@@ -26,8 +26,8 @@ static constexpr int kMaxStatus = 20;
 #define LAGI_ALIGN(v, a) (((v) + ((a) - 1)) & ~((a) - 1))
 
 extern "C" {
-extern const unsigned char _binary_lagi_color_v_gxp_start[];
-extern const unsigned char _binary_lagi_color_f_gxp_start[];
+extern const unsigned char lagi_color_v_gxp[];
+extern const unsigned char lagi_color_f_gxp[];
 }
 
 struct StatusLine {
@@ -466,9 +466,9 @@ static bool initShaders()
         return false;
 
     const SceGxmProgram* vp =
-        reinterpret_cast<const SceGxmProgram*>(_binary_lagi_color_v_gxp_start);
+        reinterpret_cast<const SceGxmProgram*>(lagi_color_v_gxp);
     const SceGxmProgram* fp =
-        reinterpret_cast<const SceGxmProgram*>(_binary_lagi_color_f_gxp_start);
+        reinterpret_cast<const SceGxmProgram*>(lagi_color_f_gxp);
 
     if (sceGxmProgramCheck(vp) < 0 || sceGxmProgramCheck(fp) < 0)
         return false;
