@@ -43,6 +43,7 @@ static void* g_probeFragment = nullptr;
 static void* g_probeFragmentUsse = nullptr;
 static SceGxmContext* g_probeContext = nullptr;
 static void* g_probeContextHost = nullptr;
+static SceGxmRenderTarget* g_probeRenderTarget = nullptr;
 
 static void fill(std::uint32_t color)
 {
@@ -173,6 +174,11 @@ bool init()
 
 void shutdown()
 {
+    if (g_probeRenderTarget) {
+        sceGxmDestroyRenderTarget(g_probeRenderTarget);
+        g_probeRenderTarget = nullptr;
+    }
+
     if (g_probeContext) {
         sceGxmDestroyContext(g_probeContext);
         g_probeContext = nullptr;
@@ -298,9 +304,9 @@ static void* probeFragmentUsseAlloc(
 
 void toggle_debug_console()
 {
-    // Stage 3 native GXM probe: initialize, map the core ring buffers, then
-    // create only the GXM context. Do not create render targets, surfaces,
-    // shader patchers, shader programs, or submit a scene.
+    // Stage 4 native GXM probe: initialize, map core rings, create the GXM
+    // context, then create only the render target. Do not create color/depth
+    // surfaces, shader patchers/programs, or submit a scene.
     g_debugVisible = true;
 
     if (g_gxmProbeAttempted)
@@ -377,13 +383,34 @@ void toggle_debug_console()
         std::snprintf(line, sizeof(line), "[FAIL] GXM CONTEXT 0X%08X",
                       static_cast<unsigned int>(contextResult));
         failure(line);
-        std::printf("[GXM] sceGxmCreateContext failed: 0x%08X\n",
-                    static_cast<unsigned int>(contextResult));
         return;
     }
 
     status("[PASS] GXM CONTEXT", 0xFF80E0FFu);
-    std::printf("[GXM] context creation passed\n");
+
+    SceGxmRenderTargetParams rtParams{};
+    rtParams.flags = 0;
+    rtParams.width = kWidth;
+    rtParams.height = kHeight;
+    rtParams.scenesPerFrame = 1;
+    rtParams.multisampleMode = SCE_GXM_MULTISAMPLE_NONE;
+    rtParams.multisampleLocations = 0;
+    rtParams.driverMemBlock = -1;
+
+    const int rtResult =
+        sceGxmCreateRenderTarget(&rtParams, &g_probeRenderTarget);
+    if (rtResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM TARGET 0X%08X",
+                      static_cast<unsigned int>(rtResult));
+        failure(line);
+        std::printf("[GXM] sceGxmCreateRenderTarget failed: 0x%08X\n",
+                    static_cast<unsigned int>(rtResult));
+        return;
+    }
+
+    status("[PASS] GXM RENDER TARGET", 0xFF80E0FFu);
+    std::printf("[GXM] render target creation passed\n");
 }
 
 bool debug_console_visible()
