@@ -135,3 +135,6 @@ The current textured-lighting mode now draws each Saturn quad separately so five
 After pulling this milestone, rerun `cmake ..` once because the textured-lighting shader interface changed and the old scalar-light vertex shader is no longer generated. Then rebuild normally.
 
 Compare textured baseline mode 0 against lit modes 1/2. On the wings, the previous diagonal half-quad lighting wedges should disappear or be substantially reduced because lighting is evaluated from a single bilinear quad coordinate instead of triangle varyings. The light should also visibly step in Saturn-style 5-bit increments. Mode 2 still enables CCW culling for comparison; mode 1 remains two-sided.
+
+
+For the current wing-winding test, viewer mode 2 uses CW culling. Compare it against mode 1 at the same camera angle. If the correct wing membrane faces remain visible and the inverted-looking flats disappear, CW is the effective front-face winding for Lagi's current GXM projection path and can replace the temporary diagnostic.
