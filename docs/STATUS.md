@@ -111,3 +111,5 @@ The framebuffer isolation build booted successfully, confirming the immediate-ex
 - GXM staged probe result: Stage 7 precompiled GXP validation and shader-patcher registration passed on hardware. Stage 8 now resolves `aPosition`, `aColor`, and `wvp`, then creates the patched vertex and fragment programs using the Basic Wing debug vertex layout. Scene begin/end, render state, vertex/index submission, and drawing remain disabled.
 
 - Debug console capacity: increased stored status lines from 20 to 64. The Stage 8 probe exceeded the previous cap after the earlier integration and GXM milestones, so later results could execute successfully but were not visible on-screen.
+
+- GXM staged probe result: Stage 8 shader parameter resolution and patched vertex/fragment program creation passed on hardware. Stage 9 now begins and ends a single empty scene against the dedicated GXM color/depth surfaces, binds the patched programs and conservative fixed state, calls `sceGxmFinish()`, but submits no vertex/index buffers and issues no draw call.
