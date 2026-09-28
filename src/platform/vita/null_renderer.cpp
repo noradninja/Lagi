@@ -1286,6 +1286,14 @@ bool load_basic_wing_viewer()
         status("[PASS] DRAGON0 CGB REFERENCES", 0xFF80E0FFu);
     else
         failure("[FAIL] DRAGON0 CGB REFERENCES");
+
+    if (g_basicWingCpuMesh.mode1DecodeFullyResolved) {
+        status("[PASS] DRAGON0 MODE1 TEXTURES", 0xFF80E0FFu);
+    } else if (g_basicWingCpuMesh.mode1DecodeValid) {
+        status("[INFO] DRAGON0 MODE1 NEEDS CRAM", 0xFF80C0FFu);
+    } else {
+        failure("[FAIL] DRAGON0 MODE1 DECODE");
+    }
     return true;
 }
 
