@@ -1460,94 +1460,58 @@ void toggle_debug_console()
         return;
     }
 
-    const SceGxmProgram* texturedLitVertexGxp =
-        reinterpret_cast<const SceGxmProgram*>(
-            _binary_lagi_textured_lit_v_gxp_start);
     const SceGxmProgram* texturedLitFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_textured_lit_f_gxp_start);
 
-    if (sceGxmProgramCheck(texturedLitVertexGxp) < 0 ||
-        sceGxmProgramCheck(texturedLitFragmentGxp) < 0) {
+    if (sceGxmProgramCheck(texturedLitFragmentGxp) < 0) {
         failure("[FAIL] TEXTURED LIT GXP CHECK");
         return;
     }
 
     if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
-            texturedLitVertexGxp,
-            &g_texturedLitVertexProgramId) < 0 ||
-        sceGxmShaderPatcherRegisterProgram(
-            g_probeShaderPatcher,
             texturedLitFragmentGxp,
             &g_texturedLitFragmentProgramId) < 0) {
         failure("[FAIL] TEXTURED LIT PROGRAM REG");
         return;
     }
-    g_texturedLitVertexRegistered = true;
     g_texturedLitFragmentRegistered = true;
 
-    const SceGxmProgramParameter* litPositionParam =
+    g_texturedLitQuadScreen01Param =
         sceGxmProgramFindParameterByName(
-            texturedLitVertexGxp, "aPosition");
-    const SceGxmProgramParameter* litUvParam =
+            texturedLitFragmentGxp, "quadScreen01");
+    g_texturedLitQuadScreen23Param =
         sceGxmProgramFindParameterByName(
-            texturedLitVertexGxp, "aTexcoord");
-    const SceGxmProgramParameter* litLightParam =
+            texturedLitFragmentGxp, "quadScreen23");
+    g_texturedLitGouraudRParam =
         sceGxmProgramFindParameterByName(
-            texturedLitVertexGxp, "aLight");
-    g_texturedLitWvpParam =
+            texturedLitFragmentGxp, "gouraudR");
+    g_texturedLitGouraudGParam =
         sceGxmProgramFindParameterByName(
-            texturedLitVertexGxp, "wvp");
+            texturedLitFragmentGxp, "gouraudG");
+    g_texturedLitGouraudBParam =
+        sceGxmProgramFindParameterByName(
+            texturedLitFragmentGxp, "gouraudB");
 
-    if (!litPositionParam || !litUvParam ||
-        !litLightParam || !g_texturedLitWvpParam) {
-        failure("[FAIL] TEXTURED LIT SHADER PARAMS");
+    if (!g_texturedLitQuadScreen01Param ||
+        !g_texturedLitQuadScreen23Param ||
+        !g_texturedLitGouraudRParam ||
+        !g_texturedLitGouraudGParam ||
+        !g_texturedLitGouraudBParam) {
+        failure("[FAIL] TEXTURED LIT FP PARAMS");
         return;
     }
 
-    SceGxmVertexAttribute litAttributes[3]{};
-    litAttributes[0].streamIndex = 0;
-    litAttributes[0].offset = 0;
-    litAttributes[0].format = SCE_GXM_ATTRIBUTE_FORMAT_F32;
-    litAttributes[0].componentCount = 3;
-    litAttributes[0].regIndex =
-        sceGxmProgramParameterGetResourceIndex(litPositionParam);
-
-    litAttributes[1].streamIndex = 0;
-    litAttributes[1].offset = 12;
-    litAttributes[1].format = SCE_GXM_ATTRIBUTE_FORMAT_F32;
-    litAttributes[1].componentCount = 2;
-    litAttributes[1].regIndex =
-        sceGxmProgramParameterGetResourceIndex(litUvParam);
-
-    litAttributes[2].streamIndex = 0;
-    litAttributes[2].offset = 20;
-    litAttributes[2].format = SCE_GXM_ATTRIBUTE_FORMAT_F32;
-    litAttributes[2].componentCount = 1;
-    litAttributes[2].regIndex =
-        sceGxmProgramParameterGetResourceIndex(litLightParam);
-
-    SceGxmVertexStream litStream{};
-    litStream.stride = sizeof(azel::DebugTexturedLitVertex);
-    litStream.indexSource =
-        SCE_GXM_INDEX_SOURCE_INDEX_16BIT;
-
-    if (sceGxmShaderPatcherCreateVertexProgram(
-            g_probeShaderPatcher,
-            g_texturedLitVertexProgramId,
-            litAttributes, 3,
-            &litStream, 1,
-            &g_texturedLitVertexProgram) < 0 ||
-        sceGxmShaderPatcherCreateFragmentProgram(
+    if (sceGxmShaderPatcherCreateFragmentProgram(
             g_probeShaderPatcher,
             g_texturedLitFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
             SCE_GXM_MULTISAMPLE_NONE,
             nullptr,
-            texturedLitVertexGxp,
+            textureVertexGxp,
             &g_texturedLitFragmentProgram) < 0) {
-        failure("[FAIL] CREATE TEXTURED LIT PROGRAMS");
+        failure("[FAIL] CREATE TEXTURED LIT FP");
         return;
     }
 
