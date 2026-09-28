@@ -74,6 +74,10 @@ static SceGxmVertexProgram* g_probeVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_probeFragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_probeWvpParam = nullptr;
 static bool g_probeScenePassed = false;
+static SceUID g_probeTriangleVertexUid = -1;
+static SceUID g_probeTriangleIndexUid = -1;
+static azel::DebugColorVertex* g_probeTriangleVertices = nullptr;
+static std::uint16_t* g_probeTriangleIndices = nullptr;
 
 static void fill(std::uint32_t color)
 {
@@ -204,6 +208,24 @@ bool init()
 
 void shutdown()
 {
+    auto freeSimpleMappedProbe = [](SceUID& uid, void*& ptr) {
+        if (uid >= 0) {
+            void* mem = nullptr;
+            if (sceKernelGetMemBlockBase(uid, &mem) >= 0 && mem)
+                sceGxmUnmapMemory(mem);
+            sceKernelFreeMemBlock(uid);
+            uid = -1;
+            ptr = nullptr;
+        }
+    };
+
+    void* triangleVertexPtr = g_probeTriangleVertices;
+    freeSimpleMappedProbe(g_probeTriangleVertexUid, triangleVertexPtr);
+    g_probeTriangleVertices = nullptr;
+    void* triangleIndexPtr = g_probeTriangleIndices;
+    freeSimpleMappedProbe(g_probeTriangleIndexUid, triangleIndexPtr);
+    g_probeTriangleIndices = nullptr;
+
     if (g_probeShaderPatcher) {
         if (g_probeFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
@@ -471,9 +493,9 @@ static void probePatcherHostFree(void*, void* mem)
 
 void toggle_debug_console()
 {
-    // Stage 9 native GXM probe: build the proven pipeline through patched
-    // program creation, then begin/end one empty scene with programs/state
-    // bound. No vertex/index submission and no draw call yet.
+    // Stage 10 native GXM probe: build the proven pipeline through empty-scene
+    // submission, then draw one hard-coded triangle into the off-screen GXM
+    // color surface. The GXM buffer is not displayed yet.
     g_debugVisible = true;
 
     if (g_gxmProbeAttempted)
@@ -885,7 +907,121 @@ void toggle_debug_console()
 
     g_probeScenePassed = true;
     status("[PASS] GXM END SCENE", 0xFF80E0FFu);
-    std::printf("[GXM] empty scene begin/end passed\n");
+
+    // Stage 10: draw one hard-coded triangle off-screen. Identity WVP means
+    // positions are specified directly in clip space.
+    g_probeTriangleVertices = static_cast<azel::DebugColorVertex*>(
+        probeGpuAlloc(
+            static_cast<unsigned int>(3 * sizeof(azel::DebugColorVertex)),
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_probeTriangleVertexUid));
+    g_probeTriangleIndices = static_cast<std::uint16_t*>(
+        probeGpuAlloc(
+            static_cast<unsigned int>(3 * sizeof(std::uint16_t)),
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_probeTriangleIndexUid));
+
+    if (!g_probeTriangleVertices || !g_probeTriangleIndices) {
+        failure("[FAIL] GXM TRIANGLE MEMORY");
+        return;
+    }
+
+    g_probeTriangleVertices[0] = { -0.65f, -0.55f, 0.0f, 255, 64, 64, 255 };
+    g_probeTriangleVertices[1] = {  0.65f, -0.55f, 0.0f, 64, 255, 64, 255 };
+    g_probeTriangleVertices[2] = {  0.00f,  0.65f, 0.0f, 64, 128, 255, 255 };
+    g_probeTriangleIndices[0] = 0;
+    g_probeTriangleIndices[1] = 1;
+    g_probeTriangleIndices[2] = 2;
+
+    const unsigned int stage10AlignedW =
+        (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
+    const unsigned int stage10AlignedH =
+        (kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1);
+    std::memset(g_probeDepth, 0xFF, stage10AlignedW * stage10AlignedH * 4u);
+    std::memset(g_probeStencil, 0, stage10AlignedW * stage10AlignedH * 4u);
+
+    const int drawBeginResult = sceGxmBeginScene(
+        g_probeContext,
+        0,
+        g_probeRenderTarget,
+        nullptr,
+        nullptr,
+        g_probeSync,
+        &g_probeColorSurface,
+        &g_probeDepthSurface);
+
+    if (drawBeginResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM DRAW BEGIN 0X%08X",
+                      static_cast<unsigned int>(drawBeginResult));
+        failure(line);
+        return;
+    }
+
+    sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext, g_probeFragmentProgram);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetDefaultRegionClipAndViewport(
+        g_probeContext, kWidth - 1, kHeight - 1);
+    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
+    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+
+    void* uniformBuffer = nullptr;
+    const int reserveUniformResult =
+        sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniformBuffer);
+    if (reserveUniformResult < 0 || !uniformBuffer) {
+        sceGxmEndScene(g_probeContext, nullptr, nullptr);
+        sceGxmFinish(g_probeContext);
+        failure("[FAIL] GXM WVP BUFFER");
+        return;
+    }
+
+    static const float identityWvp[16] = {
+        1,0,0,0,
+        0,1,0,0,
+        0,0,1,0,
+        0,0,0,1
+    };
+    sceGxmSetUniformDataF(
+        uniformBuffer, g_probeWvpParam, 0, 16, identityWvp);
+
+    const int streamResult =
+        sceGxmSetVertexStream(
+            g_probeContext, 0, g_probeTriangleVertices);
+    if (streamResult < 0) {
+        sceGxmEndScene(g_probeContext, nullptr, nullptr);
+        sceGxmFinish(g_probeContext);
+        failure("[FAIL] GXM VERTEX STREAM");
+        return;
+    }
+
+    const int drawResult = sceGxmDraw(
+        g_probeContext,
+        SCE_GXM_PRIMITIVE_TRIANGLES,
+        SCE_GXM_INDEX_FORMAT_U16,
+        g_probeTriangleIndices,
+        3);
+
+    if (drawResult < 0) {
+        sceGxmEndScene(g_probeContext, nullptr, nullptr);
+        sceGxmFinish(g_probeContext);
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM DRAW 0X%08X",
+                      static_cast<unsigned int>(drawResult));
+        failure(line);
+        return;
+    }
+
+    sceGxmEndScene(g_probeContext, nullptr, nullptr);
+    sceGxmFinish(g_probeContext);
+
+    status("[PASS] GXM TRIANGLE DRAW", 0xFF80E0FFu);
+    std::printf("[GXM] off-screen triangle draw passed\n");
 }
 
 bool debug_console_visible()
