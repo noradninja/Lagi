@@ -80,7 +80,7 @@ The CUE file is parsed to locate the MODE1 data track and `COMMON.DAT` / `DRAGON
 
 ## Rendering strategy
 
-Lagi will translate reconstructed game intent and Saturn render semantics directly to native SceGxm rather than emulate a complete Saturn graphics subsystem unless a particular behavior requires it. The renderer is intended to preserve Saturn-era characteristics such as low color precision, Gouraud behavior, mesh transparency, and VDP1/VDP2 compositing rather than silently modernize them.
+Lagi will translate reconstructed game intent and Saturn render semantics directly to native SceGxm rather than emulate a complete Saturn graphics subsystem unless a particular behavior requires it. The renderer is intended to preserve Saturn-era characteristics such as low color precision, Gouraud behavior, mesh transparency, and VDP1/VDP2 compositing rather than silently modernize them. The deliberate visual exception is resolution: Lagi targets the Vita's native 960x544 output rather than reproducing the Saturn's lower render resolution.
 
 ```text
 clear screen
