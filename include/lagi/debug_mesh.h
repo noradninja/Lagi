@@ -51,6 +51,14 @@ struct BasicWingDebugMesh {
     std::vector<SaturnPolygonRecord> polygonRecords;
     unsigned int models = 0;
     unsigned int polygons = 0;
+
+    // DRAGON0.CGB is loaded by the original game at VDP1 byte offset
+    // 0x12000. The model bundle is relocated by 0x2400 VDP1 address units,
+    // and 0x2400 << 3 == 0x12000.
+    unsigned int cgbBytes = 0;
+    unsigned int maxTextureEnd = 0;
+    unsigned int maxLutEnd = 0;
+    bool cgbReferencesValid = false;
 };
 
 bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out);
