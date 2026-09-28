@@ -73,6 +73,7 @@ static bool g_probeFragmentRegistered = false;
 static SceGxmVertexProgram* g_probeVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_probeFragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_probeWvpParam = nullptr;
+static bool g_probeScenePassed = false;
 
 static void fill(std::uint32_t color)
 {
@@ -470,9 +471,9 @@ static void probePatcherHostFree(void*, void* mem)
 
 void toggle_debug_console()
 {
-    // Stage 8 native GXM probe: build the proven pipeline through program
-    // registration, then resolve shader parameters and create the patched
-    // vertex/fragment programs. Do not begin a scene or issue a draw.
+    // Stage 9 native GXM probe: build the proven pipeline through patched
+    // program creation, then begin/end one empty scene with programs/state
+    // bound. No vertex/index submission and no draw call yet.
     g_debugVisible = true;
 
     if (g_gxmProbeAttempted)
@@ -834,7 +835,57 @@ void toggle_debug_console()
     }
 
     status("[PASS] GXM CREATE FRAGMENT PROGRAM", 0xFF80E0FFu);
-    std::printf("[GXM] patched vertex/fragment program creation passed\n");
+
+    // Stage 9: begin/end one empty scene. Bind the patched programs and
+    // conservative default state, but submit no vertex/index buffers and
+    // issue no draw call.
+    std::memset(g_probeDepth, 0xFF,
+                ((kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1)) *
+                ((kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1)) * 4u);
+    std::memset(g_probeStencil, 0,
+                ((kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1)) *
+                ((kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1)) * 4u);
+
+    const int beginResult = sceGxmBeginScene(
+        g_probeContext,
+        0,
+        g_probeRenderTarget,
+        nullptr,
+        nullptr,
+        g_probeSync,
+        &g_probeColorSurface,
+        &g_probeDepthSurface);
+
+    if (beginResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM BEGIN SCENE 0X%08X",
+                      static_cast<unsigned int>(beginResult));
+        failure(line);
+        return;
+    }
+
+    status("[PASS] GXM BEGIN SCENE", 0xFF80E0FFu);
+
+    sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext, g_probeFragmentProgram);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetDefaultRegionClipAndViewport(
+        g_probeContext, kWidth - 1, kHeight - 1);
+    sceGxmSetFrontDepthFunc(
+        g_probeContext, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
+    sceGxmSetBackDepthFunc(
+        g_probeContext, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+
+    sceGxmEndScene(g_probeContext, nullptr, nullptr);
+    sceGxmFinish(g_probeContext);
+
+    g_probeScenePassed = true;
+    status("[PASS] GXM END SCENE", 0xFF80E0FFu);
+    std::printf("[GXM] empty scene begin/end passed\n");
 }
 
 bool debug_console_visible()
