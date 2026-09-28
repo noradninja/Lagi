@@ -1879,7 +1879,7 @@ static void renderBasicWingViewer()
     }
 
     if (input::prev_mode_pressed() || input::next_mode_pressed())
-        g_viewMode = (g_viewMode + 1) % 6;
+        g_viewMode = (g_viewMode + 1) % 5;
 
     // Geometry stays in normalized model space. Rotation, camera placement,
     // and perspective now happen entirely through the WVP uniform.
@@ -1914,12 +1914,9 @@ static void renderBasicWingViewer()
     const bool textured =
         g_viewMode == 0 && g_basicWingTexturedReady;
     const bool texturedLit =
-        (g_viewMode == 1 || g_viewMode == 2) &&
-        g_basicWingTexturedReady;
-    const bool culledTexturedLit =
-        g_viewMode == 2 && g_basicWingTexturedReady;
+        g_viewMode == 1 && g_basicWingTexturedReady;
     const bool gouraudDebug =
-        g_viewMode == 3 && g_basicWingTexturedReady;
+        g_viewMode == 2 && g_basicWingTexturedReady;
 
     sceGxmSetVertexProgram(
         g_probeContext,
@@ -1937,13 +1934,13 @@ static void renderBasicWingViewer()
                     : g_probeFragmentProgram)));
     sceGxmSetCullMode(
         g_probeContext,
-        culledTexturedLit
+        texturedLit
             ? SCE_GXM_CULL_CW
             : SCE_GXM_CULL_NONE);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, kWidth - 1, kHeight - 1);
     const SceGxmDepthFunc depthFunc =
-        g_viewMode == 5
+        g_viewMode == 4
             ? SCE_GXM_DEPTH_FUNC_LESS
             : SCE_GXM_DEPTH_FUNC_LESS_EQUAL;
     sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
@@ -1954,7 +1951,7 @@ static void renderBasicWingViewer()
         g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
 
     const SceGxmPolygonMode polygonMode =
-        g_viewMode == 5
+        g_viewMode == 4
             ? SCE_GXM_POLYGON_MODE_LINE
             : SCE_GXM_POLYGON_MODE_TRIANGLE_FILL;
     sceGxmSetFrontPolygonMode(g_probeContext, polygonMode);
