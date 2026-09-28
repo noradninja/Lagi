@@ -107,3 +107,5 @@ The framebuffer isolation build booted successfully, confirming the immediate-ex
 - GXM staged probe result: Stage 6 shader patcher creation passed on hardware. Stage 7 now validates the vendored vertex/fragment GXP blobs with `sceGxmProgramCheck()` and registers both with the shader patcher. Patched vertex/fragment program creation, scene submission, and drawing remain disabled.
 
 - Debug console readability: reduced framebuffer status/body text scale by 50% and tightened line spacing, while keeping the title larger. This allows substantially more GXM bring-up diagnostics to remain visible on the 960x544 status screen.
+
+- GXM staged probe result: Stage 7 precompiled GXP validation and shader-patcher registration passed on hardware. Stage 8 now resolves `aPosition`, `aColor`, and `wvp`, then creates the patched vertex and fragment programs using the Basic Wing debug vertex layout. Scene begin/end, render state, vertex/index submission, and drawing remain disabled.
