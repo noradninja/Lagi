@@ -105,3 +105,5 @@ The framebuffer isolation build booted successfully, confirming the immediate-ex
 - GXM staged probe result: Stage 5 color/depth surface setup passed on hardware. Stage 6 now allocates the shader patcher backing buffer plus vertex/fragment USSE pools and calls only `sceGxmShaderPatcherCreate()`. Shader program validation/registration, patched program creation, scene submission, and drawing remain disabled.
 
 - GXM staged probe result: Stage 6 shader patcher creation passed on hardware. Stage 7 now validates the vendored vertex/fragment GXP blobs with `sceGxmProgramCheck()` and registers both with the shader patcher. Patched vertex/fragment program creation, scene submission, and drawing remain disabled.
+
+- Debug console readability: reduced framebuffer status/body text scale by 50% and tightened line spacing, while keeping the title larger. This allows substantially more GXM bring-up diagnostics to remain visible on the 960x544 status screen.
