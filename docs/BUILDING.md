@@ -126,3 +126,12 @@ For the wing-lighting diagnostic, compare modes 1 and 2 at the same camera angle
 ## Vita presentation assets
 
 The VPK packages `sce_sys/icon0.png`, `sce_sys/livearea/contents/bg0.png`, `startup.png`, and `template.xml` automatically. No separate asset-copy step is required after pulling the current branch.
+
+
+## RGB555 / bilinear lighting hardware test
+
+The current textured-lighting mode now draws each Saturn quad separately so five fragment uniforms can carry the original four screen-space corners and four per-corner RGB Gouraud values. This is intentionally less draw-call-efficient than the texture-only batch path; it is the correctness/reference implementation before optimization.
+
+After pulling this milestone, rerun `cmake ..` once because the textured-lighting shader interface changed and the old scalar-light vertex shader is no longer generated. Then rebuild normally.
+
+Compare textured baseline mode 0 against lit modes 1/2. On the wings, the previous diagonal half-quad lighting wedges should disappear or be substantially reduced because lighting is evaluated from a single bilinear quad coordinate instead of triangle varyings. The light should also visibly step in Saturn-style 5-bit increments. Mode 2 still enables CCW culling for comparison; mode 1 remains two-sided.
