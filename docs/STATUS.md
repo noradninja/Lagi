@@ -113,3 +113,5 @@ The framebuffer isolation build booted successfully, confirming the immediate-ex
 - Debug console capacity: increased stored status lines from 20 to 64. The Stage 8 probe exceeded the previous cap after the earlier integration and GXM milestones, so later results could execute successfully but were not visible on-screen.
 
 - GXM staged probe result: Stage 8 shader parameter resolution and patched vertex/fragment program creation passed on hardware. Stage 9 now begins and ends a single empty scene against the dedicated GXM color/depth surfaces, binds the patched programs and conservative fixed state, calls `sceGxmFinish()`, but submits no vertex/index buffers and issues no draw call.
+
+- GXM staged probe result: Stage 9 empty scene begin/end passed on hardware. Stage 10 now allocates a three-vertex/three-index debug triangle, uploads an identity `wvp`, binds stream 0, and calls `sceGxmDraw()` into the dedicated off-screen GXM color surface. The GXM render target is still not sent to the display, keeping scanout/display-queue behavior out of this test.
