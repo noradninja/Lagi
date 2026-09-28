@@ -7,6 +7,7 @@
 #include "common.h"
 #include "lagi/platform.h"
 #include "lagi/disc_image.h"
+#include "commonOverlay.h"
 #include <vector>
 
 namespace lagi::azel {
@@ -73,40 +74,6 @@ static bool saturn_memory_smoke_test()
 }
 
 
-static bool validate_common_dat(sSaturnMemoryFile& common)
-{
-    // Azel commonOverlay.cpp: 9-entry dragon level stat pointer table.
-    const sSaturnPtr dragonTable = common.getSaturnPtr(0x00206FF8);
-    for (int i = 0; i < 9; ++i) {
-        const sSaturnPtr stat = readSaturnEA(dragonTable + i * 4);
-        const u32 addr = static_cast<u32>(stat.m_offset);
-        if (addr < common.m_base || addr + 0x1E > common.m_base + common.m_dataSize)
-            return false;
-
-        volatile s8 first = readSaturnS8(stat);
-        volatile s8 last = readSaturnS8(stat + 0x1D);
-        (void)first;
-        (void)last;
-    }
-
-    // Azel commonOverlay.cpp: first battle overlay descriptor.
-    const sSaturnPtr battle = common.getSaturnPtr(0x002005DC);
-    const sSaturnPtr nameEA = readSaturnEA(battle + 0x0);
-    const sSaturnPtr prgEA  = readSaturnEA(battle + 0x4);
-    const sSaturnPtr fntEA  = readSaturnEA(battle + 0x8);
-
-    const std::string name = readSaturnString(nameEA);
-    const std::string prg  = readSaturnString(prgEA);
-    const std::string fnt  = readSaturnString(fntEA);
-
-    if (name.empty() || prg.empty() || fnt.empty())
-        return false;
-
-    std::printf("[Disc] COMMON validated: dragon stats + battle0 '%s' '%s' '%s'\n",
-                name.c_str(), prg.c_str(), fnt.c_str());
-    return true;
-}
-
 bool runtime_smoke_init()
 {
     if (!saturn_memory_smoke_test()) {
@@ -121,31 +88,20 @@ bool runtime_smoke_init()
     }
     std::printf("[Disc] mounted %s\n", lagi::disc::image_path());
 
-    std::vector<u8> commonData;
-    if (!lagi::disc::read_file("COMMON.DAT", commonData) || commonData.size() < 16) {
-        std::printf("[Disc] COMMON.DAT not found or unreadable\n");
+    initCommonFile();
+    if (!gCommonFile ||
+        gCommonFile->dragonLevelStats.size() != 9 ||
+        gCommonFile->battleOverlaySetup.size() != 27 ||
+        gCommonFile->battleActivationList.size() != 27) {
+        std::printf("[Common] initialization FAILED\n");
         return false;
     }
 
-    sSaturnMemoryFile common;
-    common.m_name = "COMMON.DAT";
-    common.m_data = commonData.data();
-    common.m_dataSize = static_cast<u32>(commonData.size());
-    common.m_base = 0x00200000;
-
-    const sSaturnPtr commonRoot = common.getSaturnPtr(common.m_base);
-    volatile u32 probe0 = readSaturnU32(commonRoot);
-    volatile u16 probe4 = readSaturnU16(commonRoot + 4);
-    (void)probe0;
-    (void)probe4;
-
-    std::printf("[Disc] COMMON.DAT loaded: %u bytes, first=%08X %04X\n",
-                common.m_dataSize, probe0, probe4);
-
-    if (!validate_common_dat(common)) {
-        std::printf("[Disc] COMMON.DAT structural validation FAILED\n");
-        return false;
-    }
+    std::printf("[Common] battle0: '%s' '%s' '%s' (%u sub-battles)\n",
+                gCommonFile->battleOverlaySetup[0].m0_name.c_str(),
+                gCommonFile->battleOverlaySetup[0].m4_prg.c_str(),
+                gCommonFile->battleOverlaySetup[0].m8_fnt.c_str(),
+                gCommonFile->battleOverlaySetup[0].mC_numSubBattles);
 
     lagi::platform::renderer::set_disc_alive(true);
 
