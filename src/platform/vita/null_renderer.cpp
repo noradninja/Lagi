@@ -939,6 +939,41 @@ static ViewerMat4 buildViewerWvp()
         projection);
 }
 
+struct ViewerScreenPoint
+{
+    float x = 0.0f;
+    float y = 0.0f;
+    bool valid = false;
+};
+
+static ViewerScreenPoint projectViewerPoint(
+    const ViewerMat4& wvp,
+    const azel::DebugColorVertex& v)
+{
+    // Shader uses mul(float4(position,1), wvp): row-vector convention.
+    const float clipX =
+        v.x * wvp.m[0] + v.y * wvp.m[4] +
+        v.z * wvp.m[8] + wvp.m[12];
+    const float clipY =
+        v.x * wvp.m[1] + v.y * wvp.m[5] +
+        v.z * wvp.m[9] + wvp.m[13];
+    const float clipW =
+        v.x * wvp.m[3] + v.y * wvp.m[7] +
+        v.z * wvp.m[11] + wvp.m[15];
+
+    if (clipW <= 0.00001f)
+        return {};
+
+    const float ndcX = clipX / clipW;
+    const float ndcY = clipY / clipW;
+
+    ViewerScreenPoint out{};
+    out.x = (ndcX * 0.5f + 0.5f) * static_cast<float>(kWidth);
+    out.y = (0.5f - ndcY * 0.5f) * static_cast<float>(kHeight);
+    out.valid = true;
+    return out;
+}
+
 void toggle_debug_console()
 {
     // Native GXM Basic Wing viewer. The proven draw/scanout path is retained;
