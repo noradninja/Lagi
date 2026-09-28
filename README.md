@@ -1,10 +1,10 @@
 # Lagi
 
-**Lagi** is a native PlayStation Vita reimplementation of *Panzer Dragoon Saga*, adapting reconstructed game logic and Saturn systems to VitaSDK and VitaGL.
+**Lagi** is a native PlayStation Vita reimplementation of *Panzer Dragoon Saga*, adapting reconstructed game logic and Saturn systems to VitaSDK and native SceGxm.
 
 The goal is not to emulate a Sega Saturn. Lagi aims to execute reconstructed PDS game logic natively on the Vita's ARM CPU while translating the game's platform, rendering, input, audio, and storage requirements to Vita hardware.
 
-> **Status:** very early bring-up. The first milestone is a native Vita executable that can initialize the reconstructed game runtime with rendering and audio disabled.
+> **Status:** active native Vita bring-up. The Azel task runtime, real Disc 1 BIN/CUE access, COMMON.DAT parsing, dragon metadata, DRAGON0.MCB hierarchy/hotpoints, and Basic Wing geometry decoding are working on real hardware. A native SceGxm Basic Wing debug viewer is now being brought up.
 
 ## Project lineage
 
@@ -26,7 +26,7 @@ Original Panzer Dragoon Saga data
               |
           Lagi runtime
               |
-   VitaGL / SceCtrl / SceAudioOut
+    SceGxm / SceCtrl / SceAudioOut
               |
         PlayStation Vita
 ```
@@ -44,7 +44,7 @@ Development is intentionally staged. The first target does **not** require graph
 5. Locate user-supplied PDS data.
 6. Reach game/runtime initialization on real Vita hardware.
 7. Add Vita controller input.
-8. Bring up VitaGL rendering with simple geometry.
+8. Bring up native SceGxm rendering with reconstructed PDS geometry.
 9. Translate PDS/VDP1 and VDP2 rendering behavior incrementally.
 10. Add native audio and remaining platform systems.
 
@@ -54,7 +54,7 @@ Development is intentionally staged. The first target does **not** require graph
 | --- | --- |
 | Desktop entry/platform code | VitaSDK |
 | SDL host services | Vita platform layer |
-| BGFX rendering | VitaGL |
+| BGFX rendering | Native SceGxm |
 | Saturn/desktop input | SceCtrl |
 | Desktop audio output | SceAudioOut |
 | Standard file access | Vita filesystem / stdio |
@@ -66,21 +66,25 @@ Development is intentionally staged. The first target does **not** require graph
 
 **No Panzer Dragoon Saga game data is included in this repository.**
 
-Lagi is intended to operate using data supplied by the user from a legally obtained copy of *Panzer Dragoon Saga*. Early development will use extracted files; direct disc-image access can come later.
+Lagi is intended to operate using data supplied by the user from a legally obtained copy of *Panzer Dragoon Saga*. Current hardware builds read user-supplied Disc 1 BIN/CUE images directly and mount the ISO9660 filesystem at runtime.
 
-Initial data path:
+Current Disc 1 layout:
 
 ```text
-ux0:data/lagi/
+ux0:data/lagi/Disc 1/
+    <disc>.cue
+    <disc>.bin
 ```
+
+The CUE file is parsed to locate the MODE1 data track and `COMMON.DAT` / `DRAGON0.MCB` are read directly from the image.
 
 ## Rendering strategy
 
-Lagi will translate reconstructed game intent and already-processed render data to VitaGL as directly as practical rather than emulate a complete Saturn graphics subsystem unless a particular behavior requires it.
+Lagi will translate reconstructed game intent and Saturn render semantics directly to native SceGxm rather than emulate a complete Saturn graphics subsystem unless a particular behavior requires it. The renderer is intended to preserve Saturn-era characteristics such as low color precision, Gouraud behavior, mesh transparency, and VDP1/VDP2 compositing rather than silently modernize them.
 
 ```text
 clear screen
- -> primitive
+ -> Basic Wing debug geometry
  -> PDS geometry
  -> textures
  -> vertex/Gouraud lighting
@@ -102,7 +106,7 @@ cmake ..
 make
 ```
 
-Exact dependency setup will be expanded as the bootstrap becomes functional.
+For the current native GXM viewer, `psp2cgc` must also be available on `PATH` or via the `PSP2CGC` environment variable. See `docs/BUILDING.md` and `docs/STATUS.md` for the current hardware workflow and milestones.
 
 ## Legal
 
