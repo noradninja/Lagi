@@ -143,17 +143,6 @@ add_custom_command(
 )
 
 add_custom_command(
- OUTPUT "${LAGI_TEXTURED_LIT_V_OBJ}"
- COMMAND "${CMAKE_OBJCOPY}"
-  -I binary -O elf32-littlearm -B arm
-  "lagi_textured_lit_v.gxp" "${LAGI_TEXTURED_LIT_V_OBJ}"
- WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
- DEPENDS "${LAGI_TEXTURED_LIT_V_GXP}"
- COMMENT "Embedding Lagi textured lighting vertex GXP"
- VERBATIM
-)
-
-add_custom_command(
  OUTPUT "${LAGI_TEXTURED_LIT_F_OBJ}"
  COMMAND "${CMAKE_OBJCOPY}"
   -I binary -O elf32-littlearm -B arm
