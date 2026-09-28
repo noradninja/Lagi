@@ -109,3 +109,5 @@ The framebuffer isolation build booted successfully, confirming the immediate-ex
 - Debug console readability: reduced framebuffer status/body text scale by 50% and tightened line spacing, while keeping the title larger. This allows substantially more GXM bring-up diagnostics to remain visible on the 960x544 status screen.
 
 - GXM staged probe result: Stage 7 precompiled GXP validation and shader-patcher registration passed on hardware. Stage 8 now resolves `aPosition`, `aColor`, and `wvp`, then creates the patched vertex and fragment programs using the Basic Wing debug vertex layout. Scene begin/end, render state, vertex/index submission, and drawing remain disabled.
+
+- Debug console capacity: increased stored status lines from 20 to 64. The Stage 8 probe exceeded the previous cap after the earlier integration and GXM milestones, so later results could execute successfully but were not visible on-screen.
