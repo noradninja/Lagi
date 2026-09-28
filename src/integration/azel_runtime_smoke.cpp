@@ -5,6 +5,7 @@
 #include "VDP1.h"
 #include "VDP2.h"
 #include "common.h"
+#include "lagi/platform.h"
 
 namespace lagi::azel {
 
@@ -40,6 +41,9 @@ bool runtime_smoke_init()
 void runtime_smoke_frame()
 {
     runTasks();
+    if (gSmokeTask && gSmokeTask->updates > 0 && gSmokeTask->draws > 0)
+        lagi::platform::renderer::set_azel_alive(true);
+
     if (gSmokeTask && gSmokeTask->updates == 1)
         std::printf("[Azel] first task frame: update=%d draw=%d\n", gSmokeTask->updates, gSmokeTask->draws);
 }
