@@ -26,6 +26,7 @@ static std::uint32_t* g_frameBuffer[2] = { nullptr, nullptr };
 static int g_drawBuffer = 0;
 static bool g_azelAlive = false;
 static bool g_discAlive = false;
+static bool g_debugVisible = true;
 static StatusLine g_status[kMaxStatus]{};
 static int g_statusCount = 0;
 
@@ -185,9 +186,23 @@ void failure(const char* text)
 void set_azel_alive(bool alive) { g_azelAlive = alive; }
 void set_disc_alive(bool alive) { g_discAlive = alive; }
 
+void toggle_debug_console()
+{
+    g_debugVisible = !g_debugVisible;
+}
+
+bool debug_console_visible()
+{
+    return g_debugVisible;
+}
+
 void begin_frame()
 {
     fill(0xFF181818u);
+
+    if (!g_debugVisible)
+        return;
+
     drawText(32, 24, "LAGI - PDS VITA RUNTIME", 0xFFFFFFFFu, 3);
     drawText(32, 58, "BOOT / INTEGRATION STATUS", 0xFFB0B0B0u, 2);
 
