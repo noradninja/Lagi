@@ -73,3 +73,7 @@ Lagi is moving toward a native SceGxm renderer rather than VitaGL. The long-term
 5. Decode Saturn textures and palettes from DRAGON0 data.
 6. Add VDP1-compatible texture and color behavior.
 7. Expand renderer from the Basic Wing test path into reusable PDS model submission.
+
+## Compatibility notes
+
+- VitaSDK GXM API compatibility: GPU mapping helpers now use `SceGxmMemoryAttribFlags` directly, and the default clip/viewport call supplies explicit `959, 543` bounds for the 960x544 render target.
