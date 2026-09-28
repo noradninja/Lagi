@@ -1938,7 +1938,7 @@ static void renderBasicWingViewer()
     sceGxmSetCullMode(
         g_probeContext,
         culledTexturedLit
-            ? SCE_GXM_CULL_CCW
+            ? SCE_GXM_CULL_CW
             : SCE_GXM_CULL_NONE);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, kWidth - 1, kHeight - 1);
