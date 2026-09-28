@@ -120,6 +120,21 @@ bool runtime_smoke_init()
         return false;
     }
     lagi::platform::renderer::status("[PASS] DRAGON COMMON DATA", 0xFF40E0A0u);
+
+    unsigned basicWingBones = 0;
+    unsigned basicWingHotpoints = 0;
+    if (!lagi::azel::validate_basic_wing_hotpoints(&basicWingBones, &basicWingHotpoints)) {
+        std::printf("[Dragon] Basic Wing hierarchy/hotpoint validation FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] DRAGON0 MCB / HOTPOINT DATA");
+        return false;
+    }
+
+    char dragonStatus[78];
+    std::snprintf(dragonStatus, sizeof(dragonStatus),
+                  "[PASS] DRAGON0 MCB %u BONES / %u HOTPOINTS",
+                  basicWingBones, basicWingHotpoints);
+    lagi::platform::renderer::status(dragonStatus, 0xFF60D0FFu);
+
     lagi::platform::renderer::set_disc_alive(true);
 
     initHeap();
