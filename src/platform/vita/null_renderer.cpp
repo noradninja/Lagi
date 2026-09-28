@@ -1,4 +1,5 @@
 #include "lagi/platform.h"
+#include "lagi/debug_mesh.h"
 
 #include <psp2/display.h>
 #include <psp2/gxm.h>
@@ -69,6 +70,9 @@ static SceGxmShaderPatcherId g_probeVertexProgramId{};
 static SceGxmShaderPatcherId g_probeFragmentProgramId{};
 static bool g_probeVertexRegistered = false;
 static bool g_probeFragmentRegistered = false;
+static SceGxmVertexProgram* g_probeVertexProgram = nullptr;
+static SceGxmFragmentProgram* g_probeFragmentProgram = nullptr;
+static const SceGxmProgramParameter* g_probeWvpParam = nullptr;
 
 static void fill(std::uint32_t color)
 {
@@ -200,6 +204,17 @@ bool init()
 void shutdown()
 {
     if (g_probeShaderPatcher) {
+        if (g_probeFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_probeFragmentProgram);
+            g_probeFragmentProgram = nullptr;
+        }
+        if (g_probeVertexProgram) {
+            sceGxmShaderPatcherReleaseVertexProgram(
+                g_probeShaderPatcher, g_probeVertexProgram);
+            g_probeVertexProgram = nullptr;
+        }
+
         if (g_probeFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_probeFragmentProgramId);
@@ -455,9 +470,9 @@ static void probePatcherHostFree(void*, void* mem)
 
 void toggle_debug_console()
 {
-    // Stage 7 native GXM probe: build the proven pipeline through shader
-    // patcher creation, then validate and register the precompiled GXP
-    // programs only. Do not create patched programs or submit a scene.
+    // Stage 8 native GXM probe: build the proven pipeline through program
+    // registration, then resolve shader parameters and create the patched
+    // vertex/fragment programs. Do not begin a scene or issue a draw.
     g_debugVisible = true;
 
     if (g_gxmProbeAttempted)
@@ -747,7 +762,79 @@ void toggle_debug_console()
     g_probeFragmentRegistered = true;
 
     status("[PASS] GXM PROGRAM REGISTER", 0xFF80E0FFu);
-    std::printf("[GXM] precompiled shader program check/register passed\n");
+
+    const SceGxmProgramParameter* positionParam =
+        sceGxmProgramFindParameterByName(vertexProgram, "aPosition");
+    const SceGxmProgramParameter* colorParam =
+        sceGxmProgramFindParameterByName(vertexProgram, "aColor");
+    g_probeWvpParam =
+        sceGxmProgramFindParameterByName(vertexProgram, "wvp");
+
+    if (!positionParam || !colorParam || !g_probeWvpParam) {
+        failure("[FAIL] GXM SHADER PARAMETERS");
+        return;
+    }
+
+    status("[PASS] GXM SHADER PARAMETERS", 0xFF80E0FFu);
+
+    SceGxmVertexAttribute attributes[2]{};
+
+    attributes[0].streamIndex = 0;
+    attributes[0].offset = 0;
+    attributes[0].format = SCE_GXM_ATTRIBUTE_FORMAT_F32;
+    attributes[0].componentCount = 3;
+    attributes[0].regIndex =
+        sceGxmProgramParameterGetResourceIndex(positionParam);
+
+    attributes[1].streamIndex = 0;
+    attributes[1].offset = 12;
+    attributes[1].format = SCE_GXM_ATTRIBUTE_FORMAT_U8N;
+    attributes[1].componentCount = 4;
+    attributes[1].regIndex =
+        sceGxmProgramParameterGetResourceIndex(colorParam);
+
+    SceGxmVertexStream stream{};
+    stream.stride = sizeof(azel::DebugColorVertex);
+    stream.indexSource = SCE_GXM_INDEX_SOURCE_INDEX_16BIT;
+
+    const int createVertexResult =
+        sceGxmShaderPatcherCreateVertexProgram(
+            g_probeShaderPatcher,
+            g_probeVertexProgramId,
+            attributes, 2,
+            &stream, 1,
+            &g_probeVertexProgram);
+
+    if (createVertexResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM CREATE VP 0X%08X",
+                      static_cast<unsigned int>(createVertexResult));
+        failure(line);
+        return;
+    }
+
+    status("[PASS] GXM CREATE VERTEX PROGRAM", 0xFF80E0FFu);
+
+    const int createFragmentResult =
+        sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_probeFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            vertexProgram,
+            &g_probeFragmentProgram);
+
+    if (createFragmentResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM CREATE FP 0X%08X",
+                      static_cast<unsigned int>(createFragmentResult));
+        failure(line);
+        return;
+    }
+
+    status("[PASS] GXM CREATE FRAGMENT PROGRAM", 0xFF80E0FFu);
+    std::printf("[GXM] patched vertex/fragment program creation passed\n");
 }
 
 bool debug_console_visible()
