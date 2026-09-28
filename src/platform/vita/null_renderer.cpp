@@ -1268,12 +1268,20 @@ bool load_basic_wing_viewer()
         v.z = (v.z - cz) * scale;
     }
 
+    if (g_basicWingCpuMesh.polygonRecords.size() !=
+        g_basicWingCpuMesh.polygons) {
+        g_basicWingCpuReady = false;
+        g_viewerReady = false;
+        return false;
+    }
+
     g_viewYaw = 0.60f;
     g_viewPitch = -0.30f;
     g_viewDistance = 3.0f;
     g_viewMode = 0;
     g_basicWingCpuReady = true;
     g_viewerReady = true;
+    status("[PASS] DRAGON0 VDP1 212 RECORDS", 0xFF80E0FFu);
     return true;
 }
 
