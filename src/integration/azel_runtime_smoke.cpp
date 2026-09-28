@@ -72,6 +72,41 @@ static bool saturn_memory_smoke_test()
            v[2].asS32() == vec[2];
 }
 
+
+static bool validate_common_dat(sSaturnMemoryFile& common)
+{
+    // Azel commonOverlay.cpp: 9-entry dragon level stat pointer table.
+    const sSaturnPtr dragonTable = common.getSaturnPtr(0x00206FF8);
+    for (int i = 0; i < 9; ++i) {
+        const sSaturnPtr stat = readSaturnEA(dragonTable + i * 4);
+        const u32 addr = static_cast<u32>(stat.m_offset);
+        if (addr < common.m_base || addr + 0x1E > common.m_base + common.m_dataSize)
+            return false;
+
+        volatile s8 first = readSaturnS8(stat);
+        volatile s8 last = readSaturnS8(stat + 0x1D);
+        (void)first;
+        (void)last;
+    }
+
+    // Azel commonOverlay.cpp: first battle overlay descriptor.
+    const sSaturnPtr battle = common.getSaturnPtr(0x002005DC);
+    const sSaturnPtr nameEA = readSaturnEA(battle + 0x0);
+    const sSaturnPtr prgEA  = readSaturnEA(battle + 0x4);
+    const sSaturnPtr fntEA  = readSaturnEA(battle + 0x8);
+
+    const std::string name = readSaturnString(nameEA);
+    const std::string prg  = readSaturnString(prgEA);
+    const std::string fnt  = readSaturnString(fntEA);
+
+    if (name.empty() || prg.empty() || fnt.empty())
+        return false;
+
+    std::printf("[Disc] COMMON validated: dragon stats + battle0 '%s' '%s' '%s'\n",
+                name.c_str(), prg.c_str(), fnt.c_str());
+    return true;
+}
+
 bool runtime_smoke_init()
 {
     if (!saturn_memory_smoke_test()) {
@@ -106,6 +141,12 @@ bool runtime_smoke_init()
 
     std::printf("[Disc] COMMON.DAT loaded: %u bytes, first=%08X %04X\n",
                 common.m_dataSize, probe0, probe4);
+
+    if (!validate_common_dat(common)) {
+        std::printf("[Disc] COMMON.DAT structural validation FAILED\n");
+        return false;
+    }
+
     lagi::platform::renderer::set_disc_alive(true);
 
     initHeap();
