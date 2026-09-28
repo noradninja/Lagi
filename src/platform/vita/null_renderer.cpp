@@ -20,6 +20,7 @@ extern const unsigned char _binary_lagi_color_v_gxp_start[];
 extern const unsigned char _binary_lagi_color_f_gxp_start[];
 extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
+extern const unsigned char _binary_lagi_gouraud_debug_f_gxp_start[];
 }
 
 static constexpr int kWidth = 960;
@@ -90,6 +91,9 @@ static bool g_textureVertexRegistered = false;
 static bool g_textureFragmentRegistered = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
+static SceGxmShaderPatcherId g_gouraudDebugFragmentProgramId{};
+static bool g_gouraudDebugFragmentRegistered = false;
+static SceGxmFragmentProgram* g_gouraudDebugFragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_textureWvpParam = nullptr;
 static bool g_probeScenePassed = false;
 static azel::BasicWingDebugMesh g_basicWingCpuMesh{};
@@ -102,8 +106,10 @@ static azel::DebugColorVertex* g_basicWingLightingVertices = nullptr;
 static std::uint16_t* g_basicWingIndices = nullptr;
 
 static SceUID g_basicWingTextureVertexUid = -1;
+static SceUID g_basicWingGouraudVertexUid = -1;
 static SceUID g_basicWingTextureIndexUid = -1;
 static azel::DebugTextureVertex* g_basicWingTextureVertices = nullptr;
+static azel::DebugTextureVertex* g_basicWingGouraudVertices = nullptr;
 static std::uint16_t* g_basicWingTextureIndices = nullptr;
 
 struct TextureBatch {
@@ -286,12 +292,20 @@ void shutdown()
     void* textureVertexPtr = g_basicWingTextureVertices;
     freeSimpleMappedProbe(g_basicWingTextureVertexUid, textureVertexPtr);
     g_basicWingTextureVertices = nullptr;
+    void* gouraudVertexPtr = g_basicWingGouraudVertices;
+    freeSimpleMappedProbe(g_basicWingGouraudVertexUid, gouraudVertexPtr);
+    g_basicWingGouraudVertices = nullptr;
     void* textureIndexPtr = g_basicWingTextureIndices;
     freeSimpleMappedProbe(g_basicWingTextureIndexUid, textureIndexPtr);
     g_basicWingTextureIndices = nullptr;
     freeBasicWingTextures();
 
     if (g_probeShaderPatcher) {
+        if (g_gouraudDebugFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_gouraudDebugFragmentProgram);
+            g_gouraudDebugFragmentProgram = nullptr;
+        }
         if (g_textureFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_textureFragmentProgram);
@@ -301,6 +315,11 @@ void shutdown()
             sceGxmShaderPatcherReleaseVertexProgram(
                 g_probeShaderPatcher, g_textureVertexProgram);
             g_textureVertexProgram = nullptr;
+        }
+        if (g_gouraudDebugFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_gouraudDebugFragmentProgramId);
+            g_gouraudDebugFragmentRegistered = false;
         }
         if (g_textureFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -690,6 +709,12 @@ static bool buildBasicWingTexturedBuffers()
                 vertexBytes,
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_basicWingTextureVertexUid));
+    g_basicWingGouraudVertices =
+        static_cast<azel::DebugTextureVertex*>(
+            probeGpuAlloc(
+                vertexBytes,
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_basicWingGouraudVertexUid));
     g_basicWingTextureIndices =
         static_cast<std::uint16_t*>(
             probeGpuAlloc(
@@ -697,7 +722,9 @@ static bool buildBasicWingTexturedBuffers()
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_basicWingTextureIndexUid));
 
-    if (!g_basicWingTextureVertices || !g_basicWingTextureIndices)
+    if (!g_basicWingTextureVertices ||
+        !g_basicWingGouraudVertices ||
+        !g_basicWingTextureIndices)
         return false;
 
     static const int triCorners[6] = {0, 1, 2, 0, 2, 3};
@@ -752,6 +779,15 @@ static bool buildBasicWingTexturedBuffers()
             g_basicWingTextureVertices[vertexIndex] = {
                 source.x, source.y, source.z,
                 uv[corner][0], uv[corner][1]
+            };
+
+            const auto& lightingSource =
+                g_basicWingCpuMesh.lightingVertices[vertexIndex];
+            const float shade =
+                static_cast<float>(lightingSource.r) / 255.0f;
+            g_basicWingGouraudVertices[vertexIndex] = {
+                source.x, source.y, source.z,
+                shade, 0.0f
             };
         }
     }
@@ -1377,6 +1413,31 @@ void toggle_debug_console()
         return;
     }
 
+    const SceGxmProgram* gouraudDebugFragmentGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_gouraud_debug_f_gxp_start);
+    if (sceGxmProgramCheck(gouraudDebugFragmentGxp) < 0 ||
+        sceGxmShaderPatcherRegisterProgram(
+            g_probeShaderPatcher,
+            gouraudDebugFragmentGxp,
+            &g_gouraudDebugFragmentProgramId) < 0) {
+        failure("[FAIL] GOURAUD DEBUG FP REG");
+        return;
+    }
+    g_gouraudDebugFragmentRegistered = true;
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_gouraudDebugFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            textureVertexGxp,
+            &g_gouraudDebugFragmentProgram) < 0) {
+        failure("[FAIL] CREATE GOURAUD DEBUG FP");
+        return;
+    }
+
     status("[PASS] GXM TEXTURE PIPELINE", 0xFF80E0FFu);
 
     // Stage 9: begin/end one empty scene. Bind the patched programs and
@@ -1685,7 +1746,7 @@ static void renderBasicWingViewer()
         !g_probeRenderTarget || !g_probeColorBuffer || !g_probeColorBuffer2 ||
         !g_probeVertexProgram || !g_probeFragmentProgram ||
         !g_basicWingVertices || !g_basicWingLightingVertices ||
-        !g_basicWingIndices)
+        !g_basicWingGouraudVertices || !g_basicWingIndices)
         return;
 
     g_viewYaw += input::analog_x() * 0.035f;
@@ -1738,13 +1799,21 @@ static void renderBasicWingViewer()
 
     const bool textured =
         g_viewMode == 0 && g_basicWingTexturedReady;
+    const bool gouraudDebug =
+        g_viewMode == 1 && g_basicWingTexturedReady;
 
     sceGxmSetVertexProgram(
         g_probeContext,
-        textured ? g_textureVertexProgram : g_probeVertexProgram);
+        (textured || gouraudDebug)
+            ? g_textureVertexProgram
+            : g_probeVertexProgram);
     sceGxmSetFragmentProgram(
         g_probeContext,
-        textured ? g_textureFragmentProgram : g_probeFragmentProgram);
+        textured
+            ? g_textureFragmentProgram
+            : (gouraudDebug
+                ? g_gouraudDebugFragmentProgram
+                : g_probeFragmentProgram));
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, kWidth - 1, kHeight - 1);
@@ -1776,19 +1845,18 @@ static void renderBasicWingViewer()
 
     sceGxmSetUniformDataF(
         uniformBuffer,
-        textured ? g_textureWvpParam : g_probeWvpParam,
+        (textured || gouraudDebug) ? g_textureWvpParam : g_probeWvpParam,
         0, 16, wvp.m);
 
-    const void* colorStream =
-        g_viewMode == 1
-            ? static_cast<const void*>(g_basicWingLightingVertices)
-            : static_cast<const void*>(g_basicWingVertices);
+    const void* viewerStream =
+        textured
+            ? static_cast<const void*>(g_basicWingTextureVertices)
+            : (gouraudDebug
+                ? static_cast<const void*>(g_basicWingGouraudVertices)
+                : static_cast<const void*>(g_basicWingVertices));
 
     if (sceGxmSetVertexStream(
-            g_probeContext, 0,
-            textured
-                ? static_cast<const void*>(g_basicWingTextureVertices)
-                : colorStream) < 0) {
+            g_probeContext, 0, viewerStream) < 0) {
         sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
         return;
