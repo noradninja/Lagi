@@ -286,8 +286,4 @@ vita_create_self(lagi.self lagi UNSAFE)
 vita_create_vpk(Lagi.vpk ${VITA_TITLEID} lagi.self
  VERSION ${VITA_VERSION}
  NAME ${VITA_APP_NAME}
- FILE ${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/icon0.png sce_sys/icon0.png
- FILE ${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/bg0.png sce_sys/livearea/contents/bg0.png
- FILE ${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/startup.png sce_sys/livearea/contents/startup.png
- FILE ${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/template.xml sce_sys/livearea/contents/template.xml
 )
