@@ -79,15 +79,19 @@ bool runtime_smoke_init()
 {
     if (!saturn_memory_smoke_test()) {
         std::printf("[Azel] Saturn memory reader smoke test FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] SATURN MEMORY READERS");
         return false;
     }
     std::printf("[Azel] Saturn memory reader smoke test passed\n");
+    lagi::platform::renderer::status("[PASS] SATURN MEMORY READERS", 0xFF40D0F0u);
 
     if (!lagi::disc::init()) {
         std::printf("[Disc] no valid ISO9660 image found in ux0:data/lagi\n");
+        lagi::platform::renderer::failure("[FAIL] DISC 1 CUE/BIN MOUNT");
         return false;
     }
     std::printf("[Disc] mounted %s\n", lagi::disc::image_path());
+    lagi::platform::renderer::status("[PASS] DISC 1 CUE/BIN + ISO9660", 0xFFF0C040u);
 
     initCommonFile();
     if (!gCommonFile ||
@@ -96,6 +100,7 @@ bool runtime_smoke_init()
         gCommonFile->battleOverlaySetup.size() != 27 ||
         gCommonFile->battleActivationList.size() != 27) {
         std::printf("[Common] initialization FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] COMMON.DAT TABLES");
         return false;
     }
 
@@ -105,12 +110,18 @@ bool runtime_smoke_init()
                 gCommonFile->battleOverlaySetup[0].m8_fnt.c_str(),
                 gCommonFile->battleOverlaySetup[0].mC_numSubBattles);
 
+    lagi::platform::renderer::status("[PASS] COMMON.DAT DRAGON/BATTLE TABLES", 0xFFF08040u);
+    lagi::platform::renderer::status("[PASS] SOUND TABLE 79/79", 0xFFE060E0u);
     lagi::platform::renderer::set_disc_alive(true);
 
     initHeap();
     resetTasks();
     gSmokeTask = createRootTask<SmokeTask>();
-    if (!gSmokeTask) return false;
+    if (!gSmokeTask) {
+        lagi::platform::renderer::failure("[FAIL] AZEL ROOT TASK CREATE");
+        return false;
+    }
+    lagi::platform::renderer::status("[PASS] AZEL ROOT TASK CREATED", 0xFF60A0F0u);
     std::printf("[Azel] native task runtime linked; root=%p\n", static_cast<void*>(gSmokeTask));
     return true;
 }
