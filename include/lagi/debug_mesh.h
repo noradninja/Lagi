@@ -36,6 +36,12 @@ struct SaturnLightingExtra {
     bool hasColor = false;
 };
 
+struct SaturnGouraud555Quad {
+    // Signed additive RGB offsets after Azel's 5-bit Gouraud quantization:
+    //   ((gouraud5 - 16) / 31), one RGB triplet per original Saturn corner.
+    float corner[4][3]{};
+};
+
 struct SaturnPolygonRecord {
     std::uint16_t indices[4]{};
     std::uint16_t lightingControl = 0;
@@ -85,6 +91,7 @@ struct BasicWingDebugMesh {
     std::vector<DebugColorVertex> vertices;
     std::vector<DebugColorVertex> lightingVertices;
     std::vector<SaturnPolygonRecord> polygonRecords;
+    std::vector<SaturnGouraud555Quad> gouraud555;
     unsigned int models = 0;
     unsigned int polygons = 0;
 
