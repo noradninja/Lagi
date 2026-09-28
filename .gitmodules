@@ -1,0 +1,3 @@
+[submodule "extern/Azel"]
+	path = extern/Azel
+	url = https://github.com/yaz0r/Azel.git
