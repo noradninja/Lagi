@@ -83,3 +83,7 @@ Lagi is moving toward a native SceGxm renderer rather than VitaGL. The long-term
 - Linkage fix: vendored GXP symbols are defined with explicit external linkage so the renderer can reference the shader byte arrays across translation units.
 
 - GXM bring-up is now non-fatal: shader/patcher failures remain on the existing status console and report the exact failing stage instead of closing the application. SELECT only enters the 3D viewer after both the GXM shader pipeline and Basic Wing mesh are ready.
+
+## GXM startup isolation
+
+A hardware regression caused the application to exit immediately after native GXM initialization was introduced. The current isolation build restores the previously proven double-buffered CPU framebuffer renderer and deliberately executes no GXM functions during startup or the frame loop. The GXM library and vendored shader data remain linked, but the Basic Wing viewer is temporarily disabled. If this build boots normally, the regression is isolated to executed GXM initialization/state setup rather than disc parsing, dragon geometry reconstruction, shader data linkage, or the existing platform/task runtime.
