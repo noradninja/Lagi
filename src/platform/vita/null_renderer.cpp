@@ -21,7 +21,6 @@ extern const unsigned char _binary_lagi_color_f_gxp_start[];
 extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_debug_f_gxp_start[];
-extern const unsigned char _binary_lagi_textured_lit_v_gxp_start[];
 extern const unsigned char _binary_lagi_textured_lit_f_gxp_start[];
 }
 
@@ -1825,7 +1824,7 @@ static void renderBasicWingViewer()
         !g_probeRenderTarget || !g_probeColorBuffer || !g_probeColorBuffer2 ||
         !g_probeVertexProgram || !g_probeFragmentProgram ||
         !g_basicWingVertices || !g_basicWingLightingVertices ||
-        !g_basicWingGouraudVertices || !g_basicWingLitVertices ||
+        !g_basicWingGouraudVertices ||
         !g_basicWingIndices)
         return;
 
@@ -1889,11 +1888,9 @@ static void renderBasicWingViewer()
 
     sceGxmSetVertexProgram(
         g_probeContext,
-        texturedLit
-            ? g_texturedLitVertexProgram
-            : ((textured || gouraudDebug)
-                ? g_textureVertexProgram
-                : g_probeVertexProgram));
+        (textured || texturedLit || gouraudDebug)
+            ? g_textureVertexProgram
+            : g_probeVertexProgram);
     sceGxmSetFragmentProgram(
         g_probeContext,
         texturedLit
@@ -1938,21 +1935,17 @@ static void renderBasicWingViewer()
 
     sceGxmSetUniformDataF(
         uniformBuffer,
-        texturedLit
-            ? g_texturedLitWvpParam
-            : ((textured || gouraudDebug)
-                ? g_textureWvpParam
-                : g_probeWvpParam),
+        (textured || texturedLit || gouraudDebug)
+            ? g_textureWvpParam
+            : g_probeWvpParam,
         0, 16, wvp.m);
 
     const void* viewerStream =
-        texturedLit
-            ? static_cast<const void*>(g_basicWingLitVertices)
-            : (textured
-                ? static_cast<const void*>(g_basicWingTextureVertices)
-                : (gouraudDebug
-                    ? static_cast<const void*>(g_basicWingGouraudVertices)
-                    : static_cast<const void*>(g_basicWingVertices)));
+        (textured || texturedLit)
+            ? static_cast<const void*>(g_basicWingTextureVertices)
+            : (gouraudDebug
+                ? static_cast<const void*>(g_basicWingGouraudVertices)
+                : static_cast<const void*>(g_basicWingVertices));
 
     if (sceGxmSetVertexStream(
             g_probeContext, 0, viewerStream) < 0) {
