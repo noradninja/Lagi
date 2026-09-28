@@ -688,21 +688,32 @@ static void validateMode1Textures(
     out.indirectCramPixels = 0;
     out.mode1DecodeValid = false;
     out.mode1DecodeFullyResolved = false;
+    out.decodedTextureData.clear();
+    out.polygonTextureIndices.assign(
+        out.polygonRecords.size(), static_cast<std::uint16_t>(0xFFFFu));
 
     bool valid = true;
 
     for (std::size_t i = 0; i < out.polygonRecords.size(); ++i) {
         const auto& record = out.polygonRecords[i];
 
-        bool seen = false;
-        for (std::size_t j = 0; j < i; ++j) {
-            if (sameTextureDescriptor(record, out.polygonRecords[j])) {
-                seen = true;
+        int existingTexture = -1;
+        for (std::size_t t = 0; t < out.decodedTextureData.size(); ++t) {
+            const auto& texture = out.decodedTextureData[t];
+            if (record.cmdPmod == texture.cmdPmod &&
+                record.cmdColr == texture.cmdColr &&
+                record.cmdSrca == texture.cmdSrca &&
+                record.cmdSize == texture.cmdSize) {
+                existingTexture = static_cast<int>(t);
                 break;
             }
         }
-        if (seen)
+
+        if (existingTexture >= 0) {
+            out.polygonTextureIndices[i] =
+                static_cast<std::uint16_t>(existingTexture);
             continue;
+        }
 
         ++out.uniqueTextures;
 
@@ -726,20 +737,22 @@ static void validateMode1Textures(
             continue;
         }
 
-        // Keep a real RGBA buffer here even though this milestone does not
-        // upload it yet. That ensures address/nibble/LUT traversal is already
-        // doing the exact work the GXM texture path will consume next.
-        std::vector<std::uint32_t> rgba(width * height, 0u);
+        lagi::azel::DecodedMode1Texture texture{};
+        texture.cmdPmod = record.cmdPmod;
+        texture.cmdColr = record.cmdColr;
+        texture.cmdSrca = record.cmdSrca;
+        texture.cmdSize = record.cmdSize;
+        texture.width = width;
+        texture.height = height;
+        texture.rgba.assign(width * height, 0u);
 
         const bool spd = (record.cmdPmod & 0x40u) != 0;
         const bool endDisabled = (record.cmdPmod & 0x80u) != 0;
         const bool endMode = (record.cmdPmod & 0x20u) == 0;
 
-        unsigned endCount = 0;
         unsigned pixel = 0;
-
         for (unsigned y = 0; y < height; ++y) {
-            endCount = 0;
+            unsigned endCount = 0;
 
             for (unsigned x = 0; x < width; ++x, ++pixel) {
                 const unsigned byteOffset =
@@ -750,13 +763,11 @@ static void validateMode1Textures(
 
                 if (endMode && endCount >= 2u) {
                     ++out.transparentPixels;
-                    rgba[pixel] = 0;
                     continue;
                 }
 
                 if (dot == 0 && !spd) {
                     ++out.transparentPixels;
-                    rgba[pixel] = 0;
                     continue;
                 }
 
@@ -764,7 +775,6 @@ static void validateMode1Textures(
                     ++endCount;
                     ++out.endCodePixels;
                     ++out.transparentPixels;
-                    rgba[pixel] = 0;
                     continue;
                 }
 
@@ -772,16 +782,11 @@ static void validateMode1Textures(
                     readBE16Raw(cgb.data() + lutAddress + dot * 2u);
 
                 if (lutColor & 0x8000u) {
-                    rgba[pixel] = rgb555ToRgba8888(lutColor);
+                    texture.rgba[pixel] = rgb555ToRgba8888(lutColor);
                     ++out.directRgb555Pixels;
                 } else if (lutColor != 0) {
-                    // Matches Azel's mode-1 path: a LUT entry without the
-                    // direct-color bit is a CRAM index, not an RGB555 value.
-                    // Record it rather than fabricating a color.
-                    rgba[pixel] = 0;
                     ++out.indirectCramPixels;
                 } else {
-                    rgba[pixel] = 0;
                     ++out.transparentPixels;
                 }
 
@@ -789,13 +794,28 @@ static void validateMode1Textures(
             }
         }
 
+        const std::uint16_t textureIndex =
+            static_cast<std::uint16_t>(out.decodedTextureData.size());
+        out.decodedTextureData.push_back(std::move(texture));
+        out.polygonTextureIndices[i] = textureIndex;
         ++out.decodedTextures;
     }
 
     out.mode1DecodeValid =
         valid &&
         out.uniqueTextures != 0 &&
-        out.decodedTextures == out.uniqueTextures;
+        out.decodedTextures == out.uniqueTextures &&
+        out.polygonTextureIndices.size() == out.polygonRecords.size();
+
+    if (out.mode1DecodeValid) {
+        for (const std::uint16_t index : out.polygonTextureIndices) {
+            if (index == 0xFFFFu ||
+                index >= out.decodedTextureData.size()) {
+                out.mode1DecodeValid = false;
+                break;
+            }
+        }
+    }
 
     out.mode1DecodeFullyResolved =
         out.mode1DecodeValid &&
