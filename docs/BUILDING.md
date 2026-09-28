@@ -147,3 +147,6 @@ CW culling is now the hardware-validated default for the textured Saturn lightin
 Modes 1 and 2 now recompute lighting every frame from the Basic Wing menu's Azel light defaults. The test light remains fixed in camera space, so rotating the dragon with the left stick should visibly move the 5-bit highlight/shadow pattern over the model. Mode 1 applies those values additively to the texture; mode 2 displays the same quantized result as grayscale.
 
 The standalone viewer reproduces Azel's light color, setupLight vector convention, 32-entry falloff table generation, RGB channel ordering, 5-bit clamp/quantization, and additive Gouraud representation. The viewer maps its current view-space depth into the dragon menu's 16-unit far-clip falloff range; live field/battle camera/light state is still a later integration step.
+
+
+All solid viewer modes now use the hardware-validated CW front-face culling. Wireframe remains uncullled by design. When comparing modes 0-3, geometry visibility should therefore remain consistent and only the rendering/debug presentation should change.
