@@ -41,6 +41,11 @@ set(LAGI_COLOR_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_color_f_gxp.o")
 set(LAGI_GOURAUD_DEBUG_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_debug_f.gxp")
 set(LAGI_GOURAUD_DEBUG_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_debug_f_gxp.o")
 
+set(LAGI_TEXTURED_LIT_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_v.gxp")
+set(LAGI_TEXTURED_LIT_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_f.gxp")
+set(LAGI_TEXTURED_LIT_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_v_gxp.o")
+set(LAGI_TEXTURED_LIT_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_f_gxp.o")
+
 set(LAGI_TEXTURE_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v.gxp")
 set(LAGI_TEXTURE_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f.gxp")
 set(LAGI_TEXTURE_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v_gxp.o")
@@ -128,6 +133,52 @@ add_custom_command(
 )
 
 add_custom_command(
+ OUTPUT "${LAGI_TEXTURED_LIT_V_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_vp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/textured_lit_v.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_TEXTURED_LIT_V_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/textured_lit_v.cg"
+ COMMENT "Compiling Lagi textured lighting vertex shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURED_LIT_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/textured_lit_f.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_TEXTURED_LIT_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/textured_lit_f.cg"
+ COMMENT "Compiling Lagi textured lighting fragment shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURED_LIT_V_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_textured_lit_v.gxp" "${LAGI_TEXTURED_LIT_V_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_TEXTURED_LIT_V_GXP}"
+ COMMENT "Embedding Lagi textured lighting vertex GXP"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURED_LIT_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_textured_lit_f.gxp" "${LAGI_TEXTURED_LIT_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_TEXTURED_LIT_F_GXP}"
+ COMMENT "Embedding Lagi textured lighting fragment GXP"
+ VERBATIM
+)
+
+add_custom_command(
  OUTPUT "${LAGI_TEXTURE_F_GXP}"
  COMMAND "${PSP2CGC_EXECUTABLE}"
   -profile sce_fp_psp2
@@ -164,6 +215,7 @@ add_custom_command(
 set_source_files_properties(
  "${LAGI_COLOR_V_OBJ}" "${LAGI_COLOR_F_OBJ}"
  "${LAGI_GOURAUD_DEBUG_F_OBJ}"
+ "${LAGI_TEXTURED_LIT_V_OBJ}" "${LAGI_TEXTURED_LIT_F_OBJ}"
  "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}"
  PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
 )
@@ -179,6 +231,8 @@ add_executable(lagi
  ${LAGI_COLOR_V_OBJ}
  ${LAGI_COLOR_F_OBJ}
  ${LAGI_GOURAUD_DEBUG_F_OBJ}
+ ${LAGI_TEXTURED_LIT_V_OBJ}
+ ${LAGI_TEXTURED_LIT_F_OBJ}
  ${LAGI_TEXTURE_V_OBJ}
  ${LAGI_TEXTURE_F_OBJ}
  src/platform/vita/null_audio.cpp
@@ -229,4 +283,11 @@ if(LAGI_AZEL_PROBE)
 endif()
 
 vita_create_self(lagi.self lagi UNSAFE)
-vita_create_vpk(Lagi.vpk ${VITA_TITLEID} lagi.self VERSION ${VITA_VERSION} NAME ${VITA_APP_NAME})
+vita_create_vpk(Lagi.vpk ${VITA_TITLEID} lagi.self
+ VERSION ${VITA_VERSION}
+ NAME ${VITA_APP_NAME}
+ FILE ${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/icon0.png sce_sys/icon0.png
+ FILE ${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/bg0.png sce_sys/livearea/contents/bg0.png
+ FILE ${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/startup.png sce_sys/livearea/contents/startup.png
+ FILE ${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/template.xml sce_sys/livearea/contents/template.xml
+)
