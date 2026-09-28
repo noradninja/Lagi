@@ -24,6 +24,12 @@ struct DecodedMode1Texture {
     std::vector<std::uint32_t> rgba;
 };
 
+struct SaturnLightingExtra {
+    std::int16_t normal[3]{};
+    std::uint16_t color[3]{};
+    bool hasColor = false;
+};
+
 struct SaturnPolygonRecord {
     std::uint16_t indices[4]{};
     std::uint16_t lightingControl = 0;
@@ -59,6 +65,14 @@ struct SaturnPolygonRecord {
     {
         return static_cast<unsigned int>(cmdSrca) << 3;
     }
+
+    unsigned int lightingMode() const
+    {
+        return (lightingControl >> 8) & 0x3u;
+    }
+
+    SaturnLightingExtra lighting[4]{};
+    std::uint8_t lightingCount = 0;
 };
 
 struct BasicWingDebugMesh {
@@ -85,6 +99,12 @@ struct BasicWingDebugMesh {
     unsigned int indirectCramPixels = 0;
     bool mode1DecodeValid = false;
     bool mode1DecodeFullyResolved = false;
+
+    // Raw DRAGON0.MCB lighting/Gouraud payload diagnostics.
+    unsigned int lightingModeCounts[4]{};
+    unsigned int lightingExtraRecords = 0;
+    unsigned int lightingColoredRecords = 0;
+    bool lightingPayloadValid = false;
 
     // Retained by the decoder for the native GXM texture upload path.
     std::vector<DecodedMode1Texture> decodedTextureData;
