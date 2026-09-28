@@ -653,6 +653,166 @@ static bool buildMeshTraverse(const std::vector<u8>& bundle, u32 nodeOffset,
     return true;
 }
 
+
+static std::uint32_t rgb555ToRgba8888(u16 color)
+{
+    // Saturn RGB555: bits 0-4 R, 5-9 G, 10-14 B, bit 15 direct-color flag.
+    const std::uint32_t r5 = color & 0x1Fu;
+    const std::uint32_t g5 = (color >> 5) & 0x1Fu;
+    const std::uint32_t b5 = (color >> 10) & 0x1Fu;
+    const std::uint32_t r8 = (r5 << 3) | (r5 >> 2);
+    const std::uint32_t g8 = (g5 << 3) | (g5 >> 2);
+    const std::uint32_t b8 = (b5 << 3) | (b5 >> 2);
+    return 0xFF000000u | r8 | (g8 << 8) | (b8 << 16);
+}
+
+static bool sameTextureDescriptor(const lagi::azel::SaturnPolygonRecord& a,
+                                  const lagi::azel::SaturnPolygonRecord& b)
+{
+    return a.cmdPmod == b.cmdPmod &&
+           a.cmdColr == b.cmdColr &&
+           a.cmdSrca == b.cmdSrca &&
+           a.cmdSize == b.cmdSize;
+}
+
+static void validateMode1Textures(
+    const std::vector<u8>& cgb,
+    lagi::azel::BasicWingDebugMesh& out)
+{
+    out.uniqueTextures = 0;
+    out.decodedTextures = 0;
+    out.decodedPixels = 0;
+    out.transparentPixels = 0;
+    out.endCodePixels = 0;
+    out.directRgb555Pixels = 0;
+    out.indirectCramPixels = 0;
+    out.mode1DecodeValid = false;
+    out.mode1DecodeFullyResolved = false;
+
+    bool valid = true;
+
+    for (std::size_t i = 0; i < out.polygonRecords.size(); ++i) {
+        const auto& record = out.polygonRecords[i];
+
+        bool seen = false;
+        for (std::size_t j = 0; j < i; ++j) {
+            if (sameTextureDescriptor(record, out.polygonRecords[j])) {
+                seen = true;
+                break;
+            }
+        }
+        if (seen)
+            continue;
+
+        ++out.uniqueTextures;
+
+        const unsigned width = record.textureWidth();
+        const unsigned height = record.textureHeight();
+        const unsigned texAddress = record.textureByteAddress();
+        const unsigned lutAddress =
+            static_cast<unsigned>(record.cmdColr) << 3;
+
+        if (record.colorMode() != 1 || width == 0 || height == 0) {
+            valid = false;
+            continue;
+        }
+
+        const unsigned texBytes = (width * height) / 2u;
+        if (texAddress > cgb.size() ||
+            texBytes > cgb.size() ||
+            static_cast<std::size_t>(texAddress) + texBytes > cgb.size() ||
+            static_cast<std::size_t>(lutAddress) + 32u > cgb.size()) {
+            valid = false;
+            continue;
+        }
+
+        // Keep a real RGBA buffer here even though this milestone does not
+        // upload it yet. That ensures address/nibble/LUT traversal is already
+        // doing the exact work the GXM texture path will consume next.
+        std::vector<std::uint32_t> rgba(width * height, 0u);
+
+        const bool spd = (record.cmdPmod & 0x40u) != 0;
+        const bool endDisabled = (record.cmdPmod & 0x80u) != 0;
+        const bool endMode = (record.cmdPmod & 0x20u) == 0;
+
+        unsigned endCount = 0;
+        unsigned pixel = 0;
+
+        for (unsigned y = 0; y < height; ++y) {
+            endCount = 0;
+
+            for (unsigned x = 0; x < width; ++x, ++pixel) {
+                const unsigned byteOffset =
+                    texAddress + (x + y * width) / 2u;
+                const u8 packed = cgb[byteOffset];
+                const u8 dot =
+                    (x & 1u) ? (packed & 0x0Fu) : (packed >> 4);
+
+                if (endMode && endCount >= 2u) {
+                    ++out.transparentPixels;
+                    rgba[pixel] = 0;
+                    continue;
+                }
+
+                if (dot == 0 && !spd) {
+                    ++out.transparentPixels;
+                    rgba[pixel] = 0;
+                    continue;
+                }
+
+                if (dot == 0x0F && !endDisabled) {
+                    ++endCount;
+                    ++out.endCodePixels;
+                    ++out.transparentPixels;
+                    rgba[pixel] = 0;
+                    continue;
+                }
+
+                const u16 lutColor =
+                    readBE16Raw(cgb.data() + lutAddress + dot * 2u);
+
+                if (lutColor & 0x8000u) {
+                    rgba[pixel] = rgb555ToRgba8888(lutColor);
+                    ++out.directRgb555Pixels;
+                } else if (lutColor != 0) {
+                    // Matches Azel's mode-1 path: a LUT entry without the
+                    // direct-color bit is a CRAM index, not an RGB555 value.
+                    // Record it rather than fabricating a color.
+                    rgba[pixel] = 0;
+                    ++out.indirectCramPixels;
+                } else {
+                    rgba[pixel] = 0;
+                    ++out.transparentPixels;
+                }
+
+                ++out.decodedPixels;
+            }
+        }
+
+        ++out.decodedTextures;
+    }
+
+    out.mode1DecodeValid =
+        valid &&
+        out.uniqueTextures != 0 &&
+        out.decodedTextures == out.uniqueTextures;
+
+    out.mode1DecodeFullyResolved =
+        out.mode1DecodeValid &&
+        out.indirectCramPixels == 0;
+
+    lagi::platform::logging::writef(
+        "[Dragon] MODE1 decode: %u/%u textures, %u pixels, %u transparent, %u end-code\n",
+        out.decodedTextures, out.uniqueTextures, out.decodedPixels,
+        out.transparentPixels, out.endCodePixels);
+    lagi::platform::logging::writef(
+        "[Dragon] MODE1 LUT: %u direct RGB555 pixels, %u indirect CRAM pixels, %s\n",
+        out.directRgb555Pixels, out.indirectCramPixels,
+        out.mode1DecodeFullyResolved
+            ? "fully resolved from CGB"
+            : (out.mode1DecodeValid ? "CRAM resolution required" : "DECODE INVALID"));
+}
+
 } // anonymous namespace
 
 namespace lagi::azel {
@@ -766,6 +926,9 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
             "[Dragon] CGB refs: texture end 0x%X, LUT end 0x%X, %s\n",
             out.maxTextureEnd, out.maxLutEnd,
             out.cgbReferencesValid ? "all in range" : "OUT OF RANGE");
+
+        if (out.cgbReferencesValid)
+            validateMode1Textures(cgb, out);
     } else {
         out.cgbBytes = 0;
         out.maxTextureEnd = maxTextureEnd;
