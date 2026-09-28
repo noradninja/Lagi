@@ -698,14 +698,22 @@ static bool appendModelDebugGeometry(const std::vector<u8>& bundle, u32 modelOff
                 const FVec3 normal =
                     normalizeDirection(transformDirection(world, rawNormal));
 
-                float diffuse =
+                float signedDot =
                     normal.x * debugLight.x +
                     normal.y * debugLight.y +
                     normal.z * debugLight.z;
-                diffuse = std::max(0.0f, std::min(1.0f, diffuse));
+                signedDot =
+                    std::max(-1.0f, std::min(1.0f, signedDot));
 
-                // Small ambient floor keeps the unlit side readable.
-                const float level = 0.15f + diffuse * 0.85f;
+                // Diagnostic mapping, not final Lambert lighting:
+                //   -1 -> 35% gray
+                //    0 -> 67.5% gray
+                //   +1 -> 100% white
+                // Keeping even fully back-facing normals visible prevents
+                // black-on-black silhouette loss from looking like a scale
+                // change, while preserving the sign of the normal/light dot.
+                const float signed01 = signedDot * 0.5f + 0.5f;
+                const float level = 0.35f + signed01 * 0.65f;
                 cornerShade[corner] =
                     static_cast<std::uint8_t>(level * 255.0f + 0.5f);
             }
