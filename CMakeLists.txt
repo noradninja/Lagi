@@ -28,6 +28,7 @@ add_executable(lagi
  src/integration/azel_fixedpoint_vita.cpp
  src/integration/azel_heap_vita.cpp
  src/integration/azel_task_vita.cpp
+ src/integration/azel_saturn_memory_vita.cpp
 )
 target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
