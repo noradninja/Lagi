@@ -1,0 +1,12 @@
+// Native Lagi textured fragment shader.
+// Nearest filtering is configured in GXM texture state.
+// Transparent Saturn texels are discarded for this first textured milestone.
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    uniform sampler2D tex)
+{
+    float4 color = tex2D(tex, vTexcoord);
+    if (color.a < 0.5f)
+        discard;
+    return color;
+}
