@@ -1,5 +1,7 @@
 #include "lagi/platform.h"
 
+#include <cstdio>
+
 namespace lagi::platform {
 
 static bool g_running = false;
@@ -9,12 +11,22 @@ bool init()
     if (!filesystem::init())
         return false;
 
-    // Logging is intentionally non-fatal: the runtime can still boot if the
-    // log file cannot be created, while stdout remains available.
-    logging::init();
+    // Logging remains non-fatal so a filesystem problem cannot prevent boot.
+    const bool logReady = logging::init();
 
     if (!input::init() || !renderer::init() || !audio::init())
         return false;
+
+    if (logReady) {
+        renderer::status("[PASS] LOG ux0:data/lagi/lagi.log", 0xFF30E030u);
+    } else {
+        char line[78];
+        std::snprintf(
+            line, sizeof(line),
+            "[FAIL] LOG OPEN 0X%08X",
+            static_cast<unsigned int>(logging::last_error()));
+        renderer::failure(line);
+    }
 
     g_running = true;
     return true;
