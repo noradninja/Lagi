@@ -9,6 +9,7 @@
 #include "lagi/disc_image.h"
 #include "commonOverlay.h"
 #include "audio/soundDataTable.h"
+#include "lagi/dragon_common.h"
 #include <vector>
 
 namespace lagi::azel {
@@ -112,6 +113,13 @@ bool runtime_smoke_init()
 
     lagi::platform::renderer::status("[PASS] COMMON.DAT DRAGON/BATTLE TABLES", 0xFFF08040u);
     lagi::platform::renderer::status("[PASS] SOUND TABLE 79/79", 0xFFE060E0u);
+
+    if (!lagi::azel::load_dragon_common_data()) {
+        std::printf("[Dragon] COMMON data initialization FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] DRAGON COMMON DATA");
+        return false;
+    }
+    lagi::platform::renderer::status("[PASS] DRAGON COMMON DATA", 0xFF40E0A0u);
     lagi::platform::renderer::set_disc_alive(true);
 
     initHeap();
