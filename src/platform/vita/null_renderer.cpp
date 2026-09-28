@@ -83,6 +83,10 @@ static SceUID g_basicWingIndexUid = -1;
 static azel::DebugColorVertex* g_basicWingVertices = nullptr;
 static std::uint16_t* g_basicWingIndices = nullptr;
 static bool g_probeDisplayingGxm = false;
+static bool g_viewerReady = false;
+static float g_viewYaw = 0.0f;
+static float g_viewPitch = 0.0f;
+static int g_viewMode = 0;
 
 static void fill(std::uint32_t color)
 {
@@ -357,6 +361,8 @@ void shutdown()
         g_frameBuffer[i] = nullptr;
     }
     g_drawBuffer = 0;
+    g_viewerReady = false;
+    g_probeDisplayingGxm = false;
 }
 
 void status(const char* text, unsigned int color)
@@ -501,10 +507,14 @@ void toggle_debug_console()
     // Stage 12 native GXM probe: use the fully proven GXM pipeline to draw the
     // reconstructed Basic Wing mesh with fixed CPU-side presentation view
     // and per-polygon debug colors, then queue it for display.
-    g_debugVisible = true;
+    if (g_gxmProbeAttempted) {
+        if (!g_viewerReady)
+            return;
 
-    if (g_gxmProbeAttempted)
+        g_debugVisible = !g_debugVisible;
+        g_probeDisplayingGxm = !g_debugVisible;
         return;
+    }
 
     g_gxmProbeAttempted = true;
 
@@ -1063,6 +1073,7 @@ void toggle_debug_console()
 
     sceDisplayWaitVblankStart();
     g_probeDisplayingGxm = true;
+    g_debugVisible = false;
     status("[PASS] GXM BASIC WING DISPLAY", 0xFF80E0FFu);
     std::printf("[GXM] Basic Wing GXM color buffer queued for display\n");
 }
@@ -1079,31 +1090,8 @@ bool load_basic_wing_viewer()
         g_basicWingCpuMesh.vertices.empty() ||
         g_basicWingCpuMesh.vertices.size() > 65535) {
         g_basicWingCpuReady = false;
+        g_viewerReady = false;
         return false;
-    }
-
-    // Fixed presentation view for the first real model draw. Keep all camera
-    // work on the CPU so the proven identity-WVP GXM path remains unchanged.
-    constexpr float yaw = 0.60f;
-    constexpr float pitch = -0.30f;
-    const float cy = std::cos(yaw);
-    const float sy = std::sin(yaw);
-    const float cp = std::cos(pitch);
-    const float sp = std::sin(pitch);
-
-    for (auto& v : g_basicWingCpuMesh.vertices) {
-        const float x0 = v.x;
-        const float y0 = v.y;
-        const float z0 = v.z;
-
-        const float x1 = x0 * cy + z0 * sy;
-        const float z1 = -x0 * sy + z0 * cy;
-        const float y1 = y0 * cp - z1 * sp;
-        const float z2 = y0 * sp + z1 * cp;
-
-        v.x = x1;
-        v.y = y1;
-        v.z = z2;
     }
 
     float minX = g_basicWingCpuMesh.vertices[0].x;
@@ -1120,7 +1108,7 @@ bool load_basic_wing_viewer()
     }
 
     const float cx = (minX + maxX) * 0.5f;
-    const float cy0 = (minY + maxY) * 0.5f;
+    const float cy = (minY + maxY) * 0.5f;
     const float cz = (minZ + maxZ) * 0.5f;
     const float extentX = std::max(maxX - minX, 0.001f);
     const float extentY = std::max(maxY - minY, 0.001f);
@@ -1130,21 +1118,148 @@ bool load_basic_wing_viewer()
 
     for (auto& v : g_basicWingCpuMesh.vertices) {
         v.x = (v.x - cx) * scale;
-        v.y = (v.y - cy0) * scale;
-        // Keep depth comfortably inside clip/depth range.
+        v.y = (v.y - cy) * scale;
         v.z = (v.z - cz) * scale * 0.5f;
     }
 
+    g_viewYaw = 0.60f;
+    g_viewPitch = -0.30f;
+    g_viewMode = 0;
     g_basicWingCpuReady = true;
+    g_viewerReady = true;
     return true;
+}
+
+static void renderBasicWingViewer()
+{
+    if (!g_viewerReady || !g_gxmInitialized || !g_probeContext ||
+        !g_probeRenderTarget || !g_probeColorBuffer ||
+        !g_probeVertexProgram || !g_probeFragmentProgram ||
+        !g_basicWingVertices || !g_basicWingIndices)
+        return;
+
+    g_viewYaw += input::analog_x() * 0.035f;
+    g_viewPitch += input::analog_y() * 0.035f;
+    g_viewPitch = std::max(-1.45f, std::min(1.45f, g_viewPitch));
+
+    if (input::reset_view_pressed()) {
+        g_viewYaw = 0.60f;
+        g_viewPitch = -0.30f;
+    }
+
+    if (input::prev_mode_pressed() || input::next_mode_pressed())
+        g_viewMode = (g_viewMode + 1) % 2;
+
+    const float cy = std::cos(g_viewYaw);
+    const float sy = std::sin(g_viewYaw);
+    const float cp = std::cos(g_viewPitch);
+    const float sp = std::sin(g_viewPitch);
+
+    for (std::size_t i = 0; i < g_basicWingCpuMesh.vertices.size(); ++i) {
+        const auto& src = g_basicWingCpuMesh.vertices[i];
+        auto& dst = g_basicWingVertices[i];
+
+        const float x1 = src.x * cy + src.z * sy;
+        const float z1 = -src.x * sy + src.z * cy;
+        const float y1 = src.y * cp - z1 * sp;
+        const float z2 = src.y * sp + z1 * cp;
+
+        dst = src;
+        dst.x = x1;
+        dst.y = y1;
+        dst.z = z2;
+    }
+
+    constexpr int gxmPitch = 1024;
+    const unsigned int alignedW =
+        (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
+    const unsigned int alignedH =
+        (kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1);
+
+    std::memset(g_probeColorBuffer, 0,
+                static_cast<std::size_t>(gxmPitch) * kHeight *
+                sizeof(std::uint32_t));
+    std::memset(g_probeDepth, 0xFF, alignedW * alignedH * 4u);
+    std::memset(g_probeStencil, 0, alignedW * alignedH * 4u);
+
+    if (sceGxmBeginScene(
+            g_probeContext, 0, g_probeRenderTarget,
+            nullptr, nullptr, g_probeSync,
+            &g_probeColorSurface, &g_probeDepthSurface) < 0)
+        return;
+
+    sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext, g_probeFragmentProgram);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetDefaultRegionClipAndViewport(
+        g_probeContext, kWidth - 1, kHeight - 1);
+    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
+    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+
+    const SceGxmPolygonMode polygonMode =
+        g_viewMode == 0
+            ? SCE_GXM_POLYGON_MODE_TRIANGLE_FILL
+            : SCE_GXM_POLYGON_MODE_LINE;
+    sceGxmSetFrontPolygonMode(g_probeContext, polygonMode);
+    sceGxmSetBackPolygonMode(g_probeContext, polygonMode);
+
+    void* uniformBuffer = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniformBuffer) < 0 || !uniformBuffer) {
+        sceGxmEndScene(g_probeContext, nullptr, nullptr);
+        sceGxmFinish(g_probeContext);
+        return;
+    }
+
+    static const float identityWvp[16] = {
+        1,0,0,0,
+        0,1,0,0,
+        0,0,1,0,
+        0,0,0,1
+    };
+    sceGxmSetUniformDataF(
+        uniformBuffer, g_probeWvpParam, 0, 16, identityWvp);
+
+    if (sceGxmSetVertexStream(
+            g_probeContext, 0, g_basicWingVertices) < 0) {
+        sceGxmEndScene(g_probeContext, nullptr, nullptr);
+        sceGxmFinish(g_probeContext);
+        return;
+    }
+
+    sceGxmDraw(
+        g_probeContext,
+        SCE_GXM_PRIMITIVE_TRIANGLES,
+        SCE_GXM_INDEX_FORMAT_U16,
+        g_basicWingIndices,
+        static_cast<unsigned int>(g_basicWingCpuMesh.vertices.size()));
+
+    sceGxmEndScene(g_probeContext, nullptr, nullptr);
+    sceGxmFinish(g_probeContext);
+
+    SceDisplayFrameBuf fb{};
+    fb.size = sizeof(fb);
+    fb.base = g_probeColorBuffer;
+    fb.pitch = gxmPitch;
+    fb.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
+    fb.width = kWidth;
+    fb.height = kHeight;
+    sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
+    sceDisplayWaitVblankStart();
 }
 
 void begin_frame()
 {
-    fill(0xFF181818u);
-
-    if (!g_debugVisible)
+    if (!g_debugVisible) {
+        renderBasicWingViewer();
         return;
+    }
+
+    fill(0xFF181818u);
 
     drawText(32, 24, "LAGI - PDS VITA RUNTIME", 0xFFFFFFFFu, 2);
     drawText(32, 48, "BOOT / INTEGRATION STATUS", 0xFFB0B0B0u, 1);
@@ -1161,7 +1276,7 @@ void begin_frame()
 
 void end_frame()
 {
-    if (g_probeDisplayingGxm)
+    if (!g_debugVisible)
         return;
 
     SceDisplayFrameBuf fb{};
@@ -1172,8 +1287,6 @@ void end_frame()
     fb.width = kWidth;
     fb.height = kHeight;
 
-    // Queue the fully rendered back buffer for the next scanout, then wait
-    // for vblank before switching which buffer the CPU draws into.
     sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
     sceDisplayWaitVblankStart();
     g_drawBuffer ^= 1;
