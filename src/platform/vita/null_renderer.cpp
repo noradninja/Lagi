@@ -4,11 +4,13 @@
 #include <psp2/display.h>
 #include <psp2/gxm.h>
 #include <psp2/kernel/sysmem.h>
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
+#include <cmath>
 
 namespace lagi::platform::renderer {
 
@@ -74,10 +76,12 @@ static SceGxmVertexProgram* g_probeVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_probeFragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_probeWvpParam = nullptr;
 static bool g_probeScenePassed = false;
-static SceUID g_probeTriangleVertexUid = -1;
-static SceUID g_probeTriangleIndexUid = -1;
-static azel::DebugColorVertex* g_probeTriangleVertices = nullptr;
-static std::uint16_t* g_probeTriangleIndices = nullptr;
+static azel::BasicWingDebugMesh g_basicWingCpuMesh{};
+static bool g_basicWingCpuReady = false;
+static SceUID g_basicWingVertexUid = -1;
+static SceUID g_basicWingIndexUid = -1;
+static azel::DebugColorVertex* g_basicWingVertices = nullptr;
+static std::uint16_t* g_basicWingIndices = nullptr;
 static bool g_probeDisplayingGxm = false;
 
 static void fill(std::uint32_t color)
@@ -220,12 +224,12 @@ void shutdown()
         }
     };
 
-    void* triangleVertexPtr = g_probeTriangleVertices;
-    freeSimpleMappedProbe(g_probeTriangleVertexUid, triangleVertexPtr);
-    g_probeTriangleVertices = nullptr;
-    void* triangleIndexPtr = g_probeTriangleIndices;
-    freeSimpleMappedProbe(g_probeTriangleIndexUid, triangleIndexPtr);
-    g_probeTriangleIndices = nullptr;
+    void* basicWingVertexPtr = g_basicWingVertices;
+    freeSimpleMappedProbe(g_basicWingVertexUid, basicWingVertexPtr);
+    g_basicWingVertices = nullptr;
+    void* basicWingIndexPtr = g_basicWingIndices;
+    freeSimpleMappedProbe(g_basicWingIndexUid, basicWingIndexPtr);
+    g_basicWingIndices = nullptr;
 
     if (g_probeShaderPatcher) {
         if (g_probeFragmentProgram) {
@@ -494,9 +498,9 @@ static void probePatcherHostFree(void*, void* mem)
 
 void toggle_debug_console()
 {
-    // Stage 11 native GXM probe: build the proven pipeline through the triangle
-    // draw, then queue the dedicated GXM color surface for display. This is
-    // the first scanout test of GXM-rendered pixels.
+    // Stage 12 native GXM probe: use the fully proven GXM pipeline to draw the
+    // reconstructed Basic Wing mesh with fixed CPU-side presentation view
+    // and per-polygon debug colors, then queue it for display.
     g_debugVisible = true;
 
     if (g_gxmProbeAttempted)
@@ -909,39 +913,55 @@ void toggle_debug_console()
     g_probeScenePassed = true;
     status("[PASS] GXM END SCENE", 0xFF80E0FFu);
 
-    // Stage 10: draw one hard-coded triangle off-screen. Identity WVP means
-    // positions are specified directly in clip space.
-    g_probeTriangleVertices = static_cast<azel::DebugColorVertex*>(
-        probeGpuAlloc(
-            static_cast<unsigned int>(3 * sizeof(azel::DebugColorVertex)),
-            SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_probeTriangleVertexUid));
-    g_probeTriangleIndices = static_cast<std::uint16_t*>(
-        probeGpuAlloc(
-            static_cast<unsigned int>(3 * sizeof(std::uint16_t)),
-            SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_probeTriangleIndexUid));
-
-    if (!g_probeTriangleVertices || !g_probeTriangleIndices) {
-        failure("[FAIL] GXM TRIANGLE MEMORY");
+    // Stage 12: replace the proven triangle payload with the reconstructed
+    // Basic Wing debug mesh. The GPU path remains otherwise unchanged.
+    if (!g_basicWingCpuReady || g_basicWingCpuMesh.vertices.empty()) {
+        failure("[FAIL] BASIC WING CPU MESH");
         return;
     }
 
-    g_probeTriangleVertices[0] = { -0.65f, -0.55f, 0.0f, 255, 64, 64, 255 };
-    g_probeTriangleVertices[1] = {  0.65f, -0.55f, 0.0f, 64, 255, 64, 255 };
-    g_probeTriangleVertices[2] = {  0.00f,  0.65f, 0.0f, 64, 128, 255, 255 };
-    g_probeTriangleIndices[0] = 0;
-    g_probeTriangleIndices[1] = 1;
-    g_probeTriangleIndices[2] = 2;
+    const unsigned int wingVertexCount =
+        static_cast<unsigned int>(g_basicWingCpuMesh.vertices.size());
+    const unsigned int wingVertexBytes =
+        wingVertexCount * sizeof(azel::DebugColorVertex);
+    const unsigned int wingIndexBytes =
+        wingVertexCount * sizeof(std::uint16_t);
 
-    const unsigned int stage10AlignedW =
+    g_basicWingVertices = static_cast<azel::DebugColorVertex*>(
+        probeGpuAlloc(
+            wingVertexBytes,
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_basicWingVertexUid));
+    g_basicWingIndices = static_cast<std::uint16_t*>(
+        probeGpuAlloc(
+            wingIndexBytes,
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_basicWingIndexUid));
+
+    if (!g_basicWingVertices || !g_basicWingIndices) {
+        failure("[FAIL] BASIC WING GPU MEMORY");
+        return;
+    }
+
+    std::memcpy(
+        g_basicWingVertices,
+        g_basicWingCpuMesh.vertices.data(),
+        wingVertexBytes);
+    for (unsigned int i = 0; i < wingVertexCount; ++i)
+        g_basicWingIndices[i] = static_cast<std::uint16_t>(i);
+
+    const unsigned int wingAlignedW =
         (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
-    const unsigned int stage10AlignedH =
+    const unsigned int wingAlignedH =
         (kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1);
-    std::memset(g_probeDepth, 0xFF, stage10AlignedW * stage10AlignedH * 4u);
-    std::memset(g_probeStencil, 0, stage10AlignedW * stage10AlignedH * 4u);
 
-    const int drawBeginResult = sceGxmBeginScene(
+    std::memset(g_probeColorBuffer, 0,
+                static_cast<std::size_t>(gxmPitch) * kHeight *
+                sizeof(std::uint32_t));
+    std::memset(g_probeDepth, 0xFF, wingAlignedW * wingAlignedH * 4u);
+    std::memset(g_probeStencil, 0, wingAlignedW * wingAlignedH * 4u);
+
+    const int wingBeginResult = sceGxmBeginScene(
         g_probeContext,
         0,
         g_probeRenderTarget,
@@ -951,10 +971,10 @@ void toggle_debug_console()
         &g_probeColorSurface,
         &g_probeDepthSurface);
 
-    if (drawBeginResult < 0) {
+    if (wingBeginResult < 0) {
         char line[78];
-        std::snprintf(line, sizeof(line), "[FAIL] GXM DRAW BEGIN 0X%08X",
-                      static_cast<unsigned int>(drawBeginResult));
+        std::snprintf(line, sizeof(line), "[FAIL] WING BEGIN 0X%08X",
+                      static_cast<unsigned int>(wingBeginResult));
         failure(line);
         return;
     }
@@ -971,14 +991,14 @@ void toggle_debug_console()
     sceGxmSetBackDepthWriteEnable(
         g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
 
-    void* uniformBuffer = nullptr;
-    const int reserveUniformResult =
+    void* wingUniformBuffer = nullptr;
+    const int wingUniformResult =
         sceGxmReserveVertexDefaultUniformBuffer(
-            g_probeContext, &uniformBuffer);
-    if (reserveUniformResult < 0 || !uniformBuffer) {
+            g_probeContext, &wingUniformBuffer);
+    if (wingUniformResult < 0 || !wingUniformBuffer) {
         sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
-        failure("[FAIL] GXM WVP BUFFER");
+        failure("[FAIL] WING WVP BUFFER");
         return;
     }
 
@@ -989,31 +1009,31 @@ void toggle_debug_console()
         0,0,0,1
     };
     sceGxmSetUniformDataF(
-        uniformBuffer, g_probeWvpParam, 0, 16, identityWvp);
+        wingUniformBuffer, g_probeWvpParam, 0, 16, identityWvp);
 
-    const int streamResult =
+    const int wingStreamResult =
         sceGxmSetVertexStream(
-            g_probeContext, 0, g_probeTriangleVertices);
-    if (streamResult < 0) {
+            g_probeContext, 0, g_basicWingVertices);
+    if (wingStreamResult < 0) {
         sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
-        failure("[FAIL] GXM VERTEX STREAM");
+        failure("[FAIL] WING VERTEX STREAM");
         return;
     }
 
-    const int drawResult = sceGxmDraw(
+    const int wingDrawResult = sceGxmDraw(
         g_probeContext,
         SCE_GXM_PRIMITIVE_TRIANGLES,
         SCE_GXM_INDEX_FORMAT_U16,
-        g_probeTriangleIndices,
-        3);
+        g_basicWingIndices,
+        wingVertexCount);
 
-    if (drawResult < 0) {
+    if (wingDrawResult < 0) {
         sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
         char line[78];
-        std::snprintf(line, sizeof(line), "[FAIL] GXM DRAW 0X%08X",
-                      static_cast<unsigned int>(drawResult));
+        std::snprintf(line, sizeof(line), "[FAIL] WING DRAW 0X%08X",
+                      static_cast<unsigned int>(wingDrawResult));
         failure(line);
         return;
     }
@@ -1021,7 +1041,7 @@ void toggle_debug_console()
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     sceGxmFinish(g_probeContext);
 
-    status("[PASS] GXM TRIANGLE DRAW", 0xFF80E0FFu);
+    status("[PASS] GXM BASIC WING DRAW", 0xFF80E0FFu);
 
     SceDisplayFrameBuf gxmFb{};
     gxmFb.size = sizeof(gxmFb);
@@ -1043,8 +1063,8 @@ void toggle_debug_console()
 
     sceDisplayWaitVblankStart();
     g_probeDisplayingGxm = true;
-    status("[PASS] GXM DISPLAY BUFFER", 0xFF80E0FFu);
-    std::printf("[GXM] dedicated GXM color buffer queued for display\n");
+    status("[PASS] GXM BASIC WING DISPLAY", 0xFF80E0FFu);
+    std::printf("[GXM] Basic Wing GXM color buffer queued for display\n");
 }
 
 bool debug_console_visible()
@@ -1054,8 +1074,69 @@ bool debug_console_visible()
 
 bool load_basic_wing_viewer()
 {
-    // Deliberately non-fatal isolation build: do not execute any GXM calls.
-    return false;
+    g_basicWingCpuMesh = {};
+    if (!azel::build_basic_wing_debug_mesh(g_basicWingCpuMesh) ||
+        g_basicWingCpuMesh.vertices.empty() ||
+        g_basicWingCpuMesh.vertices.size() > 65535) {
+        g_basicWingCpuReady = false;
+        return false;
+    }
+
+    // Fixed presentation view for the first real model draw. Keep all camera
+    // work on the CPU so the proven identity-WVP GXM path remains unchanged.
+    constexpr float yaw = 0.60f;
+    constexpr float pitch = -0.30f;
+    const float cy = std::cos(yaw);
+    const float sy = std::sin(yaw);
+    const float cp = std::cos(pitch);
+    const float sp = std::sin(pitch);
+
+    for (auto& v : g_basicWingCpuMesh.vertices) {
+        const float x0 = v.x;
+        const float y0 = v.y;
+        const float z0 = v.z;
+
+        const float x1 = x0 * cy + z0 * sy;
+        const float z1 = -x0 * sy + z0 * cy;
+        const float y1 = y0 * cp - z1 * sp;
+        const float z2 = y0 * sp + z1 * cp;
+
+        v.x = x1;
+        v.y = y1;
+        v.z = z2;
+    }
+
+    float minX = g_basicWingCpuMesh.vertices[0].x;
+    float maxX = minX;
+    float minY = g_basicWingCpuMesh.vertices[0].y;
+    float maxY = minY;
+    float minZ = g_basicWingCpuMesh.vertices[0].z;
+    float maxZ = minZ;
+
+    for (const auto& v : g_basicWingCpuMesh.vertices) {
+        minX = std::min(minX, v.x); maxX = std::max(maxX, v.x);
+        minY = std::min(minY, v.y); maxY = std::max(maxY, v.y);
+        minZ = std::min(minZ, v.z); maxZ = std::max(maxZ, v.z);
+    }
+
+    const float cx = (minX + maxX) * 0.5f;
+    const float cy0 = (minY + maxY) * 0.5f;
+    const float cz = (minZ + maxZ) * 0.5f;
+    const float extentX = std::max(maxX - minX, 0.001f);
+    const float extentY = std::max(maxY - minY, 0.001f);
+    const float extentZ = std::max(maxZ - minZ, 0.001f);
+    const float maxExtent = std::max(extentX, std::max(extentY, extentZ));
+    const float scale = 1.45f / maxExtent;
+
+    for (auto& v : g_basicWingCpuMesh.vertices) {
+        v.x = (v.x - cx) * scale;
+        v.y = (v.y - cy0) * scale;
+        // Keep depth comfortably inside clip/depth range.
+        v.z = (v.z - cz) * scale * 0.5f;
+    }
+
+    g_basicWingCpuReady = true;
+    return true;
 }
 
 void begin_frame()
