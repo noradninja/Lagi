@@ -78,6 +78,7 @@ static SceUID g_probeTriangleVertexUid = -1;
 static SceUID g_probeTriangleIndexUid = -1;
 static azel::DebugColorVertex* g_probeTriangleVertices = nullptr;
 static std::uint16_t* g_probeTriangleIndices = nullptr;
+static bool g_probeDisplayingGxm = false;
 
 static void fill(std::uint32_t color)
 {
@@ -493,9 +494,9 @@ static void probePatcherHostFree(void*, void* mem)
 
 void toggle_debug_console()
 {
-    // Stage 10 native GXM probe: build the proven pipeline through empty-scene
-    // submission, then draw one hard-coded triangle into the off-screen GXM
-    // color surface. The GXM buffer is not displayed yet.
+    // Stage 11 native GXM probe: build the proven pipeline through the triangle
+    // draw, then queue the dedicated GXM color surface for display. This is
+    // the first scanout test of GXM-rendered pixels.
     g_debugVisible = true;
 
     if (g_gxmProbeAttempted)
@@ -1021,7 +1022,29 @@ void toggle_debug_console()
     sceGxmFinish(g_probeContext);
 
     status("[PASS] GXM TRIANGLE DRAW", 0xFF80E0FFu);
-    std::printf("[GXM] off-screen triangle draw passed\n");
+
+    SceDisplayFrameBuf gxmFb{};
+    gxmFb.size = sizeof(gxmFb);
+    gxmFb.base = g_probeColorBuffer;
+    gxmFb.pitch = gxmPitch;
+    gxmFb.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
+    gxmFb.width = kWidth;
+    gxmFb.height = kHeight;
+
+    const int displayResult =
+        sceDisplaySetFrameBuf(&gxmFb, SCE_DISPLAY_SETBUF_NEXTFRAME);
+    if (displayResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM DISPLAY 0X%08X",
+                      static_cast<unsigned int>(displayResult));
+        failure(line);
+        return;
+    }
+
+    sceDisplayWaitVblankStart();
+    g_probeDisplayingGxm = true;
+    status("[PASS] GXM DISPLAY BUFFER", 0xFF80E0FFu);
+    std::printf("[GXM] dedicated GXM color buffer queued for display\n");
 }
 
 bool debug_console_visible()
@@ -1057,6 +1080,9 @@ void begin_frame()
 
 void end_frame()
 {
+    if (g_probeDisplayingGxm)
+        return;
+
     SceDisplayFrameBuf fb{};
     fb.size = sizeof(fb);
     fb.base = g_frameBuffer[g_drawBuffer];
