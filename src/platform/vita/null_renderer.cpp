@@ -16,8 +16,8 @@
 namespace lagi::platform::renderer {
 
 extern "C" {
-extern const unsigned char lagi_color_v_gxp[];
-extern const unsigned char lagi_color_f_gxp[];
+extern const unsigned char _binary_lagi_color_v_gxp_start[];
+extern const unsigned char _binary_lagi_color_f_gxp_start[];
 extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
 }
@@ -1167,9 +1167,11 @@ void toggle_debug_console()
     status("[PASS] GXM SHADER PATCHER", 0xFF80E0FFu);
 
     const SceGxmProgram* vertexProgram =
-        reinterpret_cast<const SceGxmProgram*>(lagi_color_v_gxp);
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_color_v_gxp_start);
     const SceGxmProgram* fragmentProgram =
-        reinterpret_cast<const SceGxmProgram*>(lagi_color_f_gxp);
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_color_f_gxp_start);
 
     const int vertexCheck = sceGxmProgramCheck(vertexProgram);
     if (vertexCheck < 0) {
