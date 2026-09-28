@@ -53,6 +53,13 @@ static SceUID g_probeStencilUid = -1;
 static void* g_probeDepth = nullptr;
 static void* g_probeStencil = nullptr;
 static SceGxmDepthStencilSurface g_probeDepthSurface{};
+static SceGxmShaderPatcher* g_probeShaderPatcher = nullptr;
+static SceUID g_probePatcherBufferUid = -1;
+static SceUID g_probePatcherVertexUsseUid = -1;
+static SceUID g_probePatcherFragmentUsseUid = -1;
+static void* g_probePatcherBuffer = nullptr;
+static void* g_probePatcherVertexUsse = nullptr;
+static void* g_probePatcherFragmentUsse = nullptr;
 
 static void fill(std::uint32_t color)
 {
@@ -183,6 +190,38 @@ bool init()
 
 void shutdown()
 {
+    if (g_probeShaderPatcher) {
+        sceGxmShaderPatcherDestroy(g_probeShaderPatcher);
+        g_probeShaderPatcher = nullptr;
+    }
+
+    if (g_probePatcherVertexUsseUid >= 0) {
+        void* mem = nullptr;
+        if (sceKernelGetMemBlockBase(g_probePatcherVertexUsseUid, &mem) >= 0 && mem)
+            sceGxmUnmapVertexUsseMemory(mem);
+        sceKernelFreeMemBlock(g_probePatcherVertexUsseUid);
+        g_probePatcherVertexUsseUid = -1;
+        g_probePatcherVertexUsse = nullptr;
+    }
+
+    if (g_probePatcherFragmentUsseUid >= 0) {
+        void* mem = nullptr;
+        if (sceKernelGetMemBlockBase(g_probePatcherFragmentUsseUid, &mem) >= 0 && mem)
+            sceGxmUnmapFragmentUsseMemory(mem);
+        sceKernelFreeMemBlock(g_probePatcherFragmentUsseUid);
+        g_probePatcherFragmentUsseUid = -1;
+        g_probePatcherFragmentUsse = nullptr;
+    }
+
+    if (g_probePatcherBufferUid >= 0) {
+        void* mem = nullptr;
+        if (sceKernelGetMemBlockBase(g_probePatcherBufferUid, &mem) >= 0 && mem)
+            sceGxmUnmapMemory(mem);
+        sceKernelFreeMemBlock(g_probePatcherBufferUid);
+        g_probePatcherBufferUid = -1;
+        g_probePatcherBuffer = nullptr;
+    }
+
     if (g_probeSync) {
         sceGxmSyncObjectDestroy(g_probeSync);
         g_probeSync = nullptr;
@@ -359,11 +398,47 @@ static void* probeFragmentUsseAlloc(
     return mem;
 }
 
+static void* probeVertexUsseAlloc(
+    unsigned int size, SceUID* uid, unsigned int* offset)
+{
+    const unsigned int bytes = probeAlign4096(size);
+    *uid = sceKernelAllocMemBlock(
+        "LagiGxmProbeVUSSE", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE,
+        bytes, nullptr);
+    if (*uid < 0)
+        return nullptr;
+
+    void* mem = nullptr;
+    if (sceKernelGetMemBlockBase(*uid, &mem) < 0 || !mem) {
+        sceKernelFreeMemBlock(*uid);
+        *uid = -1;
+        return nullptr;
+    }
+
+    if (sceGxmMapVertexUsseMemory(mem, bytes, offset) < 0) {
+        sceKernelFreeMemBlock(*uid);
+        *uid = -1;
+        return nullptr;
+    }
+
+    return mem;
+}
+
+static void* probePatcherHostAlloc(void*, unsigned int size)
+{
+    return std::malloc(size);
+}
+
+static void probePatcherHostFree(void*, void* mem)
+{
+    std::free(mem);
+}
+
 void toggle_debug_console()
 {
-    // Stage 4 native GXM probe: initialize, map core rings, create the GXM
-    // context, then create only the render target. Do not create color/depth
-    // surfaces, shader patchers/programs, or submit a scene.
+    // Stage 6 native GXM probe: build the proven core/context/target/surfaces,
+    // then create only the shader patcher and its backing pools. Do not
+    // register shader programs, create patched programs, or submit a scene.
     g_debugVisible = true;
 
     if (g_gxmProbeAttempted)
@@ -541,7 +616,70 @@ void toggle_debug_console()
     }
 
     status("[PASS] GXM DEPTH SURFACE", 0xFF80E0FFu);
-    std::printf("[GXM] color/depth surface initialization passed\n");
+
+    constexpr unsigned int patcherBufferSize = 64u * 1024u;
+    constexpr unsigned int patcherVertexUsseSize = 64u * 1024u;
+    constexpr unsigned int patcherFragmentUsseSize = 64u * 1024u;
+
+    g_probePatcherBuffer = probeGpuAlloc(
+        patcherBufferSize,
+        SCE_GXM_MEMORY_ATTRIB_READ | SCE_GXM_MEMORY_ATTRIB_WRITE,
+        &g_probePatcherBufferUid);
+
+    unsigned int patcherVertexUsseOffset = 0;
+    g_probePatcherVertexUsse = probeVertexUsseAlloc(
+        patcherVertexUsseSize,
+        &g_probePatcherVertexUsseUid,
+        &patcherVertexUsseOffset);
+
+    unsigned int patcherFragmentUsseOffset = 0;
+    g_probePatcherFragmentUsse = probeFragmentUsseAlloc(
+        patcherFragmentUsseSize,
+        &g_probePatcherFragmentUsseUid,
+        &patcherFragmentUsseOffset);
+
+    if (!g_probePatcherBuffer ||
+        !g_probePatcherVertexUsse ||
+        !g_probePatcherFragmentUsse) {
+        failure("[FAIL] GXM PATCHER MEMORY");
+        return;
+    }
+
+    status("[PASS] GXM PATCHER MEMORY", 0xFF80E0FFu);
+
+    SceGxmShaderPatcherParams patcherParams{};
+    patcherParams.userData = nullptr;
+    patcherParams.hostAllocCallback = probePatcherHostAlloc;
+    patcherParams.hostFreeCallback = probePatcherHostFree;
+    patcherParams.bufferAllocCallback = nullptr;
+    patcherParams.bufferFreeCallback = nullptr;
+    patcherParams.bufferMem = g_probePatcherBuffer;
+    patcherParams.bufferMemSize = patcherBufferSize;
+    patcherParams.vertexUsseAllocCallback = nullptr;
+    patcherParams.vertexUsseFreeCallback = nullptr;
+    patcherParams.vertexUsseMem = g_probePatcherVertexUsse;
+    patcherParams.vertexUsseMemSize = patcherVertexUsseSize;
+    patcherParams.vertexUsseOffset = patcherVertexUsseOffset;
+    patcherParams.fragmentUsseAllocCallback = nullptr;
+    patcherParams.fragmentUsseFreeCallback = nullptr;
+    patcherParams.fragmentUsseMem = g_probePatcherFragmentUsse;
+    patcherParams.fragmentUsseMemSize = patcherFragmentUsseSize;
+    patcherParams.fragmentUsseOffset = patcherFragmentUsseOffset;
+
+    const int patcherResult =
+        sceGxmShaderPatcherCreate(&patcherParams, &g_probeShaderPatcher);
+    if (patcherResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM PATCHER 0X%08X",
+                      static_cast<unsigned int>(patcherResult));
+        failure(line);
+        std::printf("[GXM] sceGxmShaderPatcherCreate failed: 0x%08X\n",
+                    static_cast<unsigned int>(patcherResult));
+        return;
+    }
+
+    status("[PASS] GXM SHADER PATCHER", 0xFF80E0FFu);
+    std::printf("[GXM] shader patcher creation passed\n");
 }
 
 bool debug_console_visible()
