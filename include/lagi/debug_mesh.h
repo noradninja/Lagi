@@ -9,6 +9,21 @@ struct DebugColorVertex {
     std::uint8_t r, g, b, a;
 };
 
+struct DebugTextureVertex {
+    float x, y, z;
+    float u, v;
+};
+
+struct DecodedMode1Texture {
+    std::uint16_t cmdPmod = 0;
+    std::uint16_t cmdColr = 0;
+    std::uint16_t cmdSrca = 0;
+    std::uint16_t cmdSize = 0;
+    unsigned int width = 0;
+    unsigned int height = 0;
+    std::vector<std::uint32_t> rgba;
+};
+
 struct SaturnPolygonRecord {
     std::uint16_t indices[4]{};
     std::uint16_t lightingControl = 0;
@@ -70,6 +85,10 @@ struct BasicWingDebugMesh {
     unsigned int indirectCramPixels = 0;
     bool mode1DecodeValid = false;
     bool mode1DecodeFullyResolved = false;
+
+    // Retained by the decoder for the native GXM texture upload path.
+    std::vector<DecodedMode1Texture> decodedTextureData;
+    std::vector<std::uint16_t> polygonTextureIndices;
 };
 
 bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out);
