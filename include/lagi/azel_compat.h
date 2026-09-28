@@ -49,3 +49,28 @@ struct sSaturnPtr {
 };
 
 #include "fixedPoint.h"
+
+// Azel's task templates reference logging category names even in shipping
+// builds. Upstream defines these in PDS_Logger.h, but that header depends on
+// ImGui. Preserve only the category API required by portable core headers.
+enum eLogCategories {
+    log_default = 0,
+    log_task,
+    log_unimlemented,
+    log_m68k,
+    log_warning,
+    log_max
+};
+
+#ifndef PDS_Log
+#define PDS_Log(...)
+#endif
+#ifndef PDS_CategorizedLog
+#define PDS_CategorizedLog(...)
+#endif
+#ifndef PDS_unimplemented
+#define PDS_unimplemented(...)
+#endif
+#ifndef PDS_warningOnce
+#define PDS_warningOnce(...)
+#endif
