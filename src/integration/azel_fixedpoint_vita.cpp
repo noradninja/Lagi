@@ -3,6 +3,11 @@
 // editor helpers are intentionally excluded.
 
 #include "lagi/azel_compat.h"
+#include "heap.h"
+#include "task.h"
+#include "VDP1.h"
+#include "VDP2.h"
+#include "common.h"
 
 s32 FP_GetIntegerPortion(fixedPoint& FP)
 {
