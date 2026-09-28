@@ -474,6 +474,24 @@ static FVec3 transformPoint(const FMat4& m, FVec3 p)
     };
 }
 
+static FVec3 transformDirection(const FMat4& m, FVec3 p)
+{
+    return {
+        m.m[0] * p.x + m.m[1] * p.y + m.m[2] * p.z,
+        m.m[4] * p.x + m.m[5] * p.y + m.m[6] * p.z,
+        m.m[8] * p.x + m.m[9] * p.y + m.m[10] * p.z
+    };
+}
+
+static FVec3 normalizeDirection(FVec3 v)
+{
+    const float lenSq = v.x * v.x + v.y * v.y + v.z * v.z;
+    if (lenSq <= 0.0000001f)
+        return {0.0f, 0.0f, 0.0f};
+    const float invLen = 1.0f / std::sqrt(lenSq);
+    return {v.x * invLen, v.y * invLen, v.z * invLen};
+}
+
 static float saturnAngle(s32 raw)
 {
     const s32 units = raw >> 16;
@@ -661,9 +679,46 @@ static bool appendModelDebugGeometry(const std::vector<u8>& bundle, u32 modelOff
 
         // Preserve Saturn quad identity: both generated triangles use one color.
         const int tri[6] = {0, 1, 2, 0, 2, 3};
+
+        // Controlled Gouraud diagnostic. The standalone viewer does not yet
+        // carry PDS's live light vector/color/falloff state, so use one fixed
+        // normalized direction and only test the preserved mode-3 normals,
+        // hierarchy rotation, corner association, and interpolation.
+        const FVec3 debugLight =
+            normalizeDirection({0.35f, -0.55f, 0.76f});
+        std::uint8_t cornerShade[4] = {64, 64, 64, 64};
+
+        if (record.lightingMode() == 3 && record.lightingCount == 4) {
+            for (int corner = 0; corner < 4; ++corner) {
+                const FVec3 rawNormal = {
+                    static_cast<float>(record.lighting[corner].normal[0]),
+                    static_cast<float>(record.lighting[corner].normal[1]),
+                    static_cast<float>(record.lighting[corner].normal[2])
+                };
+                const FVec3 normal =
+                    normalizeDirection(transformDirection(world, rawNormal));
+
+                float diffuse =
+                    normal.x * debugLight.x +
+                    normal.y * debugLight.y +
+                    normal.z * debugLight.z;
+                diffuse = std::max(0.0f, std::min(1.0f, diffuse));
+
+                // Small ambient floor keeps the unlit side readable.
+                const float level = 0.15f + diffuse * 0.85f;
+                cornerShade[corner] =
+                    static_cast<std::uint8_t>(level * 255.0f + 0.5f);
+            }
+        }
+
         for (int k = 0; k < 6; ++k) {
-            const FVec3& q = verts[idx[tri[k]]];
+            const int corner = tri[k];
+            const FVec3& q = verts[idx[corner]];
             out.vertices.push_back({q.x, q.y, q.z, r, g, b, 255});
+
+            const std::uint8_t shade = cornerShade[corner];
+            out.lightingVertices.push_back(
+                {q.x, q.y, q.z, shade, shade, shade, 255});
         }
 
         ++out.polygons;
@@ -1053,6 +1108,7 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
            out.polygons == 212 &&
            out.polygonRecords.size() == out.polygons &&
            out.vertices.size() == 212u * 6u &&
+           out.lightingVertices.size() == out.vertices.size() &&
            out.lightingPayloadValid;
 }
 
