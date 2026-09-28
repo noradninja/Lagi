@@ -17,6 +17,78 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(LAGI_AZEL_PROBE "Compile an Azel source portability probe" ON)
 
+# Textured GXM viewer shaders. The existing color GXP pair remains vendored,
+# while these are compiled from readable Cg source using Sony's psp2cgc.
+find_program(PSP2CGC_EXECUTABLE
+ NAMES psp2cgc psp2cgc.exe
+ HINTS
+  "$ENV{PSP2CGC}"
+  "$ENV{SCE_PSP2_SDK_DIR}/host_tools/bin"
+  "E:/PSVITA/sdk/host_tools/bin"
+)
+
+if(NOT PSP2CGC_EXECUTABLE)
+ message(FATAL_ERROR
+  "psp2cgc is required for Lagi's textured GXM shaders. "
+  "Set PSP2CGC or place it under E:/PSVITA/sdk/host_tools/bin.")
+endif()
+
+set(LAGI_TEXTURE_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v.gxp")
+set(LAGI_TEXTURE_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f.gxp")
+set(LAGI_TEXTURE_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v_gxp.o")
+set(LAGI_TEXTURE_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f_gxp.o")
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURE_V_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_vp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/texture_v.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_TEXTURE_V_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/texture_v.cg"
+ COMMENT "Compiling Lagi texture vertex shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURE_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/texture_f.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_TEXTURE_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/texture_f.cg"
+ COMMENT "Compiling Lagi texture fragment shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURE_V_OBJ}"
+ COMMAND arm-vita-eabi-objcopy
+  --input binary --output elf32-littlearm --binary-architecture arm
+  "lagi_texture_v.gxp" "${LAGI_TEXTURE_V_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_TEXTURE_V_GXP}"
+ COMMENT "Embedding Lagi texture vertex GXP"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURE_F_OBJ}"
+ COMMAND arm-vita-eabi-objcopy
+  --input binary --output elf32-littlearm --binary-architecture arm
+  "lagi_texture_f.gxp" "${LAGI_TEXTURE_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_TEXTURE_F_GXP}"
+ COMMENT "Embedding Lagi texture fragment GXP"
+ VERBATIM
+)
+
+set_source_files_properties(
+ "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}"
+ PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
+)
+
 add_executable(lagi
  src/main.cpp
  src/platform/vita/vita_platform.cpp
@@ -26,6 +98,8 @@ add_executable(lagi
  src/platform/vita/iso9660.cpp
  src/platform/vita/null_renderer.cpp
  src/platform/vita/gxm_color_shaders.cpp
+ ${LAGI_TEXTURE_V_OBJ}
+ ${LAGI_TEXTURE_F_OBJ}
  src/platform/vita/null_audio.cpp
  src/integration/azel_runtime_smoke.cpp
  src/integration/azel_fixedpoint_vita.cpp
