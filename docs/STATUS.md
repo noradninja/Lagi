@@ -81,3 +81,5 @@ Lagi is moving toward a native SceGxm renderer rather than VitaGL. The long-term
 - C++20/VitaSDK enum compatibility: the GPU allocation helper accepts combined GXM memory attribute masks as an integer and performs the enum cast only at `sceGxmMapMemory()`, avoiding strict-enum failures from bitwise OR expressions.
 
 - Linkage fix: vendored GXP symbols are defined with explicit external linkage so the renderer can reference the shader byte arrays across translation units.
+
+- GXM bring-up is now non-fatal: shader/patcher failures remain on the existing status console and report the exact failing stage instead of closing the application. SELECT only enters the 3D viewer after both the GXM shader pipeline and Basic Wing mesh are ready.
