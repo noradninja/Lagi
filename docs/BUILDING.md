@@ -150,3 +150,10 @@ The standalone viewer reproduces Azel's light color, setupLight vector conventio
 
 
 All solid viewer modes now use the hardware-validated CW front-face culling. Wireframe remains uncullled by design. When comparing modes 0-3, geometry visibility should therefore remain consistent and only the rendering/debug presentation should change.
+
+
+## RGB555 output banding test
+
+Modes 1 and 2 now quantize the final interpolated lighting result back to 5 bits per channel before display. The Vita framebuffer remains RGBA8888, but the shader only emits values corresponding to the Saturn's 0..31 channel grid.
+
+On broad, smoothly lit surfaces the highlight/shadow transition should therefore resolve into visible color bands rather than an 8-bit-smooth gradient. Mode 2 is the easiest validation view because the same quantized Gouraud values are displayed as grayscale without texture detail.
