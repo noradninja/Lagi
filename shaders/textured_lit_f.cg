@@ -1,12 +1,83 @@
+float cross2d(float2 a, float2 b)
+{
+    return a.x * b.y - a.y * b.x;
+}
+
+float computeU(float2 h, float2 e, float2 f, float2 g, float v)
+{
+    float2 num = h - f * v;
+    float2 den = e + g * v;
+    return abs(den.x) > abs(den.y)
+        ? num.x / den.x
+        : num.y / den.y;
+}
+
+float2 inverseBilinear(float2 p, float2 a, float2 b, float2 c, float2 d)
+{
+    float2 e = b - a;
+    float2 f = d - a;
+    float2 g = a - b + c - d;
+    float2 h = p - a;
+
+    float k2 = cross2d(g, f);
+    float k1 = cross2d(e, f) + cross2d(h, g);
+    float k0 = cross2d(h, e);
+
+    if (abs(k2) < 0.0001f)
+    {
+        if (abs(k1) < 0.0001f)
+            return float2(0.5f, 0.5f);
+
+        float v = -k0 / k1;
+        return float2(computeU(h, e, f, g, v), v);
+    }
+
+    float disc = max(0.0f, k1 * k1 - 4.0f * k0 * k2);
+    float root = sqrt(disc);
+
+    float v1 = (-k1 - root) / (2.0f * k2);
+    float v2 = (-k1 + root) / (2.0f * k2);
+    float u1 = computeU(h, e, f, g, v1);
+    float u2 = computeU(h, e, f, g, v2);
+
+    float d1 = max(max(-u1, u1 - 1.0f), max(-v1, v1 - 1.0f));
+    float d2 = max(max(-u2, u2 - 1.0f), max(-v2, v2 - 1.0f));
+
+    return d1 <= d2 ? float2(u1, v1) : float2(u2, v2);
+}
+
 float4 main(
     float2 vTexcoord : TEXCOORD0,
-    float vLight : TEXCOORD1,
-    uniform sampler2D tex)
+    float4 fragCoord : WPOS,
+    uniform sampler2D tex,
+    uniform float4 quadScreen01,
+    uniform float4 quadScreen23,
+    uniform float4 gouraudR,
+    uniform float4 gouraudG,
+    uniform float4 gouraudB)
 {
     float4 color = tex2D(tex, vTexcoord);
     if (color.a < 0.5f)
         discard;
 
-    float light = saturate(vLight);
-    return float4(color.rgb * light, color.a);
+    float2 p0 = quadScreen01.xy;
+    float2 p1 = quadScreen01.zw;
+    float2 p2 = quadScreen23.xy;
+    float2 p3 = quadScreen23.zw;
+
+    float2 st = saturate(inverseBilinear(fragCoord.xy, p0, p1, p2, p3));
+
+    // Same corner order as Azel:
+    // top edge 0->1, bottom edge 3->2.
+    float r = lerp(lerp(gouraudR.x, gouraudR.y, st.x),
+                   lerp(gouraudR.w, gouraudR.z, st.x), st.y);
+    float g = lerp(lerp(gouraudG.x, gouraudG.y, st.x),
+                   lerp(gouraudG.w, gouraudG.z, st.x), st.y);
+    float b = lerp(lerp(gouraudB.x, gouraudB.y, st.x),
+                   lerp(gouraudB.w, gouraudB.z, st.x), st.y);
+
+    // Azel's Saturn-accurate VDP1 path applies the quantized Gouraud
+    // values as signed additive RGB offsets, not as a multiplicative light.
+    float3 lit = clamp(color.rgb + float3(r, g, b), 0.0f, 1.0f);
+    return float4(lit, color.a);
 }
