@@ -1639,6 +1639,11 @@ bool load_basic_wing_viewer()
     g_basicWingCpuReady = true;
     g_viewerReady = true;
     status("[PASS] DRAGON0 VDP1 212 RECORDS", 0xFF80E0FFu);
+    if (g_basicWingCpuMesh.lightingPayloadValid)
+        status("[PASS] DRAGON0 LIGHTING DATA", 0xFF80E0FFu);
+    else
+        failure("[FAIL] DRAGON0 LIGHTING DATA");
+
     if (g_basicWingCpuMesh.cgbReferencesValid)
         status("[PASS] DRAGON0 CGB REFERENCES", 0xFF80E0FFu);
     else
