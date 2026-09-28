@@ -76,8 +76,19 @@ float4 main(
     float b = lerp(lerp(gouraudB.x, gouraudB.y, st.x),
                    lerp(gouraudB.w, gouraudB.z, st.x), st.y);
 
-    // Azel's Saturn-accurate VDP1 path applies the quantized Gouraud
-    // values as signed additive RGB offsets, not as a multiplicative light.
-    float3 lit = clamp(color.rgb + float3(r, g, b), 0.0f, 1.0f);
-    return float4(lit, color.a);
+    // Work in the Saturn's RGB555 domain. The source texture has already
+    // been decoded from RGB555, so first recover its 0..31 channel values.
+    // Gouraud values are stored as signed offsets around neutral 16 and are
+    // interpolated across the original quad. Keep that interpolation smooth,
+    // then perform the add/clamp in 5-bit color space.
+    float3 base5 = floor(color.rgb * 31.0f + 0.5f);
+    float3 shade5 = float3(r, g, b) * 31.0f;
+    float3 result5 = clamp(base5 + shade5, 0.0f, 31.0f);
+
+    // VDP1 ultimately writes 5-bit RGB. Quantizing here deliberately restores
+    // the visible lighting/color banding that an RGBA8888 Vita target would
+    // otherwise smooth away.
+    result5 = floor(result5 + 0.5f);
+
+    return float4(result5 / 31.0f, color.a);
 }
