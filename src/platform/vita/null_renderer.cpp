@@ -95,8 +95,10 @@ static bool g_probeScenePassed = false;
 static azel::BasicWingDebugMesh g_basicWingCpuMesh{};
 static bool g_basicWingCpuReady = false;
 static SceUID g_basicWingVertexUid = -1;
+static SceUID g_basicWingLightingVertexUid = -1;
 static SceUID g_basicWingIndexUid = -1;
 static azel::DebugColorVertex* g_basicWingVertices = nullptr;
+static azel::DebugColorVertex* g_basicWingLightingVertices = nullptr;
 static std::uint16_t* g_basicWingIndices = nullptr;
 
 static SceUID g_basicWingTextureVertexUid = -1;
@@ -274,6 +276,9 @@ void shutdown()
     void* basicWingVertexPtr = g_basicWingVertices;
     freeSimpleMappedProbe(g_basicWingVertexUid, basicWingVertexPtr);
     g_basicWingVertices = nullptr;
+    void* basicWingLightingPtr = g_basicWingLightingVertices;
+    freeSimpleMappedProbe(g_basicWingLightingVertexUid, basicWingLightingPtr);
+    g_basicWingLightingVertices = nullptr;
     void* basicWingIndexPtr = g_basicWingIndices;
     freeSimpleMappedProbe(g_basicWingIndexUid, basicWingIndexPtr);
     g_basicWingIndices = nullptr;
@@ -1441,13 +1446,20 @@ void toggle_debug_console()
             wingVertexBytes,
             SCE_GXM_MEMORY_ATTRIB_READ,
             &g_basicWingVertexUid));
+    g_basicWingLightingVertices = static_cast<azel::DebugColorVertex*>(
+        probeGpuAlloc(
+            wingVertexBytes,
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_basicWingLightingVertexUid));
     g_basicWingIndices = static_cast<std::uint16_t*>(
         probeGpuAlloc(
             wingIndexBytes,
             SCE_GXM_MEMORY_ATTRIB_READ,
             &g_basicWingIndexUid));
 
-    if (!g_basicWingVertices || !g_basicWingIndices) {
+    if (!g_basicWingVertices ||
+        !g_basicWingLightingVertices ||
+        !g_basicWingIndices) {
         failure("[FAIL] BASIC WING GPU MEMORY");
         return;
     }
@@ -1463,6 +1475,10 @@ void toggle_debug_console()
     std::memcpy(
         g_basicWingVertices,
         g_basicWingCpuMesh.vertices.data(),
+        wingVertexBytes);
+    std::memcpy(
+        g_basicWingLightingVertices,
+        g_basicWingCpuMesh.lightingVertices.data(),
         wingVertexBytes);
     for (unsigned int i = 0; i < wingVertexCount; ++i)
         g_basicWingIndices[i] = static_cast<std::uint16_t>(i);
@@ -1591,6 +1607,8 @@ bool load_basic_wing_viewer()
     g_basicWingCpuMesh = {};
     if (!azel::build_basic_wing_debug_mesh(g_basicWingCpuMesh) ||
         g_basicWingCpuMesh.vertices.empty() ||
+        g_basicWingCpuMesh.lightingVertices.size() !=
+            g_basicWingCpuMesh.vertices.size() ||
         g_basicWingCpuMesh.vertices.size() > 65535) {
         g_basicWingCpuReady = false;
         g_viewerReady = false;
@@ -1664,7 +1682,8 @@ static void renderBasicWingViewer()
     if (!g_viewerReady || !g_gxmInitialized || !g_probeContext ||
         !g_probeRenderTarget || !g_probeColorBuffer || !g_probeColorBuffer2 ||
         !g_probeVertexProgram || !g_probeFragmentProgram ||
-        !g_basicWingVertices || !g_basicWingIndices)
+        !g_basicWingVertices || !g_basicWingLightingVertices ||
+        !g_basicWingIndices)
         return;
 
     g_viewYaw += input::analog_x() * 0.035f;
@@ -1683,7 +1702,7 @@ static void renderBasicWingViewer()
     }
 
     if (input::prev_mode_pressed() || input::next_mode_pressed())
-        g_viewMode = (g_viewMode + 1) % 3;
+        g_viewMode = (g_viewMode + 1) % 4;
 
     // Geometry stays in normalized model space. Rotation, camera placement,
     // and perspective now happen entirely through the WVP uniform.
@@ -1728,7 +1747,7 @@ static void renderBasicWingViewer()
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, kWidth - 1, kHeight - 1);
     const SceGxmDepthFunc depthFunc =
-        g_viewMode == 2
+        g_viewMode == 3
             ? SCE_GXM_DEPTH_FUNC_LESS
             : SCE_GXM_DEPTH_FUNC_LESS_EQUAL;
     sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
@@ -1739,7 +1758,7 @@ static void renderBasicWingViewer()
         g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
 
     const SceGxmPolygonMode polygonMode =
-        g_viewMode == 2
+        g_viewMode == 3
             ? SCE_GXM_POLYGON_MODE_LINE
             : SCE_GXM_POLYGON_MODE_TRIANGLE_FILL;
     sceGxmSetFrontPolygonMode(g_probeContext, polygonMode);
@@ -1758,11 +1777,16 @@ static void renderBasicWingViewer()
         textured ? g_textureWvpParam : g_probeWvpParam,
         0, 16, wvp.m);
 
+    const void* colorStream =
+        g_viewMode == 1
+            ? static_cast<const void*>(g_basicWingLightingVertices)
+            : static_cast<const void*>(g_basicWingVertices);
+
     if (sceGxmSetVertexStream(
             g_probeContext, 0,
             textured
                 ? static_cast<const void*>(g_basicWingTextureVertices)
-                : static_cast<const void*>(g_basicWingVertices)) < 0) {
+                : colorStream) < 0) {
         sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
         return;
