@@ -175,3 +175,6 @@ The framebuffer isolation build booted successfully, confirming the immediate-ex
 
 
 - Wing winding follow-up: hardware video suggests the previous CCW culling diagnostic was preserving the opposite side of the thin wing membranes. The culled textured-lighting diagnostic now uses `SCE_GXM_CULL_CW` instead. This is intentionally a hardware validation step: Azel's renderer uses CCW culling in its own projection conventions, but Lagi's row-vector WVP / GXM viewport path may invert the effective front-face winding. Compare the two-sided lit mode against the CW-culled mode on the wing flats before making culling permanent.
+
+
+- CW culling hardware pass: confirmed on PS Vita hardware that `SCE_GXM_CULL_CW` preserves the intended visible side of the Basic Wing's thin wing membranes under Lagi's current row-vector WVP / GXM viewport conventions. The temporary two-sided vs culled diagnostic pair has been removed; textured + RGB555 Gouraud lighting now uses CW culling permanently. One isolated stray triangle remains visible and is being left as a separate mesh/model-data issue for later investigation rather than changing the now-correct lighting/culling path.
