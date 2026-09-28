@@ -587,17 +587,74 @@ static bool appendModelDebugGeometry(const std::vector<u8>& bundle, u32 modelOff
         record.cmdSize = readBE16Raw(base + p + 10);
         record.model = modelNumber;
         record.polygonInModel = localPoly;
-        out.polygonRecords.push_back(record);
 
-        const u16 lightingControl = record.lightingControl;
         p += 12;
 
-        switch ((lightingControl >> 8) & 3) {
-            case 0: break;
-            case 1: if (p + 8 > bundle.size()) return false; p += 8; break;
-            case 2: if (p + 48 > bundle.size()) return false; p += 48; break;
-            case 3: if (p + 24 > bundle.size()) return false; p += 24; break;
+        const unsigned lightingMode = record.lightingMode();
+        switch (lightingMode) {
+            case 0:
+                break;
+
+            case 1: {
+                // Azel readExtraData(..., false): one s16x3 normal,
+                // followed by two bytes of padding.
+                if (p + 8 > bundle.size()) return false;
+                record.lighting[0].normal[0] =
+                    static_cast<s16>(readBE16Raw(base + p + 0));
+                record.lighting[0].normal[1] =
+                    static_cast<s16>(readBE16Raw(base + p + 2));
+                record.lighting[0].normal[2] =
+                    static_cast<s16>(readBE16Raw(base + p + 4));
+                record.lighting[0].hasColor = false;
+                record.lightingCount = 1;
+                p += 8;
+                break;
+            }
+
+            case 2: {
+                // Four corners, each: s16x3 normal + u16x3 color.
+                if (p + 48 > bundle.size()) return false;
+                for (unsigned corner = 0; corner < 4; ++corner) {
+                    const u32 q = p + corner * 12u;
+                    record.lighting[corner].normal[0] =
+                        static_cast<s16>(readBE16Raw(base + q + 0));
+                    record.lighting[corner].normal[1] =
+                        static_cast<s16>(readBE16Raw(base + q + 2));
+                    record.lighting[corner].normal[2] =
+                        static_cast<s16>(readBE16Raw(base + q + 4));
+                    record.lighting[corner].color[0] =
+                        readBE16Raw(base + q + 6);
+                    record.lighting[corner].color[1] =
+                        readBE16Raw(base + q + 8);
+                    record.lighting[corner].color[2] =
+                        readBE16Raw(base + q + 10);
+                    record.lighting[corner].hasColor = true;
+                }
+                record.lightingCount = 4;
+                p += 48;
+                break;
+            }
+
+            case 3: {
+                // Four corners, each: s16x3 normal only.
+                if (p + 24 > bundle.size()) return false;
+                for (unsigned corner = 0; corner < 4; ++corner) {
+                    const u32 q = p + corner * 6u;
+                    record.lighting[corner].normal[0] =
+                        static_cast<s16>(readBE16Raw(base + q + 0));
+                    record.lighting[corner].normal[1] =
+                        static_cast<s16>(readBE16Raw(base + q + 2));
+                    record.lighting[corner].normal[2] =
+                        static_cast<s16>(readBE16Raw(base + q + 4));
+                    record.lighting[corner].hasColor = false;
+                }
+                record.lightingCount = 4;
+                p += 24;
+                break;
+            }
         }
+
+        out.polygonRecords.push_back(record);
 
         std::uint8_t r, g, b;
         polygonColor(out.polygons, modelNumber, r, g, b);
@@ -868,12 +925,33 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
     unsigned minTextureAddress = 0xFFFFFFFFu;
     unsigned maxTextureEnd = 0;
     unsigned maxLutEnd = 0;
+    unsigned lightingModeCounts[4]{};
+    unsigned lightingExtraRecords = 0;
+    unsigned lightingColoredRecords = 0;
+    bool lightingPayloadValid = true;
 
     for (std::size_t i = 0; i < out.polygonRecords.size(); ++i) {
         const SaturnPolygonRecord& record = out.polygonRecords[i];
         ++colorModeCounts[record.colorMode()];
         if (record.textureFlip() != 0)
             ++flippedPolygons;
+
+        const unsigned lightingMode = record.lightingMode();
+        ++lightingModeCounts[lightingMode];
+        lightingExtraRecords += record.lightingCount;
+
+        const unsigned expectedLightingCount =
+            lightingMode == 0 ? 0u :
+            lightingMode == 1 ? 1u : 4u;
+        if (record.lightingCount != expectedLightingCount)
+            lightingPayloadValid = false;
+
+        for (unsigned n = 0; n < record.lightingCount; ++n) {
+            if (record.lighting[n].hasColor)
+                ++lightingColoredRecords;
+            if ((lightingMode == 2) != record.lighting[n].hasColor)
+                lightingPayloadValid = false;
+        }
 
         const unsigned address = record.textureByteAddress();
         const unsigned width = record.textureWidth();
@@ -923,6 +1001,19 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
                 colorModeCounts[3], colorModeCounts[4], colorModeCounts[5],
                 colorModeCounts[6], colorModeCounts[7]);
 
+    for (unsigned i = 0; i < 4; ++i)
+        out.lightingModeCounts[i] = lightingModeCounts[i];
+    out.lightingExtraRecords = lightingExtraRecords;
+    out.lightingColoredRecords = lightingColoredRecords;
+    out.lightingPayloadValid = lightingPayloadValid;
+
+    lagi::platform::logging::writef(
+        "[Dragon] lighting modes 0/1/2/3: %u/%u/%u/%u; extras %u; colored %u; %s\n",
+        out.lightingModeCounts[0], out.lightingModeCounts[1],
+        out.lightingModeCounts[2], out.lightingModeCounts[3],
+        out.lightingExtraRecords, out.lightingColoredRecords,
+        out.lightingPayloadValid ? "payload valid" : "PAYLOAD INVALID");
+
     // Trace the original load path:
     //   DRAGON0.CGB -> VDP1 byte offset 0x12000
     //   DRAGON0.MCB relocation = 0x2400 address units
@@ -961,7 +1052,8 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
     return boneIndex == 31 && out.models == 31 &&
            out.polygons == 212 &&
            out.polygonRecords.size() == out.polygons &&
-           out.vertices.size() == 212u * 6u;
+           out.vertices.size() == 212u * 6u &&
+           out.lightingPayloadValid;
 }
 
 } // namespace lagi::azel
