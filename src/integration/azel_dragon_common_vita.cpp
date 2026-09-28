@@ -202,6 +202,120 @@ static bool countHierarchyNodes(const std::vector<u8>& bundle, u32 offset,
     return count <= 512;
 }
 
+
+static u16 readBE16Raw(const u8* p)
+{
+    return static_cast<u16>((static_cast<u16>(p[0]) << 8) | p[1]);
+}
+
+struct GeometryTotals
+{
+    unsigned models = 0;
+    unsigned vertices = 0;
+    unsigned polygons = 0;
+};
+
+static bool parseModelGeometry(const std::vector<u8>& bundle, u32 modelOffset,
+                               GeometryTotals& totals)
+{
+    if (modelOffset + 0x14 > bundle.size())
+        return false;
+
+    const u8* base = bundle.data();
+    const u32 numVertices = readBE32Raw(base + modelOffset + 4);
+    const u32 verticesOffset = readBE32Raw(base + modelOffset + 8);
+
+    if (numVertices > 65535)
+        return false;
+
+    const u64 vertexBytes = static_cast<u64>(numVertices) * 6u;
+    if (verticesOffset > bundle.size() ||
+        vertexBytes > bundle.size() ||
+        static_cast<u64>(verticesOffset) + vertexBytes > bundle.size())
+        return false;
+
+    u32 p = modelOffset + 0x0C;
+    unsigned polygons = 0;
+
+    while (true) {
+        if (p + 8 > bundle.size())
+            return false;
+
+        const u16 i0 = readBE16Raw(base + p + 0);
+        const u16 i1 = readBE16Raw(base + p + 2);
+        const u16 i2 = readBE16Raw(base + p + 4);
+        const u16 i3 = readBE16Raw(base + p + 6);
+
+        if (i0 == 0 && i1 == 0 && i2 == 0 && i3 == 0)
+            break;
+
+        if (i0 >= numVertices || i1 >= numVertices ||
+            i2 >= numVertices || i3 >= numVertices)
+            return false;
+
+        p += 8;
+
+        // lightingControl, CMDCTRL, CMDPMOD, CMDCOLR, CMDSRCA, CMDSIZE.
+        if (p + 12 > bundle.size())
+            return false;
+
+        const u16 lightingControl = readBE16Raw(base + p);
+        p += 12;
+
+        const u8 lightingMode = static_cast<u8>((lightingControl >> 8) & 3);
+        switch (lightingMode) {
+            case 0:
+                break;
+            case 1:
+                // One normal (3 x s16) plus 2 bytes padding.
+                if (p + 8 > bundle.size()) return false;
+                p += 8;
+                break;
+            case 2:
+                // Four vertices, each normal + RGB555 triplet: 12 bytes each.
+                if (p + 48 > bundle.size()) return false;
+                p += 48;
+                break;
+            case 3:
+                // Four normals, 6 bytes each.
+                if (p + 24 > bundle.size()) return false;
+                p += 24;
+                break;
+        }
+
+        ++polygons;
+        if (polygons > 65535)
+            return false;
+    }
+
+    ++totals.models;
+    totals.vertices += numVertices;
+    totals.polygons += polygons;
+    return true;
+}
+
+static bool traverseGeometry(const std::vector<u8>& bundle, u32 nodeOffset,
+                             GeometryTotals& totals, unsigned depth)
+{
+    if (nodeOffset == 0)
+        return true;
+    if (depth > 256 || nodeOffset + 12 > bundle.size())
+        return false;
+
+    const u32 modelOffset = readBE32Raw(bundle.data() + nodeOffset + 0);
+    const u32 childOffset = readBE32Raw(bundle.data() + nodeOffset + 4);
+    const u32 nextOffset = readBE32Raw(bundle.data() + nodeOffset + 8);
+
+    if (modelOffset && !parseModelGeometry(bundle, modelOffset, totals))
+        return false;
+    if (childOffset && !traverseGeometry(bundle, childOffset, totals, depth + 1))
+        return false;
+    if (nextOffset && !traverseGeometry(bundle, nextOffset, totals, depth + 1))
+        return false;
+
+    return true;
+}
+
 namespace lagi::azel {
 
 bool validate_basic_wing_hotpoints(unsigned int* out_bones, unsigned int* out_hotpoints)
@@ -246,6 +360,43 @@ bool validate_basic_wing_hotpoints(unsigned int* out_bones, unsigned int* out_ho
 
     std::printf("[Dragon] DRAGON0.MCB hierarchy: %u bones, %u decoded hotpoints\n",
                 boneCount, hotpointCount);
+    return true;
+}
+
+
+
+bool validate_basic_wing_geometry(unsigned int* out_models,
+                                  unsigned int* out_vertices,
+                                  unsigned int* out_polygons)
+{
+    std::vector<u8> mcb;
+    if (!lagi::disc::read_file("DRAGON0.MCB", mcb) || mcb.size() < 16)
+        return false;
+
+    const sDragonMorphModels& base =
+        gDragonMorphDataPerLevel[DR_LEVEL_0_BASIC_WING].m_m8[0];
+
+    const u32 modelIndex = base.m0_modelIndex;
+    if (modelIndex + 4 > mcb.size())
+        return false;
+
+    const u32 hierarchyOffset = readBE32Raw(mcb.data() + modelIndex);
+    if (hierarchyOffset == 0 || hierarchyOffset + 12 > mcb.size())
+        return false;
+
+    GeometryTotals totals{};
+    if (!traverseGeometry(mcb, hierarchyOffset, totals, 0))
+        return false;
+
+    if (totals.models == 0 || totals.vertices == 0 || totals.polygons == 0)
+        return false;
+
+    if (out_models) *out_models = totals.models;
+    if (out_vertices) *out_vertices = totals.vertices;
+    if (out_polygons) *out_polygons = totals.polygons;
+
+    std::printf("[Dragon] DRAGON0 geometry: %u models, %u vertices, %u polygons\n",
+                totals.models, totals.vertices, totals.polygons);
     return true;
 }
 
