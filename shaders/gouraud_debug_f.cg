@@ -69,10 +69,17 @@ float4 main(
     float b = lerp(lerp(gouraudB.x, gouraudB.y, st.x),
                    lerp(gouraudB.w, gouraudB.z, st.x), st.y);
 
-    // Gouraud offsets are stored as (g5 - 16) / 31.
-    // Convert back to a 0..1 visualization of the actual quantized 5-bit
-    // lighting result, averaging RGB to keep this diagnostic grayscale.
-    float neutral = 16.0f / 31.0f;
-    float gray = saturate((r + g + b) / 3.0f + neutral);
+    // Gouraud offsets are stored as (g5 - 16) / 31. Reconstruct the
+    // interpolated 0..31 lighting value, quantize it exactly like the final
+    // RGB555 output path, then average RGB only after quantization. This makes
+    // Saturn-style lighting bands directly visible in the diagnostic.
+    float3 light5 =
+        clamp(float3(r, g, b) * 31.0f + 16.0f, 0.0f, 31.0f);
+    light5 = floor(light5 + 0.5f);
+
+    float gray5 =
+        floor((light5.r + light5.g + light5.b) / 3.0f + 0.5f);
+    float gray = gray5 / 31.0f;
+
     return float4(gray, gray, gray, 1.0f);
 }
