@@ -100,7 +100,7 @@ static unsigned int alignedSize(SceKernelMemBlockType type, unsigned int size)
 }
 
 static void* gpuAlloc(SceKernelMemBlockType type, unsigned int size,
-                      SceGxmMemoryAttribFlags attribs, SceUID* uid)
+                      unsigned int attribs, SceUID* uid)
 {
     const unsigned int bytes = alignedSize(type, size);
     *uid = sceKernelAllocMemBlock("LagiGxmMem", type, bytes, nullptr);
@@ -114,7 +114,8 @@ static void* gpuAlloc(SceKernelMemBlockType type, unsigned int size,
         return nullptr;
     }
 
-    if (sceGxmMapMemory(mem, bytes, attribs) < 0) {
+    if (sceGxmMapMemory(mem, bytes,
+        static_cast<SceGxmMemoryAttribFlags>(attribs)) < 0) {
         sceKernelFreeMemBlock(*uid);
         *uid = -1;
         return nullptr;
