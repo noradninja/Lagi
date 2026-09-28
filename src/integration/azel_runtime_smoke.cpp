@@ -8,6 +8,7 @@
 #include "lagi/platform.h"
 #include "lagi/disc_image.h"
 #include "commonOverlay.h"
+#include "audio/soundDataTable.h"
 #include <vector>
 
 namespace lagi::azel {
@@ -91,6 +92,7 @@ bool runtime_smoke_init()
     initCommonFile();
     if (!gCommonFile ||
         gCommonFile->dragonLevelStats.size() != 9 ||
+        SoundDataTable.size() != 79 ||
         gCommonFile->battleOverlaySetup.size() != 27 ||
         gCommonFile->battleActivationList.size() != 27) {
         std::printf("[Common] initialization FAILED\n");
