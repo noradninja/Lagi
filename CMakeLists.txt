@@ -40,6 +40,23 @@ if(LAGI_AZEL_PROBE)
   "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
  )
  target_compile_definitions(lagi_azel_probe PRIVATE USE_NULL_RENDERER=1 LAGI_PLATFORM_VITA=1)
+
+ add_library(lagi_azel_fixedpoint OBJECT
+  extern/Azel/AzelLib/fixedPoint.cpp
+ )
+ target_include_directories(lagi_azel_fixedpoint PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
+  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
+ )
+ target_compile_definitions(lagi_azel_fixedpoint PRIVATE
+  USE_NULL_RENDERER=1
+  LAGI_PLATFORM_VITA=1
+  SHIPPING_BUILD=1
+ )
+ target_compile_options(lagi_azel_fixedpoint PRIVATE
+  -include "${CMAKE_CURRENT_SOURCE_DIR}/include/lagi/azel_source_compat.h"
+ )
 endif()
 
 vita_create_self(lagi.self lagi UNSAFE)
