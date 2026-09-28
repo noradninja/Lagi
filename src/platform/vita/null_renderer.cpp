@@ -100,7 +100,7 @@ static unsigned int alignedSize(SceKernelMemBlockType type, unsigned int size)
 }
 
 static void* gpuAlloc(SceKernelMemBlockType type, unsigned int size,
-                      unsigned int attribs, SceUID* uid)
+                      SceGxmMemoryAttribFlags attribs, SceUID* uid)
 {
     const unsigned int bytes = alignedSize(type, size);
     *uid = sceKernelAllocMemBlock("LagiGxmMem", type, bytes, nullptr);
@@ -759,7 +759,7 @@ static void drawViewer()
     sceGxmSetVertexProgram(g_context, g_vertexProgram);
     sceGxmSetFragmentProgram(g_context, g_fragmentProgram);
     sceGxmSetCullMode(g_context, SCE_GXM_CULL_NONE);
-    sceGxmSetDefaultRegionClipAndViewport(g_context);
+    sceGxmSetDefaultRegionClipAndViewport(g_context, kWidth - 1, kHeight - 1);
     sceGxmSetFrontDepthFunc(g_context, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
     sceGxmSetBackDepthFunc(g_context, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
     sceGxmSetFrontDepthWriteEnable(g_context, SCE_GXM_DEPTH_WRITE_ENABLED);
