@@ -64,7 +64,7 @@ add_custom_command(
 
 add_custom_command(
  OUTPUT "${LAGI_TEXTURE_V_OBJ}"
- COMMAND arm-vita-eabi-objcopy
+ COMMAND "${CMAKE_OBJCOPY}"
   --input binary --output elf32-littlearm --binary-architecture arm
   "lagi_texture_v.gxp" "${LAGI_TEXTURE_V_OBJ}"
  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
@@ -75,7 +75,7 @@ add_custom_command(
 
 add_custom_command(
  OUTPUT "${LAGI_TEXTURE_F_OBJ}"
- COMMAND arm-vita-eabi-objcopy
+ COMMAND "${CMAKE_OBJCOPY}"
   --input binary --output elf32-littlearm --binary-architecture arm
   "lagi_texture_f.gxp" "${LAGI_TEXTURE_F_OBJ}"
  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
