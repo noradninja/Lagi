@@ -5,6 +5,7 @@
 #include <psp2/kernel/sysmem.h>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cctype>
 
