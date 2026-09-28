@@ -34,7 +34,7 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
 )
 target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NULL_RENDERER=1 LAGI_NULL_AUDIO=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1)
-target_link_libraries(lagi SceCtrl_stub SceDisplay_stub SceKernelThreadMgr_stub SceSysmodule_stub)
+target_link_libraries(lagi SceCtrl_stub SceDisplay_stub SceKernelThreadMgr_stub SceSysmem_stub SceSysmodule_stub)
 
 if(LAGI_AZEL_PROBE)
  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib")
