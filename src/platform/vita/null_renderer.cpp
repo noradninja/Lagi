@@ -144,8 +144,16 @@ bool init()
     fb.width = kWidth;
     fb.height = kHeight;
 
-    // Establish a known front buffer immediately.
-    return sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_IMMEDIATE) >= 0;
+    // Match VitaSDK's established display path: queue the initial
+    // framebuffer for the next scanout, wait until it becomes front, then
+    // render into the other buffer.
+    const int setResult = sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
+    if (setResult < 0)
+        return false;
+
+    sceDisplayWaitVblankStart();
+    g_drawBuffer = 1;
+    return true;
 }
 
 void shutdown()
