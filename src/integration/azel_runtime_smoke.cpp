@@ -6,6 +6,8 @@
 #include "VDP2.h"
 #include "common.h"
 #include "lagi/platform.h"
+#include "lagi/disc_image.h"
+#include <vector>
 
 namespace lagi::azel {
 
@@ -77,6 +79,34 @@ bool runtime_smoke_init()
         return false;
     }
     std::printf("[Azel] Saturn memory reader smoke test passed\n");
+
+    if (!lagi::disc::init()) {
+        std::printf("[Disc] no valid ISO9660 image found in ux0:data/lagi\n");
+        return false;
+    }
+    std::printf("[Disc] mounted %s\n", lagi::disc::image_path());
+
+    std::vector<u8> commonData;
+    if (!lagi::disc::read_file("COMMON.DAT", commonData) || commonData.size() < 16) {
+        std::printf("[Disc] COMMON.DAT not found or unreadable\n");
+        return false;
+    }
+
+    sSaturnMemoryFile common;
+    common.m_name = "COMMON.DAT";
+    common.m_data = commonData.data();
+    common.m_dataSize = static_cast<u32>(commonData.size());
+    common.m_base = 0x00200000;
+
+    const sSaturnPtr commonRoot = common.getSaturnPtr(common.m_base);
+    volatile u32 probe0 = readSaturnU32(commonRoot);
+    volatile u16 probe4 = readSaturnU16(commonRoot + 4);
+    (void)probe0;
+    (void)probe4;
+
+    std::printf("[Disc] COMMON.DAT loaded: %u bytes, first=%08X %04X\n",
+                common.m_dataSize, probe0, probe4);
+    lagi::platform::renderer::set_disc_alive(true);
 
     initHeap();
     resetTasks();
