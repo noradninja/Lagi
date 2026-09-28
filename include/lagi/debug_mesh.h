@@ -14,6 +14,12 @@ struct DebugTextureVertex {
     float u, v;
 };
 
+struct DebugTexturedLitVertex {
+    float x, y, z;
+    float u, v;
+    float light;
+};
+
 struct DecodedMode1Texture {
     std::uint16_t cmdPmod = 0;
     std::uint16_t cmdColr = 0;
