@@ -135,6 +135,22 @@ bool runtime_smoke_init()
                   basicWingBones, basicWingHotpoints);
     lagi::platform::renderer::status(dragonStatus, 0xFF60D0FFu);
 
+    unsigned dragonModels = 0;
+    unsigned dragonVertices = 0;
+    unsigned dragonPolygons = 0;
+    if (!lagi::azel::validate_basic_wing_geometry(
+            &dragonModels, &dragonVertices, &dragonPolygons)) {
+        std::printf("[Dragon] Basic Wing geometry validation FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] DRAGON0 MODEL GEOMETRY");
+        return false;
+    }
+
+    char geometryStatus[78];
+    std::snprintf(geometryStatus, sizeof(geometryStatus),
+                  "[PASS] DRAGON0 GEO %u MODELS / %u VERTS / %u POLYS",
+                  dragonModels, dragonVertices, dragonPolygons);
+    lagi::platform::renderer::status(geometryStatus, 0xFFC080FFu);
+
     lagi::platform::renderer::set_disc_alive(true);
 
     initHeap();
