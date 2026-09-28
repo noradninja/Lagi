@@ -516,11 +516,112 @@ static void probePatcherHostFree(void*, void* mem)
     std::free(mem);
 }
 
+struct ViewerMat4
+{
+    float m[16];
+};
+
+static ViewerMat4 viewerIdentity()
+{
+    ViewerMat4 r{};
+    r.m[0] = r.m[5] = r.m[10] = r.m[15] = 1.0f;
+    return r;
+}
+
+static ViewerMat4 viewerMul(const ViewerMat4& a, const ViewerMat4& b)
+{
+    ViewerMat4 r{};
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            for (int k = 0; k < 4; ++k) {
+                r.m[row * 4 + col] +=
+                    a.m[row * 4 + k] * b.m[k * 4 + col];
+            }
+        }
+    }
+    return r;
+}
+
+static ViewerMat4 viewerRotationX(float angle)
+{
+    ViewerMat4 r = viewerIdentity();
+    const float c = std::cos(angle);
+    const float s = std::sin(angle);
+    r.m[5] = c;
+    r.m[6] = s;
+    r.m[9] = -s;
+    r.m[10] = c;
+    return r;
+}
+
+static ViewerMat4 viewerRotationY(float angle)
+{
+    ViewerMat4 r = viewerIdentity();
+    const float c = std::cos(angle);
+    const float s = std::sin(angle);
+    r.m[0] = c;
+    r.m[2] = -s;
+    r.m[8] = s;
+    r.m[10] = c;
+    return r;
+}
+
+static ViewerMat4 viewerTranslation(float x, float y, float z)
+{
+    ViewerMat4 r = viewerIdentity();
+    r.m[12] = x;
+    r.m[13] = y;
+    r.m[14] = z;
+    return r;
+}
+
+static ViewerMat4 viewerPerspective(
+    float fovYRadians, float aspect, float nearZ, float farZ)
+{
+    // Row-vector, left-handed perspective for shader:
+    //     mul(float4(position, 1), wvp)
+    // Maps positive view-space Z into the normalized depth interval.
+    const float yScale = 1.0f / std::tan(fovYRadians * 0.5f);
+    const float xScale = yScale / aspect;
+    const float zScale = farZ / (farZ - nearZ);
+
+    ViewerMat4 r{};
+    r.m[0] = xScale;
+    r.m[5] = yScale;
+    r.m[10] = zScale;
+    r.m[11] = 1.0f;
+    r.m[14] = -nearZ * zScale;
+    return r;
+}
+
+static ViewerMat4 buildViewerWvp()
+{
+    constexpr float kPi = 3.14159265358979323846f;
+    constexpr float kFovY = 50.0f * kPi / 180.0f;
+    constexpr float kAspect =
+        static_cast<float>(kWidth) / static_cast<float>(kHeight);
+    constexpr float kNearZ = 0.10f;
+    constexpr float kFarZ = 100.0f;
+    constexpr float kCameraDistance = 3.0f;
+
+    const ViewerMat4 yaw = viewerRotationY(g_viewYaw);
+    const ViewerMat4 pitch = viewerRotationX(g_viewPitch);
+    const ViewerMat4 view =
+        viewerTranslation(0.0f, 0.0f, kCameraDistance);
+    const ViewerMat4 projection =
+        viewerPerspective(kFovY, kAspect, kNearZ, kFarZ);
+
+    // Shader uses a row vector, so transforms apply left-to-right.
+    return viewerMul(
+        viewerMul(viewerMul(yaw, pitch), view),
+        projection);
+}
+
 void toggle_debug_console()
 {
-    // Stage 12 native GXM probe: use the fully proven GXM pipeline to draw the
-    // reconstructed Basic Wing mesh with fixed CPU-side presentation view
-    // and per-polygon debug colors, then queue it for display.
+    // Native GXM Basic Wing viewer. The proven draw/scanout path is retained;
+    // model rotation, camera placement, and perspective are now supplied
+    // through the vertex shader's WVP uniform.
     if (g_gxmProbeAttempted) {
         if (!g_viewerReady)
             return;
@@ -1060,14 +1161,9 @@ void toggle_debug_console()
         return;
     }
 
-    static const float identityWvp[16] = {
-        1,0,0,0,
-        0,1,0,0,
-        0,0,1,0,
-        0,0,0,1
-    };
+    const ViewerMat4 initialWvp = buildViewerWvp();
     sceGxmSetUniformDataF(
-        wingUniformBuffer, g_probeWvpParam, 0, 16, identityWvp);
+        wingUniformBuffer, g_probeWvpParam, 0, 16, initialWvp.m);
 
     const int wingStreamResult =
         sceGxmSetVertexStream(
@@ -1168,7 +1264,7 @@ bool load_basic_wing_viewer()
     for (auto& v : g_basicWingCpuMesh.vertices) {
         v.x = (v.x - cx) * scale;
         v.y = (v.y - cy) * scale;
-        v.z = (v.z - cz) * scale * 0.5f;
+        v.z = (v.z - cz) * scale;
     }
 
     g_viewYaw = 0.60f;
@@ -1199,32 +1295,9 @@ static void renderBasicWingViewer()
     if (input::prev_mode_pressed() || input::next_mode_pressed())
         g_viewMode = (g_viewMode + 1) % 2;
 
-    const float cy = std::cos(g_viewYaw);
-    const float sy = std::sin(g_viewYaw);
-    const float cp = std::cos(g_viewPitch);
-    const float sp = std::sin(g_viewPitch);
-
-    for (std::size_t i = 0; i < g_basicWingCpuMesh.vertices.size(); ++i) {
-        const auto& src = g_basicWingCpuMesh.vertices[i];
-        auto& dst = g_basicWingVertices[i];
-
-        const float x1 = src.x * cy + src.z * sy;
-        const float z1 = -src.x * sy + src.z * cy;
-        const float y1 = src.y * cp - z1 * sp;
-        const float z2 = src.y * sp + z1 * cp;
-
-        dst = src;
-        dst.x = x1;
-        dst.y = y1;
-
-        // The debug viewer intentionally uses an identity WVP, so these
-        // positions are already clip-space coordinates. Vita GXM depth is
-        // happiest when the visible geometry remains in the positive
-        // normalized depth interval. Center rotated model depth around 0.5
-        // rather than around zero so free rotation cannot drive half of the
-        // dragon through the near clip boundary.
-        dst.z = 0.5f + z2 * 0.45f;
-    }
+    // Geometry stays in normalized model space. Rotation, camera placement,
+    // and perspective now happen entirely through the WVP uniform.
+    const ViewerMat4 wvp = buildViewerWvp();
 
     constexpr int gxmPitch = 1024;
 
@@ -1279,14 +1352,8 @@ static void renderBasicWingViewer()
         return;
     }
 
-    static const float identityWvp[16] = {
-        1,0,0,0,
-        0,1,0,0,
-        0,0,1,0,
-        0,0,0,1
-    };
     sceGxmSetUniformDataF(
-        uniformBuffer, g_probeWvpParam, 0, 16, identityWvp);
+        uniformBuffer, g_probeWvpParam, 0, 16, wvp.m);
 
     if (sceGxmSetVertexStream(
             g_probeContext, 0, g_basicWingVertices) < 0) {
