@@ -102,3 +102,5 @@ The file is truncated on startup and flushed after each logged message. After a 
 The first textured Basic Wing renderer uses readable Cg sources at `shaders/texture_v.cg` and `shaders/texture_f.cg`. CMake compiles these with Sony's `psp2cgc` and embeds the resulting GXP binaries with `arm-vita-eabi-objcopy`. The current Windows development setup is detected automatically at `E:/PSVITA/sdk/host_tools/bin/psp2cgc.exe`; other setups can expose the compiler through PATH, `PSP2CGC`, or `SCE_PSP2_SDK_DIR`.
 
 After pulling this milestone, rerun `cmake ..` once before building so the generated shader-object rules are added to the existing build directory.
+
+- Shader embedding uses CMake's `CMAKE_OBJCOPY` from the active VitaSDK toolchain rather than requiring `arm-vita-eabi-objcopy` to be present on the Windows shell PATH. This keeps the textured-shader build compatible with the existing VitaSDK CMake configuration.
