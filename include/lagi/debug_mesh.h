@@ -77,6 +77,7 @@ struct SaturnPolygonRecord {
 
 struct BasicWingDebugMesh {
     std::vector<DebugColorVertex> vertices;
+    std::vector<DebugColorVertex> lightingVertices;
     std::vector<SaturnPolygonRecord> polygonRecords;
     unsigned int models = 0;
     unsigned int polygons = 0;
