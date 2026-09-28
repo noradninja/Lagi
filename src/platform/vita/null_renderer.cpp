@@ -44,6 +44,15 @@ static void* g_probeFragmentUsse = nullptr;
 static SceGxmContext* g_probeContext = nullptr;
 static void* g_probeContextHost = nullptr;
 static SceGxmRenderTarget* g_probeRenderTarget = nullptr;
+static SceUID g_probeColorUid = -1;
+static std::uint32_t* g_probeColorBuffer = nullptr;
+static SceGxmColorSurface g_probeColorSurface{};
+static SceGxmSyncObject* g_probeSync = nullptr;
+static SceUID g_probeDepthUid = -1;
+static SceUID g_probeStencilUid = -1;
+static void* g_probeDepth = nullptr;
+static void* g_probeStencil = nullptr;
+static SceGxmDepthStencilSurface g_probeDepthSurface{};
 
 static void fill(std::uint32_t color)
 {
@@ -174,6 +183,28 @@ bool init()
 
 void shutdown()
 {
+    if (g_probeSync) {
+        sceGxmSyncObjectDestroy(g_probeSync);
+        g_probeSync = nullptr;
+    }
+
+    auto freeProbeMapped = [](SceUID& uid, void*& ptr) {
+        if (uid >= 0) {
+            void* mem = nullptr;
+            if (sceKernelGetMemBlockBase(uid, &mem) >= 0 && mem)
+                sceGxmUnmapMemory(mem);
+            sceKernelFreeMemBlock(uid);
+            uid = -1;
+            ptr = nullptr;
+        }
+    };
+
+    void* colorPtr = g_probeColorBuffer;
+    freeProbeMapped(g_probeColorUid, colorPtr);
+    g_probeColorBuffer = nullptr;
+    freeProbeMapped(g_probeDepthUid, g_probeDepth);
+    freeProbeMapped(g_probeStencilUid, g_probeStencil);
+
     if (g_probeRenderTarget) {
         sceGxmDestroyRenderTarget(g_probeRenderTarget);
         g_probeRenderTarget = nullptr;
@@ -273,6 +304,32 @@ static void* probeGpuAlloc(unsigned int size, unsigned int attribs, SceUID* uid)
         return nullptr;
     }
 
+    return mem;
+}
+
+static void* probeCdramAlloc(unsigned int size, unsigned int attribs, SceUID* uid)
+{
+    const unsigned int bytes =
+        (size + (256u * 1024u - 1u)) & ~(256u * 1024u - 1u);
+    *uid = sceKernelAllocMemBlock(
+        "LagiGxmProbeCDRAM", SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW,
+        bytes, nullptr);
+    if (*uid < 0)
+        return nullptr;
+
+    void* mem = nullptr;
+    if (sceKernelGetMemBlockBase(*uid, &mem) < 0 || !mem) {
+        sceKernelFreeMemBlock(*uid);
+        *uid = -1;
+        return nullptr;
+    }
+
+    if (sceGxmMapMemory(mem, bytes,
+            static_cast<SceGxmMemoryAttribFlags>(attribs)) < 0) {
+        sceKernelFreeMemBlock(*uid);
+        *uid = -1;
+        return nullptr;
+    }
     return mem;
 }
 
@@ -410,7 +467,81 @@ void toggle_debug_console()
     }
 
     status("[PASS] GXM RENDER TARGET", 0xFF80E0FFu);
-    std::printf("[GXM] render target creation passed\n");
+
+    constexpr int gxmPitch = 1024;
+    constexpr unsigned int colorBytes =
+        static_cast<unsigned int>(gxmPitch * kHeight * sizeof(std::uint32_t));
+
+    g_probeColorBuffer = static_cast<std::uint32_t*>(
+        probeCdramAlloc(
+            colorBytes,
+            SCE_GXM_MEMORY_ATTRIB_READ | SCE_GXM_MEMORY_ATTRIB_WRITE,
+            &g_probeColorUid));
+    if (!g_probeColorBuffer) {
+        failure("[FAIL] GXM COLOR MEMORY");
+        return;
+    }
+
+    std::memset(g_probeColorBuffer, 0, colorBytes);
+
+    const int colorResult = sceGxmColorSurfaceInit(
+        &g_probeColorSurface,
+        SCE_GXM_COLOR_FORMAT_A8B8G8R8,
+        SCE_GXM_COLOR_SURFACE_LINEAR,
+        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+        SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+        kWidth, kHeight, gxmPitch, g_probeColorBuffer);
+    if (colorResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM COLOR 0X%08X",
+                      static_cast<unsigned int>(colorResult));
+        failure(line);
+        return;
+    }
+
+    if (sceGxmSyncObjectCreate(&g_probeSync) < 0) {
+        failure("[FAIL] GXM SYNC OBJECT");
+        return;
+    }
+
+    status("[PASS] GXM COLOR SURFACE", 0xFF80E0FFu);
+
+    const unsigned int alignedW =
+        (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
+    const unsigned int alignedH =
+        (kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1);
+    const unsigned int samples = alignedW * alignedH;
+
+    g_probeDepth = probeGpuAlloc(
+        4u * samples,
+        SCE_GXM_MEMORY_ATTRIB_READ | SCE_GXM_MEMORY_ATTRIB_WRITE,
+        &g_probeDepthUid);
+    g_probeStencil = probeGpuAlloc(
+        4u * samples,
+        SCE_GXM_MEMORY_ATTRIB_READ | SCE_GXM_MEMORY_ATTRIB_WRITE,
+        &g_probeStencilUid);
+    if (!g_probeDepth || !g_probeStencil) {
+        failure("[FAIL] GXM DEPTH MEMORY");
+        return;
+    }
+
+    const int depthResult = sceGxmDepthStencilSurfaceInit(
+        &g_probeDepthSurface,
+        SCE_GXM_DEPTH_STENCIL_FORMAT_S8D24,
+        SCE_GXM_DEPTH_STENCIL_SURFACE_TILED,
+        alignedW,
+        g_probeDepth,
+        g_probeStencil);
+    if (depthResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM DEPTH 0X%08X",
+                      static_cast<unsigned int>(depthResult));
+        failure(line);
+        return;
+    }
+
+    status("[PASS] GXM DEPTH SURFACE", 0xFF80E0FFu);
+    std::printf("[GXM] color/depth surface initialization passed\n");
 }
 
 bool debug_console_visible()
