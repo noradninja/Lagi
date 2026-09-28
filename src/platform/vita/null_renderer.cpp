@@ -40,6 +40,8 @@ static void* g_probeVdm = nullptr;
 static void* g_probeVertex = nullptr;
 static void* g_probeFragment = nullptr;
 static void* g_probeFragmentUsse = nullptr;
+static SceGxmContext* g_probeContext = nullptr;
+static void* g_probeContextHost = nullptr;
 
 static void fill(std::uint32_t color)
 {
@@ -170,6 +172,13 @@ bool init()
 
 void shutdown()
 {
+    if (g_probeContext) {
+        sceGxmDestroyContext(g_probeContext);
+        g_probeContext = nullptr;
+    }
+    std::free(g_probeContextHost);
+    g_probeContextHost = nullptr;
+
     if (g_probeFragmentUsseUid >= 0) {
         void* mem = nullptr;
         if (sceKernelGetMemBlockBase(g_probeFragmentUsseUid, &mem) >= 0 && mem)
@@ -288,9 +297,9 @@ static void* probeFragmentUsseAlloc(
 
 void toggle_debug_console()
 {
-    // Stage 2 native GXM probe: initialize, then allocate/map only the core
-    // ring buffers and fragment-USSE ring required by a context. Do not
-    // create the context or any render/shader resources yet.
+    // Stage 3 native GXM probe: initialize, map the core ring buffers, then
+    // create only the GXM context. Do not create render targets, surfaces,
+    // shader patchers, shader programs, or submit a scene.
     g_debugVisible = true;
 
     if (g_gxmProbeAttempted)
@@ -335,12 +344,45 @@ void toggle_debug_console()
     if (!g_probeVdm || !g_probeVertex || !g_probeFragment ||
         !g_probeFragmentUsse) {
         failure("[FAIL] GXM RING MEMORY");
-        std::printf("[GXM] ring/USSE allocation or mapping failed\n");
         return;
     }
 
     status("[PASS] GXM RING MEMORY", 0xFF80E0FFu);
-    std::printf("[GXM] core ring buffers and fragment USSE mapped\n");
+
+    g_probeContextHost = std::malloc(SCE_GXM_MINIMUM_CONTEXT_HOST_MEM_SIZE);
+    if (!g_probeContextHost) {
+        failure("[FAIL] GXM CONTEXT HOST MEM");
+        return;
+    }
+
+    SceGxmContextParams contextParams{};
+    contextParams.hostMem = g_probeContextHost;
+    contextParams.hostMemSize = SCE_GXM_MINIMUM_CONTEXT_HOST_MEM_SIZE;
+    contextParams.vdmRingBufferMem = g_probeVdm;
+    contextParams.vdmRingBufferMemSize = SCE_GXM_DEFAULT_VDM_RING_BUFFER_SIZE;
+    contextParams.vertexRingBufferMem = g_probeVertex;
+    contextParams.vertexRingBufferMemSize = SCE_GXM_DEFAULT_VERTEX_RING_BUFFER_SIZE;
+    contextParams.fragmentRingBufferMem = g_probeFragment;
+    contextParams.fragmentRingBufferMemSize = SCE_GXM_DEFAULT_FRAGMENT_RING_BUFFER_SIZE;
+    contextParams.fragmentUsseRingBufferMem = g_probeFragmentUsse;
+    contextParams.fragmentUsseRingBufferMemSize =
+        SCE_GXM_DEFAULT_FRAGMENT_USSE_RING_BUFFER_SIZE;
+    contextParams.fragmentUsseRingBufferOffset = fragmentUsseOffset;
+
+    const int contextResult =
+        sceGxmCreateContext(&contextParams, &g_probeContext);
+    if (contextResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM CONTEXT 0X%08X",
+                      static_cast<unsigned int>(contextResult));
+        failure(line);
+        std::printf("[GXM] sceGxmCreateContext failed: 0x%08X\n",
+                    static_cast<unsigned int>(contextResult));
+        return;
+    }
+
+    status("[PASS] GXM CONTEXT", 0xFF80E0FFu);
+    std::printf("[GXM] context creation passed\n");
 }
 
 bool debug_console_visible()
