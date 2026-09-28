@@ -56,6 +56,11 @@ static SceUID g_probeColorUid = -1;
 static std::uint32_t* g_probeColorBuffer = nullptr;
 static SceGxmColorSurface g_probeColorSurface{};
 static SceGxmSyncObject* g_probeSync = nullptr;
+static SceUID g_probeColorUid2 = -1;
+static std::uint32_t* g_probeColorBuffer2 = nullptr;
+static SceGxmColorSurface g_probeColorSurface2{};
+static SceGxmSyncObject* g_probeSync2 = nullptr;
+static int g_gxmDrawBuffer = 1;
 static SceUID g_probeDepthUid = -1;
 static SceUID g_probeStencilUid = -1;
 static void* g_probeDepth = nullptr;
@@ -288,6 +293,10 @@ void shutdown()
         g_probePatcherBuffer = nullptr;
     }
 
+    if (g_probeSync2) {
+        sceGxmSyncObjectDestroy(g_probeSync2);
+        g_probeSync2 = nullptr;
+    }
     if (g_probeSync) {
         sceGxmSyncObjectDestroy(g_probeSync);
         g_probeSync = nullptr;
@@ -303,6 +312,10 @@ void shutdown()
             ptr = nullptr;
         }
     };
+
+    void* colorPtr2 = g_probeColorBuffer2;
+    freeProbeMapped(g_probeColorUid2, colorPtr2);
+    g_probeColorBuffer2 = nullptr;
 
     void* colorPtr = g_probeColorBuffer;
     freeProbeMapped(g_probeColorUid, colorPtr);
@@ -363,6 +376,7 @@ void shutdown()
     g_drawBuffer = 0;
     g_viewerReady = false;
     g_probeDisplayingGxm = false;
+    g_gxmDrawBuffer = 1;
 }
 
 void status(const char* text, unsigned int color)
@@ -651,7 +665,41 @@ void toggle_debug_console()
         return;
     }
 
-    status("[PASS] GXM COLOR SURFACE", 0xFF80E0FFu);
+    // Interactive viewer uses a second GXM scanout surface so the GPU never
+    // redraws the buffer currently being scanned out.
+    g_probeColorBuffer2 = static_cast<std::uint32_t*>(
+        probeCdramAlloc(
+            colorBytes,
+            SCE_GXM_MEMORY_ATTRIB_READ | SCE_GXM_MEMORY_ATTRIB_WRITE,
+            &g_probeColorUid2));
+    if (!g_probeColorBuffer2) {
+        failure("[FAIL] GXM COLOR MEMORY 2");
+        return;
+    }
+
+    std::memset(g_probeColorBuffer2, 0, colorBytes);
+
+    const int colorResult2 = sceGxmColorSurfaceInit(
+        &g_probeColorSurface2,
+        SCE_GXM_COLOR_FORMAT_A8B8G8R8,
+        SCE_GXM_COLOR_SURFACE_LINEAR,
+        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+        SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+        kWidth, kHeight, gxmPitch, g_probeColorBuffer2);
+    if (colorResult2 < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM COLOR2 0X%08X",
+                      static_cast<unsigned int>(colorResult2));
+        failure(line);
+        return;
+    }
+
+    if (sceGxmSyncObjectCreate(&g_probeSync2) < 0) {
+        failure("[FAIL] GXM SYNC OBJECT 2");
+        return;
+    }
+
+    status("[PASS] GXM COLOR SURFACES X2", 0xFF80E0FFu);
 
     const unsigned int alignedW =
         (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
@@ -1073,6 +1121,7 @@ void toggle_debug_console()
 
     sceDisplayWaitVblankStart();
     g_probeDisplayingGxm = true;
+    g_gxmDrawBuffer = 1;
     g_debugVisible = false;
     status("[PASS] GXM BASIC WING DISPLAY", 0xFF80E0FFu);
     std::printf("[GXM] Basic Wing GXM color buffer queued for display\n");
@@ -1133,7 +1182,7 @@ bool load_basic_wing_viewer()
 static void renderBasicWingViewer()
 {
     if (!g_viewerReady || !g_gxmInitialized || !g_probeContext ||
-        !g_probeRenderTarget || !g_probeColorBuffer ||
+        !g_probeRenderTarget || !g_probeColorBuffer || !g_probeColorBuffer2 ||
         !g_probeVertexProgram || !g_probeFragmentProgram ||
         !g_basicWingVertices || !g_basicWingIndices)
         return;
@@ -1178,12 +1227,20 @@ static void renderBasicWingViewer()
     }
 
     constexpr int gxmPitch = 1024;
+
+    std::uint32_t* const colorBuffer =
+        g_gxmDrawBuffer == 0 ? g_probeColorBuffer : g_probeColorBuffer2;
+    SceGxmColorSurface* const colorSurface =
+        g_gxmDrawBuffer == 0 ? &g_probeColorSurface : &g_probeColorSurface2;
+    SceGxmSyncObject* const syncObject =
+        g_gxmDrawBuffer == 0 ? g_probeSync : g_probeSync2;
+
     const unsigned int alignedW =
         (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
     const unsigned int alignedH =
         (kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1);
 
-    std::memset(g_probeColorBuffer, 0,
+    std::memset(colorBuffer, 0,
                 static_cast<std::size_t>(gxmPitch) * kHeight *
                 sizeof(std::uint32_t));
     std::memset(g_probeDepth, 0xFF, alignedW * alignedH * 4u);
@@ -1191,8 +1248,8 @@ static void renderBasicWingViewer()
 
     if (sceGxmBeginScene(
             g_probeContext, 0, g_probeRenderTarget,
-            nullptr, nullptr, g_probeSync,
-            &g_probeColorSurface, &g_probeDepthSurface) < 0)
+            nullptr, nullptr, syncObject,
+            colorSurface, &g_probeDepthSurface) < 0)
         return;
 
     sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
@@ -1250,13 +1307,18 @@ static void renderBasicWingViewer()
 
     SceDisplayFrameBuf fb{};
     fb.size = sizeof(fb);
-    fb.base = g_probeColorBuffer;
+    fb.base = colorBuffer;
     fb.pitch = gxmPitch;
     fb.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
     fb.width = kWidth;
     fb.height = kHeight;
     sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
     sceDisplayWaitVblankStart();
+
+    // The buffer just queued is now front; draw the next frame into the
+    // opposite GXM surface so scanout and rendering never touch the same
+    // memory concurrently.
+    g_gxmDrawBuffer ^= 1;
 }
 
 void begin_frame()
