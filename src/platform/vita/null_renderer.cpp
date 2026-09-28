@@ -11,6 +11,11 @@
 
 namespace lagi::platform::renderer {
 
+extern "C" {
+extern const unsigned char lagi_color_v_gxp[];
+extern const unsigned char lagi_color_f_gxp[];
+}
+
 static constexpr int kWidth = 960;
 static constexpr int kHeight = 544;
 static constexpr int kPitch = 960;
@@ -60,6 +65,10 @@ static SceUID g_probePatcherFragmentUsseUid = -1;
 static void* g_probePatcherBuffer = nullptr;
 static void* g_probePatcherVertexUsse = nullptr;
 static void* g_probePatcherFragmentUsse = nullptr;
+static SceGxmShaderPatcherId g_probeVertexProgramId{};
+static SceGxmShaderPatcherId g_probeFragmentProgramId{};
+static bool g_probeVertexRegistered = false;
+static bool g_probeFragmentRegistered = false;
 
 static void fill(std::uint32_t color)
 {
@@ -191,6 +200,16 @@ bool init()
 void shutdown()
 {
     if (g_probeShaderPatcher) {
+        if (g_probeFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_probeFragmentProgramId);
+            g_probeFragmentRegistered = false;
+        }
+        if (g_probeVertexRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_probeVertexProgramId);
+            g_probeVertexRegistered = false;
+        }
         sceGxmShaderPatcherDestroy(g_probeShaderPatcher);
         g_probeShaderPatcher = nullptr;
     }
@@ -436,9 +455,9 @@ static void probePatcherHostFree(void*, void* mem)
 
 void toggle_debug_console()
 {
-    // Stage 6 native GXM probe: build the proven core/context/target/surfaces,
-    // then create only the shader patcher and its backing pools. Do not
-    // register shader programs, create patched programs, or submit a scene.
+    // Stage 7 native GXM probe: build the proven pipeline through shader
+    // patcher creation, then validate and register the precompiled GXP
+    // programs only. Do not create patched programs or submit a scene.
     g_debugVisible = true;
 
     if (g_gxmProbeAttempted)
@@ -679,7 +698,56 @@ void toggle_debug_console()
     }
 
     status("[PASS] GXM SHADER PATCHER", 0xFF80E0FFu);
-    std::printf("[GXM] shader patcher creation passed\n");
+
+    const SceGxmProgram* vertexProgram =
+        reinterpret_cast<const SceGxmProgram*>(lagi_color_v_gxp);
+    const SceGxmProgram* fragmentProgram =
+        reinterpret_cast<const SceGxmProgram*>(lagi_color_f_gxp);
+
+    const int vertexCheck = sceGxmProgramCheck(vertexProgram);
+    if (vertexCheck < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM VP CHECK 0X%08X",
+                      static_cast<unsigned int>(vertexCheck));
+        failure(line);
+        return;
+    }
+
+    const int fragmentCheck = sceGxmProgramCheck(fragmentProgram);
+    if (fragmentCheck < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM FP CHECK 0X%08X",
+                      static_cast<unsigned int>(fragmentCheck));
+        failure(line);
+        return;
+    }
+
+    status("[PASS] GXM PROGRAM CHECK", 0xFF80E0FFu);
+
+    const int vertexRegister = sceGxmShaderPatcherRegisterProgram(
+        g_probeShaderPatcher, vertexProgram, &g_probeVertexProgramId);
+    if (vertexRegister < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM VP REG 0X%08X",
+                      static_cast<unsigned int>(vertexRegister));
+        failure(line);
+        return;
+    }
+    g_probeVertexRegistered = true;
+
+    const int fragmentRegister = sceGxmShaderPatcherRegisterProgram(
+        g_probeShaderPatcher, fragmentProgram, &g_probeFragmentProgramId);
+    if (fragmentRegister < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM FP REG 0X%08X",
+                      static_cast<unsigned int>(fragmentRegister));
+        failure(line);
+        return;
+    }
+    g_probeFragmentRegistered = true;
+
+    status("[PASS] GXM PROGRAM REGISTER", 0xFF80E0FFu);
+    std::printf("[GXM] precompiled shader program check/register passed\n");
 }
 
 bool debug_console_visible()
