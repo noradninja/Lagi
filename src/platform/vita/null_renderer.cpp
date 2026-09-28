@@ -979,6 +979,175 @@ static ViewerScreenPoint projectViewerPoint(
     return out;
 }
 
+
+static void generateViewerAzelFalloff(
+    std::int16_t out[32][3])
+{
+    // Exact Azel generateMasterLightFalloffMap inputs used by the
+    // dragon morph viewer: generateLightFalloffMap(0x030102, 0, 0).
+    constexpr std::uint32_t r4 = 0x00030102u;
+    constexpr std::uint32_t r5 = 0x00000000u;
+    constexpr std::uint32_t r6 = 0x00000000u;
+
+    auto s8 = [](std::uint32_t value) -> std::int32_t {
+        return static_cast<std::int8_t>(value & 0xFFu);
+    };
+
+    std::int32_t r9t =
+        0x8421 * (s8(r5) - s8(r6));
+    std::int32_t r10t =
+        0x8421 * (s8(r5 >> 8) - s8(r6 >> 8));
+    std::int32_t r11t =
+        0x8421 * (s8(r5 >> 16) - s8(r6 >> 16));
+
+    std::int32_t r1t =
+        0x84210 * (s8(r6) - s8(r4));
+    std::int32_t r5t = s8(r4) << 24;
+    std::int32_t r2t =
+        0x84210 * (s8(r6 >> 8) - s8(r4 >> 8));
+    std::int32_t r6t = s8(r4 >> 8) << 24;
+    std::int32_t r3t =
+        0x84210 * (s8(r6 >> 16) - s8(r4 >> 16));
+    std::int32_t r7t = s8(r4 >> 16) << 24;
+
+    for (int i = 0; i < 32; ++i) {
+        out[i][0] =
+            static_cast<std::int16_t>(
+                static_cast<std::uint32_t>(r5t) >> 16);
+        out[i][1] =
+            static_cast<std::int16_t>(
+                static_cast<std::uint32_t>(r6t) >> 16);
+        out[i][2] =
+            static_cast<std::int16_t>(
+                static_cast<std::uint32_t>(r7t) >> 16);
+
+        r1t += r9t;
+        r2t += r10t;
+        r3t += r11t;
+
+        r5t += r1t;
+        r6t += r2t;
+        r7t += r3t;
+    }
+}
+
+static void updateViewerAzelLighting()
+{
+    if (g_basicWingCpuMesh.lightingNormals.size() !=
+            g_basicWingCpuMesh.polygons ||
+        g_basicWingCpuMesh.gouraud555.size() !=
+            g_basicWingCpuMesh.polygons)
+        return;
+
+    // Mirror the Basic Wing menu's actual Azel light setup:
+    //     setupLight(0, 0, 0x10000, 0x161918)
+    // setupLight stores the directional vector as -input >> 4, so the
+    // camera-space light used by ComputeColorFromNormal is (0,0,-4096).
+    // The RGB channel ordering below matches Azel's reversed storage.
+    constexpr int lightR = 0x18;
+    constexpr int lightG = 0x19;
+    constexpr int lightB = 0x16;
+
+    static bool falloffReady = false;
+    static std::int16_t falloffMap[32][3]{};
+    if (!falloffReady) {
+        generateViewerAzelFalloff(falloffMap);
+        falloffReady = true;
+    }
+
+    const ViewerMat4 rotation =
+        viewerMul(
+            viewerRotationY(g_viewYaw),
+            viewerRotationX(g_viewPitch));
+
+    auto transformDirection = [&](float x, float y, float z) {
+        struct V { float x, y, z; } out;
+        out.x = x * rotation.m[0] +
+                y * rotation.m[4] +
+                z * rotation.m[8];
+        out.y = x * rotation.m[1] +
+                y * rotation.m[5] +
+                z * rotation.m[9];
+        out.z = x * rotation.m[2] +
+                y * rotation.m[6] +
+                z * rotation.m[10];
+        const float lenSq =
+            out.x * out.x + out.y * out.y + out.z * out.z;
+        if (lenSq > 0.0000001f) {
+            const float invLen = 1.0f / std::sqrt(lenSq);
+            out.x *= invLen;
+            out.y *= invLen;
+            out.z *= invLen;
+        }
+        return out;
+    };
+
+    auto viewDepthForQuad = [&](unsigned int p) {
+        const auto& v = g_basicWingCpuMesh.vertices[p * 6u];
+        // Row-vector yaw/pitch, then the viewer's +Z camera translation.
+        const float z =
+            v.x * rotation.m[2] +
+            v.y * rotation.m[6] +
+            v.z * rotation.m[10] +
+            g_viewDistance;
+        return std::fabs(z);
+    };
+
+    for (unsigned int p = 0;
+         p < g_basicWingCpuMesh.polygons; ++p) {
+        // The dragon morph viewer uses a 16.0 far clip. Azel's
+        // GetDistanceFalloff mapping with that setup is effectively two
+        // falloff-table entries per view-space unit:
+        // index = clamp(floor(depth * 2), 0, 31).
+        const int falloffIndex =
+            std::max(
+                0,
+                std::min(
+                    31,
+                    static_cast<int>(
+                        viewDepthForQuad(p) * 2.0f)));
+
+        const int fallR = falloffMap[falloffIndex][0];
+        const int fallG = falloffMap[falloffIndex][1];
+        const int fallB = falloffMap[falloffIndex][2];
+
+        for (unsigned int corner = 0; corner < 4; ++corner) {
+            const auto& source =
+                g_basicWingCpuMesh.lightingNormals[p].corner[corner];
+
+            // Keep the light fixed relative to the camera by rotating the
+            // posed model-space normal into view space every frame.
+            const auto n =
+                transformDirection(source[0], source[1], source[2]);
+
+            // Azel's camera-space light vector is (0,0,-4096). With a
+            // normalized normal represented at Saturn scale 4096, the high
+            // word of the fixed-point dot is approximately 256 * max(-Nz,0).
+            const float dot = std::max(0.0f, -n.z);
+            const int dotHi =
+                static_cast<int>(dot * 256.0f);
+
+            int accum[3] = {fallR, fallG, fallB};
+            if (dotHi > 0) {
+                accum[0] += lightR * dotHi;
+                accum[1] += lightG * dotHi;
+                accum[2] += lightB * dotHi;
+            }
+
+            for (int channel = 0; channel < 3; ++channel) {
+                accum[channel] =
+                    std::max(0, std::min(0x1F00, accum[channel]));
+                const int gouraud5 =
+                    (accum[channel] >> 8) & 0x1F;
+                g_basicWingCpuMesh.gouraud555[p]
+                    .corner[corner][channel] =
+                    (static_cast<float>(gouraud5) - 16.0f) /
+                    31.0f;
+            }
+        }
+    }
+}
+
 void toggle_debug_console()
 {
     // Native GXM Basic Wing viewer. The proven draw/scanout path is retained;
