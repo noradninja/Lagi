@@ -59,6 +59,17 @@ struct BasicWingDebugMesh {
     unsigned int maxTextureEnd = 0;
     unsigned int maxLutEnd = 0;
     bool cgbReferencesValid = false;
+
+    // First-pass VDP1 mode-1 texture decoder diagnostics.
+    unsigned int uniqueTextures = 0;
+    unsigned int decodedTextures = 0;
+    unsigned int decodedPixels = 0;
+    unsigned int transparentPixels = 0;
+    unsigned int endCodePixels = 0;
+    unsigned int directRgb555Pixels = 0;
+    unsigned int indirectCramPixels = 0;
+    bool mode1DecodeValid = false;
+    bool mode1DecodeFullyResolved = false;
 };
 
 bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out);
