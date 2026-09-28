@@ -1,0 +1,17 @@
+build/
+cmake-build-*/
+*.vpk
+*.self
+*.elf
+*.suprx
+*.skprx
+*.o
+*.a
+.DS_Store
+.vscode/
+.idea/
+game_data/
+data/
+*.bin
+*.cue
+*.iso
