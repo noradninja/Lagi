@@ -22,6 +22,7 @@ add_executable(lagi
  src/platform/vita/vita_platform.cpp
  src/platform/vita/vita_input.cpp
  src/platform/vita/vita_filesystem.cpp
+ src/platform/vita/iso9660.cpp
  src/platform/vita/null_renderer.cpp
  src/platform/vita/null_audio.cpp
  src/integration/azel_runtime_smoke.cpp
