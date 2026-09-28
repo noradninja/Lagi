@@ -42,6 +42,13 @@ struct SaturnGouraud555Quad {
     float corner[4][3]{};
 };
 
+struct SaturnLightingNormalQuad {
+    // Normalized after applying the reconstructed Basic Wing hierarchy pose.
+    // These remain in assembled model space so the viewer can transform them
+    // into camera space every frame.
+    float corner[4][3]{};
+};
+
 struct SaturnPolygonRecord {
     std::uint16_t indices[4]{};
     std::uint16_t lightingControl = 0;
@@ -92,6 +99,7 @@ struct BasicWingDebugMesh {
     std::vector<DebugColorVertex> lightingVertices;
     std::vector<SaturnPolygonRecord> polygonRecords;
     std::vector<SaturnGouraud555Quad> gouraud555;
+    std::vector<SaturnLightingNormalQuad> lightingNormals;
     unsigned int models = 0;
     unsigned int polygons = 0;
 
