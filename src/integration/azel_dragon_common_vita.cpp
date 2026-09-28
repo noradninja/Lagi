@@ -11,6 +11,8 @@
 #include "commonOverlay.h"
 #include "dragonData.h"
 #include "lagi/disc_image.h"
+#include "lagi/debug_mesh.h"
+#include <cmath>
 
 sHotpointBundle* readRiderDefinitionSub(sSaturnPtr ptrEA)
 {
@@ -398,6 +400,277 @@ bool validate_basic_wing_geometry(unsigned int* out_models,
     std::printf("[Dragon] DRAGON0 geometry: %u models, %u vertices, %u polygons\n",
                 totals.models, totals.vertices, totals.polygons);
     return true;
+}
+
+} // namespace lagi::azel
+
+
+namespace {
+
+struct FVec3 { float x, y, z; };
+
+struct FMat4 {
+    float m[16];
+};
+
+static FMat4 matIdentity()
+{
+    FMat4 r{};
+    r.m[0] = r.m[5] = r.m[10] = r.m[15] = 1.0f;
+    return r;
+}
+
+static FMat4 matMul(const FMat4& a, const FMat4& b)
+{
+    FMat4 r{};
+    for (int row = 0; row < 4; ++row)
+        for (int col = 0; col < 4; ++col)
+            for (int k = 0; k < 4; ++k)
+                r.m[row * 4 + col] += a.m[row * 4 + k] * b.m[k * 4 + col];
+    return r;
+}
+
+static FMat4 matTranslate(float x, float y, float z)
+{
+    FMat4 r = matIdentity();
+    r.m[3] = x; r.m[7] = y; r.m[11] = z;
+    return r;
+}
+
+static FMat4 matRotX(float a)
+{
+    FMat4 r = matIdentity();
+    const float c = std::cos(a), s = std::sin(a);
+    r.m[5] = c; r.m[6] = -s;
+    r.m[9] = s; r.m[10] = c;
+    return r;
+}
+
+static FMat4 matRotY(float a)
+{
+    FMat4 r = matIdentity();
+    const float c = std::cos(a), s = std::sin(a);
+    r.m[0] = c; r.m[2] = s;
+    r.m[8] = -s; r.m[10] = c;
+    return r;
+}
+
+static FMat4 matRotZ(float a)
+{
+    FMat4 r = matIdentity();
+    const float c = std::cos(a), s = std::sin(a);
+    r.m[0] = c; r.m[1] = -s;
+    r.m[4] = s; r.m[5] = c;
+    return r;
+}
+
+static FVec3 transformPoint(const FMat4& m, FVec3 p)
+{
+    return {
+        m.m[0] * p.x + m.m[1] * p.y + m.m[2] * p.z + m.m[3],
+        m.m[4] * p.x + m.m[5] * p.y + m.m[6] * p.z + m.m[7],
+        m.m[8] * p.x + m.m[9] * p.y + m.m[10] * p.z + m.m[11]
+    };
+}
+
+static float saturnAngle(s32 raw)
+{
+    const s32 units = raw >> 16;
+    constexpr float kTwoPi = 6.28318530717958647692f;
+    return static_cast<float>(units & 0xFFF) * (kTwoPi / 4096.0f);
+}
+
+struct BonePoseRaw {
+    s32 tx, ty, tz;
+    s32 rx, ry, rz;
+};
+
+static bool readPose(const std::vector<u8>& bundle, u32 poseBase,
+                     unsigned bone, BonePoseRaw& out)
+{
+    const u64 p = static_cast<u64>(poseBase) + static_cast<u64>(bone) * 36u;
+    if (p + 36 > bundle.size())
+        return false;
+
+    const u8* b = bundle.data() + static_cast<u32>(p);
+    out.tx = static_cast<s32>(readBE32Raw(b + 0));
+    out.ty = static_cast<s32>(readBE32Raw(b + 4));
+    out.tz = static_cast<s32>(readBE32Raw(b + 8));
+    out.rx = static_cast<s32>(readBE32Raw(b + 12));
+    out.ry = static_cast<s32>(readBE32Raw(b + 16));
+    out.rz = static_cast<s32>(readBE32Raw(b + 20));
+    return true;
+}
+
+static FMat4 poseMatrix(const BonePoseRaw& p)
+{
+    const float fx = static_cast<float>(p.tx) / 65536.0f;
+    const float fy = static_cast<float>(p.ty) / 65536.0f;
+    const float fz = static_cast<float>(p.tz) / 65536.0f;
+
+    // Matches Azel's translate + rotateCurrentMatrixZYX traversal.
+    FMat4 m = matTranslate(fx, fy, fz);
+    m = matMul(m, matRotZ(saturnAngle(p.rz)));
+    m = matMul(m, matRotY(saturnAngle(p.ry)));
+    m = matMul(m, matRotX(saturnAngle(p.rx)));
+    return m;
+}
+
+static void polygonColor(unsigned polygon, unsigned model,
+                         std::uint8_t& r, std::uint8_t& g, std::uint8_t& b)
+{
+    // Deterministic high-separation debug palette, not game color data.
+    const u32 h = 0x9E3779B9u * (polygon + 1u) ^ (0x85EBCA6Bu * (model + 3u));
+    r = static_cast<u8>(80u + ((h >> 0) & 0xAFu));
+    g = static_cast<u8>(80u + ((h >> 8) & 0xAFu));
+    b = static_cast<u8>(80u + ((h >> 16) & 0xAFu));
+}
+
+static bool appendModelDebugGeometry(const std::vector<u8>& bundle, u32 modelOffset,
+                                     const FMat4& world, unsigned modelNumber,
+                                     lagi::azel::BasicWingDebugMesh& out)
+{
+    if (modelOffset + 0x14 > bundle.size())
+        return false;
+
+    const u8* base = bundle.data();
+    const u32 numVertices = readBE32Raw(base + modelOffset + 4);
+    const u32 verticesOffset = readBE32Raw(base + modelOffset + 8);
+    if (numVertices == 0 || numVertices > 65535)
+        return false;
+    if (static_cast<u64>(verticesOffset) + static_cast<u64>(numVertices) * 6u > bundle.size())
+        return false;
+
+    std::vector<FVec3> verts(numVertices);
+    for (u32 i = 0; i < numVertices; ++i) {
+        const u8* v = base + verticesOffset + i * 6u;
+        const s16 x = static_cast<s16>(readBE16Raw(v + 0));
+        const s16 y = static_cast<s16>(readBE16Raw(v + 2));
+        const s16 z = static_cast<s16>(readBE16Raw(v + 4));
+        verts[i] = transformPoint(world, {
+            static_cast<float>(x) / 4096.0f,
+            static_cast<float>(y) / 4096.0f,
+            static_cast<float>(z) / 4096.0f
+        });
+    }
+
+    u32 p = modelOffset + 0x0C;
+    unsigned localPoly = 0;
+    while (true) {
+        if (p + 8 > bundle.size())
+            return false;
+
+        u16 idx[4] = {
+            readBE16Raw(base + p + 0), readBE16Raw(base + p + 2),
+            readBE16Raw(base + p + 4), readBE16Raw(base + p + 6)
+        };
+
+        if (idx[0] == 0 && idx[1] == 0 && idx[2] == 0 && idx[3] == 0)
+            break;
+        for (int i = 0; i < 4; ++i)
+            if (idx[i] >= numVertices) return false;
+
+        p += 8;
+        if (p + 12 > bundle.size()) return false;
+        const u16 lightingControl = readBE16Raw(base + p);
+        p += 12;
+
+        switch ((lightingControl >> 8) & 3) {
+            case 0: break;
+            case 1: if (p + 8 > bundle.size()) return false; p += 8; break;
+            case 2: if (p + 48 > bundle.size()) return false; p += 48; break;
+            case 3: if (p + 24 > bundle.size()) return false; p += 24; break;
+        }
+
+        std::uint8_t r, g, b;
+        polygonColor(out.polygons, modelNumber, r, g, b);
+
+        // Preserve Saturn quad identity: both generated triangles use one color.
+        const int tri[6] = {0, 1, 2, 0, 2, 3};
+        for (int k = 0; k < 6; ++k) {
+            const FVec3& q = verts[idx[tri[k]]];
+            out.vertices.push_back({q.x, q.y, q.z, r, g, b, 255});
+        }
+
+        ++out.polygons;
+        ++localPoly;
+        if (localPoly > 65535) return false;
+    }
+
+    ++out.models;
+    return true;
+}
+
+static bool buildMeshTraverse(const std::vector<u8>& bundle, u32 nodeOffset,
+                              u32 poseBase, unsigned& boneIndex,
+                              const FMat4& parent,
+                              lagi::azel::BasicWingDebugMesh& out,
+                              unsigned depth)
+{
+    if (!nodeOffset) return true;
+    if (depth > 256 || nodeOffset + 12 > bundle.size()) return false;
+
+    do {
+        BonePoseRaw pose{};
+        if (!readPose(bundle, poseBase, boneIndex, pose))
+            return false;
+
+        const FMat4 world = matMul(parent, poseMatrix(pose));
+
+        const u32 modelOffset = readBE32Raw(bundle.data() + nodeOffset + 0);
+        const u32 childOffset = readBE32Raw(bundle.data() + nodeOffset + 4);
+        const u32 nextOffset = readBE32Raw(bundle.data() + nodeOffset + 8);
+
+        if (modelOffset && !appendModelDebugGeometry(bundle, modelOffset, world, out.models, out))
+            return false;
+
+        ++boneIndex;
+
+        if (childOffset && !buildMeshTraverse(bundle, childOffset, poseBase,
+                                               boneIndex, world, out, depth + 1))
+            return false;
+
+        nodeOffset = nextOffset;
+    } while (nodeOffset);
+
+    return true;
+}
+
+} // anonymous namespace
+
+namespace lagi::azel {
+
+bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
+{
+    out = {};
+
+    std::vector<u8> mcb;
+    if (!lagi::disc::read_file("DRAGON0.MCB", mcb) || mcb.size() < 16)
+        return false;
+
+    const sDragonMorphModels& base =
+        gDragonMorphDataPerLevel[DR_LEVEL_0_BASIC_WING].m_m8[0];
+
+    if (static_cast<u32>(base.m0_modelIndex) + 4u > mcb.size() ||
+        static_cast<u32>(base.m4_poseModelIndex) + 4u > mcb.size())
+        return false;
+
+    const u32 hierarchyOffset = readBE32Raw(mcb.data() + base.m0_modelIndex);
+    const u32 poseOffset = readBE32Raw(mcb.data() + base.m4_poseModelIndex);
+    if (!hierarchyOffset || !poseOffset)
+        return false;
+
+    unsigned boneIndex = 0;
+    if (!buildMeshTraverse(mcb, hierarchyOffset, poseOffset, boneIndex,
+                           matIdentity(), out, 0))
+        return false;
+
+    std::printf("[Dragon] debug mesh built: %u bones, %u models, %u polys, %u triangle vertices\n",
+                boneIndex, out.models, out.polygons,
+                static_cast<unsigned>(out.vertices.size()));
+
+    return boneIndex == 31 && out.models == 31 &&
+           out.polygons == 212 && out.vertices.size() == 212u * 6u;
 }
 
 } // namespace lagi::azel
