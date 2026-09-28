@@ -45,7 +45,28 @@ struct sSaturnPtr {
         return p;
     }
 
+    sSaturnPtr& operator+=(unsigned int i) { m_offset += static_cast<s32>(i); return *this; }
+    sSaturnPtr operator-(unsigned int i) const { sSaturnPtr p = *this; p.m_offset -= static_cast<s32>(i); return p; }
+    bool operator==(const sSaturnPtr& other) const { return m_offset == other.m_offset && m_file == other.m_file; }
+    bool operator!=(const sSaturnPtr& other) const { return !(*this == other); }
     bool isNull() const { return m_offset == 0; }
+};
+
+struct sSaturnMemoryFile {
+    sSaturnMemoryFile() = default;
+    sSaturnMemoryFile(const char* fileName, u32 base = 0x06054000);
+
+    std::string m_name;
+    u8* m_data = nullptr;
+    u32 m_dataSize = 0;
+    u32 m_base = 0;
+
+    sSaturnPtr getSaturnPtr(u32 address) {
+        sSaturnPtr p;
+        p.m_file = this;
+        p.m_offset = static_cast<s32>(address);
+        return p;
+    }
 };
 
 #include "fixedPoint.h"
