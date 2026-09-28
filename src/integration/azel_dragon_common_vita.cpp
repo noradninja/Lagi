@@ -687,6 +687,7 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
     unsigned flippedPolygons = 0;
     unsigned minTextureAddress = 0xFFFFFFFFu;
     unsigned maxTextureEnd = 0;
+    unsigned maxLutEnd = 0;
 
     for (std::size_t i = 0; i < out.polygonRecords.size(); ++i) {
         const SaturnPolygonRecord& record = out.polygonRecords[i];
@@ -704,6 +705,15 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
                              width * height;
         minTextureAddress = std::min(minTextureAddress, address);
         maxTextureEnd = std::max(maxTextureEnd, address + bytesPerTexture);
+
+        // Basic Wing uses color mode 1 in current hardware data. In Azel's
+        // decoder that mode uses a 16-entry LUT stored in VDP1 memory at
+        // CMDCOLR * 8, i.e. 32 bytes from this relative CGB address.
+        if (colorMode == 1) {
+            const unsigned lutAddress =
+                static_cast<unsigned>(record.cmdColr) << 3;
+            maxLutEnd = std::max(maxLutEnd, lutAddress + 32u);
+        }
 
         bool seen = false;
         for (std::size_t j = 0; j < i; ++j) {
@@ -732,6 +742,38 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
                 colorModeCounts[0], colorModeCounts[1], colorModeCounts[2],
                 colorModeCounts[3], colorModeCounts[4], colorModeCounts[5],
                 colorModeCounts[6], colorModeCounts[7]);
+
+    // Trace the original load path:
+    //   DRAGON0.CGB -> VDP1 byte offset 0x12000
+    //   DRAGON0.MCB relocation = 0x2400 address units
+    //   0x2400 << 3 == 0x12000
+    //
+    // Our preserved polygon command words are the pre-relocation values, so
+    // CMDSRCA<<3 and CMDCOLR<<3 are directly relative to the start of CGB.
+    std::vector<u8> cgb;
+    if (lagi::disc::read_file("DRAGON0.CGB", cgb)) {
+        out.cgbBytes = static_cast<unsigned>(cgb.size());
+        out.maxTextureEnd = maxTextureEnd;
+        out.maxLutEnd = maxLutEnd;
+        out.cgbReferencesValid =
+            maxTextureEnd <= out.cgbBytes &&
+            maxLutEnd <= out.cgbBytes;
+
+        lagi::platform::logging::writef(
+            "[Dragon] DRAGON0.CGB: %u bytes; original VDP1 base 0x12000 / reloc 0x2400\n",
+            out.cgbBytes);
+        lagi::platform::logging::writef(
+            "[Dragon] CGB refs: texture end 0x%X, LUT end 0x%X, %s\n",
+            out.maxTextureEnd, out.maxLutEnd,
+            out.cgbReferencesValid ? "all in range" : "OUT OF RANGE");
+    } else {
+        out.cgbBytes = 0;
+        out.maxTextureEnd = maxTextureEnd;
+        out.maxLutEnd = maxLutEnd;
+        out.cgbReferencesValid = false;
+        lagi::platform::logging::writef(
+            "[Dragon] DRAGON0.CGB could not be read for reference validation\n");
+    }
 
     return boneIndex == 31 && out.models == 31 &&
            out.polygons == 212 &&
