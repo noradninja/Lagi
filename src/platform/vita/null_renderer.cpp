@@ -1989,7 +1989,7 @@ static void renderBasicWingViewer()
         return;
     }
 
-    if (textured || texturedLit) {
+    if (textured) {
         for (unsigned int t = 0;
              t < g_basicWingGpuTextures.size(); ++t) {
             const TextureBatch& batch =
@@ -2006,6 +2006,96 @@ static void renderBasicWingViewer()
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_basicWingTextureIndices + batch.firstIndex,
                 batch.indexCount);
+        }
+    } else if (texturedLit) {
+        // Azel reconstructs the original Saturn quad in fragment space and
+        // bilinearly interpolates its four Gouraud corner values. Draw one
+        // quad at a time here so the Vita fragment program can receive those
+        // four screen-space corners and RGB555 offsets as uniforms.
+        static const unsigned int cornerVertex[4] = {0, 1, 2, 5};
+
+        for (unsigned int p = 0;
+             p < g_basicWingCpuMesh.polygons; ++p) {
+            const std::uint16_t textureIndex =
+                g_basicWingCpuMesh.polygonTextureIndices[p];
+            if (textureIndex >= g_basicWingGpuTextures.size() ||
+                p >= g_basicWingCpuMesh.gouraud555.size())
+                continue;
+
+            ViewerScreenPoint screen[4];
+            bool visible = true;
+            for (unsigned int corner = 0; corner < 4; ++corner) {
+                screen[corner] = projectViewerPoint(
+                    wvp,
+                    g_basicWingCpuMesh.vertices[
+                        p * 6u + cornerVertex[corner]]);
+                if (!screen[corner].valid)
+                    visible = false;
+            }
+            if (!visible)
+                continue;
+
+            const float quadScreen01[4] = {
+                screen[0].x, screen[0].y,
+                screen[1].x, screen[1].y
+            };
+            const float quadScreen23[4] = {
+                screen[2].x, screen[2].y,
+                screen[3].x, screen[3].y
+            };
+
+            const auto& gouraud =
+                g_basicWingCpuMesh.gouraud555[p];
+            const float gouraudR[4] = {
+                gouraud.corner[0][0], gouraud.corner[1][0],
+                gouraud.corner[2][0], gouraud.corner[3][0]
+            };
+            const float gouraudG[4] = {
+                gouraud.corner[0][1], gouraud.corner[1][1],
+                gouraud.corner[2][1], gouraud.corner[3][1]
+            };
+            const float gouraudB[4] = {
+                gouraud.corner[0][2], gouraud.corner[1][2],
+                gouraud.corner[2][2], gouraud.corner[3][2]
+            };
+
+            void* fragmentUniformBuffer = nullptr;
+            if (sceGxmReserveFragmentDefaultUniformBuffer(
+                    g_probeContext,
+                    &fragmentUniformBuffer) < 0 ||
+                !fragmentUniformBuffer)
+                continue;
+
+            sceGxmSetUniformDataF(
+                fragmentUniformBuffer,
+                g_texturedLitQuadScreen01Param,
+                0, 4, quadScreen01);
+            sceGxmSetUniformDataF(
+                fragmentUniformBuffer,
+                g_texturedLitQuadScreen23Param,
+                0, 4, quadScreen23);
+            sceGxmSetUniformDataF(
+                fragmentUniformBuffer,
+                g_texturedLitGouraudRParam,
+                0, 4, gouraudR);
+            sceGxmSetUniformDataF(
+                fragmentUniformBuffer,
+                g_texturedLitGouraudGParam,
+                0, 4, gouraudG);
+            sceGxmSetUniformDataF(
+                fragmentUniformBuffer,
+                g_texturedLitGouraudBParam,
+                0, 4, gouraudB);
+
+            sceGxmSetFragmentTexture(
+                g_probeContext, 0,
+                &g_basicWingGpuTextures[textureIndex].texture);
+            sceGxmDraw(
+                g_probeContext,
+                SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16,
+                g_basicWingIndices + p * 6u,
+                6);
         }
     } else {
         sceGxmDraw(
