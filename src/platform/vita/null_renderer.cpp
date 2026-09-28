@@ -128,6 +128,9 @@ static float g_viewPitch = 0.0f;
 static float g_viewDistance = 3.0f;
 static int g_viewMode = 0;
 
+// Defined below with the textured-viewer helpers; shutdown() needs it earlier.
+static void freeBasicWingTextures();
+
 static void fill(std::uint32_t color)
 {
     std::uint32_t* buffer = g_frameBuffer[g_drawBuffer];
