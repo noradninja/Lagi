@@ -31,7 +31,7 @@ The following milestones have been verified on hardware:
 
 ## Current renderer milestone
 
-The current branch is bringing up the first native SceGxm model viewer.
+The current branch is bringing up the first native SceGxm model viewer. Its minimal color shaders are vendored as precompiled GXP byte arrays so the project builds with standard VitaSDK and does not require psp2cgc.
 
 Target behavior:
 
