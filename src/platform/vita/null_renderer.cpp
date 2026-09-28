@@ -91,6 +91,7 @@ static bool g_probeDisplayingGxm = false;
 static bool g_viewerReady = false;
 static float g_viewYaw = 0.0f;
 static float g_viewPitch = 0.0f;
+static float g_viewDistance = 3.0f;
 static int g_viewMode = 0;
 
 static void fill(std::uint32_t color)
@@ -602,12 +603,12 @@ static ViewerMat4 buildViewerWvp()
         static_cast<float>(kWidth) / static_cast<float>(kHeight);
     constexpr float kNearZ = 0.10f;
     constexpr float kFarZ = 100.0f;
-    constexpr float kCameraDistance = 3.0f;
+    const float cameraDistance = g_viewDistance;
 
     const ViewerMat4 yaw = viewerRotationY(g_viewYaw);
     const ViewerMat4 pitch = viewerRotationX(g_viewPitch);
     const ViewerMat4 view =
-        viewerTranslation(0.0f, 0.0f, kCameraDistance);
+        viewerTranslation(0.0f, 0.0f, cameraDistance);
     const ViewerMat4 projection =
         viewerPerspective(kFovY, kAspect, kNearZ, kFarZ);
 
@@ -1269,6 +1270,7 @@ bool load_basic_wing_viewer()
 
     g_viewYaw = 0.60f;
     g_viewPitch = -0.30f;
+    g_viewDistance = 3.0f;
     g_viewMode = 0;
     g_basicWingCpuReady = true;
     g_viewerReady = true;
@@ -1287,9 +1289,15 @@ static void renderBasicWingViewer()
     g_viewPitch += input::analog_y() * 0.035f;
     g_viewPitch = std::max(-1.45f, std::min(1.45f, g_viewPitch));
 
+    // Right stick Y dollies the camera without altering FOV.
+    // Pushing up moves closer; pulling down moves farther away.
+    g_viewDistance += input::analog_zoom() * 0.060f;
+    g_viewDistance = std::max(1.4f, std::min(8.0f, g_viewDistance));
+
     if (input::reset_view_pressed()) {
         g_viewYaw = 0.60f;
         g_viewPitch = -0.30f;
+        g_viewDistance = 3.0f;
     }
 
     if (input::prev_mode_pressed() || input::next_mode_pressed())
