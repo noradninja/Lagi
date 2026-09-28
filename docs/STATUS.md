@@ -101,3 +101,5 @@ The framebuffer isolation build booted successfully, confirming the immediate-ex
 - GXM staged probe result: Stage 3 `sceGxmCreateContext()` passed on hardware. Stage 4 now adds only `sceGxmCreateRenderTarget()` at 960x544, single-scene, no multisampling. Color/depth surfaces, shader patching, programs, and scene submission remain disabled.
 
 - GXM staged probe result: Stage 4 render-target creation passed on hardware. Stage 5 now adds a dedicated 960x544 linear A8B8G8R8 color surface, sync object, and tiled S8D24 depth/stencil surface. Shader patching, shader programs, scene begin/end, and draw submission remain disabled.
+
+- GXM staged probe result: Stage 5 color/depth surface setup passed on hardware. Stage 6 now allocates the shader patcher backing buffer plus vertex/fragment USSE pools and calls only `sceGxmShaderPatcherCreate()`. Shader program validation/registration, patched program creation, scene submission, and drawing remain disabled.
