@@ -104,3 +104,5 @@ The first textured Basic Wing renderer uses readable Cg sources at `shaders/text
 After pulling this milestone, rerun `cmake ..` once before building so the generated shader-object rules are added to the existing build directory.
 
 - Shader embedding uses CMake's `CMAKE_OBJCOPY` from the active VitaSDK toolchain rather than requiring `arm-vita-eabi-objcopy` to be present on the Windows shell PATH. This keeps the textured-shader build compatible with the existing VitaSDK CMake configuration.
+
+- Windows VitaSDK's GNU objcopy treats `--input` / `--output` as ambiguous. Shader embedding now uses the canonical BFD flags `-I binary -O elf32-littlearm -B arm`, which are accepted by the bundled `arm-vita-eabi-objcopy.exe`.
