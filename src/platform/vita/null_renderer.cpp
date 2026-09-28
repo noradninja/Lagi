@@ -1615,11 +1615,7 @@ void toggle_debug_console()
 
     sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
     sceGxmSetFragmentProgram(g_probeContext, g_probeFragmentProgram);
-    sceGxmSetCullMode(
-        g_probeContext,
-        culledTexturedLit
-            ? SCE_GXM_CULL_CCW
-            : SCE_GXM_CULL_NONE);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, kWidth - 1, kHeight - 1);
     sceGxmSetFrontDepthFunc(
@@ -1971,7 +1967,11 @@ static void renderBasicWingViewer()
                 : (gouraudDebug
                     ? g_gouraudDebugFragmentProgram
                     : g_probeFragmentProgram)));
-    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetCullMode(
+        g_probeContext,
+        culledTexturedLit
+            ? SCE_GXM_CULL_CCW
+            : SCE_GXM_CULL_NONE);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, kWidth - 1, kHeight - 1);
     const SceGxmDepthFunc depthFunc =
