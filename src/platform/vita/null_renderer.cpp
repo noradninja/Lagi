@@ -22,7 +22,7 @@ static constexpr int kHeight = 544;
 static constexpr int kPitch = 960;
 static constexpr std::size_t kFrameBytes =
     static_cast<std::size_t>(kPitch) * kHeight * sizeof(std::uint32_t);
-static constexpr int kMaxStatus = 20;
+static constexpr int kMaxStatus = 64;
 
 struct StatusLine {
     char text[78];
