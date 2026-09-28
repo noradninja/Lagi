@@ -768,17 +768,17 @@ void begin_frame()
     if (!g_debugVisible)
         return;
 
-    drawText(32, 24, "LAGI - PDS VITA RUNTIME", 0xFFFFFFFFu, 3);
-    drawText(32, 58, "BOOT / INTEGRATION STATUS", 0xFFB0B0B0u, 2);
+    drawText(32, 24, "LAGI - PDS VITA RUNTIME", 0xFFFFFFFFu, 2);
+    drawText(32, 48, "BOOT / INTEGRATION STATUS", 0xFFB0B0B0u, 1);
 
-    int y = 92;
+    int y = 68;
     for (int i = 0; i < g_statusCount; ++i) {
-        drawText(40, y, g_status[i].text, g_status[i].color, 2);
-        y += 22;
+        drawText(40, y, g_status[i].text, g_status[i].color, 1);
+        y += 11;
     }
 
     if (g_azelAlive)
-        drawText(40, y + 8, "TASK LOOP: ACTIVE", 0xFF30E030u, 2);
+        drawText(40, y + 4, "TASK LOOP: ACTIVE", 0xFF30E030u, 1);
 }
 
 void end_frame()
