@@ -3,6 +3,7 @@
 
 #include "lagi/azel_compat.h"
 #include "lagi/disc_image.h"
+#include "lagi/platform.h"
 #include "heap.h"
 #include "task.h"
 #include "VDP1.h"
@@ -27,7 +28,7 @@ sCommonOverlay_data::sCommonOverlay_data()
     m_base = 0x00200000;
 
     if (!lagi::disc::read_file("COMMON.DAT", g_commonDataStorage)) {
-        std::printf("[Common] failed to load COMMON.DAT\n");
+        lagi::platform::logging::writef("[Common] failed to load COMMON.DAT\n");
         return;
     }
 
@@ -81,7 +82,7 @@ sCommonOverlay_data::sCommonOverlay_data()
     for (int i = 0; i < 27; ++i)
         battleActivationList.push_back(readSaturnS8(battleActivationListEA + i));
 
-    std::printf("[Common] loaded %u bytes: %u dragon stats, %u sound configs, %u battle descriptors, %u activation entries\n",
+    lagi::platform::logging::writef("[Common] loaded %u bytes: %u dragon stats, %u sound configs, %u battle descriptors, %u activation entries\n",
                 m_dataSize,
                 static_cast<unsigned>(dragonLevelStats.size()),
                 static_cast<unsigned>(SoundDataTable.size()),
