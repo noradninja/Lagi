@@ -32,6 +32,14 @@ static StatusLine g_status[kMaxStatus]{};
 static int g_statusCount = 0;
 static bool g_gxmProbeAttempted = false;
 static bool g_gxmInitialized = false;
+static SceUID g_probeVdmUid = -1;
+static SceUID g_probeVertexUid = -1;
+static SceUID g_probeFragmentUid = -1;
+static SceUID g_probeFragmentUsseUid = -1;
+static void* g_probeVdm = nullptr;
+static void* g_probeVertex = nullptr;
+static void* g_probeFragment = nullptr;
+static void* g_probeFragmentUsse = nullptr;
 
 static void fill(std::uint32_t color)
 {
@@ -162,6 +170,32 @@ bool init()
 
 void shutdown()
 {
+    if (g_probeFragmentUsseUid >= 0) {
+        void* mem = nullptr;
+        if (sceKernelGetMemBlockBase(g_probeFragmentUsseUid, &mem) >= 0 && mem)
+            sceGxmUnmapFragmentUsseMemory(mem);
+        sceKernelFreeMemBlock(g_probeFragmentUsseUid);
+        g_probeFragmentUsseUid = -1;
+        g_probeFragmentUsse = nullptr;
+    }
+
+    struct ProbeMappedBlock { SceUID* uid; void** ptr; };
+    ProbeMappedBlock mapped[] = {
+        { &g_probeVdmUid, &g_probeVdm },
+        { &g_probeVertexUid, &g_probeVertex },
+        { &g_probeFragmentUid, &g_probeFragment }
+    };
+    for (auto& block : mapped) {
+        if (*block.uid >= 0) {
+            void* mem = nullptr;
+            if (sceKernelGetMemBlockBase(*block.uid, &mem) >= 0 && mem)
+                sceGxmUnmapMemory(mem);
+            sceKernelFreeMemBlock(*block.uid);
+            *block.uid = -1;
+            *block.ptr = nullptr;
+        }
+    }
+
     if (g_gxmInitialized) {
         sceGxmTerminate();
         g_gxmInitialized = false;
@@ -194,10 +228,69 @@ void failure(const char* text)
 void set_azel_alive(bool alive) { g_azelAlive = alive; }
 void set_disc_alive(bool alive) { g_discAlive = alive; }
 
+static unsigned int probeAlign4096(unsigned int size)
+{
+    return (size + 4095u) & ~4095u;
+}
+
+static void* probeGpuAlloc(unsigned int size, unsigned int attribs, SceUID* uid)
+{
+    const unsigned int bytes = probeAlign4096(size);
+    *uid = sceKernelAllocMemBlock(
+        "LagiGxmProbe", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE,
+        bytes, nullptr);
+    if (*uid < 0)
+        return nullptr;
+
+    void* mem = nullptr;
+    if (sceKernelGetMemBlockBase(*uid, &mem) < 0 || !mem) {
+        sceKernelFreeMemBlock(*uid);
+        *uid = -1;
+        return nullptr;
+    }
+
+    if (sceGxmMapMemory(
+            mem, bytes,
+            static_cast<SceGxmMemoryAttribFlags>(attribs)) < 0) {
+        sceKernelFreeMemBlock(*uid);
+        *uid = -1;
+        return nullptr;
+    }
+
+    return mem;
+}
+
+static void* probeFragmentUsseAlloc(
+    unsigned int size, SceUID* uid, unsigned int* offset)
+{
+    const unsigned int bytes = probeAlign4096(size);
+    *uid = sceKernelAllocMemBlock(
+        "LagiGxmProbeUSSE", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE,
+        bytes, nullptr);
+    if (*uid < 0)
+        return nullptr;
+
+    void* mem = nullptr;
+    if (sceKernelGetMemBlockBase(*uid, &mem) < 0 || !mem) {
+        sceKernelFreeMemBlock(*uid);
+        *uid = -1;
+        return nullptr;
+    }
+
+    if (sceGxmMapFragmentUsseMemory(mem, bytes, offset) < 0) {
+        sceKernelFreeMemBlock(*uid);
+        *uid = -1;
+        return nullptr;
+    }
+
+    return mem;
+}
+
 void toggle_debug_console()
 {
-    // Stage 1 native GXM probe: initialize only. Do not create a context,
-    // render target, shader patcher, or submit a scene yet.
+    // Stage 2 native GXM probe: initialize, then allocate/map only the core
+    // ring buffers and fragment-USSE ring required by a context. Do not
+    // create the context or any render/shader resources yet.
     g_debugVisible = true;
 
     if (g_gxmProbeAttempted)
@@ -212,20 +305,42 @@ void toggle_debug_console()
     params.displayQueueCallbackDataSize = 0;
     params.parameterBufferSize = SCE_GXM_DEFAULT_PARAMETER_BUFFER_SIZE;
 
-    const int result = sceGxmInitialize(&params);
-    if (result < 0) {
+    const int initResult = sceGxmInitialize(&params);
+    if (initResult < 0) {
         char line[78];
         std::snprintf(line, sizeof(line), "[FAIL] GXM INIT 0X%08X",
-                      static_cast<unsigned int>(result));
+                      static_cast<unsigned int>(initResult));
         failure(line);
-        std::printf("[GXM] sceGxmInitialize failed: 0x%08X\n",
-                    static_cast<unsigned int>(result));
         return;
     }
 
     g_gxmInitialized = true;
     status("[PASS] GXM INITIALIZE", 0xFF80E0FFu);
-    std::printf("[GXM] sceGxmInitialize passed\n");
+
+    g_probeVdm = probeGpuAlloc(
+        SCE_GXM_DEFAULT_VDM_RING_BUFFER_SIZE,
+        SCE_GXM_MEMORY_ATTRIB_READ, &g_probeVdmUid);
+    g_probeVertex = probeGpuAlloc(
+        SCE_GXM_DEFAULT_VERTEX_RING_BUFFER_SIZE,
+        SCE_GXM_MEMORY_ATTRIB_READ, &g_probeVertexUid);
+    g_probeFragment = probeGpuAlloc(
+        SCE_GXM_DEFAULT_FRAGMENT_RING_BUFFER_SIZE,
+        SCE_GXM_MEMORY_ATTRIB_READ, &g_probeFragmentUid);
+
+    unsigned int fragmentUsseOffset = 0;
+    g_probeFragmentUsse = probeFragmentUsseAlloc(
+        SCE_GXM_DEFAULT_FRAGMENT_USSE_RING_BUFFER_SIZE,
+        &g_probeFragmentUsseUid, &fragmentUsseOffset);
+
+    if (!g_probeVdm || !g_probeVertex || !g_probeFragment ||
+        !g_probeFragmentUsse) {
+        failure("[FAIL] GXM RING MEMORY");
+        std::printf("[GXM] ring/USSE allocation or mapping failed\n");
+        return;
+    }
+
+    status("[PASS] GXM RING MEMORY", 0xFF80E0FFu);
+    std::printf("[GXM] core ring buffers and fragment USSE mapped\n");
 }
 
 bool debug_console_visible()
