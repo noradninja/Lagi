@@ -89,6 +89,7 @@ add_executable(lagi
  src/integration/azel_sound_table_vita.cpp
  src/integration/azel_dragon_common_vita.cpp
  src/integration/azel_hotpoint_vita.cpp
+ ${LAGI_GXM_SHADER_OBJECTS}
 )
 target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
