@@ -12,6 +12,7 @@
 #include "dragonData.h"
 #include "lagi/disc_image.h"
 #include "lagi/debug_mesh.h"
+#include "lagi/platform.h"
 #include <cmath>
 
 sHotpointBundle* readRiderDefinitionSub(sSaturnPtr ptrEA)
@@ -161,7 +162,7 @@ bool loadDragonDataFromCommonVita()
             if (!gDragonAnimData[i].m4[j].empty()) ++animLists;
     }
 
-    std::printf("[Dragon] COMMON data loaded: %u hotpoint bundles, %u animation lists\n",
+    lagi::platform::logging::writef("[Dragon] COMMON data loaded: %u hotpoint bundles, %u animation lists\n",
                 hotpointBundles, animLists);
     return true;
 }
@@ -360,7 +361,7 @@ bool validate_basic_wing_hotpoints(unsigned int* out_bones, unsigned int* out_ho
     if (out_bones) *out_bones = boneCount;
     if (out_hotpoints) *out_hotpoints = hotpointCount;
 
-    std::printf("[Dragon] DRAGON0.MCB hierarchy: %u bones, %u decoded hotpoints\n",
+    lagi::platform::logging::writef("[Dragon] DRAGON0.MCB hierarchy: %u bones, %u decoded hotpoints\n",
                 boneCount, hotpointCount);
     return true;
 }
@@ -397,7 +398,7 @@ bool validate_basic_wing_geometry(unsigned int* out_models,
     if (out_vertices) *out_vertices = totals.vertices;
     if (out_polygons) *out_polygons = totals.polygons;
 
-    std::printf("[Dragon] DRAGON0 geometry: %u models, %u vertices, %u polygons\n",
+    lagi::platform::logging::writef("[Dragon] DRAGON0 geometry: %u models, %u vertices, %u polygons\n",
                 totals.models, totals.vertices, totals.polygons);
     return true;
 }
@@ -719,13 +720,13 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
             ++uniqueTextureDescriptors;
     }
 
-    std::printf("[Dragon] debug mesh built: %u bones, %u models, %u polys, %u triangle vertices\n",
+    lagi::platform::logging::writef("[Dragon] debug mesh built: %u bones, %u models, %u polys, %u triangle vertices\n",
                 boneIndex, out.models, out.polygons,
                 static_cast<unsigned>(out.vertices.size()));
-    std::printf("[Dragon] VDP1 polygon records: %u records, %u unique texture descriptors, %u flipped\n",
+    lagi::platform::logging::writef("[Dragon] VDP1 polygon records: %u records, %u unique texture descriptors, %u flipped\n",
                 static_cast<unsigned>(out.polygonRecords.size()),
                 uniqueTextureDescriptors, flippedPolygons);
-    std::printf("[Dragon] VDP1 texture address span: 0x%X-0x%X; color modes %u/%u/%u/%u/%u/%u/%u/%u\n",
+    lagi::platform::logging::writef("[Dragon] VDP1 texture address span: 0x%X-0x%X; color modes %u/%u/%u/%u/%u/%u/%u/%u\n",
                 minTextureAddress == 0xFFFFFFFFu ? 0u : minTextureAddress,
                 maxTextureEnd,
                 colorModeCounts[0], colorModeCounts[1], colorModeCounts[2],
