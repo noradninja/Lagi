@@ -122,3 +122,7 @@ On hardware, compare viewer mode 0 directly with mode 1. Geometry scale, project
 
 
 For the wing-lighting diagnostic, compare modes 1 and 2 at the same camera angle. If the triangular/inverted-looking wing patches disappear in mode 2, the issue is back-face visibility rather than a mismatch in Saturn quad corner order. If they remain on front-facing surfaces, the next step is to instrument stored-normal direction versus geometric face normal per quad.
+
+## Vita presentation assets
+
+The VPK packages `sce_sys/icon0.png`, `sce_sys/livearea/contents/bg0.png`, `startup.png`, and `template.xml` automatically. No separate asset-copy step is required after pulling the current branch.
