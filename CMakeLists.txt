@@ -42,7 +42,7 @@ if(LAGI_AZEL_PROBE)
  target_compile_definitions(lagi_azel_probe PRIVATE USE_NULL_RENDERER=1 LAGI_PLATFORM_VITA=1)
 
  add_library(lagi_azel_fixedpoint OBJECT
-  extern/Azel/AzelLib/fixedPoint.cpp
+  src/integration/azel_fixedpoint_vita.cpp
  )
  target_include_directories(lagi_azel_fixedpoint PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -53,9 +53,6 @@ if(LAGI_AZEL_PROBE)
   USE_NULL_RENDERER=1
   LAGI_PLATFORM_VITA=1
   SHIPPING_BUILD=1
- )
- target_compile_options(lagi_azel_fixedpoint PRIVATE
-  -include "${CMAKE_CURRENT_SOURCE_DIR}/include/lagi/azel_source_compat.h"
  )
 endif()
 
