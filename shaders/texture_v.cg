@@ -1,0 +1,12 @@
+// Native Lagi textured vertex shader.
+// Based on the simple MIT-licensed libvita2d texture shader interface.
+void main(
+    float3 aPosition,
+    float2 aTexcoord,
+    uniform float4x4 wvp,
+    float4 out vPosition : POSITION,
+    float2 out vTexcoord : TEXCOORD0)
+{
+    vPosition = mul(float4(aPosition, 1.0f), wvp);
+    vTexcoord = aTexcoord;
+}
