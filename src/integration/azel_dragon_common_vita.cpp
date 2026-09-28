@@ -572,7 +572,23 @@ static bool appendModelDebugGeometry(const std::vector<u8>& bundle, u32 modelOff
 
         p += 8;
         if (p + 12 > bundle.size()) return false;
-        const u16 lightingControl = readBE16Raw(base + p);
+
+        // Preserve the six raw words exactly as Azel's sProcessed3dModel
+        // does. The final word is used by Azel's texture path as CMDSIZE.
+        lagi::azel::SaturnPolygonRecord record{};
+        for (int i = 0; i < 4; ++i)
+            record.indices[i] = idx[i];
+        record.lightingControl = readBE16Raw(base + p + 0);
+        record.cmdCtrl = readBE16Raw(base + p + 2);
+        record.cmdPmod = readBE16Raw(base + p + 4);
+        record.cmdColr = readBE16Raw(base + p + 6);
+        record.cmdSrca = readBE16Raw(base + p + 8);
+        record.cmdSize = readBE16Raw(base + p + 10);
+        record.model = modelNumber;
+        record.polygonInModel = localPoly;
+        out.polygonRecords.push_back(record);
+
+        const u16 lightingControl = record.lightingControl;
         p += 12;
 
         switch ((lightingControl >> 8) & 3) {
@@ -665,12 +681,61 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
                            matIdentity(), out, 0))
         return false;
 
+    unsigned uniqueTextureDescriptors = 0;
+    unsigned colorModeCounts[8]{};
+    unsigned flippedPolygons = 0;
+    unsigned minTextureAddress = 0xFFFFFFFFu;
+    unsigned maxTextureEnd = 0;
+
+    for (std::size_t i = 0; i < out.polygonRecords.size(); ++i) {
+        const SaturnPolygonRecord& record = out.polygonRecords[i];
+        ++colorModeCounts[record.colorMode()];
+        if (record.textureFlip() != 0)
+            ++flippedPolygons;
+
+        const unsigned address = record.textureByteAddress();
+        const unsigned width = record.textureWidth();
+        const unsigned height = record.textureHeight();
+        const unsigned colorMode = record.colorMode();
+        const unsigned bytesPerTexture =
+            colorMode <= 1 ? (width * height) / 2 :
+            colorMode == 5 ? width * height * 2 :
+                             width * height;
+        minTextureAddress = std::min(minTextureAddress, address);
+        maxTextureEnd = std::max(maxTextureEnd, address + bytesPerTexture);
+
+        bool seen = false;
+        for (std::size_t j = 0; j < i; ++j) {
+            const SaturnPolygonRecord& other = out.polygonRecords[j];
+            if (record.cmdPmod == other.cmdPmod &&
+                record.cmdColr == other.cmdColr &&
+                record.cmdSrca == other.cmdSrca &&
+                record.cmdSize == other.cmdSize) {
+                seen = true;
+                break;
+            }
+        }
+        if (!seen)
+            ++uniqueTextureDescriptors;
+    }
+
     std::printf("[Dragon] debug mesh built: %u bones, %u models, %u polys, %u triangle vertices\n",
                 boneIndex, out.models, out.polygons,
                 static_cast<unsigned>(out.vertices.size()));
+    std::printf("[Dragon] VDP1 polygon records: %u records, %u unique texture descriptors, %u flipped\n",
+                static_cast<unsigned>(out.polygonRecords.size()),
+                uniqueTextureDescriptors, flippedPolygons);
+    std::printf("[Dragon] VDP1 texture address span: 0x%X-0x%X; color modes %u/%u/%u/%u/%u/%u/%u/%u\n",
+                minTextureAddress == 0xFFFFFFFFu ? 0u : minTextureAddress,
+                maxTextureEnd,
+                colorModeCounts[0], colorModeCounts[1], colorModeCounts[2],
+                colorModeCounts[3], colorModeCounts[4], colorModeCounts[5],
+                colorModeCounts[6], colorModeCounts[7]);
 
     return boneIndex == 31 && out.models == 31 &&
-           out.polygons == 212 && out.vertices.size() == 212u * 6u;
+           out.polygons == 212 &&
+           out.polygonRecords.size() == out.polygons &&
+           out.vertices.size() == 212u * 6u;
 }
 
 } // namespace lagi::azel
