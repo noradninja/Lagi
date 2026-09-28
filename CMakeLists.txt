@@ -24,9 +24,16 @@ add_executable(lagi
  src/platform/vita/vita_filesystem.cpp
  src/platform/vita/null_renderer.cpp
  src/platform/vita/null_audio.cpp
+ src/integration/azel_runtime_smoke.cpp
+ src/integration/azel_fixedpoint_vita.cpp
+ src/integration/azel_heap_vita.cpp
+ src/integration/azel_task_vita.cpp
 )
-target_include_directories(lagi PRIVATE include)
-target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NULL_RENDERER=1 LAGI_NULL_AUDIO=1 USE_NULL_RENDERER=1)
+target_include_directories(lagi PRIVATE include
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
+)
+target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NULL_RENDERER=1 LAGI_NULL_AUDIO=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1)
 target_link_libraries(lagi SceCtrl_stub SceDisplay_stub SceKernelThreadMgr_stub SceSysmodule_stub)
 
 if(LAGI_AZEL_PROBE)
