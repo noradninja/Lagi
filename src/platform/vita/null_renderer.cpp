@@ -3,6 +3,7 @@
 #include <psp2/display.h>
 #include <psp2/kernel/sysmem.h>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <cctype>
 
@@ -20,8 +21,9 @@ struct StatusLine {
     std::uint32_t color;
 };
 
-static SceUID g_frameMem = -1;
-static std::uint32_t* g_frameBuffer = nullptr;
+static SceUID g_frameMem[2] = { -1, -1 };
+static std::uint32_t* g_frameBuffer[2] = { nullptr, nullptr };
+static int g_drawBuffer = 0;
 static bool g_azelAlive = false;
 static bool g_discAlive = false;
 static StatusLine g_status[kMaxStatus]{};
@@ -29,9 +31,10 @@ static int g_statusCount = 0;
 
 static void fill(std::uint32_t color)
 {
-    if (!g_frameBuffer) return;
+    std::uint32_t* buffer = g_frameBuffer[g_drawBuffer];
+    if (!buffer) return;
     for (int y = 0; y < kHeight; ++y) {
-        std::uint32_t* row = g_frameBuffer + y * kPitch;
+        std::uint32_t* row = buffer + y * kPitch;
         for (int x = 0; x < kWidth; ++x) row[x] = color;
     }
 }
@@ -86,7 +89,8 @@ static void drawChar(int x, int y, char c, std::uint32_t color, int scale = 2)
                 if (py < 0 || py >= kHeight) continue;
                 for (int sx = 0; sx < scale; ++sx) {
                     const int px = x + gx * scale + sx;
-                    if (px >= 0 && px < kWidth) g_frameBuffer[py * kPitch + px] = color;
+                    if (px >= 0 && px < kWidth)
+                        g_frameBuffer[g_drawBuffer][py * kPitch + px] = color;
                 }
             }
         }
@@ -107,37 +111,53 @@ static void drawText(int x, int y, const char* text, std::uint32_t color, int sc
 bool init()
 {
     const std::size_t allocSize = (kFrameBytes + 0x3FFFFu) & ~0x3FFFFu;
-    g_frameMem = sceKernelAllocMemBlock(
-        "LagiFramebuffer", SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, allocSize, nullptr);
-    if (g_frameMem < 0) return false;
 
-    void* base = nullptr;
-    if (sceKernelGetMemBlockBase(g_frameMem, &base) < 0 || !base) {
-        sceKernelFreeMemBlock(g_frameMem);
-        g_frameMem = -1;
-        return false;
+    for (int i = 0; i < 2; ++i) {
+        char name[32];
+        std::snprintf(name, sizeof(name), "LagiFramebuffer%d", i);
+        g_frameMem[i] = sceKernelAllocMemBlock(
+            name, SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, allocSize, nullptr);
+        if (g_frameMem[i] < 0) {
+            shutdown();
+            return false;
+        }
+
+        void* base = nullptr;
+        if (sceKernelGetMemBlockBase(g_frameMem[i], &base) < 0 || !base) {
+            shutdown();
+            return false;
+        }
+        g_frameBuffer[i] = static_cast<std::uint32_t*>(base);
     }
 
-    g_frameBuffer = static_cast<std::uint32_t*>(base);
-    fill(0xFF181818u);
+    for (int i = 0; i < 2; ++i) {
+        g_drawBuffer = i;
+        fill(0xFF181818u);
+    }
+    g_drawBuffer = 0;
 
     SceDisplayFrameBuf fb{};
     fb.size = sizeof(fb);
-    fb.base = g_frameBuffer;
+    fb.base = g_frameBuffer[0];
     fb.pitch = kPitch;
     fb.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
     fb.width = kWidth;
     fb.height = kHeight;
-    return sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME) >= 0;
+
+    // Establish a known front buffer immediately.
+    return sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_IMMEDIATE) >= 0;
 }
 
 void shutdown()
 {
-    if (g_frameMem >= 0) {
-        sceKernelFreeMemBlock(g_frameMem);
-        g_frameMem = -1;
+    for (int i = 0; i < 2; ++i) {
+        if (g_frameMem[i] >= 0) {
+            sceKernelFreeMemBlock(g_frameMem[i]);
+            g_frameMem[i] = -1;
+        }
+        g_frameBuffer[i] = nullptr;
     }
-    g_frameBuffer = nullptr;
+    g_drawBuffer = 0;
 }
 
 void status(const char* text, unsigned int color)
@@ -175,7 +195,19 @@ void begin_frame()
 
 void end_frame()
 {
+    SceDisplayFrameBuf fb{};
+    fb.size = sizeof(fb);
+    fb.base = g_frameBuffer[g_drawBuffer];
+    fb.pitch = kPitch;
+    fb.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
+    fb.width = kWidth;
+    fb.height = kHeight;
+
+    // Queue the fully rendered back buffer for the next scanout, then wait
+    // for vblank before switching which buffer the CPU draws into.
+    sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
     sceDisplayWaitVblankStart();
+    g_drawBuffer ^= 1;
 }
 
 } // namespace lagi::platform::renderer
