@@ -186,3 +186,8 @@ The framebuffer isolation build booted successfully, confirming the immediate-ex
 
 
 - Viewer culling consistency: hardware established CW as the correct effective front-face winding for Lagi's current GXM projection path. All solid Basic Wing viewer modes now use `SCE_GXM_CULL_CW`: textured baseline, textured RGB555 Gouraud, grayscale RGB555 diagnostic, and polygon debug colors. Wireframe intentionally remains `SCE_GXM_CULL_NONE` so hidden/back-facing edges remain visible for geometry debugging. This makes mode changes compare shading/material state without also changing which solid faces are visible.
+
+
+- Final RGB555 output quantization: the textured RGB555 Gouraud path now performs its final VDP1-style color calculation explicitly in 5-bit channel space. The decoded texture is converted back to integer-like 0..31 RGB, the bilinearly interpolated signed Gouraud offset is added in that domain, the result is clamped to 0..31, then rounded to a discrete 5-bit value before expanding to the Vita's RGBA8888 render target. This preserves the original quad-wide Gouraud gradient while restoring the visible Saturn lighting/color banding that was previously lost when the interpolated result remained floating point through final output.
+
+- The grayscale Gouraud diagnostic now applies the same post-interpolation 5-bit quantization before converting the RGB result to gray, making the 32-level stepping directly visible and suitable for verifying the Saturn-style banding independently of texture color.
