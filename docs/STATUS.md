@@ -95,3 +95,5 @@ The framebuffer isolation build booted successfully, confirming the immediate-ex
 - GXM staged probe result: Stage 1 `sceGxmInitialize()` passed on hardware. Stage 2 now tests allocation/mapping of the VDM, vertex, fragment, and fragment-USSE ring buffers only. No GXM context, render target, surfaces, shaders, or scene submission are created yet.
 
 - GXM staged probe result: Stage 2 ring-buffer and fragment-USSE allocation/mapping passed on hardware. Stage 3 now creates only the `SceGxmContext` using those proven buffers. No render target, color/depth surfaces, shader patcher, programs, or scene submission are involved yet.
+
+- Stage 3 build fix: added the standard `<cstdlib>` header required for `std::malloc` / `std::free` used by the GXM context host-memory probe.
