@@ -1,12 +1,16 @@
 // Compile-only probe for Azel's foundational engine types on VitaSDK.
 //
-// Do not include upstream PDS.h here: it is Azel's desktop umbrella/PCH and
-// imports SDL3, BGFX, SoLoud, ImGui and Tracy. Lagi supplies the portable
-// definitions those core headers actually require.
+// Upstream PDS.h establishes this dependency order but also imports the
+// desktop renderer/audio/debug stack. Reproduce only the portable core here.
+
+#define SHIPPING_BUILD 1
 
 #include "lagi/azel_compat.h"
-#include "common.h"
+#include "heap.h"
 #include "task.h"
+#include "VDP1.h"
+#include "VDP2.h"
+#include "common.h"
 
 namespace lagi::azel_probe {
 
@@ -21,8 +25,14 @@ void compile_probe()
     fixedPoint zero(0);
     sVec3_FP origin;
     origin.zeroize();
+
+    s_task task;
+    sVdp2Controls controls{};
+
     (void)zero;
     (void)origin;
+    (void)task;
+    (void)controls;
 }
 
 } // namespace lagi::azel_probe
