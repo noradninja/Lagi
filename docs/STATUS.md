@@ -77,3 +77,5 @@ Lagi is moving toward a native SceGxm renderer rather than VitaGL. The long-term
 ## Compatibility notes
 
 - VitaSDK GXM API compatibility: GPU mapping helpers now use `SceGxmMemoryAttribFlags` directly, and the default clip/viewport call supplies explicit `959, 543` bounds for the 960x544 render target.
+
+- C++20/VitaSDK enum compatibility: the GPU allocation helper accepts combined GXM memory attribute masks as an integer and performs the enum cast only at `sceGxmMapMemory()`, avoiding strict-enum failures from bitwise OR expressions.
