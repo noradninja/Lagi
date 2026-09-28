@@ -2134,11 +2134,14 @@ static void renderBasicWingViewer()
                 : (gouraudDebug
                     ? g_gouraudDebugFragmentProgram
                     : g_probeFragmentProgram)));
+    const bool wireframe =
+        g_viewMode == 4;
+
     sceGxmSetCullMode(
         g_probeContext,
-        (texturedLit || gouraudDebug)
-            ? SCE_GXM_CULL_CW
-            : SCE_GXM_CULL_NONE);
+        wireframe
+            ? SCE_GXM_CULL_NONE
+            : SCE_GXM_CULL_CW);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, kWidth - 1, kHeight - 1);
     const SceGxmDepthFunc depthFunc =
