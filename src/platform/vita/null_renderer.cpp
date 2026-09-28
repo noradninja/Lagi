@@ -16,6 +16,7 @@ static constexpr std::size_t kFrameBytes =
 static SceUID g_frameMem = -1;
 static std::uint32_t* g_frameBuffer = nullptr;
 static bool g_azelAlive = false;
+static bool g_discAlive = false;
 
 static void fill(std::uint32_t color)
 {
@@ -77,11 +78,20 @@ void set_azel_alive(bool alive)
     g_azelAlive = alive;
 }
 
+void set_disc_alive(bool alive)
+{
+    g_discAlive = alive;
+}
+
 void begin_frame()
 {
     // Blue means the platform/framebuffer path is alive.
     // Green means Azel's task scheduler has completed Update + Draw.
-    fill(g_azelAlive ? 0xFF00A000u : 0xFF400000u);
+    // Cyan means the real PDS disc image mounted and COMMON.DAT was decoded.
+    if (g_discAlive)
+        fill(0xFFA08000u);
+    else
+        fill(g_azelAlive ? 0xFF00A000u : 0xFF400000u);
 }
 
 void end_frame()
