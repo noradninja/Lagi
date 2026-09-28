@@ -9,6 +9,7 @@
 #include "VDP2.h"
 #include "common.h"
 #include "commonOverlay.h"
+#include "audio/soundDataTable.h"
 
 sCommonOverlay_data* gCommonFile = nullptr;
 
@@ -54,6 +55,8 @@ sCommonOverlay_data::sCommonOverlay_data()
         dragonLevelStats.push_back(entry);
     }
 
+    soundDataTableInit();
+
     // Exact Azel commonOverlay.cpp layout: battle overlay descriptors.
     sSaturnPtr battleOverlaySetupEA = getSaturnPtr(0x002005DC);
     for (int i = 0; i < 27; ++i) {
@@ -78,9 +81,10 @@ sCommonOverlay_data::sCommonOverlay_data()
     for (int i = 0; i < 27; ++i)
         battleActivationList.push_back(readSaturnS8(battleActivationListEA + i));
 
-    std::printf("[Common] loaded %u bytes: %u dragon stats, %u battle descriptors, %u activation entries\n",
+    std::printf("[Common] loaded %u bytes: %u dragon stats, %u sound configs, %u battle descriptors, %u activation entries\n",
                 m_dataSize,
                 static_cast<unsigned>(dragonLevelStats.size()),
+                static_cast<unsigned>(SoundDataTable.size()),
                 static_cast<unsigned>(battleOverlaySetup.size()),
                 static_cast<unsigned>(battleActivationList.size()));
 }
