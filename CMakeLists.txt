@@ -35,6 +35,7 @@ if(LAGI_AZEL_PROBE)
  endif()
  add_library(lagi_azel_probe OBJECT src/integration/azel_probe.cpp)
  target_include_directories(lagi_azel_probe PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
   "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
  )
