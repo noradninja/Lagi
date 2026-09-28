@@ -71,11 +71,10 @@ Current development controls:
 - Triangle: reset viewer rotation.
 - L / R: cycle viewer mode:
   - 0: textured baseline
-  - 1: textured + diagnostic Gouraud lighting, two-sided
-  - 2: textured + diagnostic Gouraud lighting, CCW culled
-  - 3: Gouraud grayscale diagnostic
-  - 4: polygon debug colors
-  - 5: wireframe
+  - 1: textured + RGB555 Gouraud lighting, CW culled
+  - 2: Gouraud grayscale diagnostic
+  - 3: polygon debug colors
+  - 4: wireframe
 
 These controls are development-only and may change as the real Saturn input layer comes online.
 
@@ -138,3 +137,6 @@ Compare textured baseline mode 0 against lit modes 1/2. On the wings, the previo
 
 
 For the current wing-winding test, viewer mode 2 uses CW culling. Compare it against mode 1 at the same camera angle. If the correct wing membrane faces remain visible and the inverted-looking flats disappear, CW is the effective front-face winding for Lagi's current GXM projection path and can replace the temporary diagnostic.
+
+
+CW culling is now the hardware-validated default for the textured Saturn lighting path. The earlier two-sided/culling comparison mode is no longer part of the normal viewer cycle.
