@@ -1487,6 +1487,31 @@ void toggle_debug_console()
     }
     g_gouraudDebugFragmentRegistered = true;
 
+    g_gouraudDebugQuadScreen01Param =
+        sceGxmProgramFindParameterByName(
+            gouraudDebugFragmentGxp, "quadScreen01");
+    g_gouraudDebugQuadScreen23Param =
+        sceGxmProgramFindParameterByName(
+            gouraudDebugFragmentGxp, "quadScreen23");
+    g_gouraudDebugGouraudRParam =
+        sceGxmProgramFindParameterByName(
+            gouraudDebugFragmentGxp, "gouraudR");
+    g_gouraudDebugGouraudGParam =
+        sceGxmProgramFindParameterByName(
+            gouraudDebugFragmentGxp, "gouraudG");
+    g_gouraudDebugGouraudBParam =
+        sceGxmProgramFindParameterByName(
+            gouraudDebugFragmentGxp, "gouraudB");
+
+    if (!g_gouraudDebugQuadScreen01Param ||
+        !g_gouraudDebugQuadScreen23Param ||
+        !g_gouraudDebugGouraudRParam ||
+        !g_gouraudDebugGouraudGParam ||
+        !g_gouraudDebugGouraudBParam) {
+        failure("[FAIL] GOURAUD DEBUG FP PARAMS");
+        return;
+    }
+
     if (sceGxmShaderPatcherCreateFragmentProgram(
             g_probeShaderPatcher,
             g_gouraudDebugFragmentProgramId,
