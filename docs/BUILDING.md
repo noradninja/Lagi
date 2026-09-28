@@ -71,10 +71,11 @@ Current development controls:
 - Triangle: reset viewer rotation.
 - L / R: cycle viewer mode:
   - 0: textured baseline
-  - 1: textured + diagnostic Gouraud lighting
-  - 2: Gouraud grayscale diagnostic
-  - 3: polygon debug colors
-  - 4: wireframe
+  - 1: textured + diagnostic Gouraud lighting, two-sided
+  - 2: textured + diagnostic Gouraud lighting, CCW culled
+  - 3: Gouraud grayscale diagnostic
+  - 4: polygon debug colors
+  - 5: wireframe
 
 These controls are development-only and may change as the real Saturn input layer comes online.
 
@@ -118,3 +119,6 @@ After pulling this milestone, rerun `cmake ..` once before building so the gener
 After pulling the current milestone, rerun `cmake ..` once because two additional Cg shaders are generated and embedded. A successful build should show compilation/embedding steps for `textured_lit_v.cg` and `textured_lit_f.cg`.
 
 On hardware, compare viewer mode 0 directly with mode 1. Geometry scale, projection, UV orientation, transparency cutout, and texture selection should remain identical. Only the interpolated lighting modulation should change. The main visual inspection targets are the broad wing surfaces, diagonal interpolation across the two-triangle Saturn-quad split, and seams between hierarchy/model sections.
+
+
+For the wing-lighting diagnostic, compare modes 1 and 2 at the same camera angle. If the triangular/inverted-looking wing patches disappear in mode 2, the issue is back-face visibility rather than a mismatch in Saturn quad corner order. If they remain on front-facing surfaces, the next step is to instrument stored-normal direction versus geometric face normal per quad.
