@@ -28,8 +28,56 @@ struct SmokeTask final : s_workAreaTemplate<SmokeTask>
 
 static SmokeTask* gSmokeTask = nullptr;
 
+static bool saturn_memory_smoke_test()
+{
+    constexpr u32 base = 0x06054000;
+    u8 data[40] = {};
+
+    data[0] = 0x12; data[1] = 0x34;
+    data[4] = 0x00; data[5] = 0x01; data[6] = 0x00; data[7] = 0x00;
+    data[8] = 'A'; data[9] = 'Z'; data[10] = 'E'; data[11] = 'L'; data[12] = 0;
+
+    const u32 target = base + 24;
+    data[16] = static_cast<u8>(target >> 24);
+    data[17] = static_cast<u8>(target >> 16);
+    data[18] = static_cast<u8>(target >> 8);
+    data[19] = static_cast<u8>(target);
+
+    const s32 vec[3] = { 0x00010000, -0x00020000, 0x00008000 };
+    for (int i = 0; i < 3; ++i) {
+        const u32 v = static_cast<u32>(vec[i]);
+        data[24 + i * 4 + 0] = static_cast<u8>(v >> 24);
+        data[24 + i * 4 + 1] = static_cast<u8>(v >> 16);
+        data[24 + i * 4 + 2] = static_cast<u8>(v >> 8);
+        data[24 + i * 4 + 3] = static_cast<u8>(v);
+    }
+
+    sSaturnMemoryFile file;
+    file.m_name = "Lagi synthetic Saturn block";
+    file.m_data = data;
+    file.m_dataSize = sizeof(data);
+    file.m_base = base;
+
+    const sSaturnPtr root = file.getSaturnPtr(base);
+    if (readSaturnU16(root) != 0x1234) return false;
+    if (readSaturnFP(root + 4).asS32() != 0x00010000) return false;
+    if (readSaturnString(root + 8) != "AZEL") return false;
+
+    const sSaturnPtr ea = readSaturnEA(root + 16);
+    const sVec3_FP v = readSaturnVec3(ea);
+    return v[0].asS32() == vec[0] &&
+           v[1].asS32() == vec[1] &&
+           v[2].asS32() == vec[2];
+}
+
 bool runtime_smoke_init()
 {
+    if (!saturn_memory_smoke_test()) {
+        std::printf("[Azel] Saturn memory reader smoke test FAILED\n");
+        return false;
+    }
+    std::printf("[Azel] Saturn memory reader smoke test passed\n");
+
     initHeap();
     resetTasks();
     gSmokeTask = createRootTask<SmokeTask>();
