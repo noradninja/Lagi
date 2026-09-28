@@ -88,3 +88,11 @@ A healthy current build should progress through PASS entries for:
 - GXM Basic Wing viewer readiness
 - Azel root task
 - active task loop
+
+## Runtime log
+
+Each Vita launch creates a fresh persistent runtime log at:
+
+`ux0:data/lagi/lagi.log`
+
+The file is truncated on startup and flushed after each logged message. After a hardware test, exit Lagi and retrieve/open `lagi.log` with VitaShell. The log currently includes platform startup, COMMON.DAT loading, dragon hierarchy/geometry validation, and Basic Wing VDP1 polygon/texture descriptor diagnostics.
