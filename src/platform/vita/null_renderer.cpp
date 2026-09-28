@@ -97,15 +97,16 @@ static SceGxmShaderPatcherId g_gouraudDebugFragmentProgramId{};
 static bool g_gouraudDebugFragmentRegistered = false;
 static SceGxmFragmentProgram* g_gouraudDebugFragmentProgram = nullptr;
 
-static SceGxmShaderPatcherId g_texturedLitVertexProgramId{};
 static SceGxmShaderPatcherId g_texturedLitFragmentProgramId{};
-static bool g_texturedLitVertexRegistered = false;
 static bool g_texturedLitFragmentRegistered = false;
-static SceGxmVertexProgram* g_texturedLitVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_texturedLitFragmentProgram = nullptr;
 
 static const SceGxmProgramParameter* g_textureWvpParam = nullptr;
-static const SceGxmProgramParameter* g_texturedLitWvpParam = nullptr;
+static const SceGxmProgramParameter* g_texturedLitQuadScreen01Param = nullptr;
+static const SceGxmProgramParameter* g_texturedLitQuadScreen23Param = nullptr;
+static const SceGxmProgramParameter* g_texturedLitGouraudRParam = nullptr;
+static const SceGxmProgramParameter* g_texturedLitGouraudGParam = nullptr;
+static const SceGxmProgramParameter* g_texturedLitGouraudBParam = nullptr;
 static bool g_probeScenePassed = false;
 static azel::BasicWingDebugMesh g_basicWingCpuMesh{};
 static bool g_basicWingCpuReady = false;
@@ -118,11 +119,9 @@ static std::uint16_t* g_basicWingIndices = nullptr;
 
 static SceUID g_basicWingTextureVertexUid = -1;
 static SceUID g_basicWingGouraudVertexUid = -1;
-static SceUID g_basicWingLitVertexUid = -1;
 static SceUID g_basicWingTextureIndexUid = -1;
 static azel::DebugTextureVertex* g_basicWingTextureVertices = nullptr;
 static azel::DebugTextureVertex* g_basicWingGouraudVertices = nullptr;
-static azel::DebugTexturedLitVertex* g_basicWingLitVertices = nullptr;
 static std::uint16_t* g_basicWingTextureIndices = nullptr;
 
 struct TextureBatch {
@@ -308,9 +307,6 @@ void shutdown()
     void* gouraudVertexPtr = g_basicWingGouraudVertices;
     freeSimpleMappedProbe(g_basicWingGouraudVertexUid, gouraudVertexPtr);
     g_basicWingGouraudVertices = nullptr;
-    void* litVertexPtr = g_basicWingLitVertices;
-    freeSimpleMappedProbe(g_basicWingLitVertexUid, litVertexPtr);
-    g_basicWingLitVertices = nullptr;
     void* textureIndexPtr = g_basicWingTextureIndices;
     freeSimpleMappedProbe(g_basicWingTextureIndexUid, textureIndexPtr);
     g_basicWingTextureIndices = nullptr;
@@ -321,11 +317,6 @@ void shutdown()
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_texturedLitFragmentProgram);
             g_texturedLitFragmentProgram = nullptr;
-        }
-        if (g_texturedLitVertexProgram) {
-            sceGxmShaderPatcherReleaseVertexProgram(
-                g_probeShaderPatcher, g_texturedLitVertexProgram);
-            g_texturedLitVertexProgram = nullptr;
         }
         if (g_gouraudDebugFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
@@ -346,11 +337,6 @@ void shutdown()
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_texturedLitFragmentProgramId);
             g_texturedLitFragmentRegistered = false;
-        }
-        if (g_texturedLitVertexRegistered) {
-            sceGxmShaderPatcherUnregisterProgram(
-                g_probeShaderPatcher, g_texturedLitVertexProgramId);
-            g_texturedLitVertexRegistered = false;
         }
         if (g_gouraudDebugFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -736,8 +722,6 @@ static bool buildBasicWingTexturedBuffers()
 
     const unsigned int vertexBytes =
         vertexCount * sizeof(azel::DebugTextureVertex);
-    const unsigned int litVertexBytes =
-        vertexCount * sizeof(azel::DebugTexturedLitVertex);
     const unsigned int indexBytes =
         vertexCount * sizeof(std::uint16_t);
 
@@ -753,12 +737,6 @@ static bool buildBasicWingTexturedBuffers()
                 vertexBytes,
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_basicWingGouraudVertexUid));
-    g_basicWingLitVertices =
-        static_cast<azel::DebugTexturedLitVertex*>(
-            probeGpuAlloc(
-                litVertexBytes,
-                SCE_GXM_MEMORY_ATTRIB_READ,
-                &g_basicWingLitVertexUid));
     g_basicWingTextureIndices =
         static_cast<std::uint16_t*>(
             probeGpuAlloc(
@@ -768,7 +746,6 @@ static bool buildBasicWingTexturedBuffers()
 
     if (!g_basicWingTextureVertices ||
         !g_basicWingGouraudVertices ||
-        !g_basicWingLitVertices ||
         !g_basicWingTextureIndices)
         return false;
 
@@ -833,11 +810,6 @@ static bool buildBasicWingTexturedBuffers()
             g_basicWingGouraudVertices[vertexIndex] = {
                 source.x, source.y, source.z,
                 shade, 0.0f
-            };
-            g_basicWingLitVertices[vertexIndex] = {
-                source.x, source.y, source.z,
-                uv[corner][0], uv[corner][1],
-                shade
             };
         }
     }
