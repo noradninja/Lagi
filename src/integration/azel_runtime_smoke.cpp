@@ -151,6 +151,13 @@ bool runtime_smoke_init()
                   dragonModels, dragonVertices, dragonPolygons);
     lagi::platform::renderer::status(geometryStatus, 0xFFC080FFu);
 
+    if (!lagi::platform::renderer::load_basic_wing_viewer()) {
+        std::printf("[GXM] Basic Wing viewer initialization FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] GXM BASIC WING VIEWER");
+        return false;
+    }
+    lagi::platform::renderer::status("[PASS] GXM BASIC WING VIEWER READY", 0xFF80E0FFu);
+
     lagi::platform::renderer::set_disc_alive(true);
 
     initHeap();
