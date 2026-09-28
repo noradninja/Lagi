@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -757,8 +758,8 @@ static void drawViewer()
 
     sceGxmSetVertexProgram(g_context, g_vertexProgram);
     sceGxmSetFragmentProgram(g_context, g_fragmentProgram);
-    sceGxmSetFrontCullMode(g_context, SCE_GXM_CULL_NONE);
-    sceGxmSetBackCullMode(g_context, SCE_GXM_CULL_NONE);
+    sceGxmSetCullMode(g_context, SCE_GXM_CULL_NONE);
+    sceGxmSetDefaultRegionClipAndViewport(g_context);
     sceGxmSetFrontDepthFunc(g_context, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
     sceGxmSetBackDepthFunc(g_context, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
     sceGxmSetFrontDepthWriteEnable(g_context, SCE_GXM_DEPTH_WRITE_ENABLED);
