@@ -1167,7 +1167,14 @@ static void renderBasicWingViewer()
         dst = src;
         dst.x = x1;
         dst.y = y1;
-        dst.z = z2;
+
+        // The debug viewer intentionally uses an identity WVP, so these
+        // positions are already clip-space coordinates. Vita GXM depth is
+        // happiest when the visible geometry remains in the positive
+        // normalized depth interval. Center rotated model depth around 0.5
+        // rather than around zero so free rotation cannot drive half of the
+        // dragon through the near clip boundary.
+        dst.z = 0.5f + z2 * 0.45f;
     }
 
     constexpr int gxmPitch = 1024;
