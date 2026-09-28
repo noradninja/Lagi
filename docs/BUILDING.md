@@ -7,7 +7,6 @@
 - CMake.
 - Ninja is recommended.
 - VitaSDK ARM toolchain.
-- `psp2cgc` for native SceGxm shader compilation.
 
 The current hardware development environment uses Ninja and the VitaSDK CMake toolchain.
 
@@ -36,24 +35,11 @@ cmake ..
 cmake --build . -j 8
 ```
 
-## GXM shader compiler
+## GXM shaders
 
-The native GXM viewer compiles Cg shaders to Vita GXP programs during the CMake build.
+The current native GXM debug-view shaders are checked into the source tree as precompiled GXP byte arrays. A normal VitaSDK installation is sufficient; `psp2cgc` is **not** required.
 
-CMake first looks for `psp2cgc` / `psp2cgc.exe` on `PATH`. If it is installed elsewhere, set:
-
-```powershell
-$env:PSP2CGC = "C:\path\to\psp2cgc.exe"
-```
-
-Then rerun:
-
-```powershell
-cmake ..
-cmake --build . -j 8
-```
-
-The compiled `.gxp` files are embedded into the Vita executable as binary objects.
+The readable Cg shader sources remain under `shaders/` as reference for future shader development. If those shaders change later, the vendored GXP data must be regenerated separately before committing.
 
 ## Game data
 
