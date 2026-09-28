@@ -54,7 +54,7 @@ SELECT is reserved for Lagi's debug UI because the Sega Saturn controller has no
 
 ## Rendering direction
 
-Lagi is moving toward a native SceGxm renderer rather than VitaGL. The long-term renderer should translate reconstructed VDP1/VDP2 intent directly to the Vita GPU while preserving important Saturn presentation behavior, including:
+Lagi is moving toward a native SceGxm renderer rather than VitaGL. The long-term renderer should translate reconstructed VDP1/VDP2 intent directly to the Vita GPU while preserving important Saturn presentation behavior. Resolution is the intentional exception: final rendering targets the Vita's native 960x544 framebuffer rather than the Saturn's lower native resolutions. Preserved behaviors include:
 
 - low color precision / RGB555-style quantization,
 - Gouraud shading semantics,
@@ -62,7 +62,7 @@ Lagi is moving toward a native SceGxm renderer rather than VitaGL. The long-term
 - mesh transparency,
 - half-transparency behavior,
 - VDP2 layer/color calculation,
-- Saturn-resolution presentation and scaling.
+- native Vita 960x544 presentation rather than Saturn-resolution rendering.
 
 ## Next milestones
 
