@@ -1,6 +1,7 @@
 #include "lagi/platform.h"
 
 #include <psp2/display.h>
+#include <psp2/gxm.h>
 #include <psp2/kernel/sysmem.h>
 #include <cstdint>
 #include <cstdio>
@@ -29,6 +30,8 @@ static bool g_discAlive = false;
 static bool g_debugVisible = true;
 static StatusLine g_status[kMaxStatus]{};
 static int g_statusCount = 0;
+static bool g_gxmProbeAttempted = false;
+static bool g_gxmInitialized = false;
 
 static void fill(std::uint32_t color)
 {
@@ -159,6 +162,11 @@ bool init()
 
 void shutdown()
 {
+    if (g_gxmInitialized) {
+        sceGxmTerminate();
+        g_gxmInitialized = false;
+    }
+
     for (int i = 0; i < 2; ++i) {
         if (g_frameMem[i] >= 0) {
             sceKernelFreeMemBlock(g_frameMem[i]);
@@ -188,9 +196,36 @@ void set_disc_alive(bool alive) { g_discAlive = alive; }
 
 void toggle_debug_console()
 {
-    // GXM viewer is temporarily disabled while startup is re-baselined.
-    // Keep the proven framebuffer console visible.
+    // Stage 1 native GXM probe: initialize only. Do not create a context,
+    // render target, shader patcher, or submit a scene yet.
     g_debugVisible = true;
+
+    if (g_gxmProbeAttempted)
+        return;
+
+    g_gxmProbeAttempted = true;
+
+    SceGxmInitializeParams params{};
+    params.flags = 0;
+    params.displayQueueMaxPendingCount = 1;
+    params.displayQueueCallback = nullptr;
+    params.displayQueueCallbackDataSize = 0;
+    params.parameterBufferSize = SCE_GXM_DEFAULT_PARAMETER_BUFFER_SIZE;
+
+    const int result = sceGxmInitialize(&params);
+    if (result < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM INIT 0X%08X",
+                      static_cast<unsigned int>(result));
+        failure(line);
+        std::printf("[GXM] sceGxmInitialize failed: 0x%08X\n",
+                    static_cast<unsigned int>(result));
+        return;
+    }
+
+    g_gxmInitialized = true;
+    status("[PASS] GXM INITIALIZE", 0xFF80E0FFu);
+    std::printf("[GXM] sceGxmInitialize passed\n");
 }
 
 bool debug_console_visible()
