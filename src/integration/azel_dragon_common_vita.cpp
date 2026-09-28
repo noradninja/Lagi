@@ -687,6 +687,7 @@ static bool appendModelDebugGeometry(const std::vector<u8>& bundle, u32 modelOff
         const FVec3 debugLight =
             normalizeDirection({0.35f, -0.55f, 0.76f});
         std::uint8_t cornerShade[4] = {64, 64, 64, 64};
+        lagi::azel::SaturnGouraud555Quad gouraud555{};
 
         if (record.lightingMode() == 3 && record.lightingCount == 4) {
             for (int corner = 0; corner < 4; ++corner) {
@@ -705,19 +706,38 @@ static bool appendModelDebugGeometry(const std::vector<u8>& bundle, u32 modelOff
                 signedDot =
                     std::max(-1.0f, std::min(1.0f, signedDot));
 
-                // Diagnostic mapping, not final Lambert lighting:
-                //   -1 -> 35% gray
-                //    0 -> 67.5% gray
-                //   +1 -> 100% white
-                // Keeping even fully back-facing normals visible prevents
-                // black-on-black silhouette loss from looking like a scale
-                // change, while preserving the sign of the normal/light dot.
+                // Keep the existing grayscale diagnostic unchanged.
                 const float signed01 = signedDot * 0.5f + 0.5f;
                 const float level = 0.35f + signed01 * 0.65f;
                 cornerShade[corner] =
                     static_cast<std::uint8_t>(level * 255.0f + 0.5f);
+
+                // Azel's Saturn-accurate path stores Gouraud as a 5-bit
+                // additive offset around neutral value 16:
+                //     offset = (gouraud5 - 16) / 31
+                //
+                // We do not yet have the live PDS light/falloff state in this
+                // standalone viewer, so retain the fixed diagnostic light and
+                // use an 8/31 ambient/falloff floor plus positive directional
+                // contribution. The quantization and additive representation
+                // match Azel; only the source light/falloff is provisional.
+                const float diffuse = std::max(0.0f, signedDot);
+                const int ambient5 = 8;
+                int gouraud5 =
+                    ambient5 +
+                    static_cast<int>(
+                        diffuse * static_cast<float>(31 - ambient5) + 0.5f);
+                gouraud5 = std::max(0, std::min(31, gouraud5));
+                const float offset =
+                    (static_cast<float>(gouraud5) - 16.0f) / 31.0f;
+
+                gouraud555.corner[corner][0] = offset;
+                gouraud555.corner[corner][1] = offset;
+                gouraud555.corner[corner][2] = offset;
             }
         }
+
+        out.gouraud555.push_back(gouraud555);
 
         for (int k = 0; k < 6; ++k) {
             const int corner = tri[k];
@@ -1115,6 +1135,7 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
     return boneIndex == 31 && out.models == 31 &&
            out.polygons == 212 &&
            out.polygonRecords.size() == out.polygons &&
+           out.gouraud555.size() == out.polygons &&
            out.vertices.size() == 212u * 6u &&
            out.lightingVertices.size() == out.vertices.size() &&
            out.lightingPayloadValid;
