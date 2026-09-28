@@ -1330,8 +1330,12 @@ static void renderBasicWingViewer()
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, kWidth - 1, kHeight - 1);
-    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
-    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
+    const SceGxmDepthFunc depthFunc =
+        g_viewMode == 0
+            ? SCE_GXM_DEPTH_FUNC_LESS_EQUAL
+            : SCE_GXM_DEPTH_FUNC_LESS;
+    sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
+    sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
     sceGxmSetFrontDepthWriteEnable(
         g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
     sceGxmSetBackDepthWriteEnable(
