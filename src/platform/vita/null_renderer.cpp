@@ -95,6 +95,11 @@ static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
 static SceGxmShaderPatcherId g_gouraudDebugFragmentProgramId{};
 static bool g_gouraudDebugFragmentRegistered = false;
 static SceGxmFragmentProgram* g_gouraudDebugFragmentProgram = nullptr;
+static const SceGxmProgramParameter* g_gouraudDebugQuadScreen01Param = nullptr;
+static const SceGxmProgramParameter* g_gouraudDebugQuadScreen23Param = nullptr;
+static const SceGxmProgramParameter* g_gouraudDebugGouraudRParam = nullptr;
+static const SceGxmProgramParameter* g_gouraudDebugGouraudGParam = nullptr;
+static const SceGxmProgramParameter* g_gouraudDebugGouraudBParam = nullptr;
 
 static SceGxmShaderPatcherId g_texturedLitFragmentProgramId{};
 static bool g_texturedLitFragmentRegistered = false;
