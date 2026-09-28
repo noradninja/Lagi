@@ -688,6 +688,7 @@ static bool appendModelDebugGeometry(const std::vector<u8>& bundle, u32 modelOff
             normalizeDirection({0.35f, -0.55f, 0.76f});
         std::uint8_t cornerShade[4] = {64, 64, 64, 64};
         lagi::azel::SaturnGouraud555Quad gouraud555{};
+        lagi::azel::SaturnLightingNormalQuad lightingNormals{};
 
         if (record.lightingMode() == 3 && record.lightingCount == 4) {
             for (int corner = 0; corner < 4; ++corner) {
@@ -698,6 +699,10 @@ static bool appendModelDebugGeometry(const std::vector<u8>& bundle, u32 modelOff
                 };
                 const FVec3 normal =
                     normalizeDirection(transformDirection(world, rawNormal));
+
+                lightingNormals.corner[corner][0] = normal.x;
+                lightingNormals.corner[corner][1] = normal.y;
+                lightingNormals.corner[corner][2] = normal.z;
 
                 float signedDot =
                     normal.x * debugLight.x +
@@ -738,6 +743,7 @@ static bool appendModelDebugGeometry(const std::vector<u8>& bundle, u32 modelOff
         }
 
         out.gouraud555.push_back(gouraud555);
+        out.lightingNormals.push_back(lightingNormals);
 
         for (int k = 0; k < 6; ++k) {
             const int corner = tri[k];
@@ -1136,6 +1142,7 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
            out.polygons == 212 &&
            out.polygonRecords.size() == out.polygons &&
            out.gouraud555.size() == out.polygons &&
+           out.lightingNormals.size() == out.polygons &&
            out.vertices.size() == 212u * 6u &&
            out.lightingVertices.size() == out.vertices.size() &&
            out.lightingPayloadValid;
