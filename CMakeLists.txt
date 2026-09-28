@@ -17,8 +17,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(LAGI_AZEL_PROBE "Compile an Azel source portability probe" ON)
 
-# Textured GXM viewer shaders. The existing color GXP pair remains vendored,
-# while these are compiled from readable Cg source using Sony's psp2cgc.
+# GXM viewer shaders are compiled from readable Cg source using Sony's
+# psp2cgc so color/debug and texture paths share the same compiler/toolchain.
 find_program(PSP2CGC_EXECUTABLE
  NAMES psp2cgc psp2cgc.exe
  HINTS
@@ -33,10 +33,61 @@ if(NOT PSP2CGC_EXECUTABLE)
   "Set PSP2CGC or place it under E:/PSVITA/sdk/host_tools/bin.")
 endif()
 
+set(LAGI_COLOR_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_color_v.gxp")
+set(LAGI_COLOR_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_color_f.gxp")
+set(LAGI_COLOR_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_color_v_gxp.o")
+set(LAGI_COLOR_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_color_f_gxp.o")
+
 set(LAGI_TEXTURE_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v.gxp")
 set(LAGI_TEXTURE_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f.gxp")
 set(LAGI_TEXTURE_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v_gxp.o")
 set(LAGI_TEXTURE_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f_gxp.o")
+
+add_custom_command(
+ OUTPUT "${LAGI_COLOR_V_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_vp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/lagi_color_v.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_COLOR_V_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/lagi_color_v.cg"
+ COMMENT "Compiling Lagi color vertex shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_COLOR_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/lagi_color_f.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_COLOR_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/lagi_color_f.cg"
+ COMMENT "Compiling Lagi color fragment shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_COLOR_V_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_color_v.gxp" "${LAGI_COLOR_V_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_COLOR_V_GXP}"
+ COMMENT "Embedding Lagi color vertex GXP"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_COLOR_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_color_f.gxp" "${LAGI_COLOR_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_COLOR_F_GXP}"
+ COMMENT "Embedding Lagi color fragment GXP"
+ VERBATIM
+)
 
 add_custom_command(
  OUTPUT "${LAGI_TEXTURE_V_GXP}"
@@ -85,6 +136,7 @@ add_custom_command(
 )
 
 set_source_files_properties(
+ "${LAGI_COLOR_V_OBJ}" "${LAGI_COLOR_F_OBJ}"
  "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}"
  PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
 )
@@ -97,7 +149,8 @@ add_executable(lagi
  src/platform/vita/vita_log.cpp
  src/platform/vita/iso9660.cpp
  src/platform/vita/null_renderer.cpp
- src/platform/vita/gxm_color_shaders.cpp
+ ${LAGI_COLOR_V_OBJ}
+ ${LAGI_COLOR_F_OBJ}
  ${LAGI_TEXTURE_V_OBJ}
  ${LAGI_TEXTURE_F_OBJ}
  src/platform/vita/null_audio.cpp
