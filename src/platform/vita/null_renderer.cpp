@@ -2117,6 +2117,9 @@ static void renderBasicWingViewer()
     const bool gouraudDebug =
         g_viewMode == 2 && g_basicWingTexturedReady;
 
+    if (texturedLit || gouraudDebug)
+        updateViewerAzelLighting();
+
     sceGxmSetVertexProgram(
         g_probeContext,
         (textured || texturedLit || gouraudDebug)
@@ -2133,7 +2136,7 @@ static void renderBasicWingViewer()
                     : g_probeFragmentProgram)));
     sceGxmSetCullMode(
         g_probeContext,
-        texturedLit
+        (texturedLit || gouraudDebug)
             ? SCE_GXM_CULL_CW
             : SCE_GXM_CULL_NONE);
     sceGxmSetDefaultRegionClipAndViewport(
@@ -2172,11 +2175,9 @@ static void renderBasicWingViewer()
         0, 16, wvp.m);
 
     const void* viewerStream =
-        (textured || texturedLit)
+        (textured || texturedLit || gouraudDebug)
             ? static_cast<const void*>(g_basicWingTextureVertices)
-            : (gouraudDebug
-                ? static_cast<const void*>(g_basicWingGouraudVertices)
-                : static_cast<const void*>(g_basicWingVertices));
+            : static_cast<const void*>(g_basicWingVertices);
 
     if (sceGxmSetVertexStream(
             g_probeContext, 0, viewerStream) < 0) {
@@ -2203,19 +2204,21 @@ static void renderBasicWingViewer()
                 g_basicWingTextureIndices + batch.firstIndex,
                 batch.indexCount);
         }
-    } else if (texturedLit) {
-        // Azel reconstructs the original Saturn quad in fragment space and
-        // bilinearly interpolates its four Gouraud corner values. Draw one
-        // quad at a time here so the Vita fragment program can receive those
-        // four screen-space corners and RGB555 offsets as uniforms.
+    } else if (texturedLit || gouraudDebug) {
+        // Both the textured and grayscale diagnostics consume the same
+        // dynamically generated RGB555 Gouraud corner values and the same
+        // inverse-bilinear quad reconstruction. This keeps mode 2 a direct
+        // visualization of the lighting that mode 1 actually applies.
         static const unsigned int cornerVertex[4] = {0, 1, 2, 5};
 
         for (unsigned int p = 0;
              p < g_basicWingCpuMesh.polygons; ++p) {
             const std::uint16_t textureIndex =
                 g_basicWingCpuMesh.polygonTextureIndices[p];
-            if (textureIndex >= g_basicWingGpuTextures.size() ||
-                p >= g_basicWingCpuMesh.gouraud555.size())
+            if (p >= g_basicWingCpuMesh.gouraud555.size())
+                continue;
+            if (texturedLit &&
+                textureIndex >= g_basicWingGpuTextures.size())
                 continue;
 
             ViewerScreenPoint screen[4];
@@ -2262,30 +2265,49 @@ static void renderBasicWingViewer()
                 !fragmentUniformBuffer)
                 continue;
 
-            sceGxmSetUniformDataF(
-                fragmentUniformBuffer,
-                g_texturedLitQuadScreen01Param,
-                0, 4, quadScreen01);
-            sceGxmSetUniformDataF(
-                fragmentUniformBuffer,
-                g_texturedLitQuadScreen23Param,
-                0, 4, quadScreen23);
-            sceGxmSetUniformDataF(
-                fragmentUniformBuffer,
-                g_texturedLitGouraudRParam,
-                0, 4, gouraudR);
-            sceGxmSetUniformDataF(
-                fragmentUniformBuffer,
-                g_texturedLitGouraudGParam,
-                0, 4, gouraudG);
-            sceGxmSetUniformDataF(
-                fragmentUniformBuffer,
-                g_texturedLitGouraudBParam,
-                0, 4, gouraudB);
+            const SceGxmProgramParameter* quad01Param =
+                texturedLit
+                    ? g_texturedLitQuadScreen01Param
+                    : g_gouraudDebugQuadScreen01Param;
+            const SceGxmProgramParameter* quad23Param =
+                texturedLit
+                    ? g_texturedLitQuadScreen23Param
+                    : g_gouraudDebugQuadScreen23Param;
+            const SceGxmProgramParameter* rParam =
+                texturedLit
+                    ? g_texturedLitGouraudRParam
+                    : g_gouraudDebugGouraudRParam;
+            const SceGxmProgramParameter* gParam =
+                texturedLit
+                    ? g_texturedLitGouraudGParam
+                    : g_gouraudDebugGouraudGParam;
+            const SceGxmProgramParameter* bParam =
+                texturedLit
+                    ? g_texturedLitGouraudBParam
+                    : g_gouraudDebugGouraudBParam;
 
-            sceGxmSetFragmentTexture(
-                g_probeContext, 0,
-                &g_basicWingGpuTextures[textureIndex].texture);
+            sceGxmSetUniformDataF(
+                fragmentUniformBuffer,
+                quad01Param, 0, 4, quadScreen01);
+            sceGxmSetUniformDataF(
+                fragmentUniformBuffer,
+                quad23Param, 0, 4, quadScreen23);
+            sceGxmSetUniformDataF(
+                fragmentUniformBuffer,
+                rParam, 0, 4, gouraudR);
+            sceGxmSetUniformDataF(
+                fragmentUniformBuffer,
+                gParam, 0, 4, gouraudG);
+            sceGxmSetUniformDataF(
+                fragmentUniformBuffer,
+                bParam, 0, 4, gouraudB);
+
+            if (texturedLit) {
+                sceGxmSetFragmentTexture(
+                    g_probeContext, 0,
+                    &g_basicWingGpuTextures[textureIndex].texture);
+            }
+
             sceGxmDraw(
                 g_probeContext,
                 SCE_GXM_PRIMITIVE_TRIANGLES,
