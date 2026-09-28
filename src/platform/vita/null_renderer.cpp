@@ -91,6 +91,8 @@ static bool g_viewerReady = false;
 static float g_yaw = 0.0f;
 static float g_pitch = 0.0f;
 static int g_viewMode = 0;
+static bool g_gxmReady = false;
+static const char* g_gxmInitError = "NOT INITIALIZED";
 
 static unsigned int alignedSize(SceKernelMemBlockType type, unsigned int size)
 {
@@ -425,6 +427,8 @@ static bool initSurfaces()
 
 static bool initShaders()
 {
+    g_gxmInitError = "PATCHER MEMORY";
+
     constexpr unsigned patcherBufferSize = 64 * 1024;
     constexpr unsigned patcherVertexUsseSize = 64 * 1024;
     constexpr unsigned patcherFragmentUsseSize = 64 * 1024;
@@ -444,6 +448,7 @@ static bool initShaders()
     if (!g_patcherBuffer || !g_patcherVertexUsse || !g_patcherFragmentUsse)
         return false;
 
+    g_gxmInitError = "PATCHER CREATE";
     SceGxmShaderPatcherParams pp{};
     pp.userData = nullptr;
     pp.hostAllocCallback = patcherHostAlloc;
@@ -471,13 +476,21 @@ static bool initShaders()
     const SceGxmProgram* fp =
         reinterpret_cast<const SceGxmProgram*>(lagi_color_f_gxp);
 
+    g_gxmInitError = "PROGRAM CHECK";
     if (sceGxmProgramCheck(vp) < 0 || sceGxmProgramCheck(fp) < 0)
         return false;
 
-    if (sceGxmShaderPatcherRegisterProgram(g_shaderPatcher, vp, &g_vertexProgramId) < 0 ||
-        sceGxmShaderPatcherRegisterProgram(g_shaderPatcher, fp, &g_fragmentProgramId) < 0)
+    g_gxmInitError = "REGISTER VP";
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_shaderPatcher, vp, &g_vertexProgramId) < 0)
         return false;
 
+    g_gxmInitError = "REGISTER FP";
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_shaderPatcher, fp, &g_fragmentProgramId) < 0)
+        return false;
+
+    g_gxmInitError = "FIND PARAMETERS";
     const SceGxmProgramParameter* pos =
         sceGxmProgramFindParameterByName(vp, "aPosition");
     const SceGxmProgramParameter* color =
@@ -503,11 +516,13 @@ static bool initShaders()
     stream.stride = sizeof(azel::DebugColorVertex);
     stream.indexSource = SCE_GXM_INDEX_SOURCE_INDEX_16BIT;
 
+    g_gxmInitError = "CREATE VP";
     if (sceGxmShaderPatcherCreateVertexProgram(
             g_shaderPatcher, g_vertexProgramId,
             attrs, 2, &stream, 1, &g_vertexProgram) < 0)
         return false;
 
+    g_gxmInitError = "CREATE FP";
     if (sceGxmShaderPatcherCreateFragmentProgram(
             g_shaderPatcher, g_fragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
@@ -517,15 +532,22 @@ static bool initShaders()
             &g_fragmentProgram) < 0)
         return false;
 
+    g_gxmInitError = nullptr;
     return true;
 }
 
 bool init()
 {
-    if (!initGxmCore() || !initSurfaces() || !initShaders()) {
+    // GXM core and display surfaces are required because the status console
+    // now shares the same double-buffered display memory as the 3D viewer.
+    if (!initGxmCore() || !initSurfaces()) {
         shutdown();
         return false;
     }
+
+    // Mark the GXM lifetime active before optional shader bring-up so cleanup
+    // remains correct even if shader creation fails.
+    g_initialized = true;
 
     g_drawBuffer = 0;
     fill(0xFF181818u);
@@ -548,7 +570,22 @@ bool init()
 
     sceDisplayWaitVblankStart();
     g_drawBuffer = 1;
-    g_initialized = true;
+
+    // Shader/patcher bring-up is diagnostic during this milestone. A failure
+    // must leave Lagi running so hardware can report the exact stage.
+    g_gxmReady = initShaders();
+    if (g_gxmReady) {
+        status("[PASS] GXM SHADER PIPELINE", 0xFF80E0FFu);
+        std::printf("[GXM] shader pipeline initialized\n");
+    } else {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM %s",
+                      g_gxmInitError ? g_gxmInitError : "UNKNOWN");
+        failure(line);
+        std::printf("[GXM] shader initialization failed at: %s\n",
+                    g_gxmInitError ? g_gxmInitError : "unknown");
+    }
+
     return true;
 }
 
@@ -627,6 +664,8 @@ void shutdown()
     if (g_initialized)
         sceGxmTerminate();
 
+    g_gxmReady = false;
+    g_viewerReady = false;
     g_initialized = false;
 }
 
@@ -643,11 +682,22 @@ void failure(const char* text) { status(text, 0xFF3030FFu); }
 void set_azel_alive(bool alive) { g_azelAlive = alive; }
 void set_disc_alive(bool alive) { g_discAlive = alive; }
 
-void toggle_debug_console() { g_debugVisible = !g_debugVisible; }
+void toggle_debug_console()
+{
+    if (g_debugVisible) {
+        if (g_viewerReady && g_gxmReady)
+            g_debugVisible = false;
+    } else {
+        g_debugVisible = true;
+    }
+}
 bool debug_console_visible() { return g_debugVisible; }
 
 bool load_basic_wing_viewer()
 {
+    if (!g_gxmReady)
+        return false;
+
     azel::BasicWingDebugMesh mesh;
     if (!azel::build_basic_wing_debug_mesh(mesh) || mesh.vertices.empty())
         return false;
@@ -729,7 +779,7 @@ static void drawViewer()
 {
     fill(0xFF101014u);
 
-    if (!g_viewerReady || !g_context)
+    if (!g_viewerReady || !g_gxmReady || !g_context || !g_vertexProgram || !g_fragmentProgram)
         return;
 
     g_yaw += input::analog_x() * 0.035f;
