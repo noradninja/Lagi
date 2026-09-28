@@ -37,9 +37,9 @@ cmake --build . -j 8
 
 ## GXM shaders
 
-The current native GXM debug-view shaders are checked into the source tree as precompiled GXP byte arrays. A normal VitaSDK installation is sufficient; `psp2cgc` is **not** required.
+The current native GXM viewer shaders are readable Cg sources under `shaders/` and are compiled during the build with Sony's `psp2cgc`. This includes the color/debug, texture, Gouraud diagnostic, and combined textured-lighting programs. CMake embeds the resulting GXP binaries with the active VitaSDK toolchain's `objcopy`.
 
-The readable Cg shader sources remain under `shaders/` as reference for future shader development. If those shaders change later, the vendored GXP data must be regenerated separately before committing.
+The current Windows development setup finds `psp2cgc.exe` at `E:/PSVITA/sdk/host_tools/bin`. Other setups can expose it through PATH, `PSP2CGC`, or `SCE_PSP2_SDK_DIR`.
 
 ## Game data
 
@@ -69,7 +69,12 @@ Current development controls:
 - START + SELECT: exit.
 - Left analog stick: rotate the Basic Wing viewer.
 - Triangle: reset viewer rotation.
-- L / R: change debug rendering mode.
+- L / R: cycle viewer mode:
+  - 0: textured baseline
+  - 1: textured + diagnostic Gouraud lighting
+  - 2: Gouraud grayscale diagnostic
+  - 3: polygon debug colors
+  - 4: wireframe
 
 These controls are development-only and may change as the real Saturn input layer comes online.
 
@@ -106,3 +111,10 @@ After pulling this milestone, rerun `cmake ..` once before building so the gener
 - Shader embedding uses CMake's `CMAKE_OBJCOPY` from the active VitaSDK toolchain rather than requiring `arm-vita-eabi-objcopy` to be present on the Windows shell PATH. This keeps the textured-shader build compatible with the existing VitaSDK CMake configuration.
 
 - Windows VitaSDK's GNU objcopy treats `--input` / `--output` as ambiguous. Shader embedding now uses the canonical BFD flags `-I binary -O elf32-littlearm -B arm`, which are accepted by the bundled `arm-vita-eabi-objcopy.exe`.
+
+
+## Combined textured-lighting hardware test
+
+After pulling the current milestone, rerun `cmake ..` once because two additional Cg shaders are generated and embedded. A successful build should show compilation/embedding steps for `textured_lit_v.cg` and `textured_lit_f.cg`.
+
+On hardware, compare viewer mode 0 directly with mode 1. Geometry scale, projection, UV orientation, transparency cutout, and texture selection should remain identical. Only the interpolated lighting modulation should change. The main visual inspection targets are the broad wing surfaces, diagonal interpolation across the two-triangle Saturn-quad split, and seams between hierarchy/model sections.
