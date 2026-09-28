@@ -43,6 +43,8 @@ if(LAGI_AZEL_PROBE)
 
  add_library(lagi_azel_fixedpoint OBJECT
   src/integration/azel_fixedpoint_vita.cpp
+  src/integration/azel_heap_vita.cpp
+  src/integration/azel_task_vita.cpp
  )
  target_include_directories(lagi_azel_fixedpoint PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
