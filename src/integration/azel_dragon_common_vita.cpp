@@ -768,15 +768,21 @@ static bool buildMeshTraverse(const std::vector<u8>& bundle, u32 nodeOffset,
                               u32 poseBase, unsigned& boneIndex,
                               const FMat4& parent,
                               lagi::azel::BasicWingDebugMesh& out,
-                              unsigned depth)
+                              unsigned depth,
+                              const std::vector<BonePoseRaw>* poseOverride = nullptr)
 {
     if (!nodeOffset) return true;
     if (depth > 256 || nodeOffset + 12 > bundle.size()) return false;
 
     do {
         BonePoseRaw pose{};
-        if (!readPose(bundle, poseBase, boneIndex, pose))
+        if (poseOverride) {
+            if (boneIndex >= poseOverride->size())
+                return false;
+            pose = (*poseOverride)[boneIndex];
+        } else if (!readPose(bundle, poseBase, boneIndex, pose)) {
             return false;
+        }
 
         const FMat4 world = matMul(parent, poseMatrix(pose));
 
@@ -790,7 +796,8 @@ static bool buildMeshTraverse(const std::vector<u8>& bundle, u32 nodeOffset,
         ++boneIndex;
 
         if (childOffset && !buildMeshTraverse(bundle, childOffset, poseBase,
-                                               boneIndex, world, out, depth + 1))
+                                               boneIndex, world, out, depth + 1,
+                                               poseOverride))
             return false;
 
         nodeOffset = nextOffset;
