@@ -167,7 +167,7 @@ static Vdp1ModelSource basicWingVdp1Source()
     source.gouraud555 = g_basicWingCpuMesh.gouraud555.data();
     source.polygonCount = g_basicWingCpuMesh.polygons;
     source.textures = g_basicWingCpuMesh.decodedTextureData.data();
-    source.textureCount = model.textureCount;
+    source.textureCount = g_basicWingCpuMesh.decodedTextureData.size();
     source.polygonTextureIndices = g_basicWingCpuMesh.polygonTextureIndices.data();
     source.polygonTextureIndexCount = g_basicWingCpuMesh.polygonTextureIndices.size();
     return source;
