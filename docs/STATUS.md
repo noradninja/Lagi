@@ -229,6 +229,26 @@ Depth:
 - Filled modes: LESS_EQUAL.
 - Wireframe: strict LESS to avoid competing equal-depth shared edges.
 
+## First ruin room geometry bring-up
+
+M3C now reconstructs the first validated 1x1 ruin town cell directly from `TWN_RUIN.PRG` and the town model bundle selected by that setup.
+
+For this diagnostic stage, Lagi:
+
+- resolves the sole grid cell through the overlay's grid EA,
+- reads the static-object list at cell + `0x0C`,
+- walks the original 0x18-byte object records,
+- uses the first LOD model entry, matching the current town default depth threshold,
+- loads the referenced MCB bundle through the original bundle offset table,
+- decodes Azel processed-model vertices, quads, VDP1 command metadata, and lighting payload,
+- applies each object's Saturn translation and 12-bit Z/Y/X rotation,
+- flattens the static room into a geometry-only `Vdp1ModelSource`,
+- normalizes the aggregate bounds only for this diagnostic viewer.
+
+Viewer mode 5 displays this real room geometry in polygon-color mode. Modes 0-4 remain the hardware-proven Basic Wing regression modes. L/R now cycle across all six modes when the room mesh is available.
+
+Textures, live Azel camera state, scripts, player/NPC tasks, LCS, audio, and VDP2 are intentionally not part of this first static-room visualization.
+
 ## First town overlay preflight
 
 M3B now loads the resolved first-scene town overlay directly from Disc 1 into a Saturn-addressed `sSaturnMemoryFile` at the canonical overlay base `0x06054000`.
