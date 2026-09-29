@@ -229,6 +229,23 @@ Depth:
 - Filled modes: LESS_EQUAL.
 - Wireframe: strict LESS to avoid competing equal-depth shared edges.
 
+## First-scene direct boot target
+
+The development boot target is now pinned to Azel game status `0x04`, the first 3D scene reached after the startup movie, D5 name-entry state, and second movie.
+
+Pinned Azel's module-manager table resolves the startup chain as:
+
+```text
+0x01 -> movie 0
+0x02 -> FLD_D5 name entry
+0x03 -> movie 1
+0x04 -> game mode 1, town entry 0x10
+```
+
+Lagi does not hard-code the resulting town overlay filename. At startup it resolves town entry `0x10` through the same COMMON.DAT dispatch tables used by Azel's `loadTownSub()` / `loadTownPrg()`, then verifies that the resolved overlay exists on Disc 1. The debug screen reports the resolved direct-boot target.
+
+This is the M3A boundary before importing the full module/town runtime. The next stage will instantiate the minimum town/module execution spine needed to enter this resolved target, while skipping the preceding movie/name presentation states only in development mode.
+
 ## Azel live-render integration boundary
 
 M2 tracing identified Azel's native 3D submission seam at `addObjectToDrawList()` / `addBillBoardToDrawList()`. At that point Azel has already selected an `sProcessed3dModel` and, in the desktop backend, captures the current model matrix, light vector/color, local screen offset, and billboard state before placing the object into the renderer queue.
