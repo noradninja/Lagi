@@ -120,6 +120,15 @@ static const SceGxmProgramParameter* g_texturedLitGouraudBParam = nullptr;
 static bool g_probeScenePassed = false;
 static azel::BasicWingDebugMesh g_basicWingCpuMesh{};
 static bool g_basicWingCpuReady = false;
+static azel::StaticRoomDebugMesh g_staticRoomCpuMesh{};
+static bool g_staticRoomCpuReady = false;
+
+enum class ResidentVdp1Model {
+    None,
+    BasicWing,
+    StaticRoom,
+};
+static ResidentVdp1Model g_residentVdp1Model = ResidentVdp1Model::None;
 static SceUID g_vdp1VertexUid = -1;
 static SceUID g_vdp1LightingVertexUid = -1;
 static SceUID g_vdp1IndexUid = -1;
@@ -174,6 +183,18 @@ static Vdp1ModelSource basicWingVdp1Source()
     source.textureCount = g_basicWingCpuMesh.decodedTextureData.size();
     source.polygonTextureIndices = g_basicWingCpuMesh.polygonTextureIndices.data();
     source.polygonTextureIndexCount = g_basicWingCpuMesh.polygonTextureIndices.size();
+    return source;
+}
+
+static Vdp1ModelSource staticRoomVdp1Source()
+{
+    Vdp1ModelSource source{};
+    source.vertices = g_staticRoomCpuMesh.vertices.data();
+    source.lightingVertices = g_staticRoomCpuMesh.lightingVertices.data();
+    source.vertexCount = g_staticRoomCpuMesh.vertices.size();
+    source.polygons = g_staticRoomCpuMesh.polygonRecords.data();
+    source.gouraud555 = g_staticRoomCpuMesh.gouraud555.data();
+    source.polygonCount = g_staticRoomCpuMesh.polygons;
     return source;
 }
 
