@@ -44,7 +44,7 @@ struct Vdp1ModelSource {
     const std::uint16_t* polygonTextureIndices = nullptr;
     std::size_t polygonTextureIndexCount = 0;
 
-    bool valid() const
+    bool geometryValid() const
     {
         return vertices &&
                lightingVertices &&
@@ -52,11 +52,20 @@ struct Vdp1ModelSource {
                polygons &&
                gouraud555 &&
                polygonCount != 0 &&
-               vertexCount == polygonCount * 6u &&
-               textures &&
+               vertexCount == polygonCount * 6u;
+    }
+
+    bool texturesValid() const
+    {
+        return textures &&
                textureCount != 0 &&
                polygonTextureIndices &&
                polygonTextureIndexCount == polygonCount;
+    }
+
+    bool valid() const
+    {
+        return geometryValid();
     }
 };
 
