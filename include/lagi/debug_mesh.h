@@ -49,6 +49,11 @@ struct SaturnLightingNormalQuad {
     float corner[4][3]{};
 };
 
+struct BasicWingAnimationFrame {
+    std::vector<DebugColorVertex> vertices;
+    std::vector<SaturnLightingNormalQuad> lightingNormals;
+};
+
 struct SaturnPolygonRecord {
     std::uint16_t indices[4]{};
     std::uint16_t lightingControl = 0;
@@ -100,6 +105,13 @@ struct BasicWingDebugMesh {
     std::vector<SaturnPolygonRecord> polygonRecords;
     std::vector<SaturnGouraud555Quad> gouraud555;
     std::vector<SaturnLightingNormalQuad> lightingNormals;
+
+    // Morph-screen Basic Wing animation (dragonAnimOffsets[0] = 0x10C).
+    std::vector<BasicWingAnimationFrame> animationFrames;
+    std::uint16_t animationFlags = 0;
+    std::uint16_t animationFrameCount = 0;
+    bool animationValid = false;
+
     unsigned int models = 0;
     unsigned int polygons = 0;
 
