@@ -845,6 +845,83 @@ static bool buildBasicWingTexturedBuffers()
     return outIndex == vertexCount;
 }
 
+static void applyBasicWingAnimationFrame(unsigned int frameIndex)
+{
+    if (!g_basicWingCpuMesh.animationValid ||
+        g_basicWingCpuMesh.animationFrames.empty())
+        return;
+
+    frameIndex %= static_cast<unsigned int>(
+        g_basicWingCpuMesh.animationFrames.size());
+
+    const auto& frame =
+        g_basicWingCpuMesh.animationFrames[frameIndex];
+
+    if (frame.vertices.size() !=
+            g_basicWingCpuMesh.vertices.size() ||
+        frame.lightingNormals.size() !=
+            g_basicWingCpuMesh.lightingNormals.size())
+        return;
+
+    g_basicWingCpuMesh.vertices = frame.vertices;
+    g_basicWingCpuMesh.lightingNormals =
+        frame.lightingNormals;
+
+    const unsigned int vertexCount =
+        static_cast<unsigned int>(frame.vertices.size());
+
+    for (unsigned int i = 0; i < vertexCount; ++i) {
+        const auto& src = frame.vertices[i];
+
+        if (g_basicWingVertices) {
+            g_basicWingVertices[i].x = src.x;
+            g_basicWingVertices[i].y = src.y;
+            g_basicWingVertices[i].z = src.z;
+        }
+
+        if (g_basicWingLightingVertices) {
+            g_basicWingLightingVertices[i].x = src.x;
+            g_basicWingLightingVertices[i].y = src.y;
+            g_basicWingLightingVertices[i].z = src.z;
+        }
+
+        if (g_basicWingTextureVertices) {
+            g_basicWingTextureVertices[i].x = src.x;
+            g_basicWingTextureVertices[i].y = src.y;
+            g_basicWingTextureVertices[i].z = src.z;
+        }
+
+        if (g_basicWingGouraudVertices) {
+            g_basicWingGouraudVertices[i].x = src.x;
+            g_basicWingGouraudVertices[i].y = src.y;
+            g_basicWingGouraudVertices[i].z = src.z;
+        }
+    }
+}
+
+static void advanceBasicWingAnimation()
+{
+    if (!g_basicWingCpuMesh.animationValid ||
+        g_basicWingCpuMesh.animationFrames.empty())
+        return;
+
+    // The viewer presents at the Vita's 60 Hz scanout while PDS animation
+    // updates are effectively 30 Hz here. Hold each decoded morph-screen
+    // animation frame for two vblanks.
+    ++g_basicWingAnimationTick;
+    if (g_basicWingAnimationTick < 2u)
+        return;
+
+    g_basicWingAnimationTick = 0;
+    g_basicWingAnimationFrame =
+        (g_basicWingAnimationFrame + 1u) %
+        static_cast<unsigned int>(
+            g_basicWingCpuMesh.animationFrames.size());
+
+    applyBasicWingAnimationFrame(
+        g_basicWingAnimationFrame);
+}
+
 struct ViewerMat4
 {
     float m[16];
