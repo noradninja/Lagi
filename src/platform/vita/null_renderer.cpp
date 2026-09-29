@@ -32,6 +32,9 @@ static constexpr int kPitch = 960;
 static constexpr std::size_t kFrameBytes =
     static_cast<std::size_t>(kPitch) * kHeight * sizeof(std::uint32_t);
 static constexpr int kMaxStatus = 64;
+static constexpr int kStatusRowsPerColumn = 32;
+static constexpr int kStatusLineHeight = 11;
+static constexpr int kStatusColumnX[2] = {40, 500};
 
 struct StatusLine {
     char text[78];
@@ -46,6 +49,7 @@ static bool g_discAlive = false;
 static bool g_debugVisible = true;
 static StatusLine g_status[kMaxStatus]{};
 static int g_statusCount = 0;
+static bool g_suppressGxmInitPassStatus = false;
 static bool g_gxmProbeAttempted = false;
 static bool g_gxmInitialized = false;
 static SceUID g_probeVdmUid = -1;
@@ -555,6 +559,11 @@ void shutdown()
 void status(const char* text, unsigned int color)
 {
     if (!text || g_statusCount >= kMaxStatus) return;
+
+    if (g_suppressGxmInitPassStatus &&
+        std::strncmp(text, "[PASS] GXM ", 11) == 0)
+        return;
+
     StatusLine& line = g_status[g_statusCount++];
     std::strncpy(line.text, text, sizeof(line.text) - 1);
     line.text[sizeof(line.text) - 1] = 0;
@@ -563,6 +572,9 @@ void status(const char* text, unsigned int color)
 
 void failure(const char* text)
 {
+    // If GXM initialization fails, stop suppressing its status stream so the
+    // failure remains visible and future diagnostics are not hidden.
+    g_suppressGxmInitPassStatus = false;
     status(text, 0xFF3030FFu);
 }
 
@@ -1386,6 +1398,7 @@ void toggle_debug_console()
     }
 
     g_gxmProbeAttempted = true;
+    g_suppressGxmInitPassStatus = true;
 
     SceGxmInitializeParams params{};
     params.flags = 0;
@@ -2152,7 +2165,8 @@ void toggle_debug_console()
     g_probeDisplayingGxm = true;
     g_gxmDrawBuffer = 1;
     g_debugVisible = false;
-    status("[PASS] GXM BASIC WING DISPLAY", 0xFF80E0FFu);
+    g_suppressGxmInitPassStatus = false;
+    status("[PASS] GXM INITIALIZATION + VDP1 READY", 0xFF80E0FFu);
     std::printf("[GXM] Basic Wing GXM color buffer queued for display\n");
 }
 
@@ -2473,7 +2487,9 @@ static void renderBasicWingViewer()
         g_viewDistance = 3.0f;
     }
 
-    if (input::prev_mode_pressed() || input::next_mode_pressed())
+    if (input::prev_mode_pressed())
+        g_viewMode = (g_viewMode + 4) % 5;
+    if (input::next_mode_pressed())
         g_viewMode = (g_viewMode + 1) % 5;
 
     if (g_basicWingCpuMesh.animationValid)
@@ -2561,14 +2577,31 @@ void begin_frame()
     drawText(32, 24, "LAGI - PDS VITA RUNTIME", 0xFFFFFFFFu, 2);
     drawText(32, 48, "BOOT / INTEGRATION STATUS", 0xFFB0B0B0u, 1);
 
-    int y = 68;
     for (int i = 0; i < g_statusCount; ++i) {
-        drawText(40, y, g_status[i].text, g_status[i].color, 1);
-        y += 11;
+        const int column = i / kStatusRowsPerColumn;
+        const int row = i % kStatusRowsPerColumn;
+        if (column >= 2)
+            break;
+
+        drawText(
+            kStatusColumnX[column],
+            68 + row * kStatusLineHeight,
+            g_status[i].text,
+            g_status[i].color,
+            1);
     }
 
-    if (g_azelAlive)
-        drawText(40, y + 4, "TASK LOOP: ACTIVE", 0xFF30E030u, 1);
+    if (g_azelAlive) {
+        const int taskIndex = std::min(g_statusCount, kMaxStatus - 1);
+        const int column = std::min(taskIndex / kStatusRowsPerColumn, 1);
+        const int row = taskIndex % kStatusRowsPerColumn;
+        drawText(
+            kStatusColumnX[column],
+            72 + row * kStatusLineHeight,
+            "TASK LOOP: ACTIVE",
+            0xFF30E030u,
+            1);
+    }
 }
 
 void end_frame()
