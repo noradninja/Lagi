@@ -6,6 +6,7 @@
 #include "VDP2.h"
 #include "common.h"
 #include "lagi/platform.h"
+#include "lagi/debug_mesh.h"
 #include "lagi/azel_render_bridge.h"
 #include "lagi/azel_direct_boot.h"
 #include "lagi/azel_town_bootstrap.h"
