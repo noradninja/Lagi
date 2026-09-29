@@ -195,6 +195,16 @@ static Vdp1ModelSource staticRoomVdp1Source()
     source.polygons = g_staticRoomCpuMesh.polygonRecords.data();
     source.gouraud555 = g_staticRoomCpuMesh.gouraud555.data();
     source.polygonCount = g_staticRoomCpuMesh.polygons;
+
+    if (g_staticRoomCpuMesh.texturesFullyResolved) {
+        source.textures = g_staticRoomCpuMesh.decodedTextureData.data();
+        source.textureCount = g_staticRoomCpuMesh.decodedTextureData.size();
+        source.polygonTextureIndices =
+            g_staticRoomCpuMesh.polygonTextureIndices.data();
+        source.polygonTextureIndexCount =
+            g_staticRoomCpuMesh.polygonTextureIndices.size();
+    }
+
     return source;
 }
 
@@ -2304,6 +2314,20 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
         mesh.objects,
         mesh.polygons);
     status(line, 0xFF70E0A0u);
+
+    if (mesh.texturesFullyResolved) {
+        char textureLine[78];
+        std::snprintf(
+            textureLine, sizeof(textureLine),
+            "[PASS] RUIN ROOM %u TEXTURES",
+            mesh.decodedTextures);
+        status(textureLine, 0xFF80E0FFu);
+    } else if (mesh.texturesValid) {
+        status("[INFO] RUIN ROOM TEXTURES NEED CRAM", 0xFF80C0FFu);
+    } else {
+        status("[INFO] RUIN ROOM POLYGON COLOR FALLBACK", 0xFFB0B0B0u);
+    }
+
     return true;
 }
 
@@ -2678,7 +2702,9 @@ static void renderBasicWingViewer()
 
     const Vdp1RenderMode renderMode =
         roomMode
-            ? Vdp1RenderMode::PolygonColor
+            ? (g_staticRoomCpuMesh.texturesFullyResolved
+                ? Vdp1RenderMode::Textured
+                : Vdp1RenderMode::PolygonColor)
             : static_cast<Vdp1RenderMode>(g_viewMode);
 
     if (!roomMode &&
