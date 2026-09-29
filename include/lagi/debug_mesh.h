@@ -105,9 +105,17 @@ struct StaticRoomDebugMesh {
     std::vector<SaturnPolygonRecord> polygonRecords;
     std::vector<SaturnGouraud555Quad> gouraud555;
 
+    std::vector<DecodedMode1Texture> decodedTextureData;
+    std::vector<std::uint16_t> polygonTextureIndices;
+
     unsigned int objects = 0;
     unsigned int models = 0;
     unsigned int polygons = 0;
+    unsigned int uniqueTextures = 0;
+    unsigned int decodedTextures = 0;
+    unsigned int indirectCramPixels = 0;
+    bool texturesValid = false;
+    bool texturesFullyResolved = false;
     bool truncated = false;
 };
 
