@@ -151,6 +151,8 @@ static float g_viewYaw = 0.0f;
 static float g_viewPitch = 0.0f;
 static float g_viewDistance = 3.0f;
 static int g_viewMode = 0;
+static unsigned int g_basicWingAnimationFrame = 0;
+static unsigned int g_basicWingAnimationTick = 0;
 
 // Defined below with the textured-viewer helpers; shutdown() needs it earlier.
 static void freeBasicWingTextures();
@@ -2018,6 +2020,14 @@ bool load_basic_wing_viewer()
         v.z = (v.z - cz) * scale;
     }
 
+    for (auto& frame : g_basicWingCpuMesh.animationFrames) {
+        for (auto& v : frame.vertices) {
+            v.x = (v.x - cx) * scale;
+            v.y = (v.y - cy) * scale;
+            v.z = (v.z - cz) * scale;
+        }
+    }
+
     if (g_basicWingCpuMesh.polygonRecords.size() !=
         g_basicWingCpuMesh.polygons) {
         g_basicWingCpuReady = false;
@@ -2029,6 +2039,8 @@ bool load_basic_wing_viewer()
     g_viewPitch = -0.30f;
     g_viewDistance = 3.0f;
     g_viewMode = 0;
+    g_basicWingAnimationFrame = 0;
+    g_basicWingAnimationTick = 0;
     g_basicWingCpuReady = true;
     g_viewerReady = true;
     status("[PASS] DRAGON0 VDP1 212 RECORDS", 0xFF80E0FFu);
@@ -2069,7 +2081,7 @@ static void renderBasicWingViewer()
     // Right stick Y dollies the camera without altering FOV.
     // Pushing up moves closer; pulling down moves farther away.
     g_viewDistance += input::analog_zoom() * 0.060f;
-    g_viewDistance = std::max(1.4f, std::min(8.0f, g_viewDistance));
+    g_viewDistance = std::max(0.75f, std::min(8.0f, g_viewDistance));
 
     if (input::reset_view_pressed()) {
         g_viewYaw = 0.60f;
