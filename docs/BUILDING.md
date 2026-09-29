@@ -384,9 +384,18 @@ Treat the stray triangle as a separate mesh/model-data investigation.
 
 ## Vita application assets
 
-LiveArea/icon packaging is currently deferred while renderer/game integration is the priority.
+The VPK now packages the repository's Vita presentation assets automatically:
 
-The active VPK build must not depend on missing custom LiveArea artwork unless that work is explicitly resumed.
+```text
+sce_sys/icon0.png
+sce_sys/livearea/contents/bg0.png
+sce_sys/livearea/contents/startup.png
+sce_sys/livearea/contents/template.xml
+```
+
+`template.xml` references `bg0.png` as the LiveArea background and `startup.png` as the gate/startup image.
+
+Because the VPK packaging rules changed, rerun `cmake ..` once after pulling this milestone before rebuilding.
 
 ## Current development direction
 
