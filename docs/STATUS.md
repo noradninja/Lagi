@@ -231,6 +231,22 @@ Depth:
 
 ## First ruin room texture bring-up
 
+### Ruin mode-0 palette resolution
+
+Pinned Azel's `ruinBgInit()` shows that the ruin scene copies 0x200 bytes from `TWN_RUIN.PRG:0x0605EBF8` into `vdp2Palette`. In Azel, `vdp2Palette` is CRAM byte offset `0xC00`, so this supplies CRAM palette indices `0x600-0x6FF`.
+
+The reduced room decoder now uses that exact overlay palette for VDP1 color mode 0:
+
+```text
+4bpp texel -> dot
+palette index = CMDCOLR | dot
+palette byte offset = palette index * 2
+0xC00-0xDFF -> TWN_RUIN:0x0605EBF8 + (offset - 0xC00)
+```
+
+Mode-0 descriptors are also logged with object/polygon IDs and VDP1 command words so any remaining mismatch can be diagnosed from hardware data without weakening the polygon-color fallback.
+
+
 The M3C room diagnostic now attempts to bind the original `RUINMP.CGB` texture data to the reconstructed static room.
 
 Because the room models are decoded from their unpatched MCB command words, the texture addressing follows the same hardware-proven rule as the Basic Wing path:
