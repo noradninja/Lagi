@@ -953,16 +953,20 @@ bool prepare_vdp1_model(const Vdp1ModelSource& model)
         !g_vdp1Indices)
         return false;
 
-    if (!uploadVdp1Textures(model) ||
-        !buildVdp1TexturedBuffers(model))
-        return false;
+    if (model.texturesValid()) {
+        if (!uploadVdp1Textures(model) ||
+            !buildVdp1TexturedBuffers(model))
+            return false;
+        g_vdp1TexturedReady = true;
+    } else {
+        g_vdp1TexturedReady = false;
+    }
 
     std::memcpy(g_vdp1Vertices, model.vertices, vertexBytes);
     std::memcpy(g_vdp1LightingVertices, model.lightingVertices, vertexBytes);
     for (unsigned int i = 0; i < vertexCount; ++i)
         g_vdp1Indices[i] = static_cast<std::uint16_t>(i);
 
-    g_vdp1TexturedReady = true;
     return true;
 }
 
@@ -2275,16 +2279,21 @@ bool submit_vdp1_model(
 {
     if (!model.valid() || !g_probeContext ||
         !g_vdp1Vertices || !g_vdp1LightingVertices ||
-        !g_vdp1TextureVertices || !g_vdp1GouraudVertices ||
-        !g_vdp1Indices || !g_vdp1TextureIndices)
+        !g_vdp1Indices)
         return false;
 
     const bool textured =
-        drawState.mode == Vdp1RenderMode::Textured && g_vdp1TexturedReady;
+        drawState.mode == Vdp1RenderMode::Textured &&
+        g_vdp1TexturedReady && model.texturesValid() &&
+        g_vdp1TextureVertices && g_vdp1TextureIndices;
     const bool texturedLit =
-        drawState.mode == Vdp1RenderMode::TexturedGouraud && g_vdp1TexturedReady;
+        drawState.mode == Vdp1RenderMode::TexturedGouraud &&
+        g_vdp1TexturedReady && model.texturesValid() &&
+        g_vdp1TextureVertices && g_vdp1TextureIndices;
     const bool gouraudDebug =
-        drawState.mode == Vdp1RenderMode::GouraudGrayscale && g_vdp1TexturedReady;
+        drawState.mode == Vdp1RenderMode::GouraudGrayscale &&
+        g_vdp1TexturedReady && model.texturesValid() &&
+        g_vdp1TextureVertices;
     const bool wireframe =
         drawState.mode == Vdp1RenderMode::Wireframe;
 
