@@ -6,6 +6,7 @@
 #include "VDP2.h"
 #include "common.h"
 #include "lagi/platform.h"
+#include "lagi/azel_render_bridge.h"
 #include "lagi/disc_image.h"
 #include "commonOverlay.h"
 #include "audio/soundDataTable.h"
@@ -174,6 +175,7 @@ bool runtime_smoke_init()
 
 void runtime_smoke_frame()
 {
+    lagi::azel_bridge::begin_frame();
     runTasks();
     if (gSmokeTask && gSmokeTask->updates > 0 && gSmokeTask->draws > 0)
         lagi::platform::renderer::set_azel_alive(true);
