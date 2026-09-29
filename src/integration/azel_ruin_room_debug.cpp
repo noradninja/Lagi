@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <vector>
+#include <utility>
 
 s8 readSaturnS8(sSaturnPtr ptr);
 s16 readSaturnS16(sSaturnPtr ptr);
