@@ -896,6 +896,64 @@ static bool buildVdp1TexturedBuffers(const Vdp1ModelSource& model)
     return outIndex == vertexCount;
 }
 
+bool prepare_vdp1_model(const Vdp1ModelSource& model)
+{
+    if (!g_gxmInitialized || !g_probeContext || !model.valid())
+        return false;
+
+    // M1 intentionally supports one resident VDP1 model at a time. This is
+    // enough for the regression viewer and for the first live Azel object;
+    // multi-model residency can be layered on after the game render boundary
+    // is connected without changing the submission contract.
+    if (g_vdp1Vertices || g_vdp1LightingVertices || g_vdp1Indices ||
+        g_vdp1TextureVertices || g_vdp1GouraudVertices ||
+        g_vdp1TextureIndices || !g_vdp1GpuTextures.empty())
+        return false;
+
+    if (model.vertexCount > 65535u)
+        return false;
+
+    const unsigned int vertexCount =
+        static_cast<unsigned int>(model.vertexCount);
+    const unsigned int vertexBytes =
+        vertexCount * sizeof(azel::DebugColorVertex);
+    const unsigned int indexBytes =
+        vertexCount * sizeof(std::uint16_t);
+
+    g_vdp1Vertices = static_cast<azel::DebugColorVertex*>(
+        probeGpuAlloc(
+            vertexBytes,
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_vdp1VertexUid));
+    g_vdp1LightingVertices = static_cast<azel::DebugColorVertex*>(
+        probeGpuAlloc(
+            vertexBytes,
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_vdp1LightingVertexUid));
+    g_vdp1Indices = static_cast<std::uint16_t*>(
+        probeGpuAlloc(
+            indexBytes,
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_vdp1IndexUid));
+
+    if (!g_vdp1Vertices ||
+        !g_vdp1LightingVertices ||
+        !g_vdp1Indices)
+        return false;
+
+    if (!uploadVdp1Textures(model) ||
+        !buildVdp1TexturedBuffers(model))
+        return false;
+
+    std::memcpy(g_vdp1Vertices, model.vertices, vertexBytes);
+    std::memcpy(g_vdp1LightingVertices, model.lightingVertices, vertexBytes);
+    for (unsigned int i = 0; i < vertexCount; ++i)
+        g_vdp1Indices[i] = static_cast<std::uint16_t>(i);
+
+    g_vdp1TexturedReady = true;
+    return true;
+}
+
 static void applyBasicWingAnimationFrame(unsigned int frameIndex)
 {
     if (!g_basicWingCpuMesh.animationValid ||
@@ -1974,55 +2032,15 @@ void toggle_debug_console()
         return;
     }
 
-    const unsigned int wingVertexCount =
-        static_cast<unsigned int>(g_basicWingCpuMesh.vertices.size());
-    const unsigned int wingVertexBytes =
-        wingVertexCount * sizeof(azel::DebugColorVertex);
-    const unsigned int wingIndexBytes =
-        wingVertexCount * sizeof(std::uint16_t);
-
-    g_vdp1Vertices = static_cast<azel::DebugColorVertex*>(
-        probeGpuAlloc(
-            wingVertexBytes,
-            SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_vdp1VertexUid));
-    g_vdp1LightingVertices = static_cast<azel::DebugColorVertex*>(
-        probeGpuAlloc(
-            wingVertexBytes,
-            SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_vdp1LightingVertexUid));
-    g_vdp1Indices = static_cast<std::uint16_t*>(
-        probeGpuAlloc(
-            wingIndexBytes,
-            SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_vdp1IndexUid));
-
-    if (!g_vdp1Vertices ||
-        !g_vdp1LightingVertices ||
-        !g_vdp1Indices) {
-        failure("[FAIL] BASIC WING GPU MEMORY");
-        return;
-    }
-
     const Vdp1ModelSource vdp1Source = basicWingVdp1Source();
-    if (!uploadVdp1Textures(vdp1Source) ||
-        !buildVdp1TexturedBuffers(vdp1Source)) {
-        failure("[FAIL] BASIC WING TEXTURE GPU");
+    if (!prepare_vdp1_model(vdp1Source)) {
+        failure("[FAIL] BASIC WING VDP1 PREPARE");
         return;
     }
-    g_vdp1TexturedReady = true;
-    status("[PASS] GXM BASIC WING TEXTURES", 0xFF80E0FFu);
+    status("[PASS] GXM BASIC WING VDP1 PREPARE", 0xFF80E0FFu);
 
-    std::memcpy(
-        g_vdp1Vertices,
-        g_basicWingCpuMesh.vertices.data(),
-        wingVertexBytes);
-    std::memcpy(
-        g_vdp1LightingVertices,
-        g_basicWingCpuMesh.lightingVertices.data(),
-        wingVertexBytes);
-    for (unsigned int i = 0; i < wingVertexCount; ++i)
-        g_vdp1Indices[i] = static_cast<std::uint16_t>(i);
+    const unsigned int wingVertexCount =
+        static_cast<unsigned int>(vdp1Source.vertexCount);
 
     const unsigned int wingAlignedW =
         (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
@@ -2237,7 +2255,7 @@ bool load_basic_wing_viewer()
     return true;
 }
 
-static bool submitVdp1Model(
+bool submit_vdp1_model(
     const Vdp1ModelSource& model,
     const Vdp1DrawState& drawState)
 {
@@ -2503,7 +2521,7 @@ static void renderBasicWingViewer()
     drawState.mode = renderMode;
 
     const Vdp1ModelSource model = basicWingVdp1Source();
-    if (!submitVdp1Model(model, drawState)) {
+    if (!submit_vdp1_model(model, drawState)) {
         sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
         return;
