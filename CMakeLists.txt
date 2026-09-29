@@ -236,6 +236,7 @@ add_executable(lagi
  ${LAGI_TEXTURE_F_OBJ}
  src/platform/vita/null_audio.cpp
  src/integration/azel_runtime_smoke.cpp
+ src/integration/azel_render_bridge.cpp
  src/integration/azel_fixedpoint_vita.cpp
  src/integration/azel_heap_vita.cpp
  src/integration/azel_task_vita.cpp
