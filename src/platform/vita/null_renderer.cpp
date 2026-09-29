@@ -1,5 +1,6 @@
 #include "lagi/platform.h"
 #include "lagi/debug_mesh.h"
+#include "lagi/vdp1_renderer.h"
 
 #include <psp2/display.h>
 #include <psp2/gxm.h>
@@ -115,19 +116,19 @@ static const SceGxmProgramParameter* g_texturedLitGouraudBParam = nullptr;
 static bool g_probeScenePassed = false;
 static azel::BasicWingDebugMesh g_basicWingCpuMesh{};
 static bool g_basicWingCpuReady = false;
-static SceUID g_basicWingVertexUid = -1;
-static SceUID g_basicWingLightingVertexUid = -1;
-static SceUID g_basicWingIndexUid = -1;
-static azel::DebugColorVertex* g_basicWingVertices = nullptr;
-static azel::DebugColorVertex* g_basicWingLightingVertices = nullptr;
-static std::uint16_t* g_basicWingIndices = nullptr;
+static SceUID g_vdp1VertexUid = -1;
+static SceUID g_vdp1LightingVertexUid = -1;
+static SceUID g_vdp1IndexUid = -1;
+static azel::DebugColorVertex* g_vdp1Vertices = nullptr;
+static azel::DebugColorVertex* g_vdp1LightingVertices = nullptr;
+static std::uint16_t* g_vdp1Indices = nullptr;
 
-static SceUID g_basicWingTextureVertexUid = -1;
-static SceUID g_basicWingGouraudVertexUid = -1;
-static SceUID g_basicWingTextureIndexUid = -1;
-static azel::DebugTextureVertex* g_basicWingTextureVertices = nullptr;
-static azel::DebugTextureVertex* g_basicWingGouraudVertices = nullptr;
-static std::uint16_t* g_basicWingTextureIndices = nullptr;
+static SceUID g_vdp1TextureVertexUid = -1;
+static SceUID g_vdp1GouraudVertexUid = -1;
+static SceUID g_vdp1TextureIndexUid = -1;
+static azel::DebugTextureVertex* g_vdp1TextureVertices = nullptr;
+static azel::DebugTextureVertex* g_vdp1GouraudVertices = nullptr;
+static std::uint16_t* g_vdp1TextureIndices = nullptr;
 
 struct TextureBatch {
     unsigned int firstIndex = 0;
@@ -142,9 +143,9 @@ struct GpuMode1Texture {
     unsigned int height = 0;
 };
 
-static std::vector<TextureBatch> g_basicWingTextureBatches;
-static std::vector<GpuMode1Texture> g_basicWingGpuTextures;
-static bool g_basicWingTexturedReady = false;
+static std::vector<TextureBatch> g_vdp1TextureBatches;
+static std::vector<GpuMode1Texture> g_vdp1GpuTextures;
+static bool g_vdp1TexturedReady = false;
 
 static bool g_probeDisplayingGxm = false;
 static bool g_viewerReady = false;
@@ -156,11 +157,27 @@ static unsigned int g_basicWingAnimationFrame = 0;
 static std::uint64_t g_basicWingAnimationLastUs = 0;
 static std::uint64_t g_basicWingAnimationPhase = 0;
 
+static Vdp1ModelSource basicWingVdp1Source()
+{
+    Vdp1ModelSource source{};
+    source.vertices = g_basicWingCpuMesh.vertices.data();
+    source.lightingVertices = g_basicWingCpuMesh.lightingVertices.data();
+    source.vertexCount = g_basicWingCpuMesh.vertices.size();
+    source.polygons = g_basicWingCpuMesh.polygonRecords.data();
+    source.gouraud555 = g_basicWingCpuMesh.gouraud555.data();
+    source.polygonCount = g_basicWingCpuMesh.polygons;
+    source.textures = g_basicWingCpuMesh.decodedTextureData.data();
+    source.textureCount = model.textureCount;
+    source.polygonTextureIndices = g_basicWingCpuMesh.polygonTextureIndices.data();
+    source.polygonTextureIndexCount = g_basicWingCpuMesh.polygonTextureIndices.size();
+    return source;
+}
+
 static bool g_presentClockInitialized = false;
 static unsigned int g_lastPresentVcount = 0;
 
 // Defined below with the textured-viewer helpers; shutdown() needs it earlier.
-static void freeBasicWingTextures();
+static void freeVdp1Textures();
 
 static void waitFor30HzPresentSlot()
 {
@@ -334,26 +351,26 @@ void shutdown()
         }
     };
 
-    void* basicWingVertexPtr = g_basicWingVertices;
-    freeSimpleMappedProbe(g_basicWingVertexUid, basicWingVertexPtr);
-    g_basicWingVertices = nullptr;
-    void* basicWingLightingPtr = g_basicWingLightingVertices;
-    freeSimpleMappedProbe(g_basicWingLightingVertexUid, basicWingLightingPtr);
-    g_basicWingLightingVertices = nullptr;
-    void* basicWingIndexPtr = g_basicWingIndices;
-    freeSimpleMappedProbe(g_basicWingIndexUid, basicWingIndexPtr);
-    g_basicWingIndices = nullptr;
+    void* basicWingVertexPtr = g_vdp1Vertices;
+    freeSimpleMappedProbe(g_vdp1VertexUid, basicWingVertexPtr);
+    g_vdp1Vertices = nullptr;
+    void* basicWingLightingPtr = g_vdp1LightingVertices;
+    freeSimpleMappedProbe(g_vdp1LightingVertexUid, basicWingLightingPtr);
+    g_vdp1LightingVertices = nullptr;
+    void* basicWingIndexPtr = g_vdp1Indices;
+    freeSimpleMappedProbe(g_vdp1IndexUid, basicWingIndexPtr);
+    g_vdp1Indices = nullptr;
 
-    void* textureVertexPtr = g_basicWingTextureVertices;
-    freeSimpleMappedProbe(g_basicWingTextureVertexUid, textureVertexPtr);
-    g_basicWingTextureVertices = nullptr;
-    void* gouraudVertexPtr = g_basicWingGouraudVertices;
-    freeSimpleMappedProbe(g_basicWingGouraudVertexUid, gouraudVertexPtr);
-    g_basicWingGouraudVertices = nullptr;
-    void* textureIndexPtr = g_basicWingTextureIndices;
-    freeSimpleMappedProbe(g_basicWingTextureIndexUid, textureIndexPtr);
-    g_basicWingTextureIndices = nullptr;
-    freeBasicWingTextures();
+    void* textureVertexPtr = g_vdp1TextureVertices;
+    freeSimpleMappedProbe(g_vdp1TextureVertexUid, textureVertexPtr);
+    g_vdp1TextureVertices = nullptr;
+    void* gouraudVertexPtr = g_vdp1GouraudVertices;
+    freeSimpleMappedProbe(g_vdp1GouraudVertexUid, gouraudVertexPtr);
+    g_vdp1GouraudVertices = nullptr;
+    void* textureIndexPtr = g_vdp1TextureIndices;
+    freeSimpleMappedProbe(g_vdp1TextureIndexUid, textureIndexPtr);
+    g_vdp1TextureIndices = nullptr;
+    freeVdp1Textures();
 
     if (g_probeShaderPatcher) {
         if (g_texturedLitFragmentProgram) {
@@ -672,9 +689,9 @@ static void probePatcherHostFree(void*, void* mem)
     std::free(mem);
 }
 
-static void freeBasicWingTextures()
+static void freeVdp1Textures()
 {
-    for (auto& texture : g_basicWingGpuTextures) {
+    for (auto& texture : g_vdp1GpuTextures) {
         if (texture.uid >= 0) {
             if (texture.data)
                 sceGxmUnmapMemory(texture.data);
@@ -683,25 +700,23 @@ static void freeBasicWingTextures()
         texture.uid = -1;
         texture.data = nullptr;
     }
-    g_basicWingGpuTextures.clear();
-    g_basicWingTextureBatches.clear();
-    g_basicWingTexturedReady = false;
+    g_vdp1GpuTextures.clear();
+    g_vdp1TextureBatches.clear();
+    g_vdp1TexturedReady = false;
 }
 
-static bool uploadBasicWingTextures()
+static bool uploadVdp1Textures(const Vdp1ModelSource& model)
 {
-    freeBasicWingTextures();
+    freeVdp1Textures();
 
-    if (!g_basicWingCpuMesh.mode1DecodeFullyResolved ||
-        g_basicWingCpuMesh.decodedTextureData.empty() ||
-        g_basicWingCpuMesh.polygonTextureIndices.size() !=
-            g_basicWingCpuMesh.polygons)
+    if (!model.valid())
         return false;
 
-    g_basicWingGpuTextures.reserve(
-        g_basicWingCpuMesh.decodedTextureData.size());
+    g_vdp1GpuTextures.reserve(model.textureCount);
 
-    for (const auto& source : g_basicWingCpuMesh.decodedTextureData) {
+    for (std::size_t textureIndex = 0;
+         textureIndex < model.textureCount; ++textureIndex) {
+        const auto& source = model.textures[textureIndex];
         if (!source.width || !source.height ||
             source.rgba.size() != source.width * source.height)
             return false;
@@ -747,62 +762,61 @@ static bool uploadBasicWingTextures()
         sceGxmTextureSetMagFilter(
             &gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
 
-        g_basicWingGpuTextures.push_back(gpu);
+        g_vdp1GpuTextures.push_back(gpu);
     }
 
-    return g_basicWingGpuTextures.size() ==
-           g_basicWingCpuMesh.decodedTextureData.size();
+    return g_vdp1GpuTextures.size() == model.textureCount;
 }
 
-static bool buildBasicWingTexturedBuffers()
+static bool buildVdp1TexturedBuffers(const Vdp1ModelSource& model)
 {
-    const unsigned int vertexCount =
-        static_cast<unsigned int>(g_basicWingCpuMesh.vertices.size());
-    if (vertexCount != g_basicWingCpuMesh.polygons * 6u ||
-        vertexCount > 65535u ||
-        g_basicWingGpuTextures.empty())
+    if (!model.valid() || model.vertexCount > 65535u ||
+        g_vdp1GpuTextures.empty())
         return false;
+
+    const unsigned int vertexCount =
+        static_cast<unsigned int>(model.vertexCount);
 
     const unsigned int vertexBytes =
         vertexCount * sizeof(azel::DebugTextureVertex);
     const unsigned int indexBytes =
         vertexCount * sizeof(std::uint16_t);
 
-    g_basicWingTextureVertices =
+    g_vdp1TextureVertices =
         static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(
                 vertexBytes,
                 SCE_GXM_MEMORY_ATTRIB_READ,
-                &g_basicWingTextureVertexUid));
-    g_basicWingGouraudVertices =
+                &g_vdp1TextureVertexUid));
+    g_vdp1GouraudVertices =
         static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(
                 vertexBytes,
                 SCE_GXM_MEMORY_ATTRIB_READ,
-                &g_basicWingGouraudVertexUid));
-    g_basicWingTextureIndices =
+                &g_vdp1GouraudVertexUid));
+    g_vdp1TextureIndices =
         static_cast<std::uint16_t*>(
             probeGpuAlloc(
                 indexBytes,
                 SCE_GXM_MEMORY_ATTRIB_READ,
-                &g_basicWingTextureIndexUid));
+                &g_vdp1TextureIndexUid));
 
-    if (!g_basicWingTextureVertices ||
-        !g_basicWingGouraudVertices ||
-        !g_basicWingTextureIndices)
+    if (!g_vdp1TextureVertices ||
+        !g_vdp1GouraudVertices ||
+        !g_vdp1TextureIndices)
         return false;
 
     static const int triCorners[6] = {0, 1, 2, 0, 2, 3};
 
-    for (unsigned int p = 0; p < g_basicWingCpuMesh.polygons; ++p) {
-        const auto& record = g_basicWingCpuMesh.polygonRecords[p];
+    for (unsigned int p = 0; p < model.polygonCount; ++p) {
+        const auto& record = model.polygons[p];
         const std::uint16_t textureIndex =
-            g_basicWingCpuMesh.polygonTextureIndices[p];
-        if (textureIndex >= g_basicWingCpuMesh.decodedTextureData.size())
+            model.polygonTextureIndices[p];
+        if (textureIndex >= model.textureCount)
             return false;
 
         const auto& texture =
-            g_basicWingCpuMesh.decodedTextureData[textureIndex];
+            model.textures[textureIndex];
 
         const float u0 = 0.5f / static_cast<float>(texture.width);
         const float v0 = 0.5f / static_cast<float>(texture.height);
@@ -838,19 +852,19 @@ static bool buildBasicWingTexturedBuffers()
         for (unsigned int k = 0; k < 6; ++k) {
             const unsigned int vertexIndex = p * 6u + k;
             const auto& source =
-                g_basicWingCpuMesh.vertices[vertexIndex];
+                model.vertices[vertexIndex];
             const int corner = order[triCorners[k]];
 
-            g_basicWingTextureVertices[vertexIndex] = {
+            g_vdp1TextureVertices[vertexIndex] = {
                 source.x, source.y, source.z,
                 uv[corner][0], uv[corner][1]
             };
 
             const auto& lightingSource =
-                g_basicWingCpuMesh.lightingVertices[vertexIndex];
+                model.lightingVertices[vertexIndex];
             const float shade =
                 static_cast<float>(lightingSource.r) / 255.0f;
-            g_basicWingGouraudVertices[vertexIndex] = {
+            g_vdp1GouraudVertices[vertexIndex] = {
                 source.x, source.y, source.z,
                 shade, 0.0f
             };
@@ -858,21 +872,21 @@ static bool buildBasicWingTexturedBuffers()
     }
 
     unsigned int outIndex = 0;
-    g_basicWingTextureBatches.assign(
-        g_basicWingGpuTextures.size(), TextureBatch{});
+    g_vdp1TextureBatches.assign(
+        g_vdp1GpuTextures.size(), TextureBatch{});
 
     for (unsigned int t = 0;
-         t < g_basicWingGpuTextures.size(); ++t) {
-        TextureBatch& batch = g_basicWingTextureBatches[t];
+         t < g_vdp1GpuTextures.size(); ++t) {
+        TextureBatch& batch = g_vdp1TextureBatches[t];
         batch.firstIndex = outIndex;
 
         for (unsigned int p = 0;
-             p < g_basicWingCpuMesh.polygons; ++p) {
-            if (g_basicWingCpuMesh.polygonTextureIndices[p] != t)
+             p < model.polygonCount; ++p) {
+            if (model.polygonTextureIndices[p] != t)
                 continue;
 
             for (unsigned int k = 0; k < 6; ++k)
-                g_basicWingTextureIndices[outIndex++] =
+                g_vdp1TextureIndices[outIndex++] =
                     static_cast<std::uint16_t>(p * 6u + k);
         }
 
@@ -910,28 +924,28 @@ static void applyBasicWingAnimationFrame(unsigned int frameIndex)
     for (unsigned int i = 0; i < vertexCount; ++i) {
         const auto& src = frame.vertices[i];
 
-        if (g_basicWingVertices) {
-            g_basicWingVertices[i].x = src.x;
-            g_basicWingVertices[i].y = src.y;
-            g_basicWingVertices[i].z = src.z;
+        if (g_vdp1Vertices) {
+            g_vdp1Vertices[i].x = src.x;
+            g_vdp1Vertices[i].y = src.y;
+            g_vdp1Vertices[i].z = src.z;
         }
 
-        if (g_basicWingLightingVertices) {
-            g_basicWingLightingVertices[i].x = src.x;
-            g_basicWingLightingVertices[i].y = src.y;
-            g_basicWingLightingVertices[i].z = src.z;
+        if (g_vdp1LightingVertices) {
+            g_vdp1LightingVertices[i].x = src.x;
+            g_vdp1LightingVertices[i].y = src.y;
+            g_vdp1LightingVertices[i].z = src.z;
         }
 
-        if (g_basicWingTextureVertices) {
-            g_basicWingTextureVertices[i].x = src.x;
-            g_basicWingTextureVertices[i].y = src.y;
-            g_basicWingTextureVertices[i].z = src.z;
+        if (g_vdp1TextureVertices) {
+            g_vdp1TextureVertices[i].x = src.x;
+            g_vdp1TextureVertices[i].y = src.y;
+            g_vdp1TextureVertices[i].z = src.z;
         }
 
-        if (g_basicWingGouraudVertices) {
-            g_basicWingGouraudVertices[i].x = src.x;
-            g_basicWingGouraudVertices[i].y = src.y;
-            g_basicWingGouraudVertices[i].z = src.z;
+        if (g_vdp1GouraudVertices) {
+            g_vdp1GouraudVertices[i].x = src.x;
+            g_vdp1GouraudVertices[i].y = src.y;
+            g_vdp1GouraudVertices[i].z = src.z;
         }
     }
 }
@@ -1967,47 +1981,48 @@ void toggle_debug_console()
     const unsigned int wingIndexBytes =
         wingVertexCount * sizeof(std::uint16_t);
 
-    g_basicWingVertices = static_cast<azel::DebugColorVertex*>(
+    g_vdp1Vertices = static_cast<azel::DebugColorVertex*>(
         probeGpuAlloc(
             wingVertexBytes,
             SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_basicWingVertexUid));
-    g_basicWingLightingVertices = static_cast<azel::DebugColorVertex*>(
+            &g_vdp1VertexUid));
+    g_vdp1LightingVertices = static_cast<azel::DebugColorVertex*>(
         probeGpuAlloc(
             wingVertexBytes,
             SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_basicWingLightingVertexUid));
-    g_basicWingIndices = static_cast<std::uint16_t*>(
+            &g_vdp1LightingVertexUid));
+    g_vdp1Indices = static_cast<std::uint16_t*>(
         probeGpuAlloc(
             wingIndexBytes,
             SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_basicWingIndexUid));
+            &g_vdp1IndexUid));
 
-    if (!g_basicWingVertices ||
-        !g_basicWingLightingVertices ||
-        !g_basicWingIndices) {
+    if (!g_vdp1Vertices ||
+        !g_vdp1LightingVertices ||
+        !g_vdp1Indices) {
         failure("[FAIL] BASIC WING GPU MEMORY");
         return;
     }
 
-    if (!uploadBasicWingTextures() ||
-        !buildBasicWingTexturedBuffers()) {
+    const Vdp1ModelSource vdp1Source = basicWingVdp1Source();
+    if (!uploadVdp1Textures(vdp1Source) ||
+        !buildVdp1TexturedBuffers(vdp1Source)) {
         failure("[FAIL] BASIC WING TEXTURE GPU");
         return;
     }
-    g_basicWingTexturedReady = true;
+    g_vdp1TexturedReady = true;
     status("[PASS] GXM BASIC WING TEXTURES", 0xFF80E0FFu);
 
     std::memcpy(
-        g_basicWingVertices,
+        g_vdp1Vertices,
         g_basicWingCpuMesh.vertices.data(),
         wingVertexBytes);
     std::memcpy(
-        g_basicWingLightingVertices,
+        g_vdp1LightingVertices,
         g_basicWingCpuMesh.lightingVertices.data(),
         wingVertexBytes);
     for (unsigned int i = 0; i < wingVertexCount; ++i)
-        g_basicWingIndices[i] = static_cast<std::uint16_t>(i);
+        g_vdp1Indices[i] = static_cast<std::uint16_t>(i);
 
     const unsigned int wingAlignedW =
         (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
@@ -2067,7 +2082,7 @@ void toggle_debug_console()
 
     const int wingStreamResult =
         sceGxmSetVertexStream(
-            g_probeContext, 0, g_basicWingVertices);
+            g_probeContext, 0, g_vdp1Vertices);
     if (wingStreamResult < 0) {
         sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
@@ -2079,7 +2094,7 @@ void toggle_debug_console()
         g_probeContext,
         SCE_GXM_PRIMITIVE_TRIANGLES,
         SCE_GXM_INDEX_FORMAT_U16,
-        g_basicWingIndices,
+        g_vdp1Indices,
         wingVertexCount);
 
     if (wingDrawResult < 0) {
@@ -2222,14 +2237,207 @@ bool load_basic_wing_viewer()
     return true;
 }
 
+static bool submitVdp1Model(
+    const Vdp1ModelSource& model,
+    const Vdp1DrawState& drawState)
+{
+    if (!model.valid() || !g_probeContext ||
+        !g_vdp1Vertices || !g_vdp1LightingVertices ||
+        !g_vdp1TextureVertices || !g_vdp1GouraudVertices ||
+        !g_vdp1Indices || !g_vdp1TextureIndices)
+        return false;
+
+    const bool textured =
+        drawState.mode == Vdp1RenderMode::Textured && g_vdp1TexturedReady;
+    const bool texturedLit =
+        drawState.mode == Vdp1RenderMode::TexturedGouraud && g_vdp1TexturedReady;
+    const bool gouraudDebug =
+        drawState.mode == Vdp1RenderMode::GouraudGrayscale && g_vdp1TexturedReady;
+    const bool wireframe =
+        drawState.mode == Vdp1RenderMode::Wireframe;
+
+    sceGxmSetVertexProgram(
+        g_probeContext,
+        (textured || texturedLit || gouraudDebug)
+            ? g_textureVertexProgram
+            : g_probeVertexProgram);
+    sceGxmSetFragmentProgram(
+        g_probeContext,
+        texturedLit
+            ? g_texturedLitFragmentProgram
+            : (textured
+                ? g_textureFragmentProgram
+                : (gouraudDebug
+                    ? g_gouraudDebugFragmentProgram
+                    : g_probeFragmentProgram)));
+
+    sceGxmSetCullMode(
+        g_probeContext,
+        wireframe ? SCE_GXM_CULL_NONE : SCE_GXM_CULL_CW);
+    sceGxmSetDefaultRegionClipAndViewport(
+        g_probeContext, kWidth - 1, kHeight - 1);
+
+    const SceGxmDepthFunc depthFunc =
+        wireframe ? SCE_GXM_DEPTH_FUNC_LESS : SCE_GXM_DEPTH_FUNC_LESS_EQUAL;
+    sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
+    sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+
+    const SceGxmPolygonMode polygonMode =
+        wireframe ? SCE_GXM_POLYGON_MODE_LINE : SCE_GXM_POLYGON_MODE_TRIANGLE_FILL;
+    sceGxmSetFrontPolygonMode(g_probeContext, polygonMode);
+    sceGxmSetBackPolygonMode(g_probeContext, polygonMode);
+
+    void* uniformBuffer = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniformBuffer) < 0 || !uniformBuffer)
+        return false;
+
+    sceGxmSetUniformDataF(
+        uniformBuffer,
+        (textured || texturedLit || gouraudDebug)
+            ? g_textureWvpParam
+            : g_probeWvpParam,
+        0, 16, drawState.wvp);
+
+    const void* vertexStream =
+        (textured || texturedLit || gouraudDebug)
+            ? static_cast<const void*>(g_vdp1TextureVertices)
+            : static_cast<const void*>(g_vdp1Vertices);
+
+    if (sceGxmSetVertexStream(g_probeContext, 0, vertexStream) < 0)
+        return false;
+
+    if (textured) {
+        for (unsigned int t = 0; t < g_vdp1GpuTextures.size(); ++t) {
+            const TextureBatch& batch = g_vdp1TextureBatches[t];
+            if (!batch.indexCount)
+                continue;
+
+            sceGxmSetFragmentTexture(
+                g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
+            sceGxmDraw(
+                g_probeContext,
+                SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16,
+                g_vdp1TextureIndices + batch.firstIndex,
+                batch.indexCount);
+        }
+        return true;
+    }
+
+    if (texturedLit || gouraudDebug) {
+        // Preserve original Saturn quad identity. The fragment shaders receive
+        // all four projected corners and all four RGB555 Gouraud values, then
+        // perform the proven inverse-bilinear reconstruction per pixel.
+        static const unsigned int cornerVertex[4] = {0, 1, 2, 5};
+        ViewerMat4 wvp{};
+        std::memcpy(wvp.m, drawState.wvp, sizeof(wvp.m));
+
+        for (unsigned int p = 0;
+             p < static_cast<unsigned int>(model.polygonCount); ++p) {
+            const std::uint16_t textureIndex = model.polygonTextureIndices[p];
+            if (texturedLit && textureIndex >= g_vdp1GpuTextures.size())
+                continue;
+
+            ViewerScreenPoint screen[4];
+            bool visible = true;
+            for (unsigned int corner = 0; corner < 4; ++corner) {
+                screen[corner] = projectViewerPoint(
+                    wvp, model.vertices[p * 6u + cornerVertex[corner]]);
+                if (!screen[corner].valid)
+                    visible = false;
+            }
+            if (!visible)
+                continue;
+
+            const float quadScreen01[4] = {
+                screen[0].x, screen[0].y,
+                screen[1].x, screen[1].y
+            };
+            const float quadScreen23[4] = {
+                screen[2].x, screen[2].y,
+                screen[3].x, screen[3].y
+            };
+
+            const auto& gouraud = model.gouraud555[p];
+            const float gouraudR[4] = {
+                gouraud.corner[0][0], gouraud.corner[1][0],
+                gouraud.corner[2][0], gouraud.corner[3][0]
+            };
+            const float gouraudG[4] = {
+                gouraud.corner[0][1], gouraud.corner[1][1],
+                gouraud.corner[2][1], gouraud.corner[3][1]
+            };
+            const float gouraudB[4] = {
+                gouraud.corner[0][2], gouraud.corner[1][2],
+                gouraud.corner[2][2], gouraud.corner[3][2]
+            };
+
+            void* fragmentUniformBuffer = nullptr;
+            if (sceGxmReserveFragmentDefaultUniformBuffer(
+                    g_probeContext, &fragmentUniformBuffer) < 0 ||
+                !fragmentUniformBuffer)
+                continue;
+
+            const SceGxmProgramParameter* quad01Param =
+                texturedLit ? g_texturedLitQuadScreen01Param
+                            : g_gouraudDebugQuadScreen01Param;
+            const SceGxmProgramParameter* quad23Param =
+                texturedLit ? g_texturedLitQuadScreen23Param
+                            : g_gouraudDebugQuadScreen23Param;
+            const SceGxmProgramParameter* rParam =
+                texturedLit ? g_texturedLitGouraudRParam
+                            : g_gouraudDebugGouraudRParam;
+            const SceGxmProgramParameter* gParam =
+                texturedLit ? g_texturedLitGouraudGParam
+                            : g_gouraudDebugGouraudGParam;
+            const SceGxmProgramParameter* bParam =
+                texturedLit ? g_texturedLitGouraudBParam
+                            : g_gouraudDebugGouraudBParam;
+
+            sceGxmSetUniformDataF(fragmentUniformBuffer, quad01Param, 0, 4, quadScreen01);
+            sceGxmSetUniformDataF(fragmentUniformBuffer, quad23Param, 0, 4, quadScreen23);
+            sceGxmSetUniformDataF(fragmentUniformBuffer, rParam, 0, 4, gouraudR);
+            sceGxmSetUniformDataF(fragmentUniformBuffer, gParam, 0, 4, gouraudG);
+            sceGxmSetUniformDataF(fragmentUniformBuffer, bParam, 0, 4, gouraudB);
+
+            if (texturedLit) {
+                sceGxmSetFragmentTexture(
+                    g_probeContext, 0,
+                    &g_vdp1GpuTextures[textureIndex].texture);
+            }
+
+            sceGxmDraw(
+                g_probeContext,
+                SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16,
+                g_vdp1Indices + p * 6u,
+                6);
+        }
+        return true;
+    }
+
+    sceGxmDraw(
+        g_probeContext,
+        SCE_GXM_PRIMITIVE_TRIANGLES,
+        SCE_GXM_INDEX_FORMAT_U16,
+        g_vdp1Indices,
+        static_cast<unsigned int>(model.vertexCount));
+    return true;
+}
+
 static void renderBasicWingViewer()
 {
     if (!g_viewerReady || !g_gxmInitialized || !g_probeContext ||
         !g_probeRenderTarget || !g_probeColorBuffer || !g_probeColorBuffer2 ||
         !g_probeVertexProgram || !g_probeFragmentProgram ||
-        !g_basicWingVertices || !g_basicWingLightingVertices ||
-        !g_basicWingGouraudVertices ||
-        !g_basicWingIndices)
+        !g_vdp1Vertices || !g_vdp1LightingVertices ||
+        !g_vdp1GouraudVertices ||
+        !g_vdp1Indices)
         return;
 
     g_viewYaw += input::analog_x() * 0.035f;
@@ -2283,222 +2491,22 @@ static void renderBasicWingViewer()
             colorSurface, &g_probeDepthSurface) < 0)
         return;
 
-    const bool textured =
-        g_viewMode == 0 && g_basicWingTexturedReady;
-    const bool texturedLit =
-        g_viewMode == 1 && g_basicWingTexturedReady;
-    const bool gouraudDebug =
-        g_viewMode == 2 && g_basicWingTexturedReady;
+    const Vdp1RenderMode renderMode =
+        static_cast<Vdp1RenderMode>(g_viewMode);
 
-    if (texturedLit || gouraudDebug)
+    if (renderMode == Vdp1RenderMode::TexturedGouraud ||
+        renderMode == Vdp1RenderMode::GouraudGrayscale)
         updateViewerAzelLighting();
 
-    sceGxmSetVertexProgram(
-        g_probeContext,
-        (textured || texturedLit || gouraudDebug)
-            ? g_textureVertexProgram
-            : g_probeVertexProgram);
-    sceGxmSetFragmentProgram(
-        g_probeContext,
-        texturedLit
-            ? g_texturedLitFragmentProgram
-            : (textured
-                ? g_textureFragmentProgram
-                : (gouraudDebug
-                    ? g_gouraudDebugFragmentProgram
-                    : g_probeFragmentProgram)));
-    const bool wireframe =
-        g_viewMode == 4;
+    Vdp1DrawState drawState{};
+    std::memcpy(drawState.wvp, wvp.m, sizeof(drawState.wvp));
+    drawState.mode = renderMode;
 
-    sceGxmSetCullMode(
-        g_probeContext,
-        wireframe
-            ? SCE_GXM_CULL_NONE
-            : SCE_GXM_CULL_CW);
-    sceGxmSetDefaultRegionClipAndViewport(
-        g_probeContext, kWidth - 1, kHeight - 1);
-    const SceGxmDepthFunc depthFunc =
-        g_viewMode == 4
-            ? SCE_GXM_DEPTH_FUNC_LESS
-            : SCE_GXM_DEPTH_FUNC_LESS_EQUAL;
-    sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
-    sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
-    sceGxmSetFrontDepthWriteEnable(
-        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
-    sceGxmSetBackDepthWriteEnable(
-        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
-
-    const SceGxmPolygonMode polygonMode =
-        g_viewMode == 4
-            ? SCE_GXM_POLYGON_MODE_LINE
-            : SCE_GXM_POLYGON_MODE_TRIANGLE_FILL;
-    sceGxmSetFrontPolygonMode(g_probeContext, polygonMode);
-    sceGxmSetBackPolygonMode(g_probeContext, polygonMode);
-
-    void* uniformBuffer = nullptr;
-    if (sceGxmReserveVertexDefaultUniformBuffer(
-            g_probeContext, &uniformBuffer) < 0 || !uniformBuffer) {
+    const Vdp1ModelSource model = basicWingVdp1Source();
+    if (!submitVdp1Model(model, drawState)) {
         sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
         return;
-    }
-
-    sceGxmSetUniformDataF(
-        uniformBuffer,
-        (textured || texturedLit || gouraudDebug)
-            ? g_textureWvpParam
-            : g_probeWvpParam,
-        0, 16, wvp.m);
-
-    const void* viewerStream =
-        (textured || texturedLit || gouraudDebug)
-            ? static_cast<const void*>(g_basicWingTextureVertices)
-            : static_cast<const void*>(g_basicWingVertices);
-
-    if (sceGxmSetVertexStream(
-            g_probeContext, 0, viewerStream) < 0) {
-        sceGxmEndScene(g_probeContext, nullptr, nullptr);
-        sceGxmFinish(g_probeContext);
-        return;
-    }
-
-    if (textured) {
-        for (unsigned int t = 0;
-             t < g_basicWingGpuTextures.size(); ++t) {
-            const TextureBatch& batch =
-                g_basicWingTextureBatches[t];
-            if (!batch.indexCount)
-                continue;
-
-            sceGxmSetFragmentTexture(
-                g_probeContext, 0,
-                &g_basicWingGpuTextures[t].texture);
-            sceGxmDraw(
-                g_probeContext,
-                SCE_GXM_PRIMITIVE_TRIANGLES,
-                SCE_GXM_INDEX_FORMAT_U16,
-                g_basicWingTextureIndices + batch.firstIndex,
-                batch.indexCount);
-        }
-    } else if (texturedLit || gouraudDebug) {
-        // Both the textured and grayscale diagnostics consume the same
-        // dynamically generated RGB555 Gouraud corner values and the same
-        // inverse-bilinear quad reconstruction. This keeps mode 2 a direct
-        // visualization of the lighting that mode 1 actually applies.
-        static const unsigned int cornerVertex[4] = {0, 1, 2, 5};
-
-        for (unsigned int p = 0;
-             p < g_basicWingCpuMesh.polygons; ++p) {
-            const std::uint16_t textureIndex =
-                g_basicWingCpuMesh.polygonTextureIndices[p];
-            if (p >= g_basicWingCpuMesh.gouraud555.size())
-                continue;
-            if (texturedLit &&
-                textureIndex >= g_basicWingGpuTextures.size())
-                continue;
-
-            ViewerScreenPoint screen[4];
-            bool visible = true;
-            for (unsigned int corner = 0; corner < 4; ++corner) {
-                screen[corner] = projectViewerPoint(
-                    wvp,
-                    g_basicWingCpuMesh.vertices[
-                        p * 6u + cornerVertex[corner]]);
-                if (!screen[corner].valid)
-                    visible = false;
-            }
-            if (!visible)
-                continue;
-
-            const float quadScreen01[4] = {
-                screen[0].x, screen[0].y,
-                screen[1].x, screen[1].y
-            };
-            const float quadScreen23[4] = {
-                screen[2].x, screen[2].y,
-                screen[3].x, screen[3].y
-            };
-
-            const auto& gouraud =
-                g_basicWingCpuMesh.gouraud555[p];
-            const float gouraudR[4] = {
-                gouraud.corner[0][0], gouraud.corner[1][0],
-                gouraud.corner[2][0], gouraud.corner[3][0]
-            };
-            const float gouraudG[4] = {
-                gouraud.corner[0][1], gouraud.corner[1][1],
-                gouraud.corner[2][1], gouraud.corner[3][1]
-            };
-            const float gouraudB[4] = {
-                gouraud.corner[0][2], gouraud.corner[1][2],
-                gouraud.corner[2][2], gouraud.corner[3][2]
-            };
-
-            void* fragmentUniformBuffer = nullptr;
-            if (sceGxmReserveFragmentDefaultUniformBuffer(
-                    g_probeContext,
-                    &fragmentUniformBuffer) < 0 ||
-                !fragmentUniformBuffer)
-                continue;
-
-            const SceGxmProgramParameter* quad01Param =
-                texturedLit
-                    ? g_texturedLitQuadScreen01Param
-                    : g_gouraudDebugQuadScreen01Param;
-            const SceGxmProgramParameter* quad23Param =
-                texturedLit
-                    ? g_texturedLitQuadScreen23Param
-                    : g_gouraudDebugQuadScreen23Param;
-            const SceGxmProgramParameter* rParam =
-                texturedLit
-                    ? g_texturedLitGouraudRParam
-                    : g_gouraudDebugGouraudRParam;
-            const SceGxmProgramParameter* gParam =
-                texturedLit
-                    ? g_texturedLitGouraudGParam
-                    : g_gouraudDebugGouraudGParam;
-            const SceGxmProgramParameter* bParam =
-                texturedLit
-                    ? g_texturedLitGouraudBParam
-                    : g_gouraudDebugGouraudBParam;
-
-            sceGxmSetUniformDataF(
-                fragmentUniformBuffer,
-                quad01Param, 0, 4, quadScreen01);
-            sceGxmSetUniformDataF(
-                fragmentUniformBuffer,
-                quad23Param, 0, 4, quadScreen23);
-            sceGxmSetUniformDataF(
-                fragmentUniformBuffer,
-                rParam, 0, 4, gouraudR);
-            sceGxmSetUniformDataF(
-                fragmentUniformBuffer,
-                gParam, 0, 4, gouraudG);
-            sceGxmSetUniformDataF(
-                fragmentUniformBuffer,
-                bParam, 0, 4, gouraudB);
-
-            if (texturedLit) {
-                sceGxmSetFragmentTexture(
-                    g_probeContext, 0,
-                    &g_basicWingGpuTextures[textureIndex].texture);
-            }
-
-            sceGxmDraw(
-                g_probeContext,
-                SCE_GXM_PRIMITIVE_TRIANGLES,
-                SCE_GXM_INDEX_FORMAT_U16,
-                g_basicWingIndices + p * 6u,
-                6);
-        }
-    } else {
-        sceGxmDraw(
-            g_probeContext,
-            SCE_GXM_PRIMITIVE_TRIANGLES,
-            SCE_GXM_INDEX_FORMAT_U16,
-            g_basicWingIndices,
-            static_cast<unsigned int>(
-                g_basicWingCpuMesh.vertices.size()));
     }
 
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
