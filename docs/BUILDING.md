@@ -166,3 +166,6 @@ The Basic Wing viewer now attempts to decode and play the same default flap anim
 The animation is displayed at 30 Hz while the viewer continues presenting at 60 Hz. Animated positions and normals feed every viewer mode, including the camera-relative RGB555 Gouraud calculation.
 
 Right-stick Y still controls camera dolly, but the near zoom limit is now `0.75` instead of `1.4`. Triangle still resets yaw, pitch, and distance to the normal `3.0` overview.
+
+
+The morph-screen flap now runs from an independent 30 Hz clock rather than one animation step per two rendered frames. For hardware validation, zoom from the normal overview into the closest detail range: animation playback speed should remain unchanged even if the renderer falls from 60 FPS to roughly 30 FPS.
