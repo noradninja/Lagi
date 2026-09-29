@@ -174,3 +174,19 @@ The morph-screen flap now runs from an independent 30 Hz clock rather than one a
 ## 30 Hz viewer cap
 
 All Basic Wing viewer modes are now capped to one presented frame every two Vita vblanks. Texture-only, polygon-debug, wireframe, RGB555-lit, and grayscale-lighting modes should therefore have the same camera/input rate. The cap is vblank-relative rather than a blind two-vblank sleep, so a more expensive rendered frame that already spans one vblank only waits for the remaining presentation slot.
+
+
+## Hardware-tested graphics baseline — 2026-09-28
+
+At the end of this session the expected Basic Wing viewer baseline on Vita hardware is:
+
+- 960x544 native GXM output, fixed 30 Hz presentation.
+- Right stick Y can dolly from the normal 3.0 overview down to 0.75 for close inspection.
+- Basic Wing morph-screen flap animation plays at an independent 30 Hz and must not slow when rendering becomes more expensive.
+- Mode 0: original decoded Saturn texture baseline.
+- Mode 1: decoded texture + quad-bilinear RGB555 Gouraud lighting + final RGB555 output quantization.
+- Mode 2: the same 5-bit Gouraud result displayed as grayscale.
+- Mode 3: polygon debug colors.
+- Mode 4: uncullled wireframe diagnostic.
+- Modes 0-3 use the hardware-validated CW front-face winding.
+- Visible 5-bit lighting/color banding is expected and intentional; a smooth 8-bit gradient is considered incorrect for this Saturn-faithful path.
