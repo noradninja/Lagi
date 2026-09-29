@@ -1,20 +1,43 @@
+#include "lagi/azel_compat.h"
+#include "common.h"
 #include "lagi/azel_render_bridge.h"
+#include "lagi/azel_live_model_adapter.h"
 #include "lagi/platform.h"
 
 #include <cstdint>
+#include <cstring>
 
 struct sProcessed3dModel;
+
+// Full Azel builds provide these globals. They are weak here so the current
+// smoke runtime can link before 3dEngine.cpp/menu_dragonMorph.cpp are part of
+// the Vita executable.
+extern sMatrix4x3* pCurrentMatrix __attribute__((weak));
+
+struct sCurrentLightVector
+{
+    sVec3_FP m_lightVector;
+    u16 m_color[3];
+};
+extern sCurrentLightVector currentLightVector_M __attribute__((weak));
 
 namespace lagi::azel_bridge {
 
 static std::uint32_t g_submissionCount = 0;
 static sProcessed3dModel* g_lastModel = nullptr;
+static LiveVdp1Model g_lastAdaptedModel{};
+static bool g_hasAdaptedModel = false;
+static SubmissionState g_lastState{};
 static bool g_reportedFirstSubmission = false;
+static bool g_reportedFirstAdaptedModel = false;
 
 void begin_frame()
 {
     g_submissionCount = 0;
     g_lastModel = nullptr;
+    g_hasAdaptedModel = false;
+    g_lastAdaptedModel = {};
+    g_lastState = {};
 }
 
 std::uint32_t submission_count()
@@ -27,6 +50,46 @@ sProcessed3dModel* last_model()
     return g_lastModel;
 }
 
+const LiveVdp1Model* last_adapted_model()
+{
+    return g_hasAdaptedModel ? &g_lastAdaptedModel : nullptr;
+}
+
+const SubmissionState& last_submission_state()
+{
+    return g_lastState;
+}
+
+static void capture_runtime_state(bool billboard)
+{
+    g_lastState = {};
+    g_lastState.billboard = billboard;
+
+    // For normal objects Azel's pCurrentMatrix already contains camera/view
+    // and model transforms at submission time. Billboard capture will later
+    // substitute cameraProperties2.m88_billboardViewMatrix when that path is
+    // linked into the Vita runtime.
+    if (&pCurrentMatrix && pCurrentMatrix) {
+        for (unsigned int row = 0; row < 3; ++row) {
+            for (unsigned int col = 0; col < 4; ++col) {
+                g_lastState.modelMatrix[row * 4u + col] =
+                    pCurrentMatrix->m[row][col].asS32();
+            }
+        }
+        g_lastState.hasModelMatrix = true;
+    }
+
+    if (&currentLightVector_M) {
+        for (unsigned int i = 0; i < 3; ++i) {
+            g_lastState.lightVector[i] =
+                currentLightVector_M.m_lightVector[i].asS32();
+            g_lastState.lightColor[i] =
+                currentLightVector_M.m_color[i];
+        }
+        g_lastState.hasLight = true;
+    }
+}
+
 static void record_submission(sProcessed3dModel* model, bool billboard)
 {
     if (!model)
@@ -34,6 +97,11 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
 
     ++g_submissionCount;
     g_lastModel = model;
+    capture_runtime_state(billboard);
+
+    g_lastAdaptedModel = {};
+    g_hasAdaptedModel =
+        adapt_processed_model(model, g_lastAdaptedModel);
 
     if (!g_reportedFirstSubmission) {
         lagi::platform::renderer::status(
@@ -43,6 +111,13 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
             0xFF70E0A0u);
         g_reportedFirstSubmission = true;
     }
+
+    if (g_hasAdaptedModel && !g_reportedFirstAdaptedModel) {
+        lagi::platform::renderer::status(
+            "[PASS] AZEL MODEL -> VDP1 SOURCE",
+            0xFF70E0A0u);
+        g_reportedFirstAdaptedModel = true;
+    }
 }
 
 } // namespace lagi::azel_bridge
@@ -50,8 +125,7 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
 // These are the same render-boundary symbols used throughout Azel field,
 // town, battle, dragon, and menu code. Desktop Azel implements them in
 // 3dEngine_flush.cpp; that implementation is excluded by USE_NULL_RENDERER.
-// Lagi owns the Vita implementation and will progressively adapt the captured
-// model/matrix/light state into the native VDP1 submission path.
+// Lagi owns the Vita implementation.
 void addObjectToDrawList(sProcessed3dModel* model)
 {
     lagi::azel_bridge::record_submission(model, false);
