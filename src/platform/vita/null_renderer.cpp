@@ -156,8 +156,43 @@ static unsigned int g_basicWingAnimationFrame = 0;
 static std::uint64_t g_basicWingAnimationLastUs = 0;
 static std::uint64_t g_basicWingAnimationPhase = 0;
 
+static bool g_presentClockInitialized = false;
+static unsigned int g_lastPresentVcount = 0;
+
 // Defined below with the textured-viewer helpers; shutdown() needs it earlier.
 static void freeBasicWingTextures();
+
+static void waitFor30HzPresentSlot()
+{
+    // The Vita display scans at 60 Hz. Queueing with NEXTFRAME makes the
+    // buffer become front on the following vblank, so wait until at least
+    // one vblank has elapsed since the previous presentation before queueing.
+    // The queued buffer then lands on the second vblank: a stable 30 Hz cap.
+    //
+    // If rendering itself already consumed one or more vblanks, this does
+    // not add an unnecessary fixed two-vblank delay.
+    unsigned int now =
+        static_cast<unsigned int>(sceDisplayGetVcount());
+
+    if (!g_presentClockInitialized) {
+        g_lastPresentVcount = now;
+        g_presentClockInitialized = true;
+    }
+
+    while (static_cast<unsigned int>(
+               now - g_lastPresentVcount) < 1u) {
+        sceDisplayWaitVblankStart();
+        now = static_cast<unsigned int>(
+            sceDisplayGetVcount());
+    }
+}
+
+static void mark30HzPresented()
+{
+    g_lastPresentVcount =
+        static_cast<unsigned int>(sceDisplayGetVcount());
+    g_presentClockInitialized = true;
+}
 
 static void fill(std::uint32_t color)
 {
@@ -2156,6 +2191,8 @@ bool load_basic_wing_viewer()
     g_basicWingAnimationFrame = 0;
     g_basicWingAnimationLastUs = 0;
     g_basicWingAnimationPhase = 0;
+    g_presentClockInitialized = false;
+    g_lastPresentVcount = 0;
     g_basicWingCpuReady = true;
     g_viewerReady = true;
     status("[PASS] DRAGON0 VDP1 212 RECORDS", 0xFF80E0FFu);
@@ -2474,8 +2511,11 @@ static void renderBasicWingViewer()
     fb.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
     fb.width = kWidth;
     fb.height = kHeight;
+
+    waitFor30HzPresentSlot();
     sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
     sceDisplayWaitVblankStart();
+    mark30HzPresented();
 
     // The buffer just queued is now front; draw the next frame into the
     // opposite GXM surface so scanout and rendering never touch the same
