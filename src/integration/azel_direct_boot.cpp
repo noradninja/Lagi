@@ -7,6 +7,13 @@
 
 #include <cstdio>
 
+// Implemented by azel_saturn_memory_vita.cpp. Keep these narrow declarations
+// here instead of including Azel common.h, which drags in unrelated task/VDP2
+// definitions that the direct-boot resolver does not need.
+s8 readSaturnS8(sSaturnPtr ptr);
+sSaturnPtr readSaturnEA(sSaturnPtr ptr);
+std::string readSaturnString(sSaturnPtr ptr);
+
 namespace lagi::azel {
 
 static DirectBootTarget g_target{};
