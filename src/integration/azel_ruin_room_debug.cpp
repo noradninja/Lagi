@@ -143,6 +143,181 @@ static u32 be32(const std::vector<u8>& data, u32 offset)
            static_cast<u32>(data[offset+3]);
 }
 
+static std::uint32_t rgb555ToRgba8888(u16 color)
+{
+    const std::uint32_t r5 = color & 0x1Fu;
+    const std::uint32_t g5 = (color >> 5) & 0x1Fu;
+    const std::uint32_t b5 = (color >> 10) & 0x1Fu;
+    const std::uint32_t r8 = (r5 << 3) | (r5 >> 2);
+    const std::uint32_t g8 = (g5 << 3) | (g5 >> 2);
+    const std::uint32_t b8 = (b5 << 3) | (b5 >> 2);
+    return 0xFF000000u | r8 | (g8 << 8) | (b8 << 16);
+}
+
+static void decodeRoomTextures(
+    const std::vector<u8>& cgb,
+    StaticRoomDebugMesh& out)
+{
+    out.decodedTextureData.clear();
+    out.polygonTextureIndices.assign(
+        out.polygonRecords.size(),
+        static_cast<std::uint16_t>(0xFFFFu));
+    out.uniqueTextures = 0;
+    out.decodedTextures = 0;
+    out.indirectCramPixels = 0;
+    out.texturesValid = false;
+    out.texturesFullyResolved = false;
+
+    bool valid = !out.polygonRecords.empty();
+
+    for (std::size_t i = 0; i < out.polygonRecords.size(); ++i) {
+        const SaturnPolygonRecord& record = out.polygonRecords[i];
+
+        int existing = -1;
+        for (std::size_t t = 0; t < out.decodedTextureData.size(); ++t) {
+            const auto& texture = out.decodedTextureData[t];
+            if (record.cmdPmod == texture.cmdPmod &&
+                record.cmdColr == texture.cmdColr &&
+                record.cmdSrca == texture.cmdSrca &&
+                record.cmdSize == texture.cmdSize) {
+                existing = static_cast<int>(t);
+                break;
+            }
+        }
+
+        if (existing >= 0) {
+            out.polygonTextureIndices[i] =
+                static_cast<std::uint16_t>(existing);
+            continue;
+        }
+
+        ++out.uniqueTextures;
+
+        const unsigned width = record.textureWidth();
+        const unsigned height = record.textureHeight();
+        const unsigned colorMode = record.colorMode();
+        const unsigned texAddress = record.textureByteAddress();
+
+        if (width == 0 || height == 0) {
+            valid = false;
+            continue;
+        }
+
+        DecodedMode1Texture texture{};
+        texture.cmdPmod = record.cmdPmod;
+        texture.cmdColr = record.cmdColr;
+        texture.cmdSrca = record.cmdSrca;
+        texture.cmdSize = record.cmdSize;
+        texture.width = width;
+        texture.height = height;
+        texture.rgba.assign(width * height, 0u);
+
+        const bool spd = (record.cmdPmod & 0x40u) != 0;
+        const bool endDisabled = (record.cmdPmod & 0x80u) != 0;
+        const bool endMode = (record.cmdPmod & 0x20u) == 0;
+
+        if (colorMode == 1) {
+            const unsigned texBytes = (width * height) / 2u;
+            const unsigned lutAddress =
+                static_cast<unsigned>(record.cmdColr) << 3;
+
+            if (static_cast<std::size_t>(texAddress) + texBytes > cgb.size() ||
+                static_cast<std::size_t>(lutAddress) + 32u > cgb.size()) {
+                valid = false;
+                continue;
+            }
+
+            unsigned pixel = 0;
+            for (unsigned y = 0; y < height; ++y) {
+                unsigned endCount = 0;
+                for (unsigned x = 0; x < width; ++x, ++pixel) {
+                    const unsigned byteOffset =
+                        texAddress + (x + y * width) / 2u;
+                    const u8 packed = cgb[byteOffset];
+                    const u8 dot =
+                        (x & 1u) ? (packed & 0x0Fu) : (packed >> 4);
+
+                    if (endMode && endCount >= 2u)
+                        continue;
+                    if (dot == 0 && !spd)
+                        continue;
+                    if (dot == 0x0Fu && !endDisabled) {
+                        ++endCount;
+                        continue;
+                    }
+
+                    const u16 lutColor =
+                        be16(cgb, lutAddress + dot * 2u);
+                    if (lutColor & 0x8000u) {
+                        texture.rgba[pixel] =
+                            rgb555ToRgba8888(lutColor);
+                    } else if (lutColor != 0) {
+                        ++out.indirectCramPixels;
+                    }
+                }
+            }
+        } else if (colorMode == 5) {
+            const unsigned texBytes = width * height * 2u;
+            if (static_cast<std::size_t>(texAddress) + texBytes > cgb.size()) {
+                valid = false;
+                continue;
+            }
+
+            unsigned pixel = 0;
+            for (unsigned y = 0; y < height; ++y) {
+                unsigned endCount = 0;
+                for (unsigned x = 0; x < width; ++x, ++pixel) {
+                    const u16 dot =
+                        be16(cgb, texAddress + (x + y * width) * 2u);
+
+                    if (endMode && endCount >= 2u)
+                        continue;
+                    if (dot == 0 && !spd)
+                        continue;
+                    if (dot == 0x7FFFu && !endDisabled) {
+                        ++endCount;
+                        continue;
+                    }
+
+                    texture.rgba[pixel] =
+                        rgb555ToRgba8888(dot);
+                }
+            }
+        } else {
+            // Bank-color modes require live VDP2 CRAM, which is not wired
+            // into the reduced room bring-up yet.
+            valid = false;
+            continue;
+        }
+
+        const std::uint16_t textureIndex =
+            static_cast<std::uint16_t>(out.decodedTextureData.size());
+        out.decodedTextureData.push_back(std::move(texture));
+        out.polygonTextureIndices[i] = textureIndex;
+        ++out.decodedTextures;
+    }
+
+    out.texturesValid =
+        valid &&
+        out.uniqueTextures != 0 &&
+        out.decodedTextures == out.uniqueTextures &&
+        out.polygonTextureIndices.size() == out.polygonRecords.size();
+
+    if (out.texturesValid) {
+        for (const std::uint16_t index : out.polygonTextureIndices) {
+            if (index == 0xFFFFu ||
+                index >= out.decodedTextureData.size()) {
+                out.texturesValid = false;
+                break;
+            }
+        }
+    }
+
+    out.texturesFullyResolved =
+        out.texturesValid &&
+        out.indirectCramPixels == 0;
+}
+
 static bool parseRawModel(
     const std::vector<u8>& bundle,
     u32 tableOffset,
@@ -429,6 +604,28 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
         v.z = (v.z - center[2]) * scale;
     }
     out.lightingVertices = out.vertices;
+
+    std::vector<u8> cgb;
+    if (lagi::disc::read_file("RUINMP.CGB", cgb) && !cgb.empty()) {
+        decodeRoomTextures(cgb, out);
+    }
+
+    unsigned colorModes[8]{};
+    for (const auto& record : out.polygonRecords)
+        ++colorModes[record.colorMode() & 7u];
+
+    lagi::platform::logging::writef(
+        "[RoomDebug] texture modes 0/1/2/3/4/5/6/7: %u/%u/%u/%u/%u/%u/%u/%u\n",
+        colorModes[0], colorModes[1], colorModes[2], colorModes[3],
+        colorModes[4], colorModes[5], colorModes[6], colorModes[7]);
+    lagi::platform::logging::writef(
+        "[RoomDebug] textures %u/%u, indirect CRAM pixels=%u, %s\n",
+        out.decodedTextures,
+        out.uniqueTextures,
+        out.indirectCramPixels,
+        out.texturesFullyResolved
+            ? "fully resolved"
+            : (out.texturesValid ? "CRAM required" : "fallback to polygon color"));
 
     lagi::platform::logging::writef(
         "[RoomDebug] %s objects=%u models=%u polys=%u verts=%u bundle=%s%s\n",
