@@ -1306,6 +1306,16 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out)
                            matIdentity(), out, 0))
         return false;
 
+    if (!buildMorphScreenAnimation(
+            mcb, hierarchyOffset, poseOffset, out)) {
+        out.animationFrames.clear();
+        out.animationFlags = 0;
+        out.animationFrameCount = 0;
+        out.animationValid = false;
+        lagi::platform::logging::writef(
+            "[Dragon] morph animation unavailable; viewer will remain static\n");
+    }
+
     unsigned uniqueTextureDescriptors = 0;
     unsigned colorModeCounts[8]{};
     unsigned flippedPolygons = 0;
