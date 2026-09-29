@@ -2160,6 +2160,7 @@ void toggle_debug_console()
         failure("[FAIL] BASIC WING VDP1 PREPARE");
         return;
     }
+    g_residentVdp1Model = ResidentVdp1Model::BasicWing;
     status("[PASS] GXM BASIC WING VDP1 PREPARE", 0xFF80E0FFu);
 
     const unsigned int wingVertexCount =
@@ -2283,6 +2284,27 @@ void toggle_debug_console()
 bool debug_console_visible()
 {
     return g_debugVisible;
+}
+
+bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
+{
+    if (mesh.vertices.empty() ||
+        mesh.vertices.size() != mesh.polygons * 6u ||
+        mesh.polygonRecords.size() != mesh.polygons ||
+        mesh.gouraud555.size() != mesh.polygons)
+        return false;
+
+    g_staticRoomCpuMesh = mesh;
+    g_staticRoomCpuReady = true;
+
+    char line[78];
+    std::snprintf(
+        line, sizeof(line),
+        "[PASS] RUIN ROOM %u OBJ / %u POLYS",
+        mesh.objects,
+        mesh.polygons);
+    status(line, 0xFF70E0A0u);
+    return true;
 }
 
 bool load_basic_wing_viewer()
@@ -2583,7 +2605,6 @@ static void renderBasicWingViewer()
         !g_probeRenderTarget || !g_probeColorBuffer || !g_probeColorBuffer2 ||
         !g_probeVertexProgram || !g_probeFragmentProgram ||
         !g_vdp1Vertices || !g_vdp1LightingVertices ||
-        !g_vdp1GouraudVertices ||
         !g_vdp1Indices)
         return;
 
@@ -2602,12 +2623,27 @@ static void renderBasicWingViewer()
         g_viewDistance = 3.0f;
     }
 
+    const int viewerModeCount = g_staticRoomCpuReady ? 6 : 5;
     if (input::prev_mode_pressed())
-        g_viewMode = (g_viewMode + 4) % 5;
+        g_viewMode = (g_viewMode + viewerModeCount - 1) % viewerModeCount;
     if (input::next_mode_pressed())
-        g_viewMode = (g_viewMode + 1) % 5;
+        g_viewMode = (g_viewMode + 1) % viewerModeCount;
 
-    if (g_basicWingCpuMesh.animationValid)
+    const bool roomMode = g_staticRoomCpuReady && g_viewMode == 5;
+
+    if (!roomMode && g_residentVdp1Model != ResidentVdp1Model::BasicWing) {
+        if (!prepare_vdp1_model(basicWingVdp1Source()))
+            return;
+        g_residentVdp1Model = ResidentVdp1Model::BasicWing;
+        applyBasicWingAnimationFrame(g_basicWingAnimationFrame);
+    } else if (roomMode &&
+               g_residentVdp1Model != ResidentVdp1Model::StaticRoom) {
+        if (!prepare_vdp1_model(staticRoomVdp1Source()))
+            return;
+        g_residentVdp1Model = ResidentVdp1Model::StaticRoom;
+    }
+
+    if (!roomMode && g_basicWingCpuMesh.animationValid)
         advanceBasicWingAnimation();
 
     // Geometry stays in normalized model space. Rotation, camera placement,
@@ -2641,17 +2677,21 @@ static void renderBasicWingViewer()
         return;
 
     const Vdp1RenderMode renderMode =
-        static_cast<Vdp1RenderMode>(g_viewMode);
+        roomMode
+            ? Vdp1RenderMode::PolygonColor
+            : static_cast<Vdp1RenderMode>(g_viewMode);
 
-    if (renderMode == Vdp1RenderMode::TexturedGouraud ||
-        renderMode == Vdp1RenderMode::GouraudGrayscale)
+    if (!roomMode &&
+        (renderMode == Vdp1RenderMode::TexturedGouraud ||
+         renderMode == Vdp1RenderMode::GouraudGrayscale))
         updateViewerAzelLighting();
 
     Vdp1DrawState drawState{};
     std::memcpy(drawState.wvp, wvp.m, sizeof(drawState.wvp));
     drawState.mode = renderMode;
 
-    const Vdp1ModelSource model = basicWingVdp1Source();
+    const Vdp1ModelSource model =
+        roomMode ? staticRoomVdp1Source() : basicWingVdp1Source();
     if (!submit_vdp1_model(model, drawState)) {
         sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
