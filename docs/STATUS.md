@@ -302,4 +302,4 @@ The current VPK build now includes the repository's custom Vita shell assets:
 - `sce_sys/livearea/contents/startup.png`
 - `sce_sys/livearea/contents/template.xml`
 
-The LiveArea template uses `bg0.png` as the background and `startup.png` as the gate image. These are packaged directly by `vita_create_vpk()`.
+The LiveArea template uses `bg0.png` as the background. `startup.png` is intentionally a fully transparent 280x158 indexed PNG so the gate artwork is invisible; any residual focus/selection outline is Vita system UI rather than app artwork. These assets are packaged directly by `vita_create_vpk()`.
