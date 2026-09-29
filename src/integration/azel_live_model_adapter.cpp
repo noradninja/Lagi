@@ -1,5 +1,4 @@
 #include "lagi/azel_compat.h"
-#include "common.h"
 #include "lagi/azel_live_model_adapter.h"
 
 #include <array>
@@ -8,14 +7,21 @@
 
 struct sProcessed3dModel;
 
+// Portable layout mirrors for the CPU-only prefix of upstream Azel model
+// data. Avoid including common.h/processModel.h here: those headers also pull
+// task, VDP2 and desktop-renderer declarations that are intentionally absent
+// from Lagi's stripped Vita runtime.
+using LagiVec3S16_12_4 = std::array<s16, 3>;
+using LagiVec3U16 = std::array<u16, 3>;
+
 // Vita does not include upstream processModel.h because its tail contains
 // BGFX-only GPU resources. This prefix mirrors the portable CPU fields at the
 // beginning of sProcessed3dModel exactly; only those fields are consumed here.
 struct LagiProcessed3dModelPrefix
 {
     struct QuadExtra {
-        sVec3_S16_12_4 normals;
-        sVec3_U16 colors;
+        LagiVec3S16_12_4 normals;
+        LagiVec3U16 colors;
     };
 
     struct Quad {
@@ -32,7 +38,7 @@ struct LagiProcessed3dModelPrefix
     u8* base;
     fixedPoint radius;
     u32 numVertices;
-    std::vector<sVec3_S16_12_4> vertices;
+    std::vector<LagiVec3S16_12_4> vertices;
     std::vector<Quad> quads;
 };
 
@@ -156,12 +162,14 @@ bool adapt_processed_model(
         for (unsigned int k = 0; k < 6; ++k) {
             const unsigned int corner = triCorners[k];
             const auto& src = model->vertices[q.indices[corner]];
-            const sVec3_FP fp = src.toSVec3_FP();
 
+            // Azel stores model vertices as signed 12.4 fixed point. Its
+            // sVec3_S16_12_4::toSVec3_FP() multiplies by 16 before converting
+            // to 16.16, which is equivalent to dividing the raw s16 by 4096.
             lagi::azel::DebugColorVertex v{};
-            v.x = fp[0].toFloat();
-            v.y = fp[1].toFloat();
-            v.z = fp[2].toFloat();
+            v.x = static_cast<float>(src[0]) / 4096.0f;
+            v.y = static_cast<float>(src[1]) / 4096.0f;
+            v.z = static_cast<float>(src[2]) / 4096.0f;
             v.r = debugR;
             v.g = debugG;
             v.b = debugB;
