@@ -4,6 +4,7 @@
 #include <psp2/display.h>
 #include <psp2/gxm.h>
 #include <psp2/kernel/sysmem.h>
+#include <psp2/kernel/processmgr.h>
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -152,7 +153,8 @@ static float g_viewPitch = 0.0f;
 static float g_viewDistance = 3.0f;
 static int g_viewMode = 0;
 static unsigned int g_basicWingAnimationFrame = 0;
-static unsigned int g_basicWingAnimationTick = 0;
+static std::uint64_t g_basicWingAnimationLastUs = 0;
+static std::uint64_t g_basicWingAnimationPhase = 0;
 
 // Defined below with the textured-viewer helpers; shutdown() needs it earlier.
 static void freeBasicWingTextures();
@@ -905,18 +907,53 @@ static void advanceBasicWingAnimation()
         g_basicWingCpuMesh.animationFrames.empty())
         return;
 
-    // The viewer presents at the Vita's 60 Hz scanout while PDS animation
-    // updates are effectively 30 Hz here. Hold each decoded morph-screen
-    // animation frame for two vblanks.
-    ++g_basicWingAnimationTick;
-    if (g_basicWingAnimationTick < 2u)
+    // Keep PDS animation on an independent 30 Hz clock instead of tying it
+    // to rendered frames. sceKernelGetProcessTimeWide() is microseconds.
+    //
+    // Accumulating elapsed_us * 30 against 1,000,000 avoids the small drift
+    // that would come from treating one tick as an integer 33,333 us.
+    const std::uint64_t nowUs =
+        static_cast<std::uint64_t>(
+            sceKernelGetProcessTimeWide());
+
+    if (g_basicWingAnimationLastUs == 0) {
+        g_basicWingAnimationLastUs = nowUs;
+        applyBasicWingAnimationFrame(
+            g_basicWingAnimationFrame);
+        return;
+    }
+
+    const std::uint64_t elapsedUs =
+        nowUs - g_basicWingAnimationLastUs;
+    g_basicWingAnimationLastUs = nowUs;
+
+    constexpr std::uint64_t kAnimationHz = 30u;
+    constexpr std::uint64_t kMicrosecondsPerSecond = 1000000u;
+
+    g_basicWingAnimationPhase +=
+        elapsedUs * kAnimationHz;
+
+    const std::uint64_t elapsedTicks =
+        g_basicWingAnimationPhase /
+        kMicrosecondsPerSecond;
+    g_basicWingAnimationPhase %=
+        kMicrosecondsPerSecond;
+
+    if (elapsedTicks == 0)
         return;
 
-    g_basicWingAnimationTick = 0;
-    g_basicWingAnimationFrame =
-        (g_basicWingAnimationFrame + 1u) %
-        static_cast<unsigned int>(
+    const std::uint64_t frameCount =
+        static_cast<std::uint64_t>(
             g_basicWingCpuMesh.animationFrames.size());
+
+    // Frames are predecoded, so if rendering stalls we can jump directly to
+    // the correct animation frame instead of executing a catch-up loop.
+    g_basicWingAnimationFrame =
+        static_cast<unsigned int>(
+            (static_cast<std::uint64_t>(
+                 g_basicWingAnimationFrame) +
+             elapsedTicks) %
+            frameCount);
 
     applyBasicWingAnimationFrame(
         g_basicWingAnimationFrame);
@@ -2117,7 +2154,8 @@ bool load_basic_wing_viewer()
     g_viewDistance = 3.0f;
     g_viewMode = 0;
     g_basicWingAnimationFrame = 0;
-    g_basicWingAnimationTick = 0;
+    g_basicWingAnimationLastUs = 0;
+    g_basicWingAnimationPhase = 0;
     g_basicWingCpuReady = true;
     g_viewerReady = true;
     status("[PASS] DRAGON0 VDP1 212 RECORDS", 0xFF80E0FFu);
@@ -2175,11 +2213,8 @@ static void renderBasicWingViewer()
     if (input::prev_mode_pressed() || input::next_mode_pressed())
         g_viewMode = (g_viewMode + 1) % 5;
 
-    if (g_basicWingCpuMesh.animationValid) {
-        applyBasicWingAnimationFrame(
-            g_basicWingAnimationFrame);
+    if (g_basicWingCpuMesh.animationValid)
         advanceBasicWingAnimation();
-    }
 
     // Geometry stays in normalized model space. Rotation, camera placement,
     // and perspective now happen entirely through the WVP uniform.
