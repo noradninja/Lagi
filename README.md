@@ -117,3 +117,8 @@ This repository does not distribute copyrighted game data. Users are responsible
 ## Acknowledgements
 
 Lagi exists because of years of Saturn and Panzer Dragoon reverse-engineering work by the Azel, ATOLM, pds-tools, Yabause, and wider Sega Saturn development communities.
+
+
+### Graphics progress
+
+The current Vita renderer can display the Basic Wing using the original Saturn VDP1 texture data and a deliberately Saturn-faithful lighting/output path. It reconstructs four-corner Gouraud shading across Saturn quads, performs the lighting in RGB555-style 5-bit color space, restores visible color banding before presenting through the Vita's RGBA8888 framebuffer, applies the hardware-validated face winding, and plays the dragon morph-screen flap animation at a fixed 30 Hz. The goal is not to modernize the visual output, but to preserve the rendering limitations that define Panzer Dragoon Saga's original look while executing natively on Vita hardware.
