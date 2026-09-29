@@ -229,6 +229,27 @@ Depth:
 - Filled modes: LESS_EQUAL.
 - Wireframe: strict LESS to avoid competing equal-depth shared edges.
 
+## First ruin room texture bring-up
+
+The M3C room diagnostic now attempts to bind the original `RUINMP.CGB` texture data to the reconstructed static room.
+
+Because the room models are decoded from their unpatched MCB command words, the texture addressing follows the same hardware-proven rule as the Basic Wing path:
+
+```text
+CMDSRCA << 3 -> byte offset in RUINMP.CGB
+CMDCOLR << 3 -> 16-entry LUT offset for VDP1 mode-1 polygons
+```
+
+The reduced room decoder currently supports:
+
+- VDP1 color mode 1 (4bpp LUT), including SPD and end-code behavior,
+- direct RGB555 LUT entries,
+- VDP1 color mode 5 direct RGB555 texture data.
+
+If a LUT entry references VDP2 CRAM, or a room polygon uses a bank-color mode that requires live CRAM, Lagi records that dependency and keeps Mode 5 on the proven polygon-color fallback rather than presenting a partially incorrect textured scene.
+
+When every room texture is resolved from the CGB alone, Mode 5 automatically switches to the native point-filtered textured VDP1 path. The debug screen reports the decoded texture count and `lagi.log` records the room color-mode distribution.
+
 ## First ruin room geometry bring-up
 
 M3C now reconstructs the first validated 1x1 ruin town cell directly from `TWN_RUIN.PRG` and the town model bundle selected by that setup.
