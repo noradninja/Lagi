@@ -169,3 +169,8 @@ Right-stick Y still controls camera dolly, but the near zoom limit is now `0.75`
 
 
 The morph-screen flap now runs from an independent 30 Hz clock rather than one animation step per two rendered frames. For hardware validation, zoom from the normal overview into the closest detail range: animation playback speed should remain unchanged even if the renderer falls from 60 FPS to roughly 30 FPS.
+
+
+## 30 Hz viewer cap
+
+All Basic Wing viewer modes are now capped to one presented frame every two Vita vblanks. Texture-only, polygon-debug, wireframe, RGB555-lit, and grayscale-lighting modes should therefore have the same camera/input rate. The cap is vblank-relative rather than a blind two-vblank sleep, so a more expensive rendered frame that already spans one vblank only waits for the remaining presentation slot.
