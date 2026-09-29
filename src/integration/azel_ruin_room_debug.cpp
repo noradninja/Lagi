@@ -156,6 +156,8 @@ static std::uint32_t rgb555ToRgba8888(u16 color)
 
 static void decodeRoomTextures(
     const std::vector<u8>& cgb,
+    const u8* ruinPalette,
+    std::size_t ruinPaletteBytes,
     StaticRoomDebugMesh& out)
 {
     out.decodedTextureData.clear();
@@ -254,6 +256,61 @@ static void decodeRoomTextures(
                     } else if (lutColor != 0) {
                         ++out.indirectCramPixels;
                     }
+                }
+            }
+        } else if (colorMode == 0) {
+            // Azel ruinBgInit() copies 0x200 bytes from TWN_RUIN:0x0605EBF8
+            // to vdp2Palette, which is CRAM byte offset 0xC00. That means
+            // palette indices 0x600-0x6FF are backed by this exact overlay
+            // palette image.
+            const unsigned texBytes = (width * height) / 2u;
+            if (static_cast<std::size_t>(texAddress) + texBytes > cgb.size() ||
+                !ruinPalette || ruinPaletteBytes < 0x200u) {
+                valid = false;
+                continue;
+            }
+
+            unsigned pixel = 0;
+            for (unsigned y = 0; y < height; ++y) {
+                unsigned endCount = 0;
+                for (unsigned x = 0; x < width; ++x, ++pixel) {
+                    const unsigned byteOffset =
+                        texAddress + (x + y * width) / 2u;
+                    const u8 packed = cgb[byteOffset];
+                    const u8 dot =
+                        (x & 1u) ? (packed & 0x0Fu) : (packed >> 4);
+
+                    if (endMode && endCount >= 2u)
+                        continue;
+                    if (dot == 0 && !spd)
+                        continue;
+                    if (dot == 0x0Fu && !endDisabled) {
+                        ++endCount;
+                        continue;
+                    }
+
+                    const unsigned paletteIndex =
+                        static_cast<unsigned>(record.cmdColr) |
+                        static_cast<unsigned>(dot);
+                    const unsigned paletteByte =
+                        paletteIndex * 2u;
+
+                    if (paletteByte < 0xC00u ||
+                        paletteByte + 1u >= 0xC00u + ruinPaletteBytes) {
+                        valid = false;
+                        continue;
+                    }
+
+                    const unsigned localPaletteByte =
+                        paletteByte - 0xC00u;
+                    const u16 color =
+                        static_cast<u16>(
+                            (static_cast<u16>(ruinPalette[localPaletteByte]) << 8) |
+                            static_cast<u16>(ruinPalette[localPaletteByte + 1u]));
+
+                    if (color != 0)
+                        texture.rgba[pixel] =
+                            rgb555ToRgba8888(color);
                 }
             }
         } else if (colorMode == 5) {
@@ -607,7 +664,26 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
 
     std::vector<u8> cgb;
     if (lagi::disc::read_file("RUINMP.CGB", cgb) && !cgb.empty()) {
-        decodeRoomTextures(cgb, out);
+        constexpr u32 kRuinPaletteEA = 0x0605EBF8u;
+        const u8* ruinPalette = nullptr;
+        std::size_t ruinPaletteBytes = 0;
+
+        if (kRuinPaletteEA >= overlay->m_base) {
+            const u32 paletteOffset =
+                kRuinPaletteEA - overlay->m_base;
+            if (paletteOffset <= overlay->m_dataSize &&
+                0x200u <= overlay->m_dataSize - paletteOffset) {
+                ruinPalette =
+                    overlay->m_data + paletteOffset;
+                ruinPaletteBytes = 0x200u;
+            }
+        }
+
+        decodeRoomTextures(
+            cgb,
+            ruinPalette,
+            ruinPaletteBytes,
+            out);
     }
 
     unsigned colorModes[8]{};
@@ -618,6 +694,21 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
         "[RoomDebug] texture modes 0/1/2/3/4/5/6/7: %u/%u/%u/%u/%u/%u/%u/%u\n",
         colorModes[0], colorModes[1], colorModes[2], colorModes[3],
         colorModes[4], colorModes[5], colorModes[6], colorModes[7]);
+    for (std::size_t i = 0; i < out.polygonRecords.size(); ++i) {
+        const auto& record = out.polygonRecords[i];
+        if (record.colorMode() == 0) {
+            lagi::platform::logging::writef(
+                "[RoomDebug] mode0 poly=%u obj=%u localPoly=%u PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
+                static_cast<unsigned>(i),
+                record.model,
+                record.polygonInModel,
+                record.cmdPmod,
+                record.cmdColr,
+                record.cmdSrca,
+                record.cmdSize);
+        }
+    }
+
     lagi::platform::logging::writef(
         "[RoomDebug] textures %u/%u, indirect CRAM pixels=%u, %s\n",
         out.decodedTextures,
