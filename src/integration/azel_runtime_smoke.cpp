@@ -7,6 +7,7 @@
 #include "common.h"
 #include "lagi/platform.h"
 #include "lagi/azel_render_bridge.h"
+#include "lagi/azel_direct_boot.h"
 #include "lagi/disc_image.h"
 #include "commonOverlay.h"
 #include "audio/soundDataTable.h"
@@ -114,6 +115,12 @@ bool runtime_smoke_init()
 
     lagi::platform::renderer::status("[PASS] COMMON.DAT DRAGON/BATTLE TABLES", 0xFFF08040u);
     lagi::platform::renderer::status("[PASS] SOUND TABLE 79/79", 0xFFE060E0u);
+
+    if (!lagi::azel::init_direct_boot_target()) {
+        std::printf("[DirectBoot] first 3D scene target resolution FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] DIRECT BOOT FIRST 3D TARGET");
+        return false;
+    }
 
     if (!lagi::azel::load_dragon_common_data()) {
         std::printf("[Dragon] COMMON data initialization FAILED\n");
