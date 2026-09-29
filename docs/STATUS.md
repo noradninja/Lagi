@@ -229,9 +229,17 @@ Depth:
 - Filled modes: LESS_EQUAL.
 - Wireframe: strict LESS to avoid competing equal-depth shared edges.
 
+## Azel live-render integration boundary
+
+M2 tracing identified Azel's native 3D submission seam at `addObjectToDrawList()` / `addBillBoardToDrawList()`. At that point Azel has already selected an `sProcessed3dModel` and, in the desktop backend, captures the current model matrix, light vector/color, local screen offset, and billboard state before placing the object into the renderer queue.
+
+Lagi now provides Vita-side definitions for those submission symbols through `azel_render_bridge.cpp`. The bridge currently records per-frame live model submissions and exposes the last submitted model as an opaque pointer. This is intentionally the first M2/M3 step: it establishes the exact runtime hook without pulling desktop BGFX renderer code into the Vita build. The next adapter will convert the submitted `sProcessed3dModel` plus captured Azel transform/light state into `Vdp1ModelSource` / `Vdp1DrawState` for native GXM submission.
+
 ## Viewer controls
 
 - SELECT: toggle status console / Basic Wing viewer.
+- L: previous viewer mode.
+- R: next viewer mode.
 - START + SELECT: exit.
 - Left stick: rotate.
 - Right stick Y: dolly.
@@ -317,3 +325,9 @@ The current VPK build now includes the repository's custom Vita shell assets:
 - `sce_sys/livearea/contents/template.xml`
 
 The LiveArea template uses `bg0.png` as the background. `startup.png` is intentionally a fully transparent 280x158 indexed PNG so the gate artwork is invisible; any residual focus/selection outline is Vita system UI rather than app artwork. These assets are packaged directly by `vita_create_vpk()`.
+
+## Debug-screen convenience
+
+- Successful GXM initialization now collapses to one status entry: `[PASS] GXM INITIALIZATION + VDP1 READY`.
+- GXM failures still surface individually.
+- Status output wraps into a second column after 32 rows instead of running off the bottom of the screen.
