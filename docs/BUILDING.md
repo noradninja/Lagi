@@ -1,16 +1,40 @@
 # Building Lagi
 
-## Requirements
+Last updated: 2026-09-28
 
-- Windows/Linux/macOS environment capable of running VitaSDK.
-- VitaSDK configured through the `VITASDK` environment variable.
-- CMake.
-- Ninja is recommended.
-- VitaSDK ARM toolchain.
+## Current development environment
 
-The current hardware development environment uses Ninja and the VitaSDK CMake toolchain.
+The current hardware-tested setup uses:
 
-## Configure
+- Windows 11
+- VitaSDK
+- CMake
+- Ninja
+- VitaSDK GCC/G++ 15.2
+- C++20
+- Sony `psp2cgc` for GXM shader compilation
+
+Current local project path:
+
+```text
+E:\dev\Lagi
+```
+
+Current VitaSDK path:
+
+```text
+E:\dev\VitaSDK
+```
+
+Current shader compiler path used by the Windows development machine:
+
+```text
+E:\PSVITA\sdk\host_tools\bin\psp2cgc.exe
+```
+
+The repository also supports locating `psp2cgc` through PATH, `PSP2CGC`, or `SCE_PSP2_SDK_DIR`.
+
+## Initial configure
 
 From the repository root:
 
@@ -25,7 +49,18 @@ cmake .. `
   -DCMAKE_BUILD_TYPE=Debug
 ```
 
-After the build directory is configured, normal incremental builds are:
+## Normal incremental build
+
+For ordinary C++ changes:
+
+```powershell
+cd E:\dev\Lagi
+git pull
+cd build
+cmake --build . -j 8
+```
+
+If CMake configuration, shader sources, shader embedding rules, or generated build inputs changed, rerun configure first:
 
 ```powershell
 cd E:\dev\Lagi
@@ -35,17 +70,53 @@ cmake ..
 cmake --build . -j 8
 ```
 
+## Azel source
+
+Azel is included as a submodule under:
+
+```text
+extern/Azel
+```
+
+The current pinned reference is:
+
+```text
+c52329fb257561abff05531a8335e34137d67098
+```
+
+Lagi-owned Vita adaptation code should be modified in the Lagi repository rather than editing the pinned Azel submodule unless an upstream change is intentionally being made.
+
 ## GXM shaders
 
-The current native GXM viewer shaders are readable Cg sources under `shaders/` and are compiled during the build with Sony's `psp2cgc`. This includes the color/debug, texture, Gouraud diagnostic, and combined textured-lighting programs. CMake embeds the resulting GXP binaries with the active VitaSDK toolchain's `objcopy`.
+Current readable shader sources live under:
 
-The current Windows development setup finds `psp2cgc.exe` at `E:/PSVITA/sdk/host_tools/bin`. Other setups can expose it through PATH, `PSP2CGC`, or `SCE_PSP2_SDK_DIR`.
+```text
+shaders/
+```
+
+The current Basic Wing renderer uses:
+
+- color/debug shaders,
+- `texture_v.cg`,
+- `texture_f.cg`,
+- `textured_lit_f.cg`,
+- `gouraud_debug_f.cg`.
+
+The lit and grayscale paths deliberately reuse the proven texture vertex shader. There is no separate active `textured_lit_v.cg` path.
+
+CMake invokes `psp2cgc`, then embeds generated GXP binaries with the active VitaSDK toolchain's `objcopy` using:
+
+```text
+-I binary -O elf32-littlearm -B arm
+```
+
+This avoids relying on a separate `arm-vita-eabi-objcopy` executable being available on the shell PATH.
 
 ## Game data
 
-No PDS game data is distributed by Lagi.
+No Panzer Dragoon Saga game data is distributed with Lagi.
 
-For current hardware testing, place the user's own Disc 1 BIN/CUE dump at:
+For current hardware testing, place a user's own Disc 1 CUE/BIN dump under:
 
 ```text
 ux0:data/lagi/Disc 1/
@@ -59,134 +130,275 @@ ux0:data/lagi/Disc 1/
     Panzer Dragoon Saga Disc 1.bin
 ```
 
-The CUE parser currently supports MODE1/2352 and MODE1/2048 data tracks. Lagi mounts the ISO9660 filesystem inside the BIN and reads files such as `COMMON.DAT` and `DRAGON0.MCB` directly.
+The current CUE/disc path supports MODE1/2352 and MODE1/2048 data tracks and mounts the ISO9660 filesystem directly from the disc image.
 
-## Hardware controls
+Current viewer data is read from files including:
+
+- `COMMON.DAT`
+- `DRAGON0.MCB`
+- `DRAGON0.CGB`
+
+## Persistent runtime log
+
+Each launch creates/truncates:
+
+```text
+ux0:data/lagi/lagi.log
+```
+
+The logger uses Vita-native I/O and flushes writes promptly so diagnostic information is likely to survive abnormal exits.
+
+After testing, retrieve the file with VitaShell if a runtime/data issue needs investigation.
+
+Useful log areas include:
+
+- platform startup,
+- COMMON.DAT parsing,
+- dragon metadata,
+- hierarchy/geometry validation,
+- VDP1 polygon descriptors,
+- texture decode statistics,
+- lighting payload statistics,
+- morph animation decoding.
+
+## Expected current hardware status
+
+A healthy viewer build should include successful status for the major runtime/data paths, including:
+
+- Vita platform/framebuffer
+- log open
+- Saturn memory readers
+- Disc 1 CUE/BIN + ISO9660
+- COMMON.DAT tables
+- sound table 79/79
+- dragon COMMON data
+- DRAGON0 hierarchy/hotpoints
+- DRAGON0 geometry
+- DRAGON0 VDP1 polygon records
+- DRAGON0 lighting data
+- DRAGON0 CGB references
+- DRAGON0 mode-1 textures
+- DRAGON0 morph flap animation
+- native GXM Basic Wing rendering
+- Azel root task / task loop
+
+Exact ordering can vary as bring-up code evolves.
+
+## Hardware viewer controls
 
 Current development controls:
 
-- SELECT: switch between debug/status screen and 3D viewer.
+- SELECT: toggle status console / 3D viewer.
 - START + SELECT: exit.
-- Left analog stick: rotate the Basic Wing viewer.
-- Triangle: reset viewer rotation.
-- L / R: cycle viewer mode:
-  - 0: textured baseline
-  - 1: textured + RGB555 Gouraud lighting, CW culled
-  - 2: Gouraud grayscale diagnostic
-  - 3: polygon debug colors
-  - 4: wireframe
+- Left stick: rotate yaw/pitch.
+- Right stick Y: dolly camera.
+- Triangle: reset viewer camera.
+- L / R: cycle viewer modes.
 
-These controls are development-only and may change as the real Saturn input layer comes online.
+Camera:
 
-## Expected runtime status
+```text
+default distance: 3.0
+minimum distance: 0.75
+maximum distance: 8.0
+vertical FOV: 50 degrees
+```
 
-A healthy current build should progress through PASS entries for:
+## Viewer modes
 
-- Vita platform/framebuffer
-- Saturn memory readers
-- Disc 1 CUE/BIN + ISO9660
-- COMMON.DAT dragon/battle tables
-- sound table 79/79
-- dragon COMMON data
-- DRAGON0 hierarchy/hotpoint validation
-- DRAGON0 geometry validation
-- GXM Basic Wing viewer readiness
-- Azel root task
-- active task loop
+```text
+Mode 0 — original decoded Saturn texture baseline
+Mode 1 — texture + RGB555 Gouraud lighting
+Mode 2 — RGB555 Gouraud grayscale diagnostic
+Mode 3 — polygon debug colors
+Mode 4 — wireframe
+```
 
-## Runtime log
+Modes 0-3 use the hardware-validated:
 
-Each Vita launch creates a fresh persistent runtime log at:
+```text
+SCE_GXM_CULL_CW
+```
 
-`ux0:data/lagi/lagi.log`
+Mode 4 intentionally uses:
 
-The file is truncated on startup and flushed after each logged message. After a hardware test, exit Lagi and retrieve/open `lagi.log` with VitaShell. The log currently includes platform startup, COMMON.DAT loading, dragon hierarchy/geometry validation, and Basic Wing VDP1 polygon/texture descriptor diagnostics.
+```text
+SCE_GXM_CULL_NONE
+```
 
-## Textured GXM shader compiler
+Filled modes use LESS_EQUAL depth testing.
 
-The first textured Basic Wing renderer uses readable Cg sources at `shaders/texture_v.cg` and `shaders/texture_f.cg`. CMake compiles these with Sony's `psp2cgc` and embeds the resulting GXP binaries with `arm-vita-eabi-objcopy`. The current Windows development setup is detected automatically at `E:/PSVITA/sdk/host_tools/bin/psp2cgc.exe`; other setups can expose the compiler through PATH, `PSP2CGC`, or `SCE_PSP2_SDK_DIR`.
+Wireframe uses strict LESS so duplicate shared-edge fragments do not fight at equal depth.
 
-After pulling this milestone, rerun `cmake ..` once before building so the generated shader-object rules are added to the existing build directory.
+## Current texture expectations
 
-- Shader embedding uses CMake's `CMAKE_OBJCOPY` from the active VitaSDK toolchain rather than requiring `arm-vita-eabi-objcopy` to be present on the Windows shell PATH. This keeps the textured-shader build compatible with the existing VitaSDK CMake configuration.
+Basic Wing currently uses 71 unique decoded textures.
 
-- Windows VitaSDK's GNU objcopy treats `--input` / `--output` as ambiguous. Shader embedding now uses the canonical BFD flags `-I binary -O elf32-littlearm -B arm`, which are accepted by the bundled `arm-vita-eabi-objcopy.exe`.
+The mode-1 decoder follows the original VDP1 data:
 
+```text
+CMDSRCA << 3 -> texture bytes in DRAGON0.CGB
+CMDCOLR << 3 -> 16-entry LUT in DRAGON0.CGB
+```
 
-## Combined textured-lighting hardware test
+Expected visual behavior:
 
-After pulling the current milestone, rerun `cmake ..` once because two additional Cg shaders are generated and embedded. A successful build should show compilation/embedding steps for `textured_lit_v.cg` and `textured_lit_f.cg`.
+- nearest-neighbor sampling,
+- no mipmaps,
+- correct CMDCTRL flips,
+- transparent dot handling,
+- VDP1 end-code behavior,
+- RGB555-derived source color.
 
-On hardware, compare viewer mode 0 directly with mode 1. Geometry scale, projection, UV orientation, transparency cutout, and texture selection should remain identical. Only the interpolated lighting modulation should change. The main visual inspection targets are the broad wing surfaces, diagonal interpolation across the two-triangle Saturn-quad split, and seams between hierarchy/model sections.
+Mode 0 is the clean reference for checking texture geometry and UV behavior without lighting.
 
+## Current RGB555 Gouraud expectations
 
-For the wing-lighting diagnostic, compare modes 1 and 2 at the same camera angle. If the triangular/inverted-looking wing patches disappear in mode 2, the issue is back-face visibility rather than a mismatch in Saturn quad corner order. If they remain on front-facing surfaces, the next step is to instrument stored-normal direction versus geometric face normal per quad.
+Mode 1 is the current Saturn-faithful lit reference.
 
-## Vita presentation assets
+The path deliberately does not use normal triangle-interpolated vertex lighting.
 
-The VPK packages `sce_sys/icon0.png`, `sce_sys/livearea/contents/bg0.png`, `startup.png`, and `template.xml` automatically. No separate asset-copy step is required after pulling the current branch.
+For each original Saturn quad:
 
+1. the four projected source corners are retained,
+2. the fragment position is mapped back into the original quad,
+3. all four Gouraud corner RGB offsets are bilinearly interpolated,
+4. the offset is added to the source texture in Saturn-style 5-bit channel space,
+5. each channel is clamped to 0..31,
+6. the result is quantized to an integer 5-bit value,
+7. the 5-bit value is expanded only for the Vita RGBA8888 target.
 
-## RGB555 / bilinear lighting hardware test
+Visible stepped color/lighting bands are expected and intentional.
 
-The current textured-lighting mode now draws each Saturn quad separately so five fragment uniforms can carry the original four screen-space corners and four per-corner RGB Gouraud values. This is intentionally less draw-call-efficient than the texture-only batch path; it is the correctness/reference implementation before optimization.
+A smooth modern 8-bit gradient is not the target.
 
-After pulling this milestone, rerun `cmake ..` once because the textured-lighting shader interface changed and the old scalar-light vertex shader is no longer generated. Then rebuild normally.
+## Grayscale lighting diagnostic
 
-Compare textured baseline mode 0 against lit modes 1/2. On the wings, the previous diagonal half-quad lighting wedges should disappear or be substantially reduced because lighting is evaluated from a single bilinear quad coordinate instead of triangle varyings. The light should also visibly step in Saturn-style 5-bit increments. Mode 2 still enables CCW culling for comparison; mode 1 remains two-sided.
+Mode 2 uses the same:
 
+- animated normals,
+- current camera-relative light,
+- RGB555 corner values,
+- inverse-bilinear quad reconstruction,
+- final 5-bit quantization
 
-For the current wing-winding test, viewer mode 2 uses CW culling. Compare it against mode 1 at the same camera angle. If the correct wing membrane faces remain visible and the inverted-looking flats disappear, CW is the effective front-face winding for Lagi's current GXM projection path and can replace the temporary diagnostic.
+as Mode 1.
 
+It then displays the result as grayscale.
 
-CW culling is now the hardware-validated default for the textured Saturn lighting path. The earlier two-sided/culling comparison mode is no longer part of the normal viewer cycle.
+Use Mode 2 when checking:
 
+- banding,
+- quad interpolation,
+- light movement,
+- hierarchy/normal animation,
+- lighting discontinuities without texture detail.
 
-## Camera-relative Azel light test
+## Morph-screen light reference
 
-Modes 1 and 2 now recompute lighting every frame from the Basic Wing menu's Azel light defaults. The test light remains fixed in camera space, so rotating the dragon with the left stick should visibly move the 5-bit highlight/shadow pattern over the model. Mode 1 applies those values additively to the texture; mode 2 displays the same quantized result as grayscale.
+The standalone viewer currently mirrors the pinned Azel dragon morph-viewer defaults:
 
-The standalone viewer reproduces Azel's light color, setupLight vector convention, 32-entry falloff table generation, RGB channel ordering, 5-bit clamp/quantization, and additive Gouraud representation. The viewer maps its current view-space depth into the dragon menu's 16-unit far-clip falloff range; live field/battle camera/light state is still a later integration step.
+```text
+setupLight(0, 0, 0x10000, 0x161918)
+generateLightFalloffMap(0x030102, 0, 0)
+```
 
+The light remains fixed relative to the camera while the viewer rotates the model.
 
-All solid viewer modes now use the hardware-validated CW front-face culling. Wireframe remains uncullled by design. When comparing modes 0-3, geometry visibility should therefore remain consistent and only the rendering/debug presentation should change.
+The current standalone view-depth-to-falloff mapping is an adaptation for this viewer. Do not treat it as the final field/battle lighting implementation.
 
+## Morph-screen animation
 
-## RGB555 output banding test
+The Basic Wing viewer decodes:
 
-Modes 1 and 2 now quantize the final interpolated lighting result back to 5 bits per channel before display. The Vita framebuffer remains RGBA8888, but the shader only emits values corresponding to the Saturn's 0..31 channel grid.
+```text
+dragonAnimOffsets[0]
+-> DRAGON0.MCB animation table entry 0x10C
+```
 
-On broad, smoothly lit surfaces the highlight/shadow transition should therefore resolve into visible color bands rather than an 8-bit-smooth gradient. Mode 2 is the easiest validation view because the same quantized Gouraud values are displayed as grayscale without texture detail.
+This is the default animation selected by pinned Azel's morph-screen setup.
 
+The decoded skeletal animation updates both:
 
-## Morph-screen animation and detail zoom
+- model vertex positions,
+- transformed lighting normals.
 
-The Basic Wing viewer now attempts to decode and play the same default flap animation used by Azel's dragon morph screen (Basic Wing animation table entry `0x10C`). A successful boot shows `[PASS] DRAGON0 MORPH FLAP ANIM`; if the native animation data fails validation, the viewer falls back to the static pose and reports `[INFO] DRAGON0 MORPH ANIM STATIC`.
+Animation timing is independent of render timing and runs at an exact logical 30 Hz.
 
-The animation is displayed at 30 Hz while the viewer continues presenting at 60 Hz. Animated positions and normals feed every viewer mode, including the camera-relative RGB555 Gouraud calculation.
+If rendering takes longer, playback catches up by elapsed animation ticks instead of slowing down.
 
-Right-stick Y still controls camera dolly, but the near zoom limit is now `0.75` instead of `1.4`. Triangle still resets yaw, pitch, and distance to the normal `3.0` overview.
+Expected successful status:
 
+```text
+[PASS] DRAGON0 MORPH FLAP ANIM
+```
 
-The morph-screen flap now runs from an independent 30 Hz clock rather than one animation step per two rendered frames. For hardware validation, zoom from the normal overview into the closest detail range: animation playback speed should remain unchanged even if the renderer falls from 60 FPS to roughly 30 FPS.
+If animation data validation fails, the viewer falls back to the static pose and reports:
 
+```text
+[INFO] DRAGON0 MORPH ANIM STATIC
+```
 
-## 30 Hz viewer cap
+## 30 Hz presentation
 
-All Basic Wing viewer modes are now capped to one presented frame every two Vita vblanks. Texture-only, polygon-debug, wireframe, RGB555-lit, and grayscale-lighting modes should therefore have the same camera/input rate. The cap is vblank-relative rather than a blind two-vblank sleep, so a more expensive rendered frame that already spans one vblank only waits for the remaining presentation slot.
+The Basic Wing viewer is intentionally capped to 30 presented frames per second.
 
+The Vita display still scans at 60 Hz. Lagi synchronizes presentation so a new game/render frame is presented every two display intervals.
 
-## Hardware-tested graphics baseline — 2026-09-28
+This keeps:
 
-At the end of this session the expected Basic Wing viewer baseline on Vita hardware is:
+- texture-only mode,
+- RGB555-lit mode,
+- grayscale diagnostic,
+- polygon debug mode,
+- wireframe
 
-- 960x544 native GXM output, fixed 30 Hz presentation.
-- Right stick Y can dolly from the normal 3.0 overview down to 0.75 for close inspection.
-- Basic Wing morph-screen flap animation plays at an independent 30 Hz and must not slow when rendering becomes more expensive.
-- Mode 0: original decoded Saturn texture baseline.
-- Mode 1: decoded texture + quad-bilinear RGB555 Gouraud lighting + final RGB555 output quantization.
-- Mode 2: the same 5-bit Gouraud result displayed as grayscale.
-- Mode 3: polygon debug colors.
-- Mode 4: uncullled wireframe diagnostic.
-- Modes 0-3 use the hardware-validated CW front-face winding.
-- Visible 5-bit lighting/color banding is expected and intentional; a smooth 8-bit gradient is considered incorrect for this Saturn-faithful path.
+on the same camera/input cadence.
+
+Animation also runs at 30 Hz, but from its own time source rather than from rendered frame count.
+
+## Hardware validation checklist
+
+When changing the renderer, compare against this known-good baseline:
+
+- Mode 0 geometry and textures remain correctly aligned.
+- Modes 0-3 expose the same visible faces.
+- Wing membranes retain the hardware-validated CW orientation.
+- Mode 1 preserves quad-wide lighting without a diagonal triangle seam.
+- Mode 1 shows visible RGB555 color banding.
+- Mode 2 shows the same moving/banded light independently of texture.
+- Morph-screen flap articulation remains coherent.
+- Animated lighting moves with the animated hierarchy.
+- Animation speed remains constant at close zoom.
+- Camera movement rate remains the same in every mode.
+- No partial-frame scanout tearing appears.
+- Triangle reset returns to the standard 3.0-distance view.
+
+## Known issue
+
+One isolated stray triangle remains in the Basic Wing rendering.
+
+Do not change the global culling convention to address it. CW has already been hardware-validated for the rest of the model.
+
+Treat the stray triangle as a separate mesh/model-data investigation.
+
+## Vita application assets
+
+LiveArea/icon packaging is currently deferred while renderer/game integration is the priority.
+
+The active VPK build must not depend on missing custom LiveArea artwork unless that work is explicitly resumed.
+
+## Current development direction
+
+The Basic Wing viewer is now a reference implementation, not the final game renderer.
+
+The next graphics work should reuse its proven pieces while moving into live game state:
+
+- original VDP1 texture decode,
+- original quad identity,
+- RGB555 Gouraud calculation,
+- animated hierarchy/normals,
+- CW solid-face convention,
+- 30 Hz presentation.
+
+Avoid replacing these with conventional smooth modern rendering simply for convenience; they are now part of the intended PDS visual target.
