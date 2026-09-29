@@ -202,3 +202,33 @@ The framebuffer isolation build booted successfully, confirming the immediate-ex
 
 
 - Fixed 30 Hz viewer presentation: all Basic Wing viewer modes now present on a 30 Hz cadence regardless of shader cost. The Vita still scans out at 60 Hz, but Lagi waits until at least one vblank has elapsed since the previous presentation before queuing the completed backbuffer for `SCE_DISPLAY_SETBUF_NEXTFRAME`; it therefore becomes front on the following vblank. Lightweight modes no longer run/camera-update at 60 FPS, while heavier lit modes do not receive an unconditional extra two-vblank delay if rendering already consumed one of the required intervals. The independent 30 Hz animation clock remains unchanged.
+
+
+## End-of-session graphics milestone — 2026-09-28
+
+The Basic Wing viewer has reached a strong Saturn-faithful graphics baseline on real PS Vita hardware.
+
+Implemented and hardware-validated:
+- Native SceGxm rendering at 960x544 with double-buffered scanout.
+- Perspective camera with yaw/pitch and close-range dolly inspection.
+- Original Saturn VDP1 texture data decoded directly from DRAGON0.CGB, including mode-1 LUT handling, texture flips, alpha/end-code behavior, and nearest-neighbor sampling.
+- Hardware-confirmed CW front-face culling for all solid viewer modes; wireframe remains two-sided for diagnostics.
+- Pinned Azel/PDS lighting behavior reconstructed around per-corner Saturn normals and RGB555 Gouraud data.
+- Original Saturn quad identity retained: two triangles are still submitted, but Gouraud interpolation is reconstructed bilinearly across the original four-corner quad to avoid a modern triangle-diagonal lighting seam.
+- Gouraud values are represented as Azel's signed 5-bit additive RGB offsets, not modern multiplicative lighting.
+- Final lit color arithmetic is clamped and quantized back onto the Saturn's 0..31 RGB555 channel grid before expansion to the Vita RGBA8888 target. This restores the characteristic visible lighting/color banding instead of producing a smooth 8-bit gradient.
+- Camera-relative morph-screen light behavior is active, with the pinned Azel dragon-viewer light defaults and falloff reconstruction feeding the RGB555 Gouraud path.
+- Matching grayscale RGB555 lighting diagnostic, polygon-color diagnostic, and wireframe view remain available.
+- The Basic Wing morph-screen flap animation is decoded from DRAGON0.MCB animation table entry 0x10C, matching the default animation selected by pinned Azel's dragon morph screen.
+- Animated hierarchy poses update both geometry and transformed lighting normals.
+- Morph animation runs from an independent exact 30 Hz clock, so rendering load no longer changes playback speed.
+- All viewer modes are presented at a fixed 30 Hz cadence to match the PDS-era update/render expectation and keep camera/input speed consistent across shaded and unshaded modes.
+
+Current visual interpretation:
+Lagi is no longer simply displaying PDS assets through a modern renderer. The Vita GPU is being used to reproduce the Saturn VDP1 rules that materially define the game's look: original texture data, quad semantics, 5-bit Gouraud arithmetic, RGB555 output limitations, face visibility, and 30 Hz presentation. The hardware implementation is modern, but the visible constraints are deliberately Saturn-like.
+
+Known issue intentionally deferred:
+- One isolated stray triangle remains visible in the Basic Wing model. Because culling, texture mapping, and the rest of the mesh are now stable, this is being treated as a likely model/reconstruction-data issue rather than a renderer-wide winding problem.
+
+Next session:
+- Move beyond the standalone graphics viewer and begin reconnecting this proven graphics path to live game rendering/state.
