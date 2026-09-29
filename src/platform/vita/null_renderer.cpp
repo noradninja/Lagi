@@ -33,8 +33,8 @@ static constexpr std::size_t kFrameBytes =
     static_cast<std::size_t>(kPitch) * kHeight * sizeof(std::uint32_t);
 static constexpr int kMaxStatus = 64;
 static constexpr int kStatusRowsPerColumn = 32;
-static constexpr int kStatusLineHeight = 11;
-static constexpr int kStatusColumnX[2] = {40, 500};
+static constexpr int kStatusLineHeight = 14;
+static constexpr int kStatusColumnX[2] = {40, 520};
 
 struct StatusLine {
     char text[78];
@@ -291,6 +291,49 @@ static void drawText(int x, int y, const char* text, std::uint32_t color, int sc
         drawChar(x, y, *p, color, scale);
         x += advance;
         if (x > kWidth - advance) break;
+    }
+}
+
+// 4:3 nearest-neighbour enlargement for the 5x7 debug font. This makes the
+// scale-1 UI roughly 33% larger without changing the scale-2 title font.
+static void drawCharSmall(int x, int y, char c, std::uint32_t color)
+{
+    const std::uint8_t* rows = glyph(c);
+    static constexpr int srcW = 5;
+    static constexpr int srcH = 7;
+    static constexpr int dstW = 7;  // ceil(5 * 4/3)
+    static constexpr int dstH = 10; // ceil(7 * 4/3)
+
+    for (int dy = 0; dy < dstH; ++dy) {
+        const int gy = (dy * 3) / 4;
+        const int py = y + dy;
+        if (py < 0 || py >= kHeight)
+            continue;
+
+        for (int dx = 0; dx < dstW; ++dx) {
+            const int gx = (dx * 3) / 4;
+            if (gx >= srcW || gy >= srcH)
+                continue;
+            if (!(rows[gy] & (1u << (4 - gx))))
+                continue;
+
+            const int px = x + dx;
+            if (px >= 0 && px < kWidth)
+                g_frameBuffer[g_drawBuffer][py * kPitch + px] = color;
+        }
+    }
+}
+
+static void drawTextSmall(int x, int y, const char* text, std::uint32_t color)
+{
+    if (!text) return;
+    static constexpr int advance = 8; // 6 * 4/3
+
+    for (const char* p = text; *p; ++p) {
+        drawCharSmall(x, y, *p, color);
+        x += advance;
+        if (x > kWidth - advance)
+            break;
     }
 }
 
@@ -2584,7 +2627,7 @@ void begin_frame()
     fill(0xFF181818u);
 
     drawText(32, 24, "LAGI - PDS VITA RUNTIME", 0xFFFFFFFFu, 2);
-    drawText(32, 48, "BOOT / INTEGRATION STATUS", 0xFFB0B0B0u, 1);
+    drawTextSmall(32, 48, "BOOT / INTEGRATION STATUS", 0xFFB0B0B0u);
 
     for (int i = 0; i < g_statusCount; ++i) {
         const int column = i / kStatusRowsPerColumn;
@@ -2592,24 +2635,22 @@ void begin_frame()
         if (column >= 2)
             break;
 
-        drawText(
+        drawTextSmall(
             kStatusColumnX[column],
             68 + row * kStatusLineHeight,
             g_status[i].text,
-            g_status[i].color,
-            1);
+            g_status[i].color);
     }
 
     if (g_azelAlive) {
         const int taskIndex = std::min(g_statusCount, kMaxStatus - 1);
         const int column = std::min(taskIndex / kStatusRowsPerColumn, 1);
         const int row = taskIndex % kStatusRowsPerColumn;
-        drawText(
+        drawTextSmall(
             kStatusColumnX[column],
             72 + row * kStatusLineHeight,
             "TASK LOOP: ACTIVE",
-            0xFF30E030u,
-            1);
+            0xFF30E030u);
     }
 }
 
