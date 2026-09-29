@@ -291,3 +291,15 @@ Next work should move beyond viewer-only rendering and begin reconnecting the pr
 - broader field/battle object rendering.
 
 The immediate priority is to preserve the now-proven Saturn visual behavior while moving it into real game execution rather than replacing it with a more conventional rendering path.
+
+
+## Vita presentation assets
+
+The current VPK build now includes the repository's custom Vita shell assets:
+
+- `sce_sys/icon0.png`
+- `sce_sys/livearea/contents/bg0.png`
+- `sce_sys/livearea/contents/startup.png`
+- `sce_sys/livearea/contents/template.xml`
+
+The LiveArea template uses `bg0.png` as the background and `startup.png` as the gate image. These are packaged directly by `vita_create_vpk()`.
