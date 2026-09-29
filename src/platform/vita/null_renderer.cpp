@@ -972,19 +972,61 @@ static bool buildVdp1TexturedBuffers(const Vdp1ModelSource& model)
     return outIndex == vertexCount;
 }
 
+static void releaseResidentVdp1Model()
+{
+    auto freeMapped = [](SceUID& uid, void*& ptr) {
+        if (uid >= 0) {
+            void* mem = nullptr;
+            if (sceKernelGetMemBlockBase(uid, &mem) >= 0 && mem)
+                sceGxmUnmapMemory(mem);
+            sceKernelFreeMemBlock(uid);
+        }
+        uid = -1;
+        ptr = nullptr;
+    };
+
+    void* p = g_vdp1Vertices;
+    freeMapped(g_vdp1VertexUid, p);
+    g_vdp1Vertices = nullptr;
+
+    p = g_vdp1LightingVertices;
+    freeMapped(g_vdp1LightingVertexUid, p);
+    g_vdp1LightingVertices = nullptr;
+
+    p = g_vdp1Indices;
+    freeMapped(g_vdp1IndexUid, p);
+    g_vdp1Indices = nullptr;
+
+    p = g_vdp1TextureVertices;
+    freeMapped(g_vdp1TextureVertexUid, p);
+    g_vdp1TextureVertices = nullptr;
+
+    p = g_vdp1GouraudVertices;
+    freeMapped(g_vdp1GouraudVertexUid, p);
+    g_vdp1GouraudVertices = nullptr;
+
+    p = g_vdp1TextureIndices;
+    freeMapped(g_vdp1TextureIndexUid, p);
+    g_vdp1TextureIndices = nullptr;
+
+    freeVdp1Textures();
+    g_vdp1TextureBatches.clear();
+    g_vdp1TexturedReady = false;
+    g_residentVdp1Model = ResidentVdp1Model::None;
+}
+
 bool prepare_vdp1_model(const Vdp1ModelSource& model)
 {
     if (!g_gxmInitialized || !g_probeContext || !model.valid())
         return false;
 
-    // M1 intentionally supports one resident VDP1 model at a time. This is
-    // enough for the regression viewer and for the first live Azel object;
-    // multi-model residency can be layered on after the game render boundary
-    // is connected without changing the submission contract.
+    // The viewer still keeps one VDP1 model resident at a time, but M3 can
+    // now swap between the Basic Wing regression mesh and the reconstructed
+    // first-room diagnostic mesh.
     if (g_vdp1Vertices || g_vdp1LightingVertices || g_vdp1Indices ||
         g_vdp1TextureVertices || g_vdp1GouraudVertices ||
         g_vdp1TextureIndices || !g_vdp1GpuTextures.empty())
-        return false;
+        releaseResidentVdp1Model();
 
     if (model.vertexCount > 65535u)
         return false;
