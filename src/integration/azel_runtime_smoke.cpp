@@ -8,6 +8,7 @@
 #include "lagi/platform.h"
 #include "lagi/azel_render_bridge.h"
 #include "lagi/azel_direct_boot.h"
+#include "lagi/azel_town_bootstrap.h"
 #include "lagi/disc_image.h"
 #include "commonOverlay.h"
 #include "audio/soundDataTable.h"
@@ -119,6 +120,12 @@ bool runtime_smoke_init()
     if (!lagi::azel::init_direct_boot_target()) {
         std::printf("[DirectBoot] first 3D scene target resolution FAILED\n");
         lagi::platform::renderer::failure("[FAIL] DIRECT BOOT FIRST 3D TARGET");
+        return false;
+    }
+
+    if (!lagi::azel::init_town_bootstrap()) {
+        std::printf("[TownBoot] first 3D town overlay preflight FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] FIRST TOWN OVERLAY PREFLIGHT");
         return false;
     }
 
