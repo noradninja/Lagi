@@ -233,7 +233,24 @@ Depth:
 
 M2 tracing identified Azel's native 3D submission seam at `addObjectToDrawList()` / `addBillBoardToDrawList()`. At that point Azel has already selected an `sProcessed3dModel` and, in the desktop backend, captures the current model matrix, light vector/color, local screen offset, and billboard state before placing the object into the renderer queue.
 
-Lagi now provides Vita-side definitions for those submission symbols through `azel_render_bridge.cpp`. The bridge currently records per-frame live model submissions and exposes the last submitted model as an opaque pointer. This is intentionally the first M2/M3 step: it establishes the exact runtime hook without pulling desktop BGFX renderer code into the Vita build. The next adapter will convert the submitted `sProcessed3dModel` plus captured Azel transform/light state into `Vdp1ModelSource` / `Vdp1DrawState` for native GXM submission.
+Lagi now provides Vita-side definitions for those submission symbols through `azel_render_bridge.cpp`. The bridge records per-frame live model submissions, captures the current Azel model matrix and light vector/color when those full-engine globals are linked, and converts the submitted `sProcessed3dModel` CPU data into an owned `LiveVdp1Model`.
+
+The live adapter currently preserves:
+
+- original indexed model vertices,
+- original quad identity,
+- `lightingControl`,
+- `CMDCTRL`,
+- `CMDPMOD`,
+- `CMDCOLR`,
+- `CMDSRCA`,
+- `CMDSIZE`,
+- per-quad/per-corner normal payload,
+- lighting-mode-2 per-corner color payload.
+
+Each Azel quad is expanded to the same six-vertex `0,1,2 / 0,2,3` representation consumed by the proven Vita VDP1 path. The renderer now accepts geometry-only `Vdp1ModelSource` objects so this live path can be brought up first in polygon/debug form.
+
+Live Azel texture memory is deliberately not connected yet. Desktop Azel decodes processed-model texture commands against emulated VDP1 VRAM/VDP2 CRAM; Lagi still needs a native equivalent of that live memory source. Until that is connected, the adapter leaves the live texture set empty rather than substituting incorrect artwork or reusing the DRAGON0 viewer texture assumptions.
 
 ## Viewer controls
 
