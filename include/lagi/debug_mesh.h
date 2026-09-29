@@ -99,6 +99,18 @@ struct SaturnPolygonRecord {
     std::uint8_t lightingCount = 0;
 };
 
+struct StaticRoomDebugMesh {
+    std::vector<DebugColorVertex> vertices;
+    std::vector<DebugColorVertex> lightingVertices;
+    std::vector<SaturnPolygonRecord> polygonRecords;
+    std::vector<SaturnGouraud555Quad> gouraud555;
+
+    unsigned int objects = 0;
+    unsigned int models = 0;
+    unsigned int polygons = 0;
+    bool truncated = false;
+};
+
 struct BasicWingDebugMesh {
     std::vector<DebugColorVertex> vertices;
     std::vector<DebugColorVertex> lightingVertices;
@@ -146,5 +158,6 @@ struct BasicWingDebugMesh {
 };
 
 bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out);
+bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out);
 
 } // namespace lagi::azel
