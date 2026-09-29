@@ -1,5 +1,4 @@
 #include "lagi/azel_compat.h"
-#include "common.h"
 #include "lagi/azel_render_bridge.h"
 #include "lagi/azel_live_model_adapter.h"
 #include "lagi/platform.h"
@@ -9,17 +8,25 @@
 
 struct sProcessed3dModel;
 
+// Minimal layout mirrors for the live Azel globals we capture. These match the
+// portable prefix used by upstream Azel but avoid including common.h, which
+// also depends on task/VDP2 types not present in Lagi's stripped Vita build.
+struct LagiMatrix4x3
+{
+    fixedPoint m[3][4];
+};
+
+struct LagiCurrentLightVector
+{
+    fixedPoint lightVector[3];
+    u16 color[3];
+};
+
 // Full Azel builds provide these globals. They are weak here so the current
 // smoke runtime can link before 3dEngine.cpp/menu_dragonMorph.cpp are part of
 // the Vita executable.
-extern sMatrix4x3* pCurrentMatrix __attribute__((weak));
-
-struct sCurrentLightVector
-{
-    sVec3_FP m_lightVector;
-    u16 m_color[3];
-};
-extern sCurrentLightVector currentLightVector_M __attribute__((weak));
+extern LagiMatrix4x3* pCurrentMatrix __attribute__((weak));
+extern LagiCurrentLightVector currentLightVector_M __attribute__((weak));
 
 namespace lagi::azel_bridge {
 
@@ -82,9 +89,9 @@ static void capture_runtime_state(bool billboard)
     if (&currentLightVector_M) {
         for (unsigned int i = 0; i < 3; ++i) {
             g_lastState.lightVector[i] =
-                currentLightVector_M.m_lightVector[i].asS32();
+                currentLightVector_M.lightVector[i].asS32();
             g_lastState.lightColor[i] =
-                currentLightVector_M.m_color[i];
+                currentLightVector_M.color[i];
         }
         g_lastState.hasLight = true;
     }
