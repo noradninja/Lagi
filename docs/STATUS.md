@@ -229,6 +229,23 @@ Depth:
 - Filled modes: LESS_EQUAL.
 - Wireframe: strict LESS to avoid competing equal-depth shared edges.
 
+## First town overlay preflight
+
+M3B now loads the resolved first-scene town overlay directly from Disc 1 into a Saturn-addressed `sSaturnMemoryFile` at the canonical overlay base `0x06054000`.
+
+For the current Disc 1 target, Lagi validates the same initial TWN_RUIN structures used by pinned Azel:
+
+- town setup at `0x0605E984`,
+- initial script entry at `0x06054398`,
+- edge data at `0x0605E990`,
+- town-grid setup and grid EA reached through the setup structure,
+- 12-entry town script pointer table,
+- environmental LCS target metadata.
+
+It also verifies the immediate ruin asset set is present before town execution begins: `COMMON3.MCB/CGB`, `RUINMP.MCB/CGB`, `RUINSCR.SCB/PNB`, and `EVTRUIN.FNT`.
+
+This stage deliberately stops before constructing Azel's town tasks. The next stage can therefore port the task/grid/matrix execution path against a hardware-verified overlay and asset set rather than treating the town loader as a single large dependency jump.
+
 ## First-scene direct boot target
 
 The development boot target is now pinned to Azel game status `0x04`, the first 3D scene reached after the startup movie, D5 name-entry state, and second movie.
