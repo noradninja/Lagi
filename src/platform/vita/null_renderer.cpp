@@ -2131,6 +2131,12 @@ bool load_basic_wing_viewer()
     else
         failure("[FAIL] DRAGON0 CGB REFERENCES");
 
+    if (g_basicWingCpuMesh.animationValid) {
+        status("[PASS] DRAGON0 MORPH FLAP ANIM", 0xFF80E0FFu);
+    } else {
+        status("[INFO] DRAGON0 MORPH ANIM STATIC", 0xFF80C0FFu);
+    }
+
     if (g_basicWingCpuMesh.mode1DecodeFullyResolved) {
         status("[PASS] DRAGON0 MODE1 TEXTURES", 0xFF80E0FFu);
     } else if (g_basicWingCpuMesh.mode1DecodeValid) {
@@ -2168,6 +2174,12 @@ static void renderBasicWingViewer()
 
     if (input::prev_mode_pressed() || input::next_mode_pressed())
         g_viewMode = (g_viewMode + 1) % 5;
+
+    if (g_basicWingCpuMesh.animationValid) {
+        applyBasicWingAnimationFrame(
+            g_basicWingAnimationFrame);
+        advanceBasicWingAnimation();
+    }
 
     // Geometry stays in normalized model space. Rotation, camera placement,
     // and perspective now happen entirely through the WVP uniform.
