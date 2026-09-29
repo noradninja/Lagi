@@ -240,6 +240,7 @@ add_executable(lagi
  src/integration/azel_live_model_adapter.cpp
  src/integration/azel_direct_boot.cpp
  src/integration/azel_town_bootstrap.cpp
+ src/integration/azel_ruin_room_debug.cpp
  src/integration/azel_fixedpoint_vita.cpp
  src/integration/azel_heap_vita.cpp
  src/integration/azel_task_vita.cpp
