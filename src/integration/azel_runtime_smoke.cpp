@@ -129,6 +129,19 @@ bool runtime_smoke_init()
         return false;
     }
 
+    lagi::azel::StaticRoomDebugMesh firstRoom{};
+    if (!lagi::azel::build_first_ruin_room_debug_mesh(firstRoom)) {
+        std::printf("[RoomDebug] first ruin room reconstruction FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] FIRST RUIN ROOM GEOMETRY");
+        return false;
+    }
+
+    if (!lagi::platform::renderer::load_static_room_viewer(firstRoom)) {
+        std::printf("[RoomDebug] room viewer registration FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] RUIN ROOM VIEWER");
+        return false;
+    }
+
     if (!lagi::azel::load_dragon_common_data()) {
         std::printf("[Dragon] COMMON data initialization FAILED\n");
         lagi::platform::renderer::failure("[FAIL] DRAGON COMMON DATA");
