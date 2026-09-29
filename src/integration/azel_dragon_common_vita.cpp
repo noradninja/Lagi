@@ -807,6 +807,297 @@ static bool buildMeshTraverse(const std::vector<u8>& bundle, u32 nodeOffset,
 }
 
 
+struct RawAnimationTrack {
+    s16 length[9]{};
+    std::vector<s16> data[9];
+};
+
+struct RawAnimation {
+    u16 flags = 0;
+    u16 bones = 0;
+    u16 frames = 0;
+    std::vector<RawAnimationTrack> tracks;
+};
+
+struct CompressedTrackState {
+    unsigned currentStep = 0;
+    int delay = 0;
+    s32 value = 0;
+};
+
+static bool parseRawAnimation(const std::vector<u8>& bundle,
+                              u32 tableOffset,
+                              RawAnimation& out)
+{
+    if (tableOffset + 4 > bundle.size())
+        return false;
+
+    const u32 animOffset = readBE32Raw(bundle.data() + tableOffset);
+    if (!animOffset || animOffset + 12 > bundle.size())
+        return false;
+
+    const u8* base = bundle.data();
+    out = {};
+    out.flags = readBE16Raw(base + animOffset + 0);
+    out.bones = readBE16Raw(base + animOffset + 2);
+    out.frames = readBE16Raw(base + animOffset + 4);
+    const u32 trackHeaderOffset =
+        readBE32Raw(base + animOffset + 8);
+
+    if (!out.flags || !out.bones || !out.frames ||
+        out.bones > 128 || out.frames > 1024)
+        return false;
+
+    out.tracks.resize(out.bones);
+
+    for (unsigned bone = 0; bone < out.bones; ++bone) {
+        const u64 header =
+            static_cast<u64>(animOffset) +
+            static_cast<u64>(trackHeaderOffset) +
+            static_cast<u64>(bone) * 0x38u;
+        if (header + 0x38u > bundle.size())
+            return false;
+
+        RawAnimationTrack& track = out.tracks[bone];
+        for (int channel = 0; channel < 9; ++channel)
+            track.length[channel] =
+                static_cast<s16>(
+                    readBE16Raw(base + header + channel * 2u));
+
+        for (int channel = 0; channel < 9; ++channel) {
+            const u32 dataOffset =
+                readBE32Raw(
+                    base + header + 0x14u + channel * 4u);
+            const int length = track.length[channel];
+            if (length <= 0)
+                continue;
+
+            const u64 dataStart =
+                static_cast<u64>(animOffset) + dataOffset;
+            const u64 dataBytes =
+                static_cast<u64>(length) * 2u;
+            if (dataStart + dataBytes > bundle.size())
+                return false;
+
+            track.data[channel].resize(
+                static_cast<std::size_t>(length));
+            for (int i = 0; i < length; ++i) {
+                track.data[channel][i] =
+                    static_cast<s16>(
+                        readBE16Raw(
+                            base + dataStart +
+                            static_cast<u64>(i) * 2u));
+            }
+        }
+    }
+
+    return true;
+}
+
+static s32 stepCompressedTrack(CompressedTrackState& state,
+                               const std::vector<s16>& data)
+{
+    if (data.empty())
+        return 0;
+
+    if (state.delay > 0) {
+        --state.delay;
+        return state.value;
+    }
+
+    if (state.currentStep != 0) {
+        const u16 packed =
+            static_cast<u16>(data[state.currentStep]);
+        state.delay =
+            static_cast<int>(packed & 0xFu) - 1;
+        state.value =
+            static_cast<s16>(packed & 0xFFF0u);
+    } else {
+        state.delay = 0;
+        state.value =
+            static_cast<s32>(data[0]) * 16;
+    }
+
+    ++state.currentStep;
+    if (state.currentStep >= data.size())
+        state.currentStep = 0;
+
+    return state.value;
+}
+
+static bool buildMorphScreenAnimation(
+    const std::vector<u8>& bundle,
+    u32 hierarchyOffset,
+    u32 poseOffset,
+    lagi::azel::BasicWingDebugMesh& out)
+{
+    // Basic Wing dragonAnimOffsets[0] in pinned Azel.
+    constexpr u32 kMorphAnimationTableOffset = 0x10Cu;
+
+    RawAnimation anim{};
+    if (!parseRawAnimation(
+            bundle, kMorphAnimationTableOffset, anim))
+        return false;
+
+    if (anim.bones != 31u)
+        return false;
+
+    std::vector<BonePoseRaw> staticPose(anim.bones);
+    for (unsigned bone = 0; bone < anim.bones; ++bone) {
+        if (!readPose(
+                bundle, poseOffset, bone, staticPose[bone]))
+            return false;
+    }
+
+    std::vector<BonePoseRaw> pose = staticPose;
+    std::vector<std::array<CompressedTrackState, 3>>
+        compressed(anim.bones);
+    std::vector<std::array<s32, 3>>
+        fractionalStep(anim.bones);
+
+    out.animationFrames.clear();
+    out.animationFrames.reserve(anim.frames);
+    out.animationFlags = anim.flags;
+    out.animationFrameCount = anim.frames;
+
+    const unsigned type = anim.flags & 7u;
+    if (type != 0u && type != 1u &&
+        type != 3u && type != 4u && type != 5u) {
+        lagi::platform::logging::writef(
+            "[Dragon] morph animation 0x10C unsupported type %u flags 0x%X\n",
+            type, anim.flags);
+        return false;
+    }
+
+    // The morph-screen flap is fundamentally a skeletal rotation animation.
+    // Reproduce Azel's rotation update modes exactly. Static translations are
+    // retained, keeping the viewer centered while preserving the wing/body
+    // articulation used by the menu.
+    for (unsigned frame = 0; frame < anim.frames; ++frame) {
+        if (anim.flags & 0x10u) {
+            for (unsigned bone = 0; bone < anim.bones; ++bone) {
+                const RawAnimationTrack& track =
+                    anim.tracks[bone];
+
+                for (int axis = 0; axis < 3; ++axis) {
+                    const std::vector<s16>& data =
+                        track.data[3 + axis];
+
+                    if (data.empty())
+                        continue;
+
+                    s32& rotation =
+                        axis == 0 ? pose[bone].rx :
+                        axis == 1 ? pose[bone].ry :
+                                    pose[bone].rz;
+
+                    if (type == 0u) {
+                        if (frame >= data.size())
+                            return false;
+                        rotation =
+                            static_cast<s32>(data[frame]) *
+                            0x10000;
+                    } else if (type == 3u) {
+                        if ((frame & 3u) == 0u) {
+                            const unsigned key = frame / 4u;
+                            if (key >= data.size())
+                                return false;
+                            rotation =
+                                static_cast<s32>(data[key]) *
+                                0x10000;
+
+                            if (frame + 1u < anim.frames &&
+                                key + 1u < data.size()) {
+                                fractionalStep[bone][axis] =
+                                    (static_cast<s32>(
+                                        data[key + 1u] -
+                                        data[key]) *
+                                     0x10000) / 4;
+                            } else {
+                                fractionalStep[bone][axis] = 0;
+                            }
+                        } else {
+                            rotation +=
+                                fractionalStep[bone][axis];
+                        }
+                    } else if (type == 1u) {
+                        const s32 delta =
+                            stepCompressedTrack(
+                                compressed[bone][axis], data) *
+                            0x1000;
+                        if (frame == 0u)
+                            rotation = delta;
+                        else
+                            rotation += delta;
+                    } else {
+                        const unsigned divisor =
+                            type == 4u ? 2u : 4u;
+                        if ((frame % divisor) == 0u) {
+                            if (frame == 0u) {
+                                rotation =
+                                    stepCompressedTrack(
+                                        compressed[bone][axis],
+                                        data) *
+                                    0x1000;
+                            } else {
+                                rotation +=
+                                    fractionalStep[bone][axis];
+                            }
+
+                            if (frame + 1u < anim.frames) {
+                                fractionalStep[bone][axis] =
+                                    (stepCompressedTrack(
+                                        compressed[bone][axis],
+                                        data) *
+                                     0x1000) /
+                                    static_cast<s32>(divisor);
+                            } else {
+                                fractionalStep[bone][axis] = 0;
+                            }
+                        } else {
+                            rotation +=
+                                fractionalStep[bone][axis];
+                        }
+                    }
+                }
+            }
+        }
+
+        lagi::azel::BasicWingDebugMesh frameMesh{};
+        unsigned boneIndex = 0;
+        if (!buildMeshTraverse(
+                bundle, hierarchyOffset, poseOffset,
+                boneIndex, matIdentity(), frameMesh, 0,
+                &pose))
+            return false;
+
+        if (boneIndex != anim.bones ||
+            frameMesh.vertices.size() != out.vertices.size() ||
+            frameMesh.lightingNormals.size() !=
+                out.lightingNormals.size())
+            return false;
+
+        lagi::azel::BasicWingAnimationFrame outFrame{};
+        outFrame.vertices =
+            std::move(frameMesh.vertices);
+        outFrame.lightingNormals =
+            std::move(frameMesh.lightingNormals);
+        out.animationFrames.push_back(
+            std::move(outFrame));
+    }
+
+    out.animationValid =
+        out.animationFrames.size() == anim.frames;
+
+    lagi::platform::logging::writef(
+        "[Dragon] morph animation 0x10C: flags 0x%X type %u, %u bones, %u frames, %s\n",
+        anim.flags, type, anim.bones, anim.frames,
+        out.animationValid ? "decoded" : "INVALID");
+
+    return out.animationValid;
+}
+
+
 static std::uint32_t rgb555ToRgba8888(u16 color)
 {
     // Saturn RGB555: bits 0-4 R, 5-9 G, 10-14 B, bit 15 direct-color flag.
