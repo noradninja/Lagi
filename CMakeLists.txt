@@ -19,19 +19,44 @@ option(LAGI_AZEL_PROBE "Compile an Azel source portability probe" ON)
 
 # GXM viewer shaders are compiled from readable Cg source using Sony's
 # psp2cgc so color/debug and texture paths share the same compiler/toolchain.
-find_program(PSP2CGC_EXECUTABLE
- NAMES psp2cgc psp2cgc.exe
- HINTS
-  "$ENV{PSP2CGC}"
-  "$ENV{SCE_PSP2_SDK_DIR}/host_tools/bin"
-  "E:/PSVITA/sdk/host_tools/bin"
-)
+#
+# PSP2CGC may be set either to the compiler executable itself:
+#   C:/Dev/sdk/host_tools/bin/psp2cgc.exe
+# or to the directory containing it:
+#   C:/Dev/sdk/host_tools/bin
+set(PSP2CGC_EXECUTABLE "")
+
+if(DEFINED ENV{PSP2CGC} AND NOT "$ENV{PSP2CGC}" STREQUAL "")
+ set(_LAGI_PSP2CGC_ENV "$ENV{PSP2CGC}")
+
+ if(EXISTS "${_LAGI_PSP2CGC_ENV}" AND NOT IS_DIRECTORY "${_LAGI_PSP2CGC_ENV}")
+  set(PSP2CGC_EXECUTABLE "${_LAGI_PSP2CGC_ENV}")
+ elseif(IS_DIRECTORY "${_LAGI_PSP2CGC_ENV}")
+  find_program(PSP2CGC_EXECUTABLE
+   NAMES psp2cgc psp2cgc.exe
+   HINTS "${_LAGI_PSP2CGC_ENV}"
+   NO_DEFAULT_PATH
+  )
+ endif()
+endif()
+
+if(NOT PSP2CGC_EXECUTABLE)
+ find_program(PSP2CGC_EXECUTABLE
+  NAMES psp2cgc psp2cgc.exe
+  HINTS
+   "$ENV{SCE_PSP2_SDK_DIR}/host_tools/bin"
+   "E:/PSVITA/sdk/host_tools/bin"
+ )
+endif()
 
 if(NOT PSP2CGC_EXECUTABLE)
  message(FATAL_ERROR
   "psp2cgc is required for Lagi's textured GXM shaders. "
-  "Set PSP2CGC or place it under E:/PSVITA/sdk/host_tools/bin.")
+  "Set PSP2CGC to either the compiler executable or its containing directory, "
+  "or set SCE_PSP2_SDK_DIR so host_tools/bin can be searched.")
 endif()
+
+message(STATUS "Using psp2cgc: ${PSP2CGC_EXECUTABLE}")
 
 set(LAGI_COLOR_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_color_v.gxp")
 set(LAGI_COLOR_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_color_f.gxp")
