@@ -1,6 +1,6 @@
 # Lagi Development Status
 
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 
 Lagi is a native PlayStation Vita reimplementation path for Panzer Dragoon Saga built around reconstructed Azel/ATOLM game logic. The current project executes reconstructed Saturn-era game/data logic directly on ARMv7 and translates the original rendering intent to native VitaSDK/SceGxm rather than emulating the Saturn CPUs or using a generic modern renderer.
 
@@ -49,6 +49,20 @@ The following paths have been verified on real PS Vita hardware:
 ## Current native GXM renderer
 
 The standalone Basic Wing viewer is now a hardware-proven Saturn-faithful rendering reference path.
+
+### M1 reusable VDP1 submission layer
+
+The hardware-proven Basic Wing path has been refactored so the viewer is now a regression client of a model-agnostic VDP1 submission interface rather than owning the draw logic directly.
+
+Current M1 interface:
+
+- `Vdp1ModelSource`: non-owning view of triangulated Saturn model vertices, original quad metadata, decoded mode-1 textures, polygon texture indices, and four-corner RGB555 Gouraud values.
+- `Vdp1DrawState`: WVP matrix plus the existing renderer mode.
+- `prepare_vdp1_model()`: uploads the source into the native Vita VDP1 GPU resource slot.
+- `submit_vdp1_model()`: binds the proven shader/state path and submits the model while preserving original quad identity for Gouraud reconstruction.
+- Basic Wing-specific camera, input, morph-screen animation clock, and test lighting remain outside the reusable submission function.
+
+M1 intentionally keeps one resident prepared model at a time. This is sufficient for the Basic Wing regression viewer and for the first live Azel-model integration. Multi-model residency/batching is deferred until the actual Azel scene render boundary is connected, so the proven renderer is not destabilized prematurely.
 
 ### Output and presentation
 
