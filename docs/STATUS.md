@@ -231,6 +231,19 @@ Depth:
 
 ## First ruin room texture bring-up
 
+### Ruin command-4 solid polygons
+
+Hardware logging showed the 16 previously unresolved "mode 0" records are not textured sprites at all. They are VDP1 command-4 polygons:
+
+```text
+CMDCTRL & 0xF = 4
+CMDSRCA = 0
+CMDSIZE = 0
+CMDCOLR = 0x8000
+```
+
+Pinned Azel dispatches command 4 to `PolyDrawGL()`, which uses `CMDCOLR` directly as RGB555. Lagi now classifies these separately and represents their flat color as a synthetic 1x1 material so the reduced room can stay on a single GXM textured submission path. They no longer count as unresolved texture descriptors.
+
 ### Ruin mode-0 palette resolution
 
 Pinned Azel's `ruinBgInit()` shows that the ruin scene copies 0x200 bytes from `TWN_RUIN.PRG:0x0605EBF8` into `vdp2Palette`. In Azel, `vdp2Palette` is CRAM byte offset `0xC00`, so this supplies CRAM palette indices `0x600-0x6FF`.
