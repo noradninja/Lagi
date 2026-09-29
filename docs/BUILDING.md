@@ -393,7 +393,7 @@ sce_sys/livearea/contents/startup.png
 sce_sys/livearea/contents/template.xml
 ```
 
-`template.xml` references `bg0.png` as the LiveArea background and `startup.png` as the gate/startup image.
+`template.xml` references `bg0.png` as the LiveArea background. `startup.png` is now a 280x158 fully transparent indexed PNG, so the gate artwork itself is invisible while the Vita retains its normal launch gate behavior.
 
 Because the VPK packaging rules changed, rerun `cmake ..` once after pulling this milestone before rebuilding.
 
