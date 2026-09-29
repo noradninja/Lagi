@@ -58,13 +58,6 @@ LiveVdp1Model::source() const
     return out;
 }
 
-static float vertex_component(
-    const sVec3_S16_12_4& v,
-    unsigned int axis)
-{
-    return v[axis].toSVec3_FP()[0].toFloat();
-}
-
 bool adapt_processed_model(
     sProcessed3dModel* opaqueModel,
     LiveVdp1Model& out)
