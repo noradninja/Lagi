@@ -195,10 +195,46 @@ static void decodeRoomTextures(
 
         ++out.uniqueTextures;
 
+        const unsigned commandType = record.cmdCtrl & 0x000Fu;
         const unsigned width = record.textureWidth();
         const unsigned height = record.textureHeight();
         const unsigned colorMode = record.colorMode();
         const unsigned texAddress = record.textureByteAddress();
+
+        // VDP1 command 4 is an untextured polygon. Pinned Azel dispatches it
+        // to PolyDrawGL(), where CMDCOLR is used directly as RGB555. Keep the
+        // room on one native submission path by representing that flat color
+        // as a 1x1 texture/material instead of treating it as a missing
+        // texture descriptor.
+        if (commandType == 4u) {
+            DecodedMode1Texture solid{};
+            solid.cmdPmod = record.cmdPmod;
+            solid.cmdColr = record.cmdColr;
+            solid.cmdSrca = record.cmdSrca;
+            solid.cmdSize = record.cmdSize;
+            solid.width = 1;
+            solid.height = 1;
+            solid.rgba.resize(1);
+
+            if (record.cmdColr & 0x8000u) {
+                solid.rgba[0] =
+                    rgb555ToRgba8888(record.cmdColr);
+            } else {
+                // Indexed-color command-4 polygons require sprite/CRAM
+                // priority-color interpretation. Keep the fallback intact
+                // until that case is observed on hardware.
+                valid = false;
+                continue;
+            }
+
+            const std::uint16_t textureIndex =
+                static_cast<std::uint16_t>(
+                    out.decodedTextureData.size());
+            out.decodedTextureData.push_back(std::move(solid));
+            out.polygonTextureIndices[i] = textureIndex;
+            ++out.decodedTextures;
+            continue;
+        }
 
         if (width == 0 || height == 0) {
             valid = false;
@@ -698,10 +734,11 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
         const auto& record = out.polygonRecords[i];
         if (record.colorMode() == 0) {
             lagi::platform::logging::writef(
-                "[RoomDebug] mode0 poly=%u obj=%u localPoly=%u PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
+                "[RoomDebug] mode0 poly=%u obj=%u localPoly=%u CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
                 static_cast<unsigned>(i),
                 record.model,
                 record.polygonInModel,
+                record.cmdCtrl,
                 record.cmdPmod,
                 record.cmdColr,
                 record.cmdSrca,
