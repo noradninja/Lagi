@@ -157,3 +157,12 @@ All solid viewer modes now use the hardware-validated CW front-face culling. Wir
 Modes 1 and 2 now quantize the final interpolated lighting result back to 5 bits per channel before display. The Vita framebuffer remains RGBA8888, but the shader only emits values corresponding to the Saturn's 0..31 channel grid.
 
 On broad, smoothly lit surfaces the highlight/shadow transition should therefore resolve into visible color bands rather than an 8-bit-smooth gradient. Mode 2 is the easiest validation view because the same quantized Gouraud values are displayed as grayscale without texture detail.
+
+
+## Morph-screen animation and detail zoom
+
+The Basic Wing viewer now attempts to decode and play the same default flap animation used by Azel's dragon morph screen (Basic Wing animation table entry `0x10C`). A successful boot shows `[PASS] DRAGON0 MORPH FLAP ANIM`; if the native animation data fails validation, the viewer falls back to the static pose and reports `[INFO] DRAGON0 MORPH ANIM STATIC`.
+
+The animation is displayed at 30 Hz while the viewer continues presenting at 60 Hz. Animated positions and normals feed every viewer mode, including the camera-relative RGB555 Gouraud calculation.
+
+Right-stick Y still controls camera dolly, but the near zoom limit is now `0.75` instead of `1.4`. Triangle still resets yaw, pitch, and distance to the normal `3.0` overview.
