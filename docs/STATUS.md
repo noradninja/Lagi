@@ -199,3 +199,6 @@ The framebuffer isolation build booted successfully, confirming the immediate-ex
 
 
 - Fixed-step morph animation timing: Basic Wing flap playback is no longer derived from rendered frame count. The viewer now uses Vita process time as a monotonic microsecond source and advances the predecoded PDS animation on an exact 30 Hz phase accumulator. At 60 FPS a pose normally persists across two renders; at 30 FPS it advances once per render; under a temporary render stall it jumps directly to the animation frame corresponding to elapsed 30 Hz ticks. This removes the previous half-speed animation behavior when close zoom increases rendering cost.
+
+
+- Fixed 30 Hz viewer presentation: all Basic Wing viewer modes now present on a 30 Hz cadence regardless of shader cost. The Vita still scans out at 60 Hz, but Lagi waits until at least one vblank has elapsed since the previous presentation before queuing the completed backbuffer for `SCE_DISPLAY_SETBUF_NEXTFRAME`; it therefore becomes front on the following vblank. Lightweight modes no longer run/camera-update at 60 FPS, while heavier lit modes do not receive an unconditional extra two-vblank delay if rendering already consumed one of the required intervals. The independent 30 Hz animation clock remains unchanged.
