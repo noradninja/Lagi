@@ -1,0 +1,20 @@
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    float4 inverse0 : TEXCOORD1,
+    float4 inverse1 : TEXCOORD2,
+    float4 inverse2 : TEXCOORD3,
+    float4 gouraudR : TEXCOORD4,
+    float4 gouraudG : TEXCOORD5,
+    float4 gouraudB : TEXCOORD6,
+    float4 fragCoord : WPOS,
+    uniform sampler2D tex)
+{
+    // Deliberately consume the same large fragment-input interface as the
+    // Gouraud paths, but perform no inverse solve, no lighting interpolation,
+    // and no RGB555 arithmetic. This isolates interpolator/register pressure.
+    float4 color = tex2D(tex, vTexcoord);
+    if (color.a < 0.5f)
+        discard;
+
+    return color;
+}
