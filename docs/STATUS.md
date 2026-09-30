@@ -344,6 +344,37 @@ while objectDepth > gTownGrid.m3C[lod]:
 
 The earlier experimental per-object AABB frustum scaffolding was removed; it is not part of Azel's normal town draw path.
 
+## Inverse-bilinear fragment optimization pass 1: coefficient reduction
+
+The lit Saturn-quad shader now moves quad-invariant inverse-bilinear setup out of the fragment stage.
+
+The CPU payload remains unchanged. The Gouraud payload vertex shader derives, per generated vertex:
+
+```text
+a = p0
+e = p1 - p0
+f = p3 - p0
+g = p0 - p1 + p2 - p3
+
+k2     = cross(g, f)
+k1Base = cross(e, f) - cross(a, g)
+k0Base = -cross(a, e)
+```
+
+Because all six generated triangle vertices for one Saturn quad carry the same original corner payload, these derived values are identical across the quad.
+
+The fragment shader now computes only the pixel-dependent terms:
+
+```text
+h  = p - a
+k1 = k1Base + p.x*g.y - p.y*g.x
+k0 = k0Base + p.x*e.y - p.y*e.x
+```
+
+The quadratic root selection, `computeU()`, four-corner Gouraud interpolation, RGB555 add/clamp, and final quantization are unchanged. This is intended to be visually identical while removing repeated vector construction and quad-invariant cross products from every covered fragment.
+
+This pass awaits hardware compile/visual/FPS validation.
+
 ## VDP1 Gouraud performance pass 2: texture batching
 
 Pass 2 keeps the pass-1 vertex-carried quad payload unchanged, but removes the one-draw-per-Saturn-quad submission pattern.
