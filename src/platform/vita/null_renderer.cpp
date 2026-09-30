@@ -458,6 +458,9 @@ static void drawTextSmallToBuffer(
     }
 }
 
+static int viewerRenderWidth();
+static int viewerRenderHeight();
+
 static const char* viewerModeLabel(int mode)
 {
     static const char* labels[] = {
