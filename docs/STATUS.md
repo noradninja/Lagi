@@ -395,6 +395,31 @@ Mode mapping for hardware comparison:
 
 Mode 10 is intentionally experimental until screenshot and FPS comparison against Mode 7 is hardware-validated.
 
+## Final-only RGB555 quantization probe
+
+Mode 15 tests a combined Gouraud + quantization path that keeps the four-corner lighting math but removes the intermediate RGB555 reconstruction stage.
+
+Fragment flow:
+
+```text
+sample texture
+four-corner Gouraud interpolation
+lit = saturate(texture.rgb + gouraud)
+lit = floor(lit * 31 + 0.5) / 31
+return lit
+```
+
+This keeps visible 5-bit output quantization while avoiding:
+
+```text
+base5 = floor(texture * 31 + 0.5)
+shade5 = gouraud * 31
+result5 = clamp(base5 + shade5, 0, 31)
+result5 = floor(result5 + 0.5)
+```
+
+Like Modes 12/13, Mode 15 deliberately uses texture coordinates as the cheap diagnostic interpolation coordinates rather than performing inverse-bilinear recovery. It therefore measures whether Gouraud interpolation plus a single final RGB555-style quantization can remain within the 30 FPS fragment budget.
+
 ## Gouraud vs RGB555 fragment isolation
 
 Modes 13 and 14 split the remaining lit fragment workload after Mode 12 showed that removing inverse-coordinate recovery alone did not restore 30 FPS.
