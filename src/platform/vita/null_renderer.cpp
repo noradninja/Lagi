@@ -168,6 +168,10 @@ static float g_basicWingFitDistance = 3.0f;
 static float g_staticRoomViewCenter[3]{};
 static float g_staticRoomFitDistance = 3.0f;
 
+static bool g_staticRoomAzelCellVisible = true;
+static unsigned int g_staticRoomAzelLod0Objects = 0;
+static unsigned int g_staticRoomAzelNonzeroLodObjects = 0;
+
 static int g_viewMode = 0;
 static unsigned int g_basicWingAnimationFrame = 0;
 static std::uint64_t g_basicWingAnimationLastUs = 0;
@@ -1420,6 +1424,128 @@ static ViewerMat4 buildAuthenticRoomWvp()
             g_staticRoomCpuMesh.cameraFar);
 
     return viewerMul(view, projection);
+}
+
+static void transformViewerPoint(
+    const ViewerMat4& matrix,
+    const float point[3],
+    float out[3])
+{
+    out[0] =
+        point[0] * matrix.m[0] +
+        point[1] * matrix.m[4] +
+        point[2] * matrix.m[8] +
+        matrix.m[12];
+    out[1] =
+        point[0] * matrix.m[1] +
+        point[1] * matrix.m[5] +
+        point[2] * matrix.m[9] +
+        matrix.m[13];
+    out[2] =
+        point[0] * matrix.m[2] +
+        point[1] * matrix.m[6] +
+        point[2] * matrix.m[10] +
+        matrix.m[14];
+}
+
+static bool updateStaticRoomAzelTownVisibility()
+{
+    if (!g_staticRoomCpuReady ||
+        !g_staticRoomCpuMesh.cameraValid)
+        return true;
+
+    const ViewerMat4 view =
+        viewerLookAtLH(
+            g_staticRoomCpuMesh.cameraPosition,
+            g_staticRoomCpuMesh.cameraTarget,
+            g_staticRoomCpuMesh.cameraUp);
+
+    float cellCamera[3]{};
+    transformViewerPoint(
+        view,
+        g_staticRoomCpuMesh.cellOrigin,
+        cellCamera);
+
+    constexpr float kPi =
+        3.14159265358979323846f;
+    const float halfFov =
+        (g_staticRoomCpuMesh.cameraFovDegrees * 0.5f) *
+        kPi / 180.0f;
+    const float r0 =
+        176.0f / std::tan(halfFov);
+    const float widthScale =
+        r0 * (352.0f / 320.0f);
+
+    // initVDP1Projection() derives these exact Saturn fixed-point ratios:
+    // m2C_widthRatio  = 176 / widthScale
+    // m28_widthRatio2 = sqrt(176^2 + widthScale^2) / widthScale
+    const float widthRatio =
+        176.0f / widthScale;
+    const float widthRatio2 =
+        std::sqrt(
+            176.0f * 176.0f +
+            widthScale * widthScale) /
+        widthScale;
+
+    const float cellRadius =
+        g_staticRoomCpuMesh.cellRadius;
+
+    bool visible =
+        cellCamera[2] >=
+        g_staticRoomCpuMesh.cameraNear - cellRadius;
+
+    if (visible) {
+        const float horizontalLimit =
+            cellCamera[2] * widthRatio +
+            cellRadius * widthRatio2;
+        visible =
+            cellCamera[0] >= -horizontalLimit &&
+            cellCamera[0] <= horizontalLimit;
+    }
+
+    g_staticRoomAzelCellVisible = visible;
+    g_staticRoomAzelLod0Objects = 0;
+    g_staticRoomAzelNonzeroLodObjects = 0;
+
+    if (!visible)
+        return false;
+
+    // Mirrors:
+    //   r5 = generateObjectMatrix(...)
+    //   r4 = 0;
+    //   while (r5 > gTownGrid.m3C[r4]) r4++;
+    // For TWN_RUIN the only threshold is 0x7FFFFFFF, so every object should
+    // resolve to LOD 0. Keep the actual walk here so later towns can replace
+    // the threshold table without changing renderer semantics.
+    for (const auto& object :
+         g_staticRoomCpuMesh.objectStates) {
+        float objectCamera[3]{};
+        transformViewerPoint(
+            view,
+            object.worldOrigin,
+            objectCamera);
+
+        const std::int64_t depthFixed =
+            static_cast<std::int64_t>(
+                std::llround(
+                    objectCamera[2] * 65536.0f));
+
+        unsigned int lod = 0;
+        while (lod + 1u <
+                   g_staticRoomCpuMesh.lodDepthCount &&
+               depthFixed >
+                   g_staticRoomCpuMesh
+                       .lodDepthThresholds[lod]) {
+            ++lod;
+        }
+
+        if (lod == 0u)
+            ++g_staticRoomAzelLod0Objects;
+        else
+            ++g_staticRoomAzelNonzeroLodObjects;
+    }
+
+    return true;
 }
 
 static ViewerMat4 buildViewerWvp(bool roomMode)
