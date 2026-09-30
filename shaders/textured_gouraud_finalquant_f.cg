@@ -1,0 +1,41 @@
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    float4 inverse0 : TEXCOORD1,
+    float4 inverse1 : TEXCOORD2,
+    float4 inverse2 : TEXCOORD3,
+    float4 gouraudR : TEXCOORD4,
+    float4 gouraudG : TEXCOORD5,
+    float4 gouraudB : TEXCOORD6,
+    float4 fragCoord : WPOS,
+    uniform sampler2D tex)
+{
+    float4 color = tex2D(tex, vTexcoord);
+    if (color.a < 0.5f)
+        discard;
+
+    // Diagnostic: same cheap interpolation coordinate source as Mode 12/13.
+    // Keep four-corner Gouraud, but quantize only the final lit result once.
+    float2 st = saturate(vTexcoord);
+
+    float r = lerp(lerp(gouraudR.x, gouraudR.y, st.x),
+                   lerp(gouraudR.w, gouraudR.z, st.x), st.y);
+    float g = lerp(lerp(gouraudG.x, gouraudG.y, st.x),
+                   lerp(gouraudG.w, gouraudG.z, st.x), st.y);
+    float b = lerp(lerp(gouraudB.x, gouraudB.y, st.x),
+                   lerp(gouraudB.w, gouraudB.z, st.x), st.y);
+
+    float3 lit =
+        saturate(color.rgb + float3(r, g, b));
+
+    // Single final RGB555-style quantization.
+    lit = floor(lit * 31.0f + 0.5f) / 31.0f;
+
+    float payloadKeepAlive =
+        dot(inverse0, float4(1.0f, 2.0f, 3.0f, 4.0f)) +
+        dot(inverse1, float4(5.0f, 6.0f, 7.0f, 8.0f)) +
+        dot(inverse2, float4(9.0f, 10.0f, 11.0f, 12.0f)) +
+        fragCoord.x * 0.000001f;
+
+    lit += payloadKeepAlive * 0.000000001f;
+    return float4(lit, color.a);
+}
