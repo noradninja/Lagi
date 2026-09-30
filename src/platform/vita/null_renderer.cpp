@@ -3747,34 +3747,6 @@ bool submit_vdp1_model(
     return true;
 }
 
-static void upscaleHalfResolution2x(
-    std::uint32_t* buffer,
-    int pitch)
-{
-    if (!buffer)
-        return;
-
-    constexpr int sourceWidth = kWidth / 2;
-    constexpr int sourceHeight = kHeight / 2;
-
-    // Expand in place from bottom-right so destination writes can never
-    // overwrite source pixels that have not yet been consumed.
-    for (int y = sourceHeight - 1; y >= 0; --y) {
-        std::uint32_t* const src = buffer + y * pitch;
-        std::uint32_t* const dst0 = buffer + (y * 2) * pitch;
-        std::uint32_t* const dst1 = buffer + (y * 2 + 1) * pitch;
-
-        for (int x = sourceWidth - 1; x >= 0; --x) {
-            const std::uint32_t pixel = src[x];
-            const int dx = x * 2;
-            dst0[dx] = pixel;
-            dst0[dx + 1] = pixel;
-            dst1[dx] = pixel;
-            dst1[dx + 1] = pixel;
-        }
-    }
-}
-
 static void renderBasicWingViewer()
 {
     if (!g_viewerReady || !g_gxmInitialized || !g_probeContext ||
@@ -3923,7 +3895,8 @@ static void renderBasicWingViewer()
         (kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1);
 
     std::memset(colorBuffer, 0,
-                static_cast<std::size_t>(gxmPitch) * kHeight *
+                static_cast<std::size_t>(gxmPitch) *
+                viewerRenderHeight() *
                 sizeof(std::uint32_t));
     std::memset(g_probeDepth, 0xFF, alignedW * alignedH * 4u);
     std::memset(g_probeStencil, 0, alignedW * alignedH * 4u);
@@ -4002,9 +3975,6 @@ static void renderBasicWingViewer()
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     sceGxmFinish(g_probeContext);
 
-    if (g_halfResolution)
-        upscaleHalfResolution2x(colorBuffer, gxmPitch);
-
     drawViewerModeOverlay(
         colorBuffer,
         gxmPitch,
@@ -4023,8 +3993,8 @@ static void renderBasicWingViewer()
     fb.base = colorBuffer;
     fb.pitch = gxmPitch;
     fb.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
-    fb.width = kWidth;
-    fb.height = kHeight;
+    fb.width = viewerRenderWidth();
+    fb.height = viewerRenderHeight();
 
     waitFor30HzPresentSlot();
     sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
