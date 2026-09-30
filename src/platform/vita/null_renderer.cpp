@@ -2904,9 +2904,11 @@ bool submit_vdp1_model(
 
     sceGxmSetVertexProgram(
         g_probeContext,
-        (textured || texturedLit || gouraudDebug)
-            ? g_textureVertexProgram
-            : g_probeVertexProgram);
+        (texturedLit || gouraudDebug)
+            ? g_gouraudPayloadVertexProgram
+            : (textured
+                ? g_textureVertexProgram
+                : g_probeVertexProgram));
     sceGxmSetFragmentProgram(
         g_probeContext,
         texturedLit
@@ -2944,15 +2946,19 @@ bool submit_vdp1_model(
 
     sceGxmSetUniformDataF(
         uniformBuffer,
-        (textured || texturedLit || gouraudDebug)
-            ? g_textureWvpParam
-            : g_probeWvpParam,
+        (texturedLit || gouraudDebug)
+            ? g_gouraudPayloadWvpParam
+            : (textured
+                ? g_textureWvpParam
+                : g_probeWvpParam),
         0, 16, drawState.wvp);
 
     const void* vertexStream =
-        (textured || texturedLit || gouraudDebug)
-            ? static_cast<const void*>(g_vdp1TextureVertices)
-            : static_cast<const void*>(g_vdp1Vertices);
+        (texturedLit || gouraudDebug)
+            ? static_cast<const void*>(g_vdp1GouraudVertices)
+            : (textured
+                ? static_cast<const void*>(g_vdp1TextureVertices)
+                : static_cast<const void*>(g_vdp1Vertices));
 
     if (sceGxmSetVertexStream(g_probeContext, 0, vertexStream) < 0)
         return false;
@@ -3000,56 +3006,39 @@ bool submit_vdp1_model(
             if (!visible)
                 continue;
 
-            const float quadScreen01[4] = {
-                screen[0].x, screen[0].y,
-                screen[1].x, screen[1].y
-            };
-            const float quadScreen23[4] = {
-                screen[2].x, screen[2].y,
-                screen[3].x, screen[3].y
-            };
-
             const auto& gouraud = model.gouraud555[p];
-            const float gouraudR[4] = {
-                gouraud.corner[0][0], gouraud.corner[1][0],
-                gouraud.corner[2][0], gouraud.corner[3][0]
-            };
-            const float gouraudG[4] = {
-                gouraud.corner[0][1], gouraud.corner[1][1],
-                gouraud.corner[2][1], gouraud.corner[3][1]
-            };
-            const float gouraudB[4] = {
-                gouraud.corner[0][2], gouraud.corner[1][2],
-                gouraud.corner[2][2], gouraud.corner[3][2]
+            const float payload[5][4] = {
+                {
+                    screen[0].x, screen[0].y,
+                    screen[1].x, screen[1].y
+                },
+                {
+                    screen[2].x, screen[2].y,
+                    screen[3].x, screen[3].y
+                },
+                {
+                    gouraud.corner[0][0], gouraud.corner[1][0],
+                    gouraud.corner[2][0], gouraud.corner[3][0]
+                },
+                {
+                    gouraud.corner[0][1], gouraud.corner[1][1],
+                    gouraud.corner[2][1], gouraud.corner[3][1]
+                },
+                {
+                    gouraud.corner[0][2], gouraud.corner[1][2],
+                    gouraud.corner[2][2], gouraud.corner[3][2]
+                }
             };
 
-            void* fragmentUniformBuffer = nullptr;
-            if (sceGxmReserveFragmentDefaultUniformBuffer(
-                    g_probeContext, &fragmentUniformBuffer) < 0 ||
-                !fragmentUniformBuffer)
-                continue;
-
-            const SceGxmProgramParameter* quad01Param =
-                texturedLit ? g_texturedLitQuadScreen01Param
-                            : g_gouraudDebugQuadScreen01Param;
-            const SceGxmProgramParameter* quad23Param =
-                texturedLit ? g_texturedLitQuadScreen23Param
-                            : g_gouraudDebugQuadScreen23Param;
-            const SceGxmProgramParameter* rParam =
-                texturedLit ? g_texturedLitGouraudRParam
-                            : g_gouraudDebugGouraudRParam;
-            const SceGxmProgramParameter* gParam =
-                texturedLit ? g_texturedLitGouraudGParam
-                            : g_gouraudDebugGouraudGParam;
-            const SceGxmProgramParameter* bParam =
-                texturedLit ? g_texturedLitGouraudBParam
-                            : g_gouraudDebugGouraudBParam;
-
-            sceGxmSetUniformDataF(fragmentUniformBuffer, quad01Param, 0, 4, quadScreen01);
-            sceGxmSetUniformDataF(fragmentUniformBuffer, quad23Param, 0, 4, quadScreen23);
-            sceGxmSetUniformDataF(fragmentUniformBuffer, rParam, 0, 4, gouraudR);
-            sceGxmSetUniformDataF(fragmentUniformBuffer, gParam, 0, 4, gouraudG);
-            sceGxmSetUniformDataF(fragmentUniformBuffer, bParam, 0, 4, gouraudB);
+            for (unsigned int k = 0; k < 6u; ++k) {
+                auto& v =
+                    g_vdp1GouraudVertices[p * 6u + k];
+                std::memcpy(v.quadScreen01, payload[0], sizeof(payload[0]));
+                std::memcpy(v.quadScreen23, payload[1], sizeof(payload[1]));
+                std::memcpy(v.gouraudR, payload[2], sizeof(payload[2]));
+                std::memcpy(v.gouraudG, payload[3], sizeof(payload[3]));
+                std::memcpy(v.gouraudB, payload[4], sizeof(payload[4]));
+            }
 
             if (texturedLit) {
                 sceGxmSetFragmentTexture(
