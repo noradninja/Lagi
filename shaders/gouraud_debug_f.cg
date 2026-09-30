@@ -1,84 +1,9 @@
-float computeU(float2 h, float2 e, float2 f, float2 g, float v)
+// Scanline Gouraud diagnostic without texture contribution.
+float safeRatio(float num, float den)
 {
-    float2 num = h - f * v;
-    float2 den = e + g * v;
-    return abs(den.x) > abs(den.y)
-        ? num.x / den.x
-        : num.y / den.y;
-}
-
-float2 inverseBilinearReduced(
-    float2 p,
-    float4 inverse0,
-    float4 inverse1,
-    float4 inverse2)
-{
-    float2 a = inverse0.xy;
-    float2 e = inverse0.zw;
-    float2 f = inverse1.xy;
-    float2 g = inverse1.zw;
-
-    float2 h = p - a;
-
-    float k2 = inverse2.x;
-    float k1 =
-        inverse2.y +
-        p.x * g.y -
-        p.y * g.x;
-    float k0 =
-        inverse2.z +
-        p.x * e.y -
-        p.y * e.x;
-
-    if (abs(k2) < 0.0001f)
-    {
-        if (abs(k1) < 0.0001f)
-            return float2(0.5f, 0.5f);
-
-        float v = -k0 / k1;
-        return float2(computeU(h, e, f, g, v), v);
-    }
-
-    float disc =
-        max(0.0f, k1 * k1 - 4.0f * k0 * k2);
-    float root = sqrt(disc);
-
-    float inv2k2 = inverse2.w;
-    float v1 = (-k1 - root) * inv2k2;
-    float v2 = (-k1 + root) * inv2k2;
-
-    bool v1Inside = v1 >= 0.0f && v1 <= 1.0f;
-    bool v2Inside = v2 >= 0.0f && v2 <= 1.0f;
-
-    // For fragments inside a normal convex Saturn quad, exactly one
-    // quadratic root maps back into the bilinear unit square. Test that
-    // candidate first so the common path pays for only one computeU()
-    // division. If it is not fully valid, fall back to the original exact
-    // two-root distance comparison.
-    if (v1Inside != v2Inside)
-    {
-        float candidateV = v1Inside ? v1 : v2;
-        float candidateU =
-            computeU(h, e, f, g, candidateV);
-
-        if (candidateU >= 0.0f &&
-            candidateU <= 1.0f)
-            return float2(candidateU, candidateV);
-    }
-
-    float u1 = computeU(h, e, f, g, v1);
-    float u2 = computeU(h, e, f, g, v2);
-
-    float d1 =
-        max(max(-u1, u1 - 1.0f),
-            max(-v1, v1 - 1.0f));
-    float d2 =
-        max(max(-u2, u2 - 1.0f),
-            max(-v2, v2 - 1.0f));
-
-    return d1 <= d2
-        ? float2(u1, v1)
-        : float2(u2, v2);
+    if (abs(den) < 0.0001f)
+        return 0.5f;
+    return num / den;
 }
 
 float4 main(
@@ -91,32 +16,32 @@ float4 main(
     float4 gouraudB : TEXCOORD6,
     float4 fragCoord : WPOS)
 {
-    float2 st =
-        saturate(
-            inverseBilinearReduced(
-                fragCoord.xy,
-                inverse0,
-                inverse1,
-                inverse2));
+    float2 a = inverse0.xy;
+    float2 b = a + inverse0.zw;
+    float2 d = a + inverse1.xy;
+    float2 c = a + inverse0.zw + inverse1.xy + inverse1.zw;
 
-    float r = lerp(lerp(gouraudR.x, gouraudR.y, st.x),
-                   lerp(gouraudR.w, gouraudR.z, st.x), st.y);
-    float g = lerp(lerp(gouraudG.x, gouraudG.y, st.x),
-                   lerp(gouraudG.w, gouraudG.z, st.x), st.y);
-    float b = lerp(lerp(gouraudB.x, gouraudB.y, st.x),
-                   lerp(gouraudB.w, gouraudB.z, st.x), st.y);
+    float leftT = saturate(safeRatio(fragCoord.y - a.y, d.y - a.y));
+    float rightT = saturate(safeRatio(fragCoord.y - b.y, c.y - b.y));
 
-    // Gouraud offsets are stored as (g5 - 16) / 31. Reconstruct the
-    // interpolated 0..31 lighting value, quantize it exactly like the final
-    // RGB555 output path, then average RGB only after quantization. This makes
-    // Saturn-style lighting bands directly visible in the diagnostic.
-    float3 light5 =
-        clamp(float3(r, g, b) * 31.0f + 16.0f, 0.0f, 31.0f);
+    float leftX = lerp(a.x, d.x, leftT);
+    float rightX = lerp(b.x, c.x, rightT);
+    float across = saturate(
+        safeRatio(fragCoord.x - leftX, rightX - leftX));
+
+    float3 shade = float3(
+        lerp(lerp(gouraudR.x, gouraudR.w, leftT),
+             lerp(gouraudR.y, gouraudR.z, rightT), across),
+        lerp(lerp(gouraudG.x, gouraudG.w, leftT),
+             lerp(gouraudG.y, gouraudG.z, rightT), across),
+        lerp(lerp(gouraudB.x, gouraudB.w, leftT),
+             lerp(gouraudB.y, gouraudB.z, rightT), across));
+
+    float3 light5 = clamp(shade * 31.0f + 16.0f, 0.0f, 31.0f);
     light5 = floor(light5 + 0.5f);
-
-    float gray5 =
-        floor((light5.r + light5.g + light5.b) / 3.0f + 0.5f);
+    float gray5 = floor((light5.r + light5.g + light5.b) / 3.0f + 0.5f);
     float gray = gray5 / 31.0f;
 
+    gray += (vTexcoord.x + inverse2.x) * 0.0f;
     return float4(gray, gray, gray, 1.0f);
 }

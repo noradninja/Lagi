@@ -475,17 +475,10 @@ static const char* viewerModeLabel(int mode)
         "MODE 4 - BASIC WING WIREFRAME",
         "MODE 5 - RUIN TEXTURED",
         "MODE 6 - RUIN GOURAUD",
-        "MODE 7 - AUTH EXACT GOURAUD",
+        "MODE 7 - AUTH GOURAUD",
         "MODE 8 - AUTH TEXTURED",
         "MODE 9 - AUTH FLAT",
-        "MODE 10 - AUTH NEWTON GOURAUD",
-        "MODE 11 - AUTH PAYLOAD PROBE",
-        "MODE 12 - AUTH NO-INVERSE GOURAUD",
-        "MODE 13 - AUTH GOURAUD NO-QUANT",
-        "MODE 14 - AUTH RGB555 NO-GOURAUD",
-        "MODE 15 - AUTH FINAL-QUANT GOURAUD",
-        "MODE 16 - AUTH SCANLINE GOURAUD",
-        "MODE 17 - AUTH SCANLINE GRAY"
+        "MODE 10 - AUTH LIGHTING ONLY"
     };
 
     if (mode < 0 ||
@@ -3569,83 +3562,34 @@ bool submit_vdp1_model(
     const bool texturedLit =
         drawState.mode == Vdp1RenderMode::TexturedGouraud &&
         g_vdp1TexturedReady && model.texturesValid() &&
-        g_vdp1TextureVertices && g_vdp1TextureIndices;
-    const bool texturedLitNewton =
-        drawState.mode == Vdp1RenderMode::TexturedGouraudNewton &&
-        g_vdp1TexturedReady && model.texturesValid() &&
-        g_vdp1TextureVertices && g_vdp1TextureIndices;
-    const bool texturedPayloadProbe =
-        drawState.mode == Vdp1RenderMode::TexturedPayloadProbe &&
-        g_vdp1TexturedReady && model.texturesValid() &&
-        g_vdp1TextureVertices && g_vdp1TextureIndices;
-    const bool texturedGouraudNoInverse =
-        drawState.mode == Vdp1RenderMode::TexturedGouraudNoInverse &&
-        g_vdp1TexturedReady && model.texturesValid() &&
-        g_vdp1TextureVertices && g_vdp1TextureIndices;
-    const bool texturedGouraudNoQuant =
-        drawState.mode == Vdp1RenderMode::TexturedGouraudNoQuant &&
-        g_vdp1TexturedReady && model.texturesValid() &&
-        g_vdp1TextureVertices && g_vdp1TextureIndices;
-    const bool texturedRgb555NoGouraud =
-        drawState.mode == Vdp1RenderMode::TexturedRgb555NoGouraud &&
-        g_vdp1TexturedReady && model.texturesValid() &&
-        g_vdp1TextureVertices && g_vdp1TextureIndices;
-    const bool texturedGouraudFinalQuant =
-        drawState.mode == Vdp1RenderMode::TexturedGouraudFinalQuant &&
-        g_vdp1TexturedReady && model.texturesValid() &&
-        g_vdp1TextureVertices && g_vdp1TextureIndices;
-    const bool texturedGouraudScanline =
-        drawState.mode == Vdp1RenderMode::TexturedGouraudScanline &&
-        g_vdp1TexturedReady && model.texturesValid() &&
-        g_vdp1TextureVertices && g_vdp1TextureIndices;
-    const bool gouraudScanlineGray =
-        drawState.mode == Vdp1RenderMode::GouraudScanlineGrayscale &&
-        g_vdp1TexturedReady && model.texturesValid() &&
         g_vdp1GouraudVertices && g_vdp1TextureIndices;
-    const bool gouraudDebug =
+    const bool gouraudGray =
         drawState.mode == Vdp1RenderMode::GouraudGrayscale &&
-        g_vdp1TexturedReady && model.texturesValid() &&
-        g_vdp1TextureVertices;
+        g_vdp1GouraudVertices && g_vdp1TextureIndices;
     const bool wireframe =
         drawState.mode == Vdp1RenderMode::Wireframe;
+    const bool gouraudPath =
+        texturedLit || gouraudGray;
 
     sceGxmSetVertexProgram(
         g_probeContext,
-        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant || texturedGouraudScanline || gouraudScanlineGray || gouraudDebug)
+        gouraudPath
             ? g_gouraudPayloadVertexProgram
             : (textured
                 ? g_textureVertexProgram
                 : g_probeVertexProgram));
+
     sceGxmSetFragmentProgram(
         g_probeContext,
         texturedLit
             ? g_texturedLitFragmentProgram
-            : (texturedLitNewton
-                ? g_texturedLitNewtonFragmentProgram
-                : (texturedPayloadProbe
-                    ? g_texturedPayloadProbeFragmentProgram
-                    : (texturedGouraudNoInverse
-                        ? g_texturedGouraudNoInverseFragmentProgram
-                        : (texturedGouraudNoQuant
-                            ? g_texturedGouraudNoQuantFragmentProgram
-                            : (texturedRgb555NoGouraud
-                                ? g_texturedRgb555NoGouraudFragmentProgram
-                                : (texturedGouraudFinalQuant
-                                    ? g_texturedGouraudFinalQuantFragmentProgram
-                                    : (texturedGouraudScanline
-                                        ? g_texturedGouraudScanlineFragmentProgram
-                                        : (gouraudScanlineGray
-                                            ? g_gouraudScanlineGrayFragmentProgram
-                                            : (textured
-                                                ? g_textureFragmentProgram
-                                                : (gouraudDebug
-                                                    ? g_gouraudDebugFragmentProgram
-                                                    : g_probeFragmentProgram)))))))))));
+            : (gouraudGray
+                ? g_gouraudDebugFragmentProgram
+                : (textured
+                    ? g_textureFragmentProgram
+                    : g_probeFragmentProgram)));
 
-
-    // Mirroring room projection X reverses triangle winding. Keep the
-    // original CW cull convention for non-room content, but flip it for
-    // mirrored room presentation so the same physical faces remain front-facing.
+    // Mirroring room projection X reverses triangle winding.
     const SceGxmCullMode cullMode =
         wireframe
             ? SCE_GXM_CULL_NONE
@@ -3659,7 +3603,8 @@ bool submit_vdp1_model(
         viewerRenderHeight() - 1);
 
     const SceGxmDepthFunc depthFunc =
-        wireframe ? SCE_GXM_DEPTH_FUNC_LESS : SCE_GXM_DEPTH_FUNC_LESS_EQUAL;
+        wireframe ? SCE_GXM_DEPTH_FUNC_LESS
+                  : SCE_GXM_DEPTH_FUNC_LESS_EQUAL;
     sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
     sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
     sceGxmSetFrontDepthWriteEnable(
@@ -3668,7 +3613,8 @@ bool submit_vdp1_model(
         g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
 
     const SceGxmPolygonMode polygonMode =
-        wireframe ? SCE_GXM_POLYGON_MODE_LINE : SCE_GXM_POLYGON_MODE_TRIANGLE_FILL;
+        wireframe ? SCE_GXM_POLYGON_MODE_LINE
+                  : SCE_GXM_POLYGON_MODE_TRIANGLE_FILL;
     sceGxmSetFrontPolygonMode(g_probeContext, polygonMode);
     sceGxmSetBackPolygonMode(g_probeContext, polygonMode);
 
@@ -3679,15 +3625,13 @@ bool submit_vdp1_model(
 
     sceGxmSetUniformDataF(
         uniformBuffer,
-        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant || texturedGouraudScanline || gouraudScanlineGray || gouraudDebug)
+        gouraudPath
             ? g_gouraudPayloadWvpParam
-            : (textured
-                ? g_textureWvpParam
-                : g_probeWvpParam),
+            : (textured ? g_textureWvpParam : g_probeWvpParam),
         0, 16, drawState.wvp);
 
     const void* vertexStream =
-        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant || texturedGouraudScanline || gouraudScanlineGray || gouraudDebug)
+        gouraudPath
             ? static_cast<const void*>(g_vdp1GouraudVertices)
             : (textured
                 ? static_cast<const void*>(g_vdp1TextureVertices)
@@ -3714,19 +3658,21 @@ bool submit_vdp1_model(
         return true;
     }
 
-    if (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant || texturedGouraudScanline || gouraudScanlineGray || gouraudDebug) {
-        // Preserve original Saturn quad identity, but no longer preserve its
-        // one-command-per-quad submission overhead. Every generated vertex
-        // already carries the complete quad projection/Gouraud payload, so
-        // visible quads can share a draw as long as they share texture state.
+    if (gouraudPath) {
+        // Preserve original Saturn quad identity and attach the four recovered
+        // Gouraud corner values to every generated triangle vertex. The final
+        // shaders interpolate those values with the accepted VDP1-style
+        // projected scanline method.
         static const unsigned int cornerVertex[4] = {0, 1, 2, 5};
         ViewerMat4 wvp{};
         std::memcpy(wvp.m, drawState.wvp, sizeof(wvp.m));
 
         const unsigned int textureBucketCount =
-            (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant || texturedGouraudScanline)
+            texturedLit
                 ? static_cast<unsigned int>(g_vdp1GpuTextures.size())
                 : 1u;
+        if (textureBucketCount == 0u)
+            return false;
 
         static std::vector<unsigned int> batchCounts;
         static std::vector<unsigned int> batchWrite;
@@ -3735,15 +3681,10 @@ bool submit_vdp1_model(
         batchWrite.assign(textureBucketCount, 0u);
         visibleQuads.assign(model.polygonCount, 0u);
 
-        // First pass: update per-quad vertex payload and count only quads whose
-        // four original corners are projectable. This retains the previous
-        // visibility rule while allowing one compact index list per texture.
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             const std::uint16_t textureIndex =
-                (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant || texturedGouraudScanline)
-                    ? model.polygonTextureIndices[p]
-                    : 0u;
+                texturedLit ? model.polygonTextureIndices[p] : 0u;
             if (textureIndex >= textureBucketCount)
                 continue;
 
@@ -3752,8 +3693,7 @@ bool submit_vdp1_model(
             for (unsigned int corner = 0; corner < 4; ++corner) {
                 screen[corner] = projectViewerPoint(
                     wvp,
-                    model.vertices[
-                        p * 6u + cornerVertex[corner]]);
+                    model.vertices[p * 6u + cornerVertex[corner]]);
                 if (!screen[corner].valid)
                     visible = false;
             }
@@ -3793,44 +3733,24 @@ bool submit_vdp1_model(
             };
 
             for (unsigned int k = 0; k < 6u; ++k) {
-                auto& v =
-                    g_vdp1GouraudVertices[p * 6u + k];
-                std::memcpy(
-                    v.quadScreen01,
-                    payload[0],
-                    sizeof(payload[0]));
-                std::memcpy(
-                    v.quadScreen23,
-                    payload[1],
-                    sizeof(payload[1]));
-                std::memcpy(
-                    v.gouraudR,
-                    payload[2],
-                    sizeof(payload[2]));
-                std::memcpy(
-                    v.gouraudG,
-                    payload[3],
-                    sizeof(payload[3]));
-                std::memcpy(
-                    v.gouraudB,
-                    payload[4],
-                    sizeof(payload[4]));
+                auto& v = g_vdp1GouraudVertices[p * 6u + k];
+                std::memcpy(v.quadScreen01, payload[0], sizeof(payload[0]));
+                std::memcpy(v.quadScreen23, payload[1], sizeof(payload[1]));
+                std::memcpy(v.gouraudR, payload[2], sizeof(payload[2]));
+                std::memcpy(v.gouraudG, payload[3], sizeof(payload[3]));
+                std::memcpy(v.gouraudB, payload[4], sizeof(payload[4]));
             }
 
             batchCounts[textureIndex] += 6u;
         }
 
-        // Prefix-sum the visible batch ranges directly into the resident U16
-        // index buffer. No new GPU allocations occur per frame.
         unsigned int totalVisibleIndices = 0u;
         if (g_vdp1TextureBatches.size() < textureBucketCount)
             g_vdp1TextureBatches.resize(textureBucketCount);
 
         for (unsigned int t = 0; t < textureBucketCount; ++t) {
-            g_vdp1TextureBatches[t].firstIndex =
-                totalVisibleIndices;
-            g_vdp1TextureBatches[t].indexCount =
-                batchCounts[t];
+            g_vdp1TextureBatches[t].firstIndex = totalVisibleIndices;
+            g_vdp1TextureBatches[t].indexCount = batchCounts[t];
             batchWrite[t] = totalVisibleIndices;
             totalVisibleIndices += batchCounts[t];
         }
@@ -3839,43 +3759,33 @@ bool submit_vdp1_model(
             static_cast<unsigned int>(model.vertexCount))
             return false;
 
-        // Second pass: write the visible quad indices into their texture
-        // ranges. The vertex payload already contains each quad's unique
-        // Saturn Gouraud state, so these indices can safely share a draw.
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             if (!visibleQuads[p])
                 continue;
 
             const std::uint16_t textureIndex =
-                (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant || texturedGouraudScanline)
-                    ? model.polygonTextureIndices[p]
-                    : 0u;
+                texturedLit ? model.polygonTextureIndices[p] : 0u;
             if (textureIndex >= textureBucketCount ||
                 batchCounts[textureIndex] == 0u)
                 continue;
 
-            unsigned int& write =
-                batchWrite[textureIndex];
+            unsigned int& write = batchWrite[textureIndex];
             for (unsigned int k = 0; k < 6u; ++k) {
                 g_vdp1TextureIndices[write++] =
-                    static_cast<std::uint16_t>(
-                        p * 6u + k);
+                    static_cast<std::uint16_t>(p * 6u + k);
             }
         }
 
         unsigned int submittedBatches = 0u;
         for (unsigned int t = 0; t < textureBucketCount; ++t) {
-            const TextureBatch& batch =
-                g_vdp1TextureBatches[t];
+            const TextureBatch& batch = g_vdp1TextureBatches[t];
             if (!batch.indexCount)
                 continue;
 
-            if (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant || texturedGouraudScanline) {
+            if (texturedLit) {
                 sceGxmSetFragmentTexture(
-                    g_probeContext,
-                    0,
-                    &g_vdp1GpuTextures[t].texture);
+                    g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
             }
 
             sceGxmDraw(
@@ -3915,7 +3825,7 @@ static void renderBasicWingViewer()
         g_staticRoomCpuReady
             ? (g_staticRoomCpuMesh.cameraValid &&
                g_staticRoomCpuMesh.lightingValid
-                ? 18
+                ? 11
                 : (g_staticRoomCpuMesh.lightingValid ? 7 : 6))
             : 5;
     if (input::prev_mode_pressed())
@@ -3927,89 +3837,59 @@ static void renderBasicWingViewer()
 
     const bool roomMode =
         g_staticRoomCpuReady && g_viewMode >= 5;
-
     const bool previousRoomMode =
         g_staticRoomCpuReady && previousMode >= 5;
     if (roomMode != previousRoomMode) {
         g_viewDistance =
-            roomMode
-                ? g_staticRoomFitDistance
-                : g_basicWingFitDistance;
+            roomMode ? g_staticRoomFitDistance : g_basicWingFitDistance;
     }
 
-    // Debug orbit controls alter only the view transform. Model and room
-    // geometry remain in native Azel game space in every mode.
-    if (!(g_staticRoomCpuReady &&
-          g_staticRoomCpuMesh.cameraValid &&
-          g_viewMode >= 7)) {
+    const bool roomAuthenticCameraMode =
+        g_staticRoomCpuReady &&
+        g_staticRoomCpuMesh.cameraValid &&
+        g_viewMode >= 7;
+
+    // Debug orbit controls alter only the view transform. Authentic modes use
+    // the recovered Azel startup camera.
+    if (!roomAuthenticCameraMode) {
         g_viewYaw += input::analog_x() * 0.035f;
         g_viewPitch += input::analog_y() * 0.035f;
         g_viewPitch =
             std::max(-1.45f, std::min(1.45f, g_viewPitch));
 
         const float fitDistance =
-            roomMode
-                ? g_staticRoomFitDistance
-                : g_basicWingFitDistance;
+            roomMode ? g_staticRoomFitDistance : g_basicWingFitDistance;
         const float dollyStep =
             std::max(0.0025f, fitDistance * 0.02f);
 
-        g_viewDistance +=
-            input::analog_zoom() * dollyStep;
+        g_viewDistance += input::analog_zoom() * dollyStep;
         g_viewDistance =
-            std::max(
-                0.01f,
-                std::min(
-                    32.0f,
-                    g_viewDistance));
+            std::max(0.01f, std::min(32.0f, g_viewDistance));
     }
 
     if (input::reset_view_pressed()) {
         g_viewYaw = 0.60f;
         g_viewPitch = -0.30f;
         g_viewDistance =
-            roomMode
-                ? g_staticRoomFitDistance
-                : g_basicWingFitDistance;
+            roomMode ? g_staticRoomFitDistance : g_basicWingFitDistance;
     }
-    const bool roomLitMode =
+
+    const bool roomDiagnosticLitMode =
         g_staticRoomCpuReady &&
         g_staticRoomCpuMesh.lightingValid &&
-        (g_viewMode == 6 || g_viewMode == 7);
-    const bool roomAuthenticCameraMode =
-        g_staticRoomCpuReady &&
-        g_staticRoomCpuMesh.cameraValid &&
-        g_viewMode >= 7;
-    const bool roomAuthenticTexturedOnlyMode =
+        g_viewMode == 6;
+    const bool roomAuthenticLitMode =
+        roomAuthenticCameraMode &&
+        g_viewMode == 7;
+    const bool roomAuthenticTexturedMode =
         roomAuthenticCameraMode &&
         g_viewMode == 8;
     const bool roomAuthenticFlatMode =
         roomAuthenticCameraMode &&
         g_viewMode == 9;
-    const bool roomAuthenticNewtonMode =
+    const bool roomAuthenticLightingOnlyMode =
         roomAuthenticCameraMode &&
         g_viewMode == 10;
-    const bool roomAuthenticPayloadProbeMode =
-        roomAuthenticCameraMode &&
-        g_viewMode == 11;
-    const bool roomAuthenticNoInverseMode =
-        roomAuthenticCameraMode &&
-        g_viewMode == 12;
-    const bool roomAuthenticNoQuantMode =
-        roomAuthenticCameraMode &&
-        g_viewMode == 13;
-    const bool roomAuthenticRgb555NoGouraudMode =
-        roomAuthenticCameraMode &&
-        g_viewMode == 14;
-    const bool roomAuthenticFinalQuantMode =
-        roomAuthenticCameraMode &&
-        g_viewMode == 15;
-    const bool roomAuthenticScanlineMode =
-        roomAuthenticCameraMode &&
-        g_viewMode == 16;
-    const bool roomAuthenticScanlineGrayMode =
-        roomAuthenticCameraMode &&
-        g_viewMode == 17;
 
     if (!roomMode && g_residentVdp1Model != ResidentVdp1Model::BasicWing) {
         if (!prepare_vdp1_model(basicWingVdp1Source()))
@@ -4024,8 +3904,7 @@ static void renderBasicWingViewer()
 
         if (g_residentVdp1Model != desiredResident) {
             if (!prepare_vdp1_model(
-                    staticRoomVdp1Source(
-                        roomAuthenticCameraMode)))
+                    staticRoomVdp1Source(roomAuthenticCameraMode)))
                 return;
             g_residentVdp1Model = desiredResident;
         }
@@ -4054,13 +3933,9 @@ static void renderBasicWingViewer()
     SceGxmSyncObject* const syncObject =
         g_gxmDrawBuffer == 0 ? g_probeSync : g_probeSync2;
     SceGxmRenderTarget* const renderTarget =
-        g_halfResolution
-            ? g_probeRenderTargetHalf
-            : g_probeRenderTarget;
+        g_halfResolution ? g_probeRenderTargetHalf : g_probeRenderTarget;
     SceGxmDepthStencilSurface* const depthSurface =
-        g_halfResolution
-            ? &g_probeDepthSurfaceHalf
-            : &g_probeDepthSurface;
+        g_halfResolution ? &g_probeDepthSurfaceHalf : &g_probeDepthSurface;
 
     const unsigned int alignedW =
         (viewerRenderWidth() + SCE_GXM_TILE_SIZEX - 1) &
@@ -4082,35 +3957,19 @@ static void renderBasicWingViewer()
             colorSurface, depthSurface) < 0)
         return;
 
-    const Vdp1RenderMode renderMode =
-        roomMode
-            ? (roomAuthenticFlatMode
-                ? Vdp1RenderMode::PolygonColor
-                : (roomAuthenticNewtonMode
-                    ? Vdp1RenderMode::TexturedGouraudNewton
-                    : (roomAuthenticPayloadProbeMode
-                        ? Vdp1RenderMode::TexturedPayloadProbe
-                        : (roomAuthenticNoInverseMode
-                            ? Vdp1RenderMode::TexturedGouraudNoInverse
-                            : (roomAuthenticNoQuantMode
-                                ? Vdp1RenderMode::TexturedGouraudNoQuant
-                                : (roomAuthenticRgb555NoGouraudMode
-                                    ? Vdp1RenderMode::TexturedRgb555NoGouraud
-                                    : (roomAuthenticScanlineGrayMode
-                                        ? Vdp1RenderMode::GouraudScanlineGrayscale
-                                        : (roomAuthenticScanlineMode
-                                            ? Vdp1RenderMode::TexturedGouraudScanline
-                                            : (roomAuthenticFinalQuantMode
-                                                ? Vdp1RenderMode::TexturedGouraudFinalQuant
-                                                : (g_staticRoomCpuMesh.texturesFullyResolved
-                                                    ? (roomLitMode
-                                                        ? Vdp1RenderMode::TexturedGouraud
-                                                        : Vdp1RenderMode::Textured)
-                                                    : Vdp1RenderMode::PolygonColor))))))))))
-            : static_cast<Vdp1RenderMode>(g_viewMode);
-
-
-    (void)roomAuthenticTexturedOnlyMode;
+    Vdp1RenderMode renderMode = Vdp1RenderMode::PolygonColor;
+    if (!roomMode) {
+        renderMode = static_cast<Vdp1RenderMode>(g_viewMode);
+    } else if (roomAuthenticFlatMode) {
+        renderMode = Vdp1RenderMode::PolygonColor;
+    } else if (roomAuthenticLightingOnlyMode) {
+        renderMode = Vdp1RenderMode::GouraudGrayscale;
+    } else if (roomDiagnosticLitMode || roomAuthenticLitMode) {
+        renderMode = Vdp1RenderMode::TexturedGouraud;
+    } else if (g_staticRoomCpuMesh.texturesFullyResolved ||
+               roomAuthenticTexturedMode) {
+        renderMode = Vdp1RenderMode::Textured;
+    }
 
     if (!roomMode &&
         (renderMode == Vdp1RenderMode::TexturedGouraud ||
@@ -4118,22 +3977,15 @@ static void renderBasicWingViewer()
         updateViewerAzelLighting();
 
     bool azelTownCellVisible = true;
-    if (roomAuthenticCameraMode) {
-        azelTownCellVisible =
-            updateStaticRoomAzelTownVisibility();
-    }
+    if (roomAuthenticCameraMode)
+        azelTownCellVisible = updateStaticRoomAzelTownVisibility();
 
-    if ((roomLitMode ||
-         roomAuthenticNewtonMode ||
-         roomAuthenticNoInverseMode ||
-         roomAuthenticNoQuantMode ||
-         roomAuthenticRgb555NoGouraudMode ||
-         roomAuthenticFinalQuantMode ||
-         roomAuthenticScanlineMode ||
-         roomAuthenticScanlineGrayMode) &&
-        azelTownCellVisible)
-        updateStaticRoomAzelLighting(
-            roomAuthenticCameraMode);
+    if ((roomDiagnosticLitMode ||
+         roomAuthenticLitMode ||
+         roomAuthenticLightingOnlyMode) &&
+        azelTownCellVisible) {
+        updateStaticRoomAzelLighting(roomAuthenticCameraMode);
+    }
 
     Vdp1DrawState drawState{};
     std::memcpy(drawState.wvp, wvp.m, sizeof(drawState.wvp));
