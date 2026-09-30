@@ -2634,7 +2634,7 @@ void toggle_debug_console()
         return;
     }
 
-    const ViewerMat4 initialWvp = buildViewerWvp();
+    const ViewerMat4 initialWvp = buildViewerWvp(false);
     sceGxmSetUniformDataF(
         wingUniformBuffer, g_probeWvpParam, 0, 16, initialWvp.m);
 
@@ -3032,20 +3032,7 @@ static void renderBasicWingViewer()
         !g_vdp1Indices)
         return;
 
-    g_viewYaw += input::analog_x() * 0.035f;
-    g_viewPitch += input::analog_y() * 0.035f;
-    g_viewPitch = std::max(-1.45f, std::min(1.45f, g_viewPitch));
-
-    // Right stick Y dollies the camera without altering FOV.
-    // Pushing up moves closer; pulling down moves farther away.
-    g_viewDistance += input::analog_zoom() * 0.060f;
-    g_viewDistance = std::max(0.75f, std::min(8.0f, g_viewDistance));
-
-    if (input::reset_view_pressed()) {
-        g_viewYaw = 0.60f;
-        g_viewPitch = -0.30f;
-        g_viewDistance = 3.0f;
-    }
+    const int previousMode = g_viewMode;
 
     const int viewerModeCount =
         g_staticRoomCpuReady
@@ -3061,6 +3048,51 @@ static void renderBasicWingViewer()
 
     const bool roomMode =
         g_staticRoomCpuReady && g_viewMode >= 5;
+
+    const bool previousRoomMode =
+        g_staticRoomCpuReady && previousMode >= 5;
+    if (roomMode != previousRoomMode) {
+        g_viewDistance =
+            roomMode
+                ? g_staticRoomFitDistance
+                : g_basicWingFitDistance;
+    }
+
+    // Debug orbit controls alter only the view transform. Model and room
+    // geometry remain in native Azel game space in every mode.
+    if (!(g_staticRoomCpuReady &&
+          g_staticRoomCpuMesh.cameraValid &&
+          g_viewMode == 7)) {
+        g_viewYaw += input::analog_x() * 0.035f;
+        g_viewPitch += input::analog_y() * 0.035f;
+        g_viewPitch =
+            std::max(-1.45f, std::min(1.45f, g_viewPitch));
+
+        const float fitDistance =
+            roomMode
+                ? g_staticRoomFitDistance
+                : g_basicWingFitDistance;
+        const float dollyStep =
+            std::max(0.0025f, fitDistance * 0.02f);
+
+        g_viewDistance +=
+            input::analog_zoom() * dollyStep;
+        g_viewDistance =
+            std::max(
+                0.01f,
+                std::min(
+                    32.0f,
+                    g_viewDistance));
+    }
+
+    if (input::reset_view_pressed()) {
+        g_viewYaw = 0.60f;
+        g_viewPitch = -0.30f;
+        g_viewDistance =
+            roomMode
+                ? g_staticRoomFitDistance
+                : g_basicWingFitDistance;
+    }
     const bool roomLitMode =
         g_staticRoomCpuReady &&
         g_staticRoomCpuMesh.lightingValid &&
@@ -3096,7 +3128,7 @@ static void renderBasicWingViewer()
     const ViewerMat4 wvp =
         roomAuthenticCameraMode
             ? buildAuthenticRoomWvp()
-            : buildViewerWvp();
+            : buildViewerWvp(roomMode);
 
     constexpr int gxmPitch = 1024;
 
