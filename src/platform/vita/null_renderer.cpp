@@ -1597,17 +1597,16 @@ static ViewerMat4 viewerLookAtLH(
     };
     normalize(up);
 
-    // Azel's camera stack begins with Z negated (resetMatrixStack
-    // initializes m[2][2] = -1). For the normal town camera looking down
-    // world -Z, camera-right must therefore remain +world X. Using the
-    // conventional LH up x forward ordering here produced -X and mirrored
-    // the entire town horizontally relative to Saturn output.
+    // Keep the stable left-handed view basis here. Authentic Saturn
+    // horizontal presentation is handled in buildAuthenticRoomWvp() by
+    // mirroring projection X only. Changing this basis changes view-space
+    // handedness and also affects the Azel visibility/LOD path.
     float x[3]{};
-    cross(z, up, x);
+    cross(up, z, x);
     normalize(x);
 
     float y[3]{};
-    cross(x, z, y);
+    cross(z, x, y);
     normalize(y);
 
     ViewerMat4 r = viewerIdentity();
@@ -1628,12 +1627,17 @@ static ViewerMat4 buildAuthenticRoomWvp()
             g_staticRoomCpuMesh.cameraTarget,
             g_staticRoomCpuMesh.cameraUp);
 
-    const ViewerMat4 projection =
+    ViewerMat4 projection =
         buildAzelProjection(
             g_staticRoomCpuMesh.cameraFovDegrees,
             0u,
             g_staticRoomCpuMesh.cameraNear,
             g_staticRoomCpuMesh.cameraFar);
+
+    // Saturn reference captures show our reconstructed town presentation is
+    // horizontally reversed. Mirror only clip-space X here so camera-space
+    // depth, Azel town visibility and LOD remain unchanged.
+    projection.m[0] = -projection.m[0];
 
     return viewerMul(view, projection);
 }
