@@ -126,7 +126,8 @@ static bool g_staticRoomCpuReady = false;
 enum class ResidentVdp1Model {
     None,
     BasicWing,
-    StaticRoom,
+    StaticRoomDiagnostic,
+    StaticRoomAuthentic,
 };
 static ResidentVdp1Model g_residentVdp1Model = ResidentVdp1Model::None;
 static SceUID g_vdp1VertexUid = -1;
@@ -186,12 +187,18 @@ static Vdp1ModelSource basicWingVdp1Source()
     return source;
 }
 
-static Vdp1ModelSource staticRoomVdp1Source()
+static Vdp1ModelSource staticRoomVdp1Source(bool authenticCamera)
 {
     Vdp1ModelSource source{};
-    source.vertices = g_staticRoomCpuMesh.vertices.data();
-    source.lightingVertices = g_staticRoomCpuMesh.lightingVertices.data();
-    source.vertexCount = g_staticRoomCpuMesh.vertices.size();
+    source.vertices = authenticCamera
+        ? g_staticRoomCpuMesh.worldVertices.data()
+        : g_staticRoomCpuMesh.vertices.data();
+    source.lightingVertices = authenticCamera
+        ? g_staticRoomCpuMesh.worldLightingVertices.data()
+        : g_staticRoomCpuMesh.lightingVertices.data();
+    source.vertexCount = authenticCamera
+        ? g_staticRoomCpuMesh.worldVertices.size()
+        : g_staticRoomCpuMesh.vertices.size();
     source.polygons = g_staticRoomCpuMesh.polygonRecords.data();
     source.gouraud555 = g_staticRoomCpuMesh.gouraud555.data();
     source.polygonCount = g_staticRoomCpuMesh.polygons;
