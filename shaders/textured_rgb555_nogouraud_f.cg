@@ -1,0 +1,37 @@
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    float4 inverse0 : TEXCOORD1,
+    float4 inverse1 : TEXCOORD2,
+    float4 inverse2 : TEXCOORD3,
+    float4 gouraudR : TEXCOORD4,
+    float4 gouraudG : TEXCOORD5,
+    float4 gouraudB : TEXCOORD6,
+    float4 fragCoord : WPOS,
+    uniform sampler2D tex)
+{
+    float4 color = tex2D(tex, vTexcoord);
+    if (color.a < 0.5f)
+        discard;
+
+    // Diagnostic: retain the complete RGB555 recover/clamp/quantize path,
+    // but remove four-corner Gouraud interpolation. Use one constant
+    // per-quad corner value so lighting math does not introduce lerps.
+    float3 shade5 =
+        float3(gouraudR.x, gouraudG.x, gouraudB.x) * 31.0f;
+
+    float3 base5 = floor(color.rgb * 31.0f + 0.5f);
+    float3 result5 = clamp(base5 + shade5, 0.0f, 31.0f);
+    result5 = floor(result5 + 0.5f);
+
+    float payloadKeepAlive =
+        dot(inverse0, float4(1.0f, 2.0f, 3.0f, 4.0f)) +
+        dot(inverse1, float4(5.0f, 6.0f, 7.0f, 8.0f)) +
+        dot(inverse2, float4(9.0f, 10.0f, 11.0f, 12.0f)) +
+        dot(gouraudR, float4(13.0f, 14.0f, 15.0f, 16.0f)) +
+        dot(gouraudG, float4(17.0f, 18.0f, 19.0f, 20.0f)) +
+        dot(gouraudB, float4(21.0f, 22.0f, 23.0f, 24.0f)) +
+        fragCoord.x * 0.000001f;
+
+    result5 += payloadKeepAlive * 0.000000001f;
+    return float4(result5 / 31.0f, color.a);
+}
