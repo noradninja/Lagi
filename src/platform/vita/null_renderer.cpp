@@ -203,6 +203,7 @@ static unsigned int g_staticRoomAzelLod0Objects = 0;
 static unsigned int g_staticRoomAzelNonzeroLodObjects = 0;
 
 static int g_viewMode = 0;
+static bool g_halfResolution = false;
 static unsigned int g_basicWingAnimationFrame = 0;
 static std::uint64_t g_basicWingAnimationLastUs = 0;
 static std::uint64_t g_basicWingAnimationPhase = 0;
@@ -1888,6 +1889,16 @@ struct ViewerScreenPoint
     bool valid = false;
 };
 
+static int viewerRenderWidth()
+{
+    return g_halfResolution ? (kWidth / 2) : kWidth;
+}
+
+static int viewerRenderHeight()
+{
+    return g_halfResolution ? (kHeight / 2) : kHeight;
+}
+
 static ViewerScreenPoint projectViewerPoint(
     const ViewerMat4& wvp,
     const azel::DebugColorVertex& v)
@@ -1910,8 +1921,10 @@ static ViewerScreenPoint projectViewerPoint(
     const float ndcY = clipY / clipW;
 
     ViewerScreenPoint out{};
-    out.x = (ndcX * 0.5f + 0.5f) * static_cast<float>(kWidth);
-    out.y = (0.5f - ndcY * 0.5f) * static_cast<float>(kHeight);
+    out.x = (ndcX * 0.5f + 0.5f) *
+        static_cast<float>(viewerRenderWidth());
+    out.y = (0.5f - ndcY * 0.5f) *
+        static_cast<float>(viewerRenderHeight());
     out.valid = true;
     return out;
 }
@@ -3488,7 +3501,9 @@ bool submit_vdp1_model(
                 : SCE_GXM_CULL_CW);
     sceGxmSetCullMode(g_probeContext, cullMode);
     sceGxmSetDefaultRegionClipAndViewport(
-        g_probeContext, kWidth - 1, kHeight - 1);
+        g_probeContext,
+        viewerRenderWidth() - 1,
+        viewerRenderHeight() - 1);
 
     const SceGxmDepthFunc depthFunc =
         wireframe ? SCE_GXM_DEPTH_FUNC_LESS : SCE_GXM_DEPTH_FUNC_LESS_EQUAL;
@@ -3732,6 +3747,34 @@ bool submit_vdp1_model(
     return true;
 }
 
+static void upscaleHalfResolution2x(
+    std::uint32_t* buffer,
+    int pitch)
+{
+    if (!buffer)
+        return;
+
+    constexpr int sourceWidth = kWidth / 2;
+    constexpr int sourceHeight = kHeight / 2;
+
+    // Expand in place from bottom-right so destination writes can never
+    // overwrite source pixels that have not yet been consumed.
+    for (int y = sourceHeight - 1; y >= 0; --y) {
+        std::uint32_t* const src = buffer + y * pitch;
+        std::uint32_t* const dst0 = buffer + (y * 2) * pitch;
+        std::uint32_t* const dst1 = buffer + (y * 2 + 1) * pitch;
+
+        for (int x = sourceWidth - 1; x >= 0; --x) {
+            const std::uint32_t pixel = src[x];
+            const int dx = x * 2;
+            dst0[dx] = pixel;
+            dst0[dx + 1] = pixel;
+            dst1[dx] = pixel;
+            dst1[dx + 1] = pixel;
+        }
+    }
+}
+
 static void renderBasicWingViewer()
 {
     if (!g_viewerReady || !g_gxmInitialized || !g_probeContext ||
@@ -3754,6 +3797,8 @@ static void renderBasicWingViewer()
         g_viewMode = (g_viewMode + viewerModeCount - 1) % viewerModeCount;
     if (input::next_mode_pressed())
         g_viewMode = (g_viewMode + 1) % viewerModeCount;
+    if (input::resolution_toggle_pressed())
+        g_halfResolution = !g_halfResolution;
 
     const bool roomMode =
         g_staticRoomCpuReady && g_viewMode >= 5;
@@ -3957,10 +4002,21 @@ static void renderBasicWingViewer()
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     sceGxmFinish(g_probeContext);
 
+    if (g_halfResolution)
+        upscaleHalfResolution2x(colorBuffer, gxmPitch);
+
     drawViewerModeOverlay(
         colorBuffer,
         gxmPitch,
         g_viewMode);
+
+    drawTextSmallToBuffer(
+        colorBuffer,
+        gxmPitch,
+        16,
+        kHeight - 18,
+        g_halfResolution ? "480X272 X2" : "960X544 NATIVE",
+        0xFFFFFFFFu);
 
     SceDisplayFrameBuf fb{};
     fb.size = sizeof(fb);
