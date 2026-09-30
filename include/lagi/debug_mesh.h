@@ -114,6 +114,16 @@ struct StaticRoomDebugMesh {
     unsigned int uniqueTextures = 0;
     unsigned int decodedTextures = 0;
     unsigned int indirectCramPixels = 0;
+
+    // First-scene lighting recovered from the town script's
+    // townCamera_setup() call. Direction is normalized world-space light
+    // input before setupLight() negates/scales it.
+    float lightDirection[3]{};
+    std::uint8_t lightColor[3]{};
+    std::uint32_t lightFalloff[3]{};
+    unsigned int lightingModes[4]{};
+    bool lightingValid = false;
+
     bool texturesValid = false;
     bool texturesFullyResolved = false;
     bool truncated = false;
