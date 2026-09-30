@@ -411,6 +411,123 @@ static void drawTextSmall(int x, int y, const char* text, std::uint32_t color)
     }
 }
 
+static void drawCharSmallToBuffer(
+    std::uint32_t* buffer,
+    int pitch,
+    int x,
+    int y,
+    char c,
+    std::uint32_t color)
+{
+    if (!buffer)
+        return;
+
+    const std::uint8_t* rows = glyph(c);
+    static constexpr int srcW = 5;
+    static constexpr int srcH = 7;
+    static constexpr int dstW = 7;
+    static constexpr int dstH = 10;
+
+    for (int dy = 0; dy < dstH; ++dy) {
+        const int gy = (dy * 3) / 4;
+        const int py = y + dy;
+        if (py < 0 || py >= kHeight)
+            continue;
+
+        for (int dx = 0; dx < dstW; ++dx) {
+            const int gx = (dx * 3) / 4;
+            if (gx >= srcW || gy >= srcH)
+                continue;
+            if (!(rows[gy] & (1u << (4 - gx))))
+                continue;
+
+            const int px = x + dx;
+            if (px >= 0 && px < kWidth)
+                buffer[py * pitch + px] = color;
+        }
+    }
+}
+
+static void drawTextSmallToBuffer(
+    std::uint32_t* buffer,
+    int pitch,
+    int x,
+    int y,
+    const char* text,
+    std::uint32_t color)
+{
+    if (!buffer || !text)
+        return;
+
+    static constexpr int advance = 8;
+    for (const char* p = text; *p; ++p) {
+        drawCharSmallToBuffer(
+            buffer, pitch, x, y, *p, color);
+        x += advance;
+        if (x > kWidth - advance)
+            break;
+    }
+}
+
+static const char* viewerModeLabel(int mode)
+{
+    static const char* labels[] = {
+        "MODE 0 - BASIC WING TEXTURED",
+        "MODE 1 - BASIC WING GOURAUD",
+        "MODE 2 - BASIC WING GOURAUD GRAY",
+        "MODE 3 - BASIC WING POLY DEBUG",
+        "MODE 4 - BASIC WING WIREFRAME",
+        "MODE 5 - RUIN TEXTURED",
+        "MODE 6 - RUIN GOURAUD",
+        "MODE 7 - AUTH EXACT GOURAUD",
+        "MODE 8 - AUTH TEXTURED",
+        "MODE 9 - AUTH FLAT",
+        "MODE 10 - AUTH NEWTON GOURAUD",
+        "MODE 11 - AUTH PAYLOAD PROBE",
+        "MODE 12 - AUTH NO-INVERSE GOURAUD",
+        "MODE 13 - AUTH GOURAUD NO-QUANT",
+        "MODE 14 - AUTH RGB555 NO-GOURAUD",
+        "MODE 15 - AUTH FINAL-QUANT GOURAUD"
+    };
+
+    if (mode < 0 ||
+        mode >= static_cast<int>(
+            sizeof(labels) / sizeof(labels[0])))
+        return "MODE ?";
+
+    return labels[mode];
+}
+
+static void drawViewerModeOverlay(
+    std::uint32_t* buffer,
+    int pitch,
+    int mode)
+{
+    const char* label = viewerModeLabel(mode);
+    const int length =
+        static_cast<int>(std::strlen(label));
+    static constexpr int advance = 8;
+    static constexpr int marginX = 12;
+    static constexpr int marginY = 12;
+    static constexpr int textHeight = 10;
+
+    const int x =
+        std::max(
+            0,
+            kWidth - marginX - length * advance);
+    const int y =
+        kHeight - marginY - textHeight;
+
+    // One-pixel black offset gives the text enough contrast over bright
+    // textures without adding a large opaque diagnostic panel.
+    drawTextSmallToBuffer(
+        buffer, pitch, x + 1, y + 1,
+        label, 0xFF000000u);
+    drawTextSmallToBuffer(
+        buffer, pitch, x, y,
+        label, 0xFFFFFFFFu);
+}
+
 bool init()
 {
     const std::size_t allocSize = (kFrameBytes + 0x3FFFFu) & ~0x3FFFFu;
@@ -3815,6 +3932,11 @@ static void renderBasicWingViewer()
 
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     sceGxmFinish(g_probeContext);
+
+    drawViewerModeOverlay(
+        colorBuffer,
+        gxmPitch,
+        g_viewMode);
 
     SceDisplayFrameBuf fb{};
     fb.size = sizeof(fb);
