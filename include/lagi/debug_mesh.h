@@ -55,6 +55,7 @@ struct SaturnGouraud555Quad {
 struct DebugObjectBounds {
     float min[3]{};
     float max[3]{};
+    bool valid = false;
 };
 
 struct SaturnLightingNormalQuad {
