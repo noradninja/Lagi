@@ -1,10 +1,15 @@
 // Per-quad Saturn Gouraud payload vertex shader.
 //
-// Each triangle vertex carries a replicated copy of the original Saturn
-// quad's projected four corners and four RGB555 Gouraud corner values.
-// Because those payload values are identical across all six generated
-// triangle vertices, interpolation leaves them constant for the fragment
-// shader without requiring per-draw fragment uniforms.
+// Each generated triangle vertex carries the same original Saturn quad
+// corners and RGB555 Gouraud values. Reduce the inverse-bilinear setup here
+// so the fragment shader does not rebuild quad-invariant vectors/cross terms
+// for every covered pixel.
+
+float cross2d(float2 a, float2 b)
+{
+    return a.x * b.y - a.y * b.x;
+}
+
 void main(
     float3 aPosition,
     float2 aTexcoord,
@@ -16,16 +21,36 @@ void main(
     uniform float4x4 wvp,
     float4 out vPosition : POSITION,
     float2 out vTexcoord : TEXCOORD0,
-    float4 out vQuadScreen01 : TEXCOORD1,
-    float4 out vQuadScreen23 : TEXCOORD2,
-    float4 out vGouraudR : TEXCOORD3,
-    float4 out vGouraudG : TEXCOORD4,
-    float4 out vGouraudB : TEXCOORD5)
+    float4 out vInverse0 : TEXCOORD1,
+    float4 out vInverse1 : TEXCOORD2,
+    float4 out vInverse2 : TEXCOORD3,
+    float4 out vGouraudR : TEXCOORD4,
+    float4 out vGouraudG : TEXCOORD5,
+    float4 out vGouraudB : TEXCOORD6)
 {
     vPosition = mul(float4(aPosition, 1.0f), wvp);
     vTexcoord = aTexcoord;
-    vQuadScreen01 = aQuadScreen01;
-    vQuadScreen23 = aQuadScreen23;
+
+    float2 a = aQuadScreen01.xy;
+    float2 b = aQuadScreen01.zw;
+    float2 c = aQuadScreen23.xy;
+    float2 d = aQuadScreen23.zw;
+
+    float2 e = b - a;
+    float2 f = d - a;
+    float2 g = a - b + c - d;
+
+    // k2 is constant for the entire quad.
+    // k1(p) = k1Base + p.x*g.y - p.y*g.x
+    // k0(p) = k0Base + p.x*e.y - p.y*e.x
+    float k2 = cross2d(g, f);
+    float k1Base = cross2d(e, f) - cross2d(a, g);
+    float k0Base = -cross2d(a, e);
+
+    vInverse0 = float4(a, e);
+    vInverse1 = float4(f, g);
+    vInverse2 = float4(k2, k1Base, k0Base, 0.0f);
+
     vGouraudR = aGouraudR;
     vGouraudG = aGouraudG;
     vGouraudB = aGouraudB;
