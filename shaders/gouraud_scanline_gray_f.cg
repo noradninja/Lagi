@@ -1,0 +1,47 @@
+// Scanline Gouraud diagnostic without texture contribution.
+float safeRatio(float num, float den)
+{
+    if (abs(den) < 0.0001f)
+        return 0.5f;
+    return num / den;
+}
+
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    float4 inverse0 : TEXCOORD1,
+    float4 inverse1 : TEXCOORD2,
+    float4 inverse2 : TEXCOORD3,
+    float4 gouraudR : TEXCOORD4,
+    float4 gouraudG : TEXCOORD5,
+    float4 gouraudB : TEXCOORD6,
+    float4 fragCoord : WPOS)
+{
+    float2 a = inverse0.xy;
+    float2 b = a + inverse0.zw;
+    float2 d = a + inverse1.xy;
+    float2 c = a + inverse0.zw + inverse1.xy + inverse1.zw;
+
+    float leftT = saturate(safeRatio(fragCoord.y - a.y, d.y - a.y));
+    float rightT = saturate(safeRatio(fragCoord.y - b.y, c.y - b.y));
+
+    float leftX = lerp(a.x, d.x, leftT);
+    float rightX = lerp(b.x, c.x, rightT);
+    float across = saturate(
+        safeRatio(fragCoord.x - leftX, rightX - leftX));
+
+    float3 shade = float3(
+        lerp(lerp(gouraudR.x, gouraudR.w, leftT),
+             lerp(gouraudR.y, gouraudR.z, rightT), across),
+        lerp(lerp(gouraudG.x, gouraudG.w, leftT),
+             lerp(gouraudG.y, gouraudG.z, rightT), across),
+        lerp(lerp(gouraudB.x, gouraudB.w, leftT),
+             lerp(gouraudB.y, gouraudB.z, rightT), across));
+
+    float3 light5 = clamp(shade * 31.0f + 16.0f, 0.0f, 31.0f);
+    light5 = floor(light5 + 0.5f);
+    float gray5 = floor((light5.r + light5.g + light5.b) / 3.0f + 0.5f);
+    float gray = gray5 / 31.0f;
+
+    gray += (vTexcoord.x + inverse2.x) * 0.0f;
+    return float4(gray, gray, gray, 1.0f);
+}
