@@ -905,6 +905,64 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
     out.worldLightingVertices = out.lightingVertices;
     recoverInitialRuinCamera(overlay, out);
 
+    lagi::platform::logging::writef(
+        "[RoomDebug] world bounds min=(%.5f,%.5f,%.5f) max=(%.5f,%.5f,%.5f)\n",
+        minV[0], minV[1], minV[2],
+        maxV[0], maxV[1], maxV[2]);
+
+    if (out.cameraValid) {
+        float forward[3] = {
+            out.cameraTarget[0] - out.cameraPosition[0],
+            out.cameraTarget[1] - out.cameraPosition[1],
+            out.cameraTarget[2] - out.cameraPosition[2]
+        };
+        const float lenSq =
+            forward[0]*forward[0] +
+            forward[1]*forward[1] +
+            forward[2]*forward[2];
+        if (lenSq > 0.0000001f) {
+            const float inv = 1.0f / std::sqrt(lenSq);
+            forward[0] *= inv;
+            forward[1] *= inv;
+            forward[2] *= inv;
+        }
+
+        float minDepth = 1.0e30f;
+        float maxDepth = -1.0e30f;
+        unsigned int inFront = 0;
+        unsigned int inClip = 0;
+
+        for (const auto& v : out.worldVertices) {
+            const float dx = v.x - out.cameraPosition[0];
+            const float dy = v.y - out.cameraPosition[1];
+            const float dz = v.z - out.cameraPosition[2];
+            const float depth =
+                dx*forward[0] +
+                dy*forward[1] +
+                dz*forward[2];
+
+            minDepth = std::min(minDepth, depth);
+            maxDepth = std::max(maxDepth, depth);
+
+            if (depth > 0.0f)
+                ++inFront;
+            if (depth >= out.cameraNear &&
+                depth <= out.cameraFar)
+                ++inClip;
+        }
+
+        lagi::platform::logging::writef(
+            "[RoomDebug] camera depth min=%.5f max=%.5f front=%u/%u clip=%u/%u near=%.5f far=%.5f\n",
+            minDepth,
+            maxDepth,
+            inFront,
+            static_cast<unsigned>(out.worldVertices.size()),
+            inClip,
+            static_cast<unsigned>(out.worldVertices.size()),
+            out.cameraNear,
+            out.cameraFar);
+    }
+
     const float scale = 3.0f / extent;
 
     for (auto& v : out.vertices) {
