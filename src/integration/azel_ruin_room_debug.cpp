@@ -143,6 +143,111 @@ static u32 be32(const std::vector<u8>& data, u32 offset)
            static_cast<u32>(data[offset+3]);
 }
 
+static s32 bes32(const std::vector<u8>& data, u32 offset)
+{
+    return static_cast<s32>(be32(data, offset));
+}
+
+static bool findInitialRuinSceneLight(
+    sSaturnMemoryFile* overlay,
+    StaticRoomDebugMesh& out)
+{
+    if (!overlay || !overlay->m_data || overlay->m_dataSize < 16u)
+        return false;
+
+    constexpr u32 kInitialScriptEA = 0x06054398u;
+    constexpr u32 kTownCameraSetupEA = 0x0605C55Cu;
+
+    if (kInitialScriptEA < overlay->m_base)
+        return false;
+
+    const u32 start = kInitialScriptEA - overlay->m_base;
+    const u32 end = std::min<u32>(
+        overlay->m_dataSize,
+        start + 0x1000u);
+
+    const std::vector<u8> view(
+        overlay->m_data,
+        overlay->m_data + overlay->m_dataSize);
+
+    for (u32 p = start; p + 12u <= end; ++p) {
+        if (be32(view, p) != kTownCameraSetupEA)
+            continue;
+
+        const u32 angleEA = be32(view, p + 4u);
+        const u32 colorEA = be32(view, p + 8u);
+
+        if (angleEA < overlay->m_base ||
+            colorEA < overlay->m_base)
+            continue;
+
+        const u32 angleOffset = angleEA - overlay->m_base;
+        const u32 colorOffset = colorEA - overlay->m_base;
+        if (angleOffset + 12u > overlay->m_dataSize ||
+            colorOffset + 12u > overlay->m_dataSize)
+            continue;
+
+        const s32 rawX = bes32(view, angleOffset + 0u);
+        const s32 rawY = bes32(view, angleOffset + 4u);
+
+        const std::int16_t angleX =
+            static_cast<std::int16_t>((rawX >> 16) & 0x0FFF);
+        const std::int16_t angleY =
+            static_cast<std::int16_t>((rawY >> 16) & 0x0FFF);
+
+        // townCamera_setup(): identity, rotate Y, rotate X, use column 2.
+        const Mat3 lightMatrix =
+            mul3(rotY(angleY), rotX(angleX));
+
+        float lx = lightMatrix.m[0][2];
+        float ly = lightMatrix.m[1][2];
+        float lz = lightMatrix.m[2][2];
+        const float len =
+            std::sqrt(lx*lx + ly*ly + lz*lz);
+        if (len <= 0.000001f)
+            continue;
+
+        out.lightDirection[0] = lx / len;
+        out.lightDirection[1] = ly / len;
+        out.lightDirection[2] = lz / len;
+
+        out.lightColor[0] = view[colorOffset + 0u];
+        out.lightColor[1] = view[colorOffset + 1u];
+        out.lightColor[2] = view[colorOffset + 2u];
+
+        for (unsigned int i = 0; i < 3; ++i) {
+            const u32 q = colorOffset + 3u + i * 3u;
+            out.lightFalloff[i] =
+                static_cast<u32>(view[q + 0u]) |
+                (static_cast<u32>(view[q + 1u]) << 8) |
+                (static_cast<u32>(view[q + 2u]) << 16);
+        }
+
+        out.lightingValid = true;
+
+        lagi::platform::logging::writef(
+            "[RoomDebug] scene light call=%08X angles=%08X colors=%08X dir=(%.3f,%.3f,%.3f) RGB=%u/%u/%u falloff=%06X/%06X/%06X\n",
+            kTownCameraSetupEA,
+            angleEA,
+            colorEA,
+            out.lightDirection[0],
+            out.lightDirection[1],
+            out.lightDirection[2],
+            static_cast<unsigned>(out.lightColor[0]),
+            static_cast<unsigned>(out.lightColor[1]),
+            static_cast<unsigned>(out.lightColor[2]),
+            static_cast<unsigned>(out.lightFalloff[0]),
+            static_cast<unsigned>(out.lightFalloff[1]),
+            static_cast<unsigned>(out.lightFalloff[2]));
+
+        return true;
+    }
+
+    lagi::platform::logging::writef(
+        "[RoomDebug] townCamera_setup light call not found in initial script window\n");
+    return false;
+}
+
 static std::uint32_t rgb555ToRgba8888(u16 color)
 {
     const std::uint32_t r5 = color & 0x1Fu;
@@ -606,14 +711,40 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
             record.model = objectIndex;
             record.polygonInModel = p;
 
+            const unsigned int lightingMode =
+                (q.lightingControl >> 8) & 3u;
+            ++out.lightingModes[lightingMode];
+
             record.lightingCount =
                 static_cast<std::uint8_t>(
                     std::min<std::size_t>(4u, q.extra.size()));
             for (unsigned int i = 0;
                  i < record.lightingCount; ++i) {
-                record.lighting[i].normal[0] = q.extra[i].normal[0];
-                record.lighting[i].normal[1] = q.extra[i].normal[1];
-                record.lighting[i].normal[2] = q.extra[i].normal[2];
+                std::array<float,3> localNormal = {{
+                    static_cast<float>(q.extra[i].normal[0]) / 4096.0f,
+                    static_cast<float>(q.extra[i].normal[1]) / 4096.0f,
+                    static_cast<float>(q.extra[i].normal[2]) / 4096.0f
+                }};
+                auto worldNormal = apply(rotation, localNormal);
+                const float nLen = std::sqrt(
+                    worldNormal[0]*worldNormal[0] +
+                    worldNormal[1]*worldNormal[1] +
+                    worldNormal[2]*worldNormal[2]);
+                if (nLen > 0.000001f) {
+                    worldNormal[0] /= nLen;
+                    worldNormal[1] /= nLen;
+                    worldNormal[2] /= nLen;
+                }
+
+                record.lighting[i].normal[0] =
+                    static_cast<std::int16_t>(
+                        std::lround(worldNormal[0] * 4096.0f));
+                record.lighting[i].normal[1] =
+                    static_cast<std::int16_t>(
+                        std::lround(worldNormal[1] * 4096.0f));
+                record.lighting[i].normal[2] =
+                    static_cast<std::int16_t>(
+                        std::lround(worldNormal[2] * 4096.0f));
                 record.lighting[i].color[0] = q.extra[i].color[0];
                 record.lighting[i].color[1] = q.extra[i].color[1];
                 record.lighting[i].color[2] = q.extra[i].color[2];
@@ -698,6 +829,8 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
     }
     out.lightingVertices = out.vertices;
 
+    findInitialRuinSceneLight(overlay, out);
+
     std::vector<u8> cgb;
     if (lagi::disc::read_file("RUINMP.CGB", cgb) && !cgb.empty()) {
         constexpr u32 kRuinPaletteEA = 0x0605EBF8u;
@@ -725,6 +858,12 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
     unsigned colorModes[8]{};
     for (const auto& record : out.polygonRecords)
         ++colorModes[record.colorMode() & 7u];
+
+    lagi::platform::logging::writef(
+        "[RoomDebug] lighting modes 0/1/2/3: %u/%u/%u/%u sceneLight=%s\n",
+        out.lightingModes[0], out.lightingModes[1],
+        out.lightingModes[2], out.lightingModes[3],
+        out.lightingValid ? "resolved" : "missing");
 
     lagi::platform::logging::writef(
         "[RoomDebug] texture modes 0/1/2/3/4/5/6/7: %u/%u/%u/%u/%u/%u/%u/%u\n",
