@@ -395,6 +395,50 @@ Mode mapping for hardware comparison:
 
 Mode 10 is intentionally experimental until screenshot and FPS comparison against Mode 7 is hardware-validated.
 
+## Gouraud vs RGB555 fragment isolation
+
+Modes 13 and 14 split the remaining lit fragment workload after Mode 12 showed that removing inverse-coordinate recovery alone did not restore 30 FPS.
+
+Mode 13 keeps:
+- heavy Gouraud payload interface
+- texture sample + alpha test
+- four-corner RGB Gouraud interpolation
+- float-domain texture + lighting add/clamp
+
+Mode 13 removes:
+- RGB555 recovery from the sampled texture
+- 5-bit clamp/round/floor quantization
+
+Mode 14 keeps:
+- heavy Gouraud payload interface
+- texture sample + alpha test
+- RGB555 recovery/add/clamp/floor/quantization
+
+Mode 14 removes:
+- four-corner Gouraud interpolation
+
+For Mode 14, a single per-quad Gouraud corner value is used as the constant lighting term so the RGB555 path remains active without bilinear color interpolation.
+
+Both modes keep otherwise-unused inverse payload values live through a negligible output dependency so the compiler cannot collapse the interpolator/register footprint.
+
+Hardware comparison target:
+
+```text
+Mode 11  heavy payload + texture only                     30 FPS
+Mode 12  Gouraud + RGB555, no inverse solve              20 FPS
+Mode 13  Gouraud interpolation, no RGB555 quantization    ? FPS
+Mode 14  RGB555 quantization, no Gouraud interpolation    ? FPS
+```
+
+Interpretation:
+
+```text
+13 = 20, 14 = 30  -> Gouraud interpolation is dominant
+13 = 30, 14 = 20  -> RGB555 conversion/quantization is dominant
+13 = 20, 14 = 20  -> either path alone exceeds the fragment budget
+13 = 30, 14 = 30  -> their combined cost crosses the SGX fragment budget
+```
+
 ## No-inverse Gouraud arithmetic probe
 
 Mode 12 isolates the cost of Gouraud/RGB555 fragment arithmetic from the cost of recovering bilinear quad coordinates.
