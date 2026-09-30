@@ -68,6 +68,8 @@ set(LAGI_GOURAUD_DEBUG_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_debug_f_g
 
 set(LAGI_TEXTURED_LIT_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_f.gxp")
 set(LAGI_TEXTURED_LIT_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_f_gxp.o")
+set(LAGI_TEXTURED_LIT_NEWTON_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_newton_f.gxp")
+set(LAGI_TEXTURED_LIT_NEWTON_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_newton_f_gxp.o")
 
 set(LAGI_GOURAUD_PAYLOAD_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_payload_v.gxp")
 set(LAGI_GOURAUD_PAYLOAD_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_payload_v_gxp.o")
@@ -205,6 +207,29 @@ add_custom_command(
 )
 
 add_custom_command(
+ OUTPUT "${LAGI_TEXTURED_LIT_NEWTON_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/textured_lit_newton_f.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_TEXTURED_LIT_NEWTON_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/textured_lit_newton_f.cg"
+ COMMENT "Compiling Lagi Newton textured lighting fragment shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURED_LIT_NEWTON_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_textured_lit_newton_f.gxp" "${LAGI_TEXTURED_LIT_NEWTON_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_TEXTURED_LIT_NEWTON_F_GXP}"
+ COMMENT "Embedding Lagi Newton textured lighting fragment GXP"
+ VERBATIM
+)
+
+add_custom_command(
  OUTPUT "${LAGI_TEXTURE_F_GXP}"
  COMMAND "${PSP2CGC_EXECUTABLE}"
   -profile sce_fp_psp2
@@ -242,6 +267,7 @@ set_source_files_properties(
  "${LAGI_COLOR_V_OBJ}" "${LAGI_COLOR_F_OBJ}"
  "${LAGI_GOURAUD_DEBUG_F_OBJ}"
  "${LAGI_TEXTURED_LIT_F_OBJ}"
+ "${LAGI_TEXTURED_LIT_NEWTON_F_OBJ}"
  "${LAGI_GOURAUD_PAYLOAD_V_OBJ}"
  "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}"
  PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
@@ -259,6 +285,7 @@ add_executable(lagi
  ${LAGI_COLOR_F_OBJ}
  ${LAGI_GOURAUD_DEBUG_F_OBJ}
  ${LAGI_TEXTURED_LIT_F_OBJ}
+ ${LAGI_TEXTURED_LIT_NEWTON_F_OBJ}
  ${LAGI_GOURAUD_PAYLOAD_V_OBJ}
  ${LAGI_TEXTURE_V_OBJ}
  ${LAGI_TEXTURE_F_OBJ}
