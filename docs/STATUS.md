@@ -298,6 +298,52 @@ sWorldGridCellTask::Draw:
 
 Lagi now applies the cell's 16.16 world translation before each object's local transform. This is source-derived and awaits hardware confirmation. It should bring the static ruin room into the same world-space frame as Edge and the recovered initial town camera without changing FOV, model scale, or clip distances.
 
+## Azel town grid visibility + LOD hook
+
+The authentic ruin path now follows the normal Azel town submission hierarchy instead of using a custom object-frustum/AABB system.
+
+For the active town cell, Lagi retains:
+
+```text
+cell world origin
+grid cell size
+gWorldGrid.m2C coarse cell radius
+town LOD depth thresholds
+per-object world origin
+per-object LOD model table entries
+```
+
+At runtime, mode 7 mirrors `sWorldGridCellTask::Draw()`:
+
+```text
+translate cell into camera space
+
+reject if:
+    cellZ < nearClip - cellRadius
+
+horizontalLimit =
+    cellZ * widthRatio
+    + cellRadius * widthRatio2
+
+reject if:
+    cellX < -horizontalLimit
+    or cellX > +horizontalLimit
+```
+
+The `widthRatio` and `widthRatio2` values are derived from the same Saturn VDP1 projection state as `initVDP1Projection()`, rather than from Vita/NDC clip-space.
+
+If the cell survives, each static object's camera-space depth runs the same LOD threshold walk used by Azel:
+
+```text
+lod = 0
+while objectDepth > gTownGrid.m3C[lod]:
+    ++lod
+```
+
+`TWN_RUIN` leaves the default town threshold `0x7FFFFFFF` in place, so all 17 current static objects resolve to LOD 0. This means the visible geometry for the first ruin room remains unchanged, but the runtime visibility/LOD path is now structurally correct for later towns that provide real depth thresholds.
+
+The earlier experimental per-object AABB frustum scaffolding was removed; it is not part of Azel's normal town draw path.
+
 ## VDP1 Gouraud performance pass 2: texture batching
 
 Pass 2 keeps the pass-1 vertex-carried quad payload unchanged, but removes the one-draw-per-Saturn-quad submission pattern.
