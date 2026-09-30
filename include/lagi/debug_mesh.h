@@ -100,8 +100,14 @@ struct SaturnPolygonRecord {
 };
 
 struct StaticRoomDebugMesh {
+    // Normalized diagnostic vertices used by viewer modes 5/6.
     std::vector<DebugColorVertex> vertices;
     std::vector<DebugColorVertex> lightingVertices;
+
+    // Untouched assembled town-space geometry for the authentic camera mode.
+    std::vector<DebugColorVertex> worldVertices;
+    std::vector<DebugColorVertex> worldLightingVertices;
+
     std::vector<SaturnPolygonRecord> polygonRecords;
     std::vector<SaturnGouraud555Quad> gouraud555;
 
@@ -123,6 +129,14 @@ struct StaticRoomDebugMesh {
     std::uint32_t lightFalloff[3]{};
     unsigned int lightingModes[4]{};
     bool lightingValid = false;
+
+    float cameraPosition[3]{};
+    float cameraTarget[3]{};
+    float cameraUp[3]{};
+    float cameraFovDegrees = 80.0f;
+    float cameraNear = 0x800 / 65536.0f;
+    float cameraFar = 0xF000 / 65536.0f;
+    bool cameraValid = false;
 
     bool texturesValid = false;
     bool texturesFullyResolved = false;
