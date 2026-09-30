@@ -1340,27 +1340,52 @@ static ViewerMat4 viewerLookAtLH(
 static ViewerMat4 buildAuthenticRoomWvp()
 {
     constexpr float kPi = 3.14159265358979323846f;
-    const float fov =
-        g_staticRoomCpuMesh.cameraFovDegrees * kPi / 180.0f;
 
-    // The Saturn projection is authored for a 4:3 display. Until the GXM
-    // viewport is pillarboxed separately, use Vita's physical aspect here
-    // to preserve object proportions while keeping the authentic vertical
-    // 80-degree field of view and camera transform.
-    const float aspect =
+    // Match Azel initVDP1Projection(DEG_80 / 2, 0):
+    //   r0          = 176 * cot(40 degrees)
+    //   widthScale  = r0 * (352 / 320)
+    //   heightScale = r0 * (224 / 240)
+    // and convert the Saturn pixel projection to normalized coordinates.
+    const float halfFov =
+        (g_staticRoomCpuMesh.cameraFovDegrees * 0.5f) *
+        kPi / 180.0f;
+    const float cotHalf = 1.0f / std::tan(halfFov);
+    const float saturnXScale =
+        cotHalf * (352.0f / 320.0f);
+    const float saturnYScale =
+        cotHalf * (176.0f / 112.0f) *
+        (224.0f / 240.0f);
+
+    // Saturn's 352x224 image is intended for a 4:3 display. Scale X into
+    // the central 4:3 region of Vita's 16:9 framebuffer so geometry keeps
+    // the intended physical proportions. A later viewport/scissor pass can
+    // make the original horizontal clipping boundary exact as well.
+    const float intendedAspect = 4.0f / 3.0f;
+    const float vitaAspect =
         static_cast<float>(kWidth) / static_cast<float>(kHeight);
+    const float xDisplayCorrection =
+        intendedAspect / vitaAspect;
+
+    const float nearZ =
+        g_staticRoomCpuMesh.cameraNear;
+    const float farZ =
+        g_staticRoomCpuMesh.cameraFar;
+    const float zScale =
+        farZ / (farZ - nearZ);
+
+    ViewerMat4 projection{};
+    projection.m[0] =
+        saturnXScale * xDisplayCorrection;
+    projection.m[5] = saturnYScale;
+    projection.m[10] = zScale;
+    projection.m[11] = 1.0f;
+    projection.m[14] = -nearZ * zScale;
 
     const ViewerMat4 view =
         viewerLookAtLH(
             g_staticRoomCpuMesh.cameraPosition,
             g_staticRoomCpuMesh.cameraTarget,
             g_staticRoomCpuMesh.cameraUp);
-    const ViewerMat4 projection =
-        viewerPerspective(
-            fov,
-            aspect,
-            g_staticRoomCpuMesh.cameraNear,
-            g_staticRoomCpuMesh.cameraFar);
 
     return viewerMul(view, projection);
 }
