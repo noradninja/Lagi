@@ -1671,11 +1671,21 @@ static void updateViewerAzelLighting()
 
     auto viewDepthForQuad = [&](unsigned int p) {
         const auto& v = g_basicWingCpuMesh.vertices[p * 6u];
-        // Row-vector yaw/pitch, then the viewer's +Z camera translation.
+
+        // The debug camera now frames native Azel game-space geometry by
+        // translating the model bounds center in the view matrix rather than
+        // rescaling the model itself.
+        const float x =
+            v.x - g_basicWingViewCenter[0];
+        const float y =
+            v.y - g_basicWingViewCenter[1];
+        const float z0 =
+            v.z - g_basicWingViewCenter[2];
+
         const float z =
-            v.x * rotation.m[2] +
-            v.y * rotation.m[6] +
-            v.z * rotation.m[10] +
+            x * rotation.m[2] +
+            y * rotation.m[6] +
+            z0 * rotation.m[10] +
             g_viewDistance;
         return std::fabs(z);
     };
