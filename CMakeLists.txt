@@ -486,6 +486,7 @@ add_executable(lagi
  src/integration/azel_town_bootstrap.cpp
  src/integration/azel_town_runtime.cpp
  src/integration/azel_town_collision.cpp
+ src/integration/azel_town_tasks.cpp
  src/integration/azel_ruin_room_debug.cpp
  src/integration/azel_edge_debug.cpp
  src/integration/azel_fixedpoint_vita.cpp

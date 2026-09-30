@@ -35,7 +35,7 @@ int main()
     }
 
     lagi::platform::logging::writef(
-        "Azel runtime: native task smoke test active\n");
+        "Azel runtime: TWN_RUIN task pipeline active\n");
 
     while (lagi::platform::running()) {
         lagi::platform::begin_frame();

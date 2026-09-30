@@ -1994,7 +1994,7 @@ static void resetTownPlayerRuntime()
 }
 
 
-static void runTownCollisionPipeline()
+static void applyAndRegisterTownEdgeCollision()
 {
     if (!g_townPlayerReady)
         return;
@@ -2006,10 +2006,9 @@ static void runTownCollisionPipeline()
     g_townEdgeCollisionBody.ownerRotation = {
         0.0f, g_townPlayerYaw, 0.0f};
 
-    azel::resetCollisionFrame();
-    azel::registerCollisionBody(g_townEdgeCollisionBody);
-    azel::processAllCollisions();
-
+    // sScriptTask resolved this body before sEdgeTask began. Azel applies
+    // that solve during Edge's update, then registers the new transform for
+    // the following frame.
     const auto& solve =
         g_townEdgeCollisionBody.collisionSolveTranslation;
     g_townPlayerPosition[0] += solve.x;
@@ -2020,9 +2019,13 @@ static void runTownCollisionPipeline()
     g_townCollisionContacts =
         g_townEdgeCollisionBody.contactCount;
 
-    azel::update_town_runtime_active_cell(
+    g_townEdgeCollisionBody.ownerPosition = {
         g_townPlayerPosition[0],
-        g_townPlayerPosition[2]);
+        g_townPlayerPosition[1],
+        g_townPlayerPosition[2]};
+    g_townEdgeCollisionBody.ownerRotation = {
+        0.0f, g_townPlayerYaw, 0.0f};
+    azel::registerCollisionBody(g_townEdgeCollisionBody);
 }
 
 static void updateTownPlayerRuntime()
@@ -2040,7 +2043,7 @@ static void updateTownPlayerRuntime()
                 inputForward * inputForward));
 
     if (magnitude <= 0.0001f) {
-        runTownCollisionPipeline();
+        applyAndRegisterTownEdgeCollision();
         return;
     }
 
@@ -2116,7 +2119,7 @@ static void updateTownPlayerRuntime()
     g_townPlayerPosition[2] -=
         std::cos(g_townPlayerYaw) * step;
 
-    runTownCollisionPipeline();
+    applyAndRegisterTownEdgeCollision();
 }
 
 
@@ -4137,7 +4140,7 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
             static_cast<unsigned>(
                 g_staticRoomCpuMesh.decodedTextureData.size());
 
-        runTownCollisionPipeline();
+        applyAndRegisterTownEdgeCollision();
         transformTownEdgeVertices();
         status(
             "[PASS] EDGE VISUAL MERGED INTO RUIN",
@@ -4595,12 +4598,6 @@ static void renderBasicWingViewer()
         }
     }
 
-    if (roomAuthenticCameraMode) {
-        updateTownPlayerRuntime();
-        updateTownFollowCamera();
-        transformTownEdgeVertices();
-    }
-
     const bool roomDiagnosticLitMode =
         g_staticRoomCpuReady &&
         g_staticRoomCpuMesh.lightingValid &&
@@ -4825,6 +4822,64 @@ void end_frame()
     sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
     sceDisplayWaitVblankStart();
     g_drawBuffer ^= 1;
+}
+
+bool town_scene_active()
+{
+    return !g_debugVisible && g_staticRoomCpuReady &&
+           g_staticRoomCpuMesh.cameraValid && g_viewMode >= 7 &&
+           g_townPlayerReady;
+}
+
+void town_script_collision_update()
+{
+    if (!town_scene_active())
+        return;
+    azel::processAllCollisions();
+    azel::resetCollisionFrame();
+}
+
+void town_edge_update()
+{
+    if (!town_scene_active())
+        return;
+    updateTownPlayerRuntime();
+}
+
+void town_main_logic_update()
+{
+    if (!town_scene_active())
+        return;
+    azel::update_town_runtime_active_cell(
+        g_townPlayerPosition[0],
+        g_townPlayerPosition[2]);
+    updateTownFollowCamera();
+}
+
+void town_camera_update()
+{
+    if (!town_scene_active())
+        return;
+    transformTownEdgeVertices();
+}
+
+void town_edge_set_position(int x, int y, int z)
+{
+    if (!g_townPlayerReady)
+        return;
+    constexpr float kFixed = 1.0f / 65536.0f;
+    g_townPlayerPosition[0] = static_cast<float>(x) * kFixed;
+    g_townPlayerPosition[1] = static_cast<float>(y) * kFixed;
+    g_townPlayerPosition[2] = static_cast<float>(z) * kFixed;
+}
+
+void town_edge_set_orientation(int, int y, int)
+{
+    if (!g_townPlayerReady)
+        return;
+    constexpr float kTau = 6.28318530717958647692f;
+    constexpr float kAngleUnit = 1.0f / 268435456.0f;
+    g_townPlayerYaw = static_cast<float>(y) * kAngleUnit * kTau;
 }
 
 } // namespace lagi::platform::renderer

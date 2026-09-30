@@ -11,6 +11,7 @@
 #include "lagi/azel_direct_boot.h"
 #include "lagi/azel_town_bootstrap.h"
 #include "lagi/azel_town_runtime.h"
+#include "lagi/azel_town_tasks.h"
 #include "lagi/disc_image.h"
 #include "commonOverlay.h"
 #include "audio/soundDataTable.h"
@@ -18,25 +19,6 @@
 #include <vector>
 
 namespace lagi::azel {
-
-struct SmokeTask final : s_workAreaTemplate<SmokeTask>
-{
-    int updates = 0;
-    int draws = 0;
-
-    static void Init(SmokeTask* self) { std::printf("[Azel] root task init\n"); self->updates = self->draws = 0; }
-    static void UpdateTask(SmokeTask* self) { ++self->updates; }
-    static void DrawTask(SmokeTask* self) { ++self->draws; }
-    static void DeleteTask(SmokeTask*) { std::printf("[Azel] root task delete\n"); }
-
-    static const TypedTaskDefinition* getTypedTaskDefinition()
-    {
-        static const TypedTaskDefinition def = { Init, UpdateTask, DrawTask, DeleteTask };
-        return &def;
-    }
-};
-
-static SmokeTask* gSmokeTask = nullptr;
 
 static bool saturn_memory_smoke_test()
 {
@@ -210,13 +192,12 @@ bool runtime_smoke_init()
 
     initHeap();
     resetTasks();
-    gSmokeTask = createRootTask<SmokeTask>();
-    if (!gSmokeTask) {
-        lagi::platform::renderer::failure("[FAIL] AZEL ROOT TASK CREATE");
+    if (!start_twn_ruin_task_pipeline()) {
+        lagi::platform::renderer::failure("[FAIL] TWN_RUIN TASK PIPELINE");
         return false;
     }
-    lagi::platform::renderer::status("[PASS] AZEL ROOT TASK CREATED", 0xFF60A0F0u);
-    std::printf("[Azel] native task runtime linked; root=%p\n", static_cast<void*>(gSmokeTask));
+    lagi::platform::renderer::status("[PASS] TWN_RUIN TASK PIPELINE", 0xFF60A0F0u);
+    std::printf("[Azel] TWN_RUIN native task pipeline started\n");
     return true;
 }
 
@@ -224,11 +205,8 @@ void runtime_smoke_frame()
 {
     lagi::azel_bridge::begin_frame();
     runTasks();
-    if (gSmokeTask && gSmokeTask->updates > 0 && gSmokeTask->draws > 0)
+    if (twn_ruin_task_pipeline_alive())
         lagi::platform::renderer::set_azel_alive(true);
-
-    if (gSmokeTask && gSmokeTask->updates == 1)
-        std::printf("[Azel] first task frame: update=%d draw=%d\n", gSmokeTask->updates, gSmokeTask->draws);
 }
 
 } // namespace lagi::azel
