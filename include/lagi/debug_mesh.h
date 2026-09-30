@@ -52,6 +52,11 @@ struct SaturnGouraud555Quad {
     float corner[4][3]{};
 };
 
+struct DebugObjectBounds {
+    float min[3]{};
+    float max[3]{};
+};
+
 struct SaturnLightingNormalQuad {
     // Normalized after applying the reconstructed Basic Wing hierarchy pose.
     // These remain in assembled model space so the viewer can transform them
@@ -120,6 +125,7 @@ struct StaticRoomDebugMesh {
 
     std::vector<SaturnPolygonRecord> polygonRecords;
     std::vector<SaturnGouraud555Quad> gouraud555;
+    std::vector<DebugObjectBounds> objectBounds;
 
     std::vector<DecodedMode1Texture> decodedTextureData;
     std::vector<std::uint16_t> polygonTextureIndices;
