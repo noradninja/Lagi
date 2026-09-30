@@ -228,6 +228,68 @@ static bool recoverInitialRuinCamera(
     return true;
 }
 
+static void traceInitialRuinScriptNativeCalls(
+    sSaturnMemoryFile* overlay)
+{
+    if (!overlay || !overlay->m_data)
+        return;
+
+    constexpr u32 kScriptEA = 0x06054398u;
+    constexpr u32 kScanBytes = 0x800u;
+    constexpr u32 kSetNpcLocationEA = 0x0605AEE0u;
+    constexpr u32 kSetNpcOrientationEA = 0x0605AF0Eu;
+    constexpr u32 kSetupCameraFollowEA = 0x06057058u;
+    constexpr u32 kTownCameraSetupEA = 0x0605C55Cu;
+
+    if (kScriptEA < overlay->m_base)
+        return;
+
+    const u32 start = kScriptEA - overlay->m_base;
+    const u32 end = std::min<u32>(
+        overlay->m_dataSize,
+        start + kScanBytes);
+
+    const std::vector<u8> view(
+        overlay->m_data,
+        overlay->m_data + overlay->m_dataSize);
+
+    for (u32 p = start; p + 8u <= end; ++p) {
+        if (view[p] != 7u)
+            continue;
+
+        const u8 argc = view[p + 1u];
+        if (argc > 4u)
+            continue;
+
+        u32 callData = p + 2u;
+        callData = (callData + 3u) & ~3u;
+        if (callData + 4u + static_cast<u32>(argc) * 4u >
+            overlay->m_dataSize)
+            continue;
+
+        const u32 functionEA = be32(view, callData);
+        if (functionEA != kSetNpcLocationEA &&
+            functionEA != kSetNpcOrientationEA &&
+            functionEA != kSetupCameraFollowEA &&
+            functionEA != kTownCameraSetupEA)
+            continue;
+
+        s32 args[4]{};
+        for (unsigned int a = 0; a < argc; ++a)
+            args[a] = bes32(view, callData + 4u + a * 4u);
+
+        lagi::platform::logging::writef(
+            "[RoomDebug] script native @%08X fn=%08X argc=%u args=%08X/%08X/%08X/%08X\n",
+            overlay->m_base + p,
+            functionEA,
+            static_cast<unsigned>(argc),
+            static_cast<unsigned>(args[0]),
+            static_cast<unsigned>(args[1]),
+            static_cast<unsigned>(args[2]),
+            static_cast<unsigned>(args[3]));
+    }
+}
+
 static bool findInitialRuinSceneLight(
     sSaturnMemoryFile* overlay,
     StaticRoomDebugMesh& out)
@@ -907,6 +969,7 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
 
     out.worldVertices = out.vertices;
     out.worldLightingVertices = out.lightingVertices;
+    traceInitialRuinScriptNativeCalls(overlay);
     recoverInitialRuinCamera(overlay, out);
 
     lagi::platform::logging::writef(
@@ -931,37 +994,119 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
             forward[2] *= inv;
         }
 
+        float right[3] = {
+            forward[2],
+            0.0f,
+            -forward[0]
+        };
+        const float rightLenSq =
+            right[0]*right[0] +
+            right[2]*right[2];
+        if (rightLenSq > 0.0000001f) {
+            const float inv = 1.0f / std::sqrt(rightLenSq);
+            right[0] *= inv;
+            right[2] *= inv;
+        } else {
+            right[0] = 1.0f;
+            right[1] = 0.0f;
+            right[2] = 0.0f;
+        }
+
+        float up[3] = {
+            -forward[1] * right[2],
+            forward[2] * right[0] -
+                forward[0] * right[2],
+            forward[1] * right[0]
+        };
+        const float upLenSq =
+            up[0]*up[0] +
+            up[1]*up[1] +
+            up[2]*up[2];
+        if (upLenSq > 0.0000001f) {
+            const float inv = 1.0f / std::sqrt(upLenSq);
+            up[0] *= inv;
+            up[1] *= inv;
+            up[2] *= inv;
+        }
+
+        constexpr float kPi =
+            3.14159265358979323846f;
+        const float cotHalf =
+            1.0f /
+            std::tan(
+                (out.cameraFovDegrees * 0.5f) *
+                kPi / 180.0f);
+        float xScale =
+            cotHalf * (352.0f / 320.0f);
+        const float yScale =
+            cotHalf *
+            (176.0f / 112.0f) *
+            (224.0f / 240.0f);
+        xScale *=
+            (4.0f / 3.0f) /
+            (960.0f / 544.0f);
+
         float minDepth = 1.0e30f;
         float maxDepth = -1.0e30f;
         unsigned int inFront = 0;
-        unsigned int inClip = 0;
+        unsigned int inDepth = 0;
+        unsigned int inHorizontal = 0;
+        unsigned int inVertical = 0;
+        unsigned int inFrustum = 0;
 
         for (const auto& v : out.worldVertices) {
             const float dx = v.x - out.cameraPosition[0];
             const float dy = v.y - out.cameraPosition[1];
             const float dz = v.z - out.cameraPosition[2];
+
             const float depth =
                 dx*forward[0] +
                 dy*forward[1] +
                 dz*forward[2];
+            const float viewX =
+                dx*right[0] +
+                dy*right[1] +
+                dz*right[2];
+            const float viewY =
+                dx*up[0] +
+                dy*up[1] +
+                dz*up[2];
 
             minDepth = std::min(minDepth, depth);
             maxDepth = std::max(maxDepth, depth);
 
-            if (depth > 0.0f)
-                ++inFront;
-            if (depth >= out.cameraNear &&
-                depth <= out.cameraFar)
-                ++inClip;
+            const bool front = depth > 0.0f;
+            const bool depthOk =
+                depth >= out.cameraNear &&
+                depth <= out.cameraFar;
+            const bool horizontalOk =
+                front &&
+                std::fabs(viewX * xScale) <= depth;
+            const bool verticalOk =
+                front &&
+                std::fabs(viewY * yScale) <= depth;
+
+            if (front) ++inFront;
+            if (depthOk) ++inDepth;
+            if (horizontalOk) ++inHorizontal;
+            if (verticalOk) ++inVertical;
+            if (depthOk && horizontalOk && verticalOk)
+                ++inFrustum;
         }
 
         lagi::platform::logging::writef(
-            "[RoomDebug] camera depth min=%.5f max=%.5f front=%u/%u clip=%u/%u near=%.5f far=%.5f\n",
+            "[RoomDebug] camera depth min=%.5f max=%.5f front=%u/%u depth=%u/%u horiz=%u/%u vert=%u/%u frustum=%u/%u near=%.5f far=%.5f\n",
             minDepth,
             maxDepth,
             inFront,
             static_cast<unsigned>(out.worldVertices.size()),
-            inClip,
+            inDepth,
+            static_cast<unsigned>(out.worldVertices.size()),
+            inHorizontal,
+            static_cast<unsigned>(out.worldVertices.size()),
+            inVertical,
+            static_cast<unsigned>(out.worldVertices.size()),
+            inFrustum,
             static_cast<unsigned>(out.worldVertices.size()),
             out.cameraNear,
             out.cameraFar);
