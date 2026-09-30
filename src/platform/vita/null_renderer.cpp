@@ -70,13 +70,16 @@ static void* g_probeFragmentUsse = nullptr;
 static SceGxmContext* g_probeContext = nullptr;
 static void* g_probeContextHost = nullptr;
 static SceGxmRenderTarget* g_probeRenderTarget = nullptr;
+static SceGxmRenderTarget* g_probeRenderTargetHalf = nullptr;
 static SceUID g_probeColorUid = -1;
 static std::uint32_t* g_probeColorBuffer = nullptr;
 static SceGxmColorSurface g_probeColorSurface{};
+static SceGxmColorSurface g_probeColorSurfaceHalf{};
 static SceGxmSyncObject* g_probeSync = nullptr;
 static SceUID g_probeColorUid2 = -1;
 static std::uint32_t* g_probeColorBuffer2 = nullptr;
 static SceGxmColorSurface g_probeColorSurface2{};
+static SceGxmColorSurface g_probeColorSurfaceHalf2{};
 static SceGxmSyncObject* g_probeSync2 = nullptr;
 static int g_gxmDrawBuffer = 1;
 static SceUID g_probeDepthUid = -1;
@@ -84,6 +87,7 @@ static SceUID g_probeStencilUid = -1;
 static void* g_probeDepth = nullptr;
 static void* g_probeStencil = nullptr;
 static SceGxmDepthStencilSurface g_probeDepthSurface{};
+static SceGxmDepthStencilSurface g_probeDepthSurfaceHalf{};
 static SceGxmShaderPatcher* g_probeShaderPatcher = nullptr;
 static SceUID g_probePatcherBufferUid = -1;
 static SceUID g_probePatcherVertexUsseUid = -1;
@@ -470,6 +474,10 @@ static void drawTextSmallToBuffer(
     }
 }
 
+static int viewerRenderWidth();
+static int viewerRenderHeight();
+static int viewerRenderPitch();
+
 static const char* viewerModeLabel(int mode)
 {
     static const char* labels[] = {
@@ -515,9 +523,9 @@ static void drawViewerModeOverlay(
     const int x =
         std::max(
             0,
-            kWidth - marginX - length * advance);
+            viewerRenderWidth() - marginX - length * advance);
     const int y =
-        kHeight - marginY - textHeight;
+        viewerRenderHeight() - marginY - textHeight;
 
     // One-pixel black offset gives the text enough contrast over bright
     // textures without adding a large opaque diagnostic panel.
@@ -805,6 +813,10 @@ void shutdown()
     freeProbeMapped(g_probeDepthUid, g_probeDepth);
     freeProbeMapped(g_probeStencilUid, g_probeStencil);
 
+    if (g_probeRenderTargetHalf) {
+        sceGxmDestroyRenderTarget(g_probeRenderTargetHalf);
+        g_probeRenderTargetHalf = nullptr;
+    }
     if (g_probeRenderTarget) {
         sceGxmDestroyRenderTarget(g_probeRenderTarget);
         g_probeRenderTarget = nullptr;
@@ -1899,6 +1911,11 @@ static int viewerRenderHeight()
     return g_halfResolution ? (kHeight / 2) : kHeight;
 }
 
+static int viewerRenderPitch()
+{
+    return g_halfResolution ? 512 : 1024;
+}
+
 static ViewerScreenPoint projectViewerPoint(
     const ViewerMat4& wvp,
     const azel::DebugColorVertex& v)
@@ -2403,6 +2420,22 @@ void toggle_debug_console()
 
     status("[PASS] GXM RENDER TARGET", 0xFF80E0FFu);
 
+    SceGxmRenderTargetParams halfRtParams = rtParams;
+    halfRtParams.width = kWidth / 2;
+    halfRtParams.height = kHeight / 2;
+
+    const int halfRtResult =
+        sceGxmCreateRenderTarget(&halfRtParams, &g_probeRenderTargetHalf);
+    if (halfRtResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM HALF TARGET 0X%08X",
+                      static_cast<unsigned int>(halfRtResult));
+        failure(line);
+        return;
+    }
+
+    status("[PASS] GXM HALF RENDER TARGET", 0xFF80E0FFu);
+
     constexpr int gxmPitch = 1024;
     constexpr unsigned int colorBytes =
         static_cast<unsigned int>(gxmPitch * kHeight * sizeof(std::uint32_t));
@@ -2430,6 +2463,21 @@ void toggle_debug_console()
         char line[78];
         std::snprintf(line, sizeof(line), "[FAIL] GXM COLOR 0X%08X",
                       static_cast<unsigned int>(colorResult));
+        failure(line);
+        return;
+    }
+
+    const int halfColorResult = sceGxmColorSurfaceInit(
+        &g_probeColorSurfaceHalf,
+        SCE_GXM_COLOR_FORMAT_A8B8G8R8,
+        SCE_GXM_COLOR_SURFACE_LINEAR,
+        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+        SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+        kWidth / 2, kHeight / 2, 512, g_probeColorBuffer);
+    if (halfColorResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM HALF COLOR 0X%08X",
+                      static_cast<unsigned int>(halfColorResult));
         failure(line);
         return;
     }
@@ -2464,6 +2512,21 @@ void toggle_debug_console()
         char line[78];
         std::snprintf(line, sizeof(line), "[FAIL] GXM COLOR2 0X%08X",
                       static_cast<unsigned int>(colorResult2));
+        failure(line);
+        return;
+    }
+
+    const int halfColorResult2 = sceGxmColorSurfaceInit(
+        &g_probeColorSurfaceHalf2,
+        SCE_GXM_COLOR_FORMAT_A8B8G8R8,
+        SCE_GXM_COLOR_SURFACE_LINEAR,
+        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+        SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+        kWidth / 2, kHeight / 2, 512, g_probeColorBuffer2);
+    if (halfColorResult2 < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM HALF COLOR2 0X%08X",
+                      static_cast<unsigned int>(halfColorResult2));
         failure(line);
         return;
     }
@@ -2509,7 +2572,25 @@ void toggle_debug_console()
         return;
     }
 
-    status("[PASS] GXM DEPTH SURFACE", 0xFF80E0FFu);
+    const unsigned int halfAlignedW =
+        ((kWidth / 2) + SCE_GXM_TILE_SIZEX - 1) &
+        ~(SCE_GXM_TILE_SIZEX - 1);
+    const int halfDepthResult = sceGxmDepthStencilSurfaceInit(
+        &g_probeDepthSurfaceHalf,
+        SCE_GXM_DEPTH_STENCIL_FORMAT_S8D24,
+        SCE_GXM_DEPTH_STENCIL_SURFACE_TILED,
+        halfAlignedW,
+        g_probeDepth,
+        g_probeStencil);
+    if (halfDepthResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM HALF DEPTH 0X%08X",
+                      static_cast<unsigned int>(halfDepthResult));
+        failure(line);
+        return;
+    }
+
+    status("[PASS] GXM DEPTH SURFACES", 0xFF80E0FFu);
 
     constexpr unsigned int patcherBufferSize = 64u * 1024u;
     constexpr unsigned int patcherVertexUsseSize = 64u * 1024u;
@@ -3880,19 +3961,35 @@ static void renderBasicWingViewer()
             ? buildAuthenticRoomWvp()
             : buildViewerWvp(roomMode);
 
-    constexpr int gxmPitch = 1024;
+    const int gxmPitch = viewerRenderPitch();
 
     std::uint32_t* const colorBuffer =
         g_gxmDrawBuffer == 0 ? g_probeColorBuffer : g_probeColorBuffer2;
     SceGxmColorSurface* const colorSurface =
-        g_gxmDrawBuffer == 0 ? &g_probeColorSurface : &g_probeColorSurface2;
+        g_halfResolution
+            ? (g_gxmDrawBuffer == 0
+                ? &g_probeColorSurfaceHalf
+                : &g_probeColorSurfaceHalf2)
+            : (g_gxmDrawBuffer == 0
+                ? &g_probeColorSurface
+                : &g_probeColorSurface2);
     SceGxmSyncObject* const syncObject =
         g_gxmDrawBuffer == 0 ? g_probeSync : g_probeSync2;
+    SceGxmRenderTarget* const renderTarget =
+        g_halfResolution
+            ? g_probeRenderTargetHalf
+            : g_probeRenderTarget;
+    SceGxmDepthStencilSurface* const depthSurface =
+        g_halfResolution
+            ? &g_probeDepthSurfaceHalf
+            : &g_probeDepthSurface;
 
     const unsigned int alignedW =
-        (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
+        (viewerRenderWidth() + SCE_GXM_TILE_SIZEX - 1) &
+        ~(SCE_GXM_TILE_SIZEX - 1);
     const unsigned int alignedH =
-        (kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1);
+        (viewerRenderHeight() + SCE_GXM_TILE_SIZEY - 1) &
+        ~(SCE_GXM_TILE_SIZEY - 1);
 
     std::memset(colorBuffer, 0,
                 static_cast<std::size_t>(gxmPitch) *
@@ -3902,9 +3999,9 @@ static void renderBasicWingViewer()
     std::memset(g_probeStencil, 0, alignedW * alignedH * 4u);
 
     if (sceGxmBeginScene(
-            g_probeContext, 0, g_probeRenderTarget,
+            g_probeContext, 0, renderTarget,
             nullptr, nullptr, syncObject,
-            colorSurface, &g_probeDepthSurface) < 0)
+            colorSurface, depthSurface) < 0)
         return;
 
     const Vdp1RenderMode renderMode =
@@ -3984,8 +4081,8 @@ static void renderBasicWingViewer()
         colorBuffer,
         gxmPitch,
         16,
-        kHeight - 18,
-        g_halfResolution ? "480X272 X2" : "960X544 NATIVE",
+        viewerRenderHeight() - 18,
+        g_halfResolution ? "480X272 GXM" : "960X544 NATIVE",
         0xFFFFFFFFu);
 
     SceDisplayFrameBuf fb{};
