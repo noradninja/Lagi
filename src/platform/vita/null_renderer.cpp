@@ -2712,6 +2712,10 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
 
     g_staticRoomCpuMesh = mesh;
     g_staticRoomCpuReady = true;
+    computeDebugFrame(
+        g_staticRoomCpuMesh.vertices,
+        g_staticRoomViewCenter,
+        g_staticRoomFitDistance);
 
     char line[78];
     std::snprintf(
@@ -2761,42 +2765,6 @@ bool load_basic_wing_viewer()
         return false;
     }
 
-    float minX = g_basicWingCpuMesh.vertices[0].x;
-    float maxX = minX;
-    float minY = g_basicWingCpuMesh.vertices[0].y;
-    float maxY = minY;
-    float minZ = g_basicWingCpuMesh.vertices[0].z;
-    float maxZ = minZ;
-
-    for (const auto& v : g_basicWingCpuMesh.vertices) {
-        minX = std::min(minX, v.x); maxX = std::max(maxX, v.x);
-        minY = std::min(minY, v.y); maxY = std::max(maxY, v.y);
-        minZ = std::min(minZ, v.z); maxZ = std::max(maxZ, v.z);
-    }
-
-    const float cx = (minX + maxX) * 0.5f;
-    const float cy = (minY + maxY) * 0.5f;
-    const float cz = (minZ + maxZ) * 0.5f;
-    const float extentX = std::max(maxX - minX, 0.001f);
-    const float extentY = std::max(maxY - minY, 0.001f);
-    const float extentZ = std::max(maxZ - minZ, 0.001f);
-    const float maxExtent = std::max(extentX, std::max(extentY, extentZ));
-    const float scale = 1.45f / maxExtent;
-
-    for (auto& v : g_basicWingCpuMesh.vertices) {
-        v.x = (v.x - cx) * scale;
-        v.y = (v.y - cy) * scale;
-        v.z = (v.z - cz) * scale;
-    }
-
-    for (auto& frame : g_basicWingCpuMesh.animationFrames) {
-        for (auto& v : frame.vertices) {
-            v.x = (v.x - cx) * scale;
-            v.y = (v.y - cy) * scale;
-            v.z = (v.z - cz) * scale;
-        }
-    }
-
     if (g_basicWingCpuMesh.polygonRecords.size() !=
         g_basicWingCpuMesh.polygons) {
         g_basicWingCpuReady = false;
@@ -2804,9 +2772,16 @@ bool load_basic_wing_viewer()
         return false;
     }
 
+    // Basic Wing vertices and every animation frame remain in native Azel
+    // game space. The debug viewer fits the model by camera distance only.
+    computeDebugFrame(
+        g_basicWingCpuMesh.vertices,
+        g_basicWingViewCenter,
+        g_basicWingFitDistance);
+
     g_viewYaw = 0.60f;
     g_viewPitch = -0.30f;
-    g_viewDistance = 3.0f;
+    g_viewDistance = g_basicWingFitDistance;
     g_viewMode = 0;
     g_basicWingAnimationFrame = 0;
     g_basicWingAnimationLastUs = 0;
@@ -2815,6 +2790,14 @@ bool load_basic_wing_viewer()
     g_lastPresentVcount = 0;
     g_basicWingCpuReady = true;
     g_viewerReady = true;
+
+    lagi::platform::logging::writef(
+        "[Viewer] Basic Wing game-space center=(%.5f,%.5f,%.5f) fit=%.5f AzelFOV=80\n",
+        g_basicWingViewCenter[0],
+        g_basicWingViewCenter[1],
+        g_basicWingViewCenter[2],
+        g_basicWingFitDistance);
+
     status("[PASS] DRAGON0 VDP1 212 RECORDS", 0xFF80E0FFu);
     if (g_basicWingCpuMesh.lightingPayloadValid)
         status("[PASS] DRAGON0 LIGHTING DATA", 0xFF80E0FFu);
