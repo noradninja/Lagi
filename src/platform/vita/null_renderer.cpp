@@ -3007,8 +3007,10 @@ bool submit_vdp1_model(
 
         static std::vector<unsigned int> batchCounts;
         static std::vector<unsigned int> batchWrite;
+        static std::vector<std::uint8_t> visibleQuads;
         batchCounts.assign(textureBucketCount, 0u);
         batchWrite.assign(textureBucketCount, 0u);
+        visibleQuads.assign(model.polygonCount, 0u);
 
         // First pass: update per-quad vertex payload and count only quads whose
         // four original corners are projectable. This retains the previous
@@ -3032,6 +3034,8 @@ bool submit_vdp1_model(
             }
             if (!visible)
                 continue;
+
+            visibleQuads[p] = 1u;
 
             const auto& gouraud = model.gouraud555[p];
             const float payload[5][4] = {
@@ -3115,23 +3119,13 @@ bool submit_vdp1_model(
         // Saturn Gouraud state, so these indices can safely share a draw.
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
+            if (!visibleQuads[p])
+                continue;
+
             const std::uint16_t textureIndex =
                 texturedLit ? model.polygonTextureIndices[p] : 0u;
             if (textureIndex >= textureBucketCount ||
                 batchCounts[textureIndex] == 0u)
-                continue;
-
-            ViewerScreenPoint screen[4];
-            bool visible = true;
-            for (unsigned int corner = 0; corner < 4; ++corner) {
-                screen[corner] = projectViewerPoint(
-                    wvp,
-                    model.vertices[
-                        p * 6u + cornerVertex[corner]]);
-                if (!screen[corner].valid)
-                    visible = false;
-            }
-            if (!visible)
                 continue;
 
             unsigned int& write =
