@@ -19,6 +19,8 @@ enum class Vdp1RenderMode : std::uint8_t {
     TexturedGouraudNewton = 5,
     TexturedPayloadProbe = 6,
     TexturedGouraudNoInverse = 7,
+    TexturedGouraudNoQuant = 8,
+    TexturedRgb555NoGouraud = 9,
 };
 
 // Non-owning CPU-side description of one triangulated Saturn VDP1 model.
