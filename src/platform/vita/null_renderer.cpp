@@ -1597,12 +1597,17 @@ static ViewerMat4 viewerLookAtLH(
     };
     normalize(up);
 
+    // Azel's camera stack begins with Z negated (resetMatrixStack
+    // initializes m[2][2] = -1). For the normal town camera looking down
+    // world -Z, camera-right must therefore remain +world X. Using the
+    // conventional LH up x forward ordering here produced -X and mirrored
+    // the entire town horizontally relative to Saturn output.
     float x[3]{};
-    cross(up, z, x);
+    cross(z, up, x);
     normalize(x);
 
     float y[3]{};
-    cross(z, x, y);
+    cross(x, z, y);
     normalize(y);
 
     ViewerMat4 r = viewerIdentity();
