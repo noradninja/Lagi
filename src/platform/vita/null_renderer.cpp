@@ -475,6 +475,11 @@ void shutdown()
                 g_probeShaderPatcher, g_textureFragmentProgram);
             g_textureFragmentProgram = nullptr;
         }
+        if (g_gouraudPayloadVertexProgram) {
+            sceGxmShaderPatcherReleaseVertexProgram(
+                g_probeShaderPatcher, g_gouraudPayloadVertexProgram);
+            g_gouraudPayloadVertexProgram = nullptr;
+        }
         if (g_textureVertexProgram) {
             sceGxmShaderPatcherReleaseVertexProgram(
                 g_probeShaderPatcher, g_textureVertexProgram);
@@ -494,6 +499,11 @@ void shutdown()
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_textureFragmentProgramId);
             g_textureFragmentRegistered = false;
+        }
+        if (g_gouraudPayloadVertexRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_gouraudPayloadVertexProgramId);
+            g_gouraudPayloadVertexRegistered = false;
         }
         if (g_textureVertexRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
