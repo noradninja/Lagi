@@ -1791,12 +1791,19 @@ static ViewerMat4 buildViewerWvp(bool roomMode)
             0.0f,
             0.0f,
             g_viewDistance);
-    const ViewerMat4 projection =
+    ViewerMat4 projection =
         buildAzelProjection(
             kDefaultFovDegrees,
             0u,
             kDefaultNear,
             kDefaultFar);
+
+    // The room data is authored in Saturn/Azel screen handedness, which is
+    // horizontally opposite to the GXM clip-space presentation used here.
+    // Apply the same X presentation mirror as the authentic room camera so
+    // both room viewers agree without changing the recovered world geometry.
+    if (roomMode)
+        projection.m[0] = -projection.m[0];
 
     // Geometry remains in native Azel game space. Debug framing is purely a
     // view transform: translate the model/scene center to the origin, orbit
