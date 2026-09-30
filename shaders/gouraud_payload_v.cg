@@ -47,9 +47,16 @@ void main(
     float k1Base = cross2d(e, f) - cross2d(a, g);
     float k0Base = -cross2d(a, e);
 
+    // k2 is quad-invariant, so pay for this reciprocal in the vertex stage
+    // rather than dividing by 2*k2 for both roots in every fragment.
+    float inv2k2 =
+        abs(k2) >= 0.0001f
+            ? 0.5f / k2
+            : 0.0f;
+
     vInverse0 = float4(a, e);
     vInverse1 = float4(f, g);
-    vInverse2 = float4(k2, k1Base, k0Base, 0.0f);
+    vInverse2 = float4(k2, k1Base, k0Base, inv2k2);
 
     vGouraudR = aGouraudR;
     vGouraudG = aGouraudG;
