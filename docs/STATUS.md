@@ -344,6 +344,27 @@ while objectDepth > gTownGrid.m3C[lod]:
 
 The earlier experimental per-object AABB frustum scaffolding was removed; it is not part of Azel's normal town draw path.
 
+## Inverse-bilinear fragment optimization pass 2: root-division reduction
+
+Pass 1 produced no measurable FPS change in the close-wall hardware case, strongly indicating the expensive portion is the quadratic/root solve rather than quad-invariant setup arithmetic.
+
+Pass 2 keeps the same inverse-bilinear solution and exact fallback behavior, but removes two common-path fragment divisions:
+
+```text
+vertex stage:
+    inv2k2 = 1 / (2 * k2)
+
+fragment stage:
+    v1 = (-k1 - sqrt(discriminant)) * inv2k2
+    v2 = (-k1 + sqrt(discriminant)) * inv2k2
+```
+
+The fragment shader also tests whether exactly one root has `v` inside `[0,1]`. If that root's computed `u` is also inside `[0,1]`, it is already the valid inverse-bilinear unit-square solution and the shader returns immediately after one `computeU()` division.
+
+Ambiguous, degenerate, or out-of-range cases fall back to the previous two-root `computeU()` and distance comparison. This preserves the prior selection semantics while reducing the normal convex-quad path from roughly four fragment divisions to one, with the square root still remaining.
+
+This pass awaits hardware visual/FPS validation.
+
 ## Inverse-bilinear fragment optimization pass 1: coefficient reduction
 
 The lit Saturn-quad shader now moves quad-invariant inverse-bilinear setup out of the fragment stage.
