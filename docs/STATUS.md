@@ -279,6 +279,25 @@ If a LUT entry references VDP2 CRAM, or a room polygon uses a bank-color mode th
 
 When every room texture is resolved from the CGB alone, Mode 5 automatically switches to the native point-filtered textured VDP1 path. The debug screen reports the decoded texture count and `lagi.log` records the room color-mode distribution.
 
+## Ruin cell-space world transform correction
+
+The first static-room reconstruction originally applied each 0x18-byte object's local translation/rotation directly to its model vertices. That produced a coherent room but placed the entire room several world units away from Edge.
+
+Pinned Azel's actual town draw path applies one additional transform first:
+
+```text
+sWorldGridCellTask::Init:
+    mC_position = readSaturnVec3(cell)
+
+sWorldGridCellTask::Draw:
+    translateCurrentMatrix(cellPosition)
+    for each static object:
+        generateObjectMatrix(objectTranslation, objectRotation)
+        addObjectToDrawList(model)
+```
+
+Lagi now applies the cell's 16.16 world translation before each object's local transform. This is source-derived and awaits hardware confirmation. It should bring the static ruin room into the same world-space frame as Edge and the recovered initial town camera without changing FOV, model scale, or clip distances.
+
 ## Shared Azel game-space projection
 
 All 3D diagnostic/viewer paths now preserve Azel's native coordinate scale end-to-end.
