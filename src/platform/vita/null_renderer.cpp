@@ -2434,6 +2434,12 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
             "[PASS] RUIN ROOM %u TEXTURES",
             mesh.decodedTextures);
         status(textureLine, 0xFF80E0FFu);
+
+        if (mesh.lightingValid) {
+            status(
+                "[PASS] RUIN SCENE LIGHTING DATA",
+                0xFF80E0FFu);
+        }
     } else if (mesh.texturesValid) {
         status("[INFO] RUIN ROOM TEXTURES NEED CRAM", 0xFF80C0FFu);
     } else {
@@ -2759,13 +2765,21 @@ static void renderBasicWingViewer()
         g_viewDistance = 3.0f;
     }
 
-    const int viewerModeCount = g_staticRoomCpuReady ? 6 : 5;
+    const int viewerModeCount =
+        g_staticRoomCpuReady
+            ? (g_staticRoomCpuMesh.lightingValid ? 7 : 6)
+            : 5;
     if (input::prev_mode_pressed())
         g_viewMode = (g_viewMode + viewerModeCount - 1) % viewerModeCount;
     if (input::next_mode_pressed())
         g_viewMode = (g_viewMode + 1) % viewerModeCount;
 
-    const bool roomMode = g_staticRoomCpuReady && g_viewMode == 5;
+    const bool roomMode =
+        g_staticRoomCpuReady && g_viewMode >= 5;
+    const bool roomLitMode =
+        g_staticRoomCpuReady &&
+        g_staticRoomCpuMesh.lightingValid &&
+        g_viewMode == 6;
 
     if (!roomMode && g_residentVdp1Model != ResidentVdp1Model::BasicWing) {
         if (!prepare_vdp1_model(basicWingVdp1Source()))
@@ -2815,7 +2829,9 @@ static void renderBasicWingViewer()
     const Vdp1RenderMode renderMode =
         roomMode
             ? (g_staticRoomCpuMesh.texturesFullyResolved
-                ? Vdp1RenderMode::Textured
+                ? (roomLitMode
+                    ? Vdp1RenderMode::TexturedGouraud
+                    : Vdp1RenderMode::Textured)
                 : Vdp1RenderMode::PolygonColor)
             : static_cast<Vdp1RenderMode>(g_viewMode);
 
@@ -2823,6 +2839,9 @@ static void renderBasicWingViewer()
         (renderMode == Vdp1RenderMode::TexturedGouraud ||
          renderMode == Vdp1RenderMode::GouraudGrayscale))
         updateViewerAzelLighting();
+
+    if (roomLitMode)
+        updateStaticRoomAzelLighting();
 
     Vdp1DrawState drawState{};
     std::memcpy(drawState.wvp, wvp.m, sizeof(drawState.wvp));
