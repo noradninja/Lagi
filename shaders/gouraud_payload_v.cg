@@ -1,0 +1,32 @@
+// Per-quad Saturn Gouraud payload vertex shader.
+//
+// Each triangle vertex carries a replicated copy of the original Saturn
+// quad's projected four corners and four RGB555 Gouraud corner values.
+// Because those payload values are identical across all six generated
+// triangle vertices, interpolation leaves them constant for the fragment
+// shader without requiring per-draw fragment uniforms.
+void main(
+    float3 aPosition,
+    float2 aTexcoord,
+    float4 aQuadScreen01,
+    float4 aQuadScreen23,
+    float4 aGouraudR,
+    float4 aGouraudG,
+    float4 aGouraudB,
+    uniform float4x4 wvp,
+    float4 out vPosition : POSITION,
+    float2 out vTexcoord : TEXCOORD0,
+    float4 out vQuadScreen01 : TEXCOORD1,
+    float4 out vQuadScreen23 : TEXCOORD2,
+    float4 out vGouraudR : TEXCOORD3,
+    float4 out vGouraudG : TEXCOORD4,
+    float4 out vGouraudB : TEXCOORD5)
+{
+    vPosition = mul(float4(aPosition, 1.0f), wvp);
+    vTexcoord = aTexcoord;
+    vQuadScreen01 = aQuadScreen01;
+    vQuadScreen23 = aQuadScreen23;
+    vGouraudR = aGouraudR;
+    vGouraudG = aGouraudG;
+    vGouraudB = aGouraudB;
+}
