@@ -211,6 +211,19 @@ static float g_basicWingFitDistance = 3.0f;
 static float g_staticRoomViewCenter[3]{};
 static float g_staticRoomFitDistance = 3.0f;
 
+// First playable-town runtime slice. The recovered Edge transform is kept
+// mutable here instead of baking movement into the reconstructed room mesh.
+static bool g_townPlayerReady = false;
+static float g_townPlayerPosition[3]{};
+static float g_townPlayerStartPosition[3]{};
+static float g_townPlayerYaw = 0.0f;
+static float g_townPlayerStartYaw = 0.0f;
+static float g_townCameraPosition[3]{};
+static float g_townCameraTarget[3]{};
+static float g_townCameraUp[3]{};
+static float g_townCameraStartOffset[3]{};
+static float g_townTargetStartOffset[3]{};
+
 static bool g_staticRoomAzelCellVisible = true;
 static unsigned int g_staticRoomAzelLod0Objects = 0;
 static unsigned int g_staticRoomAzelNonzeroLodObjects = 0;
@@ -1634,13 +1647,160 @@ static ViewerMat4 viewerLookAtLH(
     return r;
 }
 
+static float wrapRadians(float a)
+{
+    constexpr float kPi = 3.14159265358979323846f;
+    constexpr float kTau = kPi * 2.0f;
+    while (a > kPi) a -= kTau;
+    while (a < -kPi) a += kTau;
+    return a;
+}
+
+static void updateTownFollowCamera()
+{
+    if (!g_townPlayerReady)
+        return;
+
+    const float deltaYaw =
+        g_townPlayerYaw - g_townPlayerStartYaw;
+    const float c = std::cos(deltaYaw);
+    const float s = std::sin(deltaYaw);
+
+    auto rotateOffsetY = [c, s](
+        const float source[3],
+        float out[3]) {
+        out[0] = source[0] * c + source[2] * s;
+        out[1] = source[1];
+        out[2] = -source[0] * s + source[2] * c;
+    };
+
+    float cameraOffset[3]{};
+    float targetOffset[3]{};
+    rotateOffsetY(g_townCameraStartOffset, cameraOffset);
+    rotateOffsetY(g_townTargetStartOffset, targetOffset);
+
+    for (unsigned int i = 0; i < 3; ++i) {
+        g_townCameraPosition[i] =
+            g_townPlayerPosition[i] + cameraOffset[i];
+        g_townCameraTarget[i] =
+            g_townPlayerPosition[i] + targetOffset[i];
+        g_townCameraUp[i] = g_townCameraPosition[i];
+    }
+    g_townCameraUp[1] += 1.0f;
+}
+
+static void resetTownPlayerRuntime()
+{
+    if (!g_townPlayerReady)
+        return;
+
+    std::memcpy(
+        g_townPlayerPosition,
+        g_townPlayerStartPosition,
+        sizeof(g_townPlayerPosition));
+    g_townPlayerYaw = g_townPlayerStartYaw;
+    updateTownFollowCamera();
+}
+
+static void updateTownPlayerRuntime()
+{
+    if (!g_townPlayerReady)
+        return;
+
+    const float inputX = input::analog_x();
+    const float inputForward = -input::analog_y();
+    const float magnitude =
+        std::min(
+            1.0f,
+            std::sqrt(
+                inputX * inputX +
+                inputForward * inputForward));
+
+    if (magnitude <= 0.0001f)
+        return;
+
+    // Match town mode-1 semantics: stick direction is camera-relative, Edge
+    // turns toward the requested heading with a bounded per-frame turn, and
+    // forward speed is proportional to analog magnitude. Collision/ground
+    // solving is deliberately the next milestone slice.
+    float cameraForwardX =
+        g_townCameraTarget[0] - g_townCameraPosition[0];
+    float cameraForwardZ =
+        g_townCameraTarget[2] - g_townCameraPosition[2];
+    float forwardLength =
+        std::sqrt(
+            cameraForwardX * cameraForwardX +
+            cameraForwardZ * cameraForwardZ);
+    if (forwardLength <= 0.0001f) {
+        cameraForwardX = std::sin(g_townPlayerYaw);
+        cameraForwardZ = std::cos(g_townPlayerYaw);
+        forwardLength = 1.0f;
+    }
+    cameraForwardX /= forwardLength;
+    cameraForwardZ /= forwardLength;
+
+    const float cameraRightX = cameraForwardZ;
+    const float cameraRightZ = -cameraForwardX;
+
+    float desiredX =
+        cameraRightX * inputX +
+        cameraForwardX * inputForward;
+    float desiredZ =
+        cameraRightZ * inputX +
+        cameraForwardZ * inputForward;
+    const float desiredLength =
+        std::sqrt(desiredX * desiredX + desiredZ * desiredZ);
+    if (desiredLength <= 0.0001f)
+        return;
+    desiredX /= desiredLength;
+    desiredZ /= desiredLength;
+
+    const float desiredYaw =
+        std::atan2(desiredX, desiredZ);
+    float yawDelta =
+        wrapRadians(desiredYaw - g_townPlayerYaw);
+
+    // Azel's town mode-1 minimum steering clamp is 0xE38E3 in its
+    // 0x10000000-per-turn angle space.
+    constexpr float kTau =
+        6.28318530717958647692f;
+    constexpr float kMaxTurnPerFrame =
+        (static_cast<float>(0x0E38E3) /
+         static_cast<float>(0x10000000)) * kTau;
+    yawDelta =
+        std::max(
+            -kMaxTurnPerFrame,
+            std::min(kMaxTurnPerFrame, yawDelta));
+    g_townPlayerYaw =
+        wrapRadians(g_townPlayerYaw + yawDelta);
+
+    // Normal walk uses -0x109 16.16 units at full input in
+    // updateEdgePositionSub1(). The sign there is local -Z; convert to our
+    // world forward vector here.
+    constexpr float kWalkStep =
+        static_cast<float>(0x109) / 65536.0f;
+    const float step = kWalkStep * magnitude;
+    g_townPlayerPosition[0] +=
+        std::sin(g_townPlayerYaw) * step;
+    g_townPlayerPosition[2] +=
+        std::cos(g_townPlayerYaw) * step;
+
+    updateTownFollowCamera();
+}
+
 static ViewerMat4 buildAuthenticRoomWvp()
 {
     const ViewerMat4 view =
         viewerLookAtLH(
-            g_staticRoomCpuMesh.cameraPosition,
-            g_staticRoomCpuMesh.cameraTarget,
-            g_staticRoomCpuMesh.cameraUp);
+            g_townPlayerReady
+                ? g_townCameraPosition
+                : g_staticRoomCpuMesh.cameraPosition,
+            g_townPlayerReady
+                ? g_townCameraTarget
+                : g_staticRoomCpuMesh.cameraTarget,
+            g_townPlayerReady
+                ? g_townCameraUp
+                : g_staticRoomCpuMesh.cameraUp);
 
     ViewerMat4 projection =
         buildAzelProjection(
@@ -1687,9 +1847,15 @@ static bool updateStaticRoomAzelTownVisibility()
 
     const ViewerMat4 view =
         viewerLookAtLH(
-            g_staticRoomCpuMesh.cameraPosition,
-            g_staticRoomCpuMesh.cameraTarget,
-            g_staticRoomCpuMesh.cameraUp);
+            g_townPlayerReady
+                ? g_townCameraPosition
+                : g_staticRoomCpuMesh.cameraPosition,
+            g_townPlayerReady
+                ? g_townCameraTarget
+                : g_staticRoomCpuMesh.cameraTarget,
+            g_townPlayerReady
+                ? g_townCameraUp
+                : g_staticRoomCpuMesh.cameraUp);
 
     float cellCamera[3]{};
     transformViewerPoint(
@@ -3427,6 +3593,43 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
 
     g_staticRoomCpuMesh = mesh;
     g_staticRoomCpuReady = true;
+
+    g_townPlayerReady =
+        mesh.cameraValid &&
+        mesh.edgeTransformValid;
+    if (g_townPlayerReady) {
+        std::memcpy(
+            g_townPlayerPosition,
+            mesh.edgePosition,
+            sizeof(g_townPlayerPosition));
+        std::memcpy(
+            g_townPlayerStartPosition,
+            mesh.edgePosition,
+            sizeof(g_townPlayerStartPosition));
+
+        // edgeRotation[] is stored in turns. Y is the town heading.
+        constexpr float kTau =
+            6.28318530717958647692f;
+        g_townPlayerYaw =
+            mesh.edgeRotation[1] * kTau;
+        g_townPlayerStartYaw =
+            g_townPlayerYaw;
+
+        for (unsigned int i = 0; i < 3; ++i) {
+            g_townCameraStartOffset[i] =
+                mesh.cameraPosition[i] -
+                mesh.edgePosition[i];
+            g_townTargetStartOffset[i] =
+                mesh.cameraTarget[i] -
+                mesh.edgePosition[i];
+        }
+        updateTownFollowCamera();
+
+        status(
+            "[PASS] RUIN LIVE EDGE/FOLLOW STATE",
+            0xFF70E0A0u);
+    }
+
     computeDebugFrame(
         g_staticRoomCpuMesh.vertices,
         g_staticRoomViewCenter,
@@ -3868,11 +4071,18 @@ static void renderBasicWingViewer()
     }
 
     if (input::reset_view_pressed()) {
-        g_viewYaw = 0.60f;
-        g_viewPitch = -0.30f;
-        g_viewDistance =
-            roomMode ? g_staticRoomFitDistance : g_basicWingFitDistance;
+        if (roomAuthenticCameraMode) {
+            resetTownPlayerRuntime();
+        } else {
+            g_viewYaw = 0.60f;
+            g_viewPitch = -0.30f;
+            g_viewDistance =
+                roomMode ? g_staticRoomFitDistance : g_basicWingFitDistance;
+        }
     }
+
+    if (roomAuthenticCameraMode)
+        updateTownPlayerRuntime();
 
     const bool roomDiagnosticLitMode =
         g_staticRoomCpuReady &&

@@ -157,6 +157,12 @@ struct StaticRoomDebugMesh {
     unsigned int lightingModes[4]{};
     bool lightingValid = false;
 
+    // Script-updated Edge transform at the moment setupCameraFollowMode()
+    // runs. This is the seed for the live town/player runtime.
+    float edgePosition[3]{};
+    float edgeRotation[3]{};
+    bool edgeTransformValid = false;
+
     float cameraPosition[3]{};
     float cameraTarget[3]{};
     float cameraUp[3]{};

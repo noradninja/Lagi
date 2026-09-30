@@ -270,6 +270,14 @@ static bool recoverInitialRuinCamera(
         static_cast<std::int16_t>(
             (edgeRotRaw[1] >> 16) & 0x0FFF);
 
+    for (unsigned int i = 0; i < 3; ++i) {
+        out.edgePosition[i] = edgePos[i];
+        out.edgeRotation[i] =
+            static_cast<float>(edgeRotRaw[i]) /
+            static_cast<float>(0x10000000);
+    }
+    out.edgeTransformValid = true;
+
     // scriptFunction_6057058_sub0Sub0():
     // m18_position = Edge position + (0, 0x1800, 0)
     // camera basis = rotate Y, then X
