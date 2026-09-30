@@ -395,6 +395,35 @@ Mode mapping for hardware comparison:
 
 Mode 10 is intentionally experimental until screenshot and FPS comparison against Mode 7 is hardware-validated.
 
+## No-inverse Gouraud arithmetic probe
+
+Mode 12 isolates the cost of Gouraud/RGB555 fragment arithmetic from the cost of recovering bilinear quad coordinates.
+
+It uses the same authentic-camera room path, heavy Gouraud payload interface, texture sampling, alpha test, four-corner Gouraud values, RGB555 add/clamp, and final 5-bit quantization as the lit path.
+
+The only deliberate shortcut is the interpolation coordinate source:
+
+```text
+Mode 7/10:
+    recover quad-local (u,v) from screen position
+
+Mode 12:
+    st = saturate(vTexcoord)
+```
+
+The texture coordinates are therefore used directly as a cheap diagnostic interpolation coordinate. This is not intended to be visually correct on flipped or distorted quads; its purpose is strictly to measure the fragment cost of the remaining Gouraud and RGB555 arithmetic with all inverse-mapping work removed.
+
+The otherwise-unused inverse payload is kept live through a negligible output dependency so compiler dead-code elimination does not reduce the interpolator/register footprint.
+
+Comparison target:
+
+```text
+Mode 11  heavy payload + texture only
+Mode 12  heavy payload + texture + Gouraud/RGB555, no inverse solve
+```
+
+If Mode 12 remains at 30 FPS, inverse-coordinate recovery is the bottleneck. If it drops to 20 FPS, the remaining Gouraud/RGB555 arithmetic is the dominant cost.
+
 ## Heavy-payload texture-only probe
 
 Mode 11 isolates fragment interpolator/register pressure from Gouraud arithmetic.
