@@ -913,6 +913,8 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
     constexpr unsigned int kMaxVertices = 65520;
     static constexpr unsigned int triCorners[6] = {0,1,2,0,2,3};
 
+    out.objectBounds.assign(kMaxObjects, {});
+
     for (unsigned int objectIndex = 0;
          objectIndex < kMaxObjects; ++objectIndex, entry += 0x18) {
         const s32 lodTableEA = readSaturnS32(entry);
@@ -946,6 +948,12 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
         // Mirrors rotateMatrixZYX_s16(): postmultiply Z, then Y, then X.
         const Mat3 rotation =
             mul3(mul3(rotZ(rz), rotY(ry)), rotX(rx));
+
+        DebugObjectBounds objectBounds{};
+        objectBounds.min[0] = objectBounds.min[1] = objectBounds.min[2] =
+            1.0e30f;
+        objectBounds.max[0] = objectBounds.max[1] = objectBounds.max[2] =
+            -1.0e30f;
 
         for (unsigned int p = 0; p < model.quads.size(); ++p) {
             if (out.vertices.size() + 6u > kMaxVertices) {
@@ -1032,10 +1040,22 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
                 DebugColorVertex dv{};
                 dv.x = v[0]; dv.y = v[1]; dv.z = v[2];
                 dv.r = r; dv.g = g; dv.b = b; dv.a = 255;
+
+                for (unsigned int axis = 0; axis < 3u; ++axis) {
+                    objectBounds.min[axis] =
+                        std::min(objectBounds.min[axis], v[axis]);
+                    objectBounds.max[axis] =
+                        std::max(objectBounds.max[axis], v[axis]);
+                }
+                objectBounds.valid = true;
+
                 out.vertices.push_back(dv);
                 out.lightingVertices.push_back(dv);
             }
         }
+
+        if (objectBounds.valid)
+            out.objectBounds[objectIndex] = objectBounds;
 
         ++out.objects;
         ++out.models;
