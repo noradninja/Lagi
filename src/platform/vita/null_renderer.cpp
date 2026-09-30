@@ -3320,7 +3320,7 @@ static void renderBasicWingViewer()
         g_staticRoomCpuReady
             ? (g_staticRoomCpuMesh.cameraValid &&
                g_staticRoomCpuMesh.lightingValid
-                ? 8
+                ? 10
                 : (g_staticRoomCpuMesh.lightingValid ? 7 : 6))
             : 5;
     if (input::prev_mode_pressed())
@@ -3344,7 +3344,7 @@ static void renderBasicWingViewer()
     // geometry remain in native Azel game space in every mode.
     if (!(g_staticRoomCpuReady &&
           g_staticRoomCpuMesh.cameraValid &&
-          g_viewMode == 7)) {
+          g_viewMode >= 7)) {
         g_viewYaw += input::analog_x() * 0.035f;
         g_viewPitch += input::analog_y() * 0.035f;
         g_viewPitch =
@@ -3378,11 +3378,17 @@ static void renderBasicWingViewer()
     const bool roomLitMode =
         g_staticRoomCpuReady &&
         g_staticRoomCpuMesh.lightingValid &&
-        g_viewMode >= 6;
+        (g_viewMode == 6 || g_viewMode == 7);
     const bool roomAuthenticCameraMode =
         g_staticRoomCpuReady &&
         g_staticRoomCpuMesh.cameraValid &&
-        g_viewMode == 7;
+        g_viewMode >= 7;
+    const bool roomAuthenticTexturedOnlyMode =
+        roomAuthenticCameraMode &&
+        g_viewMode == 8;
+    const bool roomAuthenticFlatMode =
+        roomAuthenticCameraMode &&
+        g_viewMode == 9;
 
     if (!roomMode && g_residentVdp1Model != ResidentVdp1Model::BasicWing) {
         if (!prepare_vdp1_model(basicWingVdp1Source()))
@@ -3440,12 +3446,16 @@ static void renderBasicWingViewer()
 
     const Vdp1RenderMode renderMode =
         roomMode
-            ? (g_staticRoomCpuMesh.texturesFullyResolved
-                ? (roomLitMode
-                    ? Vdp1RenderMode::TexturedGouraud
-                    : Vdp1RenderMode::Textured)
-                : Vdp1RenderMode::PolygonColor)
+            ? (roomAuthenticFlatMode
+                ? Vdp1RenderMode::PolygonColor
+                : (g_staticRoomCpuMesh.texturesFullyResolved
+                    ? (roomLitMode
+                        ? Vdp1RenderMode::TexturedGouraud
+                        : Vdp1RenderMode::Textured)
+                    : Vdp1RenderMode::PolygonColor))
             : static_cast<Vdp1RenderMode>(g_viewMode);
+
+    (void)roomAuthenticTexturedOnlyMode;
 
     if (!roomMode &&
         (renderMode == Vdp1RenderMode::TexturedGouraud ||
