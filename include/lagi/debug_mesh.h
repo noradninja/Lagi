@@ -20,6 +20,16 @@ struct DebugTexturedLitVertex {
     float light;
 };
 
+struct DebugGouraudPayloadVertex {
+    float x, y, z;
+    float u, v;
+    float quadScreen01[4]{};
+    float quadScreen23[4]{};
+    float gouraudR[4]{};
+    float gouraudG[4]{};
+    float gouraudB[4]{};
+};
+
 struct DecodedMode1Texture {
     std::uint16_t cmdPmod = 0;
     std::uint16_t cmdColr = 0;
