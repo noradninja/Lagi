@@ -344,6 +344,41 @@ while objectDepth > gTownGrid.m3C[lod]:
 
 The earlier experimental per-object AABB frustum scaffolding was removed; it is not part of Azel's normal town draw path.
 
+## Authentic fragment-cost diagnostic ladder
+
+Three authentic-camera ruin modes now share the same:
+
+```text
+960x544 framebuffer
+world-space room geometry
+initial scripted town camera
+Azel town cell visibility
+depth state
+projection
+static object set
+```
+
+Only the fragment/material path changes:
+
+```text
+Mode 7
+  textured + Saturn four-corner Gouraud
+  full inverse-bilinear fragment solve
+
+Mode 8
+  textured only
+  existing simple texture fragment shader
+  no Gouraud/inverse-bilinear work
+
+Mode 9
+  polygon color
+  existing minimal probe fragment shader
+  no texture sampling
+  no Gouraud/inverse-bilinear work
+```
+
+These modes are intended to separate full Gouraud cost from texture/fill cost and raw geometry/depth/fill cost at the same camera position. The diagnostic ladder awaits hardware FPS comparison.
+
 ## Inverse-bilinear fragment optimization pass 2: root-division reduction
 
 Pass 1 produced no measurable FPS change in the close-wall hardware case, strongly indicating the expensive portion is the quadratic/root solve rather than quad-invariant setup arithmetic.
