@@ -2992,24 +2992,41 @@ bool submit_vdp1_model(
     }
 
     if (texturedLit || gouraudDebug) {
-        // Preserve original Saturn quad identity. The fragment shaders receive
-        // all four projected corners and all four RGB555 Gouraud values, then
-        // perform the proven inverse-bilinear reconstruction per pixel.
+        // Preserve original Saturn quad identity, but no longer preserve its
+        // one-command-per-quad submission overhead. Every generated vertex
+        // already carries the complete quad projection/Gouraud payload, so
+        // visible quads can share a draw as long as they share texture state.
         static const unsigned int cornerVertex[4] = {0, 1, 2, 5};
         ViewerMat4 wvp{};
         std::memcpy(wvp.m, drawState.wvp, sizeof(wvp.m));
 
+        const unsigned int textureBucketCount =
+            texturedLit
+                ? static_cast<unsigned int>(g_vdp1GpuTextures.size())
+                : 1u;
+
+        static std::vector<unsigned int> batchCounts;
+        static std::vector<unsigned int> batchWrite;
+        batchCounts.assign(textureBucketCount, 0u);
+        batchWrite.assign(textureBucketCount, 0u);
+
+        // First pass: update per-quad vertex payload and count only quads whose
+        // four original corners are projectable. This retains the previous
+        // visibility rule while allowing one compact index list per texture.
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
-            const std::uint16_t textureIndex = model.polygonTextureIndices[p];
-            if (texturedLit && textureIndex >= g_vdp1GpuTextures.size())
+            const std::uint16_t textureIndex =
+                texturedLit ? model.polygonTextureIndices[p] : 0u;
+            if (textureIndex >= textureBucketCount)
                 continue;
 
             ViewerScreenPoint screen[4];
             bool visible = true;
             for (unsigned int corner = 0; corner < 4; ++corner) {
                 screen[corner] = projectViewerPoint(
-                    wvp, model.vertices[p * 6u + cornerVertex[corner]]);
+                    wvp,
+                    model.vertices[
+                        p * 6u + cornerVertex[corner]]);
                 if (!screen[corner].valid)
                     visible = false;
             }
@@ -3027,43 +3044,130 @@ bool submit_vdp1_model(
                     screen[3].x, screen[3].y
                 },
                 {
-                    gouraud.corner[0][0], gouraud.corner[1][0],
-                    gouraud.corner[2][0], gouraud.corner[3][0]
+                    gouraud.corner[0][0],
+                    gouraud.corner[1][0],
+                    gouraud.corner[2][0],
+                    gouraud.corner[3][0]
                 },
                 {
-                    gouraud.corner[0][1], gouraud.corner[1][1],
-                    gouraud.corner[2][1], gouraud.corner[3][1]
+                    gouraud.corner[0][1],
+                    gouraud.corner[1][1],
+                    gouraud.corner[2][1],
+                    gouraud.corner[3][1]
                 },
                 {
-                    gouraud.corner[0][2], gouraud.corner[1][2],
-                    gouraud.corner[2][2], gouraud.corner[3][2]
+                    gouraud.corner[0][2],
+                    gouraud.corner[1][2],
+                    gouraud.corner[2][2],
+                    gouraud.corner[3][2]
                 }
             };
 
             for (unsigned int k = 0; k < 6u; ++k) {
                 auto& v =
                     g_vdp1GouraudVertices[p * 6u + k];
-                std::memcpy(v.quadScreen01, payload[0], sizeof(payload[0]));
-                std::memcpy(v.quadScreen23, payload[1], sizeof(payload[1]));
-                std::memcpy(v.gouraudR, payload[2], sizeof(payload[2]));
-                std::memcpy(v.gouraudG, payload[3], sizeof(payload[3]));
-                std::memcpy(v.gouraudB, payload[4], sizeof(payload[4]));
+                std::memcpy(
+                    v.quadScreen01,
+                    payload[0],
+                    sizeof(payload[0]));
+                std::memcpy(
+                    v.quadScreen23,
+                    payload[1],
+                    sizeof(payload[1]));
+                std::memcpy(
+                    v.gouraudR,
+                    payload[2],
+                    sizeof(payload[2]));
+                std::memcpy(
+                    v.gouraudG,
+                    payload[3],
+                    sizeof(payload[3]));
+                std::memcpy(
+                    v.gouraudB,
+                    payload[4],
+                    sizeof(payload[4]));
             }
+
+            batchCounts[textureIndex] += 6u;
+        }
+
+        // Prefix-sum the visible batch ranges directly into the resident U16
+        // index buffer. No new GPU allocations occur per frame.
+        unsigned int totalVisibleIndices = 0u;
+        if (g_vdp1TextureBatches.size() < textureBucketCount)
+            g_vdp1TextureBatches.resize(textureBucketCount);
+
+        for (unsigned int t = 0; t < textureBucketCount; ++t) {
+            g_vdp1TextureBatches[t].firstIndex =
+                totalVisibleIndices;
+            g_vdp1TextureBatches[t].indexCount =
+                batchCounts[t];
+            batchWrite[t] = totalVisibleIndices;
+            totalVisibleIndices += batchCounts[t];
+        }
+
+        if (totalVisibleIndices >
+            static_cast<unsigned int>(model.vertexCount))
+            return false;
+
+        // Second pass: write the visible quad indices into their texture
+        // ranges. The vertex payload already contains each quad's unique
+        // Saturn Gouraud state, so these indices can safely share a draw.
+        for (unsigned int p = 0;
+             p < static_cast<unsigned int>(model.polygonCount); ++p) {
+            const std::uint16_t textureIndex =
+                texturedLit ? model.polygonTextureIndices[p] : 0u;
+            if (textureIndex >= textureBucketCount ||
+                batchCounts[textureIndex] == 0u)
+                continue;
+
+            ViewerScreenPoint screen[4];
+            bool visible = true;
+            for (unsigned int corner = 0; corner < 4; ++corner) {
+                screen[corner] = projectViewerPoint(
+                    wvp,
+                    model.vertices[
+                        p * 6u + cornerVertex[corner]]);
+                if (!screen[corner].valid)
+                    visible = false;
+            }
+            if (!visible)
+                continue;
+
+            unsigned int& write =
+                batchWrite[textureIndex];
+            for (unsigned int k = 0; k < 6u; ++k) {
+                g_vdp1TextureIndices[write++] =
+                    static_cast<std::uint16_t>(
+                        p * 6u + k);
+            }
+        }
+
+        unsigned int submittedBatches = 0u;
+        for (unsigned int t = 0; t < textureBucketCount; ++t) {
+            const TextureBatch& batch =
+                g_vdp1TextureBatches[t];
+            if (!batch.indexCount)
+                continue;
 
             if (texturedLit) {
                 sceGxmSetFragmentTexture(
-                    g_probeContext, 0,
-                    &g_vdp1GpuTextures[textureIndex].texture);
+                    g_probeContext,
+                    0,
+                    &g_vdp1GpuTextures[t].texture);
             }
 
             sceGxmDraw(
                 g_probeContext,
                 SCE_GXM_PRIMITIVE_TRIANGLES,
                 SCE_GXM_INDEX_FORMAT_U16,
-                g_vdp1Indices + p * 6u,
-                6);
+                g_vdp1TextureIndices + batch.firstIndex,
+                batch.indexCount);
+            ++submittedBatches;
         }
-        return true;
+
+        return submittedBatches != 0u ||
+               totalVisibleIndices == 0u;
     }
 
     sceGxmDraw(
