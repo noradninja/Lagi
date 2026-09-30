@@ -22,6 +22,7 @@ extern const unsigned char _binary_lagi_color_v_gxp_start[];
 extern const unsigned char _binary_lagi_color_f_gxp_start[];
 extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
+extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_debug_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_lit_f_gxp_start[];
 }
@@ -98,25 +99,20 @@ static bool g_textureVertexRegistered = false;
 static bool g_textureFragmentRegistered = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
+static SceGxmShaderPatcherId g_gouraudPayloadVertexProgramId{};
+static bool g_gouraudPayloadVertexRegistered = false;
+static SceGxmVertexProgram* g_gouraudPayloadVertexProgram = nullptr;
+static const SceGxmProgramParameter* g_gouraudPayloadWvpParam = nullptr;
+
 static SceGxmShaderPatcherId g_gouraudDebugFragmentProgramId{};
 static bool g_gouraudDebugFragmentRegistered = false;
 static SceGxmFragmentProgram* g_gouraudDebugFragmentProgram = nullptr;
-static const SceGxmProgramParameter* g_gouraudDebugQuadScreen01Param = nullptr;
-static const SceGxmProgramParameter* g_gouraudDebugQuadScreen23Param = nullptr;
-static const SceGxmProgramParameter* g_gouraudDebugGouraudRParam = nullptr;
-static const SceGxmProgramParameter* g_gouraudDebugGouraudGParam = nullptr;
-static const SceGxmProgramParameter* g_gouraudDebugGouraudBParam = nullptr;
 
 static SceGxmShaderPatcherId g_texturedLitFragmentProgramId{};
 static bool g_texturedLitFragmentRegistered = false;
 static SceGxmFragmentProgram* g_texturedLitFragmentProgram = nullptr;
 
 static const SceGxmProgramParameter* g_textureWvpParam = nullptr;
-static const SceGxmProgramParameter* g_texturedLitQuadScreen01Param = nullptr;
-static const SceGxmProgramParameter* g_texturedLitQuadScreen23Param = nullptr;
-static const SceGxmProgramParameter* g_texturedLitGouraudRParam = nullptr;
-static const SceGxmProgramParameter* g_texturedLitGouraudGParam = nullptr;
-static const SceGxmProgramParameter* g_texturedLitGouraudBParam = nullptr;
 static bool g_probeScenePassed = false;
 static azel::BasicWingDebugMesh g_basicWingCpuMesh{};
 static bool g_basicWingCpuReady = false;
@@ -141,7 +137,7 @@ static SceUID g_vdp1TextureVertexUid = -1;
 static SceUID g_vdp1GouraudVertexUid = -1;
 static SceUID g_vdp1TextureIndexUid = -1;
 static azel::DebugTextureVertex* g_vdp1TextureVertices = nullptr;
-static azel::DebugTextureVertex* g_vdp1GouraudVertices = nullptr;
+static azel::DebugGouraudPayloadVertex* g_vdp1GouraudVertices = nullptr;
 static std::uint16_t* g_vdp1TextureIndices = nullptr;
 
 struct TextureBatch {
