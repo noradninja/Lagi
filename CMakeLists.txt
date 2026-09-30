@@ -78,6 +78,8 @@ set(LAGI_TEXTURED_GOURAUD_NOQUANT_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textur
 set(LAGI_TEXTURED_GOURAUD_NOQUANT_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_gouraud_noquant_f_gxp.o")
 set(LAGI_TEXTURED_RGB555_NOGOURAUD_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_rgb555_nogouraud_f.gxp")
 set(LAGI_TEXTURED_RGB555_NOGOURAUD_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_rgb555_nogouraud_f_gxp.o")
+set(LAGI_TEXTURED_GOURAUD_FINALQUANT_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_gouraud_finalquant_f.gxp")
+set(LAGI_TEXTURED_GOURAUD_FINALQUANT_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_gouraud_finalquant_f_gxp.o")
 
 set(LAGI_GOURAUD_PAYLOAD_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_payload_v.gxp")
 set(LAGI_GOURAUD_PAYLOAD_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_payload_v_gxp.o")
@@ -330,6 +332,29 @@ add_custom_command(
 )
 
 add_custom_command(
+ OUTPUT "${LAGI_TEXTURED_GOURAUD_FINALQUANT_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/textured_gouraud_finalquant_f.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_TEXTURED_GOURAUD_FINALQUANT_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/textured_gouraud_finalquant_f.cg"
+ COMMENT "Compiling Lagi final-quantization Gouraud fragment shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURED_GOURAUD_FINALQUANT_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_textured_gouraud_finalquant_f.gxp" "${LAGI_TEXTURED_GOURAUD_FINALQUANT_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_TEXTURED_GOURAUD_FINALQUANT_F_GXP}"
+ COMMENT "Embedding Lagi final-quantization Gouraud GXP"
+ VERBATIM
+)
+
+add_custom_command(
  OUTPUT "${LAGI_TEXTURE_F_GXP}"
  COMMAND "${PSP2CGC_EXECUTABLE}"
   -profile sce_fp_psp2
@@ -372,6 +397,7 @@ set_source_files_properties(
  "${LAGI_TEXTURED_GOURAUD_NOINVERSE_F_OBJ}"
  "${LAGI_TEXTURED_GOURAUD_NOQUANT_F_OBJ}"
  "${LAGI_TEXTURED_RGB555_NOGOURAUD_F_OBJ}"
+ "${LAGI_TEXTURED_GOURAUD_FINALQUANT_F_OBJ}"
  "${LAGI_GOURAUD_PAYLOAD_V_OBJ}"
  "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}"
  PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
@@ -394,6 +420,7 @@ add_executable(lagi
  ${LAGI_TEXTURED_GOURAUD_NOINVERSE_F_OBJ}
  ${LAGI_TEXTURED_GOURAUD_NOQUANT_F_OBJ}
  ${LAGI_TEXTURED_RGB555_NOGOURAUD_F_OBJ}
+ ${LAGI_TEXTURED_GOURAUD_FINALQUANT_F_OBJ}
  ${LAGI_GOURAUD_PAYLOAD_V_OBJ}
  ${LAGI_TEXTURE_V_OBJ}
  ${LAGI_TEXTURE_F_OBJ}
