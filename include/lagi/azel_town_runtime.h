@@ -6,11 +6,37 @@
 
 namespace lagi::azel {
 
+struct TownRuntimeCollisionVertex {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+};
+
+struct TownRuntimeCollisionQuad {
+    std::uint16_t indices[4]{};
+    float normal[3]{};
+    std::uint16_t cmdSrca = 0;
+    std::uint16_t onCollisionScriptIndex = 0;
+};
+
+struct TownRuntimeCollisionModel {
+    float radius = 0.0f;
+    std::vector<TownRuntimeCollisionVertex> vertices;
+    std::vector<TownRuntimeCollisionQuad> quads;
+};
+
+struct TownRuntimeCollisionInstance {
+    std::uint32_t modelTableOffset = 0;
+    float position[3]{};
+    TownRuntimeCollisionModel model;
+};
+
 struct TownRuntimeCell {
     std::uint32_t ea = 0;
     float origin[3]{};
     std::uint32_t staticObjectListEA = 0;
     std::uint32_t collisionListEA = 0;
+    std::vector<TownRuntimeCollisionInstance> collisionInstances;
     bool valid = false;
 };
 
