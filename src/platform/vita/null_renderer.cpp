@@ -1283,6 +1283,88 @@ static ViewerMat4 viewerPerspective(
     return r;
 }
 
+static ViewerMat4 viewerLookAtLH(
+    const float eye[3],
+    const float target[3],
+    const float upPoint[3])
+{
+    auto normalize = [](float v[3]) {
+        const float lenSq =
+            v[0]*v[0] + v[1]*v[1] + v[2]*v[2];
+        if (lenSq <= 0.0000001f)
+            return;
+        const float inv = 1.0f / std::sqrt(lenSq);
+        v[0] *= inv; v[1] *= inv; v[2] *= inv;
+    };
+    auto cross = [](const float a[3], const float b[3], float out[3]) {
+        out[0] = a[1]*b[2] - a[2]*b[1];
+        out[1] = a[2]*b[0] - a[0]*b[2];
+        out[2] = a[0]*b[1] - a[1]*b[0];
+    };
+    auto dot = [](const float a[3], const float b[3]) {
+        return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+    };
+
+    float z[3] = {
+        target[0] - eye[0],
+        target[1] - eye[1],
+        target[2] - eye[2]
+    };
+    normalize(z);
+
+    float up[3] = {
+        upPoint[0] - eye[0],
+        upPoint[1] - eye[1],
+        upPoint[2] - eye[2]
+    };
+    normalize(up);
+
+    float x[3]{};
+    cross(up, z, x);
+    normalize(x);
+
+    float y[3]{};
+    cross(z, x, y);
+    normalize(y);
+
+    ViewerMat4 r = viewerIdentity();
+    r.m[0] = x[0]; r.m[4] = x[1]; r.m[8]  = x[2];
+    r.m[1] = y[0]; r.m[5] = y[1]; r.m[9]  = y[2];
+    r.m[2] = z[0]; r.m[6] = z[1]; r.m[10] = z[2];
+    r.m[12] = -dot(x, eye);
+    r.m[13] = -dot(y, eye);
+    r.m[14] = -dot(z, eye);
+    return r;
+}
+
+static ViewerMat4 buildAuthenticRoomWvp()
+{
+    constexpr float kPi = 3.14159265358979323846f;
+    const float fov =
+        g_staticRoomCpuMesh.cameraFovDegrees * kPi / 180.0f;
+
+    // The Saturn projection is authored for a 4:3 display. Until the GXM
+    // viewport is pillarboxed separately, use Vita's physical aspect here
+    // to preserve object proportions while keeping the authentic vertical
+    // 80-degree field of view and camera transform.
+    const float aspect =
+        static_cast<float>(kWidth) / static_cast<float>(kHeight);
+
+    const ViewerMat4 view =
+        viewerLookAtLH(
+            g_staticRoomCpuMesh.cameraPosition,
+            g_staticRoomCpuMesh.cameraTarget,
+            g_staticRoomCpuMesh.cameraUp);
+    const ViewerMat4 projection =
+        viewerPerspective(
+            fov,
+            aspect,
+            g_staticRoomCpuMesh.cameraNear,
+            g_staticRoomCpuMesh.cameraFar);
+
+    return viewerMul(view, projection);
+}
+
 static ViewerMat4 buildViewerWvp()
 {
     constexpr float kPi = 3.14159265358979323846f;
