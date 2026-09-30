@@ -43,8 +43,29 @@ float2 inverseBilinearReduced(
         max(0.0f, k1 * k1 - 4.0f * k0 * k2);
     float root = sqrt(disc);
 
-    float v1 = (-k1 - root) / (2.0f * k2);
-    float v2 = (-k1 + root) / (2.0f * k2);
+    float inv2k2 = inverse2.w;
+    float v1 = (-k1 - root) * inv2k2;
+    float v2 = (-k1 + root) * inv2k2;
+
+    bool v1Inside = v1 >= 0.0f && v1 <= 1.0f;
+    bool v2Inside = v2 >= 0.0f && v2 <= 1.0f;
+
+    // For fragments inside a normal convex Saturn quad, exactly one
+    // quadratic root maps back into the bilinear unit square. Test that
+    // candidate first so the common path pays for only one computeU()
+    // division. If it is not fully valid, fall back to the original exact
+    // two-root distance comparison.
+    if (v1Inside != v2Inside)
+    {
+        float candidateV = v1Inside ? v1 : v2;
+        float candidateU =
+            computeU(h, e, f, g, candidateV);
+
+        if (candidateU >= 0.0f &&
+            candidateU <= 1.0f)
+            return float2(candidateU, candidateV);
+    }
+
     float u1 = computeU(h, e, f, g, v1);
     float u2 = computeU(h, e, f, g, v2);
 
