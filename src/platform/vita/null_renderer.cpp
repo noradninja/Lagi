@@ -1539,54 +1539,6 @@ struct ViewerScreenPoint
     bool valid = false;
 };
 
-static bool objectBoundsVisible(
-    const ViewerMat4& wvp,
-    const azel::DebugObjectBounds& bounds)
-{
-    if (!bounds.valid)
-        return true;
-
-    bool allLeft = true;
-    bool allRight = true;
-    bool allBottom = true;
-    bool allTop = true;
-    bool allNear = true;
-    bool allFar = true;
-
-    for (unsigned int i = 0; i < 8u; ++i) {
-        const float x =
-            (i & 1u) ? bounds.max[0] : bounds.min[0];
-        const float y =
-            (i & 2u) ? bounds.max[1] : bounds.min[1];
-        const float z =
-            (i & 4u) ? bounds.max[2] : bounds.min[2];
-
-        const float clipX =
-            x * wvp.m[0] + y * wvp.m[4] +
-            z * wvp.m[8] + wvp.m[12];
-        const float clipY =
-            x * wvp.m[1] + y * wvp.m[5] +
-            z * wvp.m[9] + wvp.m[13];
-        const float clipZ =
-            x * wvp.m[2] + y * wvp.m[6] +
-            z * wvp.m[10] + wvp.m[14];
-        const float clipW =
-            x * wvp.m[3] + y * wvp.m[7] +
-            z * wvp.m[11] + wvp.m[15];
-
-        allLeft   &= (clipX < -clipW);
-        allRight  &= (clipX >  clipW);
-        allBottom &= (clipY < -clipW);
-        allTop    &= (clipY >  clipW);
-        allNear   &= (clipZ < 0.0f);
-        allFar    &= (clipZ > clipW);
-    }
-
-    return !(allLeft || allRight ||
-             allBottom || allTop ||
-             allNear || allFar);
-}
-
 static ViewerScreenPoint projectViewerPoint(
     const ViewerMat4& wvp,
     const azel::DebugColorVertex& v)
