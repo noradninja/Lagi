@@ -717,6 +717,22 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
     if (staticList.isNull())
         return false;
 
+    // sWorldGridCellTask::Init stores readSaturnVec3(cell), and Draw()
+    // translates the current matrix by that cell position before applying
+    // each 0x18-byte static object's local translation/rotation.
+    const std::array<float,3> cellTranslation = {{
+        static_cast<float>(readSaturnS32(cell + 0x00)) / 65536.0f,
+        static_cast<float>(readSaturnS32(cell + 0x04)) / 65536.0f,
+        static_cast<float>(readSaturnS32(cell + 0x08)) / 65536.0f
+    }};
+
+    lagi::platform::logging::writef(
+        "[RoomDebug] cell origin=(%.5f,%.5f,%.5f) EA=%08X\n",
+        cellTranslation[0],
+        cellTranslation[1],
+        cellTranslation[2],
+        static_cast<unsigned>(cell.m_offset));
+
     const char* modelBundleName = nullptr;
     switch (info.setupNpcFileIndex) {
     case 0: modelBundleName = "COMMON3.MCB"; break;
@@ -850,9 +866,9 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
                 }};
 
                 auto v = applyMat3(rotation, local);
-                v[0] += translation[0];
-                v[1] += translation[1];
-                v[2] += translation[2];
+                v[0] += translation[0] + cellTranslation[0];
+                v[1] += translation[1] + cellTranslation[1];
+                v[2] += translation[2] + cellTranslation[2];
 
                 DebugColorVertex dv{};
                 dv.x = v[0]; dv.y = v[1]; dv.z = v[2];
