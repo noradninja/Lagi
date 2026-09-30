@@ -1742,6 +1742,9 @@ static void updateTownPlayerRuntime()
     const float cameraRightX = cameraForwardZ;
     const float cameraRightZ = -cameraForwardX;
 
+    // Azel town mode 1 does not strafe: stick direction chooses a desired
+    // camera-relative heading, Edge turns toward it, then movement is always
+    // forward along Edge's facing direction.
     float desiredX =
         cameraRightX * inputX +
         cameraForwardX * inputForward;
