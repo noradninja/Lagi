@@ -279,6 +279,41 @@ If a LUT entry references VDP2 CRAM, or a room polygon uses a bank-color mode th
 
 When every room texture is resolved from the CGB alone, Mode 5 automatically switches to the native point-filtered textured VDP1 path. The debug screen reports the decoded texture count and `lagi.log` records the room color-mode distribution.
 
+## Initial ruin town camera bring-up
+
+The static room diagnostic now retains both normalized viewer geometry and untouched assembled town-space geometry. Modes 5/6 continue to use the normalized regression mesh; the new mode 7 uses original town-space coordinates.
+
+Pinned Azel derives the first ruin camera from Edge's initial NPC transform at `0x0605E990` when `setupCameraFollowMode()` calls `scriptFunction_6057058_sub0Sub0()`:
+
+```text
+focus = Edge.position + (0, 0x1800, 0)
+basis = rotate Y(Edge.yaw), then X(Edge.pitch)
+camera = focus + basis.Z * 0x199
+target = focus + basis.Z * -0x1000
+up = camera + (0, 0x10000, 0)
+```
+
+Lagi now reconstructs that exact initial camera from the overlay and preserves the ruin near/far clip values (`0x800` / `0xF000`).
+
+Mode 7 also matches Azel's Saturn VDP1 projection math rather than substituting a generic 80-degree perspective. For mode 0, `initVDP1Projection(DEG_80 / 2, 0)` computes separate normalized X/Y scales from the 352x224 VDP1 viewport and the original `352/320` and `224/240` factors. The Vita output applies a 4:3 display correction to X so the Saturn-authored geometry keeps its intended physical proportions on the 16:9 framebuffer.
+
+For mode 7, lighting distance falloff is no longer pinned to table entry zero. Lagi computes view-space depth from the authentic world-space quad position and initial camera, then reproduces Azel's `computeViewDepth()` + `GetDistanceFalloff()` fixed-point table-index calculation.
+
+The remaining presentation difference is horizontal clipping: the projection is corrected into the central 4:3 region, but GXM still clips against the full Vita viewport. A later viewport/scissor step can reproduce the original Saturn horizontal clip boundary exactly.
+
+Viewer modes now are:
+
+```text
+0 textured Basic Wing baseline
+1 Basic Wing + RGB555 Gouraud
+2 Basic Wing Gouraud grayscale
+3 Basic Wing polygon debug
+4 Basic Wing wireframe
+5 ruin room textured, normalized diagnostic camera
+6 ruin room textured + lighting, normalized diagnostic camera
+7 ruin room world-space + initial town camera + depth-correct lighting
+```
+
 ## First ruin room lighting bring-up
 
 The reconstructed ruin room now retains the original per-polygon lighting payload and resolves the first scene light directly from the town script data.
