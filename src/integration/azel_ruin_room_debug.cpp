@@ -156,7 +156,14 @@ static bool recoverInitialRuinCamera(
         return false;
 
     constexpr u32 kEdgeEA = 0x0605E990u;
-    if (kEdgeEA < overlay->m_base)
+    constexpr u32 kScriptEA = 0x06054398u;
+    constexpr u32 kScanBytes = 0x800u;
+    constexpr u32 kSetNpcLocationEA = 0x0605AEE0u;
+    constexpr u32 kSetNpcOrientationEA = 0x0605AF0Eu;
+    constexpr u32 kSetupCameraFollowEA = 0x06057058u;
+
+    if (kEdgeEA < overlay->m_base ||
+        kScriptEA < overlay->m_base)
         return false;
 
     const u32 edgeOffset = kEdgeEA - overlay->m_base;
@@ -167,19 +174,101 @@ static bool recoverInitialRuinCamera(
         overlay->m_data,
         overlay->m_data + overlay->m_dataSize);
 
+    s32 edgePosRaw[3] = {
+        bes32(view, edgeOffset + 0x08u),
+        bes32(view, edgeOffset + 0x0Cu),
+        bes32(view, edgeOffset + 0x10u)
+    };
+    s32 edgeRotRaw[3] = {
+        bes32(view, edgeOffset + 0x14u),
+        bes32(view, edgeOffset + 0x18u),
+        bes32(view, edgeOffset + 0x1Cu)
+    };
+
+    bool sawScriptLocation = false;
+    bool sawScriptOrientation = false;
+    bool sawSetupCameraFollow = false;
+
+    const u32 scriptStart = kScriptEA - overlay->m_base;
+    const u32 scriptEnd = std::min<u32>(
+        overlay->m_dataSize,
+        scriptStart + kScanBytes);
+
+    // Replay the camera-relevant native calls in script order up to the
+    // setupCameraFollowMode() call. This mirrors the startup state actually
+    // visible to scriptFunction_6057058_sub0Sub0(), instead of using the raw
+    // NPC definition before the script has repositioned Edge.
+    for (u32 p = scriptStart; p + 8u <= scriptEnd; ++p) {
+        if (view[p] != 7u)
+            continue;
+
+        const u8 argc = view[p + 1u];
+        if (argc > 4u)
+            continue;
+
+        u32 callData = p + 2u;
+        callData = (callData + 3u) & ~3u;
+
+        if (callData + 4u +
+                static_cast<u32>(argc) * 4u >
+            overlay->m_dataSize)
+            continue;
+
+        const u32 functionEA = be32(view, callData);
+
+        if (functionEA == kSetNpcLocationEA &&
+            argc == 4u) {
+            const s32 npcIndex =
+                bes32(view, callData + 4u);
+            if (npcIndex == 0) {
+                edgePosRaw[0] =
+                    bes32(view, callData + 8u);
+                edgePosRaw[1] =
+                    bes32(view, callData + 12u);
+                edgePosRaw[2] =
+                    bes32(view, callData + 16u);
+                sawScriptLocation = true;
+            }
+        } else if (
+            functionEA == kSetNpcOrientationEA &&
+            argc == 4u) {
+            const s32 npcIndex =
+                bes32(view, callData + 4u);
+            if (npcIndex == 0) {
+                edgeRotRaw[0] =
+                    bes32(view, callData + 8u);
+                edgeRotRaw[1] =
+                    bes32(view, callData + 12u);
+                edgeRotRaw[2] =
+                    bes32(view, callData + 16u);
+                sawScriptOrientation = true;
+            }
+        } else if (
+            functionEA == kSetupCameraFollowEA &&
+            argc == 0u) {
+            sawSetupCameraFollow = true;
+            break;
+        }
+    }
+
+    if (!sawSetupCameraFollow) {
+        lagi::platform::logging::writef(
+            "[RoomDebug] setupCameraFollowMode not found while recovering initial camera\n");
+        return false;
+    }
+
     const std::array<float,3> edgePos = {{
-        static_cast<float>(bes32(view, edgeOffset + 0x08u)) / 65536.0f,
-        static_cast<float>(bes32(view, edgeOffset + 0x0Cu)) / 65536.0f,
-        static_cast<float>(bes32(view, edgeOffset + 0x10u)) / 65536.0f
+        static_cast<float>(edgePosRaw[0]) / 65536.0f,
+        static_cast<float>(edgePosRaw[1]) / 65536.0f,
+        static_cast<float>(edgePosRaw[2]) / 65536.0f
     }};
 
-    const s32 edgeRotXRaw = bes32(view, edgeOffset + 0x14u);
-    const s32 edgeRotYRaw = bes32(view, edgeOffset + 0x18u);
-
     const std::int16_t edgeRotX =
-        static_cast<std::int16_t>((edgeRotXRaw >> 16) & 0x0FFF);
+        static_cast<std::int16_t>(
+            (edgeRotRaw[0] >> 16) & 0x0FFF);
     const std::int16_t edgeRotY =
-        static_cast<std::int16_t>((edgeRotYRaw >> 16) & 0x0FFF);
+        static_cast<std::int16_t>(
+            (edgeRotRaw[1] >> 16) & 0x0FFF);
 
     // scriptFunction_6057058_sub0Sub0():
     // m18_position = Edge position + (0, 0x1800, 0)
@@ -197,8 +286,10 @@ static bool recoverInitialRuinCamera(
         cameraBasis.m[2][2]
     }};
 
-    constexpr float kCameraOffset = 0x199 / 65536.0f;
-    constexpr float kTargetOffset = -0x1000 / 65536.0f;
+    constexpr float kCameraOffset =
+        0x199 / 65536.0f;
+    constexpr float kTargetOffset =
+        -0x1000 / 65536.0f;
 
     for (unsigned int i = 0; i < 3; ++i) {
         out.cameraPosition[i] =
@@ -215,12 +306,18 @@ static bool recoverInitialRuinCamera(
     out.cameraValid = true;
 
     lagi::platform::logging::writef(
-        "[RoomDebug] initial camera edgePos=(%.5f,%.5f,%.5f) rot=(%03X,%03X) cam=(%.5f,%.5f,%.5f) target=(%.5f,%.5f,%.5f) fov=%.1f near=%.5f far=%.5f\n",
+        "[RoomDebug] initial camera edgePos=(%.5f,%.5f,%.5f) rot=(%03X,%03X) scriptedPos=%s scriptedRot=%s cam=(%.5f,%.5f,%.5f) target=(%.5f,%.5f,%.5f) fov=%.1f near=%.5f far=%.5f\n",
         edgePos[0], edgePos[1], edgePos[2],
         static_cast<unsigned>(edgeRotX) & 0xFFFu,
         static_cast<unsigned>(edgeRotY) & 0xFFFu,
-        out.cameraPosition[0], out.cameraPosition[1], out.cameraPosition[2],
-        out.cameraTarget[0], out.cameraTarget[1], out.cameraTarget[2],
+        sawScriptLocation ? "yes" : "no",
+        sawScriptOrientation ? "yes" : "no",
+        out.cameraPosition[0],
+        out.cameraPosition[1],
+        out.cameraPosition[2],
+        out.cameraTarget[0],
+        out.cameraTarget[1],
+        out.cameraTarget[2],
         out.cameraFovDegrees,
         out.cameraNear,
         out.cameraFar);
