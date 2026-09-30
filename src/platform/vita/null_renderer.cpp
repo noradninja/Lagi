@@ -2925,7 +2925,10 @@ static void renderBasicWingViewer()
 
     const int viewerModeCount =
         g_staticRoomCpuReady
-            ? (g_staticRoomCpuMesh.lightingValid ? 7 : 6)
+            ? (g_staticRoomCpuMesh.cameraValid &&
+               g_staticRoomCpuMesh.lightingValid
+                ? 8
+                : (g_staticRoomCpuMesh.lightingValid ? 7 : 6))
             : 5;
     if (input::prev_mode_pressed())
         g_viewMode = (g_viewMode + viewerModeCount - 1) % viewerModeCount;
@@ -2937,26 +2940,39 @@ static void renderBasicWingViewer()
     const bool roomLitMode =
         g_staticRoomCpuReady &&
         g_staticRoomCpuMesh.lightingValid &&
-        g_viewMode == 6;
+        g_viewMode >= 6;
+    const bool roomAuthenticCameraMode =
+        g_staticRoomCpuReady &&
+        g_staticRoomCpuMesh.cameraValid &&
+        g_viewMode == 7;
 
     if (!roomMode && g_residentVdp1Model != ResidentVdp1Model::BasicWing) {
         if (!prepare_vdp1_model(basicWingVdp1Source()))
             return;
         g_residentVdp1Model = ResidentVdp1Model::BasicWing;
         applyBasicWingAnimationFrame(g_basicWingAnimationFrame);
-    } else if (roomMode &&
-               g_residentVdp1Model != ResidentVdp1Model::StaticRoom) {
-        if (!prepare_vdp1_model(staticRoomVdp1Source()))
-            return;
-        g_residentVdp1Model = ResidentVdp1Model::StaticRoom;
+    } else if (roomMode) {
+        const ResidentVdp1Model desiredResident =
+            roomAuthenticCameraMode
+                ? ResidentVdp1Model::StaticRoomAuthentic
+                : ResidentVdp1Model::StaticRoomDiagnostic;
+
+        if (g_residentVdp1Model != desiredResident) {
+            if (!prepare_vdp1_model(
+                    staticRoomVdp1Source(
+                        roomAuthenticCameraMode)))
+                return;
+            g_residentVdp1Model = desiredResident;
+        }
     }
 
     if (!roomMode && g_basicWingCpuMesh.animationValid)
         advanceBasicWingAnimation();
 
-    // Geometry stays in normalized model space. Rotation, camera placement,
-    // and perspective now happen entirely through the WVP uniform.
-    const ViewerMat4 wvp = buildViewerWvp();
+    const ViewerMat4 wvp =
+        roomAuthenticCameraMode
+            ? buildAuthenticRoomWvp()
+            : buildViewerWvp();
 
     constexpr int gxmPitch = 1024;
 
@@ -2999,14 +3015,17 @@ static void renderBasicWingViewer()
         updateViewerAzelLighting();
 
     if (roomLitMode)
-        updateStaticRoomAzelLighting();
+        updateStaticRoomAzelLighting(
+            roomAuthenticCameraMode);
 
     Vdp1DrawState drawState{};
     std::memcpy(drawState.wvp, wvp.m, sizeof(drawState.wvp));
     drawState.mode = renderMode;
 
     const Vdp1ModelSource model =
-        roomMode ? staticRoomVdp1Source() : basicWingVdp1Source();
+        roomMode
+            ? staticRoomVdp1Source(roomAuthenticCameraMode)
+            : basicWingVdp1Source();
     if (!submit_vdp1_model(model, drawState)) {
         sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
