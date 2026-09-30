@@ -1335,15 +1335,12 @@ static ViewerScreenPoint projectViewerPoint(
 }
 
 
-static void generateViewerAzelFalloff(
+static void generateAzelFalloff(
+    std::uint32_t r4,
+    std::uint32_t r5,
+    std::uint32_t r6,
     std::int16_t out[32][3])
 {
-    // Exact Azel generateMasterLightFalloffMap inputs used by the
-    // dragon morph viewer: generateLightFalloffMap(0x030102, 0, 0).
-    constexpr std::uint32_t r4 = 0x00030102u;
-    constexpr std::uint32_t r5 = 0x00000000u;
-    constexpr std::uint32_t r6 = 0x00000000u;
-
     auto s8 = [](std::uint32_t value) -> std::int32_t {
         return static_cast<std::int8_t>(value & 0xFFu);
     };
@@ -1384,6 +1381,16 @@ static void generateViewerAzelFalloff(
         r6t += r2t;
         r7t += r3t;
     }
+}
+
+static void generateViewerAzelFalloff(
+    std::int16_t out[32][3])
+{
+    generateAzelFalloff(
+        0x00030102u,
+        0x00000000u,
+        0x00000000u,
+        out);
 }
 
 static void updateViewerAzelLighting()
@@ -1496,6 +1503,111 @@ static void updateViewerAzelLighting()
                     (accum[channel] >> 8) & 0x1F;
                 g_basicWingCpuMesh.gouraud555[p]
                     .corner[corner][channel] =
+                    (static_cast<float>(gouraud5) - 16.0f) /
+                    31.0f;
+            }
+        }
+    }
+}
+
+static void updateStaticRoomAzelLighting()
+{
+    if (!g_staticRoomCpuReady ||
+        !g_staticRoomCpuMesh.lightingValid ||
+        g_staticRoomCpuMesh.gouraud555.size() !=
+            g_staticRoomCpuMesh.polygons)
+        return;
+
+    std::int16_t falloffMap[32][3]{};
+    generateAzelFalloff(
+        g_staticRoomCpuMesh.lightFalloff[0],
+        g_staticRoomCpuMesh.lightFalloff[1],
+        g_staticRoomCpuMesh.lightFalloff[2],
+        falloffMap);
+
+    // In the current diagnostic viewer the room geometry is normalized and
+    // the real town camera has not been brought up yet. Use the nearest
+    // Saturn falloff entry while preserving the exact scene light direction,
+    // colors, lighting modes, per-corner normals, and 5-bit quantization.
+    // Once the live town camera is connected this becomes the true
+    // per-quad depth-selected falloff table entry.
+    const int fallR = falloffMap[0][0];
+    const int fallG = falloffMap[0][1];
+    const int fallB = falloffMap[0][2];
+
+    const int lightVector[3] = {
+        static_cast<int>(std::lround(
+            -g_staticRoomCpuMesh.lightDirection[0] * 4096.0f)),
+        static_cast<int>(std::lround(
+            -g_staticRoomCpuMesh.lightDirection[1] * 4096.0f)),
+        static_cast<int>(std::lround(
+            -g_staticRoomCpuMesh.lightDirection[2] * 4096.0f))
+    };
+
+    for (unsigned int p = 0;
+         p < g_staticRoomCpuMesh.polygons; ++p) {
+        const auto& record =
+            g_staticRoomCpuMesh.polygonRecords[p];
+        const unsigned int mode =
+            (record.lightingControl >> 8) & 3u;
+
+        auto& out = g_staticRoomCpuMesh.gouraud555[p];
+        out = {};
+
+        if (mode == 0u || record.lightingCount == 0u)
+            continue;
+
+        for (unsigned int corner = 0; corner < 4u; ++corner) {
+            const unsigned int normalIndex =
+                mode == 1u ? 0u : corner;
+            if (normalIndex >= record.lightingCount)
+                continue;
+
+            const auto& lighting =
+                record.lighting[normalIndex];
+
+            int dotProduct =
+                static_cast<int>(lighting.normal[0]) * lightVector[0] +
+                static_cast<int>(lighting.normal[1]) * lightVector[1] +
+                static_cast<int>(lighting.normal[2]) * lightVector[2];
+
+            int accum[3] = {fallR, fallG, fallB};
+
+            if (mode == 2u && lighting.hasColor) {
+                accum[0] +=
+                    static_cast<std::int16_t>(lighting.color[0]);
+                accum[1] +=
+                    static_cast<std::int16_t>(lighting.color[1]);
+                accum[2] +=
+                    static_cast<std::int16_t>(lighting.color[2]);
+            }
+
+            if (dotProduct > 0) {
+                const int dotHi =
+                    static_cast<int>(
+                        static_cast<std::uint32_t>(
+                            dotProduct) >> 16);
+                accum[0] +=
+                    static_cast<int>(
+                        g_staticRoomCpuMesh.lightColor[0]) * dotHi;
+                accum[1] +=
+                    static_cast<int>(
+                        g_staticRoomCpuMesh.lightColor[1]) * dotHi;
+                accum[2] +=
+                    static_cast<int>(
+                        g_staticRoomCpuMesh.lightColor[2]) * dotHi;
+            }
+
+            for (int channel = 0; channel < 3; ++channel) {
+                accum[channel] =
+                    std::max(
+                        0,
+                        std::min(
+                            0x1F00,
+                            accum[channel]));
+                const int gouraud5 =
+                    (accum[channel] >> 8) & 0x1F;
+                out.corner[corner][channel] =
                     (static_cast<float>(gouraud5) - 16.0f) /
                     31.0f;
             }
