@@ -279,6 +279,33 @@ If a LUT entry references VDP2 CRAM, or a room polygon uses a bank-color mode th
 
 When every room texture is resolved from the CGB alone, Mode 5 automatically switches to the native point-filtered textured VDP1 path. The debug screen reports the decoded texture count and `lagi.log` records the room color-mode distribution.
 
+## First ruin room lighting bring-up
+
+The reconstructed ruin room now retains the original per-polygon lighting payload and resolves the first scene light directly from the town script data.
+
+Pinned Azel establishes the lighting path as:
+
+```text
+initial town script @ 0x06054398
+    -> townCamera_setup(anglesEA, colorEA)
+    -> rotate Y then X
+    -> column 2 = world light direction
+    -> setupLight(...)
+    -> generateLightFalloffMap(colorEA+3, +6, +9)
+```
+
+Lagi scans the initial ruin script for the registered `townCamera_setup` call at `0x0605C55C`, validates its two overlay-pointer arguments, and recovers:
+
+- the scene light direction,
+- directional RGB intensity,
+- all three falloff RGB triplets.
+
+Static-object normals are rotated by each object's original Saturn Z/Y/X transform before being stored in the flattened room mesh. The original `lightingControl` mode and mode-2 per-corner color payload remain intact.
+
+Viewer mode 5 remains the hardware-proven unlit textured room baseline. When scene lighting resolves, viewer mode 6 uses the same quad-bilinear, 5-bit-quantized Gouraud path already proven by the Basic Wing viewer.
+
+The current diagnostic room is normalized and does not yet use the real town camera, so mode 6 deliberately uses the nearest entry of the authentic 32-entry falloff map. Directional light, scene RGB, polygon lighting modes, transformed normals, mode-2 colors, and final RGB555 quantization are authentic. Exact per-quad distance falloff will be enabled when the live town camera/matrix path replaces the diagnostic framing.
+
 ## First ruin room geometry bring-up
 
 M3C now reconstructs the first validated 1x1 ruin town cell directly from `TWN_RUIN.PRG` and the town model bundle selected by that setup.
