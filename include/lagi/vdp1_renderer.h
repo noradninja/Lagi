@@ -80,6 +80,7 @@ struct Vdp1ModelSource {
 struct Vdp1DrawState {
     float wvp[16]{};
     Vdp1RenderMode mode = Vdp1RenderMode::Textured;
+    bool reverseCullWinding = false;
 };
 
 // Upload one model into the current native Vita VDP1 resource slot. M1 keeps

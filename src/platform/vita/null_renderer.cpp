@@ -3483,7 +3483,7 @@ bool submit_vdp1_model(
     const SceGxmCullMode cullMode =
         wireframe
             ? SCE_GXM_CULL_NONE
-            : (drawState.roomMode
+            : (drawState.reverseCullWinding
                 ? SCE_GXM_CULL_CCW
                 : SCE_GXM_CULL_CW);
     sceGxmSetCullMode(g_probeContext, cullMode);
@@ -3939,6 +3939,7 @@ static void renderBasicWingViewer()
     Vdp1DrawState drawState{};
     std::memcpy(drawState.wvp, wvp.m, sizeof(drawState.wvp));
     drawState.mode = renderMode;
+    drawState.reverseCullWinding = roomMode;
 
     const Vdp1ModelSource model =
         roomMode
