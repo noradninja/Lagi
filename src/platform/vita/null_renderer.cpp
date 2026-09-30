@@ -2257,7 +2257,7 @@ static void updateTownPlayerRuntime()
     // camera-relative heading, Edge turns toward it, then movement is always
     // forward along Edge's facing direction.
     float desiredX =
-        cameraRightX * inputX +
+        cameraRightX * -inputX +
         cameraForwardX * inputForward;
     float desiredZ =
         cameraRightZ * inputX +
