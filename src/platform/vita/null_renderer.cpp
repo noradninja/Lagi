@@ -2932,6 +2932,12 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
                 "[PASS] RUIN INITIAL TOWN CAMERA",
                 0xFF80E0FFu);
         }
+        if (!mesh.objectStates.empty() &&
+            mesh.cellRadius > 0.0f) {
+            status(
+                "[PASS] RUIN AZEL GRID CULL + LOD",
+                0xFF80E0FFu);
+        }
     } else if (mesh.texturesValid) {
         status("[INFO] RUIN ROOM TEXTURES NEED CRAM", 0xFF80C0FFu);
     } else {
@@ -3446,7 +3452,13 @@ static void renderBasicWingViewer()
          renderMode == Vdp1RenderMode::GouraudGrayscale))
         updateViewerAzelLighting();
 
-    if (roomLitMode)
+    bool azelTownCellVisible = true;
+    if (roomAuthenticCameraMode) {
+        azelTownCellVisible =
+            updateStaticRoomAzelTownVisibility();
+    }
+
+    if (roomLitMode && azelTownCellVisible)
         updateStaticRoomAzelLighting(
             roomAuthenticCameraMode);
 
@@ -3458,10 +3470,13 @@ static void renderBasicWingViewer()
         roomMode
             ? staticRoomVdp1Source(roomAuthenticCameraMode)
             : basicWingVdp1Source();
-    if (!submit_vdp1_model(model, drawState)) {
-        sceGxmEndScene(g_probeContext, nullptr, nullptr);
-        sceGxmFinish(g_probeContext);
-        return;
+
+    if (azelTownCellVisible) {
+        if (!submit_vdp1_model(model, drawState)) {
+            sceGxmEndScene(g_probeContext, nullptr, nullptr);
+            sceGxmFinish(g_probeContext);
+            return;
+        }
     }
 
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
