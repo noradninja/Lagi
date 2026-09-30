@@ -1270,23 +1270,76 @@ static ViewerMat4 viewerTranslation(float x, float y, float z)
     return r;
 }
 
-static ViewerMat4 viewerPerspective(
-    float fovYRadians, float aspect, float nearZ, float farZ)
+static void azelProjectionScales(
+    float fullFovDegrees,
+    unsigned int mode,
+    float& outXScale,
+    float& outYScale)
 {
-    // Row-vector, left-handed perspective for shader:
-    //     mul(float4(position, 1), wvp)
-    // Maps positive view-space Z into the normalized depth interval.
-    const float yScale = 1.0f / std::tan(fovYRadians * 0.5f);
-    const float xScale = yScale / aspect;
-    const float zScale = farZ / (farZ - nearZ);
+    constexpr float kPi = 3.14159265358979323846f;
 
-    ViewerMat4 r{};
-    r.m[0] = xScale;
-    r.m[5] = yScale;
-    r.m[10] = zScale;
-    r.m[11] = 1.0f;
-    r.m[14] = -nearZ * zScale;
-    return r;
+    const float halfFovRadians =
+        (fullFovDegrees * 0.5f) * kPi / 180.0f;
+    const float cotHalf =
+        1.0f / std::tan(halfFovRadians);
+
+    float widthFactor = 352.0f / 320.0f;
+    float heightFactor = 224.0f / 240.0f;
+
+    if (mode == 1u) {
+        widthFactor = 264.0f / 320.0f;
+    } else if (mode == 2u) {
+        widthFactor = 264.0f / 320.0f;
+        heightFactor = 168.0f / 240.0f;
+    }
+
+    // Azel initVDP1Projection():
+    //   r0 = (352 / 2) * cot(halfFov)
+    //   widthScale  = r0 * widthFactor
+    //   heightScale = r0 * heightFactor
+    // 3dEngine_flush then normalizes those pixel-space projection scales by
+    // half of the 352x224 VDP1 viewport.
+    outXScale =
+        cotHalf * widthFactor;
+    outYScale =
+        cotHalf *
+        (176.0f / 112.0f) *
+        heightFactor;
+
+    // The Saturn 352x224 image is authored for a 4:3 display. The Vita
+    // framebuffer is 16:9, so compress X into the centered 4:3 presentation
+    // area while preserving Azel's original projection math.
+    const float intendedAspect = 4.0f / 3.0f;
+    const float vitaAspect =
+        static_cast<float>(kWidth) /
+        static_cast<float>(kHeight);
+    outXScale *= intendedAspect / vitaAspect;
+}
+
+static ViewerMat4 buildAzelProjection(
+    float fullFovDegrees,
+    unsigned int mode,
+    float nearZ,
+    float farZ)
+{
+    float xScale = 1.0f;
+    float yScale = 1.0f;
+    azelProjectionScales(
+        fullFovDegrees,
+        mode,
+        xScale,
+        yScale);
+
+    const float zScale =
+        farZ / (farZ - nearZ);
+
+    ViewerMat4 projection{};
+    projection.m[0] = xScale;
+    projection.m[5] = yScale;
+    projection.m[10] = zScale;
+    projection.m[11] = 1.0f;
+    projection.m[14] = -nearZ * zScale;
+    return projection;
 }
 
 static ViewerMat4 viewerLookAtLH(
@@ -1345,78 +1398,130 @@ static ViewerMat4 viewerLookAtLH(
 
 static ViewerMat4 buildAuthenticRoomWvp()
 {
-    constexpr float kPi = 3.14159265358979323846f;
-
-    // Match Azel initVDP1Projection(DEG_80 / 2, 0):
-    //   r0          = 176 * cot(40 degrees)
-    //   widthScale  = r0 * (352 / 320)
-    //   heightScale = r0 * (224 / 240)
-    // and convert the Saturn pixel projection to normalized coordinates.
-    const float halfFov =
-        (g_staticRoomCpuMesh.cameraFovDegrees * 0.5f) *
-        kPi / 180.0f;
-    const float cotHalf = 1.0f / std::tan(halfFov);
-    const float saturnXScale =
-        cotHalf * (352.0f / 320.0f);
-    const float saturnYScale =
-        cotHalf * (176.0f / 112.0f) *
-        (224.0f / 240.0f);
-
-    // Saturn's 352x224 image is intended for a 4:3 display. Scale X into
-    // the central 4:3 region of Vita's 16:9 framebuffer so geometry keeps
-    // the intended physical proportions. A later viewport/scissor pass can
-    // make the original horizontal clipping boundary exact as well.
-    const float intendedAspect = 4.0f / 3.0f;
-    const float vitaAspect =
-        static_cast<float>(kWidth) / static_cast<float>(kHeight);
-    const float xDisplayCorrection =
-        intendedAspect / vitaAspect;
-
-    const float nearZ =
-        g_staticRoomCpuMesh.cameraNear;
-    const float farZ =
-        g_staticRoomCpuMesh.cameraFar;
-    const float zScale =
-        farZ / (farZ - nearZ);
-
-    ViewerMat4 projection{};
-    projection.m[0] =
-        saturnXScale * xDisplayCorrection;
-    projection.m[5] = saturnYScale;
-    projection.m[10] = zScale;
-    projection.m[11] = 1.0f;
-    projection.m[14] = -nearZ * zScale;
-
     const ViewerMat4 view =
         viewerLookAtLH(
             g_staticRoomCpuMesh.cameraPosition,
             g_staticRoomCpuMesh.cameraTarget,
             g_staticRoomCpuMesh.cameraUp);
 
+    const ViewerMat4 projection =
+        buildAzelProjection(
+            g_staticRoomCpuMesh.cameraFovDegrees,
+            0u,
+            g_staticRoomCpuMesh.cameraNear,
+            g_staticRoomCpuMesh.cameraFar);
+
     return viewerMul(view, projection);
 }
 
-static ViewerMat4 buildViewerWvp()
+static ViewerMat4 buildViewerWvp(bool roomMode)
 {
-    constexpr float kPi = 3.14159265358979323846f;
-    constexpr float kFovY = 50.0f * kPi / 180.0f;
-    constexpr float kAspect =
-        static_cast<float>(kWidth) / static_cast<float>(kHeight);
-    constexpr float kNearZ = 0.10f;
-    constexpr float kFarZ = 100.0f;
-    const float cameraDistance = g_viewDistance;
+    constexpr float kDefaultFovDegrees = 80.0f;
+    constexpr float kDefaultNear =
+        static_cast<float>(0x999) / 65536.0f;
+    constexpr float kDefaultFar =
+        static_cast<float>(0x200000) / 65536.0f;
 
-    const ViewerMat4 yaw = viewerRotationY(g_viewYaw);
-    const ViewerMat4 pitch = viewerRotationX(g_viewPitch);
-    const ViewerMat4 view =
-        viewerTranslation(0.0f, 0.0f, cameraDistance);
+    const float* center =
+        roomMode
+            ? g_staticRoomViewCenter
+            : g_basicWingViewCenter;
+
+    const ViewerMat4 centerToOrigin =
+        viewerTranslation(
+            -center[0],
+            -center[1],
+            -center[2]);
+    const ViewerMat4 yaw =
+        viewerRotationY(g_viewYaw);
+    const ViewerMat4 pitch =
+        viewerRotationX(g_viewPitch);
+    const ViewerMat4 camera =
+        viewerTranslation(
+            0.0f,
+            0.0f,
+            g_viewDistance);
     const ViewerMat4 projection =
-        viewerPerspective(kFovY, kAspect, kNearZ, kFarZ);
+        buildAzelProjection(
+            kDefaultFovDegrees,
+            0u,
+            kDefaultNear,
+            kDefaultFar);
 
-    // Shader uses a row vector, so transforms apply left-to-right.
+    // Geometry remains in native Azel game space. Debug framing is purely a
+    // view transform: translate the model/scene center to the origin, orbit
+    // it, then place the camera far enough away to fit it.
     return viewerMul(
-        viewerMul(viewerMul(yaw, pitch), view),
+        viewerMul(
+            viewerMul(
+                viewerMul(
+                    centerToOrigin,
+                    yaw),
+                pitch),
+            camera),
         projection);
+}
+
+static void computeDebugFrame(
+    const std::vector<azel::DebugColorVertex>& vertices,
+    float outCenter[3],
+    float& outDistance)
+{
+    if (vertices.empty()) {
+        outCenter[0] = outCenter[1] = outCenter[2] = 0.0f;
+        outDistance = 3.0f;
+        return;
+    }
+
+    float minV[3] = {
+        vertices[0].x,
+        vertices[0].y,
+        vertices[0].z
+    };
+    float maxV[3] = {
+        vertices[0].x,
+        vertices[0].y,
+        vertices[0].z
+    };
+
+    for (const auto& v : vertices) {
+        minV[0] = std::min(minV[0], v.x);
+        minV[1] = std::min(minV[1], v.y);
+        minV[2] = std::min(minV[2], v.z);
+        maxV[0] = std::max(maxV[0], v.x);
+        maxV[1] = std::max(maxV[1], v.y);
+        maxV[2] = std::max(maxV[2], v.z);
+    }
+
+    for (unsigned int i = 0; i < 3; ++i)
+        outCenter[i] = (minV[i] + maxV[i]) * 0.5f;
+
+    float radiusSq = 0.0f;
+    for (const auto& v : vertices) {
+        const float dx = v.x - outCenter[0];
+        const float dy = v.y - outCenter[1];
+        const float dz = v.z - outCenter[2];
+        radiusSq = std::max(
+            radiusSq,
+            dx*dx + dy*dy + dz*dz);
+    }
+
+    const float radius =
+        std::max(std::sqrt(radiusSq), 0.01f);
+
+    float xScale = 1.0f;
+    float yScale = 1.0f;
+    azelProjectionScales(
+        80.0f,
+        0u,
+        xScale,
+        yScale);
+
+    // Keep a little margin and account for the bounding sphere extending
+    // toward the camera. This changes only camera distance, never model scale.
+    outDistance =
+        radius +
+        radius * std::max(xScale, yScale) / 0.72f;
 }
 
 struct ViewerScreenPoint
