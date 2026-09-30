@@ -1,0 +1,80 @@
+float cross2d(float2 a, float2 b)
+{
+    return a.x * b.y - a.y * b.x;
+}
+
+float2 inverseBilinearNewton1(
+    float2 p,
+    float4 inverse0,
+    float4 inverse1)
+{
+    float2 a = inverse0.xy;
+    float2 e = inverse0.zw;
+    float2 f = inverse1.xy;
+    float2 g = inverse1.zw;
+
+    float2 h = p - a;
+
+    // Cheap affine inverse as the initial estimate.
+    float det0 = cross2d(e, f);
+    if (abs(det0) < 0.0001f)
+        return float2(0.5f, 0.5f);
+
+    float invDet0 = 1.0f / det0;
+    float u = cross2d(h, f) * invDet0;
+    float v = cross2d(e, h) * invDet0;
+
+    // One Newton step on:
+    // P(u,v) = a + e*u + f*v + g*u*v
+    float2 du = e + g * v;
+    float2 dv = f + g * u;
+    float2 q =
+        a + e * u + f * v + g * (u * v);
+    float2 r = q - p;
+
+    float det = cross2d(du, dv);
+    if (abs(det) >= 0.0001f)
+    {
+        float invDet = 1.0f / det;
+        u -= cross2d(r, dv) * invDet;
+        v -= cross2d(du, r) * invDet;
+    }
+
+    return saturate(float2(u, v));
+}
+
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    float4 inverse0 : TEXCOORD1,
+    float4 inverse1 : TEXCOORD2,
+    float4 inverse2 : TEXCOORD3,
+    float4 gouraudR : TEXCOORD4,
+    float4 gouraudG : TEXCOORD5,
+    float4 gouraudB : TEXCOORD6,
+    float4 fragCoord : WPOS,
+    uniform sampler2D tex)
+{
+    float4 color = tex2D(tex, vTexcoord);
+    if (color.a < 0.5f)
+        discard;
+
+    float2 st =
+        inverseBilinearNewton1(
+            fragCoord.xy,
+            inverse0,
+            inverse1);
+
+    float r = lerp(lerp(gouraudR.x, gouraudR.y, st.x),
+                   lerp(gouraudR.w, gouraudR.z, st.x), st.y);
+    float g = lerp(lerp(gouraudG.x, gouraudG.y, st.x),
+                   lerp(gouraudG.w, gouraudG.z, st.x), st.y);
+    float b = lerp(lerp(gouraudB.x, gouraudB.y, st.x),
+                   lerp(gouraudB.w, gouraudB.z, st.x), st.y);
+
+    float3 base5 = floor(color.rgb * 31.0f + 0.5f);
+    float3 shade5 = float3(r, g, b) * 31.0f;
+    float3 result5 = clamp(base5 + shade5, 0.0f, 31.0f);
+    result5 = floor(result5 + 0.5f);
+
+    return float4(result5 / 31.0f, color.a);
+}
