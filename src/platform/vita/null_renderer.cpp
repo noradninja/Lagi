@@ -3477,9 +3477,16 @@ bool submit_vdp1_model(
                                             : g_probeFragmentProgram)))))))));
 
 
-    sceGxmSetCullMode(
-        g_probeContext,
-        wireframe ? SCE_GXM_CULL_NONE : SCE_GXM_CULL_CW);
+    // Mirroring room projection X reverses triangle winding. Keep the
+    // original CW cull convention for non-room content, but flip it for
+    // mirrored room presentation so the same physical faces remain front-facing.
+    const SceGxmCullMode cullMode =
+        wireframe
+            ? SCE_GXM_CULL_NONE
+            : (drawState.roomMode
+                ? SCE_GXM_CULL_CCW
+                : SCE_GXM_CULL_CW);
+    sceGxmSetCullMode(g_probeContext, cullMode);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, kWidth - 1, kHeight - 1);
 
