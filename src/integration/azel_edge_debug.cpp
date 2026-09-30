@@ -320,6 +320,7 @@ static bool decodeTextures(const std::vector<std::uint8_t>& cgb,
     out.indirectCramPixels = 0;
 
     bool allValid = true;
+    unsigned fallbackTextures = 0;
     for (std::size_t i = 0; i < out.polygonRecords.size(); ++i) {
         const auto& rec = out.polygonRecords[i];
 
@@ -344,7 +345,6 @@ static bool decodeTextures(const std::vector<std::uint8_t>& cgb,
         const unsigned w = rec.textureWidth();
         const unsigned h = rec.textureHeight();
         const unsigned addr = rec.textureByteAddress();
-        if (!w || !h) { allValid = false; continue; }
 
         DecodedMode1Texture tex{};
         tex.cmdPmod = rec.cmdPmod;
@@ -353,10 +353,32 @@ static bool decodeTextures(const std::vector<std::uint8_t>& cgb,
         tex.cmdSize = rec.cmdSize;
         tex.width = w;
         tex.height = h;
-        tex.rgba.assign(w * h, 0u);
 
         const unsigned mode = rec.colorMode();
-        if (mode == 1u) {
+
+        // Edge's COMMON3 hierarchy contains one command descriptor that is
+        // not a normal textured sprite. Keep the playable-room bring-up alive
+        // with an obvious 1x1 diagnostic texel instead of rejecting the entire
+        // actor. The log records the exact command so we can implement its
+        // native VDP1 semantics once orientation/placement is verified.
+        if (!w || !h || (mode != 1u && mode != 5u)) {
+            tex.width = 1u;
+            tex.height = 1u;
+            tex.rgba.assign(1u, 0xFFFF00FFu);
+            ++fallbackTextures;
+
+            lagi::platform::logging::writef(
+                "[Edge] texture fallback poly=%u CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X mode=%u %ux%u\n",
+                static_cast<unsigned>(i),
+                rec.cmdCtrl, rec.cmdPmod, rec.cmdColr,
+                rec.cmdSrca, rec.cmdSize, mode, w, h);
+        } else {
+            tex.rgba.assign(w * h, 0u);
+        }
+
+        if (!w || !h || (mode != 1u && mode != 5u)) {
+            // Diagnostic texel already populated above.
+        } else if (mode == 1u) {
             const unsigned lut = static_cast<unsigned>(rec.cmdColr) << 3;
             const unsigned bytes = (w * h) / 2u;
             if (static_cast<std::size_t>(addr) + bytes > cgb.size() ||
@@ -400,9 +422,6 @@ static bool decodeTextures(const std::vector<std::uint8_t>& cgb,
                 if (color & 0x8000u)
                     tex.rgba[p] = rgb555(color);
             }
-        } else {
-            allValid = false;
-            continue;
         }
 
         const auto index =
@@ -419,6 +438,11 @@ static bool decodeTextures(const std::vector<std::uint8_t>& cgb,
         out.mode1DecodeValid &&
         out.indirectCramPixels == 0;
     out.cgbReferencesValid = out.mode1DecodeValid;
+
+    lagi::platform::logging::writef(
+        "[Edge] texture decode complete: %u/%u descriptors, fallback=%u, indirect=%u\n",
+        out.decodedTextures, out.uniqueTextures,
+        fallbackTextures, out.indirectCramPixels);
 
     return out.mode1DecodeFullyResolved;
 }
@@ -472,7 +496,7 @@ bool build_edge_idle_debug_mesh(BasicWingDebugMesh& out)
     const bool textures = decodeTextures(cgb, out);
 
     lagi::platform::logging::writef(
-        "[Edge] COMMON3 idle: hierarchyIndex=0x%X poseIndex=0x%X bones=%u models=%u polys=%u textures=%u/%u indirect=%u %s\\n",
+        "[Edge] COMMON3 idle: hierarchyIndex=0x%X poseIndex=0x%X bones=%u models=%u polys=%u textures=%u/%u indirect=%u %s\n",
         hierarchyIndex, poseIndex, bones, out.models, out.polygons,
         out.decodedTextures, out.uniqueTextures,
         out.indirectCramPixels,
