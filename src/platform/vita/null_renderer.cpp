@@ -166,6 +166,12 @@ static bool g_viewerReady = false;
 static float g_viewYaw = 0.0f;
 static float g_viewPitch = 0.0f;
 static float g_viewDistance = 3.0f;
+
+static float g_basicWingViewCenter[3]{};
+static float g_basicWingFitDistance = 3.0f;
+static float g_staticRoomViewCenter[3]{};
+static float g_staticRoomFitDistance = 3.0f;
+
 static int g_viewMode = 0;
 static unsigned int g_basicWingAnimationFrame = 0;
 static std::uint64_t g_basicWingAnimationLastUs = 0;
