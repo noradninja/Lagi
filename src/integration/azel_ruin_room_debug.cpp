@@ -1,5 +1,6 @@
 #include "lagi/debug_mesh.h"
 #include "lagi/azel_town_bootstrap.h"
+#include "lagi/azel_town_runtime.h"
 #include "lagi/disc_image.h"
 #include "lagi/platform.h"
 
@@ -879,15 +880,16 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
     out = {};
 
     const TownBootstrapInfo& info = town_bootstrap_info();
+    const TownRuntimeState& runtime = town_runtime();
+    const TownRuntimeCell* runtimeCell =
+        town_runtime_active_cell();
     sSaturnMemoryFile* overlay = town_overlay_file();
-    if (!info.valid || !overlay)
+    if (!info.valid || !runtime.initialized ||
+        !runtimeCell || !overlay)
         return false;
 
-    const sSaturnPtr gridRoot =
-        overlay->getSaturnPtr(info.gridEA);
-    const sSaturnPtr cell = readSaturnEA(gridRoot);
-    if (cell.isNull())
-        return false;
+    const sSaturnPtr cell =
+        overlay->getSaturnPtr(runtimeCell->ea);
 
     const sSaturnPtr staticList = readSaturnEA(cell + 0x0C);
     if (staticList.isNull())
@@ -941,10 +943,11 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
         return false;
     }
 
-    std::vector<u8> bundle;
-    if (!lagi::disc::read_file(modelBundleName, bundle) ||
-        bundle.empty())
+    const std::vector<u8>* bundleOwned =
+        town_runtime_resource(modelBundleName);
+    if (!bundleOwned || bundleOwned->empty())
         return false;
+    const std::vector<u8>& bundle = *bundleOwned;
 
     sSaturnPtr entry = staticList;
     out.objectStates.clear();
@@ -1291,8 +1294,10 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
 
     findInitialRuinSceneLight(overlay, out);
 
-    std::vector<u8> cgb;
-    if (lagi::disc::read_file("RUINMP.CGB", cgb) && !cgb.empty()) {
+    const std::vector<u8>* cgbOwned =
+        town_runtime_resource("RUINMP.CGB");
+    if (cgbOwned && !cgbOwned->empty()) {
+        const std::vector<u8>& cgb = *cgbOwned;
         constexpr u32 kRuinPaletteEA = 0x0605EBF8u;
         const u8* ruinPalette = nullptr;
         std::size_t ruinPaletteBytes = 0;

@@ -1,5 +1,6 @@
 #include "lagi/debug_mesh.h"
 #include "lagi/azel_town_bootstrap.h"
+#include "lagi/azel_town_runtime.h"
 #include "lagi/disc_image.h"
 #include "lagi/platform.h"
 
@@ -456,13 +457,14 @@ bool build_edge_idle_debug_mesh(BasicWingDebugMesh& out)
     out = {};
 
     sSaturnMemoryFile* overlay = town_overlay_file();
-    const TownBootstrapInfo& info = town_bootstrap_info();
-    if (!overlay || !overlay->m_data || !info.edgeEA ||
-        info.edgeEA < overlay->m_base)
+    const TownRuntimeState& runtime = town_runtime();
+    if (!overlay || !overlay->m_data ||
+        !runtime.initialized || !runtime.edgeEA ||
+        runtime.edgeEA < overlay->m_base)
         return false;
 
     const std::uint32_t edge =
-        info.edgeEA - overlay->m_base;
+        runtime.edgeEA - overlay->m_base;
     if (edge + 0x26u > overlay->m_dataSize)
         return false;
 
@@ -470,12 +472,15 @@ bool build_edge_idle_debug_mesh(BasicWingDebugMesh& out)
     const std::uint16_t hierarchyIndex = be16(def + 0x22u);
     const std::uint16_t poseIndex = be16(def + 0x24u);
 
-    std::vector<std::uint8_t> mcb;
-    std::vector<std::uint8_t> cgb;
-    if (!lagi::disc::read_file("COMMON3.MCB", mcb) ||
-        !lagi::disc::read_file("COMMON3.CGB", cgb) ||
-        mcb.size() < 16u)
+    const std::vector<std::uint8_t>* mcbOwned =
+        town_runtime_resource("COMMON3.MCB");
+    const std::vector<std::uint8_t>* cgbOwned =
+        town_runtime_resource("COMMON3.CGB");
+    if (!mcbOwned || !cgbOwned || mcbOwned->size() < 16u)
         return false;
+
+    const std::vector<std::uint8_t>& mcb = *mcbOwned;
+    const std::vector<std::uint8_t>& cgb = *cgbOwned;
 
     if (static_cast<std::size_t>(hierarchyIndex) + 4u > mcb.size() ||
         static_cast<std::size_t>(poseIndex) + 4u > mcb.size())

@@ -10,6 +10,7 @@
 #include "lagi/azel_render_bridge.h"
 #include "lagi/azel_direct_boot.h"
 #include "lagi/azel_town_bootstrap.h"
+#include "lagi/azel_town_runtime.h"
 #include "lagi/disc_image.h"
 #include "commonOverlay.h"
 #include "audio/soundDataTable.h"
@@ -127,6 +128,12 @@ bool runtime_smoke_init()
     if (!lagi::azel::init_town_bootstrap()) {
         std::printf("[TownBoot] first 3D town overlay preflight FAILED\n");
         lagi::platform::renderer::failure("[FAIL] FIRST TOWN OVERLAY PREFLIGHT");
+        return false;
+    }
+
+    if (!lagi::azel::init_town_runtime()) {
+        std::printf("[TownRuntime] TWN_RUIN native scene owner FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] TWN_RUIN SCENE OWNER");
         return false;
     }
 
