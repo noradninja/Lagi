@@ -1758,8 +1758,10 @@ static void updateTownPlayerRuntime()
     desiredX /= desiredLength;
     desiredZ /= desiredLength;
 
+    // Azel's Edge forward axis is local -Z. A requested world-space travel
+    // direction therefore maps to the yaw whose -Z axis points along it.
     const float desiredYaw =
-        std::atan2(desiredX, desiredZ);
+        std::atan2(-desiredX, -desiredZ);
     float yawDelta =
         wrapRadians(desiredYaw - g_townPlayerYaw);
 
@@ -1783,9 +1785,11 @@ static void updateTownPlayerRuntime()
     constexpr float kWalkStep =
         static_cast<float>(0x109) / 65536.0f;
     const float step = kWalkStep * magnitude;
-    g_townPlayerPosition[0] +=
+    // updateEdgePositionSub1() writes a negative local-Z walk step
+    // (r10 = -0x109 at normal speed), so Edge advances along local -Z.
+    g_townPlayerPosition[0] -=
         std::sin(g_townPlayerYaw) * step;
-    g_townPlayerPosition[2] +=
+    g_townPlayerPosition[2] -=
         std::cos(g_townPlayerYaw) * step;
 
     updateTownFollowCamera();
