@@ -1578,7 +1578,13 @@ static void updateViewerAzelLighting()
             const int dotHi =
                 static_cast<int>(dot * 256.0f);
 
-            int accum[3] = {fallR, fallG, fallB};
+            const int falloffIndex =
+                falloffIndexForQuad(p);
+            int accum[3] = {
+                falloffMap[falloffIndex][0],
+                falloffMap[falloffIndex][1],
+                falloffMap[falloffIndex][2]
+            };
             if (dotHi > 0) {
                 accum[0] += lightR * dotHi;
                 accum[1] += lightG * dotHi;
@@ -1599,7 +1605,7 @@ static void updateViewerAzelLighting()
     }
 }
 
-static void updateStaticRoomAzelLighting()
+static void updateStaticRoomAzelLighting(bool authenticDepth)
 {
     if (!g_staticRoomCpuReady ||
         !g_staticRoomCpuMesh.lightingValid ||
@@ -1614,15 +1620,78 @@ static void updateStaticRoomAzelLighting()
         g_staticRoomCpuMesh.lightFalloff[2],
         falloffMap);
 
-    // In the current diagnostic viewer the room geometry is normalized and
-    // the real town camera has not been brought up yet. Use the nearest
-    // Saturn falloff entry while preserving the exact scene light direction,
-    // colors, lighting modes, per-corner normals, and 5-bit quantization.
-    // Once the live town camera is connected this becomes the true
-    // per-quad depth-selected falloff table entry.
-    const int fallR = falloffMap[0][0];
-    const int fallG = falloffMap[0][1];
-    const int fallB = falloffMap[0][2];
+    float cameraForward[3] = {
+        g_staticRoomCpuMesh.cameraTarget[0] -
+            g_staticRoomCpuMesh.cameraPosition[0],
+        g_staticRoomCpuMesh.cameraTarget[1] -
+            g_staticRoomCpuMesh.cameraPosition[1],
+        g_staticRoomCpuMesh.cameraTarget[2] -
+            g_staticRoomCpuMesh.cameraPosition[2]
+    };
+    const float forwardLenSq =
+        cameraForward[0]*cameraForward[0] +
+        cameraForward[1]*cameraForward[1] +
+        cameraForward[2]*cameraForward[2];
+    if (forwardLenSq > 0.0000001f) {
+        const float inv = 1.0f / std::sqrt(forwardLenSq);
+        cameraForward[0] *= inv;
+        cameraForward[1] *= inv;
+        cameraForward[2] *= inv;
+    }
+
+    auto falloffIndexForQuad = [&](unsigned int p) {
+        if (!authenticDepth ||
+            !g_staticRoomCpuMesh.cameraValid ||
+            g_staticRoomCpuMesh.worldVertices.size() <
+                (p * 6u + 1u))
+            return 0;
+
+        const auto& v =
+            g_staticRoomCpuMesh.worldVertices[p * 6u];
+
+        const float dx =
+            v.x - g_staticRoomCpuMesh.cameraPosition[0];
+        const float dy =
+            v.y - g_staticRoomCpuMesh.cameraPosition[1];
+        const float dz =
+            v.z - g_staticRoomCpuMesh.cameraPosition[2];
+
+        const float depth =
+            std::fabs(
+                dx * cameraForward[0] +
+                dy * cameraForward[1] +
+                dz * cameraForward[2]);
+
+        const std::int64_t rawDepth =
+            static_cast<std::int64_t>(
+                std::llround(depth * 65536.0f));
+
+        // Match Azel drawObject() + GetDistanceFalloff():
+        // computeViewDepth returns abs(viewZ) << 8, then GetDistanceFalloff
+        // multiplies by oneOverFarClip256 and indexes the 32-entry table.
+        const std::int64_t viewDepth =
+            rawDepth << 8;
+        const std::int64_t farRaw =
+            static_cast<std::int64_t>(
+                std::llround(
+                    g_staticRoomCpuMesh.cameraFar * 65536.0f));
+        if (farRaw <= 0)
+            return 0;
+
+        const std::int64_t oneOverFar =
+            (static_cast<std::int64_t>(0x8000) << 16) /
+            farRaw;
+        const std::int64_t oneOverFar256 =
+            oneOverFar << 8;
+        std::int64_t scaledDepth =
+            (viewDepth * oneOverFar256) >> 32;
+        if (scaledDepth < 0)
+            scaledDepth = 0;
+
+        const int byteOffset =
+            (static_cast<int>((scaledDepth << 1) >> 8)) & ~7;
+        return std::max(0, std::min(31, byteOffset >> 3));
+    };
 
     const int lightVector[3] = {
         static_cast<int>(std::lround(
