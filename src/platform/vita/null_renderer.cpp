@@ -2,6 +2,7 @@
 #include "lagi/debug_mesh.h"
 #include "lagi/vdp1_renderer.h"
 #include "lagi/azel_town_runtime.h"
+#include "lagi/azel_town_collision.h"
 
 #include <psp2/display.h>
 #include <psp2/gxm.h>
@@ -235,6 +236,7 @@ static float g_townPlayerCollisionHalf[3]{0.03f, 0.08f, 0.03f};
 static float g_townPlayerCollisionCenter[3]{};
 static bool g_townPlayerGrounded = false;
 static unsigned int g_townCollisionContacts = 0;
+static azel::TownCollisionBody g_townEdgeCollisionBody{};
 
 static bool g_staticRoomAzelCellVisible = true;
 static unsigned int g_staticRoomAzelLod0Objects = 0;
@@ -1992,245 +1994,31 @@ static void resetTownPlayerRuntime()
 }
 
 
-struct TownCollisionPoint {
-    float x = 0.0f;
-    float y = 0.0f;
-    float z = 0.0f;
-};
-
-static bool pointInTriangleXZ(
-    float x, float z,
-    const TownCollisionPoint& a,
-    const TownCollisionPoint& b,
-    const TownCollisionPoint& c,
-    float& w0, float& w1, float& w2)
-{
-    const float v0x = b.x - a.x;
-    const float v0z = b.z - a.z;
-    const float v1x = c.x - a.x;
-    const float v1z = c.z - a.z;
-    const float v2x = x - a.x;
-    const float v2z = z - a.z;
-    const float den = v0x * v1z - v1x * v0z;
-    if (std::fabs(den) < 0.000001f)
-        return false;
-
-    w1 = (v2x * v1z - v1x * v2z) / den;
-    w2 = (v0x * v2z - v2x * v0z) / den;
-    w0 = 1.0f - w1 - w2;
-    constexpr float eps = -0.002f;
-    return w0 >= eps && w1 >= eps && w2 >= eps;
-}
-
-template <typename Fn>
-static void forEachActiveTownCollisionTriangle(Fn&& fn)
-{
-    const azel::TownRuntimeCell* cell =
-        azel::town_runtime_active_cell();
-    if (!cell)
-        return;
-
-    for (const auto& instance : cell->collisionInstances) {
-        const float baseX = cell->origin[0] + instance.position[0];
-        const float baseY = cell->origin[1] + instance.position[1];
-        const float baseZ = cell->origin[2] + instance.position[2];
-
-        for (const auto& quad : instance.model.quads) {
-            TownCollisionPoint p[4]{};
-            for (unsigned i = 0; i < 4; ++i) {
-                const auto& v =
-                    instance.model.vertices[quad.indices[i]];
-                p[i] = {
-                    baseX + v.x,
-                    baseY + v.y,
-                    baseZ + v.z
-                };
-            }
-
-            fn(p[0], p[1], p[2], quad);
-            fn(p[0], p[2], p[3], quad);
-        }
-    }
-}
-
-static void solveTownGround()
+static void runTownCollisionPipeline()
 {
     if (!g_townPlayerReady)
         return;
 
-    const float centerY =
-        g_townPlayerPosition[1] + g_townPlayerCollisionCenter[1];
-    const float footY = centerY - g_townPlayerCollisionHalf[1];
-    float bestY = -1000000.0f;
-    bool found = false;
+    g_townEdgeCollisionBody.ownerPosition = {
+        g_townPlayerPosition[0],
+        g_townPlayerPosition[1],
+        g_townPlayerPosition[2]};
+    g_townEdgeCollisionBody.ownerRotation = {
+        0.0f, g_townPlayerYaw, 0.0f};
 
-    forEachActiveTownCollisionTriangle(
-        [&](const TownCollisionPoint& a,
-            const TownCollisionPoint& b,
-            const TownCollisionPoint& c,
-            const azel::TownRuntimeCollisionQuad&) {
-            const float ux = b.x-a.x, uy=b.y-a.y, uz=b.z-a.z;
-            const float vx = c.x-a.x, vy=c.y-a.y, vz=c.z-a.z;
-            float nx = uy*vz - uz*vy;
-            float ny = uz*vx - ux*vz;
-            float nz = ux*vy - uy*vx;
-            const float len = std::sqrt(nx*nx + ny*ny + nz*nz);
-            if (len < 0.000001f)
-                return;
-            ny /= len;
+    azel::resetCollisionFrame();
+    azel::registerCollisionBody(g_townEdgeCollisionBody);
+    azel::processAllCollisions();
 
-            if (std::fabs(ny) < 0.55f)
-                return;
-
-            float w0, w1, w2;
-            if (!pointInTriangleXZ(
-                    g_townPlayerPosition[0],
-                    g_townPlayerPosition[2],
-                    a, b, c, w0, w1, w2))
-                return;
-
-            const float y = a.y*w0 + b.y*w1 + c.y*w2;
-            if (y > footY + 0.12f || y < footY - 0.30f)
-                return;
-
-            if (!found || y > bestY) {
-                bestY = y;
-                found = true;
-            }
-        });
-
-    g_townPlayerGrounded = found;
-    if (found) {
-        g_townPlayerPosition[1] =
-            bestY -
-            g_townPlayerCollisionCenter[1] +
-            g_townPlayerCollisionHalf[1];
-    }
-}
-
-static float closestPointSegment2D(
-    float px, float pz,
-    float ax, float az,
-    float bx, float bz,
-    float& outX, float& outZ)
-{
-    const float dx = bx - ax;
-    const float dz = bz - az;
-    const float len2 = dx*dx + dz*dz;
-    float t = 0.0f;
-    if (len2 > 0.000001f)
-        t = ((px-ax)*dx + (pz-az)*dz) / len2;
-    t = std::max(0.0f, std::min(1.0f, t));
-    outX = ax + dx*t;
-    outZ = az + dz*t;
-    const float ex = px - outX;
-    const float ez = pz - outZ;
-    return std::sqrt(ex*ex + ez*ez);
-}
-
-static void solveTownWalls(float oldX, float oldZ)
-{
-    if (!g_townPlayerReady)
-        return;
-
-    const float radius =
-        std::max(g_townPlayerCollisionHalf[0],
-                 g_townPlayerCollisionHalf[2]);
-    const float playerMinY =
-        g_townPlayerPosition[1] +
-        g_townPlayerCollisionCenter[1] -
-        g_townPlayerCollisionHalf[1];
-    const float playerMaxY =
-        g_townPlayerPosition[1] +
-        g_townPlayerCollisionCenter[1] +
-        g_townPlayerCollisionHalf[1];
-
-    g_townCollisionContacts = 0;
-
-    for (unsigned pass = 0; pass < 2; ++pass) {
-        bool changed = false;
-
-        forEachActiveTownCollisionTriangle(
-            [&](const TownCollisionPoint& a,
-                const TownCollisionPoint& b,
-                const TownCollisionPoint& c,
-                const azel::TownRuntimeCollisionQuad&) {
-                const float minY =
-                    std::min(a.y, std::min(b.y, c.y));
-                const float maxY =
-                    std::max(a.y, std::max(b.y, c.y));
-                if (playerMaxY < minY || playerMinY > maxY)
-                    return;
-
-                const float ux=b.x-a.x, uy=b.y-a.y, uz=b.z-a.z;
-                const float vx=c.x-a.x, vy=c.y-a.y, vz=c.z-a.z;
-                float nx=uy*vz-uz*vy;
-                float ny=uz*vx-ux*vz;
-                float nz=ux*vy-uy*vx;
-                const float nlen =
-                    std::sqrt(nx*nx + ny*ny + nz*nz);
-                if (nlen < 0.000001f)
-                    return;
-                nx/=nlen; ny/=nlen; nz/=nlen;
-
-                if (std::fabs(ny) > 0.55f)
-                    return;
-
-                const TownCollisionPoint* v[3] = {&a,&b,&c};
-                float nearest = 1000000.0f;
-                float nearestX = 0.0f;
-                float nearestZ = 0.0f;
-
-                for (unsigned e = 0; e < 3; ++e) {
-                    float qx, qz;
-                    const auto& va = *v[e];
-                    const auto& vb = *v[(e+1)%3];
-                    const float d = closestPointSegment2D(
-                        g_townPlayerPosition[0],
-                        g_townPlayerPosition[2],
-                        va.x, va.z, vb.x, vb.z,
-                        qx, qz);
-                    if (d < nearest) {
-                        nearest = d;
-                        nearestX = qx;
-                        nearestZ = qz;
-                    }
-                }
-
-                if (nearest >= radius || nearest < 0.000001f)
-                    return;
-
-                float px =
-                    g_townPlayerPosition[0] - nearestX;
-                float pz =
-                    g_townPlayerPosition[2] - nearestZ;
-                float plen = std::sqrt(px*px + pz*pz);
-                if (plen < 0.000001f) {
-                    px = oldX - nearestX;
-                    pz = oldZ - nearestZ;
-                    plen = std::sqrt(px*px + pz*pz);
-                }
-                if (plen < 0.000001f) {
-                    px = nx;
-                    pz = nz;
-                    plen = std::sqrt(px*px + pz*pz);
-                }
-                if (plen < 0.000001f)
-                    return;
-
-                const float push =
-                    radius - nearest + 0.0005f;
-                g_townPlayerPosition[0] +=
-                    px / plen * push;
-                g_townPlayerPosition[2] +=
-                    pz / plen * push;
-                ++g_townCollisionContacts;
-                changed = true;
-            });
-
-        if (!changed)
-            break;
-    }
+    const auto& solve =
+        g_townEdgeCollisionBody.collisionSolveTranslation;
+    g_townPlayerPosition[0] += solve.x;
+    g_townPlayerPosition[1] += solve.y;
+    g_townPlayerPosition[2] += solve.z;
+    g_townPlayerGrounded =
+        (g_townEdgeCollisionBody.contactMask & 0x4u) != 0;
+    g_townCollisionContacts =
+        g_townEdgeCollisionBody.contactCount;
 
     azel::update_town_runtime_active_cell(
         g_townPlayerPosition[0],
@@ -2242,9 +2030,6 @@ static void updateTownPlayerRuntime()
     if (!g_townPlayerReady)
         return;
 
-    const float oldX = g_townPlayerPosition[0];
-    const float oldZ = g_townPlayerPosition[2];
-
     const float inputX = input::analog_x();
     const float inputForward = -input::analog_y();
     const float magnitude =
@@ -2255,14 +2040,13 @@ static void updateTownPlayerRuntime()
                 inputForward * inputForward));
 
     if (magnitude <= 0.0001f) {
-        solveTownGround();
+        runTownCollisionPipeline();
         return;
     }
 
     // Match town mode-1 semantics: stick direction is camera-relative, Edge
     // turns toward the requested heading with a bounded per-frame turn, and
-    // forward speed is proportional to analog magnitude. Collision/ground
-    // solving is deliberately the next milestone slice.
+    // forward speed is proportional to analog magnitude.
     float cameraForwardX =
         g_townCameraTarget[0] - g_townCameraPosition[0];
     float cameraForwardZ =
@@ -2332,8 +2116,7 @@ static void updateTownPlayerRuntime()
     g_townPlayerPosition[2] -=
         std::cos(g_townPlayerYaw) * step;
 
-    solveTownWalls(oldX, oldZ);
-    solveTownGround();
+    runTownCollisionPipeline();
 }
 
 
@@ -4249,6 +4032,16 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
                         mesh.edgeCollisionMax[i] -
                         mesh.edgeCollisionMin[i]) * 0.5f;
             }
+
+            azel::setCollisionSetup(g_townEdgeCollisionBody, 0);
+            azel::setCollisionBounds(
+                g_townEdgeCollisionBody,
+                {mesh.edgeCollisionMin[0],
+                 mesh.edgeCollisionMin[1],
+                 mesh.edgeCollisionMin[2]},
+                {mesh.edgeCollisionMax[0],
+                 mesh.edgeCollisionMax[1],
+                 mesh.edgeCollisionMax[2]});
         }
 
         std::memcpy(
@@ -4344,7 +4137,7 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
             static_cast<unsigned>(
                 g_staticRoomCpuMesh.decodedTextureData.size());
 
-        solveTownGround();
+        runTownCollisionPipeline();
         transformTownEdgeVertices();
         status(
             "[PASS] EDGE VISUAL MERGED INTO RUIN",
