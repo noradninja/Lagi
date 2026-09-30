@@ -69,6 +69,9 @@ set(LAGI_GOURAUD_DEBUG_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_debug_f_g
 set(LAGI_TEXTURED_LIT_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_f.gxp")
 set(LAGI_TEXTURED_LIT_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_f_gxp.o")
 
+set(LAGI_GOURAUD_PAYLOAD_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_payload_v.gxp")
+set(LAGI_GOURAUD_PAYLOAD_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_payload_v_gxp.o")
+
 set(LAGI_TEXTURE_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v.gxp")
 set(LAGI_TEXTURE_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f.gxp")
 set(LAGI_TEXTURE_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v_gxp.o")
@@ -129,6 +132,29 @@ add_custom_command(
   -o "${LAGI_TEXTURE_V_GXP}"
  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/texture_v.cg"
  COMMENT "Compiling Lagi texture vertex shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_GOURAUD_PAYLOAD_V_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_vp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/gouraud_payload_v.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_GOURAUD_PAYLOAD_V_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/gouraud_payload_v.cg"
+ COMMENT "Compiling Lagi Gouraud payload vertex shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_GOURAUD_PAYLOAD_V_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_gouraud_payload_v.gxp" "${LAGI_GOURAUD_PAYLOAD_V_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_GOURAUD_PAYLOAD_V_GXP}"
+ COMMENT "Embedding Lagi Gouraud payload vertex GXP"
  VERBATIM
 )
 
@@ -216,6 +242,7 @@ set_source_files_properties(
  "${LAGI_COLOR_V_OBJ}" "${LAGI_COLOR_F_OBJ}"
  "${LAGI_GOURAUD_DEBUG_F_OBJ}"
  "${LAGI_TEXTURED_LIT_F_OBJ}"
+ "${LAGI_GOURAUD_PAYLOAD_V_OBJ}"
  "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}"
  PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
 )
@@ -232,6 +259,7 @@ add_executable(lagi
  ${LAGI_COLOR_F_OBJ}
  ${LAGI_GOURAUD_DEBUG_F_OBJ}
  ${LAGI_TEXTURED_LIT_F_OBJ}
+ ${LAGI_GOURAUD_PAYLOAD_V_OBJ}
  ${LAGI_TEXTURE_V_OBJ}
  ${LAGI_TEXTURE_F_OBJ}
  src/platform/vita/null_audio.cpp
