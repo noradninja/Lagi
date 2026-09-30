@@ -1,0 +1,66 @@
+// Diagnostic Saturn-style scanline Gouraud approximation.
+//
+// Recover the original quad corners from the existing payload, interpolate
+// Gouraud values down the left/right edges at the fragment scanline, then
+// interpolate linearly across that scanline. This intentionally avoids the
+// inverse-bilinear parameterization used by the exact reference path.
+
+float safeRatio(float num, float den)
+{
+    if (abs(den) < 0.0001f)
+        return 0.5f;
+    return num / den;
+}
+
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    float4 inverse0 : TEXCOORD1,
+    float4 inverse1 : TEXCOORD2,
+    float4 inverse2 : TEXCOORD3,
+    float4 gouraudR : TEXCOORD4,
+    float4 gouraudG : TEXCOORD5,
+    float4 gouraudB : TEXCOORD6,
+    float4 fragCoord : WPOS,
+    uniform sampler2D tex)
+{
+    float4 color = tex2D(tex, vTexcoord);
+    if (color.a < 0.5f)
+        discard;
+
+    // Existing payload stores:
+    // a, e=(b-a), f=(d-a), g=(a-b+c-d).
+    float2 a = inverse0.xy;
+    float2 b = a + inverse0.zw;
+    float2 d = a + inverse1.xy;
+    float2 c = a + inverse0.zw + inverse1.xy + inverse1.zw;
+
+    float y = fragCoord.y;
+    float leftT = saturate(safeRatio(y - a.y, d.y - a.y));
+    float rightT = saturate(safeRatio(y - b.y, c.y - b.y));
+
+    float leftX = lerp(a.x, d.x, leftT);
+    float rightX = lerp(b.x, c.x, rightT);
+    float across = saturate(safeRatio(fragCoord.x - leftX, rightX - leftX));
+
+    float rLeft = lerp(gouraudR.x, gouraudR.w, leftT);
+    float rRight = lerp(gouraudR.y, gouraudR.z, rightT);
+    float gLeft = lerp(gouraudG.x, gouraudG.w, leftT);
+    float gRight = lerp(gouraudG.y, gouraudG.z, rightT);
+    float bLeft = lerp(gouraudB.x, gouraudB.w, leftT);
+    float bRight = lerp(gouraudB.y, gouraudB.z, rightT);
+
+    float3 shade5 = float3(
+        lerp(rLeft, rRight, across),
+        lerp(gLeft, gRight, across),
+        lerp(bLeft, bRight, across)) * 31.0f;
+
+    float3 base5 = floor(color.rgb * 31.0f + 0.5f);
+    float3 result5 = clamp(base5 + shade5, 0.0f, 31.0f);
+    result5 = floor(result5 + 0.5f);
+
+    // Keep the otherwise-unused invariant payload live so this diagnostic
+    // remains comparable to the existing Gouraud payload pipeline.
+    result5 += inverse2.x * 0.0f;
+
+    return float4(result5 / 31.0f, color.a);
+}
