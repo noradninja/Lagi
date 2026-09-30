@@ -298,6 +298,27 @@ sWorldGridCellTask::Draw:
 
 Lagi now applies the cell's 16.16 world translation before each object's local transform. This is source-derived and awaits hardware confirmation. It should bring the static ruin room into the same world-space frame as Edge and the recovered initial town camera without changing FOV, model scale, or clip distances.
 
+## VDP1 Gouraud performance pass 2: texture batching
+
+Pass 2 keeps the pass-1 vertex-carried quad payload unchanged, but removes the one-draw-per-Saturn-quad submission pattern.
+
+Each frame the lit path now:
+
+```text
+project visible original quad corners
+update replicated Gouraud payload
+count visible indices per texture
+prefix-sum texture batches
+write one compact visible U16 index list
+submit one draw per used texture
+```
+
+This preserves the exact inverse-bilinear four-corner Gouraud reconstruction and the full 960x544 render target. The optimization changes draw submission only; it does not alter lighting, texture decoding, projection, camera state, or output resolution.
+
+The implementation also caches per-frame quad visibility so projected corners are not recomputed a second time while building the texture-grouped index list.
+
+This pass is source-complete and awaits hardware FPS/visual validation before any object/frustum-culling work.
+
 ## VDP1 Gouraud performance pass 1: vertex payload state
 
 The hardware-correct Saturn four-corner Gouraud path originally uploaded five fragment-uniform vectors per quad (two projected-corner vectors plus RGB corner vectors) and reserved a fragment default-uniform buffer for every polygon draw.
