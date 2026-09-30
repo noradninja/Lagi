@@ -148,6 +148,86 @@ static s32 bes32(const std::vector<u8>& data, u32 offset)
     return static_cast<s32>(be32(data, offset));
 }
 
+static bool recoverInitialRuinCamera(
+    sSaturnMemoryFile* overlay,
+    StaticRoomDebugMesh& out)
+{
+    if (!overlay || !overlay->m_data)
+        return false;
+
+    constexpr u32 kEdgeEA = 0x0605E990u;
+    if (kEdgeEA < overlay->m_base)
+        return false;
+
+    const u32 edgeOffset = kEdgeEA - overlay->m_base;
+    if (edgeOffset + 0x20u > overlay->m_dataSize)
+        return false;
+
+    const std::vector<u8> view(
+        overlay->m_data,
+        overlay->m_data + overlay->m_dataSize);
+
+    const std::array<float,3> edgePos = {{
+        static_cast<float>(bes32(view, edgeOffset + 0x08u)) / 65536.0f,
+        static_cast<float>(bes32(view, edgeOffset + 0x0Cu)) / 65536.0f,
+        static_cast<float>(bes32(view, edgeOffset + 0x10u)) / 65536.0f
+    }};
+
+    const s32 edgeRotXRaw = bes32(view, edgeOffset + 0x14u);
+    const s32 edgeRotYRaw = bes32(view, edgeOffset + 0x18u);
+
+    const std::int16_t edgeRotX =
+        static_cast<std::int16_t>((edgeRotXRaw >> 16) & 0x0FFF);
+    const std::int16_t edgeRotY =
+        static_cast<std::int16_t>((edgeRotYRaw >> 16) & 0x0FFF);
+
+    // scriptFunction_6057058_sub0Sub0():
+    // m18_position = Edge position + (0, 0x1800, 0)
+    // camera basis = rotate Y, then X
+    // raw camera = focus + basis.Z * 0x199
+    // target     = focus + basis.Z * -0x1000
+    std::array<float,3> focus = edgePos;
+    focus[1] += 0x1800 / 65536.0f;
+
+    const Mat3 cameraBasis =
+        mul3(rotY(edgeRotY), rotX(edgeRotX));
+    const std::array<float,3> forward = {{
+        cameraBasis.m[0][2],
+        cameraBasis.m[1][2],
+        cameraBasis.m[2][2]
+    }};
+
+    constexpr float kCameraOffset = 0x199 / 65536.0f;
+    constexpr float kTargetOffset = -0x1000 / 65536.0f;
+
+    for (unsigned int i = 0; i < 3; ++i) {
+        out.cameraPosition[i] =
+            focus[i] + forward[i] * kCameraOffset;
+        out.cameraTarget[i] =
+            focus[i] + forward[i] * kTargetOffset;
+        out.cameraUp[i] = out.cameraPosition[i];
+    }
+    out.cameraUp[1] += 1.0f;
+
+    out.cameraFovDegrees = 80.0f;
+    out.cameraNear = 0x800 / 65536.0f;
+    out.cameraFar = 0xF000 / 65536.0f;
+    out.cameraValid = true;
+
+    lagi::platform::logging::writef(
+        "[RoomDebug] initial camera edgePos=(%.5f,%.5f,%.5f) rot=(%03X,%03X) cam=(%.5f,%.5f,%.5f) target=(%.5f,%.5f,%.5f) fov=%.1f near=%.5f far=%.5f\n",
+        edgePos[0], edgePos[1], edgePos[2],
+        static_cast<unsigned>(edgeRotX) & 0xFFFu,
+        static_cast<unsigned>(edgeRotY) & 0xFFFu,
+        out.cameraPosition[0], out.cameraPosition[1], out.cameraPosition[2],
+        out.cameraTarget[0], out.cameraTarget[1], out.cameraTarget[2],
+        out.cameraFovDegrees,
+        out.cameraNear,
+        out.cameraFar);
+
+    return true;
+}
+
 static bool findInitialRuinSceneLight(
     sSaturnMemoryFile* overlay,
     StaticRoomDebugMesh& out)
@@ -820,6 +900,11 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
         maxV[2]-minV[2],
         0.001f
     });
+
+    out.worldVertices = out.vertices;
+    out.worldLightingVertices = out.lightingVertices;
+    recoverInitialRuinCamera(overlay, out);
+
     const float scale = 3.0f / extent;
 
     for (auto& v : out.vertices) {
@@ -858,6 +943,11 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
     unsigned colorModes[8]{};
     for (const auto& record : out.polygonRecords)
         ++colorModes[record.colorMode() & 7u];
+
+    lagi::platform::logging::writef(
+        "[RoomDebug] camera=%s worldVerts=%u\n",
+        out.cameraValid ? "resolved" : "missing",
+        static_cast<unsigned>(out.worldVertices.size()));
 
     lagi::platform::logging::writef(
         "[RoomDebug] lighting modes 0/1/2/3: %u/%u/%u/%u sceneLight=%s\n",
