@@ -885,12 +885,33 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
         static_cast<float>(readSaturnS32(cell + 0x08)) / 65536.0f
     }};
 
+    out.cellOrigin[0] = cellTranslation[0];
+    out.cellOrigin[1] = cellTranslation[1];
+    out.cellOrigin[2] = cellTranslation[2];
+
+    // initWorldGridData():
+    //   gWorldGrid.m2C = MTH_Mul(0x10A3D, cellSize)
+    // Both values are 16.16 fixed-point.
+    const float cellSize =
+        static_cast<float>(info.gridCellSize) / 65536.0f;
+    out.cellRadius =
+        (static_cast<float>(0x10A3D) / 65536.0f) *
+        cellSize;
+
+    // TWN_RUIN never replaces the default town LOD threshold table.
+    // resetWorldGrid() therefore leaves:
+    //   gWorldGrid.m3C = { 0x7FFFFFFF }
+    out.lodDepthCount = 1;
+    out.lodDepthThresholds[0] = 0x7FFFFFFF;
+
     lagi::platform::logging::writef(
-        "[RoomDebug] cell origin=(%.5f,%.5f,%.5f) EA=%08X\n",
+        "[RoomDebug] cell origin=(%.5f,%.5f,%.5f) radius=%.5f EA=%08X lodThreshold0=%08X\n",
         cellTranslation[0],
         cellTranslation[1],
         cellTranslation[2],
-        static_cast<unsigned>(cell.m_offset));
+        out.cellRadius,
+        static_cast<unsigned>(cell.m_offset),
+        static_cast<unsigned>(out.lodDepthThresholds[0]));
 
     const char* modelBundleName = nullptr;
     switch (info.setupNpcFileIndex) {
@@ -909,6 +930,9 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
         return false;
 
     sSaturnPtr entry = staticList;
+    out.objectStates.clear();
+    out.objectStates.reserve(64);
+
     constexpr unsigned int kMaxObjects = 512;
     constexpr unsigned int kMaxVertices = 65520;
     static constexpr unsigned int triCorners[6] = {0,1,2,0,2,3};
@@ -920,7 +944,27 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
             break;
 
         sSaturnPtr lodTable = readSaturnEA(entry);
-        const u16 modelTableOffset = readSaturnU16(lodTable);
+
+        StaticRoomObjectState objectState{};
+        objectState.firstPolygon =
+            static_cast<std::uint32_t>(out.polygonRecords.size());
+
+        const unsigned int lodCount =
+            std::min<unsigned int>(
+                out.lodDepthCount,
+                static_cast<unsigned int>(
+                    sizeof(objectState.lodModelOffsets) /
+                    sizeof(objectState.lodModelOffsets[0])));
+        for (unsigned int lod = 0; lod < lodCount; ++lod) {
+            objectState.lodModelOffsets[lod] =
+                readSaturnU16(lodTable + lod * 2u);
+            if (objectState.lodModelOffsets[lod])
+                objectState.lodCount =
+                    static_cast<std::uint8_t>(lod + 1u);
+        }
+
+        const u16 modelTableOffset =
+            objectState.lodModelOffsets[0];
         if (!modelTableOffset)
             continue;
 
@@ -938,6 +982,13 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
             static_cast<float>(readSaturnS32(entry + 8)) / 65536.0f,
             static_cast<float>(readSaturnS32(entry + 12)) / 65536.0f
         }};
+
+        objectState.worldOrigin[0] =
+            cellTranslation[0] + translation[0];
+        objectState.worldOrigin[1] =
+            cellTranslation[1] + translation[1];
+        objectState.worldOrigin[2] =
+            cellTranslation[2] + translation[2];
 
         const std::int16_t rx = readSaturnS16(entry + 0x10);
         const std::int16_t ry = readSaturnS16(entry + 0x12);
@@ -1037,6 +1088,12 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
                 out.lightingVertices.push_back(dv);
             }
         }
+
+        objectState.polygonCount =
+            static_cast<std::uint32_t>(
+                out.polygonRecords.size() -
+                objectState.firstPolygon);
+        out.objectStates.push_back(objectState);
 
         ++out.objects;
         ++out.models;
