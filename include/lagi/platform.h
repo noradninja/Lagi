@@ -1,4 +1,4 @@
-namespace lagi::azel { struct StaticRoomDebugMesh; }
+namespace lagi::azel { struct StaticRoomDebugMesh; struct BasicWingDebugMesh; }
 #pragma once
 namespace lagi::platform {
 bool init(); void shutdown(); bool running(); void begin_frame(); void end_frame();
