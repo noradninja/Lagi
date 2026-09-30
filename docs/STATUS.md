@@ -395,6 +395,34 @@ Mode mapping for hardware comparison:
 
 Mode 10 is intentionally experimental until screenshot and FPS comparison against Mode 7 is hardware-validated.
 
+## Heavy-payload texture-only probe
+
+Mode 11 isolates fragment interpolator/register pressure from Gouraud arithmetic.
+
+It uses the same authentic-camera room path, texture batching, Gouraud payload vertex shader, and complete fragment input interface as the lit modes:
+
+```text
+TEXCOORD0  texture UV
+TEXCOORD1  inverse0
+TEXCOORD2  inverse1
+TEXCOORD3  inverse2
+TEXCOORD4  Gouraud R
+TEXCOORD5  Gouraud G
+TEXCOORD6  Gouraud B
+WPOS       fragment coordinate
+```
+
+The fragment shader performs only texture sampling and alpha test. All heavy payload inputs are deliberately kept live through a negligible output dependency so the shader compiler cannot optimize the diagnostic interface away.
+
+Comparison target:
+
+```text
+Mode 8   simple texture pipeline
+Mode 11  same texture result with heavy Gouraud payload interface
+```
+
+If Mode 11 falls to the lit-mode frame rate, the payload/interpolator pressure is the bottleneck. If Mode 11 remains at 30 FPS, the cost lies in the Gouraud/inverse mapping arithmetic rather than the payload itself.
+
 ## Authentic fragment-cost diagnostic ladder
 
 Three authentic-camera ruin modes now share the same:
