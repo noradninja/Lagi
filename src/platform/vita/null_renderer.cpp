@@ -872,21 +872,23 @@ static bool buildVdp1TexturedBuffers(const Vdp1ModelSource& model)
     const unsigned int vertexCount =
         static_cast<unsigned int>(model.vertexCount);
 
-    const unsigned int vertexBytes =
+    const unsigned int textureVertexBytes =
         vertexCount * sizeof(azel::DebugTextureVertex);
+    const unsigned int gouraudVertexBytes =
+        vertexCount * sizeof(azel::DebugGouraudPayloadVertex);
     const unsigned int indexBytes =
         vertexCount * sizeof(std::uint16_t);
 
     g_vdp1TextureVertices =
         static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(
-                vertexBytes,
+                textureVertexBytes,
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_vdp1TextureVertexUid));
     g_vdp1GouraudVertices =
-        static_cast<azel::DebugTextureVertex*>(
+        static_cast<azel::DebugGouraudPayloadVertex*>(
             probeGpuAlloc(
-                vertexBytes,
+                gouraudVertexBytes,
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_vdp1GouraudVertexUid));
     g_vdp1TextureIndices =
@@ -955,14 +957,14 @@ static bool buildVdp1TexturedBuffers(const Vdp1ModelSource& model)
                 uv[corner][0], uv[corner][1]
             };
 
-            const auto& lightingSource =
-                model.lightingVertices[vertexIndex];
-            const float shade =
-                static_cast<float>(lightingSource.r) / 255.0f;
-            g_vdp1GouraudVertices[vertexIndex] = {
-                source.x, source.y, source.z,
-                shade, 0.0f
-            };
+            auto& gouraudVertex =
+                g_vdp1GouraudVertices[vertexIndex];
+            gouraudVertex = {};
+            gouraudVertex.x = source.x;
+            gouraudVertex.y = source.y;
+            gouraudVertex.z = source.z;
+            gouraudVertex.u = uv[corner][0];
+            gouraudVertex.v = uv[corner][1];
         }
     }
 
