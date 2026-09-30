@@ -1,8 +1,3 @@
-float cross2d(float2 a, float2 b)
-{
-    return a.x * b.y - a.y * b.x;
-}
-
 float computeU(float2 h, float2 e, float2 f, float2 g, float v)
 {
     float2 num = h - f * v;
@@ -12,16 +7,28 @@ float computeU(float2 h, float2 e, float2 f, float2 g, float v)
         : num.y / den.y;
 }
 
-float2 inverseBilinear(float2 p, float2 a, float2 b, float2 c, float2 d)
+float2 inverseBilinearReduced(
+    float2 p,
+    float4 inverse0,
+    float4 inverse1,
+    float4 inverse2)
 {
-    float2 e = b - a;
-    float2 f = d - a;
-    float2 g = a - b + c - d;
+    float2 a = inverse0.xy;
+    float2 e = inverse0.zw;
+    float2 f = inverse1.xy;
+    float2 g = inverse1.zw;
+
     float2 h = p - a;
 
-    float k2 = cross2d(g, f);
-    float k1 = cross2d(e, f) + cross2d(h, g);
-    float k0 = cross2d(h, e);
+    float k2 = inverse2.x;
+    float k1 =
+        inverse2.y +
+        p.x * g.y -
+        p.y * g.x;
+    float k0 =
+        inverse2.z +
+        p.x * e.y -
+        p.y * e.x;
 
     if (abs(k2) < 0.0001f)
     {
@@ -32,7 +39,8 @@ float2 inverseBilinear(float2 p, float2 a, float2 b, float2 c, float2 d)
         return float2(computeU(h, e, f, g, v), v);
     }
 
-    float disc = max(0.0f, k1 * k1 - 4.0f * k0 * k2);
+    float disc =
+        max(0.0f, k1 * k1 - 4.0f * k0 * k2);
     float root = sqrt(disc);
 
     float v1 = (-k1 - root) / (2.0f * k2);
@@ -40,27 +48,35 @@ float2 inverseBilinear(float2 p, float2 a, float2 b, float2 c, float2 d)
     float u1 = computeU(h, e, f, g, v1);
     float u2 = computeU(h, e, f, g, v2);
 
-    float d1 = max(max(-u1, u1 - 1.0f), max(-v1, v1 - 1.0f));
-    float d2 = max(max(-u2, u2 - 1.0f), max(-v2, v2 - 1.0f));
+    float d1 =
+        max(max(-u1, u1 - 1.0f),
+            max(-v1, v1 - 1.0f));
+    float d2 =
+        max(max(-u2, u2 - 1.0f),
+            max(-v2, v2 - 1.0f));
 
-    return d1 <= d2 ? float2(u1, v1) : float2(u2, v2);
+    return d1 <= d2
+        ? float2(u1, v1)
+        : float2(u2, v2);
 }
 
 float4 main(
     float2 vTexcoord : TEXCOORD0,
-    float4 quadScreen01 : TEXCOORD1,
-    float4 quadScreen23 : TEXCOORD2,
-    float4 gouraudR : TEXCOORD3,
-    float4 gouraudG : TEXCOORD4,
-    float4 gouraudB : TEXCOORD5,
+    float4 inverse0 : TEXCOORD1,
+    float4 inverse1 : TEXCOORD2,
+    float4 inverse2 : TEXCOORD3,
+    float4 gouraudR : TEXCOORD4,
+    float4 gouraudG : TEXCOORD5,
+    float4 gouraudB : TEXCOORD6,
     float4 fragCoord : WPOS)
 {
-    float2 p0 = quadScreen01.xy;
-    float2 p1 = quadScreen01.zw;
-    float2 p2 = quadScreen23.xy;
-    float2 p3 = quadScreen23.zw;
-
-    float2 st = saturate(inverseBilinear(fragCoord.xy, p0, p1, p2, p3));
+    float2 st =
+        saturate(
+            inverseBilinearReduced(
+                fragCoord.xy,
+                inverse0,
+                inverse1,
+                inverse2));
 
     float r = lerp(lerp(gouraudR.x, gouraudR.y, st.x),
                    lerp(gouraudR.w, gouraudR.z, st.x), st.y);
