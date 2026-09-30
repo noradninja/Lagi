@@ -2623,6 +2623,11 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
                 "[PASS] RUIN SCENE LIGHTING DATA",
                 0xFF80E0FFu);
         }
+        if (mesh.cameraValid) {
+            status(
+                "[PASS] RUIN INITIAL TOWN CAMERA",
+                0xFF80E0FFu);
+        }
     } else if (mesh.texturesValid) {
         status("[INFO] RUIN ROOM TEXTURES NEED CRAM", 0xFF80C0FFu);
     } else {
