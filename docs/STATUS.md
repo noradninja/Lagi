@@ -279,6 +279,46 @@ If a LUT entry references VDP2 CRAM, or a room polygon uses a bank-color mode th
 
 When every room texture is resolved from the CGB alone, Mode 5 automatically switches to the native point-filtered textured VDP1 path. The debug screen reports the decoded texture count and `lagi.log` records the room color-mode distribution.
 
+## Shared Azel game-space projection
+
+All 3D diagnostic/viewer paths now preserve Azel's native coordinate scale end-to-end.
+
+Processed model vertices are decoded from Saturn `sVec3_S16_12_4` as:
+
+```text
+raw s16 * 0x10 -> Azel 16.16 fixed point
+float game unit = raw / 4096
+```
+
+Town/object translations remain 16.16 game-space values. Neither Basic Wing nor the reconstructed ruin room is normalized or rescaled for display anymore. Debug viewers fit content by moving the camera only.
+
+The renderer now uses one shared `initVDP1Projection`-equivalent projection builder for every 3D mode. The default viewer state matches Azel's normal `DEG_80 / 2, mode 0` projection, including the separate Saturn X/Y scale factors derived from the 352x224 VDP1 viewport and the original `352/320` / `224/240` corrections.
+
+A centered 4:3 output correction is applied at presentation time for the Vita's 16:9 framebuffer; this does not alter game-space geometry.
+
+Debug camera behavior is now:
+
+```text
+Basic Wing modes 0-4:
+  native Azel model scale
+  orbit/dolly debug camera
+  shared Azel projection
+
+Ruin modes 5-6:
+  native Azel town/world scale
+  orbit/dolly debug camera
+  shared Azel projection
+
+Ruin mode 7:
+  native Azel town/world scale
+  recovered initial game camera
+  shared Azel projection
+  authentic ruin near/far clip
+  depth-selected Saturn light falloff
+```
+
+This removes scene/model scaling as a variable when validating the initial town camera. If mode 7 is still outside the visible frustum, the remaining issue is camera orientation/placement or clipping rather than mismatched model units.
+
 ## Initial ruin town camera bring-up
 
 The static room diagnostic now retains both normalized viewer geometry and untouched assembled town-space geometry. Modes 5/6 continue to use the normalized regression mesh; the new mode 7 uses original town-space coordinates.
