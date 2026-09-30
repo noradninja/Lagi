@@ -421,8 +421,8 @@ static void drawCharSmallToBuffer(
         return;
 
     const std::uint8_t* rows = glyph(c);
-    const int width = viewerRenderWidth();
-    const int height = viewerRenderHeight();
+    const int width = g_halfResolution ? (kWidth / 2) : kWidth;
+    const int height = g_halfResolution ? (kHeight / 2) : kHeight;
     for (int gy = 0; gy < 7; ++gy) {
         const int py = y + gy;
         if (py < 0 || py >= height)
@@ -449,7 +449,7 @@ static void drawTextSmallToBuffer(
         return;
 
     static constexpr int advance = 6;
-    const int width = viewerRenderWidth();
+    const int width = g_halfResolution ? (kWidth / 2) : kWidth;
     for (const char* p = text; *p; ++p) {
         drawCharSmallToBuffer(buffer, pitch, x, y, *p, color);
         x += advance;
