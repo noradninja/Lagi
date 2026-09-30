@@ -48,13 +48,13 @@ float2 inverseBilinear(float2 p, float2 a, float2 b, float2 c, float2 d)
 
 float4 main(
     float2 vTexcoord : TEXCOORD0,
+    float4 quadScreen01 : TEXCOORD1,
+    float4 quadScreen23 : TEXCOORD2,
+    float4 gouraudR : TEXCOORD3,
+    float4 gouraudG : TEXCOORD4,
+    float4 gouraudB : TEXCOORD5,
     float4 fragCoord : WPOS,
-    uniform sampler2D tex,
-    uniform float4 quadScreen01,
-    uniform float4 quadScreen23,
-    uniform float4 gouraudR,
-    uniform float4 gouraudG,
-    uniform float4 gouraudB)
+    uniform sampler2D tex)
 {
     float4 color = tex2D(tex, vTexcoord);
     if (color.a < 0.5f)
