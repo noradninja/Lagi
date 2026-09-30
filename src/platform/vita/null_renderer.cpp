@@ -2411,11 +2411,33 @@ void toggle_debug_console()
         return;
     }
 
+    const SceGxmProgram* gouraudPayloadVertexGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_gouraud_payload_v_gxp_start);
     const SceGxmProgram* gouraudDebugFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_gouraud_debug_f_gxp_start);
-    if (sceGxmProgramCheck(gouraudDebugFragmentGxp) < 0 ||
-        sceGxmShaderPatcherRegisterProgram(
+    const SceGxmProgram* texturedLitFragmentGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_textured_lit_f_gxp_start);
+
+    if (sceGxmProgramCheck(gouraudPayloadVertexGxp) < 0 ||
+        sceGxmProgramCheck(gouraudDebugFragmentGxp) < 0 ||
+        sceGxmProgramCheck(texturedLitFragmentGxp) < 0) {
+        failure("[FAIL] GOURAUD PAYLOAD GXP CHECK");
+        return;
+    }
+
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_probeShaderPatcher,
+            gouraudPayloadVertexGxp,
+            &g_gouraudPayloadVertexProgramId) < 0) {
+        failure("[FAIL] GOURAUD PAYLOAD VP REG");
+        return;
+    }
+    g_gouraudPayloadVertexRegistered = true;
+
+    if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
             gouraudDebugFragmentGxp,
             &g_gouraudDebugFragmentProgramId) < 0) {
@@ -2423,52 +2445,6 @@ void toggle_debug_console()
         return;
     }
     g_gouraudDebugFragmentRegistered = true;
-
-    g_gouraudDebugQuadScreen01Param =
-        sceGxmProgramFindParameterByName(
-            gouraudDebugFragmentGxp, "quadScreen01");
-    g_gouraudDebugQuadScreen23Param =
-        sceGxmProgramFindParameterByName(
-            gouraudDebugFragmentGxp, "quadScreen23");
-    g_gouraudDebugGouraudRParam =
-        sceGxmProgramFindParameterByName(
-            gouraudDebugFragmentGxp, "gouraudR");
-    g_gouraudDebugGouraudGParam =
-        sceGxmProgramFindParameterByName(
-            gouraudDebugFragmentGxp, "gouraudG");
-    g_gouraudDebugGouraudBParam =
-        sceGxmProgramFindParameterByName(
-            gouraudDebugFragmentGxp, "gouraudB");
-
-    if (!g_gouraudDebugQuadScreen01Param ||
-        !g_gouraudDebugQuadScreen23Param ||
-        !g_gouraudDebugGouraudRParam ||
-        !g_gouraudDebugGouraudGParam ||
-        !g_gouraudDebugGouraudBParam) {
-        failure("[FAIL] GOURAUD DEBUG FP PARAMS");
-        return;
-    }
-
-    if (sceGxmShaderPatcherCreateFragmentProgram(
-            g_probeShaderPatcher,
-            g_gouraudDebugFragmentProgramId,
-            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
-            nullptr,
-            textureVertexGxp,
-            &g_gouraudDebugFragmentProgram) < 0) {
-        failure("[FAIL] CREATE GOURAUD DEBUG FP");
-        return;
-    }
-
-    const SceGxmProgram* texturedLitFragmentGxp =
-        reinterpret_cast<const SceGxmProgram*>(
-            _binary_lagi_textured_lit_f_gxp_start);
-
-    if (sceGxmProgramCheck(texturedLitFragmentGxp) < 0) {
-        failure("[FAIL] TEXTURED LIT GXP CHECK");
-        return;
-    }
 
     if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
@@ -2479,28 +2455,97 @@ void toggle_debug_console()
     }
     g_texturedLitFragmentRegistered = true;
 
-    g_texturedLitQuadScreen01Param =
+    const SceGxmProgramParameter* gouraudPositionParam =
         sceGxmProgramFindParameterByName(
-            texturedLitFragmentGxp, "quadScreen01");
-    g_texturedLitQuadScreen23Param =
+            gouraudPayloadVertexGxp, "aPosition");
+    const SceGxmProgramParameter* gouraudUvParam =
         sceGxmProgramFindParameterByName(
-            texturedLitFragmentGxp, "quadScreen23");
-    g_texturedLitGouraudRParam =
+            gouraudPayloadVertexGxp, "aTexcoord");
+    const SceGxmProgramParameter* gouraudQuad01Param =
         sceGxmProgramFindParameterByName(
-            texturedLitFragmentGxp, "gouraudR");
-    g_texturedLitGouraudGParam =
+            gouraudPayloadVertexGxp, "aQuadScreen01");
+    const SceGxmProgramParameter* gouraudQuad23Param =
         sceGxmProgramFindParameterByName(
-            texturedLitFragmentGxp, "gouraudG");
-    g_texturedLitGouraudBParam =
+            gouraudPayloadVertexGxp, "aQuadScreen23");
+    const SceGxmProgramParameter* gouraudRParam =
         sceGxmProgramFindParameterByName(
-            texturedLitFragmentGxp, "gouraudB");
+            gouraudPayloadVertexGxp, "aGouraudR");
+    const SceGxmProgramParameter* gouraudGParam =
+        sceGxmProgramFindParameterByName(
+            gouraudPayloadVertexGxp, "aGouraudG");
+    const SceGxmProgramParameter* gouraudBParam =
+        sceGxmProgramFindParameterByName(
+            gouraudPayloadVertexGxp, "aGouraudB");
+    g_gouraudPayloadWvpParam =
+        sceGxmProgramFindParameterByName(
+            gouraudPayloadVertexGxp, "wvp");
 
-    if (!g_texturedLitQuadScreen01Param ||
-        !g_texturedLitQuadScreen23Param ||
-        !g_texturedLitGouraudRParam ||
-        !g_texturedLitGouraudGParam ||
-        !g_texturedLitGouraudBParam) {
-        failure("[FAIL] TEXTURED LIT FP PARAMS");
+    if (!gouraudPositionParam ||
+        !gouraudUvParam ||
+        !gouraudQuad01Param ||
+        !gouraudQuad23Param ||
+        !gouraudRParam ||
+        !gouraudGParam ||
+        !gouraudBParam ||
+        !g_gouraudPayloadWvpParam) {
+        failure("[FAIL] GOURAUD PAYLOAD VP PARAMS");
+        return;
+    }
+
+    SceGxmVertexAttribute gouraudAttributes[7]{};
+    const SceGxmProgramParameter* gouraudParams[7] = {
+        gouraudPositionParam,
+        gouraudUvParam,
+        gouraudQuad01Param,
+        gouraudQuad23Param,
+        gouraudRParam,
+        gouraudGParam,
+        gouraudBParam
+    };
+    const unsigned int gouraudOffsets[7] = {
+        0u, 12u, 20u, 36u, 52u, 68u, 84u
+    };
+    const unsigned int gouraudComponents[7] = {
+        3u, 2u, 4u, 4u, 4u, 4u, 4u
+    };
+
+    for (unsigned int i = 0; i < 7u; ++i) {
+        gouraudAttributes[i].streamIndex = 0;
+        gouraudAttributes[i].offset = gouraudOffsets[i];
+        gouraudAttributes[i].format =
+            SCE_GXM_ATTRIBUTE_FORMAT_F32;
+        gouraudAttributes[i].componentCount =
+            gouraudComponents[i];
+        gouraudAttributes[i].regIndex =
+            sceGxmProgramParameterGetResourceIndex(
+                gouraudParams[i]);
+    }
+
+    SceGxmVertexStream gouraudStream{};
+    gouraudStream.stride =
+        sizeof(azel::DebugGouraudPayloadVertex);
+    gouraudStream.indexSource =
+        SCE_GXM_INDEX_SOURCE_INDEX_16BIT;
+
+    if (sceGxmShaderPatcherCreateVertexProgram(
+            g_probeShaderPatcher,
+            g_gouraudPayloadVertexProgramId,
+            gouraudAttributes, 7,
+            &gouraudStream, 1,
+            &g_gouraudPayloadVertexProgram) < 0) {
+        failure("[FAIL] CREATE GOURAUD PAYLOAD VP");
+        return;
+    }
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_gouraudDebugFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            gouraudPayloadVertexGxp,
+            &g_gouraudDebugFragmentProgram) < 0) {
+        failure("[FAIL] CREATE GOURAUD DEBUG FP");
         return;
     }
 
@@ -2510,14 +2555,14 @@ void toggle_debug_console()
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
             SCE_GXM_MULTISAMPLE_NONE,
             nullptr,
-            textureVertexGxp,
+            gouraudPayloadVertexGxp,
             &g_texturedLitFragmentProgram) < 0) {
         failure("[FAIL] CREATE TEXTURED LIT FP");
         return;
     }
 
+    status("[PASS] GXM GOURAUD VERTEX PAYLOAD", 0xFF80E0FFu);
     status("[PASS] GXM TEXTURED LIGHTING PIPELINE", 0xFF80E0FFu);
-
     status("[PASS] GXM TEXTURE PIPELINE", 0xFF80E0FFu);
 
     // Stage 9: begin/end one empty scene. Bind the patched programs and
