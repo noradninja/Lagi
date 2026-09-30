@@ -532,6 +532,66 @@ static void drawViewerModeOverlay(
         label, 0xFFFFFFFFu);
 }
 
+static void drawTownInputOverlay(
+    std::uint32_t* buffer,
+    int pitch,
+    bool authenticRoomMode)
+{
+    if (!authenticRoomMode || !g_townPlayerReady)
+        return;
+
+    const float lx = input::analog_x();
+    const float ly = input::analog_y();
+    const float forward = -ly;
+
+    const char* vertical =
+        forward > 0.15f ? "FWD" :
+        (forward < -0.15f ? "BACK" : "----");
+    const char* horizontal =
+        lx > 0.15f ? "RIGHT" :
+        (lx < -0.15f ? "LEFT" : "-----");
+
+    char line0[80];
+    char line1[80];
+    char line2[80];
+
+    std::snprintf(
+        line0, sizeof(line0),
+        "STICK LX=%+.2F LY=%+.2F",
+        static_cast<double>(lx),
+        static_cast<double>(ly));
+    std::snprintf(
+        line1, sizeof(line1),
+        "INPUT %s %s  FWD=%+.2F",
+        vertical,
+        horizontal,
+        static_cast<double>(forward));
+    std::snprintf(
+        line2, sizeof(line2),
+        "EDGE X=%+.3F Z=%+.3F YAW=%+.2F",
+        static_cast<double>(g_townPlayerPosition[0]),
+        static_cast<double>(g_townPlayerPosition[2]),
+        static_cast<double>(g_townPlayerYaw));
+
+    constexpr int x = 8;
+    constexpr int y0 = 20;
+    constexpr int lineStep = 9;
+
+    auto shadowed = [buffer, pitch](int x, int y, const char* text) {
+        drawTextSmallToBuffer(
+            buffer, pitch, x + 1, y + 1,
+            text, 0xFF000000u);
+        drawTextSmallToBuffer(
+            buffer, pitch, x, y,
+            text, 0xFFFFFFFFu);
+    };
+
+    shadowed(x, y0, line0);
+    shadowed(x, y0 + lineStep, line1);
+    shadowed(x, y0 + lineStep * 2, line2);
+}
+
+
 bool init()
 {
     const std::size_t allocSize = (kFrameBytes + 0x3FFFFu) & ~0x3FFFFu;
@@ -4229,6 +4289,11 @@ static void renderBasicWingViewer()
         colorBuffer,
         gxmPitch,
         g_viewMode);
+
+    drawTownInputOverlay(
+        colorBuffer,
+        gxmPitch,
+        roomAuthenticCameraMode);
 
     drawTextSmallToBuffer(
         colorBuffer,
