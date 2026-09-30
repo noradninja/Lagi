@@ -230,6 +230,10 @@ static float g_townCameraYaw = 0.0f;
 static float g_townCameraPitch = 0.0f;
 static float g_townCameraDistance = 0.0f;
 static float g_townPlayerPreviousPosition[3]{};
+static float g_townPlayerCollisionHalf[3]{0.03f, 0.08f, 0.03f};
+static float g_townPlayerCollisionCenter[3]{};
+static bool g_townPlayerGrounded = false;
+static unsigned int g_townCollisionContacts = 0;
 
 static bool g_staticRoomAzelCellVisible = true;
 static unsigned int g_staticRoomAzelLod0Objects = 0;
@@ -561,6 +565,7 @@ static void drawTownInputOverlay(
     char line0[80];
     char line1[80];
     char line2[80];
+    char line3[80];
 
     // Vita's compact printf path does not reliably include floating-point
     // formatting. Keep the capture overlay integer-only so recordings always
@@ -600,6 +605,13 @@ static void drawTownInputOverlay(
         edgeX1000,
         edgeZ1000,
         yawDeg);
+    std::snprintf(
+        line3, sizeof(line3),
+        "COLL %s CONTACTS=%u Y=%+05d",
+        g_townPlayerGrounded ? "GROUND" : "AIR",
+        g_townCollisionContacts,
+        static_cast<int>(
+            std::lround(g_townPlayerPosition[1] * 1000.0f)));
 
     constexpr int x = 8;
     constexpr int y0 = 20;
@@ -617,6 +629,7 @@ static void drawTownInputOverlay(
     shadowed(x, y0, line0);
     shadowed(x, y0 + lineStep, line1);
     shadowed(x, y0 + lineStep * 2, line2);
+    shadowed(x, y0 + lineStep * 3, line3);
 }
 
 
@@ -1977,10 +1990,231 @@ static void resetTownPlayerRuntime()
         std::atan2(oy, std::sqrt(ox*ox + oz*oz));
 }
 
+
+static bool pointInTriangleXZ(
+    float x, float z,
+    const azel::DebugColorVertex& a,
+    const azel::DebugColorVertex& b,
+    const azel::DebugColorVertex& c,
+    float& w0, float& w1, float& w2)
+{
+    const float v0x = b.x - a.x;
+    const float v0z = b.z - a.z;
+    const float v1x = c.x - a.x;
+    const float v1z = c.z - a.z;
+    const float v2x = x - a.x;
+    const float v2z = z - a.z;
+    const float den = v0x * v1z - v1x * v0z;
+    if (std::fabs(den) < 0.000001f)
+        return false;
+
+    w1 = (v2x * v1z - v1x * v2z) / den;
+    w2 = (v0x * v2z - v2x * v0z) / den;
+    w0 = 1.0f - w1 - w2;
+    constexpr float eps = -0.002f;
+    return w0 >= eps && w1 >= eps && w2 >= eps;
+}
+
+static void solveTownGround()
+{
+    if (!g_townPlayerReady || g_edgeFirstVertex == 0)
+        return;
+
+    const float centerY =
+        g_townPlayerPosition[1] + g_townPlayerCollisionCenter[1];
+    const float footY = centerY - g_townPlayerCollisionHalf[1];
+    float bestY = -1000000.0f;
+    bool found = false;
+
+    // The first g_edgeFirstVertex vertices are the static ruin. Each original
+    // quad is stored as triangles (0,1,2) and (0,2,3).
+    for (std::size_t i = 0; i + 2 < g_edgeFirstVertex; i += 3) {
+        const auto& a = g_staticRoomCpuMesh.worldVertices[i + 0];
+        const auto& b = g_staticRoomCpuMesh.worldVertices[i + 1];
+        const auto& c = g_staticRoomCpuMesh.worldVertices[i + 2];
+
+        const float ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+        const float vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
+        float nx = uy * vz - uz * vy;
+        float ny = uz * vx - ux * vz;
+        float nz = ux * vy - uy * vx;
+        const float len = std::sqrt(nx*nx + ny*ny + nz*nz);
+        if (len < 0.000001f)
+            continue;
+        nx /= len; ny /= len; nz /= len;
+
+        // Ground / walkable slope. The full Azel collision model will
+        // eventually supply contact normals directly; this first playable
+        // slice uses the reconstructed ruin surface triangles.
+        if (std::fabs(ny) < 0.55f)
+            continue;
+
+        float w0, w1, w2;
+        if (!pointInTriangleXZ(
+                g_townPlayerPosition[0],
+                g_townPlayerPosition[2],
+                a, b, c, w0, w1, w2))
+            continue;
+
+        const float y = a.y*w0 + b.y*w1 + c.y*w2;
+        if (y > footY + 0.12f || y < footY - 0.30f)
+            continue;
+        if (!found || y > bestY) {
+            bestY = y;
+            found = true;
+        }
+    }
+
+    g_townPlayerGrounded = found;
+    if (found) {
+        g_townPlayerPosition[1] =
+            bestY -
+            g_townPlayerCollisionCenter[1] +
+            g_townPlayerCollisionHalf[1];
+    }
+}
+
+static float closestPointSegment2D(
+    float px, float pz,
+    float ax, float az,
+    float bx, float bz,
+    float& outX, float& outZ)
+{
+    const float dx = bx - ax;
+    const float dz = bz - az;
+    const float len2 = dx*dx + dz*dz;
+    float t = 0.0f;
+    if (len2 > 0.000001f)
+        t = ((px-ax)*dx + (pz-az)*dz) / len2;
+    t = std::max(0.0f, std::min(1.0f, t));
+    outX = ax + dx*t;
+    outZ = az + dz*t;
+    const float ex = px - outX;
+    const float ez = pz - outZ;
+    return std::sqrt(ex*ex + ez*ez);
+}
+
+static void solveTownWalls(float oldX, float oldZ)
+{
+    if (!g_townPlayerReady || g_edgeFirstVertex == 0)
+        return;
+
+    const float radius =
+        std::max(g_townPlayerCollisionHalf[0],
+                 g_townPlayerCollisionHalf[2]);
+    const float playerMinY =
+        g_townPlayerPosition[1] +
+        g_townPlayerCollisionCenter[1] -
+        g_townPlayerCollisionHalf[1];
+    const float playerMaxY =
+        g_townPlayerPosition[1] +
+        g_townPlayerCollisionCenter[1] +
+        g_townPlayerCollisionHalf[1];
+
+    g_townCollisionContacts = 0;
+
+    // Two short solver passes are enough for corridor corners while retaining
+    // tangential motion (slide) instead of reverting the whole move.
+    for (unsigned int pass = 0; pass < 2; ++pass) {
+        bool changed = false;
+
+        for (std::size_t i = 0; i + 2 < g_edgeFirstVertex; i += 3) {
+            const auto& a = g_staticRoomCpuMesh.worldVertices[i + 0];
+            const auto& b = g_staticRoomCpuMesh.worldVertices[i + 1];
+            const auto& c = g_staticRoomCpuMesh.worldVertices[i + 2];
+
+            const float minY = std::min(a.y, std::min(b.y, c.y));
+            const float maxY = std::max(a.y, std::max(b.y, c.y));
+            if (playerMaxY < minY || playerMinY > maxY)
+                continue;
+
+            const float ux = b.x-a.x, uy=b.y-a.y, uz=b.z-a.z;
+            const float vx = c.x-a.x, vy=c.y-a.y, vz=c.z-a.z;
+            float nx = uy*vz - uz*vy;
+            float ny = uz*vx - ux*vz;
+            float nz = ux*vy - uy*vx;
+            const float nlen = std::sqrt(nx*nx + ny*ny + nz*nz);
+            if (nlen < 0.000001f)
+                continue;
+            nx /= nlen; ny /= nlen; nz /= nlen;
+            if (std::fabs(ny) > 0.55f)
+                continue;
+
+            // A vertical quad collapses to a line/shape in XZ. Test each
+            // perimeter edge and push the player circle out of the nearest.
+            const azel::DebugColorVertex* v[3] = {&a,&b,&c};
+            float nearest = 1000000.0f;
+            float nearestX = 0.0f, nearestZ = 0.0f;
+            for (unsigned int e = 0; e < 3; ++e) {
+                float qx, qz;
+                const auto& va = *v[e];
+                const auto& vb = *v[(e+1)%3];
+                const float d = closestPointSegment2D(
+                    g_townPlayerPosition[0],
+                    g_townPlayerPosition[2],
+                    va.x, va.z, vb.x, vb.z, qx, qz);
+                if (d < nearest) {
+                    nearest = d;
+                    nearestX = qx;
+                    nearestZ = qz;
+                }
+            }
+
+            if (nearest >= radius || nearest < 0.000001f)
+                continue;
+
+            float px = g_townPlayerPosition[0] - nearestX;
+            float pz = g_townPlayerPosition[2] - nearestZ;
+            float plen = std::sqrt(px*px + pz*pz);
+            if (plen < 0.000001f) {
+                px = oldX - nearestX;
+                pz = oldZ - nearestZ;
+                plen = std::sqrt(px*px + pz*pz);
+            }
+            if (plen < 0.000001f) {
+                px = nx;
+                pz = nz;
+                plen = std::sqrt(px*px + pz*pz);
+            }
+            if (plen < 0.000001f)
+                continue;
+
+            const float push = radius - nearest + 0.0005f;
+            g_townPlayerPosition[0] += px / plen * push;
+            g_townPlayerPosition[2] += pz / plen * push;
+            ++g_townCollisionContacts;
+            changed = true;
+        }
+
+        if (!changed)
+            break;
+    }
+
+    // This room is a single Azel world-grid cell. Keep the provisional actor
+    // solver inside the reconstructed scene bounds so walking through an
+    // unresolved opening cannot unload the only active cell.
+    float minX = 1000000.0f, maxX = -1000000.0f;
+    float minZ = 1000000.0f, maxZ = -1000000.0f;
+    for (std::size_t i = 0; i < g_edgeFirstVertex; ++i) {
+        const auto& v = g_staticRoomCpuMesh.worldVertices[i];
+        minX = std::min(minX, v.x); maxX = std::max(maxX, v.x);
+        minZ = std::min(minZ, v.z); maxZ = std::max(maxZ, v.z);
+    }
+    g_townPlayerPosition[0] =
+        std::max(minX + radius,
+                 std::min(maxX - radius, g_townPlayerPosition[0]));
+    g_townPlayerPosition[2] =
+        std::max(minZ + radius,
+                 std::min(maxZ - radius, g_townPlayerPosition[2]));
+}
+
 static void updateTownPlayerRuntime()
 {
     if (!g_townPlayerReady)
         return;
+
+    const float oldX = g_townPlayerPosition[0];
+    const float oldZ = g_townPlayerPosition[2];
 
     const float inputX = input::analog_x();
     const float inputForward = -input::analog_y();
@@ -1991,8 +2225,10 @@ static void updateTownPlayerRuntime()
                 inputX * inputX +
                 inputForward * inputForward));
 
-    if (magnitude <= 0.0001f)
+    if (magnitude <= 0.0001f) {
+        solveTownGround();
         return;
+    }
 
     // Match town mode-1 semantics: stick direction is camera-relative, Edge
     // turns toward the requested heading with a bounded per-frame turn, and
@@ -2066,6 +2302,9 @@ static void updateTownPlayerRuntime()
         std::sin(g_townPlayerYaw) * step;
     g_townPlayerPosition[2] -=
         std::cos(g_townPlayerYaw) * step;
+
+    solveTownWalls(oldX, oldZ);
+    solveTownGround();
 }
 
 
@@ -3971,6 +4210,18 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
         g_townPlayerStartYaw =
             g_townPlayerYaw;
 
+        if (mesh.edgeCollisionValid) {
+            for (unsigned int i = 0; i < 3; ++i) {
+                g_townPlayerCollisionCenter[i] =
+                    (mesh.edgeCollisionMin[i] +
+                     mesh.edgeCollisionMax[i]) * 0.5f;
+                g_townPlayerCollisionHalf[i] =
+                    std::fabs(
+                        mesh.edgeCollisionMax[i] -
+                        mesh.edgeCollisionMin[i]) * 0.5f;
+            }
+        }
+
         std::memcpy(
             g_townPlayerPreviousPosition,
             mesh.edgePosition,
@@ -4064,6 +4315,7 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
             static_cast<unsigned>(
                 g_staticRoomCpuMesh.decodedTextureData.size());
 
+        solveTownGround();
         transformTownEdgeVertices();
         status(
             "[PASS] EDGE VISUAL MERGED INTO RUIN",

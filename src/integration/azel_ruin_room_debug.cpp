@@ -275,7 +275,16 @@ static bool recoverInitialRuinCamera(
         out.edgeRotation[i] =
             static_cast<float>(edgeRotRaw[i]) /
             static_cast<float>(0x10000000);
+        out.edgeCollisionMin[i] =
+            static_cast<float>(
+                bes32(view, edgeOffset + 0x3Cu + i * 4u)) /
+            65536.0f;
+        out.edgeCollisionMax[i] =
+            static_cast<float>(
+                bes32(view, edgeOffset + 0x48u + i * 4u)) /
+            65536.0f;
     }
+    out.edgeCollisionValid = true;
     out.edgeTransformValid = true;
 
     // scriptFunction_6057058_sub0Sub0():

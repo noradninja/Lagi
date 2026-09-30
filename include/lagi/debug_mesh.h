@@ -161,6 +161,9 @@ struct StaticRoomDebugMesh {
     // runs. This is the seed for the live town/player runtime.
     float edgePosition[3]{};
     float edgeRotation[3]{};
+    float edgeCollisionMin[3]{};
+    float edgeCollisionMax[3]{};
+    bool edgeCollisionValid = false;
     bool edgeTransformValid = false;
 
     float cameraPosition[3]{};
