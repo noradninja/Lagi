@@ -344,6 +344,57 @@ while objectDepth > gTownGrid.m3C[lod]:
 
 The earlier experimental per-object AABB frustum scaffolding was removed; it is not part of Azel's normal town draw path.
 
+## No-sqrt Gouraud experiment: one-step Newton inverse
+
+The exact Mode 7 path remains unchanged as the visual reference.
+
+A new authentic-camera Mode 10 uses the same:
+
+```text
+960x544 render target
+town camera/projection
+Azel cell visibility
+texture batches
+RGB555 Gouraud values
+four-corner bilinear lighting equation
+```
+
+but replaces the closed-form inverse-bilinear quadratic solve with a no-sqrt iterative solve.
+
+For each fragment:
+
+```text
+1. Solve the affine approximation:
+       p ~= a + e*u + f*v
+
+2. Use that (u,v) as the initial estimate.
+
+3. Perform one Newton correction on:
+       P(u,v) = a + e*u + f*v + g*u*v
+
+   Jacobian columns:
+       dP/du = e + g*v
+       dP/dv = f + g*u
+
+4. Clamp the corrected (u,v) to the unit square.
+
+5. Use the same four-corner Gouraud interpolation and RGB555
+   add/clamp/quantization as Mode 7.
+```
+
+This removes the fragment-stage quadratic discriminant, square root, root selection, and associated exact-solver control flow. The experimental path uses only 2x2 cross products and reciprocal-based linear solves.
+
+Mode mapping for hardware comparison:
+
+```text
+7  exact inverse-bilinear Gouraud
+8  textured only
+9  flat color
+10 one-step Newton Gouraud, no sqrt
+```
+
+Mode 10 is intentionally experimental until screenshot and FPS comparison against Mode 7 is hardware-validated.
+
 ## Authentic fragment-cost diagnostic ladder
 
 Three authentic-camera ruin modes now share the same:
