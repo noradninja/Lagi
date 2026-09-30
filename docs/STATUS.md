@@ -340,6 +340,22 @@ This removes scene/model scaling as a variable when validating the initial town 
 
 ## Initial ruin town camera bring-up
 
+### Startup script camera state correction
+
+Hardware diagnostics showed the raw Edge definition at `0x0605E990` was not the state used by the first rendered follow camera. The initial ruin script calls, in order:
+
+```text
+setNpcLocation(0, 0x0000A800, 0x00000E3D, 0x00028B33)
+setNpcOrientation(0, 0, 0x0FE93E90, 0)
+setupCameraFollowMode()
+townCamera_setup(...)
+```
+
+The script-updated Edge position is approximately `(0.65625, 0.05562, 2.54375)`, which lies inside the reconstructed ruin room's hardware-observed world bounds. Lagi now replays camera-relevant NPC location/orientation calls from the initial script up to `setupCameraFollowMode()` before deriving `scriptFunction_6057058_sub0Sub0()`'s camera.
+
+This replaces the earlier raw-spawn camera assumption. The change is source-derived and awaits hardware confirmation.
+
+
 The static room diagnostic now retains both normalized viewer geometry and untouched assembled town-space geometry. Modes 5/6 continue to use the normalized regression mesh; the new mode 7 uses original town-space coordinates.
 
 Pinned Azel derives the first ruin camera from Edge's initial NPC transform at `0x0605E990` when `setupCameraFollowMode()` calls `scriptFunction_6057058_sub0Sub0()`:
