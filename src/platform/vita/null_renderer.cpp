@@ -26,6 +26,7 @@ extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_debug_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_lit_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_lit_newton_f_gxp_start[];
+extern const unsigned char _binary_lagi_textured_payload_probe_f_gxp_start[];
 }
 
 static constexpr int kWidth = 960;
@@ -116,6 +117,10 @@ static SceGxmFragmentProgram* g_texturedLitFragmentProgram = nullptr;
 static SceGxmShaderPatcherId g_texturedLitNewtonFragmentProgramId{};
 static bool g_texturedLitNewtonFragmentRegistered = false;
 static SceGxmFragmentProgram* g_texturedLitNewtonFragmentProgram = nullptr;
+
+static SceGxmShaderPatcherId g_texturedPayloadProbeFragmentProgramId{};
+static bool g_texturedPayloadProbeFragmentRegistered = false;
+static SceGxmFragmentProgram* g_texturedPayloadProbeFragmentProgram = nullptr;
 
 static const SceGxmProgramParameter* g_textureWvpParam = nullptr;
 static bool g_probeScenePassed = false;
@@ -469,6 +474,11 @@ void shutdown()
     freeVdp1Textures();
 
     if (g_probeShaderPatcher) {
+        if (g_texturedPayloadProbeFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_texturedPayloadProbeFragmentProgram);
+            g_texturedPayloadProbeFragmentProgram = nullptr;
+        }
         if (g_texturedLitNewtonFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_texturedLitNewtonFragmentProgram);
@@ -498,6 +508,11 @@ void shutdown()
             sceGxmShaderPatcherReleaseVertexProgram(
                 g_probeShaderPatcher, g_textureVertexProgram);
             g_textureVertexProgram = nullptr;
+        }
+        if (g_texturedPayloadProbeFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_texturedPayloadProbeFragmentProgramId);
+            g_texturedPayloadProbeFragmentRegistered = false;
         }
         if (g_texturedLitNewtonFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -2576,11 +2591,15 @@ void toggle_debug_console()
     const SceGxmProgram* texturedLitNewtonFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_textured_lit_newton_f_gxp_start);
+    const SceGxmProgram* texturedPayloadProbeFragmentGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_textured_payload_probe_f_gxp_start);
 
     if (sceGxmProgramCheck(gouraudPayloadVertexGxp) < 0 ||
         sceGxmProgramCheck(gouraudDebugFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedLitFragmentGxp) < 0 ||
-        sceGxmProgramCheck(texturedLitNewtonFragmentGxp) < 0) {
+        sceGxmProgramCheck(texturedLitNewtonFragmentGxp) < 0 ||
+        sceGxmProgramCheck(texturedPayloadProbeFragmentGxp) < 0) {
         failure("[FAIL] GOURAUD PAYLOAD GXP CHECK");
         return;
     }
@@ -2620,6 +2639,15 @@ void toggle_debug_console()
         return;
     }
     g_texturedLitNewtonFragmentRegistered = true;
+
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_probeShaderPatcher,
+            texturedPayloadProbeFragmentGxp,
+            &g_texturedPayloadProbeFragmentProgramId) < 0) {
+        failure("[FAIL] PAYLOAD PROBE PROGRAM REG");
+        return;
+    }
+    g_texturedPayloadProbeFragmentRegistered = true;
 
     const SceGxmProgramParameter* gouraudPositionParam =
         sceGxmProgramFindParameterByName(
@@ -2739,9 +2767,22 @@ void toggle_debug_console()
         return;
     }
 
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_texturedPayloadProbeFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            gouraudPayloadVertexGxp,
+            &g_texturedPayloadProbeFragmentProgram) < 0) {
+        failure("[FAIL] CREATE PAYLOAD PROBE FP");
+        return;
+    }
+
     status("[PASS] GXM GOURAUD VERTEX PAYLOAD", 0xFF80E0FFu);
     status("[PASS] GXM TEXTURED LIGHTING PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM NEWTON LIGHTING PIPELINE", 0xFF80E0FFu);
+    status("[PASS] GXM PAYLOAD PROBE PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM TEXTURE PIPELINE", 0xFF80E0FFu);
 
     // Stage 9: begin/end one empty scene. Bind the patched programs and
@@ -3082,6 +3123,10 @@ bool submit_vdp1_model(
         drawState.mode == Vdp1RenderMode::TexturedGouraudNewton &&
         g_vdp1TexturedReady && model.texturesValid() &&
         g_vdp1TextureVertices && g_vdp1TextureIndices;
+    const bool texturedPayloadProbe =
+        drawState.mode == Vdp1RenderMode::TexturedPayloadProbe &&
+        g_vdp1TexturedReady && model.texturesValid() &&
+        g_vdp1TextureVertices && g_vdp1TextureIndices;
     const bool gouraudDebug =
         drawState.mode == Vdp1RenderMode::GouraudGrayscale &&
         g_vdp1TexturedReady && model.texturesValid() &&
@@ -3091,7 +3136,7 @@ bool submit_vdp1_model(
 
     sceGxmSetVertexProgram(
         g_probeContext,
-        (texturedLit || texturedLitNewton || gouraudDebug)
+        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedPayloadProbe || gouraudDebug)
             ? g_gouraudPayloadVertexProgram
             : (textured
                 ? g_textureVertexProgram
@@ -3102,11 +3147,13 @@ bool submit_vdp1_model(
             ? g_texturedLitFragmentProgram
             : (texturedLitNewton
                 ? g_texturedLitNewtonFragmentProgram
-                : (textured
+                : (texturedPayloadProbe
+                    ? g_texturedPayloadProbeFragmentProgram
+                    : (textured
                     ? g_textureFragmentProgram
-                    : (gouraudDebug
-                        ? g_gouraudDebugFragmentProgram
-                        : g_probeFragmentProgram))));
+                        : (gouraudDebug
+                            ? g_gouraudDebugFragmentProgram
+                            : g_probeFragmentProgram)))));
 
     sceGxmSetCullMode(
         g_probeContext,
@@ -3135,7 +3182,7 @@ bool submit_vdp1_model(
 
     sceGxmSetUniformDataF(
         uniformBuffer,
-        (texturedLit || texturedLitNewton || gouraudDebug)
+        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedPayloadProbe || gouraudDebug)
             ? g_gouraudPayloadWvpParam
             : (textured
                 ? g_textureWvpParam
@@ -3143,7 +3190,7 @@ bool submit_vdp1_model(
         0, 16, drawState.wvp);
 
     const void* vertexStream =
-        (texturedLit || texturedLitNewton || gouraudDebug)
+        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedPayloadProbe || gouraudDebug)
             ? static_cast<const void*>(g_vdp1GouraudVertices)
             : (textured
                 ? static_cast<const void*>(g_vdp1TextureVertices)
@@ -3170,7 +3217,7 @@ bool submit_vdp1_model(
         return true;
     }
 
-    if (texturedLit || texturedLitNewton || gouraudDebug) {
+    if (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedPayloadProbe || gouraudDebug) {
         // Preserve original Saturn quad identity, but no longer preserve its
         // one-command-per-quad submission overhead. Every generated vertex
         // already carries the complete quad projection/Gouraud payload, so
@@ -3180,7 +3227,7 @@ bool submit_vdp1_model(
         std::memcpy(wvp.m, drawState.wvp, sizeof(wvp.m));
 
         const unsigned int textureBucketCount =
-            (texturedLit || texturedLitNewton)
+            (texturedLit || texturedLitNewton || texturedPayloadProbe)
                 ? static_cast<unsigned int>(g_vdp1GpuTextures.size())
                 : 1u;
 
@@ -3197,7 +3244,7 @@ bool submit_vdp1_model(
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             const std::uint16_t textureIndex =
-                (texturedLit || texturedLitNewton)
+                (texturedLit || texturedLitNewton || texturedPayloadProbe)
                     ? model.polygonTextureIndices[p]
                     : 0u;
             if (textureIndex >= textureBucketCount)
@@ -3304,7 +3351,7 @@ bool submit_vdp1_model(
                 continue;
 
             const std::uint16_t textureIndex =
-                (texturedLit || texturedLitNewton)
+                (texturedLit || texturedLitNewton || texturedPayloadProbe)
                     ? model.polygonTextureIndices[p]
                     : 0u;
             if (textureIndex >= textureBucketCount ||
@@ -3327,7 +3374,7 @@ bool submit_vdp1_model(
             if (!batch.indexCount)
                 continue;
 
-            if (texturedLit || texturedLitNewton) {
+            if (texturedLit || texturedLitNewton || texturedPayloadProbe) {
                 sceGxmSetFragmentTexture(
                     g_probeContext,
                     0,
@@ -3371,7 +3418,7 @@ static void renderBasicWingViewer()
         g_staticRoomCpuReady
             ? (g_staticRoomCpuMesh.cameraValid &&
                g_staticRoomCpuMesh.lightingValid
-                ? 11
+                ? 12
                 : (g_staticRoomCpuMesh.lightingValid ? 7 : 6))
             : 5;
     if (input::prev_mode_pressed())
@@ -3443,6 +3490,9 @@ static void renderBasicWingViewer()
     const bool roomAuthenticNewtonMode =
         roomAuthenticCameraMode &&
         g_viewMode == 10;
+    const bool roomAuthenticPayloadProbeMode =
+        roomAuthenticCameraMode &&
+        g_viewMode == 11;
 
     if (!roomMode && g_residentVdp1Model != ResidentVdp1Model::BasicWing) {
         if (!prepare_vdp1_model(basicWingVdp1Source()))
@@ -3504,11 +3554,13 @@ static void renderBasicWingViewer()
                 ? Vdp1RenderMode::PolygonColor
                 : (roomAuthenticNewtonMode
                     ? Vdp1RenderMode::TexturedGouraudNewton
-                    : (g_staticRoomCpuMesh.texturesFullyResolved
+                    : (roomAuthenticPayloadProbeMode
+                        ? Vdp1RenderMode::TexturedPayloadProbe
+                        : (g_staticRoomCpuMesh.texturesFullyResolved
                         ? (roomLitMode
                             ? Vdp1RenderMode::TexturedGouraud
                             : Vdp1RenderMode::Textured)
-                        : Vdp1RenderMode::PolygonColor)))
+                        : Vdp1RenderMode::PolygonColor))))
             : static_cast<Vdp1RenderMode>(g_viewMode);
 
     (void)roomAuthenticTexturedOnlyMode;
