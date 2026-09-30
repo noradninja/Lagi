@@ -161,6 +161,10 @@ static azel::BasicWingDebugMesh g_basicWingCpuMesh{};
 static bool g_basicWingCpuReady = false;
 static azel::StaticRoomDebugMesh g_staticRoomCpuMesh{};
 static bool g_staticRoomCpuReady = false;
+static azel::BasicWingDebugMesh g_edgeIdleCpuMesh{};
+static bool g_edgeIdleCpuReady = false;
+static std::size_t g_edgeFirstVertex = 0;
+static std::size_t g_edgeFirstPolygon = 0;
 
 enum class ResidentVdp1Model {
     None,
@@ -1874,6 +1878,61 @@ static void updateTownPlayerRuntime()
         std::cos(g_townPlayerYaw) * step;
 
     updateTownFollowCamera();
+}
+
+
+static void transformTownEdgeVertices()
+{
+    if (!g_edgeIdleCpuReady || !g_townPlayerReady ||
+        g_edgeIdleCpuMesh.vertices.empty())
+        return;
+
+    constexpr float kPi = 3.14159265358979323846f;
+    const float a = g_townPlayerYaw + kPi; // sEdgeTask::Draw adds 180 degrees.
+    const float c = std::cos(a);
+    const float s = std::sin(a);
+
+    for (std::size_t i = 0; i < g_edgeIdleCpuMesh.vertices.size(); ++i) {
+        const auto& src = g_edgeIdleCpuMesh.vertices[i];
+        const float x =
+            src.x * c + src.z * s +
+            g_townPlayerPosition[0];
+        const float y =
+            src.y + g_townPlayerPosition[1];
+        const float z =
+            -src.x * s + src.z * c +
+            g_townPlayerPosition[2];
+
+        const std::size_t dst = g_edgeFirstVertex + i;
+        if (dst >= g_staticRoomCpuMesh.worldVertices.size())
+            break;
+
+        auto apply = [x,y,z](azel::DebugColorVertex& v) {
+            v.x = x; v.y = y; v.z = z;
+        };
+        apply(g_staticRoomCpuMesh.worldVertices[dst]);
+        apply(g_staticRoomCpuMesh.worldLightingVertices[dst]);
+        apply(g_staticRoomCpuMesh.vertices[dst]);
+        apply(g_staticRoomCpuMesh.lightingVertices[dst]);
+
+        // If the combined room is resident, push only the moving position
+        // fields. Texture coordinates/payload are unchanged.
+        if (g_residentVdp1Model == ResidentVdp1Model::StaticRoomAuthentic ||
+            g_residentVdp1Model == ResidentVdp1Model::StaticRoomDiagnostic) {
+            if (g_vdp1Vertices) apply(g_vdp1Vertices[dst]);
+            if (g_vdp1LightingVertices) apply(g_vdp1LightingVertices[dst]);
+            if (g_vdp1TextureVertices) {
+                g_vdp1TextureVertices[dst].x = x;
+                g_vdp1TextureVertices[dst].y = y;
+                g_vdp1TextureVertices[dst].z = z;
+            }
+            if (g_vdp1GouraudVertices) {
+                g_vdp1GouraudVertices[dst].x = x;
+                g_vdp1GouraudVertices[dst].y = y;
+                g_vdp1GouraudVertices[dst].z = z;
+            }
+        }
+    }
 }
 
 static ViewerMat4 buildAuthenticRoomWvp()
@@ -3671,6 +3730,27 @@ bool debug_console_visible()
     return g_debugVisible;
 }
 
+bool load_edge_idle_model(const azel::BasicWingDebugMesh& mesh)
+{
+    if (mesh.vertices.empty() ||
+        mesh.vertices.size() != mesh.polygons * 6u ||
+        mesh.polygonRecords.size() != mesh.polygons ||
+        mesh.gouraud555.size() != mesh.polygons ||
+        !mesh.mode1DecodeFullyResolved)
+        return false;
+
+    g_edgeIdleCpuMesh = mesh;
+    g_edgeIdleCpuReady = true;
+
+    char line[78];
+    std::snprintf(
+        line, sizeof(line),
+        "[PASS] EDGE IDLE %u MODELS / %u POLYS / %u TEX",
+        mesh.models, mesh.polygons, mesh.decodedTextures);
+    status(line, 0xFF70E0A0u);
+    return true;
+}
+
 bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
 {
     if (mesh.vertices.empty() ||
@@ -3715,6 +3795,64 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
 
         status(
             "[PASS] RUIN LIVE EDGE/FOLLOW STATE",
+            0xFF70E0A0u);
+    }
+
+    if (g_edgeIdleCpuReady) {
+        g_edgeFirstVertex =
+            g_staticRoomCpuMesh.worldVertices.size();
+        g_edgeFirstPolygon =
+            g_staticRoomCpuMesh.polygonRecords.size();
+
+        const std::uint16_t textureBase =
+            static_cast<std::uint16_t>(
+                g_staticRoomCpuMesh.decodedTextureData.size());
+
+        g_staticRoomCpuMesh.worldVertices.insert(
+            g_staticRoomCpuMesh.worldVertices.end(),
+            g_edgeIdleCpuMesh.vertices.begin(),
+            g_edgeIdleCpuMesh.vertices.end());
+        g_staticRoomCpuMesh.worldLightingVertices.insert(
+            g_staticRoomCpuMesh.worldLightingVertices.end(),
+            g_edgeIdleCpuMesh.lightingVertices.begin(),
+            g_edgeIdleCpuMesh.lightingVertices.end());
+        g_staticRoomCpuMesh.vertices.insert(
+            g_staticRoomCpuMesh.vertices.end(),
+            g_edgeIdleCpuMesh.vertices.begin(),
+            g_edgeIdleCpuMesh.vertices.end());
+        g_staticRoomCpuMesh.lightingVertices.insert(
+            g_staticRoomCpuMesh.lightingVertices.end(),
+            g_edgeIdleCpuMesh.lightingVertices.begin(),
+            g_edgeIdleCpuMesh.lightingVertices.end());
+        g_staticRoomCpuMesh.polygonRecords.insert(
+            g_staticRoomCpuMesh.polygonRecords.end(),
+            g_edgeIdleCpuMesh.polygonRecords.begin(),
+            g_edgeIdleCpuMesh.polygonRecords.end());
+        g_staticRoomCpuMesh.gouraud555.insert(
+            g_staticRoomCpuMesh.gouraud555.end(),
+            g_edgeIdleCpuMesh.gouraud555.begin(),
+            g_edgeIdleCpuMesh.gouraud555.end());
+        g_staticRoomCpuMesh.decodedTextureData.insert(
+            g_staticRoomCpuMesh.decodedTextureData.end(),
+            g_edgeIdleCpuMesh.decodedTextureData.begin(),
+            g_edgeIdleCpuMesh.decodedTextureData.end());
+
+        for (const auto index : g_edgeIdleCpuMesh.polygonTextureIndices) {
+            g_staticRoomCpuMesh.polygonTextureIndices.push_back(
+                static_cast<std::uint16_t>(textureBase + index));
+        }
+
+        g_staticRoomCpuMesh.polygons +=
+            g_edgeIdleCpuMesh.polygons;
+        g_staticRoomCpuMesh.models +=
+            g_edgeIdleCpuMesh.models;
+        g_staticRoomCpuMesh.decodedTextures =
+            static_cast<unsigned>(
+                g_staticRoomCpuMesh.decodedTextureData.size());
+
+        transformTownEdgeVertices();
+        status(
+            "[PASS] EDGE VISUAL MERGED INTO RUIN",
             0xFF70E0A0u);
     }
 
@@ -4169,8 +4307,10 @@ static void renderBasicWingViewer()
         }
     }
 
-    if (roomAuthenticCameraMode)
+    if (roomAuthenticCameraMode) {
         updateTownPlayerRuntime();
+        transformTownEdgeVertices();
+    }
 
     const bool roomDiagnosticLitMode =
         g_staticRoomCpuReady &&

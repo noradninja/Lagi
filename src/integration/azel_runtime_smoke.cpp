@@ -137,6 +137,18 @@ bool runtime_smoke_init()
         return false;
     }
 
+    lagi::azel::BasicWingDebugMesh edgeIdle{};
+    if (!lagi::azel::build_edge_idle_debug_mesh(edgeIdle)) {
+        std::printf("[Edge] idle model/textures reconstruction FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] EDGE IDLE MODEL");
+        return false;
+    }
+    if (!lagi::platform::renderer::load_edge_idle_model(edgeIdle)) {
+        std::printf("[Edge] renderer registration FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] EDGE IDLE RENDER MODEL");
+        return false;
+    }
+
     if (!lagi::platform::renderer::load_static_room_viewer(firstRoom)) {
         std::printf("[RoomDebug] room viewer registration FAILED\n");
         lagi::platform::renderer::failure("[FAIL] RUIN ROOM VIEWER");
