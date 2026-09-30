@@ -109,6 +109,14 @@ struct SaturnPolygonRecord {
     std::uint8_t lightingCount = 0;
 };
 
+struct StaticRoomObjectState {
+    float worldOrigin[3]{};
+    std::uint32_t firstPolygon = 0;
+    std::uint32_t polygonCount = 0;
+    std::uint16_t lodModelOffsets[4]{};
+    std::uint8_t lodCount = 0;
+};
+
 struct StaticRoomDebugMesh {
     // Normalized diagnostic vertices used by viewer modes 5/6.
     std::vector<DebugColorVertex> vertices;
@@ -120,6 +128,15 @@ struct StaticRoomDebugMesh {
 
     std::vector<SaturnPolygonRecord> polygonRecords;
     std::vector<SaturnGouraud555Quad> gouraud555;
+    std::vector<StaticRoomObjectState> objectStates;
+
+    float cellOrigin[3]{};
+    float cellRadius = 0.0f;
+    std::int32_t lodDepthThresholds[4]{
+        0x7FFFFFFF, 0x7FFFFFFF,
+        0x7FFFFFFF, 0x7FFFFFFF
+    };
+    std::uint8_t lodDepthCount = 1;
 
     std::vector<DecodedMode1Texture> decodedTextureData;
     std::vector<std::uint16_t> polygonTextureIndices;
