@@ -3271,7 +3271,7 @@ bool submit_vdp1_model(
 
     sceGxmSetVertexProgram(
         g_probeContext,
-        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudNoQuant || texturedRgb555NoGouraud || gouraudDebug)
+        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || gouraudDebug)
             ? g_gouraudPayloadVertexProgram
             : (textured
                 ? g_textureVertexProgram
@@ -3324,7 +3324,7 @@ bool submit_vdp1_model(
 
     sceGxmSetUniformDataF(
         uniformBuffer,
-        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudNoQuant || texturedRgb555NoGouraud || gouraudDebug)
+        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || gouraudDebug)
             ? g_gouraudPayloadWvpParam
             : (textured
                 ? g_textureWvpParam
@@ -3332,7 +3332,7 @@ bool submit_vdp1_model(
         0, 16, drawState.wvp);
 
     const void* vertexStream =
-        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudNoQuant || texturedRgb555NoGouraud || gouraudDebug)
+        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || gouraudDebug)
             ? static_cast<const void*>(g_vdp1GouraudVertices)
             : (textured
                 ? static_cast<const void*>(g_vdp1TextureVertices)
@@ -3359,7 +3359,7 @@ bool submit_vdp1_model(
         return true;
     }
 
-    if (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudNoQuant || texturedRgb555NoGouraud || gouraudDebug) {
+    if (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || gouraudDebug) {
         // Preserve original Saturn quad identity, but no longer preserve its
         // one-command-per-quad submission overhead. Every generated vertex
         // already carries the complete quad projection/Gouraud payload, so
