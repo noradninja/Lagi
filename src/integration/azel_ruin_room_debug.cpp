@@ -889,18 +889,6 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
         maxV[2] = std::max(maxV[2], v.z);
     }
 
-    const float center[3] = {
-        (minV[0] + maxV[0]) * 0.5f,
-        (minV[1] + maxV[1]) * 0.5f,
-        (minV[2] + maxV[2]) * 0.5f
-    };
-    const float extent = std::max({
-        maxV[0]-minV[0],
-        maxV[1]-minV[1],
-        maxV[2]-minV[2],
-        0.001f
-    });
-
     out.worldVertices = out.vertices;
     out.worldLightingVertices = out.lightingVertices;
     recoverInitialRuinCamera(overlay, out);
@@ -963,14 +951,10 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
             out.cameraFar);
     }
 
-    const float scale = 3.0f / extent;
-
-    for (auto& v : out.vertices) {
-        v.x = (v.x - center[0]) * scale;
-        v.y = (v.y - center[1]) * scale;
-        v.z = (v.z - center[2]) * scale;
-    }
-    out.lightingVertices = out.vertices;
+    // Keep the renderer-facing room mesh in original Azel game space.
+    // Diagnostic framing is now handled entirely by the debug camera.
+    out.vertices = out.worldVertices;
+    out.lightingVertices = out.worldLightingVertices;
 
     findInitialRuinSceneLight(overlay, out);
 
