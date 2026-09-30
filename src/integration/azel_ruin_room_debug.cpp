@@ -106,7 +106,7 @@ static Mat3 rotZ(std::int16_t raw)
     return r;
 }
 
-static std::array<float,3> apply(
+static std::array<float,3> applyMat3(
     const Mat3& m,
     const std::array<float,3>& v)
 {
@@ -725,7 +725,7 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
                     static_cast<float>(q.extra[i].normal[1]) / 4096.0f,
                     static_cast<float>(q.extra[i].normal[2]) / 4096.0f
                 }};
-                auto worldNormal = apply(rotation, localNormal);
+                auto worldNormal = applyMat3(rotation, localNormal);
                 const float nLen = std::sqrt(
                     worldNormal[0]*worldNormal[0] +
                     worldNormal[1]*worldNormal[1] +
@@ -769,7 +769,7 @@ bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
                     static_cast<float>(raw[2]) / 4096.0f
                 }};
 
-                auto v = apply(rotation, local);
+                auto v = applyMat3(rotation, local);
                 v[0] += translation[0];
                 v[1] += translation[1];
                 v[2] += translation[2];
