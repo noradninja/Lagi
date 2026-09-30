@@ -223,10 +223,13 @@ static float g_townPlayerStartPosition[3]{};
 static float g_townPlayerYaw = 0.0f;
 static float g_townPlayerStartYaw = 0.0f;
 static float g_townCameraPosition[3]{};
+static float g_townCameraRawPosition[3]{};
 static float g_townCameraTarget[3]{};
 static float g_townCameraUp[3]{};
-static float g_townCameraStartOffset[3]{};
-static float g_townTargetStartOffset[3]{};
+static float g_townCameraYaw = 0.0f;
+static float g_townCameraPitch = 0.0f;
+static float g_townCameraDistance = 0.0f;
+static float g_townPlayerPreviousPosition[3]{};
 
 static bool g_staticRoomAzelCellVisible = true;
 static unsigned int g_staticRoomAzelLod0Objects = 0;
@@ -1746,30 +1749,180 @@ static void updateTownFollowCamera()
     if (!g_townPlayerReady)
         return;
 
-    const float deltaYaw =
-        g_townPlayerYaw - g_townPlayerStartYaw;
-    const float c = std::cos(deltaYaw);
-    const float s = std::sin(deltaYaw);
+    constexpr float kTau = 6.28318530717958647692f;
+    constexpr float kDesiredDistance =
+        static_cast<float>(0x2CCC) / 65536.0f;
+    constexpr float kDesiredPitch =
+        (static_cast<float>(0x0AAAAAA) /
+         static_cast<float>(0x10000000)) * kTau;
+    constexpr float kMaxPitch =
+        (static_cast<float>(0x13E93E9) /
+         static_cast<float>(0x10000000)) * kTau;
+    constexpr float kDistanceStepMax =
+        static_cast<float>(0x599) / 65536.0f;
+    constexpr float kAnchorHeight =
+        static_cast<float>(0x1800) / 65536.0f;
+    constexpr float kCameraTurnScale =
+        static_cast<float>(0x3333) / 65536.0f; // 0.2
+    constexpr float kInterpolationMax =
+        static_cast<float>(0xCCCC) / 65536.0f; // 0.8
+    constexpr float kTargetMinStep =
+        static_cast<float>(0x0CCC) / 65536.0f; // ~0.05
+    constexpr float kTargetMaxStep =
+        static_cast<float>(0xB333) / 65536.0f; // ~0.70
 
-    auto rotateOffsetY = [c, s](
-        const float source[3],
-        float out[3]) {
-        out[0] = source[0] * c + source[2] * s;
-        out[1] = source[1];
-        out[2] = -source[0] * s + source[2] * c;
+    float anchor[3] = {
+        g_townPlayerPosition[0],
+        g_townPlayerPosition[1] + kAnchorHeight,
+        g_townPlayerPosition[2]
     };
 
-    float cameraOffset[3]{};
-    float targetOffset[3]{};
-    rotateOffsetY(g_townCameraStartOffset, cameraOffset);
-    rotateOffsetY(g_townTargetStartOffset, targetOffset);
+    // cameraUpdate_follow(): recover distance/look angles from the current raw
+    // camera position, then chase Azel's preferred pitch and Edge-relative yaw.
+    const float dx = anchor[0] - g_townCameraRawPosition[0];
+    const float dy = anchor[1] - g_townCameraRawPosition[1];
+    const float dz = anchor[2] - g_townCameraRawPosition[2];
+    float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
+    if (distance < 0.00001f)
+        distance = 0.00001f;
+
+    // The matrix row used by Azel points from the target anchor back toward
+    // the camera, so derive yaw/pitch from camera - anchor.
+    const float backX = -dx;
+    const float backY = -dy;
+    const float backZ = -dz;
+    g_townCameraYaw = std::atan2(backX, backZ);
+    g_townCameraPitch =
+        std::atan2(
+            backY,
+            std::sqrt(backX*backX + backZ*backZ));
+
+    // Original: atan2_FP(0x147, distance), capped at 30 degrees. This is the
+    // per-frame angular catch-up budget used for both pitch and yaw.
+    float maxTurn =
+        std::atan2(
+            static_cast<float>(0x147) / 65536.0f,
+            distance);
+    const float maxTurnCap =
+        (static_cast<float>(0x1555555) /
+         static_cast<float>(0x10000000)) * kTau;
+    maxTurn = std::min(maxTurn, maxTurnCap);
+
+    float pitchDelta =
+        wrapRadians(kDesiredPitch - g_townCameraPitch);
+    pitchDelta =
+        std::max(-maxTurn, std::min(maxTurn, pitchDelta));
+    g_townCameraPitch += pitchDelta;
+    g_townCameraPitch =
+        std::max(
+            -kMaxPitch,
+            std::min(kMaxPitch, g_townCameraPitch));
+
+    const float yawDelta =
+        wrapRadians(g_townPlayerYaw - g_townCameraYaw);
+    const bool playerStationary =
+        std::fabs(
+            g_townPlayerPosition[0] -
+            g_townPlayerPreviousPosition[0]) < 0.000001f &&
+        std::fabs(
+            g_townPlayerPosition[1] -
+            g_townPlayerPreviousPosition[1]) < 0.000001f &&
+        std::fabs(
+            g_townPlayerPosition[2] -
+            g_townPlayerPreviousPosition[2]) < 0.000001f;
+
+    // Azel follows normally within about +/-160 degrees. When Edge is moving
+    // through a very large reversal, the camera is allowed to lag instead of
+    // snapping through him; when stationary it can always catch up.
+    const float followArc =
+        (static_cast<float>(0x71C71C7) /
+         static_cast<float>(0x10000000)) * kTau;
+    if (std::fabs(yawDelta) < followArc || playerStationary) {
+        const float yawStep =
+            std::max(-maxTurn, std::min(maxTurn, yawDelta));
+        g_townCameraYaw =
+            wrapRadians(g_townCameraYaw + yawStep);
+    }
+
+    // Chase the normal town follow distance. Source uses 0.2 of the error,
+    // clamped to +/-0x599 fixed-point units per frame.
+    float distanceStep =
+        (kDesiredDistance - distance) * kCameraTurnScale;
+    distanceStep =
+        std::max(
+            -kDistanceStepMax,
+            std::min(kDistanceStepMax, distanceStep));
+    distance += distanceStep;
+    g_townCameraDistance = distance;
+
+    const float cp = std::cos(g_townCameraPitch);
+    const float sp = std::sin(g_townCameraPitch);
+    const float cy = std::cos(g_townCameraYaw);
+    const float sy = std::sin(g_townCameraYaw);
+
+    g_townCameraRawPosition[0] =
+        anchor[0] + sy * cp * distance;
+    g_townCameraRawPosition[1] =
+        anchor[1] + sp * distance;
+    g_townCameraRawPosition[2] =
+        anchor[2] + cy * cp * distance;
+
+    // cameraUpdate_follow() smooths the displayed camera toward the raw
+    // position more strongly as the desired follow distance is reached.
+    float retain = kInterpolationMax;
+    if (distance < kDesiredDistance) {
+        retain =
+            ((distance - 0.0625f) * kInterpolationMax) /
+            (kDesiredDistance - 0.0625f);
+        retain = std::max(0.0f, std::min(kInterpolationMax, retain));
+    }
 
     for (unsigned int i = 0; i < 3; ++i) {
         g_townCameraPosition[i] =
-            g_townPlayerPosition[i] + cameraOffset[i];
-        g_townCameraTarget[i] =
-            g_townPlayerPosition[i] + targetOffset[i];
+            g_townCameraRawPosition[i] +
+            (g_townCameraPosition[i] -
+             g_townCameraRawPosition[i]) * retain;
+    }
+
+    // updateFollowCameraTarget(): choose a point half the camera distance in
+    // front of Edge. updateCameraTarget() then moves the existing target by
+    // an adaptive amount based on its screen-space displacement. Reproduce
+    // that behavior with the same 5%-70% step bounds.
+    const float desiredTarget[3] = {
+        anchor[0] - std::sin(g_townPlayerYaw) * (distance * 0.5f),
+        anchor[1],
+        anchor[2] - std::cos(g_townPlayerYaw) * (distance * 0.5f)
+    };
+
+    float toDesired[3] = {
+        desiredTarget[0] - g_townCameraTarget[0],
+        desiredTarget[1] - g_townCameraTarget[1],
+        desiredTarget[2] - g_townCameraTarget[2]
+    };
+    const float targetError =
+        std::sqrt(
+            toDesired[0]*toDesired[0] +
+            toDesired[1]*toDesired[1] +
+            toDesired[2]*toDesired[2]);
+
+    // The exact source weight is derived from screen-space projection. Until
+    // the full main-logic matrix stack is live, use the same legal weight
+    // range and scale it by displacement; this preserves the characteristic
+    // slow centered tracking and faster correction after large turns.
+    float targetStep =
+        targetError / std::max(distance, 0.0001f);
+    targetStep =
+        std::max(
+            kTargetMinStep,
+            std::min(kTargetMaxStep, targetStep));
+
+    for (unsigned int i = 0; i < 3; ++i) {
+        g_townCameraTarget[i] +=
+            (desiredTarget[i] - g_townCameraTarget[i]) *
+            targetStep;
         g_townCameraUp[i] = g_townCameraPosition[i];
+        g_townPlayerPreviousPosition[i] =
+            g_townPlayerPosition[i];
     }
     g_townCameraUp[1] += 1.0f;
 }
@@ -1783,8 +1936,45 @@ static void resetTownPlayerRuntime()
         g_townPlayerPosition,
         g_townPlayerStartPosition,
         sizeof(g_townPlayerPosition));
+    std::memcpy(
+        g_townPlayerPreviousPosition,
+        g_townPlayerStartPosition,
+        sizeof(g_townPlayerPreviousPosition));
     g_townPlayerYaw = g_townPlayerStartYaw;
-    updateTownFollowCamera();
+
+    std::memcpy(
+        g_townCameraPosition,
+        g_staticRoomCpuMesh.cameraPosition,
+        sizeof(g_townCameraPosition));
+    std::memcpy(
+        g_townCameraRawPosition,
+        g_staticRoomCpuMesh.cameraPosition,
+        sizeof(g_townCameraRawPosition));
+    std::memcpy(
+        g_townCameraTarget,
+        g_staticRoomCpuMesh.cameraTarget,
+        sizeof(g_townCameraTarget));
+    std::memcpy(
+        g_townCameraUp,
+        g_staticRoomCpuMesh.cameraUp,
+        sizeof(g_townCameraUp));
+
+    const float anchorY =
+        g_townPlayerPosition[1] +
+        static_cast<float>(0x1800) / 65536.0f;
+    const float ox =
+        g_townCameraRawPosition[0] -
+        g_townPlayerPosition[0];
+    const float oy =
+        g_townCameraRawPosition[1] - anchorY;
+    const float oz =
+        g_townCameraRawPosition[2] -
+        g_townPlayerPosition[2];
+    g_townCameraDistance =
+        std::sqrt(ox*ox + oy*oy + oz*oz);
+    g_townCameraYaw = std::atan2(ox, oz);
+    g_townCameraPitch =
+        std::atan2(oy, std::sqrt(ox*ox + oz*oz));
 }
 
 static void updateTownPlayerRuntime()
@@ -1876,8 +2066,6 @@ static void updateTownPlayerRuntime()
         std::sin(g_townPlayerYaw) * step;
     g_townPlayerPosition[2] -=
         std::cos(g_townPlayerYaw) * step;
-
-    updateTownFollowCamera();
 }
 
 
@@ -3783,15 +3971,41 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
         g_townPlayerStartYaw =
             g_townPlayerYaw;
 
-        for (unsigned int i = 0; i < 3; ++i) {
-            g_townCameraStartOffset[i] =
-                mesh.cameraPosition[i] -
-                mesh.edgePosition[i];
-            g_townTargetStartOffset[i] =
-                mesh.cameraTarget[i] -
-                mesh.edgePosition[i];
-        }
-        updateTownFollowCamera();
+        std::memcpy(
+            g_townPlayerPreviousPosition,
+            mesh.edgePosition,
+            sizeof(g_townPlayerPreviousPosition));
+        std::memcpy(
+            g_townCameraPosition,
+            mesh.cameraPosition,
+            sizeof(g_townCameraPosition));
+        std::memcpy(
+            g_townCameraRawPosition,
+            mesh.cameraPosition,
+            sizeof(g_townCameraRawPosition));
+        std::memcpy(
+            g_townCameraTarget,
+            mesh.cameraTarget,
+            sizeof(g_townCameraTarget));
+        std::memcpy(
+            g_townCameraUp,
+            mesh.cameraUp,
+            sizeof(g_townCameraUp));
+
+        const float anchorY =
+            mesh.edgePosition[1] +
+            static_cast<float>(0x1800) / 65536.0f;
+        const float ox =
+            mesh.cameraPosition[0] - mesh.edgePosition[0];
+        const float oy =
+            mesh.cameraPosition[1] - anchorY;
+        const float oz =
+            mesh.cameraPosition[2] - mesh.edgePosition[2];
+        g_townCameraDistance =
+            std::sqrt(ox*ox + oy*oy + oz*oz);
+        g_townCameraYaw = std::atan2(ox, oz);
+        g_townCameraPitch =
+            std::atan2(oy, std::sqrt(ox*ox + oz*oz));
 
         status(
             "[PASS] RUIN LIVE EDGE/FOLLOW STATE",
@@ -4309,6 +4523,7 @@ static void renderBasicWingViewer()
 
     if (roomAuthenticCameraMode) {
         updateTownPlayerRuntime();
+        updateTownFollowCamera();
         transformTownEdgeVertices();
     }
 
