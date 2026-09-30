@@ -298,6 +298,16 @@ sWorldGridCellTask::Draw:
 
 Lagi now applies the cell's 16.16 world translation before each object's local transform. This is source-derived and awaits hardware confirmation. It should bring the static ruin room into the same world-space frame as Edge and the recovered initial town camera without changing FOV, model scale, or clip distances.
 
+## VDP1 Gouraud performance pass 1: vertex payload state
+
+The hardware-correct Saturn four-corner Gouraud path originally uploaded five fragment-uniform vectors per quad (two projected-corner vectors plus RGB corner vectors) and reserved a fragment default-uniform buffer for every polygon draw.
+
+Pass 1 removes that per-draw fragment-uniform traffic without changing draw-call count. A dedicated Gouraud payload vertex format now replicates the quad's projected four corners and RGB555 Gouraud corner values across the six generated triangle vertices. A new vertex shader forwards that payload through TEXCOORD1..5 to the existing inverse-bilinear fragment logic.
+
+The lit path therefore remains one draw per original Saturn quad for this pass, deliberately isolating the cost of fragment-uniform reservation/upload from later batching work.
+
+No resolution reduction is part of this optimization. Lagi continues targeting the full 960x544 Vita framebuffer.
+
 ## Shared Azel game-space projection
 
 All 3D diagnostic/viewer paths now preserve Azel's native coordinate scale end-to-end.
