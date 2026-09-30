@@ -1603,13 +1603,7 @@ static void updateViewerAzelLighting()
             const int dotHi =
                 static_cast<int>(dot * 256.0f);
 
-            const int falloffIndex =
-                falloffIndexForQuad(p);
-            int accum[3] = {
-                falloffMap[falloffIndex][0],
-                falloffMap[falloffIndex][1],
-                falloffMap[falloffIndex][2]
-            };
+            int accum[3] = {fallR, fallG, fallB};
             if (dotHi > 0) {
                 accum[0] += lightR * dotHi;
                 accum[1] += lightG * dotHi;
@@ -1754,7 +1748,13 @@ static void updateStaticRoomAzelLighting(bool authenticDepth)
                 static_cast<int>(lighting.normal[1]) * lightVector[1] +
                 static_cast<int>(lighting.normal[2]) * lightVector[2];
 
-            int accum[3] = {fallR, fallG, fallB};
+            const int falloffIndex =
+                falloffIndexForQuad(p);
+            int accum[3] = {
+                falloffMap[falloffIndex][0],
+                falloffMap[falloffIndex][1],
+                falloffMap[falloffIndex][2]
+            };
 
             if (mode == 2u && lighting.hasColor) {
                 accum[0] +=
