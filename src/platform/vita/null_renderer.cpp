@@ -555,23 +555,44 @@ static void drawTownInputOverlay(
     char line1[80];
     char line2[80];
 
+    // Vita's compact printf path does not reliably include floating-point
+    // formatting. Keep the capture overlay integer-only so recordings always
+    // show usable telemetry.
+    const int lx1000 =
+        static_cast<int>(std::lround(lx * 1000.0f));
+    const int ly1000 =
+        static_cast<int>(std::lround(ly * 1000.0f));
+    const int fwd1000 =
+        static_cast<int>(std::lround(forward * 1000.0f));
+    const int edgeX1000 =
+        static_cast<int>(
+            std::lround(g_townPlayerPosition[0] * 1000.0f));
+    const int edgeZ1000 =
+        static_cast<int>(
+            std::lround(g_townPlayerPosition[2] * 1000.0f));
+    const int yawDeg =
+        static_cast<int>(
+            std::lround(
+                g_townPlayerYaw *
+                (180.0f / 3.14159265358979323846f)));
+
     std::snprintf(
         line0, sizeof(line0),
-        "STICK LX=%+.2F LY=%+.2F",
-        static_cast<double>(lx),
-        static_cast<double>(ly));
+        "STICK LX=%+04d LY=%+04d",
+        lx1000,
+        ly1000);
     std::snprintf(
         line1, sizeof(line1),
-        "INPUT %s %s  FWD=%+.2F",
+        "INPUT %s %s FWD=%+04d",
         vertical,
         horizontal,
-        static_cast<double>(forward));
+        fwd1000);
     std::snprintf(
         line2, sizeof(line2),
-        "EDGE X=%+.3F Z=%+.3F YAW=%+.2F",
-        static_cast<double>(g_townPlayerPosition[0]),
-        static_cast<double>(g_townPlayerPosition[2]),
-        static_cast<double>(g_townPlayerYaw));
+        "EDGE X=%+05d Z=%+05d YAW=%+04d",
+        edgeX1000,
+        edgeZ1000,
+        yawDeg);
 
     constexpr int x = 8;
     constexpr int y0 = 20;
