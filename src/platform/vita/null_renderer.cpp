@@ -30,6 +30,7 @@ extern const unsigned char _binary_lagi_textured_payload_probe_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_gouraud_noinverse_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_gouraud_noquant_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_rgb555_nogouraud_f_gxp_start[];
+extern const unsigned char _binary_lagi_textured_gouraud_finalquant_f_gxp_start[];
 }
 
 static constexpr int kWidth = 960;
@@ -136,6 +137,10 @@ static SceGxmFragmentProgram* g_texturedGouraudNoQuantFragmentProgram = nullptr;
 static SceGxmShaderPatcherId g_texturedRgb555NoGouraudFragmentProgramId{};
 static bool g_texturedRgb555NoGouraudFragmentRegistered = false;
 static SceGxmFragmentProgram* g_texturedRgb555NoGouraudFragmentProgram = nullptr;
+
+static SceGxmShaderPatcherId g_texturedGouraudFinalQuantFragmentProgramId{};
+static bool g_texturedGouraudFinalQuantFragmentRegistered = false;
+static SceGxmFragmentProgram* g_texturedGouraudFinalQuantFragmentProgram = nullptr;
 
 static const SceGxmProgramParameter* g_textureWvpParam = nullptr;
 static bool g_probeScenePassed = false;
@@ -489,6 +494,11 @@ void shutdown()
     freeVdp1Textures();
 
     if (g_probeShaderPatcher) {
+        if (g_texturedGouraudFinalQuantFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_texturedGouraudFinalQuantFragmentProgram);
+            g_texturedGouraudFinalQuantFragmentProgram = nullptr;
+        }
         if (g_texturedRgb555NoGouraudFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_texturedRgb555NoGouraudFragmentProgram);
@@ -538,6 +548,11 @@ void shutdown()
             sceGxmShaderPatcherReleaseVertexProgram(
                 g_probeShaderPatcher, g_textureVertexProgram);
             g_textureVertexProgram = nullptr;
+        }
+        if (g_texturedGouraudFinalQuantFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_texturedGouraudFinalQuantFragmentProgramId);
+            g_texturedGouraudFinalQuantFragmentRegistered = false;
         }
         if (g_texturedRgb555NoGouraudFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -2648,6 +2663,9 @@ void toggle_debug_console()
     const SceGxmProgram* texturedRgb555NoGouraudFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_textured_rgb555_nogouraud_f_gxp_start);
+    const SceGxmProgram* texturedGouraudFinalQuantFragmentGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_textured_gouraud_finalquant_f_gxp_start);
 
     if (sceGxmProgramCheck(gouraudPayloadVertexGxp) < 0 ||
         sceGxmProgramCheck(gouraudDebugFragmentGxp) < 0 ||
@@ -2656,7 +2674,8 @@ void toggle_debug_console()
         sceGxmProgramCheck(texturedPayloadProbeFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedGouraudNoInverseFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedGouraudNoQuantFragmentGxp) < 0 ||
-        sceGxmProgramCheck(texturedRgb555NoGouraudFragmentGxp) < 0) {
+        sceGxmProgramCheck(texturedRgb555NoGouraudFragmentGxp) < 0 ||
+        sceGxmProgramCheck(texturedGouraudFinalQuantFragmentGxp) < 0) {
         failure("[FAIL] GOURAUD PAYLOAD GXP CHECK");
         return;
     }
@@ -2732,6 +2751,15 @@ void toggle_debug_console()
         return;
     }
     g_texturedRgb555NoGouraudFragmentRegistered = true;
+
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_probeShaderPatcher,
+            texturedGouraudFinalQuantFragmentGxp,
+            &g_texturedGouraudFinalQuantFragmentProgramId) < 0) {
+        failure("[FAIL] FINAL-QUANT GOURAUD PROGRAM REG");
+        return;
+    }
+    g_texturedGouraudFinalQuantFragmentRegistered = true;
 
     const SceGxmProgramParameter* gouraudPositionParam =
         sceGxmProgramFindParameterByName(
@@ -2899,6 +2927,18 @@ void toggle_debug_console()
         return;
     }
 
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_texturedGouraudFinalQuantFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            gouraudPayloadVertexGxp,
+            &g_texturedGouraudFinalQuantFragmentProgram) < 0) {
+        failure("[FAIL] CREATE FINAL-QUANT GOURAUD FP");
+        return;
+    }
+
     status("[PASS] GXM GOURAUD VERTEX PAYLOAD", 0xFF80E0FFu);
     status("[PASS] GXM TEXTURED LIGHTING PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM NEWTON LIGHTING PIPELINE", 0xFF80E0FFu);
@@ -2906,6 +2946,7 @@ void toggle_debug_console()
     status("[PASS] GXM NO-INVERSE GOURAUD PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM NO-QUANT GOURAUD PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM RGB555 NO-GOURAUD PIPELINE", 0xFF80E0FFu);
+    status("[PASS] GXM FINAL-QUANT GOURAUD PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM TEXTURE PIPELINE", 0xFF80E0FFu);
 
     // Stage 9: begin/end one empty scene. Bind the patched programs and
@@ -3262,6 +3303,10 @@ bool submit_vdp1_model(
         drawState.mode == Vdp1RenderMode::TexturedRgb555NoGouraud &&
         g_vdp1TexturedReady && model.texturesValid() &&
         g_vdp1TextureVertices && g_vdp1TextureIndices;
+    const bool texturedGouraudFinalQuant =
+        drawState.mode == Vdp1RenderMode::TexturedGouraudFinalQuant &&
+        g_vdp1TexturedReady && model.texturesValid() &&
+        g_vdp1TextureVertices && g_vdp1TextureIndices;
     const bool gouraudDebug =
         drawState.mode == Vdp1RenderMode::GouraudGrayscale &&
         g_vdp1TexturedReady && model.texturesValid() &&
@@ -3271,7 +3316,7 @@ bool submit_vdp1_model(
 
     sceGxmSetVertexProgram(
         g_probeContext,
-        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || gouraudDebug)
+        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant || texturedGouraudFinalQuant || gouraudDebug)
             ? g_gouraudPayloadVertexProgram
             : (textured
                 ? g_textureVertexProgram
@@ -3290,11 +3335,13 @@ bool submit_vdp1_model(
                             ? g_texturedGouraudNoQuantFragmentProgram
                             : (texturedRgb555NoGouraud
                                 ? g_texturedRgb555NoGouraudFragmentProgram
-                                : (textured
-                                    ? g_textureFragmentProgram
-                                    : (gouraudDebug
-                                        ? g_gouraudDebugFragmentProgram
-                                        : g_probeFragmentProgram))))))));
+                                : (texturedGouraudFinalQuant
+                                    ? g_texturedGouraudFinalQuantFragmentProgram
+                                    : (textured
+                                        ? g_textureFragmentProgram
+                                        : (gouraudDebug
+                                            ? g_gouraudDebugFragmentProgram
+                                            : g_probeFragmentProgram)))))))));
 
 
     sceGxmSetCullMode(
@@ -3324,7 +3371,7 @@ bool submit_vdp1_model(
 
     sceGxmSetUniformDataF(
         uniformBuffer,
-        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || gouraudDebug)
+        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant || texturedGouraudFinalQuant || gouraudDebug)
             ? g_gouraudPayloadWvpParam
             : (textured
                 ? g_textureWvpParam
@@ -3332,7 +3379,7 @@ bool submit_vdp1_model(
         0, 16, drawState.wvp);
 
     const void* vertexStream =
-        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || gouraudDebug)
+        (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant || texturedGouraudFinalQuant || gouraudDebug)
             ? static_cast<const void*>(g_vdp1GouraudVertices)
             : (textured
                 ? static_cast<const void*>(g_vdp1TextureVertices)
@@ -3359,7 +3406,7 @@ bool submit_vdp1_model(
         return true;
     }
 
-    if (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || gouraudDebug) {
+    if (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant || texturedGouraudFinalQuant || gouraudDebug) {
         // Preserve original Saturn quad identity, but no longer preserve its
         // one-command-per-quad submission overhead. Every generated vertex
         // already carries the complete quad projection/Gouraud payload, so
@@ -3369,7 +3416,7 @@ bool submit_vdp1_model(
         std::memcpy(wvp.m, drawState.wvp, sizeof(wvp.m));
 
         const unsigned int textureBucketCount =
-            (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud)
+            (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant)
                 ? static_cast<unsigned int>(g_vdp1GpuTextures.size())
                 : 1u;
 
@@ -3386,7 +3433,7 @@ bool submit_vdp1_model(
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             const std::uint16_t textureIndex =
-                (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud)
+                (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant)
                     ? model.polygonTextureIndices[p]
                     : 0u;
             if (textureIndex >= textureBucketCount)
@@ -3493,7 +3540,7 @@ bool submit_vdp1_model(
                 continue;
 
             const std::uint16_t textureIndex =
-                (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud)
+                (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant)
                     ? model.polygonTextureIndices[p]
                     : 0u;
             if (textureIndex >= textureBucketCount ||
@@ -3516,7 +3563,7 @@ bool submit_vdp1_model(
             if (!batch.indexCount)
                 continue;
 
-            if (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud) {
+            if (texturedLit || texturedLitNewton || texturedPayloadProbe || texturedGouraudNoInverse || texturedGouraudNoQuant || texturedRgb555NoGouraud || texturedGouraudFinalQuant) {
                 sceGxmSetFragmentTexture(
                     g_probeContext,
                     0,
@@ -3560,7 +3607,7 @@ static void renderBasicWingViewer()
         g_staticRoomCpuReady
             ? (g_staticRoomCpuMesh.cameraValid &&
                g_staticRoomCpuMesh.lightingValid
-                ? 15
+                ? 16
                 : (g_staticRoomCpuMesh.lightingValid ? 7 : 6))
             : 5;
     if (input::prev_mode_pressed())
@@ -3644,6 +3691,9 @@ static void renderBasicWingViewer()
     const bool roomAuthenticRgb555NoGouraudMode =
         roomAuthenticCameraMode &&
         g_viewMode == 14;
+    const bool roomAuthenticFinalQuantMode =
+        roomAuthenticCameraMode &&
+        g_viewMode == 15;
 
     if (!roomMode && g_residentVdp1Model != ResidentVdp1Model::BasicWing) {
         if (!prepare_vdp1_model(basicWingVdp1Source()))
@@ -3713,11 +3763,13 @@ static void renderBasicWingViewer()
                                 ? Vdp1RenderMode::TexturedGouraudNoQuant
                                 : (roomAuthenticRgb555NoGouraudMode
                                     ? Vdp1RenderMode::TexturedRgb555NoGouraud
-                                    : (g_staticRoomCpuMesh.texturesFullyResolved
-                                        ? (roomLitMode
-                                            ? Vdp1RenderMode::TexturedGouraud
-                                            : Vdp1RenderMode::Textured)
-                                        : Vdp1RenderMode::PolygonColor)))))))
+                                    : (roomAuthenticFinalQuantMode
+                                        ? Vdp1RenderMode::TexturedGouraudFinalQuant
+                                        : (g_staticRoomCpuMesh.texturesFullyResolved
+                                            ? (roomLitMode
+                                                ? Vdp1RenderMode::TexturedGouraud
+                                                : Vdp1RenderMode::Textured)
+                                            : Vdp1RenderMode::PolygonColor))))))))
             : static_cast<Vdp1RenderMode>(g_viewMode);
 
 
@@ -3738,7 +3790,8 @@ static void renderBasicWingViewer()
          roomAuthenticNewtonMode ||
          roomAuthenticNoInverseMode ||
          roomAuthenticNoQuantMode ||
-         roomAuthenticRgb555NoGouraudMode) &&
+         roomAuthenticRgb555NoGouraudMode ||
+         roomAuthenticFinalQuantMode) &&
         azelTownCellVisible)
         updateStaticRoomAzelLighting(
             roomAuthenticCameraMode);
