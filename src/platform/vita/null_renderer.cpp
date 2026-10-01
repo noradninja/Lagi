@@ -183,6 +183,15 @@ static unsigned int g_authFlatTotalQuads = 0;
 static unsigned int g_authFlatVisibleQuads = 0;
 static unsigned int g_authFlatDrawCalls = 0;
 
+// Live-town cache diagnostics. These observe Azel's existing submissions;
+// they do not participate in visibility or scene ownership.
+static unsigned int g_liveTownSubmissionCount = 0;
+static unsigned int g_liveTownStaticSubmissionCount = 0;
+static unsigned int g_liveTownBillboardSubmissionCount = 0;
+static unsigned int g_liveTownStaticSubmittedPolygons = 0;
+static unsigned int g_liveTownBillboardSubmittedPolygons = 0;
+static bool g_liveTownHasBillboards = false;
+
 enum class ResidentVdp1Model {
     None,
     BasicWing,
@@ -2049,18 +2058,37 @@ static bool buildLiveTownFrame()
 {
     std::uint64_t staticSignature = 1469598103934665603ull;
     bool hasBillboards = false;
+    g_liveTownSubmissionCount = 0u;
+    g_liveTownStaticSubmissionCount = 0u;
+    g_liveTownBillboardSubmissionCount = 0u;
+    g_liveTownStaticSubmittedPolygons = 0u;
+    g_liveTownBillboardSubmittedPolygons = 0u;
+
     for (const auto& submission : azel_bridge::submissions()) {
         if (submission.adaptedModelIndex < 0)
             continue;
         const auto* model = azel_bridge::adapted_model(
             static_cast<std::uint32_t>(submission.adaptedModelIndex));
         if (!model) continue;
+
+        ++g_liveTownSubmissionCount;
+        if (submission.state.billboard) {
+            ++g_liveTownBillboardSubmissionCount;
+            g_liveTownBillboardSubmittedPolygons +=
+                static_cast<unsigned int>(model->polygons.size());
+        } else {
+            ++g_liveTownStaticSubmissionCount;
+            g_liveTownStaticSubmittedPolygons +=
+                static_cast<unsigned int>(model->polygons.size());
+        }
+
         staticSignature ^= submission.modelTableOffset;
         staticSignature *= 1099511628211ull;
         staticSignature ^= model->polygons.size();
         staticSignature *= 1099511628211ull;
         hasBillboards = hasBillboards || submission.state.billboard;
     }
+    g_liveTownHasBillboards = hasBillboards;
 
     g_liveTownStaticRebuilt = hasBillboards ||
         staticSignature != g_liveTownStaticSignature;
@@ -4603,16 +4631,41 @@ static void renderBasicWingViewer()
 
     if (roomAuthenticFlatMode) {
         char perfLine[80];
+        char cacheLine[80];
+        char splitLine[80];
+
         std::snprintf(
             perfLine, sizeof(perfLine),
             "QUAD %u/%u DRAW %u",
             g_authFlatVisibleQuads,
             g_authFlatTotalQuads,
             g_authFlatDrawCalls);
+        std::snprintf(
+            cacheLine, sizeof(cacheLine),
+            "SUB %u REBUILD %s BILL %s",
+            g_liveTownSubmissionCount,
+            g_liveTownStaticRebuilt ? "YES" : "NO",
+            g_liveTownHasBillboards ? "YES" : "NO");
+        std::snprintf(
+            splitLine, sizeof(splitLine),
+            "STATIC %u/%u BILL %u/%u",
+            g_liveTownStaticSubmissionCount,
+            g_liveTownStaticSubmittedPolygons,
+            g_liveTownBillboardSubmissionCount,
+            g_liveTownBillboardSubmittedPolygons);
+
         drawTextSmallToBuffer(
             colorBuffer, gxmPitch,
             8, 58,
             perfLine, 0xFFFFFFFFu);
+        drawTextSmallToBuffer(
+            colorBuffer, gxmPitch,
+            8, 67,
+            cacheLine, 0xFFFFFFFFu);
+        drawTextSmallToBuffer(
+            colorBuffer, gxmPitch,
+            8, 76,
+            splitLine, 0xFFFFFFFFu);
     }
 
     drawTextSmallToBuffer(
