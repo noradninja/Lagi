@@ -494,10 +494,11 @@ static void updateEdgeAnimation(float movedDistance)
     if (movementRate) {
         const unsigned counter = g_edge.animationLeftOver + movementRate;
         g_edge.animationLeftOver = counter & 0xFFFFu;
-        // Saturn advances the animation state once per game frame. Never
-        // catch up by skipping decoded poses when rendering falls below
-        // 30 Hz; the whole simulation and animation slow together.
-        animationSteps = std::min(counter >> 16, 1u);
+        // Native Azel semantics: consume every whole animation step carried
+        // by the 16.16 movement accumulator this game frame. updateEdgeSub3()
+        // loops stepAnimation() exactly this many times; clamping to one made
+        // Edge locomotion play substantially too slowly.
+        animationSteps = counter >> 16;
     }
 
     if (!grounded &&
