@@ -4311,6 +4311,12 @@ bool submit_vdp1_model(
     }
 
     if (gouraudPath) {
+        g_profileGouraudProjectUs = 0u;
+        g_profileGouraudPayloadUs = 0u;
+        g_profileGouraudBucketUs = 0u;
+        g_profileGouraudIndexUs = 0u;
+        g_profileGouraudDrawUs = 0u;
+
         // Preserve original Saturn quad identity and attach the four recovered
         // Gouraud corner values to every generated triangle vertex. The final
         // shaders interpolate those values with the accepted VDP1-style
@@ -4333,6 +4339,9 @@ bool submit_vdp1_model(
         batchWrite.assign(textureBucketCount, 0u);
         visibleQuads.assign(model.polygonCount, 0u);
 
+        const std::uint64_t tProjectPayload = sceKernelGetProcessTimeWide();
+        std::uint64_t projectAccumUs = 0u;
+        std::uint64_t payloadAccumUs = 0u;
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             const std::uint16_t textureIndex =
@@ -4340,6 +4349,7 @@ bool submit_vdp1_model(
             if (textureIndex >= textureBucketCount)
                 continue;
 
+            const std::uint64_t tProject = sceKernelGetProcessTimeWide();
             ViewerScreenPoint screen[4];
             bool visible = true;
             for (unsigned int corner = 0; corner < 4; ++corner) {
@@ -4349,11 +4359,13 @@ bool submit_vdp1_model(
                 if (!screen[corner].valid)
                     visible = false;
             }
+            projectAccumUs += sceKernelGetProcessTimeWide() - tProject;
             if (!visible)
                 continue;
 
             visibleQuads[p] = 1u;
 
+            const std::uint64_t tPayload = sceKernelGetProcessTimeWide();
             const auto& gouraud = model.gouraud555[p];
             const float payload[5][4] = {
                 {
@@ -4394,8 +4406,13 @@ bool submit_vdp1_model(
             }
 
             batchCounts[textureIndex] += 6u;
+            payloadAccumUs += sceKernelGetProcessTimeWide() - tPayload;
         }
+        (void)tProjectPayload;
+        g_profileGouraudProjectUs = static_cast<unsigned int>(projectAccumUs);
+        g_profileGouraudPayloadUs = static_cast<unsigned int>(payloadAccumUs);
 
+        const std::uint64_t tBucket = sceKernelGetProcessTimeWide();
         unsigned int totalVisibleIndices = 0u;
         if (g_vdp1TextureBatches.size() < textureBucketCount)
             g_vdp1TextureBatches.resize(textureBucketCount);
@@ -4410,7 +4427,10 @@ bool submit_vdp1_model(
         if (totalVisibleIndices >
             static_cast<unsigned int>(model.vertexCount))
             return false;
+        g_profileGouraudBucketUs = static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - tBucket);
 
+        const std::uint64_t tIndex = sceKernelGetProcessTimeWide();
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             if (!visibleQuads[p])
@@ -4429,6 +4449,10 @@ bool submit_vdp1_model(
             }
         }
 
+        g_profileGouraudIndexUs = static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - tIndex);
+
+        const std::uint64_t tDraw = sceKernelGetProcessTimeWide();
         unsigned int submittedBatches = 0u;
         for (unsigned int t = 0; t < textureBucketCount; ++t) {
             const TextureBatch& batch = g_vdp1TextureBatches[t];
@@ -4449,6 +4473,8 @@ bool submit_vdp1_model(
             ++submittedBatches;
         }
 
+        g_profileGouraudDrawUs = static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - tDraw);
         return submittedBatches != 0u ||
                totalVisibleIndices == 0u;
     }
