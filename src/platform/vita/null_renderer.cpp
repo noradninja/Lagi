@@ -192,6 +192,17 @@ static unsigned int g_liveTownStaticSubmittedPolygons = 0;
 static unsigned int g_liveTownBillboardSubmittedPolygons = 0;
 static bool g_liveTownHasBillboards = false;
 
+// Frame profiler samples are microseconds. TASK is written after runTasks(),
+// so the HUD naturally shows the previous task frame while the render samples
+// describe the render currently being presented.
+static unsigned int g_profileTasksUs = 0;
+static unsigned int g_profileBuildUs = 0;
+static unsigned int g_profileLightingUs = 0;
+static unsigned int g_profileSubmitUs = 0;
+static unsigned int g_profileGxmWaitUs = 0;
+static unsigned int g_profileRenderUs = 0;
+static unsigned int g_profilePresentUs = 0;
+
 enum class ResidentVdp1Model {
     None,
     BasicWing,
@@ -4436,6 +4447,12 @@ static void renderBasicWingViewer()
         !g_vdp1Indices)
         return;
 
+    const std::uint64_t renderStartUs = sceKernelGetProcessTimeWide();
+    g_profileBuildUs = 0u;
+    g_profileLightingUs = 0u;
+    g_profileSubmitUs = 0u;
+    g_profileGxmWaitUs = 0u;
+
     const int previousMode = g_viewMode;
 
     const int viewerModeCount =
@@ -4513,7 +4530,11 @@ static void renderBasicWingViewer()
         g_residentVdp1Model = ResidentVdp1Model::BasicWing;
         applyBasicWingAnimationFrame(g_basicWingAnimationFrame);
     } else if (roomAuthenticCameraMode) {
-        if (!buildLiveTownFrame())
+        const std::uint64_t buildStartUs = sceKernelGetProcessTimeWide();
+        const bool liveTownBuilt = buildLiveTownFrame();
+        g_profileBuildUs = static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - buildStartUs);
+        if (!liveTownBuilt)
             return;
     } else if (roomMode) {
         const ResidentVdp1Model desiredResident =
@@ -4593,10 +4614,14 @@ static void renderBasicWingViewer()
         updateViewerAzelLighting();
 
     if (roomAuthenticCameraMode &&
-        (roomAuthenticLitMode || roomAuthenticLightingOnlyMode))
+        (roomAuthenticLitMode || roomAuthenticLightingOnlyMode)) {
+        const std::uint64_t lightingStartUs = sceKernelGetProcessTimeWide();
         updateLiveTownAzelLighting();
-    else if (roomDiagnosticLitMode)
+        g_profileLightingUs = static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - lightingStartUs);
+    } else if (roomDiagnosticLitMode) {
         updateStaticRoomAzelLighting(false);
+    }
 
     Vdp1DrawState drawState{};
     std::memcpy(drawState.wvp, wvp.m, sizeof(drawState.wvp));
@@ -4610,14 +4635,23 @@ static void renderBasicWingViewer()
             ? staticRoomVdp1Source(false)
             : basicWingVdp1Source());
 
-    if (!submit_vdp1_model(model, drawState)) {
+    const std::uint64_t submitStartUs = sceKernelGetProcessTimeWide();
+    const bool submitted = submit_vdp1_model(model, drawState);
+    g_profileSubmitUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - submitStartUs);
+    if (!submitted) {
         sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
         return;
     }
 
+    const std::uint64_t gxmWaitStartUs = sceKernelGetProcessTimeWide();
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     sceGxmFinish(g_probeContext);
+    g_profileGxmWaitUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - gxmWaitStartUs);
+    g_profileRenderUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - renderStartUs);
 
     drawViewerModeOverlay(
         colorBuffer,
@@ -4668,6 +4702,41 @@ static void renderBasicWingViewer()
             splitLine, 0xFFFFFFFFu);
     }
 
+    if (roomAuthenticCameraMode) {
+        char timing0[80];
+        char timing1[80];
+        char timing2[80];
+        std::snprintf(
+            timing0, sizeof(timing0),
+            "US TASK %u BUILD %u LIGHT %u",
+            g_profileTasksUs,
+            g_profileBuildUs,
+            g_profileLightingUs);
+        std::snprintf(
+            timing1, sizeof(timing1),
+            "US SUB %u GXM %u RENDER %u",
+            g_profileSubmitUs,
+            g_profileGxmWaitUs,
+            g_profileRenderUs);
+        std::snprintf(
+            timing2, sizeof(timing2),
+            "US PRESENT %u",
+            g_profilePresentUs);
+
+        auto profileText = [colorBuffer, gxmPitch](
+            int y, const char* text) {
+            drawTextSmallToBuffer(
+                colorBuffer, gxmPitch,
+                9, y + 1, text, 0xFF000000u);
+            drawTextSmallToBuffer(
+                colorBuffer, gxmPitch,
+                8, y, text, 0xFFFFFFFFu);
+        };
+        profileText(88, timing0);
+        profileText(97, timing1);
+        profileText(106, timing2);
+    }
+
     drawTextSmallToBuffer(
         colorBuffer,
         gxmPitch,
@@ -4684,10 +4753,13 @@ static void renderBasicWingViewer()
     fb.width = viewerRenderWidth();
     fb.height = viewerRenderHeight();
 
+    const std::uint64_t presentStartUs = sceKernelGetProcessTimeWide();
     waitFor30HzPresentSlot();
     sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
     sceDisplayWaitVblankStart();
     mark30HzPresented();
+    g_profilePresentUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - presentStartUs);
 
     // The buffer just queued is now front; draw the next frame into the
     // opposite GXM surface so scanout and rendering never touch the same
@@ -4847,6 +4919,11 @@ bool town_scene_active()
     return !g_debugVisible && g_staticRoomCpuReady &&
            g_staticRoomCpuMesh.cameraValid && g_viewMode >= 7 &&
            g_townPlayerReady;
+}
+
+void town_profile_tasks_us(unsigned int microseconds)
+{
+    g_profileTasksUs = microseconds;
 }
 
 void town_camera_update()
