@@ -16,6 +16,10 @@ struct SubmissionState {
     bool hasModelMatrix = false;
     bool hasLight = false;
     bool billboard = false;
+
+    // Task-owned objects can move independently of the cell/static cache.
+    // The backend still consumes the same normal Azel model submission.
+    bool dynamic = false;
 };
 
 struct RenderSubmission {

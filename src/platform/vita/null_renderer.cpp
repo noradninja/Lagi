@@ -1890,6 +1890,35 @@ static std::uint16_t liveTownTextureIndex(
             record.cmdSize == texture.cmdSize)
             return static_cast<std::uint16_t>(i);
     }
+
+    // Static room bring-up only decoded materials referenced by static cell
+    // geometry. Native task-owned objects can legitimately introduce more
+    // descriptors from the same RUINMP bundle. Decode them into the shared
+    // town atlas on demand instead of rejecting the entire live frame.
+    azel::DecodedMode1Texture decoded{};
+    if (azel::decode_town_texture_descriptor(record, decoded)) {
+        const std::size_t next =
+            g_staticRoomCpuMesh.decodedTextureData.size();
+        if (next < 0xFFFFu) {
+            g_staticRoomCpuMesh.decodedTextureData.push_back(
+                std::move(decoded));
+            platform::logging::writef(
+                "[TownRender] added live material %u PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
+                static_cast<unsigned>(next),
+                static_cast<unsigned>(record.cmdPmod),
+                static_cast<unsigned>(record.cmdColr),
+                static_cast<unsigned>(record.cmdSrca),
+                static_cast<unsigned>(record.cmdSize));
+            return static_cast<std::uint16_t>(next);
+        }
+    }
+
+    platform::logging::writef(
+        "[TownRender] unresolved live material PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
+        static_cast<unsigned>(record.cmdPmod),
+        static_cast<unsigned>(record.cmdColr),
+        static_cast<unsigned>(record.cmdSrca),
+        static_cast<unsigned>(record.cmdSize));
     return 0xFFFFu;
 }
 
@@ -2145,16 +2174,18 @@ static bool buildLiveTownFrame()
             ++g_liveTownBillboardSubmissionCount;
             g_liveTownBillboardSubmittedPolygons +=
                 static_cast<unsigned int>(model->polygons.size());
-        } else {
+        } else if (!submission.state.dynamic) {
             ++g_liveTownStaticSubmissionCount;
             g_liveTownStaticSubmittedPolygons +=
                 static_cast<unsigned int>(model->polygons.size());
         }
 
-        staticSignature ^= submission.modelTableOffset;
-        staticSignature *= 1099511628211ull;
-        staticSignature ^= model->polygons.size();
-        staticSignature *= 1099511628211ull;
+        if (!submission.state.dynamic) {
+            staticSignature ^= submission.modelTableOffset;
+            staticSignature *= 1099511628211ull;
+            staticSignature ^= model->polygons.size();
+            staticSignature *= 1099511628211ull;
+        }
         hasBillboards = hasBillboards || submission.state.billboard;
     }
     g_liveTownHasBillboards = hasBillboards;
@@ -2171,7 +2202,9 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.gouraud555.clear();
         g_liveTownCpuMesh.polygonTextureIndices.clear();
         for (const auto& submission : azel_bridge::submissions()) {
-            if (submission.adaptedModelIndex < 0) continue;
+            if (submission.state.dynamic ||
+                submission.adaptedModelIndex < 0)
+                continue;
             const auto* model = azel_bridge::adapted_model(
                 static_cast<std::uint32_t>(submission.adaptedModelIndex));
             if (model) appendLiveTownModel(*model, submission.state);
@@ -2190,6 +2223,20 @@ static bool buildLiveTownFrame()
     g_profileBuildCacheUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tCache);
 
+    // Task-owned town objects retain their native per-frame transform
+    // lifecycle. Append them after restoring the static cell cache so their
+    // translations (for example the Ruins lock's 50-frame descent) remain
+    // visible without forcing the static room to rebuild every frame.
+    for (const auto& submission : azel_bridge::submissions()) {
+        if (!submission.state.dynamic ||
+            submission.adaptedModelIndex < 0)
+            continue;
+        const auto* model = azel_bridge::adapted_model(
+            static_cast<std::uint32_t>(submission.adaptedModelIndex));
+        if (model)
+            appendLiveTownModel(*model, submission.state);
+    }
+
     const std::uint64_t tEdge = sceKernelGetProcessTimeWide();
     appendLiveTownEdge();
     g_profileBuildEdgeUs = static_cast<unsigned int>(
@@ -2198,6 +2245,8 @@ static bool buildLiveTownFrame()
     const std::uint64_t tValidate = sceKernelGetProcessTimeWide();
     std::uint64_t signature = staticSignature;
     signature ^= g_liveTownCpuMesh.polygonRecords.size();
+    signature *= 1099511628211ull;
+    signature ^= g_staticRoomCpuMesh.decodedTextureData.size();
     signature *= 1099511628211ull;
     g_liveTownCpuMesh.polygons = static_cast<unsigned int>(
         g_liveTownCpuMesh.polygonRecords.size());

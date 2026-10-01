@@ -240,4 +240,11 @@ bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out);
 bool build_edge_idle_debug_mesh(BasicWingDebugMesh& out);
 bool build_town_world_scene(StaticRoomDebugMesh& out);
 
+// Decode one VDP1 material descriptor from the currently loaded Ruins town
+// bundle/palette. Live task-owned town objects use this to extend the same
+// texture atlas as static cell geometry without renderer-side object cases.
+bool decode_town_texture_descriptor(
+    const SaturnPolygonRecord& record,
+    DecodedMode1Texture& out);
+
 } // namespace lagi::azel

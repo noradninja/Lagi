@@ -875,6 +875,43 @@ static bool parseRawModel(
 
 } // namespace
 
+bool decode_town_texture_descriptor(
+    const SaturnPolygonRecord& record,
+    DecodedMode1Texture& out)
+{
+    const std::vector<std::uint8_t>* const cgb =
+        town_runtime_resource("RUINMP.CGB");
+    sSaturnMemoryFile* const overlay = town_overlay_file();
+    if (!cgb || !overlay || !overlay->m_data)
+        return false;
+
+    constexpr u32 kPaletteEA = 0x0605EBF8u;
+    constexpr u32 kPaletteBytes = 0x200u;
+    if (kPaletteEA < overlay->m_base)
+        return false;
+    const u32 paletteOffset = kPaletteEA - overlay->m_base;
+    if (paletteOffset > overlay->m_dataSize ||
+        kPaletteBytes > overlay->m_dataSize - paletteOffset)
+        return false;
+
+    StaticRoomDebugMesh one{};
+    one.polygonRecords.push_back(record);
+    decodeRoomTextures(
+        *cgb,
+        overlay->m_data + paletteOffset,
+        kPaletteBytes,
+        one);
+
+    if (!one.texturesValid ||
+        one.decodedTextureData.size() != 1u ||
+        one.polygonTextureIndices.size() != 1u ||
+        one.polygonTextureIndices[0] != 0u)
+        return false;
+
+    out = std::move(one.decodedTextureData[0]);
+    return true;
+}
+
 bool build_town_world_scene(StaticRoomDebugMesh& out)
 {
     out = {};

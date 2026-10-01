@@ -931,12 +931,13 @@ struct RuinLockTask final : s_workAreaTemplateWithArg<RuinLockTask, u32> {
         if (!model)
             return;
 
-        const auto state = makeTownSubmissionState(
+        auto state = makeTownSubmissionState(
             self->position,
             static_cast<s16>(self->rotationRaw[0] >> 16),
             static_cast<s16>(self->rotationRaw[1] >> 16),
             static_cast<s16>(self->rotationRaw[2] >> 16),
             false);
+        state.dynamic = true;
         azel_bridge::set_town_submission_context(
             self->bundleIndex,
             self->cellIndex >= 0 ? static_cast<u32>(self->cellIndex) : 0u,
