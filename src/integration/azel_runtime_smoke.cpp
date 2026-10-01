@@ -16,6 +16,7 @@
 #include "commonOverlay.h"
 #include "audio/soundDataTable.h"
 #include "lagi/dragon_common.h"
+#include <utility>
 #include <vector>
 
 namespace lagi::azel {
@@ -125,7 +126,8 @@ bool runtime_smoke_init()
         lagi::platform::renderer::failure("[FAIL] EDGE IDLE MODEL");
         return false;
     }
-    if (!lagi::platform::renderer::load_edge_idle_model(edgeIdle)) {
+    if (!lagi::platform::renderer::load_edge_idle_model(
+            std::move(edgeIdle))) {
         std::printf("[Edge] renderer registration FAILED\n");
         lagi::platform::renderer::failure("[FAIL] EDGE IDLE RENDER MODEL");
         return false;

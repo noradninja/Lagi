@@ -15,6 +15,7 @@
 #include <cstring>
 #include <cctype>
 #include <cmath>
+#include <utility>
 #include <vector>
 
 namespace lagi::platform::renderer {
@@ -3669,7 +3670,7 @@ bool debug_console_visible()
     return g_debugVisible;
 }
 
-bool load_edge_idle_model(const azel::BasicWingDebugMesh& mesh)
+bool load_edge_idle_model(azel::BasicWingDebugMesh&& mesh)
 {
     if (mesh.vertices.empty() ||
         mesh.vertices.size() != mesh.polygons * 6u ||
@@ -3678,14 +3679,17 @@ bool load_edge_idle_model(const azel::BasicWingDebugMesh& mesh)
         !mesh.mode1DecodeFullyResolved)
         return false;
 
-    g_edgeIdleCpuMesh = mesh;
+    const unsigned models = mesh.models;
+    const unsigned polygons = mesh.polygons;
+    const unsigned decodedTextures = mesh.decodedTextures;
+    g_edgeIdleCpuMesh = std::move(mesh);
     g_edgeIdleCpuReady = true;
 
     char line[78];
     std::snprintf(
         line, sizeof(line),
         "[PASS] EDGE IDLE %u MODELS / %u POLYS / %u TEX",
-        mesh.models, mesh.polygons, mesh.decodedTextures);
+        models, polygons, decodedTextures);
     status(line, 0xFF70E0A0u);
     return true;
 }
