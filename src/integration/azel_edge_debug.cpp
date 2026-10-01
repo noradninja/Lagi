@@ -762,7 +762,6 @@ bool build_edge_idle_debug_mesh(BasicWingDebugMesh& out)
         textures ? "textures ready" : "texture decode incomplete");
 
     const bool coreAnimations =
-        out.edgeAnimationClips[0].valid &&
         out.edgeAnimationClips[1].valid &&
         out.edgeAnimationClips[2].valid &&
         out.edgeAnimationClips[4].valid;
