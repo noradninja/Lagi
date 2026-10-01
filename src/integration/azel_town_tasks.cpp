@@ -54,9 +54,65 @@ WorldGridState g_worldGrid{};
 StaticRoomDebugMesh g_worldScene{};
 p_workArea g_worldParent = nullptr;
 
+struct EdgeRuntimeState {
+    bool initialized = false;
+    float position[3]{};
+    float startPosition[3]{};
+    float yaw = 0.0f;
+    float startYaw = 0.0f;
+    TownCollisionBody collision{};
+};
+
+EdgeRuntimeState g_edge{};
+bool g_pendingEdgePosition = false;
+bool g_pendingEdgeOrientation = false;
+float g_pendingEdgePositionValue[3]{};
+float g_pendingEdgeYaw = 0.0f;
+
 static s32 initNpcWorld(s32 setupIndex);
 static s32 initNpcFromStructWorld(u32 objectEA);
 static s32 updateWorldGridRaw(s32 x, s32 z);
+
+static float wrapAngle(float value)
+{
+    constexpr float kPi = 3.14159265358979323846f;
+    constexpr float kTau = kPi * 2.0f;
+    while (value > kPi) value -= kTau;
+    while (value < -kPi) value += kTau;
+    return value;
+}
+
+static void presentEdge()
+{
+    platform::renderer::town_present_edge(
+        g_edge.position[0], g_edge.position[1], g_edge.position[2],
+        g_edge.yaw,
+        (g_edge.collision.contactMask & 0x4u) != 0,
+        g_edge.collision.contactCount);
+}
+
+static void setEdgePositionRaw(s32 x, s32 y, s32 z)
+{
+    constexpr float kFixed = 1.0f / 65536.0f;
+    g_pendingEdgePosition = true;
+    g_pendingEdgePositionValue[0] = static_cast<float>(x) * kFixed;
+    g_pendingEdgePositionValue[1] = static_cast<float>(y) * kFixed;
+    g_pendingEdgePositionValue[2] = static_cast<float>(z) * kFixed;
+    std::copy(std::begin(g_pendingEdgePositionValue),
+              std::end(g_pendingEdgePositionValue),
+              std::begin(g_edge.position));
+    presentEdge();
+}
+
+static void setEdgeOrientationRaw(s32, s32 y, s32)
+{
+    constexpr float kTau = 6.28318530717958647692f;
+    g_pendingEdgeOrientation = true;
+    g_pendingEdgeYaw = static_cast<float>(y) /
+        static_cast<float>(0x10000000) * kTau;
+    g_edge.yaw = g_pendingEdgeYaw;
+    presentEdge();
+}
 
 static sSaturnPtr align2(sSaturnPtr ptr)
 {
@@ -136,11 +192,11 @@ static s32 dispatchNative(u32 functionEA, unsigned argc, const s32* args)
         return 0;
     case 0x0605AEE0u:
         if (argc == 4 && args[0] == 0)
-            platform::renderer::town_edge_set_position(args[1], args[2], args[3]);
+            setEdgePositionRaw(args[1], args[2], args[3]);
         return 0;
     case 0x0605AF0Eu:
         if (argc == 4 && args[0] == 0)
-            platform::renderer::town_edge_set_orientation(args[1], args[2], args[3]);
+            setEdgeOrientationRaw(args[1], args[2], args[3]);
         return 0;
     case 0x060144C0u:
         return argc == 2 ? updateWorldGridRaw(args[0], args[1]) : 0;
@@ -299,7 +355,10 @@ struct TownScriptTask final : s_workAreaTemplate<TownScriptTask> {
         g_worldParent = self;
     }
     static void UpdateTask(TownScriptTask*) {
-        platform::renderer::town_script_collision_update();
+        if (platform::renderer::town_scene_active()) {
+            processAllCollisions();
+            resetCollisionFrame();
+        }
         runScript();
     }
     static const TypedTaskDefinition* getTypedTaskDefinition() {
@@ -427,6 +486,41 @@ static s32 initNpcWorld(s32 setupIndex)
         return 0;
     }
 
+    g_edge = {};
+    g_edge.initialized = g_worldScene.edgeTransformValid;
+    if (g_edge.initialized) {
+        std::copy(std::begin(g_worldScene.edgePosition),
+                  std::end(g_worldScene.edgePosition),
+                  std::begin(g_edge.position));
+        std::copy(std::begin(g_worldScene.edgePosition),
+                  std::end(g_worldScene.edgePosition),
+                  std::begin(g_edge.startPosition));
+        constexpr float kTau = 6.28318530717958647692f;
+        g_edge.yaw = g_worldScene.edgeRotation[1] * kTau;
+        if (g_pendingEdgePosition)
+            std::copy(std::begin(g_pendingEdgePositionValue),
+                      std::end(g_pendingEdgePositionValue),
+                      std::begin(g_edge.position));
+        if (g_pendingEdgeOrientation)
+            g_edge.yaw = g_pendingEdgeYaw;
+        std::copy(std::begin(g_edge.position),
+                  std::end(g_edge.position),
+                  std::begin(g_edge.startPosition));
+        g_edge.startYaw = g_edge.yaw;
+        if (g_worldScene.edgeCollisionValid) {
+            setCollisionSetup(g_edge.collision, 0);
+            setCollisionBounds(
+                g_edge.collision,
+                {g_worldScene.edgeCollisionMin[0],
+                 g_worldScene.edgeCollisionMin[1],
+                 g_worldScene.edgeCollisionMin[2]},
+                {g_worldScene.edgeCollisionMax[0],
+                 g_worldScene.edgeCollisionMax[1],
+                 g_worldScene.edgeCollisionMax[2]});
+        }
+        presentEdge();
+    }
+
     g_worldGrid.initialized = true;
     createGridCells(-3, -3);
     platform::logging::writef(
@@ -516,15 +610,81 @@ struct RuinBackgroundTask final : s_workAreaTemplate<RuinBackgroundTask> {
 };
 
 struct TownEdgeTask final : s_workAreaTemplate<TownEdgeTask> {
-    static void UpdateTask(TownEdgeTask*) { platform::renderer::town_edge_update(); }
+    static void UpdateTask(TownEdgeTask*) {
+        if (!g_edge.initialized || !platform::renderer::town_scene_active())
+            return;
+
+        if (platform::input::reset_view_pressed()) {
+            std::copy(std::begin(g_edge.startPosition),
+                      std::end(g_edge.startPosition),
+                      std::begin(g_edge.position));
+            g_edge.yaw = g_edge.startYaw;
+        }
+
+        float forwardX = 0.0f, forwardZ = 1.0f;
+        platform::renderer::town_camera_forward(forwardX, forwardZ);
+        float forwardLength = std::sqrt(
+            forwardX * forwardX + forwardZ * forwardZ);
+        if (forwardLength <= 0.0001f) {
+            forwardX = std::sin(g_edge.yaw);
+            forwardZ = std::cos(g_edge.yaw);
+            forwardLength = 1.0f;
+        }
+        forwardX /= forwardLength;
+        forwardZ /= forwardLength;
+
+        const float inputX = platform::input::analog_x();
+        const float inputForward = -platform::input::analog_y();
+        const float magnitude = std::min(
+            1.0f, std::sqrt(inputX * inputX + inputForward * inputForward));
+        if (magnitude > 0.0001f) {
+            const float rightX = forwardZ;
+            const float rightZ = -forwardX;
+            float desiredX = rightX * -inputX + forwardX * inputForward;
+            float desiredZ = rightZ * inputX + forwardZ * inputForward;
+            const float desiredLength = std::sqrt(
+                desiredX * desiredX + desiredZ * desiredZ);
+            if (desiredLength > 0.0001f) {
+                desiredX /= desiredLength;
+                desiredZ /= desiredLength;
+                const float desiredYaw = std::atan2(-desiredX, -desiredZ);
+                constexpr float kTau = 6.28318530717958647692f;
+                constexpr float kMaxTurn =
+                    static_cast<float>(0x0E38E3) /
+                    static_cast<float>(0x10000000) * kTau;
+                const float delta = std::clamp(
+                    wrapAngle(desiredYaw - g_edge.yaw),
+                    -kMaxTurn, kMaxTurn);
+                g_edge.yaw = wrapAngle(g_edge.yaw + delta);
+
+                constexpr float kWalkStep =
+                    static_cast<float>(0x109) / 65536.0f;
+                const float step = kWalkStep * magnitude;
+                g_edge.position[0] -= std::sin(g_edge.yaw) * step;
+                g_edge.position[2] -= std::cos(g_edge.yaw) * step;
+            }
+        }
+
+        const auto& solve = g_edge.collision.collisionSolveTranslation;
+        g_edge.position[0] += solve.x;
+        g_edge.position[1] += solve.y;
+        g_edge.position[2] += solve.z;
+        g_edge.collision.ownerPosition = {
+            g_edge.position[0], g_edge.position[1], g_edge.position[2]};
+        g_edge.collision.ownerRotation = {0.0f, g_edge.yaw, 0.0f};
+        registerCollisionBody(g_edge.collision);
+        presentEdge();
+    }
     static void DrawTask(TownEdgeTask*) { platform::renderer::town_camera_update(); }
     static const TypedTaskDefinition* getTypedTaskDefinition() { return taskDefinition<TownEdgeTask>(UpdateTask, DrawTask); }
 };
 
 struct TownMainLogicTask final : s_workAreaTemplate<TownMainLogicTask> {
     static void UpdateTask(TownMainLogicTask*) {
-        int x = 0, y = 0, z = 0;
-        platform::renderer::town_edge_position_raw(x, y, z);
+        const int x = static_cast<int>(
+            std::lround(g_edge.position[0] * 65536.0f));
+        const int z = static_cast<int>(
+            std::lround(g_edge.position[2] * 65536.0f));
         updateWorldGridRaw(x, z);
         platform::renderer::town_main_logic_update();
     }
@@ -542,6 +702,9 @@ struct TwnRuinTask final : s_workAreaTemplate<TwnRuinTask> {
         g_script = {};
         g_gameBits.fill(0);
         g_pipelineFrames = 0;
+        g_edge = {};
+        g_pendingEdgePosition = false;
+        g_pendingEdgeOrientation = false;
         if (overlay && town.initialScriptEA)
             g_script.pc = overlay->getSaturnPtr(town.initialScriptEA);
 

@@ -2,7 +2,6 @@
 #include "lagi/debug_mesh.h"
 #include "lagi/vdp1_renderer.h"
 #include "lagi/azel_town_runtime.h"
-#include "lagi/azel_town_collision.h"
 #include "lagi/azel_render_bridge.h"
 
 #include <psp2/display.h>
@@ -233,11 +232,8 @@ static float g_townCameraYaw = 0.0f;
 static float g_townCameraPitch = 0.0f;
 static float g_townCameraDistance = 0.0f;
 static float g_townPlayerPreviousPosition[3]{};
-static float g_townPlayerCollisionHalf[3]{0.03f, 0.08f, 0.03f};
-static float g_townPlayerCollisionCenter[3]{};
 static bool g_townPlayerGrounded = false;
 static unsigned int g_townCollisionContacts = 0;
-static azel::TownCollisionBody g_townEdgeCollisionBody{};
 
 static bool g_staticRoomAzelCellVisible = true;
 static unsigned int g_staticRoomAzelLod0Objects = 0;
@@ -1992,135 +1988,6 @@ static void resetTownPlayerRuntime()
     g_townCameraYaw = std::atan2(ox, oz);
     g_townCameraPitch =
         std::atan2(oy, std::sqrt(ox*ox + oz*oz));
-}
-
-
-static void applyAndRegisterTownEdgeCollision()
-{
-    if (!g_townPlayerReady)
-        return;
-
-    g_townEdgeCollisionBody.ownerPosition = {
-        g_townPlayerPosition[0],
-        g_townPlayerPosition[1],
-        g_townPlayerPosition[2]};
-    g_townEdgeCollisionBody.ownerRotation = {
-        0.0f, g_townPlayerYaw, 0.0f};
-
-    // sScriptTask resolved this body before sEdgeTask began. Azel applies
-    // that solve during Edge's update, then registers the new transform for
-    // the following frame.
-    const auto& solve =
-        g_townEdgeCollisionBody.collisionSolveTranslation;
-    g_townPlayerPosition[0] += solve.x;
-    g_townPlayerPosition[1] += solve.y;
-    g_townPlayerPosition[2] += solve.z;
-    g_townPlayerGrounded =
-        (g_townEdgeCollisionBody.contactMask & 0x4u) != 0;
-    g_townCollisionContacts =
-        g_townEdgeCollisionBody.contactCount;
-
-    g_townEdgeCollisionBody.ownerPosition = {
-        g_townPlayerPosition[0],
-        g_townPlayerPosition[1],
-        g_townPlayerPosition[2]};
-    g_townEdgeCollisionBody.ownerRotation = {
-        0.0f, g_townPlayerYaw, 0.0f};
-    azel::registerCollisionBody(g_townEdgeCollisionBody);
-}
-
-static void updateTownPlayerRuntime()
-{
-    if (!g_townPlayerReady)
-        return;
-
-    const float inputX = input::analog_x();
-    const float inputForward = -input::analog_y();
-    const float magnitude =
-        std::min(
-            1.0f,
-            std::sqrt(
-                inputX * inputX +
-                inputForward * inputForward));
-
-    if (magnitude <= 0.0001f) {
-        applyAndRegisterTownEdgeCollision();
-        return;
-    }
-
-    // Match town mode-1 semantics: stick direction is camera-relative, Edge
-    // turns toward the requested heading with a bounded per-frame turn, and
-    // forward speed is proportional to analog magnitude.
-    float cameraForwardX =
-        g_townCameraTarget[0] - g_townCameraPosition[0];
-    float cameraForwardZ =
-        g_townCameraTarget[2] - g_townCameraPosition[2];
-    float forwardLength =
-        std::sqrt(
-            cameraForwardX * cameraForwardX +
-            cameraForwardZ * cameraForwardZ);
-    if (forwardLength <= 0.0001f) {
-        cameraForwardX = std::sin(g_townPlayerYaw);
-        cameraForwardZ = std::cos(g_townPlayerYaw);
-        forwardLength = 1.0f;
-    }
-    cameraForwardX /= forwardLength;
-    cameraForwardZ /= forwardLength;
-
-    const float cameraRightX = cameraForwardZ;
-    const float cameraRightZ = -cameraForwardX;
-
-    // Azel town mode 1 does not strafe: stick direction chooses a desired
-    // camera-relative heading, Edge turns toward it, then movement is always
-    // forward along Edge's facing direction.
-    float desiredX =
-        cameraRightX * -inputX +
-        cameraForwardX * inputForward;
-    float desiredZ =
-        cameraRightZ * inputX +
-        cameraForwardZ * inputForward;
-    const float desiredLength =
-        std::sqrt(desiredX * desiredX + desiredZ * desiredZ);
-    if (desiredLength <= 0.0001f)
-        return;
-    desiredX /= desiredLength;
-    desiredZ /= desiredLength;
-
-    // Azel's Edge forward axis is local -Z. A requested world-space travel
-    // direction therefore maps to the yaw whose -Z axis points along it.
-    const float desiredYaw =
-        std::atan2(-desiredX, -desiredZ);
-    float yawDelta =
-        wrapRadians(desiredYaw - g_townPlayerYaw);
-
-    // Azel's town mode-1 minimum steering clamp is 0xE38E3 in its
-    // 0x10000000-per-turn angle space.
-    constexpr float kTau =
-        6.28318530717958647692f;
-    constexpr float kMaxTurnPerFrame =
-        (static_cast<float>(0x0E38E3) /
-         static_cast<float>(0x10000000)) * kTau;
-    yawDelta =
-        std::max(
-            -kMaxTurnPerFrame,
-            std::min(kMaxTurnPerFrame, yawDelta));
-    g_townPlayerYaw =
-        wrapRadians(g_townPlayerYaw + yawDelta);
-
-    // Normal walk uses -0x109 16.16 units at full input in
-    // updateEdgePositionSub1(). The sign there is local -Z; convert to our
-    // world forward vector here.
-    constexpr float kWalkStep =
-        static_cast<float>(0x109) / 65536.0f;
-    const float step = kWalkStep * magnitude;
-    // updateEdgePositionSub1() writes a negative local-Z walk step
-    // (r10 = -0x109 at normal speed), so Edge advances along local -Z.
-    g_townPlayerPosition[0] -=
-        std::sin(g_townPlayerYaw) * step;
-    g_townPlayerPosition[2] -=
-        std::cos(g_townPlayerYaw) * step;
-
-    applyAndRegisterTownEdgeCollision();
 }
 
 
@@ -4026,28 +3893,6 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
         g_townPlayerStartYaw =
             g_townPlayerYaw;
 
-        if (mesh.edgeCollisionValid) {
-            for (unsigned int i = 0; i < 3; ++i) {
-                g_townPlayerCollisionCenter[i] =
-                    (mesh.edgeCollisionMin[i] +
-                     mesh.edgeCollisionMax[i]) * 0.5f;
-                g_townPlayerCollisionHalf[i] =
-                    std::fabs(
-                        mesh.edgeCollisionMax[i] -
-                        mesh.edgeCollisionMin[i]) * 0.5f;
-            }
-
-            azel::setCollisionSetup(g_townEdgeCollisionBody, 0);
-            azel::setCollisionBounds(
-                g_townEdgeCollisionBody,
-                {mesh.edgeCollisionMin[0],
-                 mesh.edgeCollisionMin[1],
-                 mesh.edgeCollisionMin[2]},
-                {mesh.edgeCollisionMax[0],
-                 mesh.edgeCollisionMax[1],
-                 mesh.edgeCollisionMax[2]});
-        }
-
         std::memcpy(
             g_townPlayerPreviousPosition,
             mesh.edgePosition,
@@ -4141,7 +3986,6 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
             static_cast<unsigned>(
                 g_staticRoomCpuMesh.decodedTextureData.size());
 
-        applyAndRegisterTownEdgeCollision();
         transformTownEdgeVertices();
         status(
             "[PASS] EDGE VISUAL MERGED INTO RUIN",
@@ -4835,21 +4679,6 @@ bool town_scene_active()
            g_townPlayerReady;
 }
 
-void town_script_collision_update()
-{
-    if (!town_scene_active())
-        return;
-    azel::processAllCollisions();
-    azel::resetCollisionFrame();
-}
-
-void town_edge_update()
-{
-    if (!town_scene_active())
-        return;
-    updateTownPlayerRuntime();
-}
-
 void town_main_logic_update()
 {
     if (!town_scene_active())
@@ -4864,30 +4693,24 @@ void town_camera_update()
     transformTownEdgeVertices();
 }
 
-void town_edge_set_position(int x, int y, int z)
+void town_camera_forward(float& x, float& z)
+{
+    x = g_townCameraTarget[0] - g_townCameraPosition[0];
+    z = g_townCameraTarget[2] - g_townCameraPosition[2];
+}
+
+void town_present_edge(
+    float x, float y, float z, float yaw,
+    bool grounded, unsigned contacts)
 {
     if (!g_townPlayerReady)
         return;
-    constexpr float kFixed = 1.0f / 65536.0f;
-    g_townPlayerPosition[0] = static_cast<float>(x) * kFixed;
-    g_townPlayerPosition[1] = static_cast<float>(y) * kFixed;
-    g_townPlayerPosition[2] = static_cast<float>(z) * kFixed;
-}
-
-void town_edge_set_orientation(int, int y, int)
-{
-    if (!g_townPlayerReady)
-        return;
-    constexpr float kTau = 6.28318530717958647692f;
-    constexpr float kAngleUnit = 1.0f / 268435456.0f;
-    g_townPlayerYaw = static_cast<float>(y) * kAngleUnit * kTau;
-}
-
-void town_edge_position_raw(int& x, int& y, int& z)
-{
-    x = static_cast<int>(std::lround(g_townPlayerPosition[0] * 65536.0f));
-    y = static_cast<int>(std::lround(g_townPlayerPosition[1] * 65536.0f));
-    z = static_cast<int>(std::lround(g_townPlayerPosition[2] * 65536.0f));
+    g_townPlayerPosition[0] = x;
+    g_townPlayerPosition[1] = y;
+    g_townPlayerPosition[2] = z;
+    g_townPlayerYaw = yaw;
+    g_townPlayerGrounded = grounded;
+    g_townCollisionContacts = contacts;
 }
 
 } // namespace lagi::platform::renderer
