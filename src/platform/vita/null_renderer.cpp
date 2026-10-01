@@ -1905,7 +1905,9 @@ static Vdp1ModelSource liveTownVdp1Source()
 
 static void appendLiveTownModel(
     const azel_bridge::LiveVdp1Model& model,
-    const azel_bridge::SubmissionState& state)
+    const azel_bridge::SubmissionState& state,
+    const std::uint16_t* resolvedTextureIndices = nullptr,
+    std::size_t resolvedTextureIndexCount = 0)
 {
     if (!state.hasModelMatrix)
         return;
@@ -1989,8 +1991,11 @@ static void appendLiveTownModel(
         }
         record.model = static_cast<unsigned int>(polygonBase);
         g_liveTownCpuMesh.polygonRecords.push_back(record);
-        g_liveTownCpuMesh.polygonTextureIndices.push_back(
-            liveTownTextureIndex(record));
+        const std::uint16_t textureIndex =
+            resolvedTextureIndices && p < resolvedTextureIndexCount
+                ? resolvedTextureIndices[p]
+                : liveTownTextureIndex(record);
+        g_liveTownCpuMesh.polygonTextureIndices.push_back(textureIndex);
         g_liveTownCpuMesh.gouraud555.push_back({});
     }
 }
@@ -2081,7 +2086,25 @@ static void appendLiveTownEdge()
     state.modelMatrix[7] = static_cast<std::int32_t>(std::lround(g_townPlayerPosition[1] * 65536.0f));
     state.modelMatrix[11] = static_cast<std::int32_t>(std::lround(g_townPlayerPosition[2] * 65536.0f));
     state.hasModelMatrix = true;
-    appendLiveTownModel(edge, state);
+
+    // Edge's VDP1 texture mapping was already resolved when the static room
+    // asset set was assembled. Reuse those indices instead of performing a
+    // linear search across every decoded room texture for every Edge polygon
+    // on every frame.
+    const std::uint16_t* edgeTextureIndices = nullptr;
+    std::size_t edgeTextureIndexCount = 0;
+    if (g_edgeFirstPolygon < g_staticRoomCpuMesh.polygonTextureIndices.size()) {
+        edgeTextureIndices =
+            g_staticRoomCpuMesh.polygonTextureIndices.data() +
+            g_edgeFirstPolygon;
+        edgeTextureIndexCount = std::min<std::size_t>(
+            edge.polygons.size(),
+            g_staticRoomCpuMesh.polygonTextureIndices.size() -
+                g_edgeFirstPolygon);
+    }
+
+    appendLiveTownModel(
+        edge, state, edgeTextureIndices, edgeTextureIndexCount);
     g_profileEdgeAppendUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tAppend);
 }
