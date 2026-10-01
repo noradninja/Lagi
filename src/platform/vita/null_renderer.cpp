@@ -192,6 +192,12 @@ static unsigned int g_liveTownStaticSubmittedPolygons = 0;
 static unsigned int g_liveTownBillboardSubmittedPolygons = 0;
 static bool g_liveTownHasBillboards = false;
 
+struct LiveTownResolvedMaterialCache {
+    sProcessed3dModel* model = nullptr;
+    std::vector<std::uint16_t> textureIndices;
+};
+static std::vector<LiveTownResolvedMaterialCache> g_liveTownMaterialCache;
+
 // Frame profiler samples are microseconds. TASK is written after runTasks(),
 // so the HUD naturally shows the previous task frame while the render samples
 // describe the render currently being presented.
@@ -205,6 +211,9 @@ static unsigned int g_profileBuildUploadUs = 0;
 static unsigned int g_profileEdgeCopyUs = 0;
 static unsigned int g_profileEdgeAnimUs = 0;
 static unsigned int g_profileEdgeAppendUs = 0;
+static unsigned int g_profileObjectAppendUs = 0;
+static unsigned int g_profileObjectMaterialResolveUs = 0;
+static unsigned int g_profileObjectMaterialCacheMisses = 0;
 static unsigned int g_profileLightingUs = 0;
 static unsigned int g_profileSubmitUs = 0;
 static unsigned int g_profileGouraudProjectUs = 0;
@@ -1940,6 +1949,33 @@ static Vdp1ModelSource liveTownVdp1Source()
     return source;
 }
 
+static const std::vector<std::uint16_t>* resolvedLiveTownMaterialIndices(
+    sProcessed3dModel* modelIdentity,
+    const azel_bridge::LiveVdp1Model& model)
+{
+    if (!modelIdentity)
+        return nullptr;
+
+    for (auto& cached : g_liveTownMaterialCache) {
+        if (cached.model == modelIdentity &&
+            cached.textureIndices.size() == model.polygons.size())
+            return &cached.textureIndices;
+    }
+
+    const std::uint64_t resolveStartUs = sceKernelGetProcessTimeWide();
+    LiveTownResolvedMaterialCache cached{};
+    cached.model = modelIdentity;
+    cached.textureIndices.reserve(model.polygons.size());
+    for (const auto& record : model.polygons)
+        cached.textureIndices.push_back(liveTownTextureIndex(record));
+    g_profileObjectMaterialResolveUs += static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - resolveStartUs);
+    ++g_profileObjectMaterialCacheMisses;
+
+    g_liveTownMaterialCache.push_back(std::move(cached));
+    return &g_liveTownMaterialCache.back().textureIndices;
+}
+
 static void appendLiveTownModel(
     const azel_bridge::LiveVdp1Model& model,
     const azel_bridge::SubmissionState& state,
@@ -2153,6 +2189,9 @@ static bool buildLiveTownFrame()
     g_profileBuildEdgeUs = 0u;
     g_profileBuildValidateUs = 0u;
     g_profileBuildUploadUs = 0u;
+    g_profileObjectAppendUs = 0u;
+    g_profileObjectMaterialResolveUs = 0u;
+    g_profileObjectMaterialCacheMisses = 0u;
     const std::uint64_t tScan = sceKernelGetProcessTimeWide();
     std::uint64_t staticSignature = 1469598103934665603ull;
     bool hasBillboards = false;
@@ -2224,18 +2263,30 @@ static bool buildLiveTownFrame()
         sceKernelGetProcessTimeWide() - tCache);
 
     // Task-owned town objects retain their native per-frame transform
-    // lifecycle. Append them after restoring the static cell cache so their
-    // translations (for example the Ruins lock's 50-frame descent) remain
-    // visible without forcing the static room to rebuild every frame.
+    // lifecycle. Their model/material mapping is immutable, though, so cache
+    // polygon->town-texture indices by native model identity exactly as Edge
+    // reuses its already-resolved mapping. Only transforms/normals are rebuilt
+    // per instance each frame.
+    const std::uint64_t tObjects = sceKernelGetProcessTimeWide();
     for (const auto& submission : azel_bridge::submissions()) {
         if (!submission.state.dynamic ||
             submission.adaptedModelIndex < 0)
             continue;
         const auto* model = azel_bridge::adapted_model(
             static_cast<std::uint32_t>(submission.adaptedModelIndex));
-        if (model)
-            appendLiveTownModel(*model, submission.state);
+        if (!model)
+            continue;
+
+        const auto* resolved = resolvedLiveTownMaterialIndices(
+            submission.model, *model);
+        appendLiveTownModel(
+            *model,
+            submission.state,
+            resolved && !resolved->empty() ? resolved->data() : nullptr,
+            resolved ? resolved->size() : 0u);
     }
+    g_profileObjectAppendUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - tObjects);
 
     const std::uint64_t tEdge = sceKernelGetProcessTimeWide();
     appendLiveTownEdge();
@@ -5001,7 +5052,7 @@ static void renderBasicWingViewer()
 
     if (roomAuthenticCameraMode) {
         char timing0[80], timing1[80], timing2[80], timing3[80], timing4[80];
-        char timing5[80], timing6[80], timing7[80];
+        char timing5[80], timing6[80], timing7[80], timing8[80];
         std::snprintf(
             timing0, sizeof(timing0),
             "US TASK %u BUILD %u LIGHT %u",
@@ -5040,6 +5091,12 @@ static void renderBasicWingViewer()
             g_profileGouraudVisibleQuads,
             g_profileGouraudTotalQuads,
             g_profileGouraudPrepUs);
+        std::snprintf(
+            timing8, sizeof(timing8),
+            "OBJ APP %u MAT %u MISS %u",
+            g_profileObjectAppendUs,
+            g_profileObjectMaterialResolveUs,
+            g_profileObjectMaterialCacheMisses);
 
         auto profileText = [colorBuffer, gxmPitch](
             int y, const char* text) {
@@ -5058,6 +5115,7 @@ static void renderBasicWingViewer()
         profileText(133, timing5);
         profileText(142, timing6);
         profileText(151, timing7);
+        profileText(160, timing8);
     }
 
     drawTextSmallToBuffer(
