@@ -4747,25 +4747,28 @@ static void renderBasicWingViewer()
     }
 
     if (roomAuthenticCameraMode) {
-        char timing0[80];
-        char timing1[80];
-        char timing2[80];
+        char timing0[80], timing1[80], timing2[80], timing3[80], timing4[80];
         std::snprintf(
             timing0, sizeof(timing0),
             "US TASK %u BUILD %u LIGHT %u",
-            g_profileTasksUs,
-            g_profileBuildUs,
-            g_profileLightingUs);
+            g_profileTasksUs, g_profileBuildUs, g_profileLightingUs);
         std::snprintf(
             timing1, sizeof(timing1),
-            "US SUB %u GXM %u RENDER %u",
-            g_profileSubmitUs,
-            g_profileGxmWaitUs,
-            g_profileRenderUs);
+            "BUILD SCAN %u CACHE %u EDGE %u",
+            g_profileBuildScanUs, g_profileBuildCacheUs, g_profileBuildEdgeUs);
         std::snprintf(
             timing2, sizeof(timing2),
-            "US PRESENT %u",
-            g_profilePresentUs);
+            "EDGE COPY %u ANIM %u APP %u",
+            g_profileEdgeCopyUs, g_profileEdgeAnimUs, g_profileEdgeAppendUs);
+        std::snprintf(
+            timing3, sizeof(timing3),
+            "BUILD VAL %u UP %u SUB %u GXM %u",
+            g_profileBuildValidateUs, g_profileBuildUploadUs,
+            g_profileSubmitUs, g_profileGxmWaitUs);
+        std::snprintf(
+            timing4, sizeof(timing4),
+            "US RENDER %u PRESENT %u",
+            g_profileRenderUs, g_profilePresentUs);
 
         auto profileText = [colorBuffer, gxmPitch](
             int y, const char* text) {
@@ -4779,6 +4782,8 @@ static void renderBasicWingViewer()
         profileText(88, timing0);
         profileText(97, timing1);
         profileText(106, timing2);
+        profileText(115, timing3);
+        profileText(124, timing4);
     }
 
     drawTextSmallToBuffer(
