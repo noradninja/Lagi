@@ -58,20 +58,44 @@ struct EdgeRuntimeState {
     bool initialized = false;
     float position[3]{};
     float startPosition[3]{};
+    float pitch = 0.0f;
     float yaw = 0.0f;
+    float startPitch = 0.0f;
     float startYaw = 0.0f;
     TownCollisionBody collision{};
 };
 
 EdgeRuntimeState g_edge{};
+struct MainLogicRuntimeState {
+    bool initialized = false;
+    bool followReady = false;
+    int cameraParamsIndex = 0;
+    float anchor[3]{};
+    float rawCamera[3]{};
+    float cameraPosition[3]{};
+    float target[3]{};
+    float up[3]{};
+    float previousEdgePosition[3]{};
+    float distance = 0.0f;
+    float pitch = 0.0f;
+    float yaw = 0.0f;
+    float yawOffset = 0.0f;
+    TownCollisionBody collision{};
+};
+
+MainLogicRuntimeState g_mainLogic{};
 bool g_pendingEdgePosition = false;
 bool g_pendingEdgeOrientation = false;
 float g_pendingEdgePositionValue[3]{};
+float g_pendingEdgePitch = 0.0f;
 float g_pendingEdgeYaw = 0.0f;
 
 static s32 initNpcWorld(s32 setupIndex);
 static s32 initNpcFromStructWorld(u32 objectEA);
 static s32 updateWorldGridRaw(s32 x, s32 z);
+static s32 setupCameraFollowMode();
+static bool getBit(unsigned bit);
+static bool pointerValid(sSaturnPtr ptr, u32 bytes);
 
 static float wrapAngle(float value)
 {
@@ -80,6 +104,263 @@ static float wrapAngle(float value)
     while (value > kPi) value -= kTau;
     while (value < -kPi) value += kTau;
     return value;
+}
+
+static void cameraBasisZ(float yaw, float pitch, float out[3])
+{
+    const float cp = std::cos(pitch);
+    out[0] = std::sin(yaw) * cp;
+    out[1] = -std::sin(pitch);
+    out[2] = std::cos(yaw) * cp;
+}
+
+static void presentCamera()
+{
+    platform::renderer::town_present_camera(
+        g_mainLogic.cameraPosition,
+        g_mainLogic.rawCamera,
+        g_mainLogic.target,
+        g_mainLogic.up,
+        g_mainLogic.yaw,
+        g_mainLogic.pitch,
+        g_mainLogic.distance);
+}
+
+static void initializeMainLogic()
+{
+    g_mainLogic = {};
+    g_mainLogic.initialized = true;
+    g_mainLogic.cameraParamsIndex = getBit(0x274u * 8u + 7u) ? 1 : 0;
+    setCollisionSetup(g_mainLogic.collision, 0);
+
+    sSaturnMemoryFile* overlay = town_overlay_file();
+    if (overlay) {
+        const sSaturnPtr minimum = overlay->getSaturnPtr(0x0605EEE4u);
+        const sSaturnPtr maximum = overlay->getSaturnPtr(0x0605EEF0u);
+        if (pointerValid(minimum, 12) && pointerValid(maximum, 12)) {
+            constexpr float kFixed = 1.0f / 65536.0f;
+            setCollisionBounds(
+                g_mainLogic.collision,
+                {readSaturnS32(minimum) * kFixed,
+                 readSaturnS32(minimum + 4) * kFixed,
+                 readSaturnS32(minimum + 8) * kFixed},
+                {readSaturnS32(maximum) * kFixed,
+                 readSaturnS32(maximum + 4) * kFixed,
+                 readSaturnS32(maximum + 8) * kFixed});
+        }
+    }
+}
+
+static s32 setupCameraFollowMode()
+{
+    if (!g_mainLogic.initialized || !g_edge.initialized)
+        return 0;
+
+    constexpr float kAnchorHeight =
+        static_cast<float>(0x1800) / 65536.0f;
+    constexpr float kInitialCameraOffset =
+        static_cast<float>(0x199) / 65536.0f;
+    constexpr float kInitialTargetOffset =
+        static_cast<float>(-0x1000) / 65536.0f;
+    g_mainLogic.anchor[0] = g_edge.position[0];
+    g_mainLogic.anchor[1] = g_edge.position[1] + kAnchorHeight;
+    g_mainLogic.anchor[2] = g_edge.position[2];
+
+    float basisZ[3]{};
+    cameraBasisZ(g_edge.yaw, g_edge.pitch, basisZ);
+    for (unsigned i = 0; i < 3; ++i) {
+        g_mainLogic.rawCamera[i] =
+            g_mainLogic.anchor[i] + basisZ[i] * kInitialCameraOffset;
+        g_mainLogic.cameraPosition[i] = g_mainLogic.rawCamera[i];
+        g_mainLogic.target[i] =
+            g_mainLogic.anchor[i] + basisZ[i] * kInitialTargetOffset;
+        g_mainLogic.up[i] = g_mainLogic.cameraPosition[i];
+        g_mainLogic.previousEdgePosition[i] = g_edge.position[i];
+    }
+    g_mainLogic.up[1] += 1.0f;
+    g_mainLogic.distance = kInitialCameraOffset;
+    g_mainLogic.pitch = g_edge.pitch;
+    g_mainLogic.yaw = g_edge.yaw;
+    g_mainLogic.yawOffset = 0.0f;
+    g_mainLogic.followReady = true;
+    presentCamera();
+    return 0;
+}
+
+static float dot3(const float a[3], const float b[3])
+{
+    return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+}
+
+static void normalize3(float v[3])
+{
+    const float length = std::sqrt(dot3(v, v));
+    if (length > 0.000001f) {
+        v[0] /= length;
+        v[1] /= length;
+        v[2] /= length;
+    }
+}
+
+static void updateCameraTarget(const float desired[3])
+{
+    // updateCameraTarget() projects desired X/Y using the current camera
+    // matrix, but deliberately projects the Edge anchor for Z.
+    float viewZ[3] = {
+        g_mainLogic.target[0] - g_mainLogic.cameraPosition[0],
+        g_mainLogic.target[1] - g_mainLogic.cameraPosition[1],
+        g_mainLogic.target[2] - g_mainLogic.cameraPosition[2]};
+    normalize3(viewZ);
+    float viewX[3] = {viewZ[2], 0.0f, -viewZ[0]};
+    normalize3(viewX);
+    float viewY[3] = {
+        viewZ[1]*viewX[2] - viewZ[2]*viewX[1],
+        viewZ[2]*viewX[0] - viewZ[0]*viewX[2],
+        viewZ[0]*viewX[1] - viewZ[1]*viewX[0]};
+
+    const float desiredDelta[3] = {
+        desired[0] - g_mainLogic.cameraPosition[0],
+        desired[1] - g_mainLogic.cameraPosition[1],
+        desired[2] - g_mainLogic.cameraPosition[2]};
+    const float anchorDelta[3] = {
+        g_mainLogic.anchor[0] - g_mainLogic.cameraPosition[0],
+        g_mainLogic.anchor[1] - g_mainLogic.cameraPosition[1],
+        g_mainLogic.anchor[2] - g_mainLogic.cameraPosition[2]};
+    const float depth = dot3(anchorDelta, viewZ);
+    if (std::fabs(depth) <= 0.000001f) {
+        std::copy(desired, desired + 3, g_mainLogic.target);
+        return;
+    }
+
+    float projectedX = std::fabs(dot3(desiredDelta, viewX) / depth);
+    float projectedY = std::fabs(dot3(desiredDelta, viewY) / depth);
+    if (projectedX == 0.0f && projectedY == 0.0f) {
+        std::copy(desired, desired + 3, g_mainLogic.target);
+        return;
+    }
+    projectedX = std::min(projectedX, 128.0f);
+    projectedY = std::min(projectedY, 128.0f);
+    float weight = (projectedX*projectedX + projectedY*projectedY) * 0.5f;
+    weight = std::clamp(
+        weight,
+        static_cast<float>(0xCCC) / 65536.0f,
+        static_cast<float>(0xB333) / 65536.0f);
+    const float retain = 1.0f - weight;
+    for (unsigned i = 0; i < 3; ++i)
+        g_mainLogic.target[i] =
+            desired[i] + (g_mainLogic.target[i] - desired[i]) * retain;
+}
+
+static void updateFollowCamera()
+{
+    if (!g_mainLogic.followReady || !g_edge.initialized)
+        return;
+
+    constexpr float kTau = 6.28318530717958647692f;
+    constexpr float kAnchorHeight =
+        static_cast<float>(0x1800) / 65536.0f;
+    constexpr float kDesiredDistance =
+        static_cast<float>(0x2CCC) / 65536.0f;
+    constexpr float kDesiredPitch0 =
+        static_cast<float>(0xAAAAAA) / static_cast<float>(0x10000000) * kTau;
+    constexpr float kDesiredPitch1 =
+        static_cast<float>(-0x555555) / static_cast<float>(0x10000000) * kTau;
+    constexpr float kMaxPitch =
+        static_cast<float>(0x13E93E9) / static_cast<float>(0x10000000) * kTau;
+
+    g_mainLogic.anchor[0] = g_edge.position[0];
+    g_mainLogic.anchor[1] = g_edge.position[1] + kAnchorHeight;
+    g_mainLogic.anchor[2] = g_edge.position[2];
+
+    if (g_mainLogic.distance <
+        static_cast<float>(0x151EB) / 65536.0f * kDesiredDistance) {
+        const auto& solve = g_mainLogic.collision.collisionSolveTranslation;
+        g_mainLogic.rawCamera[0] += solve.x;
+        g_mainLogic.rawCamera[1] += solve.y;
+        g_mainLogic.rawCamera[2] += solve.z;
+    }
+
+    const float backX = g_mainLogic.rawCamera[0] - g_mainLogic.anchor[0];
+    const float backY = g_mainLogic.rawCamera[1] - g_mainLogic.anchor[1];
+    const float backZ = g_mainLogic.rawCamera[2] - g_mainLogic.anchor[2];
+    float distance = std::sqrt(backX*backX + backY*backY + backZ*backZ);
+    distance = std::max(distance, 0.000001f);
+    g_mainLogic.yaw = std::atan2(backX, backZ);
+    g_mainLogic.pitch = std::atan2(
+        -backY, std::sqrt(backX*backX + backZ*backZ));
+
+    float maxTurn = std::atan2(
+        static_cast<float>(0x147) / 65536.0f, distance);
+    maxTurn = std::min(
+        maxTurn,
+        static_cast<float>(0x1555555) /
+            static_cast<float>(0x10000000) * kTau);
+    const float desiredPitch = g_mainLogic.cameraParamsIndex
+        ? kDesiredPitch1 : kDesiredPitch0;
+    const float pitchStep = std::clamp(
+        wrapAngle(desiredPitch - g_mainLogic.pitch), -maxTurn, maxTurn);
+    g_mainLogic.pitch = std::clamp(
+        g_mainLogic.pitch + pitchStep, -kMaxPitch, kMaxPitch);
+
+    const float yawStep = wrapAngle(
+        g_edge.yaw + g_mainLogic.yawOffset - g_mainLogic.yaw);
+    const bool stationary =
+        g_edge.position[0] == g_mainLogic.previousEdgePosition[0] &&
+        g_edge.position[1] == g_mainLogic.previousEdgePosition[1] &&
+        g_edge.position[2] == g_mainLogic.previousEdgePosition[2];
+    const float followArc =
+        static_cast<float>(0x71C71C7) /
+        static_cast<float>(0x10000000) * kTau;
+    if ((yawStep < followArc && yawStep > -followArc) || stationary)
+        g_mainLogic.yaw = wrapAngle(
+            g_mainLogic.yaw + std::clamp(yawStep, -maxTurn, maxTurn));
+
+    float distanceStep =
+        (kDesiredDistance - distance) *
+        (static_cast<float>(0x3333) / 65536.0f);
+    const float maxDistanceStep = static_cast<float>(0x599) / 65536.0f;
+    distance += std::clamp(distanceStep, -maxDistanceStep, maxDistanceStep);
+    g_mainLogic.distance = distance;
+
+    float basisZ[3]{};
+    cameraBasisZ(g_mainLogic.yaw, g_mainLogic.pitch, basisZ);
+    for (unsigned i = 0; i < 3; ++i)
+        g_mainLogic.rawCamera[i] =
+            g_mainLogic.anchor[i] + basisZ[i] * distance;
+
+    float retain = static_cast<float>(0xCCCC) / 65536.0f;
+    if (distance < kDesiredDistance) {
+        retain = ((distance - static_cast<float>(0x1000) / 65536.0f) * retain) /
+            (kDesiredDistance - static_cast<float>(0x1000) / 65536.0f);
+        retain = std::max(0.0f, retain);
+    }
+    for (unsigned i = 0; i < 3; ++i)
+        g_mainLogic.cameraPosition[i] =
+            g_mainLogic.rawCamera[i] +
+            (g_mainLogic.cameraPosition[i] - g_mainLogic.rawCamera[i]) * retain;
+
+    const float targetScale = -distance * 0.5f;
+    float edgeBasisZ[3]{};
+    cameraBasisZ(g_edge.yaw, g_edge.pitch, edgeBasisZ);
+    const float desiredTarget[3] = {
+        g_mainLogic.anchor[0] + edgeBasisZ[0] * targetScale,
+        g_mainLogic.anchor[1] + edgeBasisZ[1] * targetScale,
+        g_mainLogic.anchor[2] + edgeBasisZ[2] * targetScale};
+    updateCameraTarget(desiredTarget);
+
+    for (unsigned i = 0; i < 3; ++i) {
+        g_mainLogic.up[i] = g_mainLogic.cameraPosition[i];
+        g_mainLogic.previousEdgePosition[i] = g_edge.position[i];
+    }
+    g_mainLogic.up[1] += 1.0f;
+    g_mainLogic.collision.ownerPosition = {
+        g_mainLogic.rawCamera[0],
+        g_mainLogic.rawCamera[1],
+        g_mainLogic.rawCamera[2]};
+    g_mainLogic.collision.ownerRotation = {
+        g_mainLogic.pitch, g_mainLogic.yaw, 0.0f};
+    registerCollisionBody(g_mainLogic.collision);
+    presentCamera();
 }
 
 static void presentEdge()
@@ -104,12 +385,15 @@ static void setEdgePositionRaw(s32 x, s32 y, s32 z)
     presentEdge();
 }
 
-static void setEdgeOrientationRaw(s32, s32 y, s32)
+static void setEdgeOrientationRaw(s32 x, s32 y, s32)
 {
     constexpr float kTau = 6.28318530717958647692f;
     g_pendingEdgeOrientation = true;
+    g_pendingEdgePitch = static_cast<float>(x) /
+        static_cast<float>(0x10000000) * kTau;
     g_pendingEdgeYaw = static_cast<float>(y) /
         static_cast<float>(0x10000000) * kTau;
+    g_edge.pitch = g_pendingEdgePitch;
     g_edge.yaw = g_pendingEdgeYaw;
     presentEdge();
 }
@@ -200,9 +484,10 @@ static s32 dispatchNative(u32 functionEA, unsigned argc, const s32* args)
         return 0;
     case 0x060144C0u:
         return argc == 2 ? updateWorldGridRaw(args[0], args[1]) : 0;
+    case 0x06057058u:
+        return setupCameraFollowMode();
     case 0x0600CC78u: // setSomethingInNpc0
     case 0x06057570u: // hasLoadingCompleted
-    case 0x06057058u: // setupCameraFollowMode / NPC walk setup
     case 0x0605762Au: // setupAutoWalk
         return functionEA == 0x06057570u ? 1 : 0;
     case 0x0605800Eu: // isObjectCloseEnoughToActivate
@@ -496,16 +781,20 @@ static s32 initNpcWorld(s32 setupIndex)
                   std::end(g_worldScene.edgePosition),
                   std::begin(g_edge.startPosition));
         constexpr float kTau = 6.28318530717958647692f;
+        g_edge.pitch = g_worldScene.edgeRotation[0] * kTau;
         g_edge.yaw = g_worldScene.edgeRotation[1] * kTau;
         if (g_pendingEdgePosition)
             std::copy(std::begin(g_pendingEdgePositionValue),
                       std::end(g_pendingEdgePositionValue),
                       std::begin(g_edge.position));
-        if (g_pendingEdgeOrientation)
+        if (g_pendingEdgeOrientation) {
+            g_edge.pitch = g_pendingEdgePitch;
             g_edge.yaw = g_pendingEdgeYaw;
+        }
         std::copy(std::begin(g_edge.position),
                   std::end(g_edge.position),
                   std::begin(g_edge.startPosition));
+        g_edge.startPitch = g_edge.pitch;
         g_edge.startYaw = g_edge.yaw;
         if (g_worldScene.edgeCollisionValid) {
             setCollisionSetup(g_edge.collision, 0);
@@ -618,6 +907,7 @@ struct TownEdgeTask final : s_workAreaTemplate<TownEdgeTask> {
             std::copy(std::begin(g_edge.startPosition),
                       std::end(g_edge.startPosition),
                       std::begin(g_edge.position));
+            g_edge.pitch = g_edge.startPitch;
             g_edge.yaw = g_edge.startYaw;
         }
 
@@ -681,14 +971,20 @@ struct TownEdgeTask final : s_workAreaTemplate<TownEdgeTask> {
 
 struct TownMainLogicTask final : s_workAreaTemplate<TownMainLogicTask> {
     static void UpdateTask(TownMainLogicTask*) {
+        if (!g_edge.initialized || !platform::renderer::town_scene_active())
+            return;
         const int x = static_cast<int>(
             std::lround(g_edge.position[0] * 65536.0f));
         const int z = static_cast<int>(
             std::lround(g_edge.position[2] * 65536.0f));
         updateWorldGridRaw(x, z);
-        platform::renderer::town_main_logic_update();
+        if (platform::input::reset_view_pressed())
+            setupCameraFollowMode();
+        updateFollowCamera();
     }
-    static const TypedTaskDefinition* getTypedTaskDefinition() { return taskDefinition<TownMainLogicTask>(UpdateTask); }
+    static const TypedTaskDefinition* getTypedTaskDefinition() {
+        return taskDefinition<TownMainLogicTask>(UpdateTask);
+    }
 };
 
 struct TownCameraTask final : s_workAreaTemplate<TownCameraTask> {
@@ -703,8 +999,10 @@ struct TwnRuinTask final : s_workAreaTemplate<TwnRuinTask> {
         g_gameBits.fill(0);
         g_pipelineFrames = 0;
         g_edge = {};
+        g_mainLogic = {};
         g_pendingEdgePosition = false;
         g_pendingEdgeOrientation = false;
+        initializeMainLogic();
         if (overlay && town.initialScriptEA)
             g_script.pc = overlay->getSaturnPtr(town.initialScriptEA);
 
