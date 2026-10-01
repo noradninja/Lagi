@@ -2088,6 +2088,12 @@ static void appendLiveTownEdge()
 
 static bool buildLiveTownFrame()
 {
+    g_profileBuildScanUs = 0u;
+    g_profileBuildCacheUs = 0u;
+    g_profileBuildEdgeUs = 0u;
+    g_profileBuildValidateUs = 0u;
+    g_profileBuildUploadUs = 0u;
+    const std::uint64_t tScan = sceKernelGetProcessTimeWide();
     std::uint64_t staticSignature = 1469598103934665603ull;
     bool hasBillboards = false;
     g_liveTownSubmissionCount = 0u;
@@ -2121,7 +2127,10 @@ static bool buildLiveTownFrame()
         hasBillboards = hasBillboards || submission.state.billboard;
     }
     g_liveTownHasBillboards = hasBillboards;
+    g_profileBuildScanUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - tScan);
 
+    const std::uint64_t tCache = sceKernelGetProcessTimeWide();
     g_liveTownStaticRebuilt = hasBillboards ||
         staticSignature != g_liveTownStaticSignature;
     if (g_liveTownStaticRebuilt) {
@@ -2147,7 +2156,15 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.polygonTextureIndices.resize(
             g_liveTownStaticPolygonCount);
     }
+    g_profileBuildCacheUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - tCache);
+
+    const std::uint64_t tEdge = sceKernelGetProcessTimeWide();
     appendLiveTownEdge();
+    g_profileBuildEdgeUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - tEdge);
+
+    const std::uint64_t tValidate = sceKernelGetProcessTimeWide();
     std::uint64_t signature = staticSignature;
     signature ^= g_liveTownCpuMesh.polygonRecords.size();
     signature *= 1099511628211ull;
@@ -2160,6 +2177,10 @@ static bool buildLiveTownFrame()
         return false;
     for (const auto index : g_liveTownCpuMesh.polygonTextureIndices)
         if (index == 0xFFFFu) return false;
+    g_profileBuildValidateUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - tValidate);
+
+    const std::uint64_t tUpload = sceKernelGetProcessTimeWide();
     const bool changed = !g_liveTownPrepared ||
         g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
         signature != g_liveTownSignature;
@@ -2185,6 +2206,8 @@ static bool buildLiveTownFrame()
             g_vdp1GouraudVertices[i].z = v.z;
         }
     }
+    g_profileBuildUploadUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - tUpload);
     return true;
 }
 
