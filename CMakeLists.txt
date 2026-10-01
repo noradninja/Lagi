@@ -91,6 +91,10 @@ set(LAGI_GOURAUD_SCANLINE_GRAY_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_s
 
 set(LAGI_GOURAUD_PAYLOAD_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_payload_v.gxp")
 set(LAGI_GOURAUD_PAYLOAD_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_payload_v_gxp.o")
+set(LAGI_GOURAUD_SUBDIV_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_subdiv_v.gxp")
+set(LAGI_GOURAUD_SUBDIV_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_subdiv_v_gxp.o")
+set(LAGI_TEXTURED_GOURAUD_SUBDIV_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_gouraud_subdiv_f.gxp")
+set(LAGI_TEXTURED_GOURAUD_SUBDIV_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_gouraud_subdiv_f_gxp.o")
 
 set(LAGI_TEXTURE_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v.gxp")
 set(LAGI_TEXTURE_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f.gxp")
@@ -175,6 +179,52 @@ add_custom_command(
  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
  DEPENDS "${LAGI_GOURAUD_PAYLOAD_V_GXP}"
  COMMENT "Embedding Lagi Gouraud payload vertex GXP"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_GOURAUD_SUBDIV_V_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_vp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/gouraud_subdiv_v.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_GOURAUD_SUBDIV_V_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/gouraud_subdiv_v.cg"
+ COMMENT "Compiling Lagi subdivided Gouraud vertex shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_GOURAUD_SUBDIV_V_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_gouraud_subdiv_v.gxp" "${LAGI_GOURAUD_SUBDIV_V_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_GOURAUD_SUBDIV_V_GXP}"
+ COMMENT "Embedding Lagi subdivided Gouraud vertex GXP"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURED_GOURAUD_SUBDIV_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/textured_gouraud_subdiv_f.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_TEXTURED_GOURAUD_SUBDIV_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/textured_gouraud_subdiv_f.cg"
+ COMMENT "Compiling Lagi subdivided Gouraud fragment shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURED_GOURAUD_SUBDIV_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_textured_gouraud_subdiv_f.gxp" "${LAGI_TEXTURED_GOURAUD_SUBDIV_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_TEXTURED_GOURAUD_SUBDIV_F_GXP}"
+ COMMENT "Embedding Lagi subdivided Gouraud fragment GXP"
  VERBATIM
 )
 
@@ -503,6 +553,8 @@ set_source_files_properties(
  "${LAGI_TEXTURED_GOURAUD_SCANLINE_F_OBJ}"
  "${LAGI_GOURAUD_SCANLINE_GRAY_F_OBJ}"
  "${LAGI_GOURAUD_PAYLOAD_V_OBJ}"
+ "${LAGI_GOURAUD_SUBDIV_V_OBJ}"
+ "${LAGI_TEXTURED_GOURAUD_SUBDIV_F_OBJ}"
  "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}"
  PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
 )
@@ -530,6 +582,8 @@ add_executable(lagi
  ${LAGI_TEXTURED_GOURAUD_SCANLINE_F_OBJ}
  ${LAGI_GOURAUD_SCANLINE_GRAY_F_OBJ}
  ${LAGI_GOURAUD_PAYLOAD_V_OBJ}
+ ${LAGI_GOURAUD_SUBDIV_V_OBJ}
+ ${LAGI_TEXTURED_GOURAUD_SUBDIV_F_OBJ}
  ${LAGI_TEXTURE_V_OBJ}
  ${LAGI_TEXTURE_F_OBJ}
  src/platform/vita/null_audio.cpp

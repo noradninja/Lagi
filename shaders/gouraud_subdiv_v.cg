@@ -1,0 +1,18 @@
+// 2x2 subdivision Gouraud vertex path.
+// The CPU samples the accepted Saturn scanline lighting solution at the
+// subdivision vertices; the SGX then performs cheap interpolation only
+// within the small generated triangles.
+
+void main(
+    float3 aPosition,
+    float2 aTexcoord,
+    float3 aShade,
+    uniform float4x4 wvp,
+    float4 out vPosition : POSITION,
+    float2 out vTexcoord : TEXCOORD0,
+    float3 out vShade : TEXCOORD1)
+{
+    vPosition = mul(float4(aPosition, 1.0f), wvp);
+    vTexcoord = aTexcoord;
+    vShade = aShade;
+}

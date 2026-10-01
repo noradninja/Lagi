@@ -1,0 +1,18 @@
+// Cheap textured RGB555 combine for the subdivided Mode 7 path.
+// The expensive projected-perimeter solve has already been sampled on the
+// CPU at each generated subdivision vertex.
+
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    float3 vShade : TEXCOORD1,
+    uniform sampler2D tex)
+{
+    float4 color = tex2D(tex, vTexcoord);
+    if (color.a < 0.5f)
+        discard;
+
+    float3 base5 = floor(color.rgb * 31.0f + 0.5f);
+    float3 result5 = clamp(base5 + vShade * 31.0f, 0.0f, 31.0f);
+    result5 = floor(result5 + 0.5f);
+    return float4(result5 / 31.0f, color.a);
+}
