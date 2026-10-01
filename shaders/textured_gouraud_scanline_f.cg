@@ -16,7 +16,7 @@ float4 main(
     float2 vTexcoord : TEXCOORD0,
     float4 inverse0 : TEXCOORD1,
     float4 inverse1 : TEXCOORD2,
-    float4 inverse2 : TEXCOORD3,
+    float4 edgeInverseDy : TEXCOORD3,
     float4 gouraudR : TEXCOORD4,
     float4 gouraudG : TEXCOORD5,
     float4 gouraudB : TEXCOORD6,
@@ -60,7 +60,7 @@ float4 main(
 
     // Keep the otherwise-unused invariant payload live so this diagnostic
     // remains comparable to the existing Gouraud payload pipeline.
-    result5 += inverse2.x * 0.0f;
+    result5 += edgeInverseDy.x * 0.0f;
 
     return float4(result5 / 31.0f, color.a);
 }

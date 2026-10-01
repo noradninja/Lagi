@@ -1,13 +1,15 @@
 // Per-quad Saturn Gouraud payload vertex shader.
 //
 // Each generated triangle vertex carries the same original Saturn quad
-// corners and RGB555 Gouraud values. Reduce the inverse-bilinear setup here
-// so the fragment shader does not rebuild quad-invariant vectors/cross terms
-// for every covered pixel.
+// corners and RGB555 Gouraud values. Hoist the four projected-edge reciprocal
+// Y deltas here so both final fragment paths replace per-pixel divisions with
+// multiplications while retaining the exact scanline edge selection.
 
-float cross2d(float2 a, float2 b)
+float safeInverse(float value)
 {
-    return a.x * b.y - a.y * b.x;
+    if (abs(value) < 0.0001f)
+        return 0.0f;
+    return 1.0f / value;
 }
 
 void main(
@@ -23,7 +25,7 @@ void main(
     float2 out vTexcoord : TEXCOORD0,
     float4 out vInverse0 : TEXCOORD1,
     float4 out vInverse1 : TEXCOORD2,
-    float4 out vInverse2 : TEXCOORD3,
+    float4 out vEdgeInverseDy : TEXCOORD3,
     float4 out vGouraudR : TEXCOORD4,
     float4 out vGouraudG : TEXCOORD5,
     float4 out vGouraudB : TEXCOORD6)
@@ -40,23 +42,13 @@ void main(
     float2 f = d - a;
     float2 g = a - b + c - d;
 
-    // k2 is constant for the entire quad.
-    // k1(p) = k1Base + p.x*g.y - p.y*g.x
-    // k0(p) = k0Base + p.x*e.y - p.y*e.x
-    float k2 = cross2d(g, f);
-    float k1Base = cross2d(e, f) - cross2d(a, g);
-    float k0Base = -cross2d(a, e);
-
-    // k2 is quad-invariant, so pay for this reciprocal in the vertex stage
-    // rather than dividing by 2*k2 for both roots in every fragment.
-    float inv2k2 =
-        abs(k2) >= 0.0001f
-            ? 0.5f / k2
-            : 0.0f;
-
     vInverse0 = float4(a, e);
     vInverse1 = float4(f, g);
-    vInverse2 = float4(k2, k1Base, k0Base, inv2k2);
+    vEdgeInverseDy = float4(
+        safeInverse(b.y - a.y),
+        safeInverse(c.y - b.y),
+        safeInverse(d.y - c.y),
+        safeInverse(a.y - d.y));
 
     vGouraudR = aGouraudR;
     vGouraudG = aGouraudG;

@@ -2,7 +2,7 @@ float4 main(
     float2 vTexcoord : TEXCOORD0,
     float4 inverse0 : TEXCOORD1,
     float4 inverse1 : TEXCOORD2,
-    float4 inverse2 : TEXCOORD3,
+    float4 edgeInverseDy : TEXCOORD3,
     float4 gouraudR : TEXCOORD4,
     float4 gouraudG : TEXCOORD5,
     float4 gouraudB : TEXCOORD6,
@@ -29,7 +29,7 @@ float4 main(
     float payloadKeepAlive =
         dot(inverse0, float4(1.0f, 2.0f, 3.0f, 4.0f)) +
         dot(inverse1, float4(5.0f, 6.0f, 7.0f, 8.0f)) +
-        dot(inverse2, float4(9.0f, 10.0f, 11.0f, 12.0f)) +
+        dot(edgeInverseDy, float4(9.0f, 10.0f, 11.0f, 12.0f)) +
         fragCoord.x * 0.000001f;
 
     lit += payloadKeepAlive * 0.000000001f;

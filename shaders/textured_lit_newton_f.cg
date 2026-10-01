@@ -47,7 +47,7 @@ float4 main(
     float2 vTexcoord : TEXCOORD0,
     float4 inverse0 : TEXCOORD1,
     float4 inverse1 : TEXCOORD2,
-    float4 inverse2 : TEXCOORD3,
+    float4 edgeInverseDy : TEXCOORD3,
     float4 gouraudR : TEXCOORD4,
     float4 gouraudG : TEXCOORD5,
     float4 gouraudB : TEXCOORD6,

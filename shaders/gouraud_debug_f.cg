@@ -3,6 +3,13 @@
 // Uses the same renderer-wide projected-perimeter scanline interpolation as
 // textured Gouraud, but exposes only the recovered lighting field.
 
+float ratioFromInverse(float num, float inverseDen)
+{
+    if (inverseDen == 0.0f)
+        return 0.5f;
+    return num * inverseDen;
+}
+
 float safeRatio(float num, float den)
 {
     if (abs(den) < 0.0001f)
@@ -16,14 +23,14 @@ void considerEdge(
     float2 p1,
     float3 shade0,
     float3 shade1,
+    float inverseDy,
     inout float leftX,
     inout float3 leftShade,
     inout float rightX,
     inout float3 rightShade,
     inout float hitCount)
 {
-    float dy = p1.y - p0.y;
-    if (abs(dy) < 0.0001f)
+    if (inverseDy == 0.0f)
         return;
 
     float minY = min(p0.y, p1.y);
@@ -33,7 +40,7 @@ void considerEdge(
     if (y < minY || y >= maxY)
         return;
 
-    float t = saturate((y - p0.y) / dy);
+    float t = saturate((y - p0.y) * inverseDy);
     float x = lerp(p0.x, p1.x, t);
     float3 shade = lerp(shade0, shade1, t);
 
@@ -58,7 +65,8 @@ float3 scanlineGouraud(
     float3 shadeA,
     float3 shadeB,
     float3 shadeC,
-    float3 shadeD)
+    float3 shadeD,
+    float4 edgeInverseDy)
 {
     float leftX = 1000000.0f;
     float rightX = -1000000.0f;
@@ -71,22 +79,28 @@ float3 scanlineGouraud(
     // rotates, or changes orientation on screen.
     considerEdge(
         frag.y, a, b, shadeA, shadeB,
+        edgeInverseDy.x,
         leftX, leftShade, rightX, rightShade, hitCount);
     considerEdge(
         frag.y, b, c, shadeB, shadeC,
+        edgeInverseDy.y,
         leftX, leftShade, rightX, rightShade, hitCount);
     considerEdge(
         frag.y, c, d, shadeC, shadeD,
+        edgeInverseDy.z,
         leftX, leftShade, rightX, rightShade, hitCount);
     considerEdge(
         frag.y, d, a, shadeD, shadeA,
+        edgeInverseDy.w,
         leftX, leftShade, rightX, rightShade, hitCount);
 
     // Degenerate projected quads can collapse an edge pair onto one scanline.
     // Fall back to the original AD/BC pairing rather than introducing a pop.
     if (hitCount < 2.0f || rightX - leftX < 0.0001f) {
-        float leftT = saturate(safeRatio(frag.y - a.y, d.y - a.y));
-        float rightT = saturate(safeRatio(frag.y - b.y, c.y - b.y));
+        float leftT = saturate(
+            ratioFromInverse(frag.y - a.y, -edgeInverseDy.w));
+        float rightT = saturate(
+            ratioFromInverse(frag.y - b.y, edgeInverseDy.y));
         leftX = lerp(a.x, d.x, leftT);
         rightX = lerp(b.x, c.x, rightT);
         leftShade = lerp(shadeA, shadeD, leftT);
@@ -102,6 +116,7 @@ float4 main(
     float2 vTexcoord : TEXCOORD0,
     float4 inverse0 : TEXCOORD1,
     float4 inverse1 : TEXCOORD2,
+    float4 edgeInverseDy : TEXCOORD3,
     float4 gouraudR : TEXCOORD4,
     float4 gouraudG : TEXCOORD5,
     float4 gouraudB : TEXCOORD6,
@@ -120,7 +135,8 @@ float4 main(
     float3 shade = scanlineGouraud(
         fragCoord.xy,
         a, b, c, d,
-        shadeA, shadeB, shadeC, shadeD);
+        shadeA, shadeB, shadeC, shadeD,
+        edgeInverseDy);
 
     float3 light5 = clamp(shade * 31.0f + 16.0f, 0.0f, 31.0f);
     light5 = floor(light5 + 0.5f);
