@@ -37,7 +37,8 @@ static bool g_hasAdaptedModel = false;
 static SubmissionState g_lastState{};
 static std::vector<LiveVdp1Model> g_adaptedModels;
 static std::vector<RenderSubmission> g_submissions;
-static std::vector<TownObjectSubmission> g_townObjectSubmissions;
+static RenderSubmission g_pendingTownSubmission{};
+static bool g_hasPendingTownSubmission = false;
 static bool g_reportedFirstSubmission = false;
 static bool g_reportedFirstAdaptedModel = false;
 
@@ -50,7 +51,8 @@ void begin_frame()
     g_lastState = {};
     g_adaptedModels.clear();
     g_submissions.clear();
-    g_townObjectSubmissions.clear();
+    g_pendingTownSubmission = {};
+    g_hasPendingTownSubmission = false;
 }
 
 std::uint32_t submission_count()
@@ -85,22 +87,20 @@ const LiveVdp1Model* adapted_model(std::uint32_t index)
         : nullptr;
 }
 
-void submit_town_object(
+void set_town_submission_context(
+    std::int8_t bundleIndex,
     std::uint32_t cellIndex,
     std::uint32_t objectIndex,
-    std::uint32_t firstPolygon,
-    std::uint32_t polygonCount,
+    std::uint32_t modelTableOffset,
     const SubmissionState& state)
 {
-    if (!polygonCount)
-        return;
-    g_townObjectSubmissions.push_back({
-        cellIndex, objectIndex, firstPolygon, polygonCount, state});
-}
-
-const std::vector<TownObjectSubmission>& town_object_submissions()
-{
-    return g_townObjectSubmissions;
+    g_pendingTownSubmission = {};
+    g_pendingTownSubmission.bundleIndex = bundleIndex;
+    g_pendingTownSubmission.cellIndex = cellIndex;
+    g_pendingTownSubmission.objectIndex = objectIndex;
+    g_pendingTownSubmission.modelTableOffset = modelTableOffset;
+    g_pendingTownSubmission.state = state;
+    g_hasPendingTownSubmission = true;
 }
 
 static void capture_runtime_state(bool billboard)
@@ -140,7 +140,12 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
 
     ++g_submissionCount;
     g_lastModel = model;
-    capture_runtime_state(billboard);
+    if (g_hasPendingTownSubmission) {
+        g_lastState = g_pendingTownSubmission.state;
+        g_lastState.billboard = billboard;
+    } else {
+        capture_runtime_state(billboard);
+    }
 
     g_lastAdaptedModel = {};
     g_hasAdaptedModel =
@@ -151,7 +156,14 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
         g_adaptedModels.push_back(g_lastAdaptedModel);
         adaptedIndex = static_cast<std::int32_t>(g_adaptedModels.size() - 1u);
     }
-    g_submissions.push_back({model, adaptedIndex, g_lastState});
+    RenderSubmission submission = g_hasPendingTownSubmission
+        ? g_pendingTownSubmission : RenderSubmission{};
+    submission.model = model;
+    submission.adaptedModelIndex = adaptedIndex;
+    submission.state = g_lastState;
+    g_submissions.push_back(submission);
+    g_pendingTownSubmission = {};
+    g_hasPendingTownSubmission = false;
 
     if (!g_reportedFirstSubmission) {
         lagi::platform::renderer::status(

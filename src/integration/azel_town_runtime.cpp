@@ -9,6 +9,8 @@
 #include <cmath>
 #include <cstring>
 #include <cstdio>
+#include <map>
+#include <memory>
 
 s8 readSaturnS8(sSaturnPtr ptr);
 s32 readSaturnS32(sSaturnPtr ptr);
@@ -17,6 +19,44 @@ fixedPoint readSaturnFP(sSaturnPtr ptr);
 sSaturnPtr readSaturnEA(sSaturnPtr ptr);
 
 namespace lagi::azel {
+
+namespace {
+
+using NativeVec3S16 = std::array<s16, 3>;
+using NativeVec3U16 = std::array<u16, 3>;
+
+struct NativeModelQuadExtra {
+    NativeVec3S16 normals{};
+    NativeVec3U16 colors{};
+};
+
+struct NativeModelQuad {
+    std::array<u16, 4> indices{};
+    u16 lightingControl = 0;
+    u16 cmdCtrl = 0;
+    u16 cmdPmod = 0;
+    u16 cmdColr = 0;
+    u16 cmdSrca = 0;
+    u16 cmdSize = 0;
+    std::vector<NativeModelQuadExtra> extraData;
+};
+
+// CPU prefix of Azel's sProcessed3dModel. The Vita build deliberately omits
+// the BGFX-only tail, while retaining the exact fields consumed at the
+// addObjectToDrawList boundary.
+struct NativeProcessedModel {
+    u8* base = nullptr;
+    fixedPoint radius{};
+    u32 numVertices = 0;
+    std::vector<NativeVec3S16> vertices;
+    std::vector<NativeModelQuad> quads;
+};
+
+} // namespace
+
+struct TownRuntimeBundle::ModelCache {
+    std::map<std::uint32_t, std::unique_ptr<NativeProcessedModel>> models;
+};
 
 static TownRuntimeState g_runtime{};
 
@@ -270,11 +310,115 @@ const std::vector<std::uint8_t>* town_runtime_resource(const char* name)
     return nullptr;
 }
 
+static std::unique_ptr<NativeProcessedModel> parse_native_model(
+    const TownRuntimeResource& resource,
+    std::uint32_t tableOffset)
+{
+    const auto& bytes = resource.bytes;
+    if (tableOffset + 4u > bytes.size()) return nullptr;
+    const std::uint32_t modelOffset = be32(bytes.data() + tableOffset);
+    if (!modelOffset || modelOffset + 12u > bytes.size()) return nullptr;
+
+    auto model = std::make_unique<NativeProcessedModel>();
+    model->base = const_cast<u8*>(bytes.data());
+    model->radius = bes32(bytes.data() + modelOffset);
+    model->numVertices = be32(bytes.data() + modelOffset + 4u);
+    const std::uint32_t verticesOffset =
+        be32(bytes.data() + modelOffset + 8u);
+    if (!model->numVertices || model->numVertices > 65535u ||
+        static_cast<std::uint64_t>(verticesOffset) +
+            static_cast<std::uint64_t>(model->numVertices) * 6u >
+            bytes.size())
+        return nullptr;
+
+    model->vertices.reserve(model->numVertices);
+    for (std::uint32_t i = 0; i < model->numVertices; ++i) {
+        const auto* v = bytes.data() + verticesOffset + i * 6u;
+        model->vertices.push_back({bes16(v), bes16(v + 2), bes16(v + 4)});
+    }
+
+    std::uint32_t cursor = modelOffset + 12u;
+    constexpr unsigned kMaxQuads = 16384;
+    for (unsigned q = 0; q < kMaxQuads; ++q) {
+        if (cursor + 8u > bytes.size()) return nullptr;
+        NativeModelQuad quad{};
+        for (unsigned i = 0; i < 4u; ++i)
+            quad.indices[i] = be16(bytes.data() + cursor + i * 2u);
+        if (!quad.indices[0] && !quad.indices[1] &&
+            !quad.indices[2] && !quad.indices[3])
+            return model->quads.empty() ? nullptr : std::move(model);
+        for (const auto index : quad.indices)
+            if (index >= model->numVertices) return nullptr;
+        cursor += 8u;
+        if (cursor + 12u > bytes.size()) return nullptr;
+        quad.lightingControl = be16(bytes.data() + cursor + 0u);
+        quad.cmdCtrl = be16(bytes.data() + cursor + 2u);
+        quad.cmdPmod = be16(bytes.data() + cursor + 4u);
+        quad.cmdColr = be16(bytes.data() + cursor + 6u);
+        quad.cmdSrca = be16(bytes.data() + cursor + 8u);
+        quad.cmdSize = be16(bytes.data() + cursor + 10u);
+        cursor += 12u;
+
+        const unsigned mode = (quad.lightingControl >> 8) & 3u;
+        const unsigned count = mode == 1u ? 1u :
+            ((mode == 2u || mode == 3u) ? 4u : 0u);
+        const bool colors = mode == 2u;
+        for (unsigned i = 0; i < count; ++i) {
+            const unsigned bytesNeeded = colors ? 12u : 6u;
+            if (cursor + bytesNeeded > bytes.size()) return nullptr;
+            NativeModelQuadExtra extra{};
+            extra.normals = {
+                bes16(bytes.data() + cursor + 0u),
+                bes16(bytes.data() + cursor + 2u),
+                bes16(bytes.data() + cursor + 4u)};
+            cursor += 6u;
+            if (colors) {
+                extra.colors = {
+                    be16(bytes.data() + cursor + 0u),
+                    be16(bytes.data() + cursor + 2u),
+                    be16(bytes.data() + cursor + 4u)};
+                cursor += 6u;
+            }
+            quad.extraData.push_back(extra);
+        }
+        if (mode == 1u) {
+            if (cursor + 2u > bytes.size()) return nullptr;
+            cursor += 2u;
+        }
+        model->quads.push_back(std::move(quad));
+    }
+    return nullptr;
+}
+
 const TownRuntimeBundle* town_runtime_bundle(std::int8_t fileIndex)
 {
     for (const auto& bundle : g_runtime.bundles)
         if (bundle.fileIndex == fileIndex)
             return &bundle;
+    return nullptr;
+}
+
+sProcessed3dModel* town_runtime_model(
+    std::int8_t fileIndex,
+    std::uint32_t tableOffset)
+{
+    if (!tableOffset) return nullptr;
+    for (auto& bundle : g_runtime.bundles) {
+        if (bundle.fileIndex != fileIndex || !bundle.model)
+            continue;
+        if (!bundle.modelCache)
+            bundle.modelCache =
+                std::make_shared<TownRuntimeBundle::ModelCache>();
+        auto& models = bundle.modelCache->models;
+        const auto found = models.find(tableOffset);
+        if (found != models.end())
+            return reinterpret_cast<sProcessed3dModel*>(found->second.get());
+        auto model = parse_native_model(*bundle.model, tableOffset);
+        if (!model) return nullptr;
+        NativeProcessedModel* const result = model.get();
+        models.emplace(tableOffset, std::move(model));
+        return reinterpret_cast<sProcessed3dModel*>(result);
+    }
     return nullptr;
 }
 
@@ -296,6 +440,8 @@ void release_town_runtime_bundle(std::int8_t fileIndex)
     for (auto& bundle : g_runtime.bundles) {
         if (bundle.fileIndex == fileIndex && bundle.refCount) {
             --bundle.refCount;
+            if (!bundle.refCount)
+                bundle.modelCache.reset();
             return;
         }
     }
@@ -411,6 +557,9 @@ bool init_town_runtime()
         dst.staticObjectListEA =
             static_cast<std::uint32_t>(
                 readSaturnEA(cell + 0x0C).m_offset);
+        dst.billboardListEA =
+            static_cast<std::uint32_t>(
+                readSaturnEA(cell + 0x10).m_offset);
         dst.collisionListEA =
             static_cast<std::uint32_t>(
                 readSaturnEA(cell + 0x14).m_offset);

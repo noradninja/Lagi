@@ -1,8 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
+
+struct sProcessed3dModel;
 
 namespace lagi::azel {
 
@@ -35,6 +38,7 @@ struct TownRuntimeCell {
     std::uint32_t ea = 0;
     float origin[3]{};
     std::uint32_t staticObjectListEA = 0;
+    std::uint32_t billboardListEA = 0;
     std::uint32_t collisionListEA = 0;
     std::vector<TownRuntimeCollisionInstance> collisionInstances;
     bool valid = false;
@@ -46,10 +50,12 @@ struct TownRuntimeResource {
 };
 
 struct TownRuntimeBundle {
+    struct ModelCache;
     std::int8_t fileIndex = -1;
     const TownRuntimeResource* model = nullptr;
     const TownRuntimeResource* graphics = nullptr;
     unsigned refCount = 0;
+    std::shared_ptr<ModelCache> modelCache;
 };
 
 struct TownRuntimeState {
@@ -88,5 +94,8 @@ void update_town_runtime_active_cell(float worldX, float worldZ);
 bool acquire_town_runtime_bundle(std::int8_t fileIndex);
 void release_town_runtime_bundle(std::int8_t fileIndex);
 const TownRuntimeBundle* town_runtime_bundle(std::int8_t fileIndex);
+sProcessed3dModel* town_runtime_model(
+    std::int8_t fileIndex,
+    std::uint32_t tableOffset);
 
 } // namespace lagi::azel

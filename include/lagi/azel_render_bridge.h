@@ -21,14 +21,10 @@ struct SubmissionState {
 struct RenderSubmission {
     sProcessed3dModel* model = nullptr;
     std::int32_t adaptedModelIndex = -1;
-    SubmissionState state{};
-};
-
-struct TownObjectSubmission {
+    std::int8_t bundleIndex = -1;
     std::uint32_t cellIndex = 0;
     std::uint32_t objectIndex = 0;
-    std::uint32_t firstPolygon = 0;
-    std::uint32_t polygonCount = 0;
+    std::uint32_t modelTableOffset = 0;
     SubmissionState state{};
 };
 
@@ -54,12 +50,11 @@ const SubmissionState& last_submission_state();
 // frame. Entries remain valid until the next begin_frame().
 const std::vector<RenderSubmission>& submissions();
 const LiveVdp1Model* adapted_model(std::uint32_t index);
-void submit_town_object(
+void set_town_submission_context(
+    std::int8_t bundleIndex,
     std::uint32_t cellIndex,
     std::uint32_t objectIndex,
-    std::uint32_t firstPolygon,
-    std::uint32_t polygonCount,
+    std::uint32_t modelTableOffset,
     const SubmissionState& state);
-const std::vector<TownObjectSubmission>& town_object_submissions();
 
 } // namespace lagi::azel_bridge

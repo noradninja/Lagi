@@ -3,6 +3,7 @@
 #include "lagi/vdp1_renderer.h"
 #include "lagi/azel_town_runtime.h"
 #include "lagi/azel_render_bridge.h"
+#include "lagi/azel_live_model_adapter.h"
 
 #include <psp2/display.h>
 #include <psp2/gxm.h>
@@ -166,6 +167,9 @@ static azel::StaticRoomDebugMesh g_staticRoomCpuMesh{};
 static bool g_staticRoomCpuReady = false;
 static azel::BasicWingDebugMesh g_edgeIdleCpuMesh{};
 static bool g_edgeIdleCpuReady = false;
+static azel::BasicWingDebugMesh g_liveTownCpuMesh{};
+static std::uint64_t g_liveTownSignature = 0;
+static bool g_liveTownPrepared = false;
 static std::size_t g_edgeFirstVertex = 0;
 static std::size_t g_edgeFirstPolygon = 0;
 
@@ -173,7 +177,7 @@ enum class ResidentVdp1Model {
     None,
     BasicWing,
     StaticRoomDiagnostic,
-    StaticRoomAuthentic,
+    LiveTown,
 };
 static ResidentVdp1Model g_residentVdp1Model = ResidentVdp1Model::None;
 static SceUID g_vdp1VertexUid = -1;
@@ -238,15 +242,9 @@ static unsigned int g_townEdgePreviousAnimation = 0;
 static unsigned int g_townEdgePreviousFrame = 0;
 static float g_townEdgeTransition = 1.0f;
 
-static bool g_staticRoomAzelCellVisible = true;
-static unsigned int g_staticRoomAzelLod0Objects = 0;
-static unsigned int g_staticRoomAzelNonzeroLodObjects = 0;
-
 static int g_viewMode = 0;
 static constexpr bool g_halfResolution = true;
 static unsigned int g_basicWingAnimationFrame = 0;
-static std::uint64_t g_basicWingAnimationLastUs = 0;
-static std::uint64_t g_basicWingAnimationPhase = 0;
 
 static Vdp1ModelSource basicWingVdp1Source()
 {
@@ -297,6 +295,7 @@ static unsigned int g_lastPresentVcount = 0;
 
 // Defined below with the textured-viewer helpers; shutdown() needs it earlier.
 static void freeVdp1Textures();
+static void updateLiveTownAzelLighting();
 
 static void waitFor30HzPresentSlot()
 {
@@ -1510,53 +1509,12 @@ static void advanceBasicWingAnimation()
         g_basicWingCpuMesh.animationFrames.empty())
         return;
 
-    // Keep PDS animation on an independent 30 Hz clock instead of tying it
-    // to rendered frames. sceKernelGetProcessTimeWide() is microseconds.
-    //
-    // Accumulating elapsed_us * 30 against 1,000,000 avoids the small drift
-    // that would come from treating one tick as an integer 33,333 us.
-    const std::uint64_t nowUs =
-        static_cast<std::uint64_t>(
-            sceKernelGetProcessTimeWide());
-
-    if (g_basicWingAnimationLastUs == 0) {
-        g_basicWingAnimationLastUs = nowUs;
-        applyBasicWingAnimationFrame(
-            g_basicWingAnimationFrame);
-        return;
-    }
-
-    const std::uint64_t elapsedUs =
-        nowUs - g_basicWingAnimationLastUs;
-    g_basicWingAnimationLastUs = nowUs;
-
-    constexpr std::uint64_t kAnimationHz = 30u;
-    constexpr std::uint64_t kMicrosecondsPerSecond = 1000000u;
-
-    g_basicWingAnimationPhase +=
-        elapsedUs * kAnimationHz;
-
-    const std::uint64_t elapsedTicks =
-        g_basicWingAnimationPhase /
-        kMicrosecondsPerSecond;
-    g_basicWingAnimationPhase %=
-        kMicrosecondsPerSecond;
-
-    if (elapsedTicks == 0)
-        return;
-
-    const std::uint64_t frameCount =
-        static_cast<std::uint64_t>(
-            g_basicWingCpuMesh.animationFrames.size());
-
-    // Frames are predecoded, so if rendering stalls we can jump directly to
-    // the correct animation frame instead of executing a catch-up loop.
+    // Saturn animation is simulation-frame driven. If a frame takes longer
+    // than 1/30 second, retain every pose and let playback slow down.
+    const unsigned int frameCount = static_cast<unsigned int>(
+        g_basicWingCpuMesh.animationFrames.size());
     g_basicWingAnimationFrame =
-        static_cast<unsigned int>(
-            (static_cast<std::uint64_t>(
-                 g_basicWingAnimationFrame) +
-             elapsedTicks) %
-            frameCount);
+        (g_basicWingAnimationFrame + 1u) % frameCount;
 
     applyBasicWingAnimationFrame(
         g_basicWingAnimationFrame);
@@ -1819,8 +1777,7 @@ static void transformTownEdgeVertices()
 
         // If the combined room is resident, push only the moving position
         // fields. Texture coordinates/payload are unchanged.
-        if (g_residentVdp1Model == ResidentVdp1Model::StaticRoomAuthentic ||
-            g_residentVdp1Model == ResidentVdp1Model::StaticRoomDiagnostic) {
+        if (g_residentVdp1Model == ResidentVdp1Model::StaticRoomDiagnostic) {
             if (g_vdp1Vertices) apply(g_vdp1Vertices[dst]);
             if (g_vdp1LightingVertices) apply(g_vdp1LightingVertices[dst]);
             if (g_vdp1TextureVertices) {
@@ -1875,6 +1832,266 @@ static void transformTownEdgeVertices()
     }
 }
 
+static std::uint16_t liveTownTextureIndex(
+    const azel::SaturnPolygonRecord& record)
+{
+    for (std::size_t i = 0;
+         i < g_staticRoomCpuMesh.decodedTextureData.size(); ++i) {
+        const auto& texture = g_staticRoomCpuMesh.decodedTextureData[i];
+        if (record.cmdPmod == texture.cmdPmod &&
+            record.cmdColr == texture.cmdColr &&
+            record.cmdSrca == texture.cmdSrca &&
+            record.cmdSize == texture.cmdSize)
+            return static_cast<std::uint16_t>(i);
+    }
+    return 0xFFFFu;
+}
+
+static Vdp1ModelSource liveTownVdp1Source()
+{
+    Vdp1ModelSource source{};
+    source.vertices = g_liveTownCpuMesh.vertices.data();
+    source.lightingVertices = g_liveTownCpuMesh.lightingVertices.data();
+    source.vertexCount = g_liveTownCpuMesh.vertices.size();
+    source.polygons = g_liveTownCpuMesh.polygonRecords.data();
+    source.gouraud555 = g_liveTownCpuMesh.gouraud555.data();
+    source.polygonCount = g_liveTownCpuMesh.polygonRecords.size();
+    source.textures = g_staticRoomCpuMesh.decodedTextureData.data();
+    source.textureCount = g_staticRoomCpuMesh.decodedTextureData.size();
+    source.polygonTextureIndices =
+        g_liveTownCpuMesh.polygonTextureIndices.data();
+    source.polygonTextureIndexCount =
+        g_liveTownCpuMesh.polygonTextureIndices.size();
+    return source;
+}
+
+static void appendLiveTownModel(
+    const azel_bridge::LiveVdp1Model& model,
+    const azel_bridge::SubmissionState& state)
+{
+    if (!state.hasModelMatrix)
+        return;
+
+    const float invFixed = 1.0f / 65536.0f;
+    float m[12]{};
+    for (unsigned i = 0; i < 12; ++i)
+        m[i] = state.modelMatrix[i] * invFixed;
+
+    float billboardX[3]{}, billboardY[3]{}, billboardZ[3]{};
+    if (state.billboard) {
+        billboardZ[0] = g_townCameraTarget[0] - g_townCameraPosition[0];
+        billboardZ[1] = g_townCameraTarget[1] - g_townCameraPosition[1];
+        billboardZ[2] = g_townCameraTarget[2] - g_townCameraPosition[2];
+        const float zl = std::sqrt(
+            billboardZ[0]*billboardZ[0] + billboardZ[1]*billboardZ[1] +
+            billboardZ[2]*billboardZ[2]);
+        if (zl > 0.000001f)
+            for (float& v : billboardZ) v /= zl;
+        float up[3] = {
+            g_townCameraUp[0] - g_townCameraPosition[0],
+            g_townCameraUp[1] - g_townCameraPosition[1],
+            g_townCameraUp[2] - g_townCameraPosition[2]};
+        const float ul = std::sqrt(up[0]*up[0] + up[1]*up[1] + up[2]*up[2]);
+        if (ul > 0.000001f)
+            for (float& v : up) v /= ul;
+        billboardX[0] = up[1]*billboardZ[2] - up[2]*billboardZ[1];
+        billboardX[1] = up[2]*billboardZ[0] - up[0]*billboardZ[2];
+        billboardX[2] = up[0]*billboardZ[1] - up[1]*billboardZ[0];
+        const float xl = std::sqrt(
+            billboardX[0]*billboardX[0] + billboardX[1]*billboardX[1] +
+            billboardX[2]*billboardX[2]);
+        if (xl > 0.000001f)
+            for (float& v : billboardX) v /= xl;
+        billboardY[0] = billboardZ[1]*billboardX[2] - billboardZ[2]*billboardX[1];
+        billboardY[1] = billboardZ[2]*billboardX[0] - billboardZ[0]*billboardX[2];
+        billboardY[2] = billboardZ[0]*billboardX[1] - billboardZ[1]*billboardX[0];
+    }
+
+    const std::size_t polygonBase = g_liveTownCpuMesh.polygonRecords.size();
+    for (const auto& source : model.vertices) {
+        azel::DebugColorVertex v = source;
+        if (state.billboard) {
+            v.x = m[3] + source.x*billboardX[0] + source.y*billboardY[0] +
+                source.z*billboardZ[0];
+            v.y = m[7] + source.x*billboardX[1] + source.y*billboardY[1] +
+                source.z*billboardZ[1];
+            v.z = m[11] + source.x*billboardX[2] + source.y*billboardY[2] +
+                source.z*billboardZ[2];
+        } else {
+            v.x = source.x*m[0] + source.y*m[1] + source.z*m[2] + m[3];
+            v.y = source.x*m[4] + source.y*m[5] + source.z*m[6] + m[7];
+            v.z = source.x*m[8] + source.y*m[9] + source.z*m[10] + m[11];
+        }
+        g_liveTownCpuMesh.vertices.push_back(v);
+        g_liveTownCpuMesh.lightingVertices.push_back(v);
+    }
+
+    for (std::size_t p = 0; p < model.polygons.size(); ++p) {
+        auto record = model.polygons[p];
+        for (unsigned n = 0; n < record.lightingCount; ++n) {
+            const float x = record.lighting[n].normal[0] / 4096.0f;
+            const float y = record.lighting[n].normal[1] / 4096.0f;
+            const float z = record.lighting[n].normal[2] / 4096.0f;
+            float nx, ny, nz;
+            if (state.billboard) {
+                nx = x*billboardX[0] + y*billboardY[0] + z*billboardZ[0];
+                ny = x*billboardX[1] + y*billboardY[1] + z*billboardZ[1];
+                nz = x*billboardX[2] + y*billboardY[2] + z*billboardZ[2];
+            } else {
+                nx = x*m[0] + y*m[1] + z*m[2];
+                ny = x*m[4] + y*m[5] + z*m[6];
+                nz = x*m[8] + y*m[9] + z*m[10];
+            }
+            record.lighting[n].normal[0] = static_cast<std::int16_t>(
+                std::lround(std::clamp(nx, -1.0f, 1.0f) * 4096.0f));
+            record.lighting[n].normal[1] = static_cast<std::int16_t>(
+                std::lround(std::clamp(ny, -1.0f, 1.0f) * 4096.0f));
+            record.lighting[n].normal[2] = static_cast<std::int16_t>(
+                std::lround(std::clamp(nz, -1.0f, 1.0f) * 4096.0f));
+        }
+        record.model = static_cast<unsigned int>(polygonBase);
+        g_liveTownCpuMesh.polygonRecords.push_back(record);
+        g_liveTownCpuMesh.polygonTextureIndices.push_back(
+            liveTownTextureIndex(record));
+        g_liveTownCpuMesh.gouraud555.push_back({});
+    }
+}
+
+static void appendLiveTownEdge()
+{
+    if (!g_edgeIdleCpuReady || !g_townPlayerReady)
+        return;
+
+    azel_bridge::LiveVdp1Model edge{};
+    edge.vertices = g_edgeIdleCpuMesh.vertices;
+    edge.lightingVertices = g_edgeIdleCpuMesh.lightingVertices;
+    edge.polygons = g_edgeIdleCpuMesh.polygonRecords;
+    edge.gouraud555.resize(edge.polygons.size());
+
+    const azel::BasicWingAnimationFrame* current = nullptr;
+    const azel::BasicWingAnimationFrame* previous = nullptr;
+    if (g_townEdgeAnimation < g_edgeIdleCpuMesh.edgeAnimationClips.size()) {
+        const auto& clip = g_edgeIdleCpuMesh.edgeAnimationClips[g_townEdgeAnimation];
+        if (clip.valid && !clip.frames.empty())
+            current = &clip.frames[g_townEdgeAnimationFrame % clip.frames.size()];
+    }
+    if (g_townEdgePreviousAnimation < g_edgeIdleCpuMesh.edgeAnimationClips.size()) {
+        const auto& clip = g_edgeIdleCpuMesh.edgeAnimationClips[g_townEdgePreviousAnimation];
+        if (clip.valid && !clip.frames.empty())
+            previous = &clip.frames[g_townEdgePreviousFrame % clip.frames.size()];
+    }
+    const float blend = std::clamp(g_townEdgeTransition, 0.0f, 1.0f);
+    if (current && previous && current->vertices.size() == edge.vertices.size() &&
+        previous->vertices.size() == edge.vertices.size()) {
+        for (std::size_t i = 0; i < edge.vertices.size(); ++i) {
+            edge.vertices[i] = previous->vertices[i];
+            edge.vertices[i].x += (current->vertices[i].x - edge.vertices[i].x) * blend;
+            edge.vertices[i].y += (current->vertices[i].y - edge.vertices[i].y) * blend;
+            edge.vertices[i].z += (current->vertices[i].z - edge.vertices[i].z) * blend;
+        }
+    } else if (current && current->vertices.size() == edge.vertices.size()) {
+        edge.vertices = current->vertices;
+    }
+    if (current && previous &&
+        current->lightingNormals.size() == edge.polygons.size() &&
+        previous->lightingNormals.size() == edge.polygons.size()) {
+        for (std::size_t p = 0; p < edge.polygons.size(); ++p) {
+            auto& record = edge.polygons[p];
+            const unsigned mode = (record.lightingControl >> 8) & 3u;
+            const unsigned count = mode == 1u ? 1u : record.lightingCount;
+            for (unsigned corner = 0; corner < count; ++corner) {
+                float normal[3]{};
+                for (unsigned axis = 0; axis < 3; ++axis) {
+                    const float from = previous->lightingNormals[p].corner[corner][axis];
+                    const float to = current->lightingNormals[p].corner[corner][axis];
+                    normal[axis] = from + (to - from) * blend;
+                }
+                const float nl = std::sqrt(
+                    normal[0]*normal[0] + normal[1]*normal[1] +
+                    normal[2]*normal[2]);
+                if (nl > 0.000001f)
+                    for (float& v : normal) v /= nl;
+                for (unsigned axis = 0; axis < 3; ++axis)
+                    record.lighting[corner].normal[axis] =
+                        static_cast<std::int16_t>(std::lround(
+                            std::clamp(normal[axis], -1.0f, 1.0f) * 4096.0f));
+            }
+        }
+    }
+
+    azel_bridge::SubmissionState state{};
+    constexpr float kPi = 3.14159265358979323846f;
+    const float a = g_townPlayerYaw + kPi;
+    const float c = std::cos(a), s = std::sin(a);
+    state.modelMatrix[0] = static_cast<std::int32_t>(std::lround(c * 65536.0f));
+    state.modelMatrix[2] = static_cast<std::int32_t>(std::lround(s * 65536.0f));
+    state.modelMatrix[5] = 0x10000;
+    state.modelMatrix[8] = static_cast<std::int32_t>(std::lround(-s * 65536.0f));
+    state.modelMatrix[10] = static_cast<std::int32_t>(std::lround(c * 65536.0f));
+    state.modelMatrix[3] = static_cast<std::int32_t>(std::lround(g_townPlayerPosition[0] * 65536.0f));
+    state.modelMatrix[7] = static_cast<std::int32_t>(std::lround(g_townPlayerPosition[1] * 65536.0f));
+    state.modelMatrix[11] = static_cast<std::int32_t>(std::lround(g_townPlayerPosition[2] * 65536.0f));
+    state.hasModelMatrix = true;
+    appendLiveTownModel(edge, state);
+}
+
+static bool buildLiveTownFrame()
+{
+    g_liveTownCpuMesh.vertices.clear();
+    g_liveTownCpuMesh.lightingVertices.clear();
+    g_liveTownCpuMesh.polygonRecords.clear();
+    g_liveTownCpuMesh.gouraud555.clear();
+    g_liveTownCpuMesh.polygonTextureIndices.clear();
+    std::uint64_t signature = 1469598103934665603ull;
+    for (const auto& submission : azel_bridge::submissions()) {
+        if (submission.adaptedModelIndex < 0)
+            continue;
+        const auto* model = azel_bridge::adapted_model(
+            static_cast<std::uint32_t>(submission.adaptedModelIndex));
+        if (!model) continue;
+        appendLiveTownModel(*model, submission.state);
+        signature ^= submission.modelTableOffset;
+        signature *= 1099511628211ull;
+        signature ^= model->polygons.size();
+        signature *= 1099511628211ull;
+    }
+    appendLiveTownEdge();
+    signature ^= g_liveTownCpuMesh.polygonRecords.size();
+    signature *= 1099511628211ull;
+    g_liveTownCpuMesh.polygons = static_cast<unsigned int>(
+        g_liveTownCpuMesh.polygonRecords.size());
+    if (g_liveTownCpuMesh.vertices.empty() ||
+        g_liveTownCpuMesh.vertices.size() > 65535u ||
+        g_liveTownCpuMesh.polygonTextureIndices.size() !=
+            g_liveTownCpuMesh.polygonRecords.size())
+        return false;
+    for (const auto index : g_liveTownCpuMesh.polygonTextureIndices)
+        if (index == 0xFFFFu) return false;
+    const bool changed = !g_liveTownPrepared ||
+        g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
+        signature != g_liveTownSignature;
+    g_liveTownSignature = signature;
+    if (changed) {
+        if (!prepare_vdp1_model(liveTownVdp1Source()))
+            return false;
+        g_residentVdp1Model = ResidentVdp1Model::LiveTown;
+        g_liveTownPrepared = true;
+    } else {
+        for (std::size_t i = 0; i < g_liveTownCpuMesh.vertices.size(); ++i) {
+            const auto& v = g_liveTownCpuMesh.vertices[i];
+            g_vdp1Vertices[i] = v;
+            g_vdp1LightingVertices[i] = v;
+            g_vdp1TextureVertices[i].x = v.x;
+            g_vdp1TextureVertices[i].y = v.y;
+            g_vdp1TextureVertices[i].z = v.z;
+            g_vdp1GouraudVertices[i].x = v.x;
+            g_vdp1GouraudVertices[i].y = v.y;
+            g_vdp1GouraudVertices[i].z = v.z;
+        }
+    }
+    return true;
+}
+
 static ViewerMat4 buildAuthenticRoomWvp()
 {
     const ViewerMat4 view =
@@ -1902,134 +2119,6 @@ static ViewerMat4 buildAuthenticRoomWvp()
     projection.m[0] = -projection.m[0];
 
     return viewerMul(view, projection);
-}
-
-static void transformViewerPoint(
-    const ViewerMat4& matrix,
-    const float point[3],
-    float out[3])
-{
-    out[0] =
-        point[0] * matrix.m[0] +
-        point[1] * matrix.m[4] +
-        point[2] * matrix.m[8] +
-        matrix.m[12];
-    out[1] =
-        point[0] * matrix.m[1] +
-        point[1] * matrix.m[5] +
-        point[2] * matrix.m[9] +
-        matrix.m[13];
-    out[2] =
-        point[0] * matrix.m[2] +
-        point[1] * matrix.m[6] +
-        point[2] * matrix.m[10] +
-        matrix.m[14];
-}
-
-static bool updateStaticRoomAzelTownVisibility()
-{
-    if (!g_staticRoomCpuReady ||
-        !g_staticRoomCpuMesh.cameraValid)
-        return true;
-
-    const ViewerMat4 view =
-        viewerLookAtLH(
-            g_townPlayerReady
-                ? g_townCameraPosition
-                : g_staticRoomCpuMesh.cameraPosition,
-            g_townPlayerReady
-                ? g_townCameraTarget
-                : g_staticRoomCpuMesh.cameraTarget,
-            g_townPlayerReady
-                ? g_townCameraUp
-                : g_staticRoomCpuMesh.cameraUp);
-
-    float cellCamera[3]{};
-    transformViewerPoint(
-        view,
-        g_staticRoomCpuMesh.cellOrigin,
-        cellCamera);
-
-    constexpr float kPi =
-        3.14159265358979323846f;
-    const float halfFov =
-        (g_staticRoomCpuMesh.cameraFovDegrees * 0.5f) *
-        kPi / 180.0f;
-    const float r0 =
-        176.0f / std::tan(halfFov);
-    const float widthScale =
-        r0 * (352.0f / 320.0f);
-
-    // initVDP1Projection() derives these exact Saturn fixed-point ratios:
-    // m2C_widthRatio  = 176 / widthScale
-    // m28_widthRatio2 = sqrt(176^2 + widthScale^2) / widthScale
-    const float widthRatio =
-        176.0f / widthScale;
-    const float widthRatio2 =
-        std::sqrt(
-            176.0f * 176.0f +
-            widthScale * widthScale) /
-        widthScale;
-
-    const float cellRadius =
-        g_staticRoomCpuMesh.cellRadius;
-
-    bool visible =
-        cellCamera[2] >=
-        g_staticRoomCpuMesh.cameraNear - cellRadius;
-
-    if (visible) {
-        const float horizontalLimit =
-            cellCamera[2] * widthRatio +
-            cellRadius * widthRatio2;
-        visible =
-            cellCamera[0] >= -horizontalLimit &&
-            cellCamera[0] <= horizontalLimit;
-    }
-
-    g_staticRoomAzelCellVisible = visible;
-    g_staticRoomAzelLod0Objects = 0;
-    g_staticRoomAzelNonzeroLodObjects = 0;
-
-    if (!visible)
-        return false;
-
-    // Mirrors:
-    //   r5 = generateObjectMatrix(...)
-    //   r4 = 0;
-    //   while (r5 > gTownGrid.m3C[r4]) r4++;
-    // For TWN_RUIN the only threshold is 0x7FFFFFFF, so every object should
-    // resolve to LOD 0. Keep the actual walk here so later towns can replace
-    // the threshold table without changing renderer semantics.
-    for (const auto& object :
-         g_staticRoomCpuMesh.objectStates) {
-        float objectCamera[3]{};
-        transformViewerPoint(
-            view,
-            object.worldOrigin,
-            objectCamera);
-
-        const std::int64_t depthFixed =
-            static_cast<std::int64_t>(
-                std::llround(
-                    objectCamera[2] * 65536.0f));
-
-        unsigned int lod = 0;
-        while (lod + 1u <
-                   g_staticRoomCpuMesh.lodDepthCount &&
-               depthFixed >
-                   g_staticRoomCpuMesh
-                       .lodDepthThresholds[lod]) {
-            ++lod;
-        }
-
-        if (lod == 0u)
-            ++g_staticRoomAzelLod0Objects;
-        else
-            ++g_staticRoomAzelNonzeroLodObjects;
-    }
-
-    return true;
 }
 
 static ViewerMat4 buildViewerWvp(bool roomMode)
@@ -3892,8 +3981,6 @@ bool load_basic_wing_viewer()
     g_viewDistance = g_basicWingFitDistance;
     g_viewMode = 0;
     g_basicWingAnimationFrame = 0;
-    g_basicWingAnimationLastUs = 0;
-    g_basicWingAnimationPhase = 0;
     g_presentClockInitialized = false;
     g_lastPresentVcount = 0;
     g_basicWingCpuReady = true;
@@ -4282,15 +4369,15 @@ static void renderBasicWingViewer()
             return;
         g_residentVdp1Model = ResidentVdp1Model::BasicWing;
         applyBasicWingAnimationFrame(g_basicWingAnimationFrame);
+    } else if (roomAuthenticCameraMode) {
+        if (!buildLiveTownFrame())
+            return;
     } else if (roomMode) {
         const ResidentVdp1Model desiredResident =
-            roomAuthenticCameraMode
-                ? ResidentVdp1Model::StaticRoomAuthentic
-                : ResidentVdp1Model::StaticRoomDiagnostic;
+            ResidentVdp1Model::StaticRoomDiagnostic;
 
         if (g_residentVdp1Model != desiredResident) {
-            if (!prepare_vdp1_model(
-                    staticRoomVdp1Source(roomAuthenticCameraMode)))
+            if (!prepare_vdp1_model(staticRoomVdp1Source(false)))
                 return;
             g_residentVdp1Model = desiredResident;
         }
@@ -4362,19 +4449,11 @@ static void renderBasicWingViewer()
          renderMode == Vdp1RenderMode::GouraudGrayscale))
         updateViewerAzelLighting();
 
-    bool azelTownCellVisible = true;
-    if (roomAuthenticCameraMode)
-        azelTownCellVisible = updateStaticRoomAzelTownVisibility();
-    if (roomMode)
-        azelTownCellVisible = azelTownCellVisible &&
-            !lagi::azel_bridge::town_object_submissions().empty();
-
-    if ((roomDiagnosticLitMode ||
-         roomAuthenticLitMode ||
-         roomAuthenticLightingOnlyMode) &&
-        azelTownCellVisible) {
-        updateStaticRoomAzelLighting(roomAuthenticCameraMode);
-    }
+    if (roomAuthenticCameraMode &&
+        (roomAuthenticLitMode || roomAuthenticLightingOnlyMode))
+        updateLiveTownAzelLighting();
+    else if (roomDiagnosticLitMode)
+        updateStaticRoomAzelLighting(false);
 
     Vdp1DrawState drawState{};
     std::memcpy(drawState.wvp, wvp.m, sizeof(drawState.wvp));
@@ -4382,16 +4461,16 @@ static void renderBasicWingViewer()
     drawState.reverseCullWinding = roomMode;
 
     const Vdp1ModelSource model =
-        roomMode
-            ? staticRoomVdp1Source(roomAuthenticCameraMode)
-            : basicWingVdp1Source();
+        roomAuthenticCameraMode
+            ? liveTownVdp1Source()
+            : (roomMode
+            ? staticRoomVdp1Source(false)
+            : basicWingVdp1Source());
 
-    if (azelTownCellVisible) {
-        if (!submit_vdp1_model(model, drawState)) {
-            sceGxmEndScene(g_probeContext, nullptr, nullptr);
-            sceGxmFinish(g_probeContext);
-            return;
-        }
+    if (!submit_vdp1_model(model, drawState)) {
+        sceGxmEndScene(g_probeContext, nullptr, nullptr);
+        sceGxmFinish(g_probeContext);
+        return;
     }
 
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
@@ -4489,6 +4568,98 @@ void end_frame()
     g_drawBuffer ^= 1;
 }
 
+static void updateLiveTownAzelLighting()
+{
+    if (!g_staticRoomCpuMesh.lightingValid ||
+        g_liveTownCpuMesh.gouraud555.size() !=
+            g_liveTownCpuMesh.polygonRecords.size())
+        return;
+
+    std::int16_t falloffMap[32][3]{};
+    generateAzelFalloff(
+        g_staticRoomCpuMesh.lightFalloff[0],
+        g_staticRoomCpuMesh.lightFalloff[1],
+        g_staticRoomCpuMesh.lightFalloff[2], falloffMap);
+
+    float cameraForward[3] = {
+        g_townCameraTarget[0] - g_townCameraPosition[0],
+        g_townCameraTarget[1] - g_townCameraPosition[1],
+        g_townCameraTarget[2] - g_townCameraPosition[2]};
+    const float length = std::sqrt(
+        cameraForward[0]*cameraForward[0] +
+        cameraForward[1]*cameraForward[1] +
+        cameraForward[2]*cameraForward[2]);
+    if (length > 0.000001f)
+        for (float& v : cameraForward) v /= length;
+
+    // TWN_RUIN initializes far clip to 0xF000. Preserve the Saturn integer
+    // scale and 32-entry byte-offset quantization used by GetDistanceFalloff.
+    constexpr std::int64_t farRaw = 0xF000;
+    constexpr std::int64_t oneOverFar =
+        (static_cast<std::int64_t>(0x8000) << 16) / farRaw;
+    constexpr std::int64_t oneOverFar256 = oneOverFar << 8;
+    auto falloffIndex = [&](std::size_t polygon) {
+        const auto& v = g_liveTownCpuMesh.vertices[polygon * 6u];
+        const float depth = std::fabs(
+            (v.x - g_townCameraPosition[0]) * cameraForward[0] +
+            (v.y - g_townCameraPosition[1]) * cameraForward[1] +
+            (v.z - g_townCameraPosition[2]) * cameraForward[2]);
+        const std::int64_t viewDepth =
+            static_cast<std::int64_t>(std::llround(depth * 65536.0f)) << 8;
+        const std::int64_t scaled = std::max<std::int64_t>(
+            0, (viewDepth * oneOverFar256) >> 32);
+        const int byteOffset =
+            (static_cast<int>((scaled << 1) >> 8)) & ~7;
+        return std::clamp(byteOffset >> 3, 0, 31);
+    };
+
+    const int lightVector[3] = {
+        static_cast<int>(std::lround(-g_staticRoomCpuMesh.lightDirection[0] * 4096.0f)),
+        static_cast<int>(std::lround(-g_staticRoomCpuMesh.lightDirection[1] * 4096.0f)),
+        static_cast<int>(std::lround(-g_staticRoomCpuMesh.lightDirection[2] * 4096.0f))};
+
+    for (std::size_t p = 0;
+         p < g_liveTownCpuMesh.polygonRecords.size(); ++p) {
+        const auto& record = g_liveTownCpuMesh.polygonRecords[p];
+        const unsigned mode = (record.lightingControl >> 8) & 3u;
+        auto& out = g_liveTownCpuMesh.gouraud555[p];
+        out = {};
+        if (mode == 0u || record.lightingCount == 0u)
+            continue;
+        const int depthIndex = falloffIndex(p);
+        for (unsigned corner = 0; corner < 4u; ++corner) {
+            const unsigned normalIndex = mode == 1u ? 0u : corner;
+            if (normalIndex >= record.lightingCount) continue;
+            const auto& lighting = record.lighting[normalIndex];
+            const int dotProduct =
+                static_cast<int>(lighting.normal[0]) * lightVector[0] +
+                static_cast<int>(lighting.normal[1]) * lightVector[1] +
+                static_cast<int>(lighting.normal[2]) * lightVector[2];
+            int accum[3] = {
+                falloffMap[depthIndex][0], falloffMap[depthIndex][1],
+                falloffMap[depthIndex][2]};
+            if (mode == 2u && lighting.hasColor) {
+                for (unsigned channel = 0; channel < 3; ++channel)
+                    accum[channel] += static_cast<std::int16_t>(
+                        lighting.color[channel]);
+            }
+            if (dotProduct > 0) {
+                const int dotHi = static_cast<int>(
+                    static_cast<std::uint32_t>(dotProduct) >> 16);
+                for (unsigned channel = 0; channel < 3; ++channel)
+                    accum[channel] +=
+                        g_staticRoomCpuMesh.lightColor[channel] * dotHi;
+            }
+            for (unsigned channel = 0; channel < 3; ++channel) {
+                const int gouraud5 =
+                    (std::clamp(accum[channel], 0, 0x1F00) >> 8) & 0x1F;
+                out.corner[corner][channel] =
+                    (static_cast<float>(gouraud5) - 16.0f) / 31.0f;
+            }
+        }
+    }
+}
+
 bool town_scene_active()
 {
     return !g_debugVisible && g_staticRoomCpuReady &&
@@ -4498,9 +4669,8 @@ bool town_scene_active()
 
 void town_camera_update()
 {
-    if (!town_scene_active())
-        return;
-    transformTownEdgeVertices();
+    // Edge's current task-owned pose is consumed when the native town
+    // submission batch is assembled. No renderer-owned room mesh is updated.
 }
 
 unsigned town_edge_animation_frames(unsigned animation)

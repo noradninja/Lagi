@@ -22,6 +22,9 @@ u16 readSaturnU16(sSaturnPtr ptr);
 s32 readSaturnS32(sSaturnPtr ptr);
 sSaturnPtr readSaturnEA(sSaturnPtr ptr);
 
+void addObjectToDrawList(sProcessed3dModel* model);
+void addBillBoardToDrawList(sProcessed3dModel* model);
+
 namespace lagi::azel {
 namespace {
 
@@ -48,6 +51,9 @@ struct WorldGridState {
     int currentY = 0;
     TownWorldCellTask* cells[8][8]{};
     std::array<std::vector<u32>, 64> objectLists{};
+    std::array<s32, 4> lodDepthThresholds{
+        0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF};
+    unsigned lodDepthCount = 1;
 };
 
 WorldGridState g_worldGrid{};
@@ -476,7 +482,10 @@ static void updateEdgeAnimation(float movedDistance)
     if (movementRate) {
         const unsigned counter = g_edge.animationLeftOver + movementRate;
         g_edge.animationLeftOver = counter & 0xFFFFu;
-        animationSteps = counter >> 16;
+        // Saturn advances the animation state once per game frame. Never
+        // catch up by skipping decoded poses when rendering falls below
+        // 30 Hz; the whole simulation and animation slow together.
+        animationSteps = std::min(counter >> 16, 1u);
     }
 
     if (!grounded &&
@@ -901,14 +910,87 @@ struct TownWorldCellTask final : s_workAreaTemplateWithArg<TownWorldCellTask, in
         self->cellIndex = index;
     }
     static void DrawTask(TownWorldCellTask* self) {
-        if (self->cellIndex != town_runtime().activeCellIndex)
+        const auto& runtime = town_runtime();
+        if (self->cellIndex < 0 ||
+            self->cellIndex >= static_cast<int>(runtime.cells.size()) ||
+            !g_mainLogic.followReady)
             return;
-        for (std::size_t i = 0; i < g_worldScene.objectStates.size(); ++i) {
-            const auto& object = g_worldScene.objectStates[i];
+
+        const auto& cell = runtime.cells[
+            static_cast<std::size_t>(self->cellIndex)];
+        float viewZ[3] = {
+            g_mainLogic.target[0] - g_mainLogic.cameraPosition[0],
+            g_mainLogic.target[1] - g_mainLogic.cameraPosition[1],
+            g_mainLogic.target[2] - g_mainLogic.cameraPosition[2]};
+        normalize3(viewZ);
+        float up[3] = {
+            g_mainLogic.up[0] - g_mainLogic.cameraPosition[0],
+            g_mainLogic.up[1] - g_mainLogic.cameraPosition[1],
+            g_mainLogic.up[2] - g_mainLogic.cameraPosition[2]};
+        normalize3(up);
+        float viewX[3] = {
+            up[1]*viewZ[2] - up[2]*viewZ[1],
+            up[2]*viewZ[0] - up[0]*viewZ[2],
+            up[0]*viewZ[1] - up[1]*viewZ[0]};
+        normalize3(viewX);
+
+        const float cellDelta[3] = {
+            cell.origin[0] - g_mainLogic.cameraPosition[0],
+            cell.origin[1] - g_mainLogic.cameraPosition[1],
+            cell.origin[2] - g_mainLogic.cameraPosition[2]};
+        const float cellDepth = dot3(cellDelta, viewZ);
+        const float cellSide = dot3(cellDelta, viewX);
+        const float cellRadius =
+            static_cast<float>(0x10A3D) / 65536.0f *
+            runtime.gridCellSize;
+        const float nearClip = static_cast<float>(0x800) / 65536.0f;
+        constexpr float kPi = 3.14159265358979323846f;
+        const float widthScale =
+            (176.0f / std::tan(40.0f * kPi / 180.0f)) *
+            (352.0f / 320.0f);
+        const float widthRatio = 176.0f / widthScale;
+        const float widthRatio2 =
+            std::sqrt(176.0f*176.0f + widthScale*widthScale) /
+            widthScale;
+        if (cellDepth < nearClip - cellRadius)
+            return;
+        const float horizontalLimit =
+            cellDepth * widthRatio + cellRadius * widthRatio2;
+        if (cellSide < -horizontalLimit || cellSide > horizontalLimit)
+            return;
+
+        sSaturnMemoryFile* const overlay = town_overlay_file();
+        if (!overlay) return;
+
+        auto makeState = [&](const float position[3],
+                             s16 rx, s16 ry, s16 rz,
+                             bool billboard) {
             azel_bridge::SubmissionState state{};
-            state.modelMatrix[0] = state.modelMatrix[5] =
-                state.modelMatrix[10] = 0x10000;
+            constexpr float kTau = 6.28318530717958647692f;
+            const float ax = static_cast<float>(rx) / 4096.0f * kTau;
+            const float ay = static_cast<float>(ry) / 4096.0f * kTau;
+            const float az = static_cast<float>(rz) / 4096.0f * kTau;
+            const float cx = std::cos(ax), sx = std::sin(ax);
+            const float cy = std::cos(ay), sy = std::sin(ay);
+            const float cz = std::cos(az), sz = std::sin(az);
+            const float m[9] = {
+                cz*cy, cz*sy*sx - sz*cx, cz*sy*cx + sz*sx,
+                sz*cy, sz*sy*sx + cz*cx, sz*sy*cx - cz*sx,
+                -sy,   cy*sx,            cy*cx};
+            state.modelMatrix[0] = static_cast<s32>(std::lround(m[0]*65536.0f));
+            state.modelMatrix[1] = static_cast<s32>(std::lround(m[1]*65536.0f));
+            state.modelMatrix[2] = static_cast<s32>(std::lround(m[2]*65536.0f));
+            state.modelMatrix[4] = static_cast<s32>(std::lround(m[3]*65536.0f));
+            state.modelMatrix[5] = static_cast<s32>(std::lround(m[4]*65536.0f));
+            state.modelMatrix[6] = static_cast<s32>(std::lround(m[5]*65536.0f));
+            state.modelMatrix[8] = static_cast<s32>(std::lround(m[6]*65536.0f));
+            state.modelMatrix[9] = static_cast<s32>(std::lround(m[7]*65536.0f));
+            state.modelMatrix[10] = static_cast<s32>(std::lround(m[8]*65536.0f));
+            state.modelMatrix[3] = static_cast<s32>(std::lround(position[0]*65536.0f));
+            state.modelMatrix[7] = static_cast<s32>(std::lround(position[1]*65536.0f));
+            state.modelMatrix[11] = static_cast<s32>(std::lround(position[2]*65536.0f));
             state.hasModelMatrix = true;
+            state.billboard = billboard;
             if (g_worldScene.lightingValid) {
                 state.lightVector[0] = static_cast<s32>(
                     -g_worldScene.lightDirection[0] * 65536.0f);
@@ -921,12 +1003,73 @@ struct TownWorldCellTask final : s_workAreaTemplateWithArg<TownWorldCellTask, in
                 state.lightColor[2] = g_worldScene.lightColor[2];
                 state.hasLight = true;
             }
-            azel_bridge::submit_town_object(
-                static_cast<u32>(self->cellIndex),
-                static_cast<u32>(i),
-                object.firstPolygon,
-                object.polygonCount,
-                state);
+            return state;
+        };
+
+        unsigned objectIndex = 0;
+        if (cell.staticObjectListEA) {
+            sSaturnPtr entry = overlay->getSaturnPtr(cell.staticObjectListEA);
+            constexpr unsigned kMaxObjects = 512;
+            for (; objectIndex < kMaxObjects; ++objectIndex, entry += 0x18) {
+                const s32 lodTableEA = readSaturnS32(entry);
+                if (!lodTableEA) break;
+                const float position[3] = {
+                    cell.origin[0] + readSaturnS32(entry + 4) / 65536.0f,
+                    cell.origin[1] + readSaturnS32(entry + 8) / 65536.0f,
+                    cell.origin[2] + readSaturnS32(entry + 12) / 65536.0f};
+                const float delta[3] = {
+                    position[0] - g_mainLogic.cameraPosition[0],
+                    position[1] - g_mainLogic.cameraPosition[1],
+                    position[2] - g_mainLogic.cameraPosition[2]};
+                const float depth = dot3(delta, viewZ);
+                unsigned lod = 0;
+                const s32 depthRaw = static_cast<s32>(std::clamp(
+                    depth * 65536.0f,
+                    static_cast<float>(INT32_MIN),
+                    static_cast<float>(INT32_MAX)));
+                while (lod + 1u < g_worldGrid.lodDepthCount &&
+                       depthRaw > g_worldGrid.lodDepthThresholds[lod])
+                    ++lod;
+                const sSaturnPtr lodTable = readSaturnEA(entry);
+                u16 modelOffset = readSaturnU16(lodTable + lod * 2u);
+                sProcessed3dModel* const model = town_runtime_model(
+                    g_worldGrid.bundleIndex, modelOffset);
+                if (!model) continue;
+                const auto state = makeState(
+                    position,
+                    readSaturnS16(entry + 0x10),
+                    readSaturnS16(entry + 0x12),
+                    readSaturnS16(entry + 0x14),
+                    false);
+                azel_bridge::set_town_submission_context(
+                    g_worldGrid.bundleIndex,
+                    static_cast<u32>(self->cellIndex), objectIndex,
+                    modelOffset, state);
+                addObjectToDrawList(model);
+            }
+        }
+
+        if (cell.billboardListEA) {
+            sSaturnPtr entry = overlay->getSaturnPtr(cell.billboardListEA);
+            constexpr unsigned kMaxBillboards = 512;
+            for (unsigned i = 0; i < kMaxBillboards; ++i, ++objectIndex,
+                 entry += 0x10) {
+                const u32 modelOffset = static_cast<u32>(readSaturnS32(entry));
+                if (!modelOffset) break;
+                const float position[3] = {
+                    cell.origin[0] + readSaturnS32(entry + 4) / 65536.0f,
+                    cell.origin[1] + readSaturnS32(entry + 8) / 65536.0f,
+                    cell.origin[2] + readSaturnS32(entry + 12) / 65536.0f};
+                sProcessed3dModel* const model = town_runtime_model(
+                    g_worldGrid.bundleIndex, modelOffset);
+                if (!model) continue;
+                const auto state = makeState(position, 0, 0, 0, true);
+                azel_bridge::set_town_submission_context(
+                    g_worldGrid.bundleIndex,
+                    static_cast<u32>(self->cellIndex), objectIndex,
+                    modelOffset, state);
+                addBillBoardToDrawList(model);
+            }
         }
     }
     static const TypedTaskDefinition* getTypedTaskDefinition() {
