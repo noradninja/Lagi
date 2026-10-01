@@ -212,6 +212,8 @@ static unsigned int g_profileGouraudPayloadUs = 0;
 static unsigned int g_profileGouraudBucketUs = 0;
 static unsigned int g_profileGouraudIndexUs = 0;
 static unsigned int g_profileGouraudDrawUs = 0;
+static unsigned int g_profileGouraudVisibleQuads = 0;
+static unsigned int g_profileGouraudTotalQuads = 0;
 static unsigned int g_profileGxmWaitUs = 0;
 static unsigned int g_profileRenderUs = 0;
 static unsigned int g_profilePresentUs = 0;
@@ -4316,6 +4318,9 @@ bool submit_vdp1_model(
         g_profileGouraudBucketUs = 0u;
         g_profileGouraudIndexUs = 0u;
         g_profileGouraudDrawUs = 0u;
+        g_profileGouraudVisibleQuads = 0u;
+        g_profileGouraudTotalQuads =
+            static_cast<unsigned int>(model.polygonCount);
 
         // Preserve original Saturn quad identity and attach the four recovered
         // Gouraud corner values to every generated triangle vertex. The final
@@ -4352,17 +4357,58 @@ bool submit_vdp1_model(
             const std::uint64_t tProject = sceKernelGetProcessTimeWide();
             ViewerScreenPoint screen[4];
             bool visible = true;
+            std::uint8_t sharedOutcode = 0x3Fu;
+
+            // Compute homogeneous clip coordinates once per original Saturn
+            // corner. Reject only when all four corners lie outside the same
+            // clip plane; otherwise reuse the same clip coordinates for the
+            // perspective divide needed by the scanline Gouraud payload.
             for (unsigned int corner = 0; corner < 4; ++corner) {
-                screen[corner] = projectViewerPoint(
-                    wvp,
-                    model.vertices[p * 6u + cornerVertex[corner]]);
-                if (!screen[corner].valid)
+                const auto& v =
+                    model.vertices[p * 6u + cornerVertex[corner]];
+                const float clipX =
+                    v.x * wvp.m[0] + v.y * wvp.m[4] +
+                    v.z * wvp.m[8] + wvp.m[12];
+                const float clipY =
+                    v.x * wvp.m[1] + v.y * wvp.m[5] +
+                    v.z * wvp.m[9] + wvp.m[13];
+                const float clipZ =
+                    v.x * wvp.m[2] + v.y * wvp.m[6] +
+                    v.z * wvp.m[10] + wvp.m[14];
+                const float clipW =
+                    v.x * wvp.m[3] + v.y * wvp.m[7] +
+                    v.z * wvp.m[11] + wvp.m[15];
+
+                std::uint8_t outcode = 0u;
+                if (clipX < -clipW) outcode |= 1u << 0;
+                if (clipX >  clipW) outcode |= 1u << 1;
+                if (clipY < -clipW) outcode |= 1u << 2;
+                if (clipY >  clipW) outcode |= 1u << 3;
+                if (clipZ <  0.0f)  outcode |= 1u << 4;
+                if (clipZ >  clipW) outcode |= 1u << 5;
+                sharedOutcode &= outcode;
+
+                if (clipW <= 0.00001f) {
                     visible = false;
+                    continue;
+                }
+
+                const float invW = 1.0f / clipW;
+                const float ndcX = clipX * invW;
+                const float ndcY = clipY * invW;
+                screen[corner].x =
+                    (ndcX * 0.5f + 0.5f) *
+                    static_cast<float>(viewerRenderWidth());
+                screen[corner].y =
+                    (0.5f - ndcY * 0.5f) *
+                    static_cast<float>(viewerRenderHeight());
+                screen[corner].valid = true;
             }
             projectAccumUs += sceKernelGetProcessTimeWide() - tProject;
-            if (!visible)
+            if (!visible || sharedOutcode != 0u)
                 continue;
 
+            ++g_profileGouraudVisibleQuads;
             visibleQuads[p] = 1u;
 
             const std::uint64_t tPayload = sceKernelGetProcessTimeWide();
@@ -4802,7 +4848,7 @@ static void renderBasicWingViewer()
 
     if (roomAuthenticCameraMode) {
         char timing0[80], timing1[80], timing2[80], timing3[80], timing4[80];
-        char timing5[80], timing6[80];
+        char timing5[80], timing6[80], timing7[80];
         std::snprintf(
             timing0, sizeof(timing0),
             "US TASK %u BUILD %u LIGHT %u",
@@ -4835,6 +4881,11 @@ static void renderBasicWingViewer()
             "GOUR INDEX %u DRAW %u",
             g_profileGouraudIndexUs,
             g_profileGouraudDrawUs);
+        std::snprintf(
+            timing7, sizeof(timing7),
+            "GOUR QUAD %u/%u",
+            g_profileGouraudVisibleQuads,
+            g_profileGouraudTotalQuads);
 
         auto profileText = [colorBuffer, gxmPitch](
             int y, const char* text) {
@@ -4852,6 +4903,7 @@ static void renderBasicWingViewer()
         profileText(124, timing4);
         profileText(133, timing5);
         profileText(142, timing6);
+        profileText(151, timing7);
     }
 
     drawTextSmallToBuffer(
