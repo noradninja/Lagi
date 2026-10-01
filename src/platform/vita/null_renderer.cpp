@@ -2394,6 +2394,17 @@ struct ViewerScreenPoint
     bool valid = false;
 };
 
+struct GouraudQuadPrep
+{
+    bool visible = false;
+    ViewerScreenPoint screen[4]{};
+};
+
+static std::vector<GouraudQuadPrep> g_liveTownGouraudPrep;
+static const azel::DebugColorVertex* g_liveTownGouraudPrepVertices = nullptr;
+static std::size_t g_liveTownGouraudPrepPolygonCount = 0;
+static bool g_liveTownGouraudPrepValid = false;
+
 static int viewerRenderWidth()
 {
     return g_halfResolution ? (kWidth / 2) : kWidth;
@@ -2469,6 +2480,75 @@ static std::uint8_t viewerClipOutcode(
     if (clipZ <  0.0f)  out |= 1u << 4; // near (GXM/D3D-style 0..W Z)
     if (clipZ >  clipW) out |= 1u << 5; // far
     return out;
+}
+
+static void prepareLiveTownGouraudVisibility(const ViewerMat4& wvp)
+{
+    static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
+    const std::size_t polygonCount =
+        g_liveTownCpuMesh.polygonRecords.size();
+
+    g_liveTownGouraudPrep.assign(polygonCount, GouraudQuadPrep{});
+    g_liveTownGouraudPrepVertices = g_liveTownCpuMesh.vertices.data();
+    g_liveTownGouraudPrepPolygonCount = polygonCount;
+    g_liveTownGouraudPrepValid =
+        polygonCount != 0u &&
+        g_liveTownCpuMesh.vertices.size() == polygonCount * 6u;
+    g_profileGouraudVisibleQuads = 0u;
+    g_profileGouraudTotalQuads = static_cast<unsigned int>(polygonCount);
+
+    if (!g_liveTownGouraudPrepValid)
+        return;
+
+    for (std::size_t p = 0; p < polygonCount; ++p) {
+        auto& prep = g_liveTownGouraudPrep[p];
+        bool projectable = true;
+        std::uint8_t sharedOutcode = 0x3Fu;
+
+        for (unsigned int corner = 0; corner < 4u; ++corner) {
+            const auto& v = g_liveTownCpuMesh.vertices[
+                p * 6u + cornerVertex[corner]];
+            const float clipX =
+                v.x * wvp.m[0] + v.y * wvp.m[4] +
+                v.z * wvp.m[8] + wvp.m[12];
+            const float clipY =
+                v.x * wvp.m[1] + v.y * wvp.m[5] +
+                v.z * wvp.m[9] + wvp.m[13];
+            const float clipZ =
+                v.x * wvp.m[2] + v.y * wvp.m[6] +
+                v.z * wvp.m[10] + wvp.m[14];
+            const float clipW =
+                v.x * wvp.m[3] + v.y * wvp.m[7] +
+                v.z * wvp.m[11] + wvp.m[15];
+
+            std::uint8_t outcode = 0u;
+            if (clipX < -clipW) outcode |= 1u << 0;
+            if (clipX >  clipW) outcode |= 1u << 1;
+            if (clipY < -clipW) outcode |= 1u << 2;
+            if (clipY >  clipW) outcode |= 1u << 3;
+            if (clipZ <  0.0f)  outcode |= 1u << 4;
+            if (clipZ >  clipW) outcode |= 1u << 5;
+            sharedOutcode &= outcode;
+
+            if (clipW <= 0.00001f) {
+                projectable = false;
+                continue;
+            }
+
+            const float invW = 1.0f / clipW;
+            prep.screen[corner].x =
+                (clipX * invW * 0.5f + 0.5f) *
+                static_cast<float>(viewerRenderWidth());
+            prep.screen[corner].y =
+                (0.5f - clipY * invW * 0.5f) *
+                static_cast<float>(viewerRenderHeight());
+            prep.screen[corner].valid = true;
+        }
+
+        prep.visible = projectable && sharedOutcode == 0u;
+        if (prep.visible)
+            ++g_profileGouraudVisibleQuads;
+    }
 }
 
 static void generateAzelFalloff(
@@ -4313,14 +4393,22 @@ bool submit_vdp1_model(
     }
 
     if (gouraudPath) {
+        const bool useLiveTownPrep =
+            g_liveTownGouraudPrepValid &&
+            g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+            model.vertices == g_liveTownGouraudPrepVertices &&
+            model.polygonCount == g_liveTownGouraudPrepPolygonCount &&
+            g_liveTownGouraudPrep.size() == model.polygonCount;
         g_profileGouraudProjectUs = 0u;
         g_profileGouraudPayloadUs = 0u;
         g_profileGouraudBucketUs = 0u;
         g_profileGouraudIndexUs = 0u;
         g_profileGouraudDrawUs = 0u;
-        g_profileGouraudVisibleQuads = 0u;
-        g_profileGouraudTotalQuads =
-            static_cast<unsigned int>(model.polygonCount);
+        if (!useLiveTownPrep) {
+            g_profileGouraudVisibleQuads = 0u;
+            g_profileGouraudTotalQuads =
+                static_cast<unsigned int>(model.polygonCount);
+        }
 
         // Preserve original Saturn quad identity and attach the four recovered
         // Gouraud corner values to every generated triangle vertex. The final
@@ -4354,61 +4442,64 @@ bool submit_vdp1_model(
             if (textureIndex >= textureBucketCount)
                 continue;
 
-            const std::uint64_t tProject = sceKernelGetProcessTimeWide();
             ViewerScreenPoint screen[4];
-            bool visible = true;
-            std::uint8_t sharedOutcode = 0x3Fu;
-
-            // Compute homogeneous clip coordinates once per original Saturn
-            // corner. Reject only when all four corners lie outside the same
-            // clip plane; otherwise reuse the same clip coordinates for the
-            // perspective divide needed by the scanline Gouraud payload.
-            for (unsigned int corner = 0; corner < 4; ++corner) {
-                const auto& v =
-                    model.vertices[p * 6u + cornerVertex[corner]];
-                const float clipX =
-                    v.x * wvp.m[0] + v.y * wvp.m[4] +
-                    v.z * wvp.m[8] + wvp.m[12];
-                const float clipY =
-                    v.x * wvp.m[1] + v.y * wvp.m[5] +
-                    v.z * wvp.m[9] + wvp.m[13];
-                const float clipZ =
-                    v.x * wvp.m[2] + v.y * wvp.m[6] +
-                    v.z * wvp.m[10] + wvp.m[14];
-                const float clipW =
-                    v.x * wvp.m[3] + v.y * wvp.m[7] +
-                    v.z * wvp.m[11] + wvp.m[15];
-
-                std::uint8_t outcode = 0u;
-                if (clipX < -clipW) outcode |= 1u << 0;
-                if (clipX >  clipW) outcode |= 1u << 1;
-                if (clipY < -clipW) outcode |= 1u << 2;
-                if (clipY >  clipW) outcode |= 1u << 3;
-                if (clipZ <  0.0f)  outcode |= 1u << 4;
-                if (clipZ >  clipW) outcode |= 1u << 5;
-                sharedOutcode &= outcode;
-
-                if (clipW <= 0.00001f) {
-                    visible = false;
+            if (useLiveTownPrep) {
+                const auto& prep = g_liveTownGouraudPrep[p];
+                if (!prep.visible)
                     continue;
+                std::memcpy(screen, prep.screen, sizeof(screen));
+            } else {
+                const std::uint64_t tProject = sceKernelGetProcessTimeWide();
+                bool visible = true;
+                std::uint8_t sharedOutcode = 0x3Fu;
+
+                // Preserve the original conservative fallback for diagnostic
+                // and non-live Gouraud sources.
+                for (unsigned int corner = 0; corner < 4; ++corner) {
+                    const auto& v =
+                        model.vertices[p * 6u + cornerVertex[corner]];
+                    const float clipX =
+                        v.x * wvp.m[0] + v.y * wvp.m[4] +
+                        v.z * wvp.m[8] + wvp.m[12];
+                    const float clipY =
+                        v.x * wvp.m[1] + v.y * wvp.m[5] +
+                        v.z * wvp.m[9] + wvp.m[13];
+                    const float clipZ =
+                        v.x * wvp.m[2] + v.y * wvp.m[6] +
+                        v.z * wvp.m[10] + wvp.m[14];
+                    const float clipW =
+                        v.x * wvp.m[3] + v.y * wvp.m[7] +
+                        v.z * wvp.m[11] + wvp.m[15];
+
+                    std::uint8_t outcode = 0u;
+                    if (clipX < -clipW) outcode |= 1u << 0;
+                    if (clipX >  clipW) outcode |= 1u << 1;
+                    if (clipY < -clipW) outcode |= 1u << 2;
+                    if (clipY >  clipW) outcode |= 1u << 3;
+                    if (clipZ <  0.0f)  outcode |= 1u << 4;
+                    if (clipZ >  clipW) outcode |= 1u << 5;
+                    sharedOutcode &= outcode;
+
+                    if (clipW <= 0.00001f) {
+                        visible = false;
+                        continue;
+                    }
+
+                    const float invW = 1.0f / clipW;
+                    screen[corner].x =
+                        (clipX * invW * 0.5f + 0.5f) *
+                        static_cast<float>(viewerRenderWidth());
+                    screen[corner].y =
+                        (0.5f - clipY * invW * 0.5f) *
+                        static_cast<float>(viewerRenderHeight());
+                    screen[corner].valid = true;
                 }
-
-                const float invW = 1.0f / clipW;
-                const float ndcX = clipX * invW;
-                const float ndcY = clipY * invW;
-                screen[corner].x =
-                    (ndcX * 0.5f + 0.5f) *
-                    static_cast<float>(viewerRenderWidth());
-                screen[corner].y =
-                    (0.5f - ndcY * 0.5f) *
-                    static_cast<float>(viewerRenderHeight());
-                screen[corner].valid = true;
+                projectAccumUs += sceKernelGetProcessTimeWide() - tProject;
+                if (!visible || sharedOutcode != 0u)
+                    continue;
+                ++g_profileGouraudVisibleQuads;
             }
-            projectAccumUs += sceKernelGetProcessTimeWide() - tProject;
-            if (!visible || sharedOutcode != 0u)
-                continue;
 
-            ++g_profileGouraudVisibleQuads;
             visibleQuads[p] = 1u;
 
             const std::uint64_t tPayload = sceKernelGetProcessTimeWide();
@@ -4596,6 +4687,7 @@ static void renderBasicWingViewer()
     g_profileLightingUs = 0u;
     g_profileSubmitUs = 0u;
     g_profileGxmWaitUs = 0u;
+    g_liveTownGouraudPrepValid = false;
 
     const int previousMode = g_viewMode;
 
@@ -4698,6 +4790,10 @@ static void renderBasicWingViewer()
         roomAuthenticCameraMode
             ? buildAuthenticRoomWvp()
             : buildViewerWvp(roomMode);
+
+    if (roomAuthenticCameraMode &&
+        (roomAuthenticLitMode || roomAuthenticLightingOnlyMode))
+        prepareLiveTownGouraudVisibility(wvp);
 
     const int gxmPitch = viewerRenderPitch();
 
@@ -4998,6 +5094,14 @@ static void updateLiveTownAzelLighting()
             g_liveTownCpuMesh.polygonRecords.size())
         return;
 
+    const bool usePreparedVisibility =
+        g_liveTownGouraudPrepValid &&
+        g_liveTownGouraudPrepVertices == g_liveTownCpuMesh.vertices.data() &&
+        g_liveTownGouraudPrepPolygonCount ==
+            g_liveTownCpuMesh.polygonRecords.size() &&
+        g_liveTownGouraudPrep.size() ==
+            g_liveTownCpuMesh.polygonRecords.size();
+
     std::int16_t falloffMap[32][3]{};
     generateAzelFalloff(
         g_staticRoomCpuMesh.lightFalloff[0],
@@ -5043,6 +5147,8 @@ static void updateLiveTownAzelLighting()
 
     for (std::size_t p = 0;
          p < g_liveTownCpuMesh.polygonRecords.size(); ++p) {
+        if (usePreparedVisibility && !g_liveTownGouraudPrep[p].visible)
+            continue;
         const auto& record = g_liveTownCpuMesh.polygonRecords[p];
         const unsigned mode = (record.lightingControl >> 8) & 3u;
         auto& out = g_liveTownCpuMesh.gouraud555[p];
