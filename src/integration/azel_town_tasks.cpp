@@ -454,11 +454,13 @@ static void readEdgeInput()
     const int digitalX = platform::input::digital_x();
     const int digitalY = platform::input::digital_y();
     if (digitalX || digitalY) {
-        g_edge.inputX = digitalX * 0x10000;
+        // The Vita render bridge mirrors Saturn presentation X. Keep the
+        // platform axes physical and convert once at the native town input.
+        g_edge.inputX = -digitalX * 0x10000;
         g_edge.inputY = digitalY * 0x10000;
     } else {
         g_edge.inputX = static_cast<int>(std::lround(
-            platform::input::analog_x() * 65536.0f));
+            -platform::input::analog_x() * 65536.0f));
         // Vita LY is negative upward; Azel's town input is positive forward.
         g_edge.inputY = static_cast<int>(std::lround(
             -platform::input::analog_y() * 65536.0f));
