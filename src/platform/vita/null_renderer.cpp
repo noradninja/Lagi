@@ -30,6 +30,7 @@ extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_debug_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_lit_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_lit_opaque_f_gxp_start[];
+extern const unsigned char _binary_lagi_textured_lit_half_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_lit_newton_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_payload_probe_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_gouraud_noinverse_f_gxp_start[];
@@ -131,6 +132,9 @@ static SceGxmFragmentProgram* g_texturedLitFragmentProgram = nullptr;
 static SceGxmShaderPatcherId g_texturedLitOpaqueFragmentProgramId{};
 static bool g_texturedLitOpaqueFragmentRegistered = false;
 static SceGxmFragmentProgram* g_texturedLitOpaqueFragmentProgram = nullptr;
+static SceGxmShaderPatcherId g_texturedLitHalfFragmentProgramId{};
+static bool g_texturedLitHalfFragmentRegistered = false;
+static SceGxmFragmentProgram* g_texturedLitHalfFragmentProgram = nullptr;
 
 static SceGxmShaderPatcherId g_texturedLitNewtonFragmentProgramId{};
 static bool g_texturedLitNewtonFragmentRegistered = false;
@@ -818,6 +822,11 @@ void shutdown()
                 g_probeShaderPatcher, g_texturedLitNewtonFragmentProgram);
             g_texturedLitNewtonFragmentProgram = nullptr;
         }
+        if (g_texturedLitHalfFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_texturedLitHalfFragmentProgram);
+            g_texturedLitHalfFragmentProgram = nullptr;
+        }
         if (g_texturedLitOpaqueFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_texturedLitOpaqueFragmentProgram);
@@ -887,6 +896,11 @@ void shutdown()
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_texturedLitNewtonFragmentProgramId);
             g_texturedLitNewtonFragmentRegistered = false;
+        }
+        if (g_texturedLitHalfFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_texturedLitHalfFragmentProgramId);
+            g_texturedLitHalfFragmentRegistered = false;
         }
         if (g_texturedLitOpaqueFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -3610,6 +3624,9 @@ void toggle_debug_console()
     const SceGxmProgram* texturedLitOpaqueFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_textured_lit_opaque_f_gxp_start);
+    const SceGxmProgram* texturedLitHalfFragmentGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_textured_lit_half_f_gxp_start);
     const SceGxmProgram* texturedLitNewtonFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_textured_lit_newton_f_gxp_start);
@@ -3639,6 +3656,7 @@ void toggle_debug_console()
         sceGxmProgramCheck(gouraudDebugFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedLitFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedLitOpaqueFragmentGxp) < 0 ||
+        sceGxmProgramCheck(texturedLitHalfFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedLitNewtonFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedPayloadProbeFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedGouraudNoInverseFragmentGxp) < 0 ||
@@ -3686,6 +3704,15 @@ void toggle_debug_console()
         return;
     }
     g_texturedLitOpaqueFragmentRegistered = true;
+
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_probeShaderPatcher,
+            texturedLitHalfFragmentGxp,
+            &g_texturedLitHalfFragmentProgramId) < 0) {
+        failure("[FAIL] HALF TEXTURED LIT PROGRAM REG");
+        return;
+    }
+    g_texturedLitHalfFragmentRegistered = true;
 
     if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
@@ -3878,6 +3905,18 @@ void toggle_debug_console()
 
     if (sceGxmShaderPatcherCreateFragmentProgram(
             g_probeShaderPatcher,
+            g_texturedLitHalfFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            gouraudPayloadVertexGxp,
+            &g_texturedLitHalfFragmentProgram) < 0) {
+        failure("[FAIL] CREATE HALF TEXTURED LIT FP");
+        return;
+    }
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
             g_texturedLitNewtonFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
             SCE_GXM_MULTISAMPLE_NONE,
@@ -3975,6 +4014,7 @@ void toggle_debug_console()
     status("[PASS] GXM GOURAUD VERTEX PAYLOAD", 0xFF80E0FFu);
     status("[PASS] GXM TEXTURED LIGHTING PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM OPAQUE LIGHTING PIPELINE", 0xFF80E0FFu);
+    status("[PASS] GXM HALF EXACT LIGHTING PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM NEWTON LIGHTING PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM PAYLOAD PROBE PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM NO-INVERSE GOURAUD PIPELINE", 0xFF80E0FFu);
@@ -4470,10 +4510,9 @@ bool submit_vdp1_model(
     sceGxmSetFragmentProgram(
         g_probeContext,
         texturedLit
-            // Mode 7 uses the same full projected-perimeter scanline Gouraud
-            // reconstruction as the visually-correct Mode 10 diagnostic.
-            // textured_lit_f adds only texture sampling and RGB555 combine.
-            ? g_texturedLitFragmentProgram
+            // Same edge selection and RGB555 result as the reference path;
+            // shade/color arithmetic is FP16 to reduce SGX fragment pressure.
+            ? g_texturedLitHalfFragmentProgram
             : (gouraudGray
                 ? g_gouraudDebugFragmentProgram
                 : (textured
@@ -4755,10 +4794,7 @@ bool submit_vdp1_model(
 
             if (texturedLit) {
                 sceGxmSetFragmentProgram(
-                    g_probeContext,
-                    g_vdp1GpuTextures[t].opaque
-                        ? g_texturedLitOpaqueFragmentProgram
-                        : g_texturedLitFragmentProgram);
+                    g_probeContext, g_texturedLitHalfFragmentProgram);
                 sceGxmSetFragmentTexture(
                     g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
             }

@@ -1,0 +1,137 @@
+// Half-precision exact projected-perimeter Saturn Gouraud path.
+//
+// Geometry/edge selection remains full precision so the active perimeter
+// edges match the reference shader. Gouraud/color arithmetic is FP16, which
+// is visually lossless after the final RGB555 quantization and substantially
+// reduces fragment ALU/register pressure on SGX543.
+
+float ratioFromInverse(float num, float inverseDen)
+{
+    if (inverseDen == 0.0f)
+        return 0.5f;
+    return num * inverseDen;
+}
+
+float safeRatio(float num, float den)
+{
+    if (abs(den) < 0.0001f)
+        return 0.5f;
+    return num / den;
+}
+
+void considerEdgeHalf(
+    float y,
+    float2 p0,
+    float2 p1,
+    half3 shade0,
+    half3 shade1,
+    float inverseDy,
+    inout float leftX,
+    inout half3 leftShade,
+    inout float rightX,
+    inout half3 rightShade,
+    inout float hitCount)
+{
+    if (inverseDy == 0.0f)
+        return;
+
+    float minY = min(p0.y, p1.y);
+    float maxY = max(p0.y, p1.y);
+    if (y < minY || y >= maxY)
+        return;
+
+    float t = saturate((y - p0.y) * inverseDy);
+    float x = lerp(p0.x, p1.x, t);
+    half ht = (half)t;
+    half3 shade = lerp(shade0, shade1, ht);
+
+    if (x < leftX) {
+        leftX = x;
+        leftShade = shade;
+    }
+    if (x > rightX) {
+        rightX = x;
+        rightShade = shade;
+    }
+    hitCount += 1.0f;
+}
+
+half3 scanlineGouraudHalf(
+    float2 frag,
+    float2 a,
+    float2 b,
+    float2 c,
+    float2 d,
+    half3 shadeA,
+    half3 shadeB,
+    half3 shadeC,
+    half3 shadeD,
+    float4 edgeInverseDy)
+{
+    float leftX = 1000000.0f;
+    float rightX = -1000000.0f;
+    half3 leftShade = shadeA;
+    half3 rightShade = shadeB;
+    float hitCount = 0.0f;
+
+    considerEdgeHalf(frag.y, a, b, shadeA, shadeB, edgeInverseDy.x,
+        leftX, leftShade, rightX, rightShade, hitCount);
+    considerEdgeHalf(frag.y, b, c, shadeB, shadeC, edgeInverseDy.y,
+        leftX, leftShade, rightX, rightShade, hitCount);
+    considerEdgeHalf(frag.y, c, d, shadeC, shadeD, edgeInverseDy.z,
+        leftX, leftShade, rightX, rightShade, hitCount);
+    considerEdgeHalf(frag.y, d, a, shadeD, shadeA, edgeInverseDy.w,
+        leftX, leftShade, rightX, rightShade, hitCount);
+
+    if (hitCount < 2.0f || rightX - leftX < 0.0001f) {
+        float leftT = saturate(
+            ratioFromInverse(frag.y - a.y, -edgeInverseDy.w));
+        float rightT = saturate(
+            ratioFromInverse(frag.y - b.y, edgeInverseDy.y));
+        leftX = lerp(a.x, d.x, leftT);
+        rightX = lerp(b.x, c.x, rightT);
+        leftShade = lerp(shadeA, shadeD, (half)leftT);
+        rightShade = lerp(shadeB, shadeC, (half)rightT);
+    }
+
+    half across = (half)saturate(
+        safeRatio(frag.x - leftX, rightX - leftX));
+    return lerp(leftShade, rightShade, across);
+}
+
+half4 main(
+    float2 vTexcoord : TEXCOORD0,
+    float4 inverse0 : TEXCOORD1,
+    float4 inverse1 : TEXCOORD2,
+    float4 edgeInverseDy : TEXCOORD3,
+    float4 gouraudR : TEXCOORD4,
+    float4 gouraudG : TEXCOORD5,
+    float4 gouraudB : TEXCOORD6,
+    float4 fragCoord : WPOS,
+    uniform sampler2D tex)
+{
+    half4 color = (half4)tex2D(tex, vTexcoord);
+    if (color.a < (half)0.5)
+        discard;
+
+    float2 a = inverse0.xy;
+    float2 b = a + inverse0.zw;
+    float2 d = a + inverse1.xy;
+    float2 c = a + inverse0.zw + inverse1.xy + inverse1.zw;
+
+    half3 shadeA = half3((half)gouraudR.x, (half)gouraudG.x, (half)gouraudB.x);
+    half3 shadeB = half3((half)gouraudR.y, (half)gouraudG.y, (half)gouraudB.y);
+    half3 shadeC = half3((half)gouraudR.z, (half)gouraudG.z, (half)gouraudB.z);
+    half3 shadeD = half3((half)gouraudR.w, (half)gouraudG.w, (half)gouraudB.w);
+
+    half3 shade = scanlineGouraudHalf(
+        fragCoord.xy, a, b, c, d,
+        shadeA, shadeB, shadeC, shadeD, edgeInverseDy);
+
+    half3 shade5 = shade * (half)31.0;
+    half3 base5 = floor(color.rgb * (half)31.0 + (half)0.5);
+    half3 result5 = clamp(base5 + shade5, (half)0.0, (half)31.0);
+    result5 = floor(result5 + (half)0.5);
+
+    return half4(result5 / (half)31.0, color.a);
+}
