@@ -177,28 +177,6 @@ static bool g_liveTownPrepared = false;
 static std::size_t g_edgeFirstVertex = 0;
 static std::size_t g_edgeFirstPolygon = 0;
 
-enum class LiveTownOwnerKind : std::uint8_t {
-    Static,
-    Billboard,
-    Edge,
-};
-
-// Parallel to the flattened polygon stream. This keeps Azel's original
-// submission/object identity available to backend diagnostics without moving
-// ownership or visibility decisions into the renderer.
-struct LiveTownPolygonOwner {
-    std::uint16_t profileIndex = 0;
-    std::uint16_t submissionOrdinal = 0;
-    std::int8_t bundleIndex = -1;
-    std::uint32_t cellIndex = 0;
-    std::uint32_t objectIndex = 0;
-    std::uint32_t modelTableOffset = 0;
-    LiveTownOwnerKind kind = LiveTownOwnerKind::Static;
-    std::uint16_t textureIndex = 0xFFFFu;
-};
-
-static std::vector<LiveTownPolygonOwner> g_liveTownPolygonOwners;
-
 // Mode 9 submission diagnostics. Azel still owns town cell/object visibility;
 // these counters describe only the final backend primitive stream.
 static unsigned int g_authFlatTotalQuads = 0;
@@ -237,10 +215,6 @@ static unsigned int g_profileGouraudDrawUs = 0;
 static unsigned int g_profileGouraudVisibleQuads = 0;
 static unsigned int g_profileGouraudTotalQuads = 0;
 static unsigned int g_profileGouraudPrepUs = 0;
-static unsigned int g_profileGouraudUsedBatches = 0;
-static float g_profileGouraudProjectedArea = 0.0f;
-static float g_profileGouraudAlphaTestedArea = 0.0f;
-static float g_profileGouraudOpaqueArea = 0.0f;
 static unsigned int g_profileGxmWaitUs = 0;
 static unsigned int g_profileRenderUs = 0;
 static unsigned int g_profilePresentUs = 0;
@@ -1940,7 +1914,6 @@ static Vdp1ModelSource liveTownVdp1Source()
 static void appendLiveTownModel(
     const azel_bridge::LiveVdp1Model& model,
     const azel_bridge::SubmissionState& state,
-    const LiveTownPolygonOwner& owner,
     const std::uint16_t* resolvedTextureIndices = nullptr,
     std::size_t resolvedTextureIndexCount = 0)
 {
@@ -2031,9 +2004,6 @@ static void appendLiveTownModel(
                 ? resolvedTextureIndices[p]
                 : liveTownTextureIndex(record);
         g_liveTownCpuMesh.polygonTextureIndices.push_back(textureIndex);
-        LiveTownPolygonOwner polygonOwner = owner;
-        polygonOwner.textureIndex = textureIndex;
-        g_liveTownPolygonOwners.push_back(polygonOwner);
         g_liveTownCpuMesh.gouraud555.push_back({});
     }
 }
@@ -2141,13 +2111,8 @@ static void appendLiveTownEdge()
                 g_edgeFirstPolygon);
     }
 
-    LiveTownPolygonOwner owner{};
-    owner.profileIndex = static_cast<std::uint16_t>(
-        std::min<std::size_t>(azel_bridge::submissions().size(), 0xFFFFu));
-    owner.submissionOrdinal = 0xFFFFu;
-    owner.kind = LiveTownOwnerKind::Edge;
     appendLiveTownModel(
-        edge, state, owner, edgeTextureIndices, edgeTextureIndexCount);
+        edge, state, edgeTextureIndices, edgeTextureIndexCount);
     g_profileEdgeAppendUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tAppend);
 }
@@ -2205,26 +2170,11 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.polygonRecords.clear();
         g_liveTownCpuMesh.gouraud555.clear();
         g_liveTownCpuMesh.polygonTextureIndices.clear();
-        g_liveTownPolygonOwners.clear();
-        std::uint16_t submissionOrdinal = 0u;
         for (const auto& submission : azel_bridge::submissions()) {
-            const std::uint16_t currentOrdinal = submissionOrdinal++;
             if (submission.adaptedModelIndex < 0) continue;
             const auto* model = azel_bridge::adapted_model(
                 static_cast<std::uint32_t>(submission.adaptedModelIndex));
-            if (model) {
-                LiveTownPolygonOwner owner{};
-                owner.profileIndex = currentOrdinal;
-                owner.submissionOrdinal = currentOrdinal;
-                owner.bundleIndex = submission.bundleIndex;
-                owner.cellIndex = submission.cellIndex;
-                owner.objectIndex = submission.objectIndex;
-                owner.modelTableOffset = submission.modelTableOffset;
-                owner.kind = submission.state.billboard
-                    ? LiveTownOwnerKind::Billboard
-                    : LiveTownOwnerKind::Static;
-                appendLiveTownModel(*model, submission.state, owner);
-            }
+            if (model) appendLiveTownModel(*model, submission.state);
         }
         g_liveTownStaticSignature = staticSignature;
         g_liveTownStaticVertexCount = g_liveTownCpuMesh.vertices.size();
@@ -2236,7 +2186,6 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.gouraud555.resize(g_liveTownStaticPolygonCount);
         g_liveTownCpuMesh.polygonTextureIndices.resize(
             g_liveTownStaticPolygonCount);
-        g_liveTownPolygonOwners.resize(g_liveTownStaticPolygonCount);
     }
     g_profileBuildCacheUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tCache);
@@ -2255,8 +2204,6 @@ static bool buildLiveTownFrame()
     if (g_liveTownCpuMesh.vertices.empty() ||
         g_liveTownCpuMesh.vertices.size() > 65535u ||
         g_liveTownCpuMesh.polygonTextureIndices.size() !=
-            g_liveTownCpuMesh.polygonRecords.size() ||
-        g_liveTownPolygonOwners.size() !=
             g_liveTownCpuMesh.polygonRecords.size())
         return false;
     for (const auto index : g_liveTownCpuMesh.polygonTextureIndices)
@@ -2454,46 +2401,10 @@ struct GouraudQuadPrep
     ViewerScreenPoint screen[4]{};
 };
 
-struct GouraudOwnerProfile
-{
-    bool active = false;
-    LiveTownPolygonOwner owner{};
-    unsigned int totalQuads = 0u;
-    unsigned int visibleQuads = 0u;
-    float projectedArea = 0.0f;
-    float alphaTestedArea = 0.0f;
-    float opaqueArea = 0.0f;
-    std::vector<std::uint16_t> textureIndices;
-};
-
 static std::vector<GouraudQuadPrep> g_liveTownGouraudPrep;
-static std::vector<GouraudOwnerProfile> g_liveTownGouraudOwnerProfiles;
-static std::vector<float> g_liveTownTextureOpaqueCoverage;
 static const azel::DebugColorVertex* g_liveTownGouraudPrepVertices = nullptr;
 static std::size_t g_liveTownGouraudPrepPolygonCount = 0;
 static bool g_liveTownGouraudPrepValid = false;
-static int g_liveTownGouraudTopOwners[2] = {-1, -1};
-
-static void updateLiveTownTextureOpaqueCoverage()
-{
-    const auto& textures = g_staticRoomCpuMesh.decodedTextureData;
-    if (g_liveTownTextureOpaqueCoverage.size() == textures.size())
-        return;
-
-    g_liveTownTextureOpaqueCoverage.assign(textures.size(), 1.0f);
-    for (std::size_t i = 0; i < textures.size(); ++i) {
-        const auto& rgba = textures[i].rgba;
-        if (rgba.empty())
-            continue;
-
-        std::size_t opaqueTexels = 0u;
-        for (const std::uint32_t pixel : rgba)
-            opaqueTexels += (pixel & 0xFF000000u) != 0u ? 1u : 0u;
-        g_liveTownTextureOpaqueCoverage[i] =
-            static_cast<float>(opaqueTexels) /
-            static_cast<float>(rgba.size());
-    }
-}
 
 static int viewerRenderWidth()
 {
@@ -2503,25 +2414,6 @@ static int viewerRenderWidth()
 static int viewerRenderHeight()
 {
     return g_halfResolution ? (kHeight / 2) : kHeight;
-}
-
-static float clampedGouraudQuadArea(const ViewerScreenPoint screen[4])
-{
-    float x[4]{}, y[4]{};
-    const float width = static_cast<float>(viewerRenderWidth());
-    const float height = static_cast<float>(viewerRenderHeight());
-    for (unsigned int i = 0; i < 4u; ++i) {
-        x[i] = std::clamp(screen[i].x, 0.0f, width);
-        y[i] = std::clamp(screen[i].y, 0.0f, height);
-    }
-
-    const auto triangleArea = [&x, &y](unsigned int a, unsigned int b,
-                                       unsigned int c) {
-        return 0.5f * std::fabs(
-            (x[b] - x[a]) * (y[c] - y[a]) -
-            (y[b] - y[a]) * (x[c] - x[a]));
-    };
-    return triangleArea(0u, 1u, 2u) + triangleArea(0u, 2u, 3u);
 }
 
 static int viewerRenderPitch()
@@ -2603,31 +2495,9 @@ static void prepareLiveTownGouraudVisibility(const ViewerMat4& wvp)
     g_liveTownGouraudPrepPolygonCount = polygonCount;
     g_liveTownGouraudPrepValid =
         polygonCount != 0u &&
-        g_liveTownCpuMesh.vertices.size() == polygonCount * 6u &&
-        g_liveTownPolygonOwners.size() == polygonCount;
+        g_liveTownCpuMesh.vertices.size() == polygonCount * 6u;
     g_profileGouraudVisibleQuads = 0u;
     g_profileGouraudTotalQuads = static_cast<unsigned int>(polygonCount);
-    g_profileGouraudProjectedArea = 0.0f;
-    g_profileGouraudAlphaTestedArea = 0.0f;
-    g_profileGouraudOpaqueArea = 0.0f;
-    g_liveTownGouraudTopOwners[0] = -1;
-    g_liveTownGouraudTopOwners[1] = -1;
-
-    std::size_t profileCount = 0u;
-    for (const auto& owner : g_liveTownPolygonOwners)
-        profileCount = std::max<std::size_t>(
-            profileCount, static_cast<std::size_t>(owner.profileIndex) + 1u);
-    g_liveTownGouraudOwnerProfiles.resize(profileCount);
-    for (auto& profile : g_liveTownGouraudOwnerProfiles) {
-        profile.active = false;
-        profile.totalQuads = 0u;
-        profile.visibleQuads = 0u;
-        profile.projectedArea = 0.0f;
-        profile.alphaTestedArea = 0.0f;
-        profile.opaqueArea = 0.0f;
-        profile.textureIndices.clear();
-    }
-    updateLiveTownTextureOpaqueCoverage();
 
     if (!g_liveTownGouraudPrepValid) {
         g_profileGouraudPrepUs = static_cast<unsigned int>(
@@ -2637,13 +2507,6 @@ static void prepareLiveTownGouraudVisibility(const ViewerMat4& wvp)
 
     for (std::size_t p = 0; p < polygonCount; ++p) {
         auto& prep = g_liveTownGouraudPrep[p];
-        const auto& owner = g_liveTownPolygonOwners[p];
-        auto& profile = g_liveTownGouraudOwnerProfiles[owner.profileIndex];
-        if (!profile.active) {
-            profile.active = true;
-            profile.owner = owner;
-        }
-        ++profile.totalQuads;
         bool projectable = true;
         std::uint8_t sharedOutcode = 0x3Fu;
 
@@ -2688,50 +2551,8 @@ static void prepareLiveTownGouraudVisibility(const ViewerMat4& wvp)
         }
 
         prep.visible = projectable && sharedOutcode == 0u;
-        if (!prep.visible)
-            continue;
-
-        ++g_profileGouraudVisibleQuads;
-        ++profile.visibleQuads;
-        const float area = clampedGouraudQuadArea(prep.screen);
-        float opaqueCoverage = 1.0f;
-        if (owner.textureIndex < g_liveTownTextureOpaqueCoverage.size())
-            opaqueCoverage =
-                g_liveTownTextureOpaqueCoverage[owner.textureIndex];
-
-        profile.projectedArea += area;
-        profile.opaqueArea += area * opaqueCoverage;
-        if (opaqueCoverage < 0.9999f)
-            profile.alphaTestedArea += area;
-        g_profileGouraudProjectedArea += area;
-        g_profileGouraudOpaqueArea += area * opaqueCoverage;
-        if (opaqueCoverage < 0.9999f)
-            g_profileGouraudAlphaTestedArea += area;
-
-        if (std::find(
-                profile.textureIndices.begin(),
-                profile.textureIndices.end(),
-                owner.textureIndex) == profile.textureIndices.end())
-            profile.textureIndices.push_back(owner.textureIndex);
-    }
-
-    for (std::size_t i = 0; i < g_liveTownGouraudOwnerProfiles.size(); ++i) {
-        const auto& profile = g_liveTownGouraudOwnerProfiles[i];
-        if (!profile.active || profile.visibleQuads == 0u)
-            continue;
-        for (unsigned int rank = 0u; rank < 2u; ++rank) {
-            const int current = g_liveTownGouraudTopOwners[rank];
-            if (current >= 0 &&
-                profile.projectedArea <=
-                    g_liveTownGouraudOwnerProfiles[
-                        static_cast<std::size_t>(current)].projectedArea)
-                continue;
-            if (rank == 0u)
-                g_liveTownGouraudTopOwners[1] =
-                    g_liveTownGouraudTopOwners[0];
-            g_liveTownGouraudTopOwners[rank] = static_cast<int>(i);
-            break;
-        }
+        if (prep.visible)
+            ++g_profileGouraudVisibleQuads;
     }
 
     g_profileGouraudPrepUs = static_cast<unsigned int>(
@@ -4591,7 +4412,6 @@ bool submit_vdp1_model(
         g_profileGouraudBucketUs = 0u;
         g_profileGouraudIndexUs = 0u;
         g_profileGouraudDrawUs = 0u;
-        g_profileGouraudUsedBatches = 0u;
         if (!useLiveTownPrep) {
             g_profileGouraudVisibleQuads = 0u;
             g_profileGouraudTotalQuads =
@@ -4800,7 +4620,6 @@ bool submit_vdp1_model(
 
         g_profileGouraudDrawUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - tDraw);
-        g_profileGouraudUsedBatches = submittedBatches;
         return submittedBatches != 0u ||
                totalVisibleIndices == 0u;
     }
@@ -5168,9 +4987,10 @@ static void renderBasicWingViewer()
             g_profileGouraudDrawUs);
         std::snprintf(
             timing7, sizeof(timing7),
-            "GOUR QUAD %u/%u",
+            "GOUR QUAD %u/%u PREP %u",
             g_profileGouraudVisibleQuads,
-            g_profileGouraudTotalQuads);
+            g_profileGouraudTotalQuads,
+            g_profileGouraudPrepUs);
 
         auto profileText = [colorBuffer, gxmPitch](
             int y, const char* text) {
@@ -5189,60 +5009,6 @@ static void renderBasicWingViewer()
         profileText(133, timing5);
         profileText(142, timing6);
         profileText(151, timing7);
-
-        if (roomAuthenticLitMode || roomAuthenticLightingOnlyMode) {
-            char ownerTotals[96];
-            char ownerLines[2][96];
-            std::snprintf(
-                ownerTotals, sizeof(ownerTotals),
-                "PREP %u AREA %uK ALPHA %uK OPAQ %uK BATCH %u",
-                g_profileGouraudPrepUs,
-                static_cast<unsigned int>(
-                    g_profileGouraudProjectedArea / 1000.0f),
-                static_cast<unsigned int>(
-                    g_profileGouraudAlphaTestedArea / 1000.0f),
-                static_cast<unsigned int>(
-                    g_profileGouraudOpaqueArea / 1000.0f),
-                g_profileGouraudUsedBatches);
-
-            for (unsigned int rank = 0u; rank < 2u; ++rank) {
-                const int index = g_liveTownGouraudTopOwners[rank];
-                if (index < 0 ||
-                    static_cast<std::size_t>(index) >=
-                        g_liveTownGouraudOwnerProfiles.size()) {
-                    std::snprintf(
-                        ownerLines[rank], sizeof(ownerLines[rank]),
-                        "TOP%u -", rank);
-                    continue;
-                }
-
-                const auto& profile = g_liveTownGouraudOwnerProfiles[
-                    static_cast<std::size_t>(index)];
-                const char kind =
-                    profile.owner.kind == LiveTownOwnerKind::Billboard
-                        ? 'B'
-                        : (profile.owner.kind == LiveTownOwnerKind::Edge
-                            ? 'E' : 'S');
-                std::snprintf(
-                    ownerLines[rank], sizeof(ownerLines[rank]),
-                    "TOP%u %c O%u M%05X Q%u/%u A%uK T%u",
-                    rank,
-                    kind,
-                    profile.owner.objectIndex,
-                    static_cast<unsigned int>(
-                        profile.owner.modelTableOffset),
-                    profile.visibleQuads,
-                    profile.totalQuads,
-                    static_cast<unsigned int>(
-                        profile.projectedArea / 1000.0f),
-                    static_cast<unsigned int>(
-                        profile.textureIndices.size()));
-            }
-
-            profileText(160, ownerTotals);
-            profileText(169, ownerLines[0]);
-            profileText(178, ownerLines[1]);
-        }
     }
 
     drawTextSmallToBuffer(
