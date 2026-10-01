@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <psp2/kernel/processmgr.h>
 #include "lagi/azel_compat.h"
 #include "heap.h"
 #include "task.h"
@@ -193,7 +194,11 @@ bool runtime_smoke_init()
 void runtime_smoke_frame()
 {
     lagi::azel_bridge::begin_frame();
+    const std::uint64_t tasksStart = sceKernelGetProcessTimeWide();
     runTasks();
+    const std::uint64_t tasksEnd = sceKernelGetProcessTimeWide();
+    lagi::platform::renderer::town_profile_tasks_us(
+        static_cast<unsigned int>(tasksEnd - tasksStart));
     if (twn_ruin_task_pipeline_alive())
         lagi::platform::renderer::set_azel_alive(true);
 }
