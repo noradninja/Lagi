@@ -4424,7 +4424,11 @@ bool submit_vdp1_model(
     sceGxmSetFragmentProgram(
         g_probeContext,
         texturedLit
-            ? g_texturedLitFragmentProgram
+            // Use the same fixed AD/BC scanline interpolation topology as
+            // the fast Gouraud diagnostic path, retaining texture sampling
+            // and the RGB555 add/clamp/quantize stage. This avoids testing
+            // all four projected perimeter edges per fragment.
+            ? g_texturedGouraudScanlineFragmentProgram
             : (gouraudGray
                 ? g_gouraudDebugFragmentProgram
                 : (textured
