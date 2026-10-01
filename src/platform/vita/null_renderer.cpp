@@ -1997,15 +1997,22 @@ static void appendLiveTownModel(
 
 static void appendLiveTownEdge()
 {
+    g_profileEdgeCopyUs = 0u;
+    g_profileEdgeAnimUs = 0u;
+    g_profileEdgeAppendUs = 0u;
     if (!g_edgeIdleCpuReady || !g_townPlayerReady)
         return;
 
+    const std::uint64_t tCopy = sceKernelGetProcessTimeWide();
     azel_bridge::LiveVdp1Model edge{};
     edge.vertices = g_edgeIdleCpuMesh.vertices;
     edge.lightingVertices = g_edgeIdleCpuMesh.lightingVertices;
     edge.polygons = g_edgeIdleCpuMesh.polygonRecords;
     edge.gouraud555.resize(edge.polygons.size());
+    g_profileEdgeCopyUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - tCopy);
 
+    const std::uint64_t tAnim = sceKernelGetProcessTimeWide();
     const azel::BasicWingAnimationFrame* current = nullptr;
     const azel::BasicWingAnimationFrame* previous = nullptr;
     if (g_townEdgeAnimation < g_edgeIdleCpuMesh.edgeAnimationClips.size()) {
@@ -2057,6 +2064,10 @@ static void appendLiveTownEdge()
         }
     }
 
+    g_profileEdgeAnimUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - tAnim);
+    const std::uint64_t tAppend = sceKernelGetProcessTimeWide();
+
     azel_bridge::SubmissionState state{};
     constexpr float kPi = 3.14159265358979323846f;
     const float a = g_townPlayerYaw + kPi;
@@ -2071,6 +2082,8 @@ static void appendLiveTownEdge()
     state.modelMatrix[11] = static_cast<std::int32_t>(std::lround(g_townPlayerPosition[2] * 65536.0f));
     state.hasModelMatrix = true;
     appendLiveTownModel(edge, state);
+    g_profileEdgeAppendUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - tAppend);
 }
 
 static bool buildLiveTownFrame()
