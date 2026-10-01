@@ -177,6 +177,12 @@ static bool g_liveTownPrepared = false;
 static std::size_t g_edgeFirstVertex = 0;
 static std::size_t g_edgeFirstPolygon = 0;
 
+// Mode 9 submission diagnostics. Azel still owns town cell/object visibility;
+// these counters describe only the final backend primitive stream.
+static unsigned int g_authFlatTotalQuads = 0;
+static unsigned int g_authFlatVisibleQuads = 0;
+static unsigned int g_authFlatDrawCalls = 0;
+
 enum class ResidentVdp1Model {
     None,
     BasicWing,
@@ -2320,6 +2326,37 @@ static ViewerScreenPoint projectViewerPoint(
     return out;
 }
 
+// Conservative homogeneous clip test for the Vita backend. This does not
+// replace Azel's town visibility/LOD pipeline: Azel has already selected the
+// cells, objects and models that reach this point. It only avoids referencing
+// a submitted quad when all four of its corners are outside the same hardware
+// clip plane, which is equivalent to work GXM would otherwise discard later.
+static std::uint8_t viewerClipOutcode(
+    const ViewerMat4& wvp,
+    const azel::DebugColorVertex& v)
+{
+    const float clipX =
+        v.x * wvp.m[0] + v.y * wvp.m[4] +
+        v.z * wvp.m[8] + wvp.m[12];
+    const float clipY =
+        v.x * wvp.m[1] + v.y * wvp.m[5] +
+        v.z * wvp.m[9] + wvp.m[13];
+    const float clipZ =
+        v.x * wvp.m[2] + v.y * wvp.m[6] +
+        v.z * wvp.m[10] + wvp.m[14];
+    const float clipW =
+        v.x * wvp.m[3] + v.y * wvp.m[7] +
+        v.z * wvp.m[11] + wvp.m[15];
+
+    std::uint8_t out = 0;
+    if (clipX < -clipW) out |= 1u << 0; // left
+    if (clipX >  clipW) out |= 1u << 1; // right
+    if (clipY < -clipW) out |= 1u << 2; // bottom
+    if (clipY >  clipW) out |= 1u << 3; // top
+    if (clipZ <  0.0f)  out |= 1u << 4; // near (GXM/D3D-style 0..W Z)
+    if (clipZ >  clipW) out |= 1u << 5; // far
+    return out;
+}
 
 static void generateAzelFalloff(
     std::uint32_t r4,
@@ -4305,6 +4342,54 @@ bool submit_vdp1_model(
                totalVisibleIndices == 0u;
     }
 
+    // Auth Flat is the cleanest benchmark for backend submission cost. Keep
+    // Azel's submitted model set intact and compact only the final index list:
+    // reject a quad iff all four original Saturn corners lie outside one same
+    // clip plane. Intersecting/partially clipped quads are always preserved.
+    if (drawState.mode == Vdp1RenderMode::PolygonColor &&
+        g_viewMode == 9 &&
+        g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+        model.vertexCount == model.polygonCount * 6u) {
+        static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
+        ViewerMat4 wvp{};
+        std::memcpy(wvp.m, drawState.wvp, sizeof(wvp.m));
+
+        g_authFlatTotalQuads =
+            static_cast<unsigned int>(model.polygonCount);
+        g_authFlatVisibleQuads = 0u;
+        g_authFlatDrawCalls = 0u;
+
+        unsigned int write = 0u;
+        for (unsigned int p = 0;
+             p < static_cast<unsigned int>(model.polygonCount); ++p) {
+            std::uint8_t sharedOutcode = 0x3Fu;
+            for (unsigned int corner = 0; corner < 4u; ++corner) {
+                sharedOutcode &= viewerClipOutcode(
+                    wvp,
+                    model.vertices[p * 6u + cornerVertex[corner]]);
+            }
+
+            if (sharedOutcode != 0u)
+                continue;
+
+            ++g_authFlatVisibleQuads;
+            for (unsigned int k = 0; k < 6u; ++k)
+                g_vdp1Indices[write++] =
+                    static_cast<std::uint16_t>(p * 6u + k);
+        }
+
+        if (write != 0u) {
+            sceGxmDraw(
+                g_probeContext,
+                SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16,
+                g_vdp1Indices,
+                write);
+            g_authFlatDrawCalls = 1u;
+        }
+        return true;
+    }
+
     sceGxmDraw(
         g_probeContext,
         SCE_GXM_PRIMITIVE_TRIANGLES,
@@ -4515,6 +4600,20 @@ static void renderBasicWingViewer()
         colorBuffer,
         gxmPitch,
         roomAuthenticCameraMode);
+
+    if (roomAuthenticFlatMode) {
+        char perfLine[80];
+        std::snprintf(
+            perfLine, sizeof(perfLine),
+            "QUAD %u/%u DRAW %u",
+            g_authFlatVisibleQuads,
+            g_authFlatTotalQuads,
+            g_authFlatDrawCalls);
+        drawTextSmallToBuffer(
+            colorBuffer, gxmPitch,
+            8, 58,
+            perfLine, 0xFFFFFFFFu);
+    }
 
     drawTextSmallToBuffer(
         colorBuffer,
