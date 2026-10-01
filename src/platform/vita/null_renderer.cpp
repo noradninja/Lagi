@@ -197,6 +197,14 @@ static bool g_liveTownHasBillboards = false;
 // describe the render currently being presented.
 static unsigned int g_profileTasksUs = 0;
 static unsigned int g_profileBuildUs = 0;
+static unsigned int g_profileBuildScanUs = 0;
+static unsigned int g_profileBuildCacheUs = 0;
+static unsigned int g_profileBuildEdgeUs = 0;
+static unsigned int g_profileBuildValidateUs = 0;
+static unsigned int g_profileBuildUploadUs = 0;
+static unsigned int g_profileEdgeCopyUs = 0;
+static unsigned int g_profileEdgeAnimUs = 0;
+static unsigned int g_profileEdgeAppendUs = 0;
 static unsigned int g_profileLightingUs = 0;
 static unsigned int g_profileSubmitUs = 0;
 static unsigned int g_profileGxmWaitUs = 0;
