@@ -280,7 +280,9 @@ static SceUID g_vdp1SubdivVertexUid = -1;
 static SceUID g_vdp1SubdivIndexUid = -1;
 static SubdivGouraudVertex* g_vdp1SubdivVertices = nullptr;
 static std::uint16_t* g_vdp1SubdivIndices = nullptr;
-static unsigned int g_vdp1SubdivCapacity = 0u;
+static unsigned int g_vdp1SubdivVertexCapacity = 0u;
+static unsigned int g_vdp1SubdivIndexCapacity = 0u;
+static std::vector<std::uint16_t> g_vdp1SubdivQuadIndices;
 
 struct TextureBatch {
     unsigned int firstIndex = 0;
@@ -810,7 +812,9 @@ void shutdown()
     void* subdivIndexPtr = g_vdp1SubdivIndices;
     freeSimpleMappedProbe(g_vdp1SubdivIndexUid, subdivIndexPtr);
     g_vdp1SubdivIndices = nullptr;
-    g_vdp1SubdivCapacity = 0u;
+    g_vdp1SubdivVertexCapacity = 0u;
+    g_vdp1SubdivIndexCapacity = 0u;
+    g_vdp1SubdivQuadIndices.clear();
     freeVdp1Textures();
 
     if (g_probeShaderPatcher) {
@@ -1540,7 +1544,9 @@ static void releaseResidentVdp1Model()
     p = g_vdp1SubdivIndices;
     freeMapped(g_vdp1SubdivIndexUid, p);
     g_vdp1SubdivIndices = nullptr;
-    g_vdp1SubdivCapacity = 0u;
+    g_vdp1SubdivVertexCapacity = 0u;
+    g_vdp1SubdivIndexCapacity = 0u;
+    g_vdp1SubdivQuadIndices.clear();
 
     freeVdp1Textures();
     g_vdp1TextureBatches.clear();
@@ -1599,21 +1605,139 @@ bool prepare_vdp1_model(const Vdp1ModelSource& model)
             return false;
         g_vdp1TexturedReady = true;
 
-        const std::size_t subdivCount = model.polygonCount * 24u;
-        if (subdivCount && subdivCount <= 65535u) {
-            g_vdp1SubdivCapacity = static_cast<unsigned int>(subdivCount);
+        const std::size_t subdivVertexCount = model.polygonCount * 9u;
+        const std::size_t subdivIndexCount = model.polygonCount * 24u;
+        if (subdivVertexCount && subdivVertexCount <= 65535u &&
+            subdivIndexCount <= 65535u) {
+            g_vdp1SubdivVertexCapacity =
+                static_cast<unsigned int>(subdivVertexCount);
+            g_vdp1SubdivIndexCapacity =
+                static_cast<unsigned int>(subdivIndexCount);
             g_vdp1SubdivVertices = static_cast<SubdivGouraudVertex*>(
                 probeGpuAlloc(
-                    g_vdp1SubdivCapacity * sizeof(SubdivGouraudVertex),
+                    g_vdp1SubdivVertexCapacity * sizeof(SubdivGouraudVertex),
                     SCE_GXM_MEMORY_ATTRIB_READ,
                     &g_vdp1SubdivVertexUid));
             g_vdp1SubdivIndices = static_cast<std::uint16_t*>(
                 probeGpuAlloc(
-                    g_vdp1SubdivCapacity * sizeof(std::uint16_t),
+                    g_vdp1SubdivIndexCapacity * sizeof(std::uint16_t),
                     SCE_GXM_MEMORY_ATTRIB_READ,
                     &g_vdp1SubdivIndexUid));
+
             if (!g_vdp1SubdivVertices || !g_vdp1SubdivIndices) {
-                g_vdp1SubdivCapacity = 0u;
+                g_vdp1SubdivVertexCapacity = 0u;
+                g_vdp1SubdivIndexCapacity = 0u;
+            } else {
+                // Cache immutable subdivision topology, UVs and initial
+                // positions once. Per frame, static town quads only need
+                // shade updates; dynamic objects update position + shade.
+                static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
+                static const unsigned int gridTris[24] = {
+                    0,1,4, 0,4,3,
+                    1,2,5, 1,5,4,
+                    3,4,7, 3,7,6,
+                    4,5,8, 4,8,7
+                };
+                g_vdp1SubdivQuadIndices.resize(subdivIndexCount);
+
+                auto bilerp = [](
+                    float a, float b, float c, float d,
+                    float u, float v) {
+                    const float top = a + (b - a) * u;
+                    const float bottom = d + (c - d) * u;
+                    return top + (bottom - top) * v;
+                };
+
+                for (unsigned int p = 0;
+                     p < static_cast<unsigned int>(model.polygonCount); ++p) {
+                    const auto& record = model.polygons[p];
+                    const std::uint16_t textureIndex =
+                        model.polygonTextureIndices[p];
+                    if (textureIndex >= model.textureCount)
+                        return false;
+                    const auto& texture = model.textures[textureIndex];
+                    if (!texture.width || !texture.height)
+                        return false;
+
+                    const float u0 =
+                        0.5f / static_cast<float>(texture.width);
+                    const float v0 =
+                        0.5f / static_cast<float>(texture.height);
+                    const float u1 =
+                        (static_cast<float>(texture.width) - 0.5f) /
+                        static_cast<float>(texture.width);
+                    const float v1 =
+                        (static_cast<float>(texture.height) - 0.5f) /
+                        static_cast<float>(texture.height);
+                    const float uv[4][2] = {
+                        {u0,v0}, {u1,v0}, {u1,v1}, {u0,v1}
+                    };
+                    int order[4] = {0,1,2,3};
+                    switch (record.textureFlip() & 3u) {
+                    case 1:
+                        order[0]=1; order[1]=0;
+                        order[2]=3; order[3]=2;
+                        break;
+                    case 2:
+                        order[0]=3; order[1]=2;
+                        order[2]=1; order[3]=0;
+                        break;
+                    case 3:
+                        order[0]=2; order[1]=3;
+                        order[2]=0; order[3]=1;
+                        break;
+                    default:
+                        break;
+                    }
+
+                    float cornerUv[4][2];
+                    for (unsigned c = 0; c < 4u; ++c) {
+                        cornerUv[c][0] = uv[order[c]][0];
+                        cornerUv[c][1] = uv[order[c]][1];
+                    }
+
+                    const auto& a =
+                        model.vertices[p * 6u + cornerVertex[0]];
+                    const auto& b =
+                        model.vertices[p * 6u + cornerVertex[1]];
+                    const auto& c =
+                        model.vertices[p * 6u + cornerVertex[2]];
+                    const auto& d =
+                        model.vertices[p * 6u + cornerVertex[3]];
+
+                    const unsigned int baseVertex = p * 9u;
+                    for (unsigned gy = 0; gy < 3u; ++gy) {
+                        const float v = static_cast<float>(gy) * 0.5f;
+                        for (unsigned gx = 0; gx < 3u; ++gx) {
+                            const float u =
+                                static_cast<float>(gx) * 0.5f;
+                            auto& dst =
+                                g_vdp1SubdivVertices[
+                                    baseVertex + gy * 3u + gx];
+                            dst.x = bilerp(a.x,b.x,c.x,d.x,u,v);
+                            dst.y = bilerp(a.y,b.y,c.y,d.y,u,v);
+                            dst.z = bilerp(a.z,b.z,c.z,d.z,u,v);
+                            dst.u = bilerp(
+                                cornerUv[0][0], cornerUv[1][0],
+                                cornerUv[2][0], cornerUv[3][0],
+                                u, v);
+                            dst.v = bilerp(
+                                cornerUv[0][1], cornerUv[1][1],
+                                cornerUv[2][1], cornerUv[3][1],
+                                u, v);
+                            dst.shadeR = 0.0f;
+                            dst.shadeG = 0.0f;
+                            dst.shadeB = 0.0f;
+                        }
+                    }
+
+                    const unsigned int quadIndexBase = p * 24u;
+                    for (unsigned k = 0; k < 24u; ++k) {
+                        g_vdp1SubdivQuadIndices[quadIndexBase + k] =
+                            static_cast<std::uint16_t>(
+                                baseVertex + gridTris[k]);
+                    }
+                }
             }
         }
     } else {
@@ -4697,7 +4821,8 @@ bool submit_vdp1_model(
         g_viewMode == 7 &&
         g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
         g_vdp1SubdivVertices && g_vdp1SubdivIndices &&
-        g_vdp1SubdivCapacity >= model.polygonCount * 24u &&
+        g_vdp1SubdivVertexCapacity >= model.polygonCount * 9u &&
+        g_vdp1SubdivIndexCapacity >= model.polygonCount * 24u &&
         g_gouraudSubdivVertexProgram &&
         g_texturedGouraudSubdivFragmentProgram;
     const bool subdividedGouraudGray =
@@ -4705,7 +4830,8 @@ bool submit_vdp1_model(
         g_viewMode == 10 &&
         g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
         g_vdp1SubdivVertices && g_vdp1SubdivIndices &&
-        g_vdp1SubdivCapacity >= model.polygonCount * 24u &&
+        g_vdp1SubdivVertexCapacity >= model.polygonCount * 9u &&
+        g_vdp1SubdivIndexCapacity >= model.polygonCount * 24u &&
         g_gouraudSubdivVertexProgram &&
         g_gouraudSubdivGrayFragmentProgram;
     const bool subdividedGouraud =
@@ -4828,17 +4954,6 @@ bool submit_vdp1_model(
         g_profileGouraudDrawUs = 0u;
 
         static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
-        static const unsigned int gridTris[24] = {
-            0,1,4, 0,4,3,
-            1,2,5, 1,5,4,
-            3,4,7, 3,7,6,
-            4,5,8, 4,8,7
-        };
-        struct Sample {
-            float x, y, z;
-            float u, v;
-            float shade[3];
-        };
 
         const unsigned int bucketCount =
             subdividedTexturedLit
@@ -4865,46 +4980,6 @@ bool submit_vdp1_model(
             if (textureIndex >= bucketCount)
                 continue;
 
-            float cornerUv[4][2] = {
-                {0.0f,0.0f}, {1.0f,0.0f}, {1.0f,1.0f}, {0.0f,1.0f}
-            };
-            if (subdividedTexturedLit) {
-                const auto& record = model.polygons[p];
-                const auto& texture =
-                    model.textures[model.polygonTextureIndices[p]];
-                if (!texture.width || !texture.height)
-                    continue;
-                const float u0 = 0.5f / static_cast<float>(texture.width);
-                const float v0 = 0.5f / static_cast<float>(texture.height);
-                const float u1 =
-                    (static_cast<float>(texture.width) - 0.5f) /
-                    static_cast<float>(texture.width);
-                const float v1 =
-                    (static_cast<float>(texture.height) - 0.5f) /
-                    static_cast<float>(texture.height);
-                const float uv[4][2] = {
-                    {u0,v0}, {u1,v0}, {u1,v1}, {u0,v1}
-                };
-                int order[4] = {0,1,2,3};
-                switch (record.textureFlip() & 3u) {
-                case 1:
-                    order[0]=1; order[1]=0; order[2]=3; order[3]=2;
-                    break;
-                case 2:
-                    order[0]=3; order[1]=2; order[2]=1; order[3]=0;
-                    break;
-                case 3:
-                    order[0]=2; order[1]=3; order[2]=0; order[3]=1;
-                    break;
-                default:
-                    break;
-                }
-                for (unsigned c = 0; c < 4u; ++c) {
-                    cornerUv[c][0] = uv[order[c]][0];
-                    cornerUv[c][1] = uv[order[c]][1];
-                }
-            }
-
             const auto bilerp = [](
                 float a, float b, float c, float d,
                 float u, float v) {
@@ -4913,47 +4988,51 @@ bool submit_vdp1_model(
                 return top + (bottom - top) * v;
             };
 
-            Sample grid[9]{};
+            const auto& a =
+                model.vertices[p * 6u + cornerVertex[0]];
+            const auto& b =
+                model.vertices[p * 6u + cornerVertex[1]];
+            const auto& c =
+                model.vertices[p * 6u + cornerVertex[2]];
+            const auto& d =
+                model.vertices[p * 6u + cornerVertex[3]];
+            const auto& shade = model.gouraud555[p];
+
+            const bool updatePosition =
+                g_liveTownStaticRebuilt ||
+                p >= static_cast<unsigned int>(
+                    g_liveTownStaticPolygonCount);
+            const unsigned int baseVertex = p * 9u;
             for (unsigned gy = 0; gy < 3u; ++gy) {
                 const float v = static_cast<float>(gy) * 0.5f;
                 for (unsigned gx = 0; gx < 3u; ++gx) {
-                    const float u = static_cast<float>(gx) * 0.5f;
-                    Sample& dst = grid[gy * 3u + gx];
+                    const float u =
+                        static_cast<float>(gx) * 0.5f;
+                    auto& dst =
+                        g_vdp1SubdivVertices[
+                            baseVertex + gy * 3u + gx];
 
-                    const auto& a = model.vertices[p * 6u + cornerVertex[0]];
-                    const auto& b = model.vertices[p * 6u + cornerVertex[1]];
-                    const auto& c = model.vertices[p * 6u + cornerVertex[2]];
-                    const auto& d = model.vertices[p * 6u + cornerVertex[3]];
-                    dst.x = bilerp(a.x,b.x,c.x,d.x,u,v);
-                    dst.y = bilerp(a.y,b.y,c.y,d.y,u,v);
-                    dst.z = bilerp(a.z,b.z,c.z,d.z,u,v);
-                    dst.u = bilerp(
-                        cornerUv[0][0], cornerUv[1][0],
-                        cornerUv[2][0], cornerUv[3][0], u, v);
-                    dst.v = bilerp(
-                        cornerUv[0][1], cornerUv[1][1],
-                        cornerUv[2][1], cornerUv[3][1], u, v);
-                    for (unsigned ch = 0; ch < 3u; ++ch) {
-                        dst.shade[ch] = bilerp(
-                            model.gouraud555[p].corner[0][ch],
-                            model.gouraud555[p].corner[1][ch],
-                            model.gouraud555[p].corner[2][ch],
-                            model.gouraud555[p].corner[3][ch],
-                            u, v);
+                    if (updatePosition) {
+                        dst.x = bilerp(a.x,b.x,c.x,d.x,u,v);
+                        dst.y = bilerp(a.y,b.y,c.y,d.y,u,v);
+                        dst.z = bilerp(a.z,b.z,c.z,d.z,u,v);
                     }
+
+                    dst.shadeR = bilerp(
+                        shade.corner[0][0], shade.corner[1][0],
+                        shade.corner[2][0], shade.corner[3][0],
+                        u, v);
+                    dst.shadeG = bilerp(
+                        shade.corner[0][1], shade.corner[1][1],
+                        shade.corner[2][1], shade.corner[3][1],
+                        u, v);
+                    dst.shadeB = bilerp(
+                        shade.corner[0][2], shade.corner[1][2],
+                        shade.corner[2][2], shade.corner[3][2],
+                        u, v);
                 }
             }
 
-            const unsigned int baseVertex = p * 24u;
-            for (unsigned k = 0; k < 24u; ++k) {
-                const Sample& src = grid[gridTris[k]];
-                auto& dst = g_vdp1SubdivVertices[baseVertex + k];
-                dst.x = src.x; dst.y = src.y; dst.z = src.z;
-                dst.u = src.u; dst.v = src.v;
-                dst.shadeR = src.shade[0];
-                dst.shadeG = src.shade[1];
-                dst.shadeB = src.shade[2];
-            }
             visibleQuads[p] = 1u;
             batchCounts[textureIndex] += 24u;
         }
@@ -4970,7 +5049,7 @@ bool submit_vdp1_model(
             batchWrite[t] = totalVisibleIndices;
             totalVisibleIndices += batchCounts[t];
         }
-        if (totalVisibleIndices > g_vdp1SubdivCapacity)
+        if (totalVisibleIndices > g_vdp1SubdivIndexCapacity)
             return false;
         g_profileGouraudBucketUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - tBucket);
@@ -4983,10 +5062,12 @@ bool submit_vdp1_model(
             const unsigned int bucket =
                 subdividedTexturedLit ? model.polygonTextureIndices[p] : 0u;
             unsigned int& write = batchWrite[bucket];
-            const unsigned int baseVertex = p * 24u;
-            for (unsigned k = 0; k < 24u; ++k)
-                g_vdp1SubdivIndices[write++] =
-                    static_cast<std::uint16_t>(baseVertex + k);
+            const unsigned int quadIndexBase = p * 24u;
+            std::memcpy(
+                g_vdp1SubdivIndices + write,
+                g_vdp1SubdivQuadIndices.data() + quadIndexBase,
+                24u * sizeof(std::uint16_t));
+            write += 24u;
         }
         g_profileGouraudIndexUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - tIndex);
