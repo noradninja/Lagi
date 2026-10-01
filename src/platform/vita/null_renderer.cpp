@@ -4802,6 +4802,7 @@ static void renderBasicWingViewer()
 
     if (roomAuthenticCameraMode) {
         char timing0[80], timing1[80], timing2[80], timing3[80], timing4[80];
+        char timing5[80], timing6[80];
         std::snprintf(
             timing0, sizeof(timing0),
             "US TASK %u BUILD %u LIGHT %u",
@@ -4823,6 +4824,17 @@ static void renderBasicWingViewer()
             timing4, sizeof(timing4),
             "US RENDER %u PRESENT %u",
             g_profileRenderUs, g_profilePresentUs);
+        std::snprintf(
+            timing5, sizeof(timing5),
+            "GOUR PROJ %u PAY %u BUCKET %u",
+            g_profileGouraudProjectUs,
+            g_profileGouraudPayloadUs,
+            g_profileGouraudBucketUs);
+        std::snprintf(
+            timing6, sizeof(timing6),
+            "GOUR INDEX %u DRAW %u",
+            g_profileGouraudIndexUs,
+            g_profileGouraudDrawUs);
 
         auto profileText = [colorBuffer, gxmPitch](
             int y, const char* text) {
@@ -4838,6 +4850,8 @@ static void renderBasicWingViewer()
         profileText(106, timing2);
         profileText(115, timing3);
         profileText(124, timing4);
+        profileText(133, timing5);
+        profileText(142, timing6);
     }
 
     drawTextSmallToBuffer(
