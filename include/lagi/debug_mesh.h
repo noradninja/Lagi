@@ -227,6 +227,6 @@ struct BasicWingDebugMesh {
 
 bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out);
 bool build_edge_idle_debug_mesh(BasicWingDebugMesh& out);
-bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out);
+bool build_town_world_scene(StaticRoomDebugMesh& out);
 
 } // namespace lagi::azel

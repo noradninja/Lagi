@@ -35,6 +35,9 @@ static sProcessed3dModel* g_lastModel = nullptr;
 static LiveVdp1Model g_lastAdaptedModel{};
 static bool g_hasAdaptedModel = false;
 static SubmissionState g_lastState{};
+static std::vector<LiveVdp1Model> g_adaptedModels;
+static std::vector<RenderSubmission> g_submissions;
+static std::vector<TownObjectSubmission> g_townObjectSubmissions;
 static bool g_reportedFirstSubmission = false;
 static bool g_reportedFirstAdaptedModel = false;
 
@@ -45,6 +48,9 @@ void begin_frame()
     g_hasAdaptedModel = false;
     g_lastAdaptedModel = {};
     g_lastState = {};
+    g_adaptedModels.clear();
+    g_submissions.clear();
+    g_townObjectSubmissions.clear();
 }
 
 std::uint32_t submission_count()
@@ -65,6 +71,36 @@ const LiveVdp1Model* last_adapted_model()
 const SubmissionState& last_submission_state()
 {
     return g_lastState;
+}
+
+const std::vector<RenderSubmission>& submissions()
+{
+    return g_submissions;
+}
+
+const LiveVdp1Model* adapted_model(std::uint32_t index)
+{
+    return index < g_adaptedModels.size()
+        ? &g_adaptedModels[index]
+        : nullptr;
+}
+
+void submit_town_object(
+    std::uint32_t cellIndex,
+    std::uint32_t objectIndex,
+    std::uint32_t firstPolygon,
+    std::uint32_t polygonCount,
+    const SubmissionState& state)
+{
+    if (!polygonCount)
+        return;
+    g_townObjectSubmissions.push_back({
+        cellIndex, objectIndex, firstPolygon, polygonCount, state});
+}
+
+const std::vector<TownObjectSubmission>& town_object_submissions()
+{
+    return g_townObjectSubmissions;
 }
 
 static void capture_runtime_state(bool billboard)
@@ -109,6 +145,13 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
     g_lastAdaptedModel = {};
     g_hasAdaptedModel =
         adapt_processed_model(model, g_lastAdaptedModel);
+
+    std::int32_t adaptedIndex = -1;
+    if (g_hasAdaptedModel) {
+        g_adaptedModels.push_back(g_lastAdaptedModel);
+        adaptedIndex = static_cast<std::int32_t>(g_adaptedModels.size() - 1u);
+    }
+    g_submissions.push_back({model, adaptedIndex, g_lastState});
 
     if (!g_reportedFirstSubmission) {
         lagi::platform::renderer::status(

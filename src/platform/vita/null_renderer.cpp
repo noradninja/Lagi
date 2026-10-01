@@ -3,6 +3,7 @@
 #include "lagi/vdp1_renderer.h"
 #include "lagi/azel_town_runtime.h"
 #include "lagi/azel_town_collision.h"
+#include "lagi/azel_render_bridge.h"
 
 #include <psp2/display.h>
 #include <psp2/gxm.h>
@@ -4703,6 +4704,9 @@ static void renderBasicWingViewer()
     bool azelTownCellVisible = true;
     if (roomAuthenticCameraMode)
         azelTownCellVisible = updateStaticRoomAzelTownVisibility();
+    if (roomMode)
+        azelTownCellVisible = azelTownCellVisible &&
+            !lagi::azel_bridge::town_object_submissions().empty();
 
     if ((roomDiagnosticLitMode ||
          roomAuthenticLitMode ||
@@ -4850,9 +4854,6 @@ void town_main_logic_update()
 {
     if (!town_scene_active())
         return;
-    azel::update_town_runtime_active_cell(
-        g_townPlayerPosition[0],
-        g_townPlayerPosition[2]);
     updateTownFollowCamera();
 }
 
@@ -4880,6 +4881,13 @@ void town_edge_set_orientation(int, int y, int)
     constexpr float kTau = 6.28318530717958647692f;
     constexpr float kAngleUnit = 1.0f / 268435456.0f;
     g_townPlayerYaw = static_cast<float>(y) * kAngleUnit * kTau;
+}
+
+void town_edge_position_raw(int& x, int& y, int& z)
+{
+    x = static_cast<int>(std::lround(g_townPlayerPosition[0] * 65536.0f));
+    y = static_cast<int>(std::lround(g_townPlayerPosition[1] * 65536.0f));
+    z = static_cast<int>(std::lround(g_townPlayerPosition[2] * 65536.0f));
 }
 
 } // namespace lagi::platform::renderer

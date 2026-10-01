@@ -4,11 +4,16 @@
 #include "lagi/azel_town_bootstrap.h"
 #include "lagi/azel_town_runtime.h"
 #include "lagi/azel_town_collision.h"
+#include "lagi/azel_render_bridge.h"
+#include "lagi/debug_mesh.h"
 #include "lagi/platform.h"
 #include "task.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
+#include <vector>
 
 s8 readSaturnS8(sSaturnPtr ptr);
 u8 readSaturnU8(sSaturnPtr ptr);
@@ -32,6 +37,26 @@ struct ScriptContext {
 std::array<u8, 0x300> g_gameBits{};
 ScriptContext g_script{};
 unsigned g_pipelineFrames = 0;
+
+struct TownWorldCellTask;
+struct WorldGridState {
+    bool initialized = false;
+    std::int8_t bundleIndex = -1;
+    int ringX = 0;
+    int ringY = 0;
+    int currentX = 0;
+    int currentY = 0;
+    TownWorldCellTask* cells[8][8]{};
+    std::array<std::vector<u32>, 64> objectLists{};
+};
+
+WorldGridState g_worldGrid{};
+StaticRoomDebugMesh g_worldScene{};
+p_workArea g_worldParent = nullptr;
+
+static s32 initNpcWorld(s32 setupIndex);
+static s32 initNpcFromStructWorld(u32 objectEA);
+static s32 updateWorldGridRaw(s32 x, s32 z);
 
 static sSaturnPtr align2(sSaturnPtr ptr)
 {
@@ -91,8 +116,10 @@ static void writePackedBits(unsigned first, unsigned count, u32 value)
 static s32 dispatchNative(u32 functionEA, unsigned argc, const s32* args)
 {
     switch (functionEA) {
-    case 0x0600CCB4u: // initNPC -- TownRuntime already owns this setup.
-    case 0x06014DF2u: // initNPCFromStruct
+    case 0x0600CCB4u:
+        return argc == 1 ? initNpcWorld(args[0]) : 0;
+    case 0x06014DF2u:
+        return argc == 1 ? initNpcFromStructWorld(static_cast<u32>(args[0])) : 0;
     case 0x06027110u: // setNextGameStatus
     case 0x0602C1D0u: // fadeOutAllSequences
     case 0x0602C2CAu: // playSystemSoundEffect
@@ -116,11 +143,7 @@ static s32 dispatchNative(u32 functionEA, unsigned argc, const s32* args)
             platform::renderer::town_edge_set_orientation(args[1], args[2], args[3]);
         return 0;
     case 0x060144C0u:
-        if (argc == 2)
-            update_town_runtime_active_cell(
-                static_cast<float>(args[0]) / 65536.0f,
-                static_cast<float>(args[1]) / 65536.0f);
-        return 0;
+        return argc == 2 ? updateWorldGridRaw(args[0], args[1]) : 0;
     case 0x0600CC78u: // setSomethingInNpc0
     case 0x06057570u: // hasLoadingCompleted
     case 0x06057058u: // setupCameraFollowMode / NPC walk setup
@@ -271,7 +294,10 @@ template<class T> static const typename T::TypedTaskDefinition* taskDefinition(
 }
 
 struct TownScriptTask final : s_workAreaTemplate<TownScriptTask> {
-    static void Init(TownScriptTask*) { resetCollisionFrame(); }
+    static void Init(TownScriptTask* self) {
+        resetCollisionFrame();
+        g_worldParent = self;
+    }
     static void UpdateTask(TownScriptTask*) {
         platform::renderer::town_script_collision_update();
         runScript();
@@ -281,6 +307,209 @@ struct TownScriptTask final : s_workAreaTemplate<TownScriptTask> {
         return &definition;
     }
 };
+
+struct TownWorldCellTask final : s_workAreaTemplateWithArg<TownWorldCellTask, int> {
+    int cellIndex = -1;
+
+    static void Init(TownWorldCellTask* self, int index) {
+        self->cellIndex = index;
+    }
+    static void DrawTask(TownWorldCellTask* self) {
+        if (self->cellIndex != town_runtime().activeCellIndex)
+            return;
+        for (std::size_t i = 0; i < g_worldScene.objectStates.size(); ++i) {
+            const auto& object = g_worldScene.objectStates[i];
+            azel_bridge::SubmissionState state{};
+            state.modelMatrix[0] = state.modelMatrix[5] =
+                state.modelMatrix[10] = 0x10000;
+            state.hasModelMatrix = true;
+            if (g_worldScene.lightingValid) {
+                state.lightVector[0] = static_cast<s32>(
+                    -g_worldScene.lightDirection[0] * 65536.0f);
+                state.lightVector[1] = static_cast<s32>(
+                    -g_worldScene.lightDirection[1] * 65536.0f);
+                state.lightVector[2] = static_cast<s32>(
+                    -g_worldScene.lightDirection[2] * 65536.0f);
+                state.lightColor[0] = g_worldScene.lightColor[0];
+                state.lightColor[1] = g_worldScene.lightColor[1];
+                state.lightColor[2] = g_worldScene.lightColor[2];
+                state.hasLight = true;
+            }
+            azel_bridge::submit_town_object(
+                static_cast<u32>(self->cellIndex),
+                static_cast<u32>(i),
+                object.firstPolygon,
+                object.polygonCount,
+                state);
+        }
+    }
+    static const TypedTaskDefinition* getTypedTaskDefinition() {
+        static const TypedTaskDefinition definition{Init, nullptr, DrawTask, nullptr};
+        return &definition;
+    }
+};
+
+static void deleteCell(int x, int y)
+{
+    if (x < 0 || y < 0 || x >= town_runtime().gridWidth ||
+        y >= town_runtime().gridHeight)
+        return;
+    TownWorldCellTask*& task =
+        g_worldGrid.cells[(g_worldGrid.ringY + y - g_worldGrid.currentY) & 7]
+                         [(g_worldGrid.ringX + x - g_worldGrid.currentX) & 7];
+    if (task)
+        task->getTask()->markFinished();
+    task = nullptr;
+}
+
+static void createCell(int x, int y)
+{
+    const auto& runtime = town_runtime();
+    if (!g_worldParent || x < 0 || y < 0 ||
+        x >= runtime.gridWidth || y >= runtime.gridHeight)
+        return;
+    const int index = y * runtime.gridWidth + x;
+    if (index < 0 || index >= static_cast<int>(runtime.cells.size()) ||
+        !runtime.cells[static_cast<std::size_t>(index)].valid)
+        return;
+    TownWorldCellTask*& slot =
+        g_worldGrid.cells[(g_worldGrid.ringY + y - g_worldGrid.currentY) & 7]
+                         [(g_worldGrid.ringX + x - g_worldGrid.currentX) & 7];
+    if (!slot)
+        slot = createSubTaskWithArg<TownWorldCellTask>(g_worldParent, index);
+}
+
+static void deleteAllGridCells()
+{
+    for (auto& row : g_worldGrid.cells)
+        for (auto*& cell : row) {
+            if (cell)
+                cell->getTask()->markFinished();
+            cell = nullptr;
+        }
+}
+
+static void createGridCells(int centerX, int centerY)
+{
+    g_worldGrid.ringX = 0;
+    g_worldGrid.ringY = 0;
+    g_worldGrid.currentX = centerX;
+    g_worldGrid.currentY = centerY;
+    for (int y = -2; y <= 2; ++y)
+        for (int x = -2; x <= 2; ++x)
+            createCell(centerX + x, centerY + y);
+}
+
+static void resetWorldGrid()
+{
+    deleteAllGridCells();
+    if (g_worldGrid.bundleIndex >= 0)
+        release_town_runtime_bundle(g_worldGrid.bundleIndex);
+    g_worldGrid = {};
+    g_worldGrid.bundleIndex = -1;
+    g_worldScene = {};
+}
+
+static s32 initNpcWorld(s32 setupIndex)
+{
+    const auto& runtime = town_runtime();
+    if (setupIndex != 0 || runtime.setupNpcFileIndex < 0)
+        return 0;
+
+    resetWorldGrid();
+    if (!acquire_town_runtime_bundle(runtime.setupNpcFileIndex))
+        return 0;
+    g_worldGrid.bundleIndex = runtime.setupNpcFileIndex;
+
+    if (!build_town_world_scene(g_worldScene) ||
+        !platform::renderer::load_static_room_viewer(g_worldScene)) {
+        resetWorldGrid();
+        return 0;
+    }
+
+    g_worldGrid.initialized = true;
+    createGridCells(-3, -3);
+    platform::logging::writef(
+        "[TownWorld] initNPC setup=%d bundle=%d grid=%dx%d refs=%u\n",
+        static_cast<int>(setupIndex),
+        static_cast<int>(runtime.setupNpcFileIndex),
+        static_cast<int>(runtime.gridWidth),
+        static_cast<int>(runtime.gridHeight),
+        town_runtime_bundle(runtime.setupNpcFileIndex)->refCount);
+    return 0;
+}
+
+static s32 initNpcFromStructWorld(u32 objectEA)
+{
+    if (!g_worldGrid.initialized || !objectEA)
+        return 0;
+    sSaturnMemoryFile* overlay = town_overlay_file();
+    if (!overlay)
+        return 0;
+    const sSaturnPtr object = overlay->getSaturnPtr(objectEA);
+    const float x = static_cast<float>(readSaturnS32(object + 8)) / 65536.0f;
+    const float z = static_cast<float>(readSaturnS32(object + 0x10)) / 65536.0f;
+    const auto& runtime = town_runtime();
+    const int cellX = std::clamp(
+        static_cast<int>(x / runtime.gridCellSize),
+        0, static_cast<int>(runtime.gridWidth) - 1);
+    const int cellY = std::clamp(
+        static_cast<int>(z / runtime.gridCellSize),
+        0, static_cast<int>(runtime.gridHeight) - 1);
+    g_worldGrid.objectLists[static_cast<std::size_t>(
+        cellY * runtime.gridWidth + cellX)].push_back(objectEA);
+    return 1;
+}
+
+static s32 updateWorldGridRaw(s32 x, s32 z)
+{
+    if (!g_worldGrid.initialized || town_runtime().gridCellSize <= 0.0f)
+        return 0;
+    const float worldX = static_cast<float>(x) / 65536.0f;
+    const float worldZ = static_cast<float>(z) / 65536.0f;
+    const int nextX = static_cast<int>(worldX / town_runtime().gridCellSize);
+    const int nextY = static_cast<int>(worldZ / town_runtime().gridCellSize);
+    const int dx = nextX - g_worldGrid.currentX;
+    const int dy = nextY - g_worldGrid.currentY;
+
+    if (std::abs(dx) > 1 || std::abs(dy) > 1) {
+        deleteAllGridCells();
+        createGridCells(nextX, nextY);
+    } else {
+        if (dx < 0) {
+            for (int y = -2; y <= 2; ++y)
+                deleteCell(g_worldGrid.currentX + 2, g_worldGrid.currentY + y);
+            g_worldGrid.ringX = (g_worldGrid.ringX - 1) & 7;
+            --g_worldGrid.currentX;
+            for (int y = -2; y <= 2; ++y)
+                createCell(g_worldGrid.currentX - 2, g_worldGrid.currentY + y);
+        } else if (dx > 0) {
+            for (int y = -2; y <= 2; ++y)
+                deleteCell(g_worldGrid.currentX - 2, g_worldGrid.currentY + y);
+            g_worldGrid.ringX = (g_worldGrid.ringX + 1) & 7;
+            ++g_worldGrid.currentX;
+            for (int y = -2; y <= 2; ++y)
+                createCell(g_worldGrid.currentX + 2, g_worldGrid.currentY + y);
+        }
+        if (dy < 0) {
+            for (int cellX = -2; cellX <= 2; ++cellX)
+                deleteCell(g_worldGrid.currentX + cellX, g_worldGrid.currentY + 2);
+            g_worldGrid.ringY = (g_worldGrid.ringY - 1) & 7;
+            --g_worldGrid.currentY;
+            for (int cellX = -2; cellX <= 2; ++cellX)
+                createCell(g_worldGrid.currentX + cellX, g_worldGrid.currentY - 2);
+        } else if (dy > 0) {
+            for (int cellX = -2; cellX <= 2; ++cellX)
+                deleteCell(g_worldGrid.currentX + cellX, g_worldGrid.currentY - 2);
+            g_worldGrid.ringY = (g_worldGrid.ringY + 1) & 7;
+            ++g_worldGrid.currentY;
+            for (int cellX = -2; cellX <= 2; ++cellX)
+                createCell(g_worldGrid.currentX + cellX, g_worldGrid.currentY + 2);
+        }
+    }
+    update_town_runtime_active_cell(worldX, worldZ);
+    return 0;
+}
 
 struct RuinBackgroundTask final : s_workAreaTemplate<RuinBackgroundTask> {
     static const TypedTaskDefinition* getTypedTaskDefinition() { return taskDefinition<RuinBackgroundTask>(nullptr); }
@@ -293,7 +522,12 @@ struct TownEdgeTask final : s_workAreaTemplate<TownEdgeTask> {
 };
 
 struct TownMainLogicTask final : s_workAreaTemplate<TownMainLogicTask> {
-    static void UpdateTask(TownMainLogicTask*) { platform::renderer::town_main_logic_update(); }
+    static void UpdateTask(TownMainLogicTask*) {
+        int x = 0, y = 0, z = 0;
+        platform::renderer::town_edge_position_raw(x, y, z);
+        updateWorldGridRaw(x, z);
+        platform::renderer::town_main_logic_update();
+    }
     static const TypedTaskDefinition* getTypedTaskDefinition() { return taskDefinition<TownMainLogicTask>(UpdateTask); }
 };
 

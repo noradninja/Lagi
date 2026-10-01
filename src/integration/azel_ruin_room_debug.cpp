@@ -875,7 +875,7 @@ static bool parseRawModel(
 
 } // namespace
 
-bool build_first_ruin_room_debug_mesh(StaticRoomDebugMesh& out)
+bool build_town_world_scene(StaticRoomDebugMesh& out)
 {
     out = {};
 

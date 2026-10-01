@@ -270,6 +270,37 @@ const std::vector<std::uint8_t>* town_runtime_resource(const char* name)
     return nullptr;
 }
 
+const TownRuntimeBundle* town_runtime_bundle(std::int8_t fileIndex)
+{
+    for (const auto& bundle : g_runtime.bundles)
+        if (bundle.fileIndex == fileIndex)
+            return &bundle;
+    return nullptr;
+}
+
+bool acquire_town_runtime_bundle(std::int8_t fileIndex)
+{
+    for (auto& bundle : g_runtime.bundles) {
+        if (bundle.fileIndex != fileIndex)
+            continue;
+        if (!bundle.model || !bundle.graphics)
+            return false;
+        ++bundle.refCount;
+        return true;
+    }
+    return false;
+}
+
+void release_town_runtime_bundle(std::int8_t fileIndex)
+{
+    for (auto& bundle : g_runtime.bundles) {
+        if (bundle.fileIndex == fileIndex && bundle.refCount) {
+            --bundle.refCount;
+            return;
+        }
+    }
+}
+
 static bool load_runtime_resource(const char* name)
 {
     TownRuntimeResource resource{};
@@ -404,6 +435,17 @@ bool init_town_runtime()
         if (!load_runtime_resource(name))
             return false;
     }
+
+    const auto resourceByName = [](const char* name) -> const TownRuntimeResource* {
+        for (const auto& resource : g_runtime.resources)
+            if (resource.name == name)
+                return &resource;
+        return nullptr;
+    };
+    g_runtime.bundles = {
+        {0, resourceByName("COMMON3.MCB"), resourceByName("COMMON3.CGB"), 0},
+        {2, resourceByName("RUINMP.MCB"), resourceByName("RUINMP.CGB"), 0},
+    };
 
     g_runtime.initialized = validCells != 0;
     if (!g_runtime.initialized)

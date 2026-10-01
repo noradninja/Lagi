@@ -45,6 +45,13 @@ struct TownRuntimeResource {
     std::vector<std::uint8_t> bytes;
 };
 
+struct TownRuntimeBundle {
+    std::int8_t fileIndex = -1;
+    const TownRuntimeResource* model = nullptr;
+    const TownRuntimeResource* graphics = nullptr;
+    unsigned refCount = 0;
+};
+
 struct TownRuntimeState {
     bool initialized = false;
     std::string overlayFile;
@@ -66,6 +73,7 @@ struct TownRuntimeState {
     int activeCellIndex = -1;
 
     std::vector<TownRuntimeResource> resources;
+    std::vector<TownRuntimeBundle> bundles;
 };
 
 bool init_town_runtime();
@@ -77,5 +85,8 @@ const std::vector<std::uint8_t>* town_runtime_resource(const char* name);
 // scene owner responsible for selecting the active cell rather than the
 // renderer/debug reconstruction doing so directly.
 void update_town_runtime_active_cell(float worldX, float worldZ);
+bool acquire_town_runtime_bundle(std::int8_t fileIndex);
+void release_town_runtime_bundle(std::int8_t fileIndex);
+const TownRuntimeBundle* town_runtime_bundle(std::int8_t fileIndex);
 
 } // namespace lagi::azel
