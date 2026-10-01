@@ -42,6 +42,17 @@ ScriptContext g_script{};
 unsigned g_pipelineFrames = 0;
 
 struct TownWorldCellTask;
+struct RuinLockTask;
+
+struct TownCellObjectNode {
+    u32 objectEA = 0;
+    u32 definitionEA = 0;
+    p_workArea task = nullptr;
+    int cellIndex = -1;
+    std::int8_t bundleIndex = -1;
+    bool bundleAcquired = false;
+};
+
 struct WorldGridState {
     bool initialized = false;
     std::int8_t bundleIndex = -1;
@@ -50,7 +61,7 @@ struct WorldGridState {
     int currentX = 0;
     int currentY = 0;
     TownWorldCellTask* cells[8][8]{};
-    std::array<std::vector<u32>, 64> objectLists{};
+    std::array<std::vector<TownCellObjectNode>, 64> objectLists{};
     std::array<s32, 4> lodDepthThresholds{
         0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF};
     unsigned lodDepthCount = 1;
@@ -59,6 +70,7 @@ struct WorldGridState {
 WorldGridState g_worldGrid{};
 StaticRoomDebugMesh g_worldScene{};
 p_workArea g_worldParent = nullptr;
+std::array<RuinLockTask*, 16> g_npcLockTasks{};
 
 struct EdgeRuntimeState {
     bool initialized = false;
@@ -700,6 +712,275 @@ static void writePackedBits(unsigned first, unsigned count, u32 value)
         setBit(first + i, (value & (1u << (count - 1u - i))) != 0);
 }
 
+
+static azel_bridge::SubmissionState makeTownSubmissionState(
+    const float position[3],
+    s16 rx, s16 ry, s16 rz,
+    bool billboard)
+{
+    azel_bridge::SubmissionState state{};
+    constexpr float kTau = 6.28318530717958647692f;
+    const float ax = static_cast<float>(rx) / 4096.0f * kTau;
+    const float ay = static_cast<float>(ry) / 4096.0f * kTau;
+    const float az = static_cast<float>(rz) / 4096.0f * kTau;
+    const float cx = std::cos(ax), sx = std::sin(ax);
+    const float cy = std::cos(ay), sy = std::sin(ay);
+    const float cz = std::cos(az), sz = std::sin(az);
+    const float m[9] = {
+        cz*cy, cz*sy*sx - sz*cx, cz*sy*cx + sz*sx,
+        sz*cy, sz*sy*sx + cz*cx, sz*sy*cx - cz*sx,
+        -sy,   cy*sx,            cy*cx};
+
+    state.modelMatrix[0] = static_cast<s32>(std::lround(m[0]*65536.0f));
+    state.modelMatrix[1] = static_cast<s32>(std::lround(m[1]*65536.0f));
+    state.modelMatrix[2] = static_cast<s32>(std::lround(m[2]*65536.0f));
+    state.modelMatrix[4] = static_cast<s32>(std::lround(m[3]*65536.0f));
+    state.modelMatrix[5] = static_cast<s32>(std::lround(m[4]*65536.0f));
+    state.modelMatrix[6] = static_cast<s32>(std::lround(m[5]*65536.0f));
+    state.modelMatrix[8] = static_cast<s32>(std::lround(m[6]*65536.0f));
+    state.modelMatrix[9] = static_cast<s32>(std::lround(m[7]*65536.0f));
+    state.modelMatrix[10] = static_cast<s32>(std::lround(m[8]*65536.0f));
+    state.modelMatrix[3] = static_cast<s32>(std::lround(position[0]*65536.0f));
+    state.modelMatrix[7] = static_cast<s32>(std::lround(position[1]*65536.0f));
+    state.modelMatrix[11] = static_cast<s32>(std::lround(position[2]*65536.0f));
+    state.hasModelMatrix = true;
+    state.billboard = billboard;
+
+    if (g_worldScene.lightingValid) {
+        state.lightVector[0] = static_cast<s32>(
+            -g_worldScene.lightDirection[0] * 65536.0f);
+        state.lightVector[1] = static_cast<s32>(
+            -g_worldScene.lightDirection[1] * 65536.0f);
+        state.lightVector[2] = static_cast<s32>(
+            -g_worldScene.lightDirection[2] * 65536.0f);
+        state.lightColor[0] = g_worldScene.lightColor[0];
+        state.lightColor[1] = g_worldScene.lightColor[1];
+        state.lightColor[2] = g_worldScene.lightColor[2];
+        state.hasLight = true;
+    }
+    return state;
+}
+
+static void detachTownObjectTask(p_workArea task)
+{
+    if (!task)
+        return;
+    for (auto& list : g_worldGrid.objectLists) {
+        for (auto& node : list) {
+            if (node.task == task) {
+                node.task = nullptr;
+                node.cellIndex = -1;
+                node.bundleIndex = -1;
+                node.bundleAcquired = false;
+                return;
+            }
+        }
+    }
+}
+
+struct RuinLockTask final : s_workAreaTemplateWithArg<RuinLockTask, u32> {
+    u32 objectEA = 0;
+    int cellIndex = -1;
+    std::int8_t bundleIndex = -1;
+    bool ownsBundleReference = false;
+    bool collisionReady = false;
+    bool resourcesReleased = false;
+    u16 modelOffset = 0;
+    u16 npcIndex = 0xFFFFu;
+    u16 collisionModelOffset = 0;
+    float position[3]{};
+    s32 rotationRaw[3]{};
+    s16 status = 0;
+    s16 translationLength = 0x32;
+    TownCollisionBody collision{};
+
+    static void ReleaseResources(RuinLockTask* self)
+    {
+        if (!self || self->resourcesReleased)
+            return;
+        self->resourcesReleased = true;
+        if (self->npcIndex < g_npcLockTasks.size() &&
+            g_npcLockTasks[self->npcIndex] == self)
+            g_npcLockTasks[self->npcIndex] = nullptr;
+        if (self->ownsBundleReference && self->bundleIndex >= 0) {
+            release_town_runtime_bundle(self->bundleIndex);
+            self->ownsBundleReference = false;
+        }
+    }
+
+    static void Remove(RuinLockTask* self)
+    {
+        if (!self)
+            return;
+        detachTownObjectTask(self);
+        ReleaseResources(self);
+        self->getTask()->markFinished();
+    }
+
+    static void Init(RuinLockTask* self, u32 objectEA)
+    {
+        self->objectEA = objectEA;
+        self->translationLength = 0x32;
+        sSaturnMemoryFile* const overlay = town_overlay_file();
+        if (!overlay || !objectEA)
+            return;
+
+        const sSaturnPtr object = overlay->getSaturnPtr(objectEA);
+        if (!pointerValid(object, 0x2Au))
+            return;
+
+        constexpr float kFixed = 1.0f / 65536.0f;
+        self->position[0] = readSaturnS32(object + 8) * kFixed;
+        self->position[1] = readSaturnS32(object + 0x0C) * kFixed;
+        self->position[2] = readSaturnS32(object + 0x10) * kFixed;
+        self->rotationRaw[0] = readSaturnS32(object + 0x14);
+        self->rotationRaw[1] = readSaturnS32(object + 0x18);
+        self->rotationRaw[2] = readSaturnS32(object + 0x1C);
+        self->modelOffset = readSaturnU16(object + 0x20);
+        self->npcIndex = readSaturnU16(object + 0x28);
+
+        if (self->npcIndex < g_npcLockTasks.size())
+            g_npcLockTasks[self->npcIndex] = self;
+    }
+
+    static bool InitializeCollision(RuinLockTask* self)
+    {
+        if (!self || self->collisionReady || self->bundleIndex < 0)
+            return self && self->collisionReady;
+
+        sSaturnMemoryFile* const overlay = town_overlay_file();
+        if (!overlay)
+            return false;
+        const sSaturnPtr object = overlay->getSaturnPtr(self->objectEA);
+        if (!pointerValid(object, 0x28))
+            return false;
+
+        const sSaturnPtr config = readSaturnEA(object + 0x24);
+        if (!pointerValid(config, 0x20))
+            return false;
+
+        self->collisionModelOffset = readSaturnU16(config + 2);
+        self->collision.owner = self;
+        self->collision.collisionModel = self->collisionModelOffset
+            ? town_runtime_model(self->bundleIndex, self->collisionModelOffset)
+            : nullptr;
+        self->collision.collisionScriptEA =
+            static_cast<u32>(readSaturnEA(config + 4).m_offset);
+        // Azel's town LCS consumes the same m3C script carried by this
+        // collision body. Keep it explicitly available for the later LCS UI
+        // milestone without inventing a temporary activation path here.
+        self->collision.interactionScriptEA =
+            self->collision.collisionScriptEA;
+
+        setCollisionSetup(self->collision, readSaturnU8(config));
+        constexpr float kFixed = 1.0f / 65536.0f;
+        setCollisionBounds(
+            self->collision,
+            {readSaturnS32(config + 8) * kFixed,
+             readSaturnS32(config + 0x0C) * kFixed,
+             readSaturnS32(config + 0x10) * kFixed},
+            {readSaturnS32(config + 0x14) * kFixed,
+             readSaturnS32(config + 0x18) * kFixed,
+             readSaturnS32(config + 0x1C) * kFixed});
+        self->collisionReady = true;
+        return true;
+    }
+
+    static void UpdateTask(RuinLockTask* self)
+    {
+        if (!InitializeCollision(self))
+            return;
+
+        switch (self->status) {
+        case 0:
+            break;
+        case 1:
+            self->position[1] -= static_cast<float>(0x7A) / 65536.0f;
+            if (self->translationLength > 0)
+                --self->translationLength;
+            if (self->translationLength == 0)
+                self->status = 2;
+            break;
+        case 2:
+            Remove(self);
+            return;
+        default:
+            break;
+        }
+
+        if (platform::renderer::town_scene_active()) {
+            constexpr float kTau = 6.28318530717958647692f;
+            self->collision.ownerPosition = {
+                self->position[0], self->position[1], self->position[2]};
+            self->collision.ownerRotation = {
+                static_cast<float>(self->rotationRaw[0] >> 16) / 4096.0f * kTau,
+                static_cast<float>(self->rotationRaw[1] >> 16) / 4096.0f * kTau,
+                static_cast<float>(self->rotationRaw[2] >> 16) / 4096.0f * kTau};
+            registerCollisionBody(self->collision);
+        }
+    }
+
+    static void DrawTask(RuinLockTask* self)
+    {
+        if (!self->collisionReady || self->bundleIndex < 0 ||
+            !g_mainLogic.followReady)
+            return;
+
+        sProcessed3dModel* const model =
+            town_runtime_model(self->bundleIndex, self->modelOffset);
+        if (!model)
+            return;
+
+        const auto state = makeTownSubmissionState(
+            self->position,
+            static_cast<s16>(self->rotationRaw[0] >> 16),
+            static_cast<s16>(self->rotationRaw[1] >> 16),
+            static_cast<s16>(self->rotationRaw[2] >> 16),
+            false);
+        azel_bridge::set_town_submission_context(
+            self->bundleIndex,
+            self->cellIndex >= 0 ? static_cast<u32>(self->cellIndex) : 0u,
+            self->objectEA,
+            self->modelOffset,
+            state);
+        addObjectToDrawList(model);
+    }
+
+    static void DeleteTask(RuinLockTask* self)
+    {
+        ReleaseResources(self);
+    }
+
+    static const TypedTaskDefinition* getTypedTaskDefinition()
+    {
+        static const TypedTaskDefinition definition{
+            Init, UpdateTask, DrawTask, DeleteTask};
+        return &definition;
+    }
+};
+
+static s32 disableRuinLock(s32 npcIndex, s32 nextStatus)
+{
+    if (npcIndex >= 0 &&
+        static_cast<std::size_t>(npcIndex) < g_npcLockTasks.size()) {
+        RuinLockTask* const lock =
+            g_npcLockTasks[static_cast<std::size_t>(npcIndex)];
+        if (lock)
+            lock->status = static_cast<s16>(nextStatus);
+    }
+    return 0;
+}
+
+static s32 waitForRuinLockDisableCompletion(s32 npcIndex)
+{
+    if (npcIndex < 0 ||
+        static_cast<std::size_t>(npcIndex) >= g_npcLockTasks.size())
+        return 1;
+    RuinLockTask* const lock =
+        g_npcLockTasks[static_cast<std::size_t>(npcIndex)];
+    return !lock || lock->status == 2 ? 1 : 0;
+}
+
 static s32 dispatchNative(u32 functionEA, unsigned argc, const s32* args)
 {
     switch (functionEA) {
@@ -707,6 +988,10 @@ static s32 dispatchNative(u32 functionEA, unsigned argc, const s32* args)
         return argc == 1 ? initNpcWorld(args[0]) : 0;
     case 0x06014DF2u:
         return argc == 1 ? initNpcFromStructWorld(static_cast<u32>(args[0])) : 0;
+    case 0x06054334u: // disableLock
+        return argc == 2 ? disableRuinLock(args[0], args[1]) : 0;
+    case 0x06054364u: // waitForLockDisableCompletion
+        return argc == 1 ? waitForRuinLockDisableCompletion(args[0]) : 0;
     case 0x06027110u: // setNextGameStatus
     case 0x0602C1D0u: // fadeOutAllSequences
     case 0x0602C2CAu: // playSystemSoundEffect
@@ -714,8 +999,6 @@ static s32 dispatchNative(u32 functionEA, unsigned argc, const s32* args)
     case 0x0603011Eu: // terminateTown
     case 0x0605C83Cu: // TwnFadeOut
     case 0x0605C7C4u: // TwnFadeIn
-    case 0x06054364u: // waitForLockDisableCompletion
-    case 0x06054334u: // disableLock
     case 0x0605B320u: // NPC control
     case 0x0605C55Cu: // townCamera_setup; decoded scene lighting owns it today.
         return 0;
@@ -962,50 +1245,6 @@ struct TownWorldCellTask final : s_workAreaTemplateWithArg<TownWorldCellTask, in
         sSaturnMemoryFile* const overlay = town_overlay_file();
         if (!overlay) return;
 
-        auto makeState = [&](const float position[3],
-                             s16 rx, s16 ry, s16 rz,
-                             bool billboard) {
-            azel_bridge::SubmissionState state{};
-            constexpr float kTau = 6.28318530717958647692f;
-            const float ax = static_cast<float>(rx) / 4096.0f * kTau;
-            const float ay = static_cast<float>(ry) / 4096.0f * kTau;
-            const float az = static_cast<float>(rz) / 4096.0f * kTau;
-            const float cx = std::cos(ax), sx = std::sin(ax);
-            const float cy = std::cos(ay), sy = std::sin(ay);
-            const float cz = std::cos(az), sz = std::sin(az);
-            const float m[9] = {
-                cz*cy, cz*sy*sx - sz*cx, cz*sy*cx + sz*sx,
-                sz*cy, sz*sy*sx + cz*cx, sz*sy*cx - cz*sx,
-                -sy,   cy*sx,            cy*cx};
-            state.modelMatrix[0] = static_cast<s32>(std::lround(m[0]*65536.0f));
-            state.modelMatrix[1] = static_cast<s32>(std::lround(m[1]*65536.0f));
-            state.modelMatrix[2] = static_cast<s32>(std::lround(m[2]*65536.0f));
-            state.modelMatrix[4] = static_cast<s32>(std::lround(m[3]*65536.0f));
-            state.modelMatrix[5] = static_cast<s32>(std::lround(m[4]*65536.0f));
-            state.modelMatrix[6] = static_cast<s32>(std::lround(m[5]*65536.0f));
-            state.modelMatrix[8] = static_cast<s32>(std::lround(m[6]*65536.0f));
-            state.modelMatrix[9] = static_cast<s32>(std::lround(m[7]*65536.0f));
-            state.modelMatrix[10] = static_cast<s32>(std::lround(m[8]*65536.0f));
-            state.modelMatrix[3] = static_cast<s32>(std::lround(position[0]*65536.0f));
-            state.modelMatrix[7] = static_cast<s32>(std::lround(position[1]*65536.0f));
-            state.modelMatrix[11] = static_cast<s32>(std::lround(position[2]*65536.0f));
-            state.hasModelMatrix = true;
-            state.billboard = billboard;
-            if (g_worldScene.lightingValid) {
-                state.lightVector[0] = static_cast<s32>(
-                    -g_worldScene.lightDirection[0] * 65536.0f);
-                state.lightVector[1] = static_cast<s32>(
-                    -g_worldScene.lightDirection[1] * 65536.0f);
-                state.lightVector[2] = static_cast<s32>(
-                    -g_worldScene.lightDirection[2] * 65536.0f);
-                state.lightColor[0] = g_worldScene.lightColor[0];
-                state.lightColor[1] = g_worldScene.lightColor[1];
-                state.lightColor[2] = g_worldScene.lightColor[2];
-                state.hasLight = true;
-            }
-            return state;
-        };
-
         unsigned objectIndex = 0;
         if (cell.staticObjectListEA) {
             sSaturnPtr entry = overlay->getSaturnPtr(cell.staticObjectListEA);
@@ -1035,7 +1274,7 @@ struct TownWorldCellTask final : s_workAreaTemplateWithArg<TownWorldCellTask, in
                 sProcessed3dModel* const model = town_runtime_model(
                     g_worldGrid.bundleIndex, modelOffset);
                 if (!model) continue;
-                const auto state = makeState(
+                const auto state = makeTownSubmissionState(
                     position,
                     readSaturnS16(entry + 0x10),
                     readSaturnS16(entry + 0x12),
@@ -1063,7 +1302,7 @@ struct TownWorldCellTask final : s_workAreaTemplateWithArg<TownWorldCellTask, in
                 sProcessed3dModel* const model = town_runtime_model(
                     g_worldGrid.bundleIndex, modelOffset);
                 if (!model) continue;
-                const auto state = makeState(position, 0, 0, 0, true);
+                const auto state = makeTownSubmissionState(position, 0, 0, 0, true);
                 azel_bridge::set_town_submission_context(
                     g_worldGrid.bundleIndex,
                     static_cast<u32>(self->cellIndex), objectIndex,
@@ -1078,6 +1317,109 @@ struct TownWorldCellTask final : s_workAreaTemplateWithArg<TownWorldCellTask, in
     }
 };
 
+
+static void destroyCellObject(TownCellObjectNode& node)
+{
+    if (!node.task)
+        return;
+
+    if (node.definitionEA == 0x0605EA20u) {
+        auto* const lock = static_cast<RuinLockTask*>(node.task);
+        RuinLockTask::ReleaseResources(lock);
+    }
+    node.task->getTask()->markFinished();
+    node.task = nullptr;
+    node.cellIndex = -1;
+    node.bundleIndex = -1;
+    node.bundleAcquired = false;
+}
+
+static void deleteCellObjects(int x, int y)
+{
+    const auto& runtime = town_runtime();
+    if (x < 0 || y < 0 || x >= runtime.gridWidth || y >= runtime.gridHeight)
+        return;
+    const std::size_t index =
+        static_cast<std::size_t>(y * runtime.gridWidth + x);
+    if (index >= g_worldGrid.objectLists.size())
+        return;
+    for (auto& node : g_worldGrid.objectLists[index])
+        destroyCellObject(node);
+}
+
+static void createCellObjects(int x, int y)
+{
+    const auto& runtime = town_runtime();
+    if (!g_worldParent || x < 0 || y < 0 ||
+        x >= runtime.gridWidth || y >= runtime.gridHeight)
+        return;
+    const int cellIndex = y * runtime.gridWidth + x;
+    if (cellIndex < 0 ||
+        static_cast<std::size_t>(cellIndex) >= g_worldGrid.objectLists.size())
+        return;
+
+    sSaturnMemoryFile* const overlay = town_overlay_file();
+    if (!overlay)
+        return;
+
+    for (auto& node :
+         g_worldGrid.objectLists[static_cast<std::size_t>(cellIndex)]) {
+        if (node.task || !node.objectEA)
+            continue;
+
+        const sSaturnPtr object = overlay->getSaturnPtr(node.objectEA);
+        if (!pointerValid(object, 8))
+            continue;
+
+        const s32 requestedBundle = readSaturnS32(object);
+        node.definitionEA =
+            static_cast<u32>(readSaturnEA(object + 4).m_offset);
+        node.cellIndex = cellIndex;
+        node.bundleIndex = requestedBundle > 0
+            ? static_cast<std::int8_t>(requestedBundle)
+            : g_worldGrid.bundleIndex;
+        node.bundleAcquired = false;
+
+        if (requestedBundle > 0) {
+            if (!acquire_town_runtime_bundle(node.bundleIndex)) {
+                node.bundleIndex = -1;
+                continue;
+            }
+            node.bundleAcquired = true;
+        }
+
+        p_workArea task = nullptr;
+        if (node.definitionEA == 0x0605EA20u) {
+            auto* const lock =
+                createSubTaskWithArg<RuinLockTask>(g_worldParent, node.objectEA);
+            if (lock) {
+                lock->cellIndex = cellIndex;
+                lock->bundleIndex = node.bundleIndex;
+                lock->ownsBundleReference = node.bundleAcquired;
+                task = lock;
+            }
+        }
+
+        if (!task) {
+            if (node.bundleAcquired && node.bundleIndex >= 0)
+                release_town_runtime_bundle(node.bundleIndex);
+            node.bundleAcquired = false;
+            node.bundleIndex = -1;
+            continue;
+        }
+
+        node.task = task;
+        const TownRuntimeBundle* const bundle =
+            town_runtime_bundle(node.bundleIndex);
+        platform::logging::writef(
+            "[TownWorld] cell=%d object=%08X bundle=%d refs=%u\n",
+            cellIndex,
+            static_cast<unsigned>(node.objectEA),
+            static_cast<int>(node.bundleIndex),
+            bundle ? bundle->refCount : 0u);
+    }
+}
+
 static void deleteCell(int x, int y)
 {
     if (x < 0 || y < 0 || x >= town_runtime().gridWidth ||
@@ -1086,8 +1428,10 @@ static void deleteCell(int x, int y)
     TownWorldCellTask*& task =
         g_worldGrid.cells[(g_worldGrid.ringY + y - g_worldGrid.currentY) & 7]
                          [(g_worldGrid.ringX + x - g_worldGrid.currentX) & 7];
-    if (task)
+    if (task) {
+        deleteCellObjects(x, y);
         task->getTask()->markFinished();
+    }
     task = nullptr;
 }
 
@@ -1104,12 +1448,20 @@ static void createCell(int x, int y)
     TownWorldCellTask*& slot =
         g_worldGrid.cells[(g_worldGrid.ringY + y - g_worldGrid.currentY) & 7]
                          [(g_worldGrid.ringX + x - g_worldGrid.currentX) & 7];
-    if (!slot)
+    if (!slot) {
         slot = createSubTaskWithArg<TownWorldCellTask>(g_worldParent, index);
+        if (slot)
+            createCellObjects(x, y);
+    }
 }
 
 static void deleteAllGridCells()
 {
+    const auto& runtime = town_runtime();
+    for (int y = 0; y < runtime.gridHeight; ++y)
+        for (int x = 0; x < runtime.gridWidth; ++x)
+            deleteCellObjects(x, y);
+
     for (auto& row : g_worldGrid.cells)
         for (auto*& cell : row) {
             if (cell)
@@ -1137,6 +1489,7 @@ static void resetWorldGrid()
     g_worldGrid = {};
     g_worldGrid.bundleIndex = -1;
     g_worldScene = {};
+    g_npcLockTasks.fill(nullptr);
 }
 
 static s32 initNpcWorld(s32 setupIndex)
@@ -1229,8 +1582,12 @@ static s32 initNpcFromStructWorld(u32 objectEA)
     const int cellY = std::clamp(
         static_cast<int>(z / runtime.gridCellSize),
         0, static_cast<int>(runtime.gridHeight) - 1);
+    TownCellObjectNode node{};
+    node.objectEA = objectEA;
+    node.definitionEA =
+        static_cast<u32>(readSaturnEA(object + 4).m_offset);
     g_worldGrid.objectLists[static_cast<std::size_t>(
-        cellY * runtime.gridWidth + cellX)].push_back(objectEA);
+        cellY * runtime.gridWidth + cellX)].push_back(node);
     return 1;
 }
 

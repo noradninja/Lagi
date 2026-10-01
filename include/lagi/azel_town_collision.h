@@ -28,6 +28,16 @@ struct TownCollisionBody {
     TownCollisionVec3 halfAabb{};
     TownCollisionVec3 aabbCenter{};
     int setupIndex = 0;
+
+    // Native sCollisionBody ownership/lifecycle metadata. These mirror Azel's
+    // m38 owner, m3C interaction script, m40 collision model and m48 paired
+    // body without moving any town-object policy into the collision solver.
+    void* owner = nullptr;
+    sProcessed3dModel* collisionModel = nullptr;
+    TownCollisionBody* pairedBody = nullptr;
+    std::uint32_t collisionScriptEA = 0;
+    std::uint32_t interactionScriptEA = 0;
+
     TownCollisionVec3 ownerPosition{};
     TownCollisionVec3 ownerRotation{};
     std::uint32_t contactMask = 0;

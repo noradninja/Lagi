@@ -330,6 +330,7 @@ void beginBodyCollisionTest(TownCollisionBody& body)
 {
     g_contactFaces = {};
     body.contactMask = 0;
+    body.pairedBody = nullptr;
     body.floorNormal = {};
     body.collisionSolveTranslation = {};
     body.contactCount = 0;
