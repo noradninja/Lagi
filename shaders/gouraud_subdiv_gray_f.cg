@@ -1,0 +1,13 @@
+// Lighting-only companion for the subdivided Mode 7 approximation.
+// Uses the same interpolated shade payload as textured subdivision so Mode 10
+// exposes the approximation directly without texture/color contribution.
+
+float4 main(float3 vShade : TEXCOORD1)
+{
+    float3 light5 = clamp(vShade * 31.0f + 16.0f, 0.0f, 31.0f);
+    light5 = floor(light5 + 0.5f);
+    float gray5 =
+        floor((light5.r + light5.g + light5.b) / 3.0f + 0.5f);
+    float value = gray5 / 31.0f;
+    return float4(value, value, value, 1.0f);
+}

@@ -29,6 +29,7 @@ extern const unsigned char _binary_lagi_texture_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_subdiv_v_gxp_start[];
 extern const unsigned char _binary_lagi_textured_gouraud_subdiv_f_gxp_start[];
+extern const unsigned char _binary_lagi_gouraud_subdiv_gray_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_debug_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_lit_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_lit_opaque_f_gxp_start[];
@@ -131,6 +132,9 @@ static const SceGxmProgramParameter* g_gouraudSubdivWvpParam = nullptr;
 static SceGxmShaderPatcherId g_texturedGouraudSubdivFragmentProgramId{};
 static bool g_texturedGouraudSubdivFragmentRegistered = false;
 static SceGxmFragmentProgram* g_texturedGouraudSubdivFragmentProgram = nullptr;
+static SceGxmShaderPatcherId g_gouraudSubdivGrayFragmentProgramId{};
+static bool g_gouraudSubdivGrayFragmentRegistered = false;
+static SceGxmFragmentProgram* g_gouraudSubdivGrayFragmentProgram = nullptr;
 
 static SceGxmShaderPatcherId g_gouraudDebugFragmentProgramId{};
 static bool g_gouraudDebugFragmentRegistered = false;
@@ -875,6 +879,11 @@ void shutdown()
                 g_probeShaderPatcher, g_textureFragmentProgram);
             g_textureFragmentProgram = nullptr;
         }
+        if (g_gouraudSubdivGrayFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_gouraudSubdivGrayFragmentProgram);
+            g_gouraudSubdivGrayFragmentProgram = nullptr;
+        }
         if (g_texturedGouraudSubdivFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_texturedGouraudSubdivFragmentProgram);
@@ -959,6 +968,11 @@ void shutdown()
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_textureFragmentProgramId);
             g_textureFragmentRegistered = false;
+        }
+        if (g_gouraudSubdivGrayFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_gouraudSubdivGrayFragmentProgramId);
+            g_gouraudSubdivGrayFragmentRegistered = false;
         }
         if (g_texturedGouraudSubdivFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -3697,6 +3711,9 @@ void toggle_debug_console()
     const SceGxmProgram* texturedGouraudSubdivFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_textured_gouraud_subdiv_f_gxp_start);
+    const SceGxmProgram* gouraudSubdivGrayFragmentGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_gouraud_subdiv_gray_f_gxp_start);
     const SceGxmProgram* gouraudDebugFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_gouraud_debug_f_gxp_start);
@@ -3737,6 +3754,7 @@ void toggle_debug_console()
     if (sceGxmProgramCheck(gouraudPayloadVertexGxp) < 0 ||
         sceGxmProgramCheck(gouraudSubdivVertexGxp) < 0 ||
         sceGxmProgramCheck(texturedGouraudSubdivFragmentGxp) < 0 ||
+        sceGxmProgramCheck(gouraudSubdivGrayFragmentGxp) < 0 ||
         sceGxmProgramCheck(gouraudDebugFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedLitFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedLitOpaqueFragmentGxp) < 0 ||
@@ -3779,6 +3797,15 @@ void toggle_debug_console()
         return;
     }
     g_texturedGouraudSubdivFragmentRegistered = true;
+
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_probeShaderPatcher,
+            gouraudSubdivGrayFragmentGxp,
+            &g_gouraudSubdivGrayFragmentProgramId) < 0) {
+        failure("[FAIL] GOURAUD SUBDIV GRAY FP REG");
+        return;
+    }
+    g_gouraudSubdivGrayFragmentRegistered = true;
 
     if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
@@ -3937,6 +3964,18 @@ void toggle_debug_console()
             gouraudSubdivVertexGxp,
             &g_texturedGouraudSubdivFragmentProgram) < 0) {
         failure("[FAIL] CREATE GOURAUD SUBDIV FP");
+        return;
+    }
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_gouraudSubdivGrayFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            gouraudSubdivVertexGxp,
+            &g_gouraudSubdivGrayFragmentProgram) < 0) {
+        failure("[FAIL] CREATE GOURAUD SUBDIV GRAY FP");
         return;
     }
 
@@ -4168,6 +4207,7 @@ void toggle_debug_console()
 
     status("[PASS] GXM GOURAUD VERTEX PAYLOAD", 0xFF80E0FFu);
     status("[PASS] GXM GOURAUD SUBDIV PIPELINE", 0xFF80E0FFu);
+    status("[PASS] GXM GOURAUD SUBDIV GRAY", 0xFF80E0FFu);
     status("[PASS] GXM TEXTURED LIGHTING PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM OPAQUE LIGHTING PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM HALF EXACT LIGHTING PIPELINE", 0xFF80E0FFu);
@@ -4660,12 +4700,22 @@ bool submit_vdp1_model(
         g_vdp1SubdivCapacity >= model.polygonCount * 24u &&
         g_gouraudSubdivVertexProgram &&
         g_texturedGouraudSubdivFragmentProgram;
+    const bool subdividedGouraudGray =
+        gouraudGray &&
+        g_viewMode == 10 &&
+        g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+        g_vdp1SubdivVertices && g_vdp1SubdivIndices &&
+        g_vdp1SubdivCapacity >= model.polygonCount * 24u &&
+        g_gouraudSubdivVertexProgram &&
+        g_gouraudSubdivGrayFragmentProgram;
+    const bool subdividedGouraud =
+        subdividedTexturedLit || subdividedGouraudGray;
     const bool gouraudPath =
         texturedLit || gouraudGray;
 
     sceGxmSetVertexProgram(
         g_probeContext,
-        subdividedTexturedLit
+        subdividedGouraud
             ? g_gouraudSubdivVertexProgram
             : (gouraudPath
             ? g_gouraudPayloadVertexProgram
@@ -4675,8 +4725,10 @@ bool submit_vdp1_model(
 
     sceGxmSetFragmentProgram(
         g_probeContext,
-        subdividedTexturedLit
-            ? g_texturedGouraudSubdivFragmentProgram
+        subdividedGouraud
+            ? (subdividedTexturedLit
+                ? g_texturedGouraudSubdivFragmentProgram
+                : g_gouraudSubdivGrayFragmentProgram)
             : (texturedLit
             // Same edge selection and RGB555 result as the reference path;
             // shade/color arithmetic is FP16 to reduce SGX fragment pressure.
@@ -4723,7 +4775,7 @@ bool submit_vdp1_model(
 
     sceGxmSetUniformDataF(
         uniformBuffer,
-        subdividedTexturedLit
+        subdividedGouraud
             ? g_gouraudSubdivWvpParam
             : (gouraudPath
                 ? g_gouraudPayloadWvpParam
@@ -4731,7 +4783,7 @@ bool submit_vdp1_model(
         0, 16, drawState.wvp);
 
     const void* vertexStream =
-        subdividedTexturedLit
+        subdividedGouraud
             ? static_cast<const void*>(g_vdp1SubdivVertices)
             : (gouraudPath
             ? static_cast<const void*>(g_vdp1GouraudVertices)
@@ -4760,7 +4812,7 @@ bool submit_vdp1_model(
         return true;
     }
 
-    if (subdividedTexturedLit) {
+    if (subdividedGouraud) {
         const bool useLiveTownPrep =
             g_liveTownGouraudPrepValid &&
             model.vertices == g_liveTownGouraudPrepVertices &&
@@ -4776,211 +4828,131 @@ bool submit_vdp1_model(
         g_profileGouraudDrawUs = 0u;
 
         static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
-        static const unsigned int sampleTris[24] = {
-            0,4,6, 4,1,5, 6,5,2, 4,5,6,
-            0,6,8, 6,2,7, 8,6,7, 8,7,3
+        static const unsigned int gridTris[24] = {
+            0,1,4, 0,4,3,
+            1,2,5, 1,5,4,
+            3,4,7, 3,7,6,
+            4,5,8, 4,8,7
         };
-        // Samples: A,B,C,D, AB,BC,AC,CD,DA. Each original triangle is
-        // subdivided into four, so geometry and UV mapping remain exactly on
-        // the existing two-triangle surface while the lighting approximation
-        // gains a shared diagonal midpoint and edge midpoints.
         struct Sample {
             float x, y, z;
             float u, v;
             float shade[3];
         };
 
-        ViewerMat4 wvp{};
-        std::memcpy(wvp.m, drawState.wvp, sizeof(wvp.m));
-        const unsigned int textureBucketCount =
-            static_cast<unsigned int>(g_vdp1GpuTextures.size());
-        if (!textureBucketCount)
+        const unsigned int bucketCount =
+            subdividedTexturedLit
+                ? static_cast<unsigned int>(g_vdp1GpuTextures.size())
+                : 1u;
+        if (!bucketCount)
             return false;
 
         static std::vector<unsigned int> batchCounts;
         static std::vector<unsigned int> batchWrite;
         static std::vector<std::uint8_t> visibleQuads;
-        batchCounts.assign(textureBucketCount, 0u);
-        batchWrite.assign(textureBucketCount, 0u);
+        batchCounts.assign(bucketCount, 0u);
+        batchWrite.assign(bucketCount, 0u);
         visibleQuads.assign(model.polygonCount, 0u);
-
-        auto project = [&](const Sample& v, float& sx, float& sy) -> bool {
-            const float clipX =
-                v.x * wvp.m[0] + v.y * wvp.m[4] +
-                v.z * wvp.m[8] + wvp.m[12];
-            const float clipY =
-                v.x * wvp.m[1] + v.y * wvp.m[5] +
-                v.z * wvp.m[9] + wvp.m[13];
-            const float clipW =
-                v.x * wvp.m[3] + v.y * wvp.m[7] +
-                v.z * wvp.m[11] + wvp.m[15];
-            if (clipW <= 0.00001f)
-                return false;
-            const float invW = 1.0f / clipW;
-            sx = (clipX * invW * 0.5f + 0.5f) *
-                static_cast<float>(viewerRenderWidth());
-            sy = (0.5f - clipY * invW * 0.5f) *
-                static_cast<float>(viewerRenderHeight());
-            return true;
-        };
-
-        auto exactShadeAt = [](
-            float x, float y,
-            const ViewerScreenPoint screen[4],
-            const azel::SaturnGouraud555Quad& gouraud,
-            float out[3]) {
-            float leftX = 1000000.0f;
-            float rightX = -1000000.0f;
-            float leftShade[3] = {
-                gouraud.corner[0][0], gouraud.corner[0][1],
-                gouraud.corner[0][2]};
-            float rightShade[3] = {
-                gouraud.corner[1][0], gouraud.corner[1][1],
-                gouraud.corner[1][2]};
-            unsigned hits = 0u;
-
-            auto edge = [&](unsigned a, unsigned b) {
-                const float dy = screen[b].y - screen[a].y;
-                if (std::fabs(dy) < 0.0001f)
-                    return;
-                const float minY = std::min(screen[a].y, screen[b].y);
-                const float maxY = std::max(screen[a].y, screen[b].y);
-                if (y < minY || y >= maxY)
-                    return;
-                const float t = std::clamp(
-                    (y - screen[a].y) / dy, 0.0f, 1.0f);
-                const float ex =
-                    screen[a].x + (screen[b].x - screen[a].x) * t;
-                float shade[3];
-                for (unsigned c = 0; c < 3u; ++c)
-                    shade[c] = gouraud.corner[a][c] +
-                        (gouraud.corner[b][c] - gouraud.corner[a][c]) * t;
-                if (ex < leftX) {
-                    leftX = ex;
-                    for (unsigned c = 0; c < 3u; ++c)
-                        leftShade[c] = shade[c];
-                }
-                if (ex > rightX) {
-                    rightX = ex;
-                    for (unsigned c = 0; c < 3u; ++c)
-                        rightShade[c] = shade[c];
-                }
-                ++hits;
-            };
-
-            edge(0u,1u); edge(1u,2u); edge(2u,3u); edge(3u,0u);
-            if (hits < 2u || rightX - leftX < 0.0001f) {
-                const float dyL = screen[3].y - screen[0].y;
-                const float dyR = screen[2].y - screen[1].y;
-                const float lt = std::fabs(dyL) < 0.0001f ? 0.5f :
-                    std::clamp((y - screen[0].y) / dyL, 0.0f, 1.0f);
-                const float rt = std::fabs(dyR) < 0.0001f ? 0.5f :
-                    std::clamp((y - screen[1].y) / dyR, 0.0f, 1.0f);
-                leftX = screen[0].x +
-                    (screen[3].x - screen[0].x) * lt;
-                rightX = screen[1].x +
-                    (screen[2].x - screen[1].x) * rt;
-                for (unsigned c = 0; c < 3u; ++c) {
-                    leftShade[c] = gouraud.corner[0][c] +
-                        (gouraud.corner[3][c] -
-                         gouraud.corner[0][c]) * lt;
-                    rightShade[c] = gouraud.corner[1][c] +
-                        (gouraud.corner[2][c] -
-                         gouraud.corner[1][c]) * rt;
-                }
-            }
-            const float across =
-                rightX - leftX < 0.0001f ? 0.5f :
-                std::clamp((x - leftX) / (rightX - leftX), 0.0f, 1.0f);
-            for (unsigned c = 0; c < 3u; ++c)
-                out[c] = leftShade[c] +
-                    (rightShade[c] - leftShade[c]) * across;
-        };
 
         const std::uint64_t tPayload = sceKernelGetProcessTimeWide();
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
-            const auto& prep = g_liveTownGouraudPrep[p];
-            if (!prep.visible)
+            if (!g_liveTownGouraudPrep[p].visible)
                 continue;
+
             const std::uint16_t textureIndex =
-                model.polygonTextureIndices[p];
-            if (textureIndex >= textureBucketCount)
+                subdividedTexturedLit ? model.polygonTextureIndices[p] : 0u;
+            if (textureIndex >= bucketCount)
                 continue;
 
-            const auto& record = model.polygons[p];
-            const auto& texture = model.textures[textureIndex];
-            if (!texture.width || !texture.height)
-                continue;
-
-            const float u0 = 0.5f / static_cast<float>(texture.width);
-            const float v0 = 0.5f / static_cast<float>(texture.height);
-            const float u1 =
-                (static_cast<float>(texture.width) - 0.5f) /
-                static_cast<float>(texture.width);
-            const float v1 =
-                (static_cast<float>(texture.height) - 0.5f) /
-                static_cast<float>(texture.height);
-            const float uv[4][2] = {
-                {u0,v0}, {u1,v0}, {u1,v1}, {u0,v1}
+            float cornerUv[4][2] = {
+                {0.0f,0.0f}, {1.0f,0.0f}, {1.0f,1.0f}, {0.0f,1.0f}
             };
-            int order[4] = {0,1,2,3};
-            switch (record.textureFlip() & 3u) {
-            case 1:
-                order[0]=1; order[1]=0; order[2]=3; order[3]=2;
-                break;
-            case 2:
-                order[0]=3; order[1]=2; order[2]=1; order[3]=0;
-                break;
-            case 3:
-                order[0]=2; order[1]=3; order[2]=0; order[3]=1;
-                break;
-            default:
-                break;
+            if (subdividedTexturedLit) {
+                const auto& record = model.polygons[p];
+                const auto& texture =
+                    model.textures[model.polygonTextureIndices[p]];
+                if (!texture.width || !texture.height)
+                    continue;
+                const float u0 = 0.5f / static_cast<float>(texture.width);
+                const float v0 = 0.5f / static_cast<float>(texture.height);
+                const float u1 =
+                    (static_cast<float>(texture.width) - 0.5f) /
+                    static_cast<float>(texture.width);
+                const float v1 =
+                    (static_cast<float>(texture.height) - 0.5f) /
+                    static_cast<float>(texture.height);
+                const float uv[4][2] = {
+                    {u0,v0}, {u1,v0}, {u1,v1}, {u0,v1}
+                };
+                int order[4] = {0,1,2,3};
+                switch (record.textureFlip() & 3u) {
+                case 1:
+                    order[0]=1; order[1]=0; order[2]=3; order[3]=2;
+                    break;
+                case 2:
+                    order[0]=3; order[1]=2; order[2]=1; order[3]=0;
+                    break;
+                case 3:
+                    order[0]=2; order[1]=3; order[2]=0; order[3]=1;
+                    break;
+                default:
+                    break;
+                }
+                for (unsigned c = 0; c < 4u; ++c) {
+                    cornerUv[c][0] = uv[order[c]][0];
+                    cornerUv[c][1] = uv[order[c]][1];
+                }
             }
 
-            Sample s[9]{};
-            for (unsigned c = 0; c < 4u; ++c) {
-                const auto& src =
-                    model.vertices[p * 6u + cornerVertex[c]];
-                s[c].x = src.x; s[c].y = src.y; s[c].z = src.z;
-                s[c].u = uv[order[c]][0];
-                s[c].v = uv[order[c]][1];
-                for (unsigned k = 0; k < 3u; ++k)
-                    s[c].shade[k] = model.gouraud555[p].corner[c][k];
-            }
-            const unsigned ends[5][2] = {
-                {0,1}, {1,2}, {0,2}, {2,3}, {3,0}
+            const auto bilerp = [](
+                float a, float b, float c, float d,
+                float u, float v) {
+                const float top = a + (b - a) * u;
+                const float bottom = d + (c - d) * u;
+                return top + (bottom - top) * v;
             };
-            for (unsigned m = 0; m < 5u; ++m) {
-                const unsigned dst = 4u + m;
-                const Sample& a = s[ends[m][0]];
-                const Sample& b = s[ends[m][1]];
-                s[dst].x = (a.x+b.x)*0.5f;
-                s[dst].y = (a.y+b.y)*0.5f;
-                s[dst].z = (a.z+b.z)*0.5f;
-                s[dst].u = (a.u+b.u)*0.5f;
-                s[dst].v = (a.v+b.v)*0.5f;
-                float sx, sy;
-                if (project(s[dst], sx, sy))
-                    exactShadeAt(
-                        sx, sy, prep.screen, model.gouraud555[p],
-                        s[dst].shade);
-                else
-                    for (unsigned k = 0; k < 3u; ++k)
-                        s[dst].shade[k] =
-                            (a.shade[k]+b.shade[k])*0.5f;
+
+            Sample grid[9]{};
+            for (unsigned gy = 0; gy < 3u; ++gy) {
+                const float v = static_cast<float>(gy) * 0.5f;
+                for (unsigned gx = 0; gx < 3u; ++gx) {
+                    const float u = static_cast<float>(gx) * 0.5f;
+                    Sample& dst = grid[gy * 3u + gx];
+
+                    const auto& a = model.vertices[p * 6u + cornerVertex[0]];
+                    const auto& b = model.vertices[p * 6u + cornerVertex[1]];
+                    const auto& c = model.vertices[p * 6u + cornerVertex[2]];
+                    const auto& d = model.vertices[p * 6u + cornerVertex[3]];
+                    dst.x = bilerp(a.x,b.x,c.x,d.x,u,v);
+                    dst.y = bilerp(a.y,b.y,c.y,d.y,u,v);
+                    dst.z = bilerp(a.z,b.z,c.z,d.z,u,v);
+                    dst.u = bilerp(
+                        cornerUv[0][0], cornerUv[1][0],
+                        cornerUv[2][0], cornerUv[3][0], u, v);
+                    dst.v = bilerp(
+                        cornerUv[0][1], cornerUv[1][1],
+                        cornerUv[2][1], cornerUv[3][1], u, v);
+                    for (unsigned ch = 0; ch < 3u; ++ch) {
+                        dst.shade[ch] = bilerp(
+                            model.gouraud555[p].corner[0][ch],
+                            model.gouraud555[p].corner[1][ch],
+                            model.gouraud555[p].corner[2][ch],
+                            model.gouraud555[p].corner[3][ch],
+                            u, v);
+                    }
+                }
             }
 
             const unsigned int baseVertex = p * 24u;
             for (unsigned k = 0; k < 24u; ++k) {
-                const Sample& src = s[sampleTris[k]];
+                const Sample& src = grid[gridTris[k]];
                 auto& dst = g_vdp1SubdivVertices[baseVertex + k];
-                dst.x=src.x; dst.y=src.y; dst.z=src.z;
-                dst.u=src.u; dst.v=src.v;
-                dst.shadeR=src.shade[0];
-                dst.shadeG=src.shade[1];
-                dst.shadeB=src.shade[2];
+                dst.x = src.x; dst.y = src.y; dst.z = src.z;
+                dst.u = src.u; dst.v = src.v;
+                dst.shadeR = src.shade[0];
+                dst.shadeG = src.shade[1];
+                dst.shadeB = src.shade[2];
             }
             visibleQuads[p] = 1u;
             batchCounts[textureIndex] += 24u;
@@ -4990,9 +4962,9 @@ bool submit_vdp1_model(
 
         const std::uint64_t tBucket = sceKernelGetProcessTimeWide();
         unsigned int totalVisibleIndices = 0u;
-        if (g_vdp1TextureBatches.size() < textureBucketCount)
-            g_vdp1TextureBatches.resize(textureBucketCount);
-        for (unsigned int t = 0; t < textureBucketCount; ++t) {
+        if (g_vdp1TextureBatches.size() < bucketCount)
+            g_vdp1TextureBatches.resize(bucketCount);
+        for (unsigned int t = 0; t < bucketCount; ++t) {
             g_vdp1TextureBatches[t].firstIndex = totalVisibleIndices;
             g_vdp1TextureBatches[t].indexCount = batchCounts[t];
             batchWrite[t] = totalVisibleIndices;
@@ -5008,9 +4980,9 @@ bool submit_vdp1_model(
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             if (!visibleQuads[p])
                 continue;
-            const std::uint16_t textureIndex =
-                model.polygonTextureIndices[p];
-            unsigned int& write = batchWrite[textureIndex];
+            const unsigned int bucket =
+                subdividedTexturedLit ? model.polygonTextureIndices[p] : 0u;
+            unsigned int& write = batchWrite[bucket];
             const unsigned int baseVertex = p * 24u;
             for (unsigned k = 0; k < 24u; ++k)
                 g_vdp1SubdivIndices[write++] =
@@ -5021,12 +4993,14 @@ bool submit_vdp1_model(
 
         const std::uint64_t tDraw = sceKernelGetProcessTimeWide();
         unsigned int submittedBatches = 0u;
-        for (unsigned int t = 0; t < textureBucketCount; ++t) {
+        for (unsigned int t = 0; t < bucketCount; ++t) {
             const TextureBatch& batch = g_vdp1TextureBatches[t];
             if (!batch.indexCount)
                 continue;
-            sceGxmSetFragmentTexture(
-                g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
+            if (subdividedTexturedLit) {
+                sceGxmSetFragmentTexture(
+                    g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
+            }
             sceGxmDraw(
                 g_probeContext,
                 SCE_GXM_PRIMITIVE_TRIANGLES,
