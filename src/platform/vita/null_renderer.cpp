@@ -169,6 +169,10 @@ static azel::BasicWingDebugMesh g_edgeIdleCpuMesh{};
 static bool g_edgeIdleCpuReady = false;
 static azel::BasicWingDebugMesh g_liveTownCpuMesh{};
 static std::uint64_t g_liveTownSignature = 0;
+static std::uint64_t g_liveTownStaticSignature = 0;
+static std::size_t g_liveTownStaticVertexCount = 0;
+static std::size_t g_liveTownStaticPolygonCount = 0;
+static bool g_liveTownStaticRebuilt = true;
 static bool g_liveTownPrepared = false;
 static std::size_t g_edgeFirstVertex = 0;
 static std::size_t g_edgeFirstPolygon = 0;
@@ -2037,25 +2041,48 @@ static void appendLiveTownEdge()
 
 static bool buildLiveTownFrame()
 {
-    g_liveTownCpuMesh.vertices.clear();
-    g_liveTownCpuMesh.lightingVertices.clear();
-    g_liveTownCpuMesh.polygonRecords.clear();
-    g_liveTownCpuMesh.gouraud555.clear();
-    g_liveTownCpuMesh.polygonTextureIndices.clear();
-    std::uint64_t signature = 1469598103934665603ull;
+    std::uint64_t staticSignature = 1469598103934665603ull;
+    bool hasBillboards = false;
     for (const auto& submission : azel_bridge::submissions()) {
         if (submission.adaptedModelIndex < 0)
             continue;
         const auto* model = azel_bridge::adapted_model(
             static_cast<std::uint32_t>(submission.adaptedModelIndex));
         if (!model) continue;
-        appendLiveTownModel(*model, submission.state);
-        signature ^= submission.modelTableOffset;
-        signature *= 1099511628211ull;
-        signature ^= model->polygons.size();
-        signature *= 1099511628211ull;
+        staticSignature ^= submission.modelTableOffset;
+        staticSignature *= 1099511628211ull;
+        staticSignature ^= model->polygons.size();
+        staticSignature *= 1099511628211ull;
+        hasBillboards = hasBillboards || submission.state.billboard;
+    }
+
+    g_liveTownStaticRebuilt = hasBillboards ||
+        staticSignature != g_liveTownStaticSignature;
+    if (g_liveTownStaticRebuilt) {
+        g_liveTownCpuMesh.vertices.clear();
+        g_liveTownCpuMesh.lightingVertices.clear();
+        g_liveTownCpuMesh.polygonRecords.clear();
+        g_liveTownCpuMesh.gouraud555.clear();
+        g_liveTownCpuMesh.polygonTextureIndices.clear();
+        for (const auto& submission : azel_bridge::submissions()) {
+            if (submission.adaptedModelIndex < 0) continue;
+            const auto* model = azel_bridge::adapted_model(
+                static_cast<std::uint32_t>(submission.adaptedModelIndex));
+            if (model) appendLiveTownModel(*model, submission.state);
+        }
+        g_liveTownStaticSignature = staticSignature;
+        g_liveTownStaticVertexCount = g_liveTownCpuMesh.vertices.size();
+        g_liveTownStaticPolygonCount = g_liveTownCpuMesh.polygonRecords.size();
+    } else {
+        g_liveTownCpuMesh.vertices.resize(g_liveTownStaticVertexCount);
+        g_liveTownCpuMesh.lightingVertices.resize(g_liveTownStaticVertexCount);
+        g_liveTownCpuMesh.polygonRecords.resize(g_liveTownStaticPolygonCount);
+        g_liveTownCpuMesh.gouraud555.resize(g_liveTownStaticPolygonCount);
+        g_liveTownCpuMesh.polygonTextureIndices.resize(
+            g_liveTownStaticPolygonCount);
     }
     appendLiveTownEdge();
+    std::uint64_t signature = staticSignature;
     signature ^= g_liveTownCpuMesh.polygonRecords.size();
     signature *= 1099511628211ull;
     g_liveTownCpuMesh.polygons = static_cast<unsigned int>(
@@ -2077,7 +2104,10 @@ static bool buildLiveTownFrame()
         g_residentVdp1Model = ResidentVdp1Model::LiveTown;
         g_liveTownPrepared = true;
     } else {
-        for (std::size_t i = 0; i < g_liveTownCpuMesh.vertices.size(); ++i) {
+        const std::size_t firstDynamicVertex = g_liveTownStaticRebuilt
+            ? 0u : g_liveTownStaticVertexCount;
+        for (std::size_t i = firstDynamicVertex;
+             i < g_liveTownCpuMesh.vertices.size(); ++i) {
             const auto& v = g_liveTownCpuMesh.vertices[i];
             g_vdp1Vertices[i] = v;
             g_vdp1LightingVertices[i] = v;

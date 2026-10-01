@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <unordered_map>
 
 struct sProcessed3dModel;
 
@@ -32,10 +33,10 @@ namespace lagi::azel_bridge {
 
 static std::uint32_t g_submissionCount = 0;
 static sProcessed3dModel* g_lastModel = nullptr;
-static LiveVdp1Model g_lastAdaptedModel{};
-static bool g_hasAdaptedModel = false;
+static const LiveVdp1Model* g_lastAdaptedModel = nullptr;
 static SubmissionState g_lastState{};
-static std::vector<LiveVdp1Model> g_adaptedModels;
+static std::unordered_map<sProcessed3dModel*, LiveVdp1Model> g_modelCache;
+static std::vector<const LiveVdp1Model*> g_adaptedModels;
 static std::vector<RenderSubmission> g_submissions;
 static RenderSubmission g_pendingTownSubmission{};
 static bool g_hasPendingTownSubmission = false;
@@ -46,8 +47,7 @@ void begin_frame()
 {
     g_submissionCount = 0;
     g_lastModel = nullptr;
-    g_hasAdaptedModel = false;
-    g_lastAdaptedModel = {};
+    g_lastAdaptedModel = nullptr;
     g_lastState = {};
     g_adaptedModels.clear();
     g_submissions.clear();
@@ -67,7 +67,7 @@ sProcessed3dModel* last_model()
 
 const LiveVdp1Model* last_adapted_model()
 {
-    return g_hasAdaptedModel ? &g_lastAdaptedModel : nullptr;
+    return g_lastAdaptedModel;
 }
 
 const SubmissionState& last_submission_state()
@@ -83,7 +83,7 @@ const std::vector<RenderSubmission>& submissions()
 const LiveVdp1Model* adapted_model(std::uint32_t index)
 {
     return index < g_adaptedModels.size()
-        ? &g_adaptedModels[index]
+        ? g_adaptedModels[index]
         : nullptr;
 }
 
@@ -147,14 +147,19 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
         capture_runtime_state(billboard);
     }
 
-    g_lastAdaptedModel = {};
-    g_hasAdaptedModel =
-        adapt_processed_model(model, g_lastAdaptedModel);
-
     std::int32_t adaptedIndex = -1;
-    if (g_hasAdaptedModel) {
+    auto cached = g_modelCache.find(model);
+    if (cached == g_modelCache.end()) {
+        LiveVdp1Model adapted{};
+        if (adapt_processed_model(model, adapted))
+            cached = g_modelCache.emplace(model, std::move(adapted)).first;
+    }
+    if (cached != g_modelCache.end()) {
+        g_lastAdaptedModel = &cached->second;
         g_adaptedModels.push_back(g_lastAdaptedModel);
         adaptedIndex = static_cast<std::int32_t>(g_adaptedModels.size() - 1u);
+    } else {
+        g_lastAdaptedModel = nullptr;
     }
     RenderSubmission submission = g_hasPendingTownSubmission
         ? g_pendingTownSubmission : RenderSubmission{};
@@ -174,7 +179,7 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
         g_reportedFirstSubmission = true;
     }
 
-    if (g_hasAdaptedModel && !g_reportedFirstAdaptedModel) {
+    if (g_lastAdaptedModel && !g_reportedFirstAdaptedModel) {
         lagi::platform::renderer::status(
             "[PASS] AZEL MODEL -> VDP1 SOURCE",
             0xFF70E0A0u);
