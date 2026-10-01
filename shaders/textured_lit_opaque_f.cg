@@ -1,0 +1,157 @@
+// Opaque-material variant of the final Saturn-style Gouraud path.
+// Identical lighting/interpolation/RGB555 math to textured_lit_f.cg, but
+// omits alpha testing for textures proven fully opaque at upload time.
+//
+// The four recovered VDP1 Gouraud corner values are interpolated along the
+// actual projected perimeter edges that cross each fragment scanline, then
+// linearly across the span. Unlike the earlier fixed AD/BC pairing, this is
+// stable for arbitrary animated/projected quads and is shared by all shaded
+// VDP1 model paths.
+
+float ratioFromInverse(float num, float inverseDen)
+{
+    if (inverseDen == 0.0f)
+        return 0.5f;
+    return num * inverseDen;
+}
+
+float safeRatio(float num, float den)
+{
+    if (abs(den) < 0.0001f)
+        return 0.5f;
+    return num / den;
+}
+
+void considerEdge(
+    float y,
+    float2 p0,
+    float2 p1,
+    float3 shade0,
+    float3 shade1,
+    float inverseDy,
+    inout float leftX,
+    inout float3 leftShade,
+    inout float rightX,
+    inout float3 rightShade,
+    inout float hitCount)
+{
+    if (inverseDy == 0.0f)
+        return;
+
+    float minY = min(p0.y, p1.y);
+    float maxY = max(p0.y, p1.y);
+
+    // Half-open edge rule prevents a shared vertex from being counted twice.
+    if (y < minY || y >= maxY)
+        return;
+
+    float t = saturate((y - p0.y) * inverseDy);
+    float x = lerp(p0.x, p1.x, t);
+    float3 shade = lerp(shade0, shade1, t);
+
+    if (x < leftX) {
+        leftX = x;
+        leftShade = shade;
+    }
+    if (x > rightX) {
+        rightX = x;
+        rightShade = shade;
+    }
+
+    hitCount += 1.0f;
+}
+
+float3 scanlineGouraud(
+    float2 frag,
+    float2 a,
+    float2 b,
+    float2 c,
+    float2 d,
+    float3 shadeA,
+    float3 shadeB,
+    float3 shadeC,
+    float3 shadeD,
+    float4 edgeInverseDy)
+{
+    float leftX = 1000000.0f;
+    float rightX = -1000000.0f;
+    float3 leftShade = shadeA;
+    float3 rightShade = shadeB;
+    float hitCount = 0.0f;
+
+    // Test all four perimeter edges. This makes the interpolation independent
+    // of which projected edges happen to be left/right as a quad animates,
+    // rotates, or changes orientation on screen.
+    considerEdge(
+        frag.y, a, b, shadeA, shadeB,
+        edgeInverseDy.x,
+        leftX, leftShade, rightX, rightShade, hitCount);
+    considerEdge(
+        frag.y, b, c, shadeB, shadeC,
+        edgeInverseDy.y,
+        leftX, leftShade, rightX, rightShade, hitCount);
+    considerEdge(
+        frag.y, c, d, shadeC, shadeD,
+        edgeInverseDy.z,
+        leftX, leftShade, rightX, rightShade, hitCount);
+    considerEdge(
+        frag.y, d, a, shadeD, shadeA,
+        edgeInverseDy.w,
+        leftX, leftShade, rightX, rightShade, hitCount);
+
+    // Degenerate projected quads can collapse an edge pair onto one scanline.
+    // Fall back to the original AD/BC pairing rather than introducing a pop.
+    if (hitCount < 2.0f || rightX - leftX < 0.0001f) {
+        float leftT = saturate(
+            ratioFromInverse(frag.y - a.y, -edgeInverseDy.w));
+        float rightT = saturate(
+            ratioFromInverse(frag.y - b.y, edgeInverseDy.y));
+        leftX = lerp(a.x, d.x, leftT);
+        rightX = lerp(b.x, c.x, rightT);
+        leftShade = lerp(shadeA, shadeD, leftT);
+        rightShade = lerp(shadeB, shadeC, rightT);
+    }
+
+    float across =
+        saturate(safeRatio(frag.x - leftX, rightX - leftX));
+    return lerp(leftShade, rightShade, across);
+}
+
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    float4 inverse0 : TEXCOORD1,
+    float4 inverse1 : TEXCOORD2,
+    float4 edgeInverseDy : TEXCOORD3,
+    float4 gouraudR : TEXCOORD4,
+    float4 gouraudG : TEXCOORD5,
+    float4 gouraudB : TEXCOORD6,
+    float4 fragCoord : WPOS,
+    uniform sampler2D tex)
+{
+    float4 color = tex2D(tex, vTexcoord);
+
+    // Existing payload stores:
+    // a, e=(b-a), f=(d-a), g=(a-b+c-d).
+    float2 a = inverse0.xy;
+    float2 b = a + inverse0.zw;
+    float2 d = a + inverse1.xy;
+    float2 c = a + inverse0.zw + inverse1.xy + inverse1.zw;
+
+    float3 shadeA = float3(gouraudR.x, gouraudG.x, gouraudB.x);
+    float3 shadeB = float3(gouraudR.y, gouraudG.y, gouraudB.y);
+    float3 shadeC = float3(gouraudR.z, gouraudG.z, gouraudB.z);
+    float3 shadeD = float3(gouraudR.w, gouraudG.w, gouraudB.w);
+
+    float3 shade = scanlineGouraud(
+        fragCoord.xy,
+        a, b, c, d,
+        shadeA, shadeB, shadeC, shadeD,
+        edgeInverseDy);
+
+    float3 shade5 = shade * 31.0f;
+    float3 base5 = floor(color.rgb * 31.0f + 0.5f);
+    float3 result5 = clamp(base5 + shade5, 0.0f, 31.0f);
+    result5 = floor(result5 + 0.5f);
+
+    return float4(result5 / 31.0f, color.a);
+}

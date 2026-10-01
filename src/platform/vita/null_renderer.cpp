@@ -29,6 +29,7 @@ extern const unsigned char _binary_lagi_texture_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_debug_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_lit_f_gxp_start[];
+extern const unsigned char _binary_lagi_textured_lit_opaque_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_lit_newton_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_payload_probe_f_gxp_start[];
 extern const unsigned char _binary_lagi_textured_gouraud_noinverse_f_gxp_start[];
@@ -127,6 +128,9 @@ static SceGxmFragmentProgram* g_gouraudDebugFragmentProgram = nullptr;
 static SceGxmShaderPatcherId g_texturedLitFragmentProgramId{};
 static bool g_texturedLitFragmentRegistered = false;
 static SceGxmFragmentProgram* g_texturedLitFragmentProgram = nullptr;
+static SceGxmShaderPatcherId g_texturedLitOpaqueFragmentProgramId{};
+static bool g_texturedLitOpaqueFragmentRegistered = false;
+static SceGxmFragmentProgram* g_texturedLitOpaqueFragmentProgram = nullptr;
 
 static SceGxmShaderPatcherId g_texturedLitNewtonFragmentProgramId{};
 static bool g_texturedLitNewtonFragmentRegistered = false;
@@ -260,6 +264,7 @@ struct GpuMode1Texture {
     SceGxmTexture texture{};
     unsigned int width = 0;
     unsigned int height = 0;
+    bool opaque = false;
 };
 
 static std::vector<TextureBatch> g_vdp1TextureBatches;
@@ -813,6 +818,11 @@ void shutdown()
                 g_probeShaderPatcher, g_texturedLitNewtonFragmentProgram);
             g_texturedLitNewtonFragmentProgram = nullptr;
         }
+        if (g_texturedLitOpaqueFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_texturedLitOpaqueFragmentProgram);
+            g_texturedLitOpaqueFragmentProgram = nullptr;
+        }
         if (g_texturedLitFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_texturedLitFragmentProgram);
@@ -877,6 +887,11 @@ void shutdown()
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_texturedLitNewtonFragmentProgramId);
             g_texturedLitNewtonFragmentRegistered = false;
+        }
+        if (g_texturedLitOpaqueFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_texturedLitOpaqueFragmentProgramId);
+            g_texturedLitOpaqueFragmentRegistered = false;
         }
         if (g_texturedLitFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -1237,6 +1252,11 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model)
 
         gpu.width = source.width;
         gpu.height = source.height;
+        gpu.opaque = std::all_of(
+            source.rgba.begin(), source.rgba.end(),
+            [](std::uint32_t pixel) {
+                return (pixel >> 24) >= 0x80u;
+            });
         std::memset(gpu.data, 0, bytes);
 
         auto* dst = static_cast<std::uint32_t*>(gpu.data);
@@ -3587,6 +3607,9 @@ void toggle_debug_console()
     const SceGxmProgram* texturedLitFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_textured_lit_f_gxp_start);
+    const SceGxmProgram* texturedLitOpaqueFragmentGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_textured_lit_opaque_f_gxp_start);
     const SceGxmProgram* texturedLitNewtonFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_textured_lit_newton_f_gxp_start);
@@ -3615,6 +3638,7 @@ void toggle_debug_console()
     if (sceGxmProgramCheck(gouraudPayloadVertexGxp) < 0 ||
         sceGxmProgramCheck(gouraudDebugFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedLitFragmentGxp) < 0 ||
+        sceGxmProgramCheck(texturedLitOpaqueFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedLitNewtonFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedPayloadProbeFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedGouraudNoInverseFragmentGxp) < 0 ||
@@ -3653,6 +3677,15 @@ void toggle_debug_console()
         return;
     }
     g_texturedLitFragmentRegistered = true;
+
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_probeShaderPatcher,
+            texturedLitOpaqueFragmentGxp,
+            &g_texturedLitOpaqueFragmentProgramId) < 0) {
+        failure("[FAIL] OPAQUE TEXTURED LIT PROGRAM REG");
+        return;
+    }
+    g_texturedLitOpaqueFragmentRegistered = true;
 
     if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
@@ -3833,6 +3866,18 @@ void toggle_debug_console()
 
     if (sceGxmShaderPatcherCreateFragmentProgram(
             g_probeShaderPatcher,
+            g_texturedLitOpaqueFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            gouraudPayloadVertexGxp,
+            &g_texturedLitOpaqueFragmentProgram) < 0) {
+        failure("[FAIL] CREATE OPAQUE TEXTURED LIT FP");
+        return;
+    }
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
             g_texturedLitNewtonFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
             SCE_GXM_MULTISAMPLE_NONE,
@@ -3929,6 +3974,7 @@ void toggle_debug_console()
 
     status("[PASS] GXM GOURAUD VERTEX PAYLOAD", 0xFF80E0FFu);
     status("[PASS] GXM TEXTURED LIGHTING PIPELINE", 0xFF80E0FFu);
+    status("[PASS] GXM OPAQUE LIGHTING PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM NEWTON LIGHTING PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM PAYLOAD PROBE PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM NO-INVERSE GOURAUD PIPELINE", 0xFF80E0FFu);
@@ -4708,6 +4754,11 @@ bool submit_vdp1_model(
                 continue;
 
             if (texturedLit) {
+                sceGxmSetFragmentProgram(
+                    g_probeContext,
+                    g_vdp1GpuTextures[t].opaque
+                        ? g_texturedLitOpaqueFragmentProgram
+                        : g_texturedLitFragmentProgram);
                 sceGxmSetFragmentTexture(
                     g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
             }

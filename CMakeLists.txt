@@ -68,6 +68,8 @@ set(LAGI_GOURAUD_DEBUG_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_gouraud_debug_f_g
 
 set(LAGI_TEXTURED_LIT_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_f.gxp")
 set(LAGI_TEXTURED_LIT_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_f_gxp.o")
+set(LAGI_TEXTURED_LIT_OPAQUE_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_opaque_f.gxp")
+set(LAGI_TEXTURED_LIT_OPAQUE_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_opaque_f_gxp.o")
 set(LAGI_TEXTURED_LIT_NEWTON_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_newton_f.gxp")
 set(LAGI_TEXTURED_LIT_NEWTON_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_lit_newton_f_gxp.o")
 set(LAGI_TEXTURED_PAYLOAD_PROBE_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_textured_payload_probe_f.gxp")
@@ -217,6 +219,29 @@ add_custom_command(
  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
  DEPENDS "${LAGI_TEXTURED_LIT_F_GXP}"
  COMMENT "Embedding Lagi textured lighting fragment GXP"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURED_LIT_OPAQUE_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/textured_lit_opaque_f.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_TEXTURED_LIT_OPAQUE_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/textured_lit_opaque_f.cg"
+ COMMENT "Compiling Lagi opaque textured lighting fragment shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_TEXTURED_LIT_OPAQUE_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_textured_lit_opaque_f.gxp" "${LAGI_TEXTURED_LIT_OPAQUE_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_TEXTURED_LIT_OPAQUE_F_GXP}"
+ COMMENT "Embedding Lagi opaque textured lighting fragment GXP"
  VERBATIM
 )
 
@@ -442,6 +467,7 @@ set_source_files_properties(
  "${LAGI_COLOR_V_OBJ}" "${LAGI_COLOR_F_OBJ}"
  "${LAGI_GOURAUD_DEBUG_F_OBJ}"
  "${LAGI_TEXTURED_LIT_F_OBJ}"
+ "${LAGI_TEXTURED_LIT_OPAQUE_F_OBJ}"
  "${LAGI_TEXTURED_LIT_NEWTON_F_OBJ}"
  "${LAGI_TEXTURED_PAYLOAD_PROBE_F_OBJ}"
  "${LAGI_TEXTURED_GOURAUD_NOINVERSE_F_OBJ}"
@@ -467,6 +493,7 @@ add_executable(lagi
  ${LAGI_COLOR_F_OBJ}
  ${LAGI_GOURAUD_DEBUG_F_OBJ}
  ${LAGI_TEXTURED_LIT_F_OBJ}
+ ${LAGI_TEXTURED_LIT_OPAQUE_F_OBJ}
  ${LAGI_TEXTURED_LIT_NEWTON_F_OBJ}
  ${LAGI_TEXTURED_PAYLOAD_PROBE_F_OBJ}
  ${LAGI_TEXTURED_GOURAUD_NOINVERSE_F_OBJ}
