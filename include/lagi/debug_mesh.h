@@ -64,6 +64,12 @@ struct BasicWingAnimationFrame {
     std::vector<SaturnLightingNormalQuad> lightingNormals;
 };
 
+struct EdgeAnimationClip {
+    std::vector<BasicWingAnimationFrame> frames;
+    std::uint16_t flags = 0;
+    bool valid = false;
+};
+
 struct SaturnPolygonRecord {
     std::uint16_t indices[4]{};
     std::uint16_t lightingControl = 0;
@@ -191,6 +197,11 @@ struct BasicWingDebugMesh {
     std::uint16_t animationFlags = 0;
     std::uint16_t animationFrameCount = 0;
     bool animationValid = false;
+
+    // Native town Edge animation table (idle, walk, run, fall and ambient
+    // idles). Frames retain the original model hierarchy already evaluated
+    // into model-space vertices; playback remains owned by sEdgeTask.
+    std::vector<EdgeAnimationClip> edgeAnimationClips;
 
     unsigned int models = 0;
     unsigned int polygons = 0;

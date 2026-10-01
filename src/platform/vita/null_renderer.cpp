@@ -231,13 +231,18 @@ static float g_townCameraPitch = 0.0f;
 static float g_townCameraDistance = 0.0f;
 static bool g_townPlayerGrounded = false;
 static unsigned int g_townCollisionContacts = 0;
+static unsigned int g_townEdgeAnimation = 0;
+static unsigned int g_townEdgeAnimationFrame = 0;
+static unsigned int g_townEdgePreviousAnimation = 0;
+static unsigned int g_townEdgePreviousFrame = 0;
+static float g_townEdgeTransition = 1.0f;
 
 static bool g_staticRoomAzelCellVisible = true;
 static unsigned int g_staticRoomAzelLod0Objects = 0;
 static unsigned int g_staticRoomAzelNonzeroLodObjects = 0;
 
 static int g_viewMode = 0;
-static bool g_halfResolution = true;
+static constexpr bool g_halfResolution = true;
 static unsigned int g_basicWingAnimationFrame = 0;
 static std::uint64_t g_basicWingAnimationLastUs = 0;
 static std::uint64_t g_basicWingAnimationPhase = 0;
@@ -1757,9 +1762,39 @@ static void transformTownEdgeVertices()
     const float a = g_townPlayerYaw + kPi; // sEdgeTask::Draw adds 180 degrees.
     const float c = std::cos(a);
     const float s = std::sin(a);
+    const azel::BasicWingAnimationFrame* currentFrame = nullptr;
+    const azel::BasicWingAnimationFrame* previousFrame = nullptr;
+
+    if (g_townEdgeAnimation < g_edgeIdleCpuMesh.edgeAnimationClips.size()) {
+        const auto& clip =
+            g_edgeIdleCpuMesh.edgeAnimationClips[g_townEdgeAnimation];
+        if (clip.valid && !clip.frames.empty())
+            currentFrame = &clip.frames[
+                g_townEdgeAnimationFrame % clip.frames.size()];
+    }
+    if (g_townEdgePreviousAnimation <
+        g_edgeIdleCpuMesh.edgeAnimationClips.size()) {
+        const auto& clip = g_edgeIdleCpuMesh.edgeAnimationClips[
+            g_townEdgePreviousAnimation];
+        if (clip.valid && !clip.frames.empty())
+            previousFrame = &clip.frames[
+                g_townEdgePreviousFrame % clip.frames.size()];
+    }
 
     for (std::size_t i = 0; i < g_edgeIdleCpuMesh.vertices.size(); ++i) {
-        const auto& src = g_edgeIdleCpuMesh.vertices[i];
+        const azel::DebugColorVertex* current =
+            &g_edgeIdleCpuMesh.vertices[i];
+        const azel::DebugColorVertex* previous = current;
+        if (currentFrame && i < currentFrame->vertices.size())
+            current = &currentFrame->vertices[i];
+        if (previousFrame && i < previousFrame->vertices.size())
+            previous = &previousFrame->vertices[i];
+        azel::DebugColorVertex blended = *current;
+        const float t = std::clamp(g_townEdgeTransition, 0.0f, 1.0f);
+        blended.x = previous->x + (current->x - previous->x) * t;
+        blended.y = previous->y + (current->y - previous->y) * t;
+        blended.z = previous->z + (current->z - previous->z) * t;
+        const auto& src = blended;
         const float x =
             src.x * c + src.z * s +
             g_townPlayerPosition[0];
@@ -1797,6 +1832,44 @@ static void transformTownEdgeVertices()
                 g_vdp1GouraudVertices[dst].y = y;
                 g_vdp1GouraudVertices[dst].z = z;
             }
+        }
+    }
+
+    const float t = std::clamp(g_townEdgeTransition, 0.0f, 1.0f);
+    for (std::size_t p = 0; p < g_edgeIdleCpuMesh.polygons; ++p) {
+        const auto* current = p < g_edgeIdleCpuMesh.lightingNormals.size()
+            ? &g_edgeIdleCpuMesh.lightingNormals[p] : nullptr;
+        const auto* previous = current;
+        if (currentFrame && p < currentFrame->lightingNormals.size())
+            current = &currentFrame->lightingNormals[p];
+        if (previousFrame && p < previousFrame->lightingNormals.size())
+            previous = &previousFrame->lightingNormals[p];
+        const std::size_t dst = g_edgeFirstPolygon + p;
+        if (!current || !previous ||
+            dst >= g_staticRoomCpuMesh.polygonRecords.size())
+            continue;
+        auto& record = g_staticRoomCpuMesh.polygonRecords[dst];
+        const unsigned mode = (record.lightingControl >> 8) & 3u;
+        const unsigned count = mode == 1u ? 1u : 4u;
+        for (unsigned corner = 0; corner < count; ++corner) {
+            float x = previous->corner[corner][0] +
+                (current->corner[corner][0] - previous->corner[corner][0]) * t;
+            float y = previous->corner[corner][1] +
+                (current->corner[corner][1] - previous->corner[corner][1]) * t;
+            float z = previous->corner[corner][2] +
+                (current->corner[corner][2] - previous->corner[corner][2]) * t;
+            const float length = std::sqrt(x*x + y*y + z*z);
+            if (length > 0.000001f) {
+                x /= length; y /= length; z /= length;
+            }
+            const float worldX = x*c + z*s;
+            const float worldZ = -x*s + z*c;
+            record.lighting[corner].normal[0] =
+                static_cast<std::int16_t>(std::lround(worldX * 4096.0f));
+            record.lighting[corner].normal[1] =
+                static_cast<std::int16_t>(std::lround(y * 4096.0f));
+            record.lighting[corner].normal[2] =
+                static_cast<std::int16_t>(std::lround(worldZ * 4096.0f));
         }
     }
 }
@@ -4142,9 +4215,6 @@ static void renderBasicWingViewer()
         g_viewMode = (g_viewMode + viewerModeCount - 1) % viewerModeCount;
     if (input::next_mode_pressed())
         g_viewMode = (g_viewMode + 1) % viewerModeCount;
-    if (input::resolution_toggle_pressed())
-        g_halfResolution = !g_halfResolution;
-
     const bool roomMode =
         g_staticRoomCpuReady && g_viewMode >= 5;
     const bool previousRoomMode =
@@ -4429,15 +4499,19 @@ void town_camera_update()
     transformTownEdgeVertices();
 }
 
-void town_camera_forward(float& x, float& z)
+unsigned town_edge_animation_frames(unsigned animation)
 {
-    x = g_townCameraTarget[0] - g_townCameraPosition[0];
-    z = g_townCameraTarget[2] - g_townCameraPosition[2];
+    if (animation >= g_edgeIdleCpuMesh.edgeAnimationClips.size()) return 0;
+    const auto& clip = g_edgeIdleCpuMesh.edgeAnimationClips[animation];
+    return clip.valid ? static_cast<unsigned>(clip.frames.size()) : 0;
 }
 
 void town_present_edge(
     float x, float y, float z, float yaw,
-    bool grounded, unsigned contacts)
+    bool grounded, unsigned contacts,
+    unsigned animation, unsigned frame,
+    unsigned previousAnimation, unsigned previousFrame,
+    float transition)
 {
     if (!g_townPlayerReady)
         return;
@@ -4447,6 +4521,11 @@ void town_present_edge(
     g_townPlayerYaw = yaw;
     g_townPlayerGrounded = grounded;
     g_townCollisionContacts = contacts;
+    g_townEdgeAnimation = animation;
+    g_townEdgeAnimationFrame = frame;
+    g_townEdgePreviousAnimation = previousAnimation;
+    g_townEdgePreviousFrame = previousFrame;
+    g_townEdgeTransition = transition;
 }
 
 void town_present_camera(

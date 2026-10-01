@@ -62,6 +62,21 @@ struct EdgeRuntimeState {
     float yaw = 0.0f;
     float startPitch = 0.0f;
     float startYaw = 0.0f;
+    float oldPosition[3]{};
+    float stepTranslation[3]{};
+    float stepRotationYaw = 0.0f;
+    float lookAt[2]{};
+    int inputX = 0;
+    int inputY = 0;
+    unsigned currentAnimation = 0;
+    unsigned animationFrame = 0;
+    unsigned previousAnimation = 0;
+    unsigned previousAnimationFrame = 0;
+    unsigned animationLeftOver = 0;
+    unsigned transitionRemaining = 0;
+    unsigned ambientAnimation = 5;
+    bool autoWalk = false;
+    float autoWalkTarget[3]{};
     TownCollisionBody collision{};
 };
 
@@ -365,11 +380,17 @@ static void updateFollowCamera()
 
 static void presentEdge()
 {
+    const float transition = g_edge.transitionRemaining
+        ? 1.0f - static_cast<float>(g_edge.transitionRemaining) / 5.0f
+        : 1.0f;
     platform::renderer::town_present_edge(
         g_edge.position[0], g_edge.position[1], g_edge.position[2],
         g_edge.yaw,
         (g_edge.collision.contactMask & 0x4u) != 0,
-        g_edge.collision.contactCount);
+        g_edge.collision.contactCount,
+        g_edge.currentAnimation, g_edge.animationFrame,
+        g_edge.previousAnimation, g_edge.previousAnimationFrame,
+        transition);
 }
 
 static void setEdgePositionRaw(s32 x, s32 y, s32 z)
@@ -396,6 +417,221 @@ static void setEdgeOrientationRaw(s32 x, s32 y, s32)
     g_edge.pitch = g_pendingEdgePitch;
     g_edge.yaw = g_pendingEdgeYaw;
     presentEdge();
+}
+
+static void setEdgeAnimation(unsigned animation, unsigned transitionFrames = 5)
+{
+    if (!platform::renderer::town_edge_animation_frames(animation) ||
+        animation == g_edge.currentAnimation)
+        return;
+    g_edge.previousAnimation = g_edge.currentAnimation;
+    g_edge.previousAnimationFrame = g_edge.animationFrame;
+    g_edge.currentAnimation = animation;
+    g_edge.animationFrame = 0;
+    g_edge.transitionRemaining = transitionFrames;
+}
+
+static void setupNpcWalkInZDirection(float zDirection, int distance)
+{
+    if (!g_edge.initialized) return;
+    const float step = -zDirection;
+    const float cp = std::cos(g_edge.pitch);
+    const float forward[3] = {
+        std::sin(g_edge.yaw) * cp,
+        -std::sin(g_edge.pitch),
+        std::cos(g_edge.yaw) * cp};
+    g_edge.stepTranslation[0] = 0.0f;
+    g_edge.stepTranslation[1] = 0.0f;
+    g_edge.stepTranslation[2] = step;
+    for (unsigned i = 0; i < 3; ++i)
+        g_edge.autoWalkTarget[i] =
+            g_edge.position[i] + forward[i] * step * distance;
+    g_edge.autoWalk = true;
+}
+
+static void readEdgeInput()
+{
+    const int digitalX = platform::input::digital_x();
+    const int digitalY = platform::input::digital_y();
+    if (digitalX || digitalY) {
+        g_edge.inputX = digitalX * 0x10000;
+        g_edge.inputY = digitalY * 0x10000;
+    } else {
+        g_edge.inputX = static_cast<int>(std::lround(
+            platform::input::analog_x() * 65536.0f));
+        // Vita LY is negative upward; Azel's town input is positive forward.
+        g_edge.inputY = static_cast<int>(std::lround(
+            -platform::input::analog_y() * 65536.0f));
+    }
+}
+
+static void updateEdgeAnimation(float movedDistance)
+{
+    const bool grounded = (g_edge.collision.contactMask & 0x4u) != 0;
+    const unsigned movementRate = static_cast<unsigned>(std::lround(
+        movedDistance * 65536.0f * static_cast<float>(0x1E1)));
+    unsigned animationSteps = 0;
+    if (movementRate) {
+        const unsigned counter = g_edge.animationLeftOver + movementRate;
+        g_edge.animationLeftOver = counter & 0xFFFFu;
+        animationSteps = counter >> 16;
+    }
+
+    if (!grounded &&
+        (g_edge.stepTranslation[1] < -static_cast<float>(0x199) / 65536.0f ||
+         g_edge.stepTranslation[1] > 0.0f)) {
+        setEdgeAnimation(4);
+        animationSteps = std::max(animationSteps, 1u);
+    } else if (movementRate > 0x666u) {
+        unsigned desired = 1u;
+        if (g_edge.currentAnimation == 2u)
+            desired = movementRate < 0x28000u ? 1u : 2u;
+        else if (movementRate > 0x30000u)
+            desired = 2u;
+        setEdgeAnimation(desired);
+    } else {
+        if (g_edge.currentAnimation < 5u || g_edge.currentAnimation > 8u) {
+            g_edge.ambientAnimation = 5u;
+            setEdgeAnimation(g_edge.ambientAnimation);
+        }
+        animationSteps = std::max(animationSteps, 1u);
+    }
+
+    const unsigned frames = platform::renderer::town_edge_animation_frames(
+        g_edge.currentAnimation);
+    if (frames && animationSteps) {
+        g_edge.animationFrame =
+            (g_edge.animationFrame + animationSteps) % frames;
+        if (movementRate <= 0x666u && g_edge.animationFrame == 0u) {
+            const unsigned next = 5u + ((g_edge.ambientAnimation - 4u) & 3u);
+            g_edge.ambientAnimation = next;
+            setEdgeAnimation(next, 5u);
+        }
+    }
+    if (g_edge.transitionRemaining)
+        --g_edge.transitionRemaining;
+}
+
+static void updateEdgeLookAt()
+{
+    constexpr float kTau = 6.28318530717958647692f;
+    const float limit = static_cast<float>(0x1C71C71) /
+        static_cast<float>(0x10000000) * kTau;
+    const float turn = std::clamp(g_edge.stepRotationYaw, -limit, limit);
+    const float yawRate = turn != 0.0f
+        ? static_cast<float>(0xB333) / 65536.0f
+        : 0.5f;
+    g_edge.lookAt[1] += (turn - g_edge.lookAt[1]) * yawRate;
+    g_edge.lookAt[0] *= static_cast<float>(0xB333) / 65536.0f;
+}
+
+static void updateEdgePositionNative()
+{
+    std::copy(std::begin(g_edge.position), std::end(g_edge.position),
+              std::begin(g_edge.oldPosition));
+
+    const auto& solve = g_edge.collision.collisionSolveTranslation;
+    g_edge.position[0] += solve.x;
+    g_edge.position[1] += solve.y;
+    g_edge.position[2] += solve.z;
+
+    const bool grounded = (g_edge.collision.contactMask & 0x4u) != 0;
+    if (grounded && g_edge.collision.floorNormal.y >=
+            static_cast<float>(0xB504) / 65536.0f &&
+        g_edge.stepTranslation[1] < 0.0f)
+        g_edge.stepTranslation[1] = 0.0f;
+
+    if (g_edge.autoWalk) {
+        const float dx = g_edge.autoWalkTarget[0] - g_edge.position[0];
+        const float dy = g_edge.autoWalkTarget[1] - g_edge.position[1];
+        const float dz = g_edge.autoWalkTarget[2] - g_edge.position[2];
+        const float remaining = std::sqrt(dx*dx + dy*dy + dz*dz);
+        const float step = std::fabs(g_edge.stepTranslation[2]);
+        if (remaining <= step) {
+            std::copy(std::begin(g_edge.autoWalkTarget),
+                      std::end(g_edge.autoWalkTarget),
+                      std::begin(g_edge.position));
+            g_edge.autoWalk = false;
+            g_edge.stepTranslation[2] = 0.0f;
+        } else {
+            constexpr float kTau = 6.28318530717958647692f;
+            const float targetYaw = std::atan2(
+                g_edge.position[0] - g_edge.autoWalkTarget[0],
+                g_edge.position[2] - g_edge.autoWalkTarget[2]);
+            const float maxTurn =
+                static_cast<float>(0x2D82D8) /
+                static_cast<float>(0x10000000) * kTau;
+            g_edge.stepRotationYaw = std::clamp(
+                wrapAngle(targetYaw - g_edge.yaw), -maxTurn, maxTurn);
+            g_edge.yaw = wrapAngle(g_edge.yaw + g_edge.stepRotationYaw);
+        }
+    } else {
+        readEdgeInput();
+        const float inputX = static_cast<float>(g_edge.inputX) / 65536.0f;
+        const float inputY = static_cast<float>(g_edge.inputY) / 65536.0f;
+        const float inputMagnitude = std::min(
+            1.0f, std::sqrt(inputX*inputX + inputY*inputY));
+        float rotationStep = 0.0f;
+        if (inputMagnitude > 0.0f) {
+            const float desired = std::atan2(inputX, inputY) + g_mainLogic.yaw;
+            rotationStep = wrapAngle(desired - g_edge.yaw);
+            constexpr float kTau = 6.28318530717958647692f;
+            const float baseTurn =
+                static_cast<float>(0x4FA4FA) /
+                static_cast<float>(0x10000000) * kTau;
+            const float distanceFactor = std::max(
+                0.0f,
+                (g_mainLogic.distance -
+                 static_cast<float>(0xA8F) / 65536.0f) /
+                (static_cast<float>(0x1000) / 65536.0f));
+            const float minimumTurn =
+                static_cast<float>(0xE38E3) /
+                static_cast<float>(0x10000000) * kTau;
+            const float maxTurn = std::max(minimumTurn, baseTurn * distanceFactor);
+            rotationStep = std::clamp(rotationStep, -maxTurn, maxTurn);
+        }
+        g_edge.stepRotationYaw = rotationStep;
+        g_edge.yaw = wrapAngle(g_edge.yaw + rotationStep);
+
+        const float speed = static_cast<float>(
+            platform::input::run_held() ? -0x212 : -0x109) / 65536.0f;
+        const float desiredStep = inputMagnitude * speed;
+        const float damped =
+            (g_edge.stepTranslation[2] * std::cos(rotationStep) - desiredStep) *
+            (static_cast<float>(0xE666) / 65536.0f);
+        g_edge.stepTranslation[0] = 0.0f;
+        g_edge.stepTranslation[2] = desiredStep + damped;
+    }
+
+    g_edge.stepTranslation[1] -= static_cast<float>(0x56) / 65536.0f;
+    g_edge.stepTranslation[1] = std::max(
+        g_edge.stepTranslation[1], -static_cast<float>(0x800) / 65536.0f);
+
+    float forward[3] = {
+        -std::sin(g_edge.yaw), 0.0f, -std::cos(g_edge.yaw)};
+    if (grounded) {
+        const auto& n = g_edge.collision.floorNormal;
+        const float projection = forward[0]*n.x + forward[2]*n.z;
+        forward[0] -= n.x * projection;
+        forward[1] -= n.y * projection;
+        forward[2] -= n.z * projection;
+        const float length = std::sqrt(
+            forward[0]*forward[0] + forward[1]*forward[1] +
+            forward[2]*forward[2]);
+        if (length > 0.000001f)
+            for (float& component : forward) component /= length;
+    }
+    g_edge.position[0] += forward[0] * -g_edge.stepTranslation[2];
+    g_edge.position[1] +=
+        forward[1] * -g_edge.stepTranslation[2] + g_edge.stepTranslation[1];
+    g_edge.position[2] += forward[2] * -g_edge.stepTranslation[2];
+
+    updateEdgeLookAt();
+
+    const float dx = g_edge.position[0] - g_edge.oldPosition[0];
+    const float dy = g_edge.position[1] - g_edge.oldPosition[1];
+    const float dz = g_edge.position[2] - g_edge.oldPosition[2];
+    updateEdgeAnimation(std::sqrt(dx*dx + dy*dy + dz*dz));
 }
 
 static sSaturnPtr align2(sSaturnPtr ptr)
@@ -484,8 +720,12 @@ static s32 dispatchNative(u32 functionEA, unsigned argc, const s32* args)
         return 0;
     case 0x060144C0u:
         return argc == 2 ? updateWorldGridRaw(args[0], args[1]) : 0;
-    case 0x06057058u:
-        return setupCameraFollowMode();
+    case 0x06057058u: {
+        const s32 result = setupCameraFollowMode();
+        setupNpcWalkInZDirection(
+            static_cast<float>(227) / 65536.0f, 36);
+        return result;
+    }
     case 0x0600CC78u: // setSomethingInNpc0
     case 0x06057570u: // hasLoadingCompleted
     case 0x0605762Au: // setupAutoWalk
@@ -794,8 +1034,13 @@ static s32 initNpcWorld(s32 setupIndex)
         std::copy(std::begin(g_edge.position),
                   std::end(g_edge.position),
                   std::begin(g_edge.startPosition));
+        std::copy(std::begin(g_edge.position),
+                  std::end(g_edge.position),
+                  std::begin(g_edge.oldPosition));
         g_edge.startPitch = g_edge.pitch;
         g_edge.startYaw = g_edge.yaw;
+        g_edge.currentAnimation = 0;
+        g_edge.previousAnimation = 0;
         if (g_worldScene.edgeCollisionValid) {
             setCollisionSetup(g_edge.collision, 0);
             setCollisionBounds(
@@ -909,59 +1154,27 @@ struct TownEdgeTask final : s_workAreaTemplate<TownEdgeTask> {
                       std::begin(g_edge.position));
             g_edge.pitch = g_edge.startPitch;
             g_edge.yaw = g_edge.startYaw;
+            std::fill(std::begin(g_edge.stepTranslation),
+                      std::end(g_edge.stepTranslation), 0.0f);
+            g_edge.stepRotationYaw = 0.0f;
+            g_edge.lookAt[0] = 0.0f;
+            g_edge.lookAt[1] = 0.0f;
+            g_edge.inputX = 0;
+            g_edge.inputY = 0;
+            g_edge.currentAnimation = 0;
+            g_edge.previousAnimation = 0;
+            g_edge.animationFrame = 0;
+            g_edge.previousAnimationFrame = 0;
+            g_edge.animationLeftOver = 0;
+            g_edge.transitionRemaining = 0;
+            g_edge.ambientAnimation = 5;
+            g_edge.autoWalk = false;
         }
 
-        float forwardX = 0.0f, forwardZ = 1.0f;
-        platform::renderer::town_camera_forward(forwardX, forwardZ);
-        float forwardLength = std::sqrt(
-            forwardX * forwardX + forwardZ * forwardZ);
-        if (forwardLength <= 0.0001f) {
-            forwardX = std::sin(g_edge.yaw);
-            forwardZ = std::cos(g_edge.yaw);
-            forwardLength = 1.0f;
-        }
-        forwardX /= forwardLength;
-        forwardZ /= forwardLength;
-
-        const float inputX = platform::input::analog_x();
-        const float inputForward = -platform::input::analog_y();
-        const float magnitude = std::min(
-            1.0f, std::sqrt(inputX * inputX + inputForward * inputForward));
-        if (magnitude > 0.0001f) {
-            const float rightX = forwardZ;
-            const float rightZ = -forwardX;
-            float desiredX = rightX * -inputX + forwardX * inputForward;
-            float desiredZ = rightZ * inputX + forwardZ * inputForward;
-            const float desiredLength = std::sqrt(
-                desiredX * desiredX + desiredZ * desiredZ);
-            if (desiredLength > 0.0001f) {
-                desiredX /= desiredLength;
-                desiredZ /= desiredLength;
-                const float desiredYaw = std::atan2(-desiredX, -desiredZ);
-                constexpr float kTau = 6.28318530717958647692f;
-                constexpr float kMaxTurn =
-                    static_cast<float>(0x0E38E3) /
-                    static_cast<float>(0x10000000) * kTau;
-                const float delta = std::clamp(
-                    wrapAngle(desiredYaw - g_edge.yaw),
-                    -kMaxTurn, kMaxTurn);
-                g_edge.yaw = wrapAngle(g_edge.yaw + delta);
-
-                constexpr float kWalkStep =
-                    static_cast<float>(0x109) / 65536.0f;
-                const float step = kWalkStep * magnitude;
-                g_edge.position[0] -= std::sin(g_edge.yaw) * step;
-                g_edge.position[2] -= std::cos(g_edge.yaw) * step;
-            }
-        }
-
-        const auto& solve = g_edge.collision.collisionSolveTranslation;
-        g_edge.position[0] += solve.x;
-        g_edge.position[1] += solve.y;
-        g_edge.position[2] += solve.z;
+        updateEdgePositionNative();
         g_edge.collision.ownerPosition = {
             g_edge.position[0], g_edge.position[1], g_edge.position[2]};
-        g_edge.collision.ownerRotation = {0.0f, g_edge.yaw, 0.0f};
+        g_edge.collision.ownerRotation = {g_edge.pitch, g_edge.yaw, 0.0f};
         registerCollisionBody(g_edge.collision);
         presentEdge();
     }
