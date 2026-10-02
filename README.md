@@ -1,20 +1,34 @@
 # Lagi
 
-**Lagi** is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. It executes reconstructed game logic directly on the Vita's ARM CPU and translates the original Saturn rendering and platform behavior to VitaSDK and native SceGxm.
+**Lagi** is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed game logic runs directly on the Vita's ARM CPU, while Saturn-era rendering and platform behavior are translated to VitaSDK and native SceGxm.
 
-Lagi is **not a Sega Saturn emulator** and does **not use VitaGL**.
+Lagi is not a Sega Saturn emulator and does not use VitaGL.
 
-> **Current status (2026-10-01):** the first Ruins town is running on real Vita hardware through the native town task/script pipeline. Edge movement and animation, the follow camera, town visibility, collision, dynamic lock/switch objects, textured RGB555-style Gouraud rendering, and Edge's original VDP1 mesh shadow are working. The current priority is to keep bringing the complete Ruins scene online through Azel's original systems rather than replacing them with room-specific logic.
+## Current status
 
-## Project goals
+Development is currently focused on the first Ruins town. The scene now runs on real Vita hardware through the native town task/script pipeline rather than as a standalone geometry demo.
 
-The guiding rule is simple:
+Working systems include:
 
-> Port the original Azel/PDS pipeline where practical; translate only at the hardware boundary.
+- Disc 1 CUE/BIN and ISO9660 access
+- `COMMON.DAT` and town resource loading
+- direct development boot into `TWN_RUIN`
+- Azel task scheduling and town task/script flow
+- world-grid and cell ownership
+- static and task-owned dynamic object submission
+- native town collision
+- Edge movement and animation
+- Azel-style follow camera
+- town visibility and LOD selection
+- textured SceGxm rendering
+- RGB555-style Gouraud lighting
+- Ruins lock/switch objects
+- Edge's original VDP1 mesh shadow
+- stable 30 Hz presentation
 
-That means gameplay ownership remains with reconstructed Azel systems — tasks, scripts, town grids, model selection, collision, camera state, animation, and object lifetimes — while Lagi adapts the parts that must differ on Vita, such as SceGxm submission, input, storage, timing, and audio.
+The current milestone is to continue bringing up the complete Ruins scene using the same systems and ownership boundaries as the original game.
 
-The intended execution path is:
+## Architecture
 
 ```text
 PDS disc data
@@ -23,138 +37,99 @@ Azel / ATOLM reconstructed logic
     |
 Lagi native runtime (ARMv7)
     |
-VDP1/VDP2 translation + Vita platform layer
+VDP1 / VDP2 translation + Vita platform layer
     |
 SceGxm / SceCtrl / SceAudioOut
     |
 PlayStation Vita
 ```
 
-## Current first-Ruins pipeline
+The game-side runtime owns tasks, scripts, town grids, collision, camera state, animation, visibility, and object lifetimes. Vita-specific code is concentrated in the platform and rendering translation layers.
 
-The current hardware-tested path is:
+The current first-Ruins path is:
 
 ```text
 Disc 1 BIN/CUE
     |
 COMMON.DAT + TWN_RUIN resources
     |
-native town bootstrap
+town bootstrap
     |
-Azel-style town tasks / scripts
+town tasks / scripts
     |
 world grid / cells / task-owned objects
     |
-native town collision
-    |
-Edge movement + animation
-    |
-Azel follow camera + town visibility
+collision / Edge / camera / visibility
     |
 sProcessed3dModel submissions
     |
-Lagi VDP1 translation layer
+Lagi VDP1 translation
     |
 SceGxm
 ```
 
-Current working pieces include:
+## Rendering
 
-- Direct development boot into the first Ruins town.
-- Disc 1 CUE/BIN + ISO9660 access.
-- `COMMON.DAT`, `TWN_RUIN.PRG`, `COMMON3`, `RUINMP`, and related first-scene resources.
-- Azel task scheduler and town task/script spine.
-- Town world-grid/cell ownership and static-object submission.
-- Task-owned dynamic Ruins lock/switch objects.
-- Native `processTownMeshCollision()`-based town collision parsing/registration.
-- Edge movement, animation, interpolation, and collision body registration.
-- Azel-style follow camera.
-- Azel town visibility/LOD selection before the Vita render bridge.
-- Native SceGxm textured VDP1-style rendering.
-- Saturn RGB555 color behavior and Gouraud lighting approximation.
-- Original VDP1 mesh-mode Edge shadow using the real `COMMON3.CGB` texture mask.
-- 30 Hz presentation on real hardware.
-
-## Rendering strategy
-
-Lagi preserves original Saturn render intent without emulating the VDP1 rasterizer cycle-by-cycle.
-
-The current Ruins renderer uses a **480x272 internal GXM render target** and presents to the Vita's **960x544 display**. This leaves enough GPU/CPU headroom for the game systems while retaining a clean 2x presentation.
+The current Ruins renderer uses a 480x272 internal GXM render target and presents to the Vita's 960x544 display.
 
 ### Gouraud lighting
 
-The exact four-edge Saturn-style fragment reconstruction remains useful as a visual/reference implementation, but it was too expensive for the Vita SGX543 in close views.
+The exact four-edge Saturn-style fragment reconstruction remains in the project as a reference path. On Vita hardware it was too expensive in close views, so the active `Full` mode uses a cached 3x3 subdivision of each Saturn quad.
 
-The active `Full` path therefore uses a cached 3x3 subdivision per original Saturn quad:
+Each source quad is represented by:
 
-- 9 unique generated vertices per source quad.
-- 8 GXM triangles per source quad.
-- original four-corner Gouraud values are approximated across the subdivision.
-- RGB555 add/clamp/quantization is retained.
-- static topology, UVs, and positions are cached where possible.
-- dynamic polygons update only the data that changes.
+- 9 unique subdivision vertices
+- 8 GXM triangles
+- four-corner Gouraud values interpolated across the subdivision
+- RGB555-style add, clamp, and quantization
 
-This keeps the approximation inside the **Vita backend**; Azel still owns the model, material, lighting inputs, visibility, animation, and scene behavior.
+Static topology, UVs, and positions are cached where possible. Dynamic polygons update only the data that changes.
 
-### VDP1 mesh transparency
+This approximation exists only in the Vita renderer. The Azel-side model and scene structures remain unchanged.
 
-Edge's shadow is now rendered from the original shadow model and its real `COMMON3.CGB` texture mask.
+### VDP1 mesh shadow
 
-The Vita backend reproduces the Saturn behavior as:
+Edge's shadow uses the original shadow model from `COMMON3.MCB` and its real texture mask from `COMMON3.CGB`.
 
-```text
-original shadow texture alpha
-        |
-oval silhouette
-        |
-CMDPMOD mesh mode
-        |
-alternating destination pixels
-        |
-ordered/two-sided GXM draw
-```
+The texture supplies the oval silhouette. VDP1 `CMDPMOD` mesh mode supplies the alternating-pixel stipple. The Vita backend renders that primitive two-sided and with ordered VDP1-style depth behavior so it remains visible over the floor.
 
-The mesh primitive is handled as an ordered VDP1-style draw rather than relying on ordinary GXM depth behavior.
+## Scene views
 
-## User-facing scene views
-
-L/R cycles through five views:
+L/R cycles through:
 
 ```text
 Full -> Texture -> Lighting -> Quads -> Wires
 ```
 
-The on-screen labels are:
+- **Full** — textured scene with the active Gouraud path
+- **Texture** — texture-only reference
+- **Lighting** — lighting-only diagnostic
+- **Quads** — filled polygon diagnostic
+- **Wires** — original Saturn quad perimeter view
 
-- **Full** — textured + current Gouraud path.
-- **Texture** — texture-only reference.
-- **Lighting** — Gouraud/lighting diagnostic.
-- **Quads** — polygon-color diagnostic.
-- **Wires** — two-sided wireframe topology.
+The older dragon/demo views remain in the source tree as regression/reference code but are not part of the normal mode cycle.
 
-The old dragon/demo views remain useful as internal regression code but are no longer part of the user-facing mode cycle.
+Normal startup enters **Full** with the diagnostic console hidden.
 
-Normal startup enters **Full** directly with the diagnostic console hidden.
+## Controls
 
-## Current controls
-
-- **L / R** — previous / next scene view.
-- **Triangle** — Azel follow-camera modifier.
-- **Right stick while holding Triangle** — select the native follow-camera side/rear direction.
-- **START + SELECT** — exit.
-- **SELECT** — diagnostic console toggle when needed during development.
-
-The normal player movement path is owned by the town/Edge runtime rather than the old free-orbit viewer controls.
+- **L / R** — previous / next scene view
+- **Triangle** — Azel follow-camera modifier
+- **Right stick while holding Triangle** — side/rear follow-camera selection
+- **SELECT** — diagnostic console toggle
+- **START + SELECT** — exit
 
 ## Performance
 
-The game remains capped at 30 presented frames per second to match the current simulation/presentation target.
+The game is currently presented at 30 FPS.
 
-Recent first-Ruins hardware captures typically measured about **20-23 ms of render work** before the deliberate 30 Hz presentation wait, corresponding to roughly **44-50 FPS of render throughput if uncapped**. The cap is intentional; simulation timing is not currently being converted to a variable-rate model.
+Recent first-Ruins captures show approximately **20-23 ms** of render work before the deliberate presentation wait, corresponding to about **44-50 FPS** of render throughput if uncapped.
+
+The 30 Hz cap remains in place because the game/simulation timing path has not been converted to a variable-rate model.
 
 ## Game data
 
-**No Panzer Dragoon Saga game data is included in this repository.**
+No Panzer Dragoon Saga game data is included in this repository.
 
 Current development builds use a user-supplied Disc 1 dump:
 
@@ -164,18 +139,18 @@ ux0:data/lagi/Disc 1/
     <disc>.bin
 ```
 
-The runtime parses the CUE, mounts the MODE1 data track, and reads the original game files directly from ISO9660.
+The runtime parses the CUE, mounts the MODE1 data track, and reads the original files directly from ISO9660.
 
 ## Source lineage
 
-Lagi builds on community reverse-engineering work including:
+Lagi builds on several community reverse-engineering projects:
 
-- **Azel** — primary reconstructed PDS runtime/source reference.
-- **ATOLM** — decompilation and accuracy reference.
-- **pds-tools** — asset/format documentation and tooling.
-- **Yabause / Vita Yabause** — Saturn hardware/behavior reference where useful.
+- **Azel** — primary reconstructed PDS runtime and source-level behavior reference
+- **ATOLM** — decompilation and accuracy reference
+- **pds-tools** — asset and format documentation/tooling
+- **Yabause / Vita Yabause** — Saturn hardware and behavior reference
 
-The current Azel reference is pinned under `extern/Azel`; Lagi-owned Vita adaptations live in this repository.
+The current Azel reference is pinned under `extern/Azel`. Vita-specific adaptations live in the Lagi repository.
 
 ## Building
 
@@ -185,14 +160,6 @@ See:
 
 - [docs/BUILDING.md](docs/BUILDING.md)
 - [docs/STATUS.md](docs/STATUS.md)
-
-## Near-term direction
-
-The immediate milestone is **not** "make this one room look complete." It is:
-
-> Load Lagi and bring up the Ruins scene through the same systems the original game expects.
-
-That means continuing to port, in dependency order, the remaining town object types, scripts, LCS/interaction behavior, effects, audio, transitions, UI, and eventually the broader field/battle/VDP2 systems.
 
 ## Legal
 

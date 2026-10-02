@@ -4,20 +4,19 @@ Last updated: 2026-10-01
 
 ## Requirements
 
-The current Vita build requires:
+The current Vita build uses:
 
-- Windows 11 or another VitaSDK-supported host.
-- VitaSDK.
-- CMake.
-- Ninja.
-- C++20-capable VitaSDK GCC/G++.
-- Sony `psp2cgc` for native GXM shader compilation.
+- VitaSDK
+- CMake
+- Ninja
+- a C++20-capable VitaSDK GCC/G++
+- Sony `psp2cgc` for native GXM shader compilation
 
 Lagi uses native SceGxm. VitaGL is not part of the renderer.
 
-## Example environment
+## Example Windows layout
 
-A typical Windows checkout may look like:
+One development setup uses:
 
 ```text
 C:\Dev\Lagi
@@ -25,19 +24,11 @@ C:\Dev\VitaSDK
 C:\Dev\sdk\host_tools\bin\psp2cgc.exe
 ```
 
-Another currently used development machine has the repository/VitaSDK under `E:\dev` and the official shader tools under `E:\PSVITA\sdk`.
+Another uses the repository/VitaSDK under `E:\dev` and the official shader tools under `E:\PSVITA\sdk`.
 
-The build supports locating `psp2cgc` through:
-
-- `PSP2CGC`
-- `SCE_PSP2_SDK_DIR`
-- PATH / known host-tools locations
-
-Set `VITASDK` to the active VitaSDK root.
+The build can locate `psp2cgc` through `PSP2CGC`, `SCE_PSP2_SDK_DIR`, PATH, or known host-tool locations.
 
 ## Initial configure
-
-From the repository root:
 
 ```powershell
 Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
@@ -50,7 +41,7 @@ cmake .. `
   -DCMAKE_BUILD_TYPE=Debug
 ```
 
-## Normal incremental build
+## Incremental build
 
 ```powershell
 git pull
@@ -58,7 +49,7 @@ cd build
 cmake --build . -j 8
 ```
 
-If `CMakeLists.txt`, shader sources, shader embedding rules, or generated build inputs changed:
+When CMake configuration or shader build rules change:
 
 ```powershell
 cd <Lagi checkout>
@@ -70,7 +61,7 @@ cmake --build . -j 8
 
 ## Azel source
 
-Azel is pinned as a submodule under:
+Azel is included as a submodule under:
 
 ```text
 extern/Azel
@@ -82,13 +73,13 @@ Current reference:
 c52329fb257561abff05531a8335e34137d67098
 ```
 
-Lagi-owned Vita adaptation work should normally be made in this repository rather than editing the pinned submodule.
-
-Initialize/update submodules when needed:
+Submodules can be initialized with:
 
 ```powershell
 git submodule update --init --recursive
 ```
+
+Lagi-specific Vita code is kept in the main repository so the pinned Azel tree remains a clean reference.
 
 ## GXM shaders
 
@@ -98,17 +89,18 @@ Readable shader sources live under:
 shaders/
 ```
 
-The current live Ruins path uses several native GXM programs, including:
+The current Ruins path uses, among others:
 
-- `texture_v.cg` / `texture_f.cg`
+- `texture_v.cg`
+- `texture_f.cg`
 - `gouraud_subdiv_v.cg`
 - `textured_gouraud_subdiv_f.cg`
 - `gouraud_subdiv_gray_f.cg`
 - `mesh_f.cg`
 
-Additional exact/reference Gouraud shaders remain in the tree for renderer validation and experiments.
+The older exact/reference Gouraud shaders are still present for comparison and renderer validation.
 
-CMake invokes `psp2cgc`, then embeds the generated GXP binaries with `objcopy`:
+CMake compiles GXP programs with `psp2cgc` and embeds them with `objcopy` using:
 
 ```text
 -I binary -O elf32-littlearm -B arm
@@ -116,9 +108,9 @@ CMake invokes `psp2cgc`, then embeds the generated GXP binaries with `objcopy`:
 
 ## Game data
 
-No PDS data is distributed with Lagi.
+No PDS game data is distributed with Lagi.
 
-For current hardware development, place a user's own Disc 1 CUE/BIN dump under:
+Current development builds read a user-supplied Disc 1 CUE/BIN dump from:
 
 ```text
 ux0:data/lagi/Disc 1/
@@ -132,9 +124,9 @@ ux0:data/lagi/Disc 1/
     Panzer Dragoon Saga Disc 1.bin
 ```
 
-The runtime parses the CUE, finds the MODE1 data track, mounts ISO9660, and loads the first-scene resources directly from the disc image.
+The runtime parses the CUE, locates the MODE1 data track, mounts ISO9660, and loads first-scene resources directly from the disc image.
 
-Current first-Ruins work uses files including:
+Current Ruins work uses files including:
 
 - `COMMON.DAT`
 - `TWN_RUIN.PRG`
@@ -143,7 +135,7 @@ Current first-Ruins work uses files including:
 - `RUINSCR.SCB` / `RUINSCR.PNB`
 - `EVTRUIN.FNT`
 
-## Persistent runtime log
+## Runtime log
 
 Each launch creates/truncates:
 
@@ -151,88 +143,67 @@ Each launch creates/truncates:
 ux0:data/lagi/lagi.log
 ```
 
-The Vita-native logger flushes frequently so useful state often survives abnormal exits.
+Useful sections currently include:
 
-Useful log areas now include:
+- platform startup
+- disc/ISO9660 mounting
+- COMMON/town table parsing
+- direct-boot target resolution
+- town/grid/cell setup
+- task-owned object creation
+- Edge state and animation
+- collision setup
+- material/texture decode
+- GXM initialization and failures
 
-- platform startup.
-- disc/ISO9660 mounting.
-- COMMON/town table parsing.
-- direct-boot target resolution.
-- town/grid/cell setup.
-- task-owned object creation.
-- Edge state and animation.
-- collision setup.
-- material/texture decode.
-- GXM initialization and failures.
+## Current startup behavior
 
-## Current app behavior
+A normal development launch:
 
-Normal startup:
-
-1. initializes the native runtime/GXM path,
+1. initializes the runtime and GXM,
 2. resolves the first Ruins town from Disc 1,
 3. starts the town task/script pipeline,
 4. enters the scene in **Full** view,
-5. keeps the diagnostic console hidden unless explicitly toggled.
+5. leaves the diagnostic console hidden.
 
-Internal render resolution is currently:
+Current rendering configuration:
 
 ```text
-480x272 GXM -> 960x544 Vita display
+480x272 GXM -> 960x544 display
+30 Hz presentation
 ```
 
-Presentation target is 30 Hz.
+## Controls
 
-## Development controls
+- **L / R** — cycle `Full -> Texture -> Lighting -> Quads -> Wires`
+- **Triangle** — Azel follow-camera modifier
+- **Right stick + Triangle** — side/rear follow-camera selection
+- **SELECT** — diagnostic console
+- **START + SELECT** — exit
 
-Current scene controls:
+## Renderer reference behavior
 
-- **L / R** — cycle views:
-  `Full -> Texture -> Lighting -> Quads -> Wires`
-- **Triangle** — hold the Azel follow-camera modifier.
-- **Right stick + Triangle** — choose side/rear follow-camera direction.
-- **SELECT** — toggle the diagnostic console when needed.
-- **START + SELECT** — exit.
+The current live scene is expected to show:
 
-The old Basic Wing free-camera controls are no longer the normal town controls.
+- consistent geometry and materials between Full and Texture
+- the same visibility set across the main scene modes
+- original quad boundaries in Wires
+- stable Edge animation
+- correctly textured dynamic Ruins objects
+- Edge's oval stippled VDP1 mesh shadow
+- stable 30 FPS presentation
 
-## Current renderer validation
-
-When changing the live renderer, verify at minimum:
-
-- **Full** retains correct room/Edge/dynamic-object textures and lighting.
-- **Texture** matches geometry/material placement without Gouraud contribution.
-- **Lighting** shows the expected four-corner lighting field.
-- **Quads** shows the submitted filled polygon topology.
-- **Wires** exposes the same topology two-sided.
-- no giant camera-crossing polygons reappear in Texture.
-- Edge animation speed remains stable.
-- dynamic Ruins locks/switches retain the correct materials.
-- Edge's shadow keeps its oval mask and alternating VDP1 mesh stipple.
-- the shadow remains visible over the floor without depth fighting.
-- normal geometry still uses the intended culling/depth state after mesh draws.
-- scene presentation remains a stable 30 FPS.
+The hidden profiling overlay remains available for performance work.
 
 ## Performance reference
 
-A recent good first-Ruins build typically measured about:
+Recent first-Ruins captures show approximately:
 
 ```text
 20-23 ms render work
 ```
 
 before the deliberate 30 Hz presentation wait.
-
-Use the hidden profiling overlay when investigating regressions; the normal OSD intentionally omits those diagnostics.
-
-## Notes on the Gouraud path
-
-The active Full renderer is **not** the older exact heavy fragment solve.
-
-It uses a cached 3x3 subdivision representation of each original Saturn quad to approximate the four-corner lighting field cheaply enough for Vita hardware while retaining RGB555-style color math.
-
-The exact/reference paths remain in source and should not be removed casually; they are useful as a visual oracle when validating future optimizations.
 
 ## Vita application assets
 
@@ -244,5 +215,3 @@ sce_sys/livearea/contents/bg0.png
 sce_sys/livearea/contents/startup.png
 sce_sys/livearea/contents/template.xml
 ```
-
-If packaging rules or these assets change, rerun CMake configuration before rebuilding.
