@@ -1,24 +1,12 @@
 // Native Lagi textured fragment shader.
 // Nearest filtering is configured in GXM texture state.
-// A 0xC0-alpha 1x1 sentinel is reserved for Saturn VDP1 mesh primitives.
-// Mesh mode writes alternating destination pixels, producing the original
-// checkerboard pseudo-transparency used by Edge's shadow.
+// Transparent Saturn texels are discarded for this first textured milestone.
 float4 main(
     float2 vTexcoord : TEXCOORD0,
-    float4 fragCoord : WPOS,
     uniform sampler2D tex)
 {
     float4 color = tex2D(tex, vTexcoord);
     if (color.a < 0.5f)
         discard;
-
-    if (color.a > 0.70f && color.a < 0.80f) {
-        float parity = frac(
-            (floor(fragCoord.x) + floor(fragCoord.y)) * 0.5f);
-        if (parity >= 0.5f)
-            discard;
-        return float4(0.0f, 0.0f, 0.0f, 1.0f);
-    }
-
     return color;
 }

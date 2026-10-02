@@ -102,6 +102,8 @@ set(LAGI_TEXTURE_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v.gxp")
 set(LAGI_TEXTURE_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f.gxp")
 set(LAGI_TEXTURE_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v_gxp.o")
 set(LAGI_TEXTURE_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f_gxp.o")
+set(LAGI_MESH_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_mesh_f.gxp")
+set(LAGI_MESH_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_mesh_f_gxp.o")
 
 add_custom_command(
  OUTPUT "${LAGI_COLOR_V_GXP}"
@@ -542,6 +544,29 @@ add_custom_command(
 )
 
 add_custom_command(
+ OUTPUT "${LAGI_MESH_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh_f.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_MESH_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh_f.cg"
+ COMMENT "Compiling Lagi VDP1 mesh fragment shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_MESH_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_mesh_f.gxp" "${LAGI_MESH_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_MESH_F_GXP}"
+ COMMENT "Embedding Lagi VDP1 mesh fragment GXP"
+ VERBATIM
+)
+
+add_custom_command(
  OUTPUT "${LAGI_TEXTURE_V_OBJ}"
  COMMAND "${CMAKE_OBJCOPY}"
   -I binary -O elf32-littlearm -B arm
@@ -582,6 +607,7 @@ set_source_files_properties(
  "${LAGI_TEXTURED_GOURAUD_SUBDIV_F_OBJ}"
  "${LAGI_GOURAUD_SUBDIV_GRAY_F_OBJ}"
  "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}"
+ "${LAGI_MESH_F_OBJ}"
  PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
 )
 
@@ -613,6 +639,7 @@ add_executable(lagi
  ${LAGI_GOURAUD_SUBDIV_GRAY_F_OBJ}
  ${LAGI_TEXTURE_V_OBJ}
  ${LAGI_TEXTURE_F_OBJ}
+ ${LAGI_MESH_F_OBJ}
  src/platform/vita/null_audio.cpp
  src/integration/azel_runtime_smoke.cpp
  src/integration/azel_render_bridge.cpp

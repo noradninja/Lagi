@@ -825,8 +825,8 @@ bool build_edge_shadow_debug_mesh(BasicWingDebugMesh& out)
         return false;
 
     // The Saturn shadow is a VDP1 mesh primitive: every other destination
-    // pixel is omitted. Preserve that semantic explicitly and feed a sentinel
-    // 1x1 material to the Vita fragment path; WPOS performs the stipple.
+    // pixel is omitted. Preserve that semantic in CMDPMOD; the Vita backend
+    // dispatches mesh primitives directly from this flag.
     for (auto& record : out.polygonRecords)
         record.cmdPmod |= 0x0100u;
 
@@ -834,9 +834,9 @@ bool build_edge_shadow_debug_mesh(BasicWingDebugMesh& out)
     marker.cmdPmod = 0x0100u;
     marker.width = 1u;
     marker.height = 1u;
-    // Partial alpha is only a sentinel. Normal decoded Saturn texels are
-    // either 0x00 or 0xFF alpha, so this cannot collide with game textures.
-    marker.rgba.assign(1u, 0xC0000000u);
+    // The texture is intentionally boring: mesh semantics come from CMDPMOD,
+    // not from a magic alpha value.
+    marker.rgba.assign(1u, 0xFF000000u);
     out.decodedTextureData.push_back(std::move(marker));
     out.polygonTextureIndices.assign(out.polygons, 0u);
     out.uniqueTextures = 1u;

@@ -1,0 +1,13 @@
+// Saturn VDP1 mesh primitive.
+// Mesh mode draws only alternating destination pixels; color calculation for
+// Edge's shadow is simply black, so no texture sample or Gouraud input is
+// needed. The same GXP is linked against both the texture-only and subdivided
+// vertex programs.
+float4 main(float4 fragCoord : WPOS)
+{
+    float parity = frac(
+        (floor(fragCoord.x) + floor(fragCoord.y)) * 0.5f);
+    if (parity >= 0.5f)
+        discard;
+    return float4(0.0f, 0.0f, 0.0f, 1.0f);
+}

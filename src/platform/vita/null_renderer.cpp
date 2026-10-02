@@ -26,6 +26,7 @@ extern const unsigned char _binary_lagi_color_v_gxp_start[];
 extern const unsigned char _binary_lagi_color_f_gxp_start[];
 extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
+extern const unsigned char _binary_lagi_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_subdiv_v_gxp_start[];
 extern const unsigned char _binary_lagi_textured_gouraud_subdiv_f_gxp_start[];
@@ -120,6 +121,10 @@ static bool g_textureVertexRegistered = false;
 static bool g_textureFragmentRegistered = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
+static SceGxmShaderPatcherId g_meshFragmentProgramId{};
+static bool g_meshFragmentRegistered = false;
+static SceGxmFragmentProgram* g_meshTextureFragmentProgram = nullptr;
+static SceGxmFragmentProgram* g_meshSubdivFragmentProgram = nullptr;
 static SceGxmShaderPatcherId g_gouraudPayloadVertexProgramId{};
 static bool g_gouraudPayloadVertexRegistered = false;
 static SceGxmVertexProgram* g_gouraudPayloadVertexProgram = nullptr;
@@ -299,6 +304,7 @@ struct GpuMode1Texture {
     unsigned int width = 0;
     unsigned int height = 0;
     bool opaque = false;
+    bool mesh = false;
 };
 
 static std::vector<TextureBatch> g_vdp1TextureBatches;
@@ -872,6 +878,16 @@ void shutdown()
                 g_probeShaderPatcher, g_gouraudDebugFragmentProgram);
             g_gouraudDebugFragmentProgram = nullptr;
         }
+        if (g_meshSubdivFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_meshSubdivFragmentProgram);
+            g_meshSubdivFragmentProgram = nullptr;
+        }
+        if (g_meshTextureFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_meshTextureFragmentProgram);
+            g_meshTextureFragmentProgram = nullptr;
+        }
         if (g_textureFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_textureFragmentProgram);
@@ -961,6 +977,11 @@ void shutdown()
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_gouraudDebugFragmentProgramId);
             g_gouraudDebugFragmentRegistered = false;
+        }
+        if (g_meshFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_meshFragmentProgramId);
+            g_meshFragmentRegistered = false;
         }
         if (g_textureFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -1331,6 +1352,7 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model)
             [](std::uint32_t pixel) {
                 return (pixel >> 24) >= 0x80u;
             });
+        gpu.mesh = (source.cmdPmod & 0x0100u) != 0u;
         std::memset(gpu.data, 0, bytes);
 
         auto* dst = static_cast<std::uint32_t*>(gpu.data);
@@ -2427,9 +2449,15 @@ static void appendLiveTownEdge()
         shadow.lightingVertices = g_edgeShadowCpuMesh.lightingVertices;
         shadow.polygons = g_edgeShadowCpuMesh.polygonRecords;
         shadow.gouraud555.resize(shadow.polygons.size());
+        azel_bridge::SubmissionState shadowState = state;
+        // VDP1 has no depth buffer; its mesh shadow is submitted after the
+        // floor and therefore remains visible. GXM's Z buffer would make the
+        // coplanar quad fight/vanish, so lift only this translated primitive
+        // by 2/4096 world units (32 in 16.16) -- visually imperceptible.
+        shadowState.modelMatrix[7] += 32;
         appendLiveTownModel(
             shadow,
-            state,
+            shadowState,
             g_edgeShadowTownTextureIndices.data(),
             g_edgeShadowTownTextureIndices.size());
     }
@@ -3754,9 +3782,13 @@ void toggle_debug_console()
     const SceGxmProgram* textureFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_texture_f_gxp_start);
+    const SceGxmProgram* meshFragmentGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_mesh_f_gxp_start);
 
     if (sceGxmProgramCheck(textureVertexGxp) < 0 ||
-        sceGxmProgramCheck(textureFragmentGxp) < 0) {
+        sceGxmProgramCheck(textureFragmentGxp) < 0 ||
+        sceGxmProgramCheck(meshFragmentGxp) < 0) {
         failure("[FAIL] TEXTURE GXP CHECK");
         return;
     }
@@ -3778,6 +3810,15 @@ void toggle_debug_console()
         return;
     }
     g_textureFragmentRegistered = true;
+
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_probeShaderPatcher,
+            meshFragmentGxp,
+            &g_meshFragmentProgramId) < 0) {
+        failure("[FAIL] MESH FP REG");
+        return;
+    }
+    g_meshFragmentRegistered = true;
 
     const SceGxmProgramParameter* texturePositionParam =
         sceGxmProgramFindParameterByName(
@@ -3833,6 +3874,18 @@ void toggle_debug_console()
             textureVertexGxp,
             &g_textureFragmentProgram) < 0) {
         failure("[FAIL] CREATE TEXTURE FP");
+        return;
+    }
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_meshFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            textureVertexGxp,
+            &g_meshTextureFragmentProgram) < 0) {
+        failure("[FAIL] CREATE MESH TEXTURE FP");
         return;
     }
 
@@ -4098,6 +4151,18 @@ void toggle_debug_console()
             gouraudSubdivVertexGxp,
             &g_texturedGouraudSubdivFragmentProgram) < 0) {
         failure("[FAIL] CREATE GOURAUD SUBDIV FP");
+        return;
+    }
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_meshFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            gouraudSubdivVertexGxp,
+            &g_meshSubdivFragmentProgram) < 0) {
+        failure("[FAIL] CREATE MESH SUBDIV FP");
         return;
     }
 
@@ -5030,8 +5095,15 @@ bool submit_vdp1_model(
             if (!batch.indexCount)
                 continue;
 
-            sceGxmSetFragmentTexture(
-                g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
+            const bool mesh = g_vdp1GpuTextures[t].mesh;
+            sceGxmSetFragmentProgram(
+                g_probeContext,
+                mesh ? g_meshTextureFragmentProgram
+                     : g_textureFragmentProgram);
+            if (!mesh) {
+                sceGxmSetFragmentTexture(
+                    g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
+            }
             sceGxmDraw(
                 g_probeContext,
                 SCE_GXM_PRIMITIVE_TRIANGLES,
@@ -5186,8 +5258,15 @@ bool submit_vdp1_model(
             if (!batch.indexCount)
                 continue;
             if (subdividedTexturedLit) {
-                sceGxmSetFragmentTexture(
-                    g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
+                const bool mesh = g_vdp1GpuTextures[t].mesh;
+                sceGxmSetFragmentProgram(
+                    g_probeContext,
+                    mesh ? g_meshSubdivFragmentProgram
+                         : g_texturedGouraudSubdivFragmentProgram);
+                if (!mesh) {
+                    sceGxmSetFragmentTexture(
+                        g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
+                }
             }
             sceGxmDraw(
                 g_probeContext,
