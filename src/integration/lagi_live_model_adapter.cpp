@@ -1,5 +1,5 @@
-#include "lagi/azel_compat.h"
-#include "lagi/azel_live_model_adapter.h"
+#include "lagi/lagi_compat.h"
+#include "lagi/lagi_live_model_adapter.h"
 
 #include <array>
 #include <cstdint>
