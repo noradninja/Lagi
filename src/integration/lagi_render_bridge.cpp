@@ -1,6 +1,6 @@
-#include "lagi/azel_compat.h"
-#include "lagi/azel_render_bridge.h"
-#include "lagi/azel_live_model_adapter.h"
+#include "lagi/lagi_compat.h"
+#include "lagi/lagi_render_bridge.h"
+#include "lagi/lagi_live_model_adapter.h"
 #include "lagi/platform.h"
 
 #include <cstdint>
