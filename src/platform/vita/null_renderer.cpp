@@ -125,7 +125,12 @@ static bool g_probeVertexRegistered = false;
 static bool g_probeFragmentRegistered = false;
 static SceGxmVertexProgram* g_probeVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_probeFragmentProgram = nullptr;
+static SceGxmFragmentProgram* g_fadeFragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_probeWvpParam = nullptr;
+static SceUID g_fadeVertexUid = -1;
+static SceUID g_fadeIndexUid = -1;
+static azel::DebugColorVertex* g_fadeVertices = nullptr;
+static std::uint16_t* g_fadeIndices = nullptr;
 
 static SceGxmShaderPatcherId g_textureVertexProgramId{};
 static SceGxmShaderPatcherId g_textureFragmentProgramId{};
@@ -895,6 +900,13 @@ void shutdown()
         }
     };
 
+    void* fadeVertexPtr = g_fadeVertices;
+    freeSimpleMappedProbe(g_fadeVertexUid, fadeVertexPtr);
+    g_fadeVertices = nullptr;
+    void* fadeIndexPtr = g_fadeIndices;
+    freeSimpleMappedProbe(g_fadeIndexUid, fadeIndexPtr);
+    g_fadeIndices = nullptr;
+
     void* basicWingVertexPtr = g_vdp1Vertices;
     freeSimpleMappedProbe(g_vdp1VertexUid, basicWingVertexPtr);
     g_vdp1Vertices = nullptr;
@@ -1122,6 +1134,11 @@ void shutdown()
             g_textureVertexRegistered = false;
         }
 
+        if (g_fadeFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_fadeFragmentProgram);
+            g_fadeFragmentProgram = nullptr;
+        }
         if (g_probeFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_probeFragmentProgram);
@@ -3896,6 +3913,27 @@ void toggle_debug_console()
 
     status("[PASS] GXM CREATE FRAGMENT PROGRAM", 0xFF80E0FFu);
 
+    SceGxmBlendInfo fadeBlend{};
+    fadeBlend.colorFunc = SCE_GXM_BLEND_FUNC_ADD;
+    fadeBlend.alphaFunc = SCE_GXM_BLEND_FUNC_ADD;
+    fadeBlend.colorSrc = SCE_GXM_BLEND_FACTOR_SRC_ALPHA;
+    fadeBlend.colorDst = SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    fadeBlend.alphaSrc = SCE_GXM_BLEND_FACTOR_ZERO;
+    fadeBlend.alphaDst = SCE_GXM_BLEND_FACTOR_ONE;
+    fadeBlend.colorMask = SCE_GXM_COLOR_MASK_ALL;
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_probeFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            &fadeBlend,
+            vertexProgram,
+            &g_fadeFragmentProgram) < 0) {
+        failure("[FAIL] CREATE FADE FP");
+        return;
+    }
+
     const SceGxmProgram* textureVertexGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_texture_v_gxp_start);
@@ -4549,6 +4587,35 @@ void toggle_debug_console()
     std::memset(g_probeStencil, 0,
                 ((kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1)) *
                 ((kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1)) * 4u);
+
+    g_fadeVertices = static_cast<azel::DebugColorVertex*>(
+        probeGpuAlloc(
+            6u * sizeof(azel::DebugColorVertex),
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_fadeVertexUid));
+    g_fadeIndices = static_cast<std::uint16_t*>(
+        probeGpuAlloc(
+            6u * sizeof(std::uint16_t),
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_fadeIndexUid));
+    if (!g_fadeVertices || !g_fadeIndices) {
+        failure("[FAIL] FADE GPU BUFFER");
+        return;
+    }
+    static const float xy[6][2] = {
+        {-1.0f,-1.0f}, { 1.0f,-1.0f}, { 1.0f, 1.0f},
+        {-1.0f,-1.0f}, { 1.0f, 1.0f}, {-1.0f, 1.0f}
+    };
+    for (unsigned i = 0; i < 6u; ++i) {
+        g_fadeVertices[i].x = xy[i][0];
+        g_fadeVertices[i].y = xy[i][1];
+        g_fadeVertices[i].z = 0.0f;
+        g_fadeVertices[i].r = 0u;
+        g_fadeVertices[i].g = 0u;
+        g_fadeVertices[i].b = 0u;
+        g_fadeVertices[i].a = 255u;
+        g_fadeIndices[i] = static_cast<std::uint16_t>(i);
+    }
 
     const int beginResult = sceGxmBeginScene(
         g_probeContext,
@@ -5751,15 +5818,8 @@ bool submit_vdp1_model(
     return true;
 }
 
-static void applyTownFadeToBuffer(
-    std::uint32_t* buffer,
-    int pitch,
-    int width,
-    int height)
+static float updateTownFadeAlpha()
 {
-    if (!buffer)
-        return;
-
     if (g_townFadeSerial != g_townFadeAppliedSerial) {
         g_townFadeAppliedSerial = g_townFadeSerial;
         g_townFadeElapsed = 0u;
@@ -5777,21 +5837,44 @@ static void applyTownFadeToBuffer(
     } else {
         g_townFadeBlack = g_townFadeIn ? 0.0f : 1.0f;
     }
+    return g_townFadeBlack;
+}
 
-    if (g_townFadeBlack <= 0.0f)
+static void drawTownFadeOverlay(float alpha)
+{
+    if (alpha <= 0.0f || !g_fadeVertices || !g_fadeIndices ||
+        !g_fadeFragmentProgram)
         return;
 
-    const unsigned int keep = static_cast<unsigned int>(
-        std::lround((1.0f - g_townFadeBlack) * 256.0f));
-    for (int y = 0; y < height; ++y) {
-        std::uint32_t* row = buffer + y * pitch;
-        for (int x = 0; x < width; ++x) {
-            const std::uint32_t c = row[x];
-            const std::uint32_t r = ((c >> 0) & 0xFFu) * keep >> 8;
-            const std::uint32_t g = ((c >> 8) & 0xFFu) * keep >> 8;
-            const std::uint32_t b = ((c >> 16) & 0xFFu) * keep >> 8;
-            row[x] = (c & 0xFF000000u) | (b << 16) | (g << 8) | r;
-        }
+    const std::uint8_t a = static_cast<std::uint8_t>(
+        std::clamp<int>(
+            static_cast<int>(std::lround(alpha * 255.0f)), 0, 255));
+    for (unsigned i = 0; i < 6u; ++i)
+        g_fadeVertices[i].a = a;
+
+    sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext, g_fadeFragmentProgram);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+
+    void* uniforms = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniforms) >= 0 && uniforms) {
+        const ViewerMat4 identity = viewerIdentity();
+        sceGxmSetUniformDataF(
+            uniforms, g_probeWvpParam, 0, 16, identity.m);
+        sceGxmSetVertexStream(g_probeContext, 0, g_fadeVertices);
+        sceGxmDraw(
+            g_probeContext,
+            SCE_GXM_PRIMITIVE_TRIANGLES,
+            SCE_GXM_INDEX_FORMAT_U16,
+            g_fadeIndices,
+            6u);
     }
 }
 
@@ -5968,6 +6051,9 @@ static void renderBasicWingViewer()
         sceGxmFinish(g_probeContext);
         return;
     }
+
+    if (roomAuthenticCameraMode)
+        drawTownFadeOverlay(updateTownFadeAlpha());
 
     const std::uint64_t gxmWaitStartUs = sceKernelGetProcessTimeWide();
     const unsigned int renderCpuBeforeWaitUs =
@@ -6161,14 +6247,6 @@ static void renderBasicWingViewer()
         viewerRenderHeight() - 12,
         resolutionLabel,
         0xFFFFFFFFu);
-
-    if (roomAuthenticCameraMode) {
-        applyTownFadeToBuffer(
-            colorBuffer,
-            gxmPitch,
-            viewerRenderWidth(),
-            viewerRenderHeight());
-    }
 
     SceDisplayFrameBuf fb{};
     fb.size = sizeof(fb);
