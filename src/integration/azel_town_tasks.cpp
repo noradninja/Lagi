@@ -1786,35 +1786,6 @@ struct TownEdgeTask final : s_workAreaTemplate<TownEdgeTask> {
         if (!g_edge.initialized || !platform::renderer::town_scene_active())
             return;
 
-        if (platform::input::reset_view_pressed()) {
-            std::copy(std::begin(g_edge.startPosition),
-                      std::end(g_edge.startPosition),
-                      std::begin(g_edge.position));
-            g_edge.pitch = g_edge.startPitch;
-            g_edge.yaw = g_edge.startYaw;
-            std::fill(std::begin(g_edge.stepTranslation),
-                      std::end(g_edge.stepTranslation), 0.0f);
-            g_edge.stepRotationYaw = 0.0f;
-            g_edge.lookAt[0] = 0.0f;
-            g_edge.lookAt[1] = 0.0f;
-            g_edge.inputX = 0;
-            g_edge.inputY = 0;
-            g_edge.currentAnimation = 0;
-            g_edge.previousAnimation = 0;
-            g_edge.animationFrame = 0;
-            g_edge.previousAnimationFrame = 0;
-            g_edge.animationLeftOver = 0;
-            g_edge.transitionRemaining = 0;
-            g_edge.ambientAnimation = 5;
-            g_edge.controlFlags = 0;
-            g_edge.actionFlags = 0;
-            std::fill(
-                std::begin(g_edge.scriptedTarget),
-                std::end(g_edge.scriptedTarget),
-                0.0f);
-            g_edge.scriptedTargetYaw = g_edge.yaw;
-        }
-
         updateEdgePositionNative();
         g_edge.collision.ownerPosition = {
             g_edge.position[0], g_edge.position[1], g_edge.position[2]};
@@ -1835,8 +1806,6 @@ struct TownMainLogicTask final : s_workAreaTemplate<TownMainLogicTask> {
         const int z = static_cast<int>(
             std::lround(g_edge.position[2] * 65536.0f));
         updateWorldGridRaw(x, z);
-        if (platform::input::reset_view_pressed())
-            setupCameraFollowMode();
         updateFollowCamera();
     }
     static const TypedTaskDefinition* getTypedTaskDefinition() {
