@@ -1,6 +1,6 @@
 #include "lagi/debug_mesh.h"
-#include "lagi/azel_town_bootstrap.h"
-#include "lagi/azel_town_runtime.h"
+#include "lagi/lagi_town_bootstrap.h"
+#include "lagi/lagi_town_runtime.h"
 #include "lagi/disc_image.h"
 #include "lagi/platform.h"
 
