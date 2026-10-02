@@ -2,7 +2,7 @@
 // Math behavior mirrors upstream AzelLib/fixedPoint.cpp; desktop-only ImGui/GLM
 // editor helpers are intentionally excluded.
 
-#include "lagi/azel_compat.h"
+#include "lagi/lagi_compat.h"
 #include "heap.h"
 #include "task.h"
 #include "VDP1.h"
