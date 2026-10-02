@@ -14,7 +14,7 @@ static int g_digitalX = 0;
 static int g_digitalY = 0;
 static bool g_runHeld = false;
 static bool g_cameraHeld = false;
-static bool g_resetView = false;
+static bool g_resetScene = false;
 static bool g_prevMode = false;
 static bool g_nextMode = false;
 
@@ -56,7 +56,7 @@ void update()
         (buttons & SCE_CTRL_DOWN ? 1 : 0);
     g_runHeld = (buttons & SCE_CTRL_CROSS) != 0;
     g_cameraHeld = (buttons & SCE_CTRL_TRIANGLE) != 0;
-    g_resetView = (pressed & SCE_CTRL_SQUARE) != 0;
+    g_resetScene = (pressed & SCE_CTRL_SQUARE) != 0;
     g_prevMode = (pressed & SCE_CTRL_LTRIGGER) != 0;
     g_nextMode = (pressed & SCE_CTRL_RTRIGGER) != 0;
 
@@ -79,7 +79,7 @@ int digital_x() { return g_digitalX; }
 int digital_y() { return g_digitalY; }
 bool run_held() { return g_runHeld; }
 bool camera_held() { return g_cameraHeld; }
-bool reset_view_pressed() { return g_resetView; }
+bool reset_scene_pressed() { return g_resetScene; }
 bool prev_mode_pressed() { return g_prevMode; }
 bool next_mode_pressed() { return g_nextMode; }
 
