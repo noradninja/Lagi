@@ -5096,6 +5096,8 @@ bool submit_vdp1_model(
                 continue;
 
             const bool mesh = g_vdp1GpuTextures[t].mesh;
+            if (mesh)
+                sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
             sceGxmSetFragmentProgram(
                 g_probeContext,
                 mesh ? g_meshTextureFragmentProgram
@@ -5110,6 +5112,8 @@ bool submit_vdp1_model(
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_vdp1TextureIndices + batch.firstIndex,
                 batch.indexCount);
+            if (mesh)
+                sceGxmSetCullMode(g_probeContext, cullMode);
         }
         return true;
     }
@@ -5257,8 +5261,11 @@ bool submit_vdp1_model(
             const TextureBatch& batch = g_vdp1TextureBatches[t];
             if (!batch.indexCount)
                 continue;
+            bool mesh = false;
             if (subdividedTexturedLit) {
-                const bool mesh = g_vdp1GpuTextures[t].mesh;
+                mesh = g_vdp1GpuTextures[t].mesh;
+                if (mesh)
+                    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
                 sceGxmSetFragmentProgram(
                     g_probeContext,
                     mesh ? g_meshSubdivFragmentProgram
@@ -5274,6 +5281,8 @@ bool submit_vdp1_model(
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_vdp1SubdivIndices + batch.firstIndex,
                 batch.indexCount);
+            if (mesh)
+                sceGxmSetCullMode(g_probeContext, cullMode);
             ++submittedBatches;
         }
         g_profileGouraudDrawUs = static_cast<unsigned int>(
@@ -5549,7 +5558,10 @@ bool submit_vdp1_model(
         g_authFlatVisibleQuads = 0u;
         g_authFlatDrawCalls = 0u;
 
+        static std::vector<std::uint16_t> meshIndices;
+        meshIndices.clear();
         unsigned int write = 0u;
+
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             std::uint8_t sharedOutcode = 0x3Fu;
@@ -5558,14 +5570,22 @@ bool submit_vdp1_model(
                     wvp,
                     model.vertices[p * 6u + cornerVertex[corner]]);
             }
-
             if (sharedOutcode != 0u)
                 continue;
 
             ++g_authFlatVisibleQuads;
-            for (unsigned int k = 0; k < 6u; ++k)
-                g_vdp1Indices[write++] =
-                    static_cast<std::uint16_t>(p * 6u + k);
+            const bool mesh = (model.polygons[p].cmdPmod & 0x0100u) != 0u;
+            if (mesh) {
+                const std::size_t oldSize = meshIndices.size();
+                meshIndices.resize(oldSize + 6u);
+                for (unsigned int k = 0; k < 6u; ++k)
+                    meshIndices[oldSize + k] =
+                        static_cast<std::uint16_t>(p * 6u + k);
+            } else {
+                for (unsigned int k = 0; k < 6u; ++k)
+                    g_vdp1Indices[write++] =
+                        static_cast<std::uint16_t>(p * 6u + k);
+            }
         }
 
         if (write != 0u) {
@@ -5575,7 +5595,19 @@ bool submit_vdp1_model(
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_vdp1Indices,
                 write);
-            g_authFlatDrawCalls = 1u;
+            ++g_authFlatDrawCalls;
+        }
+
+        if (!meshIndices.empty()) {
+            sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+            sceGxmDraw(
+                g_probeContext,
+                SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16,
+                meshIndices.data(),
+                static_cast<unsigned int>(meshIndices.size()));
+            sceGxmSetCullMode(g_probeContext, cullMode);
+            ++g_authFlatDrawCalls;
         }
         return true;
     }
