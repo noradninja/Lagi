@@ -1026,10 +1026,18 @@ static s32 dispatchNative(u32 functionEA, unsigned argc, const s32* args)
     case 0x0602C2CAu: // playSystemSoundEffect
     case 0x0602C32Au: // playBattleSoundEffect
     case 0x0603011Eu: // terminateTown
-    case 0x0605C83Cu: // TwnFadeOut
-    case 0x0605C7C4u: // TwnFadeIn
     case 0x0605B320u: // NPC control
     case 0x0605C55Cu: // townCamera_setup; decoded scene lighting owns it today.
+        return 0;
+    case 0x0605C83Cu: // TwnFadeOut
+        if (argc == 1)
+            platform::renderer::town_fade_out(
+                static_cast<unsigned int>(std::max<s32>(1, args[0])));
+        return 0;
+    case 0x0605C7C4u: // TwnFadeIn
+        if (argc == 1)
+            platform::renderer::town_fade_in(
+                static_cast<unsigned int>(std::max<s32>(1, args[0])));
         return 0;
     case 0x0600CDD4u: // getNpcData0_5d
         return 0;

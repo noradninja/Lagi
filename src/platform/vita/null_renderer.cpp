@@ -381,6 +381,20 @@ static int g_pendingViewMode = 7;
 static unsigned int g_pendingProfileTasksUs = 0u;
 static unsigned int g_pendingProfileGameWaitUs = 0u;
 
+// Script-owned town fade command. The game thread stages commands here; the
+// completed-frame publish copies them across the existing render handoff.
+static unsigned int g_pendingTownFadeSerial = 0u;
+static bool g_pendingTownFadeIn = false;
+static unsigned int g_pendingTownFadeFrames = 1u;
+
+static unsigned int g_townFadeSerial = 0u;
+static unsigned int g_townFadeAppliedSerial = 0u;
+static bool g_townFadeIn = false;
+static unsigned int g_townFadeFrames = 1u;
+static unsigned int g_townFadeElapsed = 0u;
+// Town boot begins black. Azel's TwnFadeIn script call releases presentation.
+static float g_townFadeBlack = 1.0f;
+
 static int g_viewMode = 7;
 static constexpr bool g_halfResolution = true;
 // Compact timing HUD used for capture/video analysis of the game/render split.
@@ -4576,8 +4590,10 @@ void toggle_debug_console()
     g_probeScenePassed = true;
     status("[PASS] GXM END SCENE", 0xFF80E0FFu);
 
-    // Stage 12: replace the proven triangle payload with the reconstructed
-    // Basic Wing debug mesh. The GPU path remains otherwise unchanged.
+    // Keep the Basic Wing CPU/GXM resources available as an internal
+    // regression path, but do not present that model during normal town boot.
+    // The display stays black until the first valid Ruins frame is rendered;
+    // the original town script then controls TwnFadeIn.
     if (!g_basicWingCpuReady || g_basicWingCpuMesh.vertices.empty()) {
         failure("[FAIL] BASIC WING CPU MESH");
         return;
@@ -4591,96 +4607,11 @@ void toggle_debug_console()
     g_residentVdp1Model = ResidentVdp1Model::BasicWing;
     status("[PASS] GXM BASIC WING VDP1 PREPARE", 0xFF80E0FFu);
 
-    const unsigned int wingVertexCount =
-        static_cast<unsigned int>(vdp1Source.vertexCount);
-
-    const unsigned int wingAlignedW =
-        (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
-    const unsigned int wingAlignedH =
-        (kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1);
-
-    std::memset(g_probeColorBuffer, 0,
-                static_cast<std::size_t>(gxmPitch) * kHeight *
-                sizeof(std::uint32_t));
-    std::memset(g_probeDepth, 0xFF, wingAlignedW * wingAlignedH * 4u);
-    std::memset(g_probeStencil, 0, wingAlignedW * wingAlignedH * 4u);
-
-    const int wingBeginResult = sceGxmBeginScene(
-        g_probeContext,
+    std::memset(
+        g_probeColorBuffer,
         0,
-        g_probeRenderTarget,
-        nullptr,
-        nullptr,
-        g_probeSync,
-        &g_probeColorSurface,
-        &g_probeDepthSurface);
-
-    if (wingBeginResult < 0) {
-        char line[78];
-        std::snprintf(line, sizeof(line), "[FAIL] WING BEGIN 0X%08X",
-                      static_cast<unsigned int>(wingBeginResult));
-        failure(line);
-        return;
-    }
-
-    sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
-    sceGxmSetFragmentProgram(g_probeContext, g_probeFragmentProgram);
-    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
-    sceGxmSetDefaultRegionClipAndViewport(
-        g_probeContext, kWidth - 1, kHeight - 1);
-    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
-    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_LESS_EQUAL);
-    sceGxmSetFrontDepthWriteEnable(
-        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
-    sceGxmSetBackDepthWriteEnable(
-        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
-
-    void* wingUniformBuffer = nullptr;
-    const int wingUniformResult =
-        sceGxmReserveVertexDefaultUniformBuffer(
-            g_probeContext, &wingUniformBuffer);
-    if (wingUniformResult < 0 || !wingUniformBuffer) {
-        sceGxmEndScene(g_probeContext, nullptr, nullptr);
-        sceGxmFinish(g_probeContext);
-        failure("[FAIL] WING WVP BUFFER");
-        return;
-    }
-
-    const ViewerMat4 initialWvp = buildViewerWvp(false);
-    sceGxmSetUniformDataF(
-        wingUniformBuffer, g_probeWvpParam, 0, 16, initialWvp.m);
-
-    const int wingStreamResult =
-        sceGxmSetVertexStream(
-            g_probeContext, 0, g_vdp1Vertices);
-    if (wingStreamResult < 0) {
-        sceGxmEndScene(g_probeContext, nullptr, nullptr);
-        sceGxmFinish(g_probeContext);
-        failure("[FAIL] WING VERTEX STREAM");
-        return;
-    }
-
-    const int wingDrawResult = sceGxmDraw(
-        g_probeContext,
-        SCE_GXM_PRIMITIVE_TRIANGLES,
-        SCE_GXM_INDEX_FORMAT_U16,
-        g_vdp1Indices,
-        wingVertexCount);
-
-    if (wingDrawResult < 0) {
-        sceGxmEndScene(g_probeContext, nullptr, nullptr);
-        sceGxmFinish(g_probeContext);
-        char line[78];
-        std::snprintf(line, sizeof(line), "[FAIL] WING DRAW 0X%08X",
-                      static_cast<unsigned int>(wingDrawResult));
-        failure(line);
-        return;
-    }
-
-    sceGxmEndScene(g_probeContext, nullptr, nullptr);
-    sceGxmFinish(g_probeContext);
-
-    status("[PASS] GXM BASIC WING DRAW", 0xFF80E0FFu);
+        static_cast<std::size_t>(gxmPitch) * kHeight *
+            sizeof(std::uint32_t));
 
     SceDisplayFrameBuf gxmFb{};
     gxmFb.size = sizeof(gxmFb);
@@ -4694,8 +4625,10 @@ void toggle_debug_console()
         sceDisplaySetFrameBuf(&gxmFb, SCE_DISPLAY_SETBUF_NEXTFRAME);
     if (displayResult < 0) {
         char line[78];
-        std::snprintf(line, sizeof(line), "[FAIL] GXM DISPLAY 0X%08X",
-                      static_cast<unsigned int>(displayResult));
+        std::snprintf(
+            line, sizeof(line),
+            "[FAIL] GXM DISPLAY 0X%08X",
+            static_cast<unsigned int>(displayResult));
         failure(line);
         return;
     }
@@ -4706,7 +4639,7 @@ void toggle_debug_console()
     g_debugVisible = false;
     g_suppressGxmInitPassStatus = false;
     status("[PASS] GXM INITIALIZATION + VDP1 READY", 0xFF80E0FFu);
-    std::printf("[GXM] Basic Wing GXM color buffer queued for display\n");
+    std::printf("[GXM] black town boot framebuffer queued for display\n");
 }
 
 bool debug_console_visible()
@@ -5818,6 +5751,50 @@ bool submit_vdp1_model(
     return true;
 }
 
+static void applyTownFadeToBuffer(
+    std::uint32_t* buffer,
+    int pitch,
+    int width,
+    int height)
+{
+    if (!buffer)
+        return;
+
+    if (g_townFadeSerial != g_townFadeAppliedSerial) {
+        g_townFadeAppliedSerial = g_townFadeSerial;
+        g_townFadeElapsed = 0u;
+    }
+
+    const unsigned int duration = std::max(1u, g_townFadeFrames);
+    if (g_townFadeElapsed < duration) {
+        const float t =
+            static_cast<float>(g_townFadeElapsed + 1u) /
+            static_cast<float>(duration);
+        g_townFadeBlack = g_townFadeIn
+            ? std::max(0.0f, 1.0f - t)
+            : std::min(1.0f, t);
+        ++g_townFadeElapsed;
+    } else {
+        g_townFadeBlack = g_townFadeIn ? 0.0f : 1.0f;
+    }
+
+    if (g_townFadeBlack <= 0.0f)
+        return;
+
+    const unsigned int keep = static_cast<unsigned int>(
+        std::lround((1.0f - g_townFadeBlack) * 256.0f));
+    for (int y = 0; y < height; ++y) {
+        std::uint32_t* row = buffer + y * pitch;
+        for (int x = 0; x < width; ++x) {
+            const std::uint32_t c = row[x];
+            const std::uint32_t r = ((c >> 0) & 0xFFu) * keep >> 8;
+            const std::uint32_t g = ((c >> 8) & 0xFFu) * keep >> 8;
+            const std::uint32_t b = ((c >> 16) & 0xFFu) * keep >> 8;
+            row[x] = (c & 0xFF000000u) | (b << 16) | (g << 8) | r;
+        }
+    }
+}
+
 static void renderBasicWingViewer()
 {
     if (!g_viewerReady || !g_gxmInitialized || !g_probeContext ||
@@ -6185,6 +6162,14 @@ static void renderBasicWingViewer()
         resolutionLabel,
         0xFFFFFFFFu);
 
+    if (roomAuthenticCameraMode) {
+        applyTownFadeToBuffer(
+            colorBuffer,
+            gxmPitch,
+            viewerRenderWidth(),
+            viewerRenderHeight());
+    }
+
     SceDisplayFrameBuf fb{};
     fb.size = sizeof(fb);
     fb.base = colorBuffer;
@@ -6459,9 +6444,32 @@ void town_publish_frame()
     g_viewMode = g_pendingViewMode;
     g_profileTasksUs = g_pendingProfileTasksUs;
     g_profileGameWaitUs = g_pendingProfileGameWaitUs;
+    g_townFadeSerial = g_pendingTownFadeSerial;
+    g_townFadeIn = g_pendingTownFadeIn;
+    g_townFadeFrames = g_pendingTownFadeFrames;
 
     if (g_renderThreadStarted && g_renderFrameReadySema >= 0)
         sceKernelSignalSema(g_renderFrameReadySema, 1);
+}
+
+void town_fade_in(unsigned int frames)
+{
+    g_pendingTownFadeIn = true;
+    g_pendingTownFadeFrames = std::max(1u, frames);
+    ++g_pendingTownFadeSerial;
+    logging::writef(
+        "[Town] TwnFadeIn frames=%u\n",
+        g_pendingTownFadeFrames);
+}
+
+void town_fade_out(unsigned int frames)
+{
+    g_pendingTownFadeIn = false;
+    g_pendingTownFadeFrames = std::max(1u, frames);
+    ++g_pendingTownFadeSerial;
+    logging::writef(
+        "[Town] TwnFadeOut frames=%u\n",
+        g_pendingTownFadeFrames);
 }
 
 void town_camera_update()
