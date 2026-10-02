@@ -1,4 +1,4 @@
-#include "lagi/azel_compat.h"
+#include "lagi/lagi_compat.h"
 #include "heap.h"
 #include "task.h"
 #include "VDP1.h"
