@@ -113,7 +113,6 @@ struct MainLogicRuntimeState {
     float pitch = 0.0f;
     float yaw = 0.0f;
     float yawOffset = 0.0f;
-    float pitchOffset = 0.0f;
     TownCollisionBody collision{};
 };
 
@@ -216,7 +215,6 @@ static s32 setupCameraFollowMode()
     g_mainLogic.pitch = g_edge.pitch;
     g_mainLogic.yaw = g_edge.yaw;
     g_mainLogic.yawOffset = 0.0f;
-    g_mainLogic.pitchOffset = 0.0f;
     g_mainLogic.followReady = true;
     presentCamera();
     return 0;
@@ -307,21 +305,31 @@ static void updateFollowCamera()
     g_mainLogic.anchor[1] = g_edge.position[1] + kAnchorHeight;
     g_mainLogic.anchor[2] = g_edge.position[2];
 
-    // Vita camera modifier: Triangle holds manual camera control while the
-    // right stick adjusts the native follow-camera offsets. Square recenters.
-    if (platform::input::reset_view_pressed()) {
-        g_mainLogic.yawOffset = 0.0f;
-        g_mainLogic.pitchOffset = 0.0f;
-    }
+    // Azel's native follow camera does not use a free orbit. Its two camera
+    // buttons select fixed quarter-turn offsets around Edge every frame:
+    //   left  = +90 degrees
+    //   right = -90 degrees
+    //   both  = 180 degrees
+    //   none  = forward
+    // Vita exposes those original semantics through Triangle as a camera
+    // modifier and the right stick as the selector. Holding Triangle by
+    // itself maps to both original camera buttons (rear view), while left or
+    // right selects the corresponding quarter view. Releasing Triangle
+    // returns to Azel's normal forward-follow target.
+    g_mainLogic.yawOffset = 0.0f;
     if (platform::input::camera_held()) {
-        g_mainLogic.yawOffset = std::clamp(
-            g_mainLogic.yawOffset -
-                platform::input::analog_camera_x() * 0.055f,
-            -1.35f, 1.35f);
-        g_mainLogic.pitchOffset = std::clamp(
-            g_mainLogic.pitchOffset +
-                platform::input::analog_camera_y() * 0.040f,
-            -0.55f, 0.55f);
+        constexpr float kHalfPi = 1.57079632679489661923f;
+        constexpr float kPi = 3.14159265358979323846f;
+        const float rx = platform::input::analog_camera_x();
+        const float ry = platform::input::analog_camera_y();
+        if (rx < -0.30f)
+            g_mainLogic.yawOffset = kHalfPi;
+        else if (rx > 0.30f)
+            g_mainLogic.yawOffset = -kHalfPi;
+        else if (ry < -0.30f)
+            g_mainLogic.yawOffset = 0.0f;
+        else
+            g_mainLogic.yawOffset = kPi;
     }
 
     if (g_mainLogic.distance <
@@ -348,8 +356,7 @@ static void updateFollowCamera()
         static_cast<float>(0x1555555) /
             static_cast<float>(0x10000000) * kTau);
     const float desiredPitch =
-        (g_mainLogic.cameraParamsIndex ? kDesiredPitch1 : kDesiredPitch0) +
-        g_mainLogic.pitchOffset;
+        g_mainLogic.cameraParamsIndex ? kDesiredPitch1 : kDesiredPitch0;
     const float pitchStep = std::clamp(
         wrapAngle(desiredPitch - g_mainLogic.pitch), -maxTurn, maxTurn);
     g_mainLogic.pitch = std::clamp(
