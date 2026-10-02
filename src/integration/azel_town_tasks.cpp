@@ -200,23 +200,6 @@ static s32 setupCameraFollowMode()
     g_mainLogic.anchor[1] = g_edge.position[1] + kAnchorHeight;
     g_mainLogic.anchor[2] = g_edge.position[2];
 
-    // Vita camera modifier: Triangle holds manual camera control while the
-    // right stick adjusts the native follow-camera offsets. Square recenters.
-    if (platform::input::reset_view_pressed()) {
-        g_mainLogic.yawOffset = 0.0f;
-        g_mainLogic.pitchOffset = 0.0f;
-    }
-    if (platform::input::camera_held()) {
-        g_mainLogic.yawOffset = std::clamp(
-            g_mainLogic.yawOffset -
-                platform::input::analog_camera_x() * 0.055f,
-            -1.35f, 1.35f);
-        g_mainLogic.pitchOffset = std::clamp(
-            g_mainLogic.pitchOffset +
-                platform::input::analog_camera_y() * 0.040f,
-            -0.55f, 0.55f);
-    }
-
     float basisZ[3]{};
     cameraBasisZ(g_edge.yaw, g_edge.pitch, basisZ);
     for (unsigned i = 0; i < 3; ++i) {
@@ -323,6 +306,23 @@ static void updateFollowCamera()
     g_mainLogic.anchor[0] = g_edge.position[0];
     g_mainLogic.anchor[1] = g_edge.position[1] + kAnchorHeight;
     g_mainLogic.anchor[2] = g_edge.position[2];
+
+    // Vita camera modifier: Triangle holds manual camera control while the
+    // right stick adjusts the native follow-camera offsets. Square recenters.
+    if (platform::input::reset_view_pressed()) {
+        g_mainLogic.yawOffset = 0.0f;
+        g_mainLogic.pitchOffset = 0.0f;
+    }
+    if (platform::input::camera_held()) {
+        g_mainLogic.yawOffset = std::clamp(
+            g_mainLogic.yawOffset -
+                platform::input::analog_camera_x() * 0.055f,
+            -1.35f, 1.35f);
+        g_mainLogic.pitchOffset = std::clamp(
+            g_mainLogic.pitchOffset +
+                platform::input::analog_camera_y() * 0.040f,
+            -0.55f, 0.55f);
+    }
 
     if (g_mainLogic.distance <
         static_cast<float>(0x151EB) / 65536.0f * kDesiredDistance) {
