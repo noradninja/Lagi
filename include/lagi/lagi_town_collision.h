@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lagi/azel_town_runtime.h"
+#include "lagi/lagi_town_runtime.h"
 
 #include <array>
 #include <cstdint>
