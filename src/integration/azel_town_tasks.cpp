@@ -668,6 +668,32 @@ static void updateEdgePositionNative()
                         wrapAngle(targetYaw - g_edge.yaw),
                         -maxTurn,
                         maxTurn);
+
+                    if ((g_pipelineFrames & 7u) == 0u) {
+                        const auto& solve =
+                            g_edge.collision.collisionSolveTranslation;
+                        platform::logging::writef(
+                            "[EdgeWalk] f=%u pos=(%.5f,%.5f,%.5f) "
+                            "target=(%.5f,%.5f,%.5f) dist=%.6f "
+                            "yaw=%.5f targetYaw=%.5f turn=%.5f "
+                            "solve=(%.5f,%.5f,%.5f) contacts=%u\\n",
+                            g_pipelineFrames,
+                            g_edge.position[0],
+                            g_edge.position[1],
+                            g_edge.position[2],
+                            g_edge.scriptedTarget[0],
+                            g_edge.scriptedTarget[1],
+                            g_edge.scriptedTarget[2],
+                            std::sqrt(distanceSq),
+                            g_edge.yaw,
+                            targetYaw,
+                            turn,
+                            solve.x,
+                            solve.y,
+                            solve.z,
+                            g_edge.collision.contactMask);
+                    }
+
                     g_edge.stepRotationYaw = turn;
                     g_edge.yaw = wrapAngle(g_edge.yaw + turn);
 
