@@ -693,10 +693,24 @@ static void updateEdgePositionNative()
                 // Azel clears mC bit 2 on the update after mF bit 0 clears.
                 // That is the real scripted -> player-control handoff.
                 g_edge.controlFlags &= ~0x4u;
+
+                // The scripted controller owns these fields while mC bit 2
+                // is set. Clear its residual locomotion state at the real
+                // Azel handoff so the first player-controlled frame starts
+                // neutral, without forcing mC/mF or synthesizing control.
+                g_edge.inputX = 0;
+                g_edge.inputY = 0;
+                g_edge.stepRotationYaw = 0.0f;
                 g_edge.stepTranslation[0] = 0.0f;
                 g_edge.stepTranslation[2] = 0.0f;
+                g_edge.lookAt[0] = 0.0f;
+                g_edge.lookAt[1] = 0.0f;
+
                 platform::logging::writef(
-                    "[Edge] Ruins scripted controller released; player control active\n");
+                    "[Edge] Ruins scripted controller released; player control active "
+                    "edgeYaw=%.5f cameraYaw=%.5f\n",
+                    g_edge.yaw,
+                    g_mainLogic.yaw);
             }
         }
     } else {
