@@ -203,7 +203,10 @@ Major systems still incomplete or not yet integrated include:
 - broader field systems
 - movies, menus, save flow, and complete game progression
 
-There is also renderer-side technical debt around material-cache lifetime and eventual batching for larger scenes.
+Renderer-side technical debt currently falls into two concrete areas:
+
+- **Material-cache lifetime/invalidation.** The live town material cache currently keys resolved polygon-to-texture mappings by model identity and polygon count. That is sufficient for the present Ruins scene, where resources are effectively stable, but it is not yet tied to a scene/resource generation. After town transitions or bundle reloads, pointer reuse could make an old cache entry appear valid for a different model with the same shape. Failed resolutions also should not become permanent cache state. Before frequent town transitions are enabled, the cache needs explicit invalidation on town/resource teardown or a stronger key that includes stable bundle/model identity plus a generation/version.
+- **Batching and 16-bit index limits.** The current live renderer flattens the active town into shared CPU/GPU buffers and uses 16-bit indices. The 3x3 Gouraud subdivision expands each Saturn quad to 9 vertices and 24 indices, so large towns can exhaust a single 65,535-vertex/index address space much sooner than the original model data would. The current Ruins room fits comfortably, but broader towns will need the renderer to split work into multiple resident batches—most likely per model, object group, or world-grid cell—while preserving Azel's original draw ordering, material state, visibility decisions, and dynamic-object updates.
 
 ## Historical reference paths
 
