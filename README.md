@@ -70,7 +70,7 @@ SceGxm
 
 ## Rendering
 
-The current Ruins renderer uses a 480x272 internal GXM render target and presents to the Vita's 960x544 display.
+The current Ruins renderer uses a 480x272 GXM render target and presents to the Vita's display, maintaining the original object 4:3 scale while rendering in a 16:9 aspect.
 
 ### Gouraud lighting
 
