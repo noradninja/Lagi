@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lagi/azel_compat.h"
+#include "lagi/lagi_compat.h"
 
 #include <cstdint>
 #include <string>
