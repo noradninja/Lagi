@@ -611,6 +611,64 @@ set_source_files_properties(
  PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
 )
 
+
+# Compile the actual upstream Azel town runtime without modifying extern/Azel.
+#
+# Azel's PDS.h is a desktop umbrella header (SDL3/BGFX/SoLoud/ImGui/Tracy).
+# Vita does not replace any runtime/gameplay code here; at configure time we
+# generate build-only copies whose sole change is redirecting that umbrella
+# include to Lagi's platform prelude. Every Azel function body remains
+# byte-for-byte sourced from extern/Azel.
+set(LAGI_AZEL_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib")
+set(LAGI_AZEL_GENERATED_ROOT "${CMAKE_CURRENT_BINARY_DIR}/azel_upstream")
+file(MAKE_DIRECTORY "${LAGI_AZEL_GENERATED_ROOT}")
+
+function(lagi_prepare_upstream_azel_source relative_path out_var)
+ set(input_path "${LAGI_AZEL_SOURCE_ROOT}/${relative_path}")
+ if(NOT EXISTS "${input_path}")
+  message(FATAL_ERROR "Missing upstream Azel source: ${input_path}")
+ endif()
+
+ file(READ "${input_path}" source_text)
+ set(original_text "${source_text}")
+ string(REPLACE
+  "#include \"PDS.h\""
+  "#include \"lagi/lagi_azel_upstream_prelude.h\""
+  source_text
+  "${source_text}"
+ )
+ if(source_text STREQUAL original_text)
+  message(FATAL_ERROR
+   "Upstream Azel source no longer contains the expected PDS.h include: "
+   "${relative_path}")
+ endif()
+
+ string(REPLACE "/" "_" generated_name "${relative_path}")
+ set(output_path "${LAGI_AZEL_GENERATED_ROOT}/${generated_name}")
+ file(WRITE "${output_path}" "${source_text}")
+ set_source_files_properties("${output_path}" PROPERTIES GENERATED TRUE)
+ set(${out_var} "${output_path}" PARENT_SCOPE)
+endfunction()
+
+set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
+ town/town.cpp
+ town/townScript.cpp
+ town/townEdge.cpp
+ town/townMainLogic.cpp
+ town/townCamera.cpp
+ town/townLCS.cpp
+ town/collisionRegistry.cpp
+ kernel/worldGrid.cpp
+ town/ruin/twn_ruin.cpp
+ town/ruin/twn_ruin_lock.cpp
+)
+
+set(LAGI_AZEL_UPSTREAM_SOURCES)
+foreach(relative_source IN LISTS LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES)
+ lagi_prepare_upstream_azel_source("${relative_source}" generated_source)
+ list(APPEND LAGI_AZEL_UPSTREAM_SOURCES "${generated_source}")
+endforeach()
+
 add_executable(lagi
  src/main.cpp
  src/platform/vita/vita_platform.cpp
@@ -659,6 +717,7 @@ add_executable(lagi
  src/integration/lagi_sound_table_vita.cpp
  src/integration/lagi_dragon_common_vita.cpp
  src/integration/lagi_hotpoint_vita.cpp
+ ${LAGI_AZEL_UPSTREAM_SOURCES}
 )
 target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
