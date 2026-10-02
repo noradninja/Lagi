@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <vector>
 
-#include "lagi/azel_compat.h"
+#include "lagi/lagi_compat.h"
 #include "lagi/disc_image.h"
 #include "lagi/platform.h"
 #include "heap.h"
