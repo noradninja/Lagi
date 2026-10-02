@@ -244,6 +244,8 @@ static std::vector<LiveTownResolvedMaterialCache> g_liveTownMaterialCache;
 // so the HUD naturally shows the previous task frame while the render samples
 // describe the render currently being presented.
 static unsigned int g_profileTasksUs = 0;
+static unsigned int g_profileGameWaitUs = 0;
+static unsigned int g_profileRenderCpuPrepUs = 0;
 static unsigned int g_profileBuildUs = 0;
 static unsigned int g_profileBuildScanUs = 0;
 static unsigned int g_profileBuildCacheUs = 0;
@@ -377,11 +379,13 @@ static float g_pendingTownEdgeTransition = 1.0f;
 static bool g_pendingTownPresentationValid = false;
 static int g_pendingViewMode = 7;
 static unsigned int g_pendingProfileTasksUs = 0u;
+static unsigned int g_pendingProfileGameWaitUs = 0u;
 
 static int g_viewMode = 7;
 static constexpr bool g_halfResolution = true;
-// Retain all capture/profiling overlays in code, but keep the normal scene
-// presentation clean. Flip this for renderer investigations.
+// Compact timing HUD used for capture/video analysis of the game/render split.
+static constexpr bool kShowThreadTimingOsd = true;
+// Retain the larger legacy diagnostics in code, but keep them off normally.
 static constexpr bool kShowTownDiagnostics = false;
 static unsigned int g_basicWingAnimationFrame = 0;
 
@@ -5989,6 +5993,12 @@ static void renderBasicWingViewer()
     }
 
     const std::uint64_t gxmWaitStartUs = sceKernelGetProcessTimeWide();
+    const unsigned int renderCpuBeforeWaitUs =
+        static_cast<unsigned int>(gxmWaitStartUs - renderStartUs);
+    g_profileRenderCpuPrepUs =
+        renderCpuBeforeWaitUs > g_profileSubmitUs
+            ? renderCpuBeforeWaitUs - g_profileSubmitUs
+            : 0u;
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     sceGxmFinish(g_probeContext);
     g_profileGxmWaitUs = static_cast<unsigned int>(
@@ -6000,6 +6010,49 @@ static void renderBasicWingViewer()
         colorBuffer,
         gxmPitch,
         g_viewMode);
+
+    if (kShowThreadTimingOsd && roomAuthenticCameraMode) {
+        char thread0[64], thread1[64], thread2[64], thread3[64];
+        std::snprintf(
+            thread0, sizeof(thread0),
+            "GAME TASK %u WAIT %u",
+            g_profileTasksUs,
+            g_profileGameWaitUs);
+        std::snprintf(
+            thread1, sizeof(thread1),
+            "REND PREP %u SUB %u",
+            g_profileRenderCpuPrepUs,
+            g_profileSubmitUs);
+        std::snprintf(
+            thread2, sizeof(thread2),
+            "GPU WAIT %u PRES %u",
+            g_profileGxmWaitUs,
+            g_profilePresentUs);
+        std::snprintf(
+            thread3, sizeof(thread3),
+            "REND TOTAL %u",
+            g_profileRenderUs);
+
+        const char* lines[4] = {thread0, thread1, thread2, thread3};
+        constexpr int advance = 6;
+        constexpr int xMargin = 8;
+        constexpr int yStart = 8;
+        constexpr int lineStep = 9;
+        for (int line = 0; line < 4; ++line) {
+            const int length =
+                static_cast<int>(std::strlen(lines[line]));
+            const int x = std::max(
+                0,
+                viewerRenderWidth() - xMargin - length * advance);
+            const int y = yStart + line * lineStep;
+            drawTextSmallToBuffer(
+                colorBuffer, gxmPitch,
+                x + 1, y + 1, lines[line], 0xFF000000u);
+            drawTextSmallToBuffer(
+                colorBuffer, gxmPitch,
+                x, y, lines[line], 0xFFFFFFFFu);
+        }
+    }
 
     if (kShowTownDiagnostics) {
         drawTownInputOverlay(
@@ -6359,8 +6412,11 @@ void town_profile_tasks_us(unsigned int microseconds)
 
 void town_wait_render_slot()
 {
+    const std::uint64_t waitStartUs = sceKernelGetProcessTimeWide();
     if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
         sceKernelWaitSema(g_renderFrameFreeSema, 1, nullptr);
+    g_pendingProfileGameWaitUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - waitStartUs);
 }
 
 void town_publish_frame()
@@ -6402,6 +6458,7 @@ void town_publish_frame()
     g_townCameraDistance = g_pendingTownCameraDistance;
     g_viewMode = g_pendingViewMode;
     g_profileTasksUs = g_pendingProfileTasksUs;
+    g_profileGameWaitUs = g_pendingProfileGameWaitUs;
 
     if (g_renderThreadStarted && g_renderFrameReadySema >= 0)
         sceKernelSignalSema(g_renderFrameReadySema, 1);
