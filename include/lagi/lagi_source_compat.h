@@ -3,6 +3,9 @@
 
 namespace ImGui {
 inline bool InputFloat(const char*, float*, float = 0.0f, float = 0.0f) { return false; }
+inline bool Begin(const char*, bool* = nullptr) { return false; }
+inline void End() {}
+inline bool Checkbox(const char*, bool*) { return false; }
 inline void PushItemWidth(float) {}
 inline void SameLine() {}
 inline void PopItemWidth() {}
