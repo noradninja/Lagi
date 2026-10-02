@@ -211,6 +211,21 @@ bool runtime_smoke_init()
 
 void runtime_smoke_frame()
 {
+    // Square is a diagnostic scene restart, not an Edge/camera reset.
+    // Rebuild the native town task graph so the Ruins opening script owns
+    // Edge again and player control can only be released by Azel's normal
+    // scripted mF -> mC handoff.
+    if (lagi::platform::input::reset_scene_pressed()) {
+        lagi::platform::logging::writef(
+            "[Azel] Square: restarting TWN_RUIN task pipeline\n");
+        resetTasks();
+        if (!start_twn_ruin_task_pipeline()) {
+            lagi::platform::renderer::failure("[FAIL] TWN_RUIN SCENE RESET");
+            return;
+        }
+        lagi::platform::renderer::show_town_scene();
+    }
+
     lagi::azel_bridge::begin_frame();
     const std::uint64_t tasksStart = sceKernelGetProcessTimeWide();
     runTasks();
