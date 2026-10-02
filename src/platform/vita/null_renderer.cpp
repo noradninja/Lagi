@@ -5558,9 +5558,12 @@ bool submit_vdp1_model(
         g_authFlatVisibleQuads = 0u;
         g_authFlatDrawCalls = 0u;
 
-        static std::vector<std::uint16_t> meshIndices;
-        meshIndices.clear();
-        unsigned int write = 0u;
+        // Keep both index lists in the GXM-mapped index buffer. Passing a
+        // std::vector's host pointer directly to sceGxmDraw is invalid on Vita
+        // and can crash the GPU driver.
+        unsigned int ordinaryWrite = 0u;
+        unsigned int meshWrite =
+            static_cast<unsigned int>(model.vertexCount);
 
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
@@ -5576,36 +5579,37 @@ bool submit_vdp1_model(
             ++g_authFlatVisibleQuads;
             const bool mesh = (model.polygons[p].cmdPmod & 0x0100u) != 0u;
             if (mesh) {
-                const std::size_t oldSize = meshIndices.size();
-                meshIndices.resize(oldSize + 6u);
+                meshWrite -= 6u;
                 for (unsigned int k = 0; k < 6u; ++k)
-                    meshIndices[oldSize + k] =
+                    g_vdp1Indices[meshWrite + k] =
                         static_cast<std::uint16_t>(p * 6u + k);
             } else {
                 for (unsigned int k = 0; k < 6u; ++k)
-                    g_vdp1Indices[write++] =
+                    g_vdp1Indices[ordinaryWrite++] =
                         static_cast<std::uint16_t>(p * 6u + k);
             }
         }
 
-        if (write != 0u) {
+        if (ordinaryWrite != 0u) {
             sceGxmDraw(
                 g_probeContext,
                 SCE_GXM_PRIMITIVE_TRIANGLES,
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_vdp1Indices,
-                write);
+                ordinaryWrite);
             ++g_authFlatDrawCalls;
         }
 
-        if (!meshIndices.empty()) {
+        const unsigned int meshCount =
+            static_cast<unsigned int>(model.vertexCount) - meshWrite;
+        if (meshCount != 0u) {
             sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
             sceGxmDraw(
                 g_probeContext,
                 SCE_GXM_PRIMITIVE_TRIANGLES,
                 SCE_GXM_INDEX_FORMAT_U16,
-                meshIndices.data(),
-                static_cast<unsigned int>(meshIndices.size()));
+                g_vdp1Indices + meshWrite,
+                meshCount);
             sceGxmSetCullMode(g_probeContext, cullMode);
             ++g_authFlatDrawCalls;
         }
