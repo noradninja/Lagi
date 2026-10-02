@@ -93,8 +93,10 @@ struct EdgeRuntimeState {
     unsigned animationLeftOver = 0;
     unsigned transitionRemaining = 0;
     unsigned ambientAnimation = 5;
-    bool autoWalk = false;
-    float autoWalkTarget[3]{};
+    unsigned controlFlags = 0; // Azel sNPC::mC
+    unsigned actionFlags = 0;  // Azel sNPC::mF
+    float scriptedTarget[3]{};
+    float scriptedTargetYaw = 0.0f;
     TownCollisionBody collision{};
 };
 
@@ -476,22 +478,54 @@ static void setEdgeAnimation(unsigned animation, unsigned transitionFrames = 5)
     g_edge.transitionRemaining = transitionFrames;
 }
 
-static void setupNpcWalkInZDirection(float zDirection, int distance)
+static void setupNpcWalkInZDirection(
+    int npcIndex,
+    s32 zDirectionRaw,
+    int distance)
 {
-    if (!g_edge.initialized) return;
-    const float step = -zDirection;
-    const float cp = std::cos(g_edge.pitch);
-    const float forward[3] = {
-        std::sin(g_edge.yaw) * cp,
-        -std::sin(g_edge.pitch),
-        std::cos(g_edge.yaw) * cp};
+    // Direct translation of TWN_RUIN::setupNPCWalkInZDirection().
+    // Lagi currently has one live Edge slot, which is NPC index 0.
+    if (!g_edge.initialized || npcIndex != 0)
+        return;
+
+    constexpr float kFixed = 1.0f / 65536.0f;
+    const float stepZ = -static_cast<float>(zDirectionRaw) * kFixed;
+
     g_edge.stepTranslation[0] = 0.0f;
     g_edge.stepTranslation[1] = 0.0f;
-    g_edge.stepTranslation[2] = step;
+    g_edge.stepTranslation[2] = stepZ;
+
+    // Azel builds Y then X rotation and transforms m30_stepTranslation.
+    const float cy = std::cos(g_edge.yaw);
+    const float sy = std::sin(g_edge.yaw);
+    const float cx = std::cos(g_edge.pitch);
+    const float sx = std::sin(g_edge.pitch);
+    const float ax = 0.0f;
+    const float ay = -stepZ * sx;
+    const float az = stepZ * cx;
+    const float worldStep[3] = {
+        ax * cy + az * sy,
+        ay,
+        -ax * sy + az * cy};
+
     for (unsigned i = 0; i < 3; ++i)
-        g_edge.autoWalkTarget[i] =
-            g_edge.position[i] + forward[i] * step * distance;
-    g_edge.autoWalk = true;
+        g_edge.scriptedTarget[i] =
+            g_edge.position[i] + worldStep[i] * static_cast<float>(distance);
+    g_edge.scriptedTargetYaw = g_edge.yaw;
+
+    // Original state transition:
+    //   mF &= ~0x6; mF |= 1; mC |= 4;
+    g_edge.actionFlags &= ~0x6u;
+    g_edge.actionFlags |= 0x1u;
+    g_edge.controlFlags |= 0x4u;
+
+    platform::logging::writef(
+        "[Edge] Ruins scripted walk start target=(%.5f,%.5f,%.5f) rawStep=%d distance=%d\n",
+        g_edge.scriptedTarget[0],
+        g_edge.scriptedTarget[1],
+        g_edge.scriptedTarget[2],
+        static_cast<int>(zDirectionRaw),
+        distance);
 }
 
 static void readEdgeInput()
@@ -592,29 +626,78 @@ static void updateEdgePositionNative()
         g_edge.stepTranslation[1] < 0.0f)
         g_edge.stepTranslation[1] = 0.0f;
 
-    if (g_edge.autoWalk) {
-        const float dx = g_edge.autoWalkTarget[0] - g_edge.position[0];
-        const float dy = g_edge.autoWalkTarget[1] - g_edge.position[1];
-        const float dz = g_edge.autoWalkTarget[2] - g_edge.position[2];
-        const float remaining = std::sqrt(dx*dx + dy*dy + dz*dz);
-        const float step = std::fabs(g_edge.stepTranslation[2]);
-        if (remaining <= step) {
-            std::copy(std::begin(g_edge.autoWalkTarget),
-                      std::end(g_edge.autoWalkTarget),
-                      std::begin(g_edge.position));
-            g_edge.autoWalk = false;
-            g_edge.stepTranslation[2] = 0.0f;
-        } else {
-            constexpr float kTau = 6.28318530717958647692f;
-            const float targetYaw = std::atan2(
-                g_edge.position[0] - g_edge.autoWalkTarget[0],
-                g_edge.position[2] - g_edge.autoWalkTarget[2]);
-            const float maxTurn =
-                static_cast<float>(0x2D82D8) /
-                static_cast<float>(0x10000000) * kTau;
-            g_edge.stepRotationYaw = std::clamp(
-                wrapAngle(targetYaw - g_edge.yaw), -maxTurn, maxTurn);
-            g_edge.yaw = wrapAngle(g_edge.yaw + g_edge.stepRotationYaw);
+    bool scriptedStepApplied = false;
+
+    if (g_edge.controlFlags != 0u) {
+        // sEdgeTask::Update(): scripted state owns Edge while mC != 0.
+        if (g_edge.controlFlags & 0x4u) {
+            // updateEdgeSub2(), exact branch used by the Ruins opening walk.
+            if (g_edge.actionFlags & 0x2u) {
+                // Target-rotation branch is not exercised by this opening
+                // sequence; preserve the flag for later town scripting work.
+            } else if (g_edge.actionFlags & 0x1u) {
+                const float dx =
+                    g_edge.scriptedTarget[0] - g_edge.position[0];
+                const float dy =
+                    g_edge.scriptedTarget[1] - g_edge.position[1];
+                const float dz =
+                    g_edge.scriptedTarget[2] - g_edge.position[2];
+                const float distanceSq = dx*dx + dy*dy + dz*dz;
+                const float step =
+                    std::fabs(g_edge.stepTranslation[2]);
+
+                // Azel: distanceSquareBetween2Points() <=
+                // FP_Pow2(m30_stepTranslation[2]).
+                if (distanceSq <= step * step) {
+                    std::copy(
+                        std::begin(g_edge.scriptedTarget),
+                        std::end(g_edge.scriptedTarget),
+                        std::begin(g_edge.position));
+                    g_edge.actionFlags &= ~0x1u;
+                    platform::logging::writef(
+                        "[Edge] Ruins scripted walk reached destination\n");
+                } else {
+                    constexpr float kTau = 6.28318530717958647692f;
+                    const float targetYaw = std::atan2(
+                        g_edge.position[0] - g_edge.scriptedTarget[0],
+                        g_edge.position[2] - g_edge.scriptedTarget[2]);
+                    const float maxTurn =
+                        static_cast<float>(0x2D82D8) /
+                        static_cast<float>(0x10000000) * kTau;
+                    const float turn = std::clamp(
+                        wrapAngle(targetYaw - g_edge.yaw),
+                        -maxTurn,
+                        maxTurn);
+                    g_edge.stepRotationYaw = turn;
+                    g_edge.yaw = wrapAngle(g_edge.yaw + turn);
+
+                    // Azel stepNPCForward(): transform the original local
+                    // m30_stepTranslation by Y/X and add it to position.
+                    const float cy = std::cos(g_edge.yaw);
+                    const float sy = std::sin(g_edge.yaw);
+                    const float cx = std::cos(g_edge.pitch);
+                    const float sx = std::sin(g_edge.pitch);
+                    const float lx = g_edge.stepTranslation[0];
+                    const float ly = g_edge.stepTranslation[1];
+                    const float lz = g_edge.stepTranslation[2];
+                    const float ax = lx;
+                    const float ay = ly * cx - lz * sx;
+                    const float az = ly * sx + lz * cx;
+
+                    g_edge.position[0] += ax * cy + az * sy;
+                    g_edge.position[1] += ay;
+                    g_edge.position[2] += -ax * sy + az * cy;
+                    scriptedStepApplied = true;
+                }
+            } else {
+                // Azel clears mC bit 2 on the update after mF bit 0 clears.
+                // That is the real scripted -> player-control handoff.
+                g_edge.controlFlags &= ~0x4u;
+                g_edge.stepTranslation[0] = 0.0f;
+                g_edge.stepTranslation[2] = 0.0f;
+                platform::logging::writef(
+                    "[Edge] Ruins scripted controller released; player control active\n");
+            }
         }
     } else {
         readEdgeInput();
@@ -624,7 +707,8 @@ static void updateEdgePositionNative()
             1.0f, std::sqrt(inputX*inputX + inputY*inputY));
         float rotationStep = 0.0f;
         if (inputMagnitude > 0.0f) {
-            const float desired = std::atan2(inputX, inputY) + g_mainLogic.yaw;
+            const float desired =
+                std::atan2(inputX, inputY) + g_mainLogic.yaw;
             rotationStep = wrapAngle(desired - g_edge.yaw);
             constexpr float kTau = 6.28318530717958647692f;
             const float baseTurn =
@@ -638,8 +722,10 @@ static void updateEdgePositionNative()
             const float minimumTurn =
                 static_cast<float>(0xE38E3) /
                 static_cast<float>(0x10000000) * kTau;
-            const float maxTurn = std::max(minimumTurn, baseTurn * distanceFactor);
-            rotationStep = std::clamp(rotationStep, -maxTurn, maxTurn);
+            const float maxTurn =
+                std::max(minimumTurn, baseTurn * distanceFactor);
+            rotationStep =
+                std::clamp(rotationStep, -maxTurn, maxTurn);
         }
         g_edge.stepRotationYaw = rotationStep;
         g_edge.yaw = wrapAngle(g_edge.yaw + rotationStep);
@@ -648,34 +734,47 @@ static void updateEdgePositionNative()
             platform::input::run_held() ? -0x212 : -0x109) / 65536.0f;
         const float desiredStep = inputMagnitude * speed;
         const float damped =
-            (g_edge.stepTranslation[2] * std::cos(rotationStep) - desiredStep) *
+            (g_edge.stepTranslation[2] * std::cos(rotationStep) -
+             desiredStep) *
             (static_cast<float>(0xE666) / 65536.0f);
         g_edge.stepTranslation[0] = 0.0f;
         g_edge.stepTranslation[2] = desiredStep + damped;
     }
 
-    g_edge.stepTranslation[1] -= static_cast<float>(0x56) / 65536.0f;
+    g_edge.stepTranslation[1] -=
+        static_cast<float>(0x56) / 65536.0f;
     g_edge.stepTranslation[1] = std::max(
-        g_edge.stepTranslation[1], -static_cast<float>(0x800) / 65536.0f);
+        g_edge.stepTranslation[1],
+        -static_cast<float>(0x800) / 65536.0f);
 
-    float forward[3] = {
-        -std::sin(g_edge.yaw), 0.0f, -std::cos(g_edge.yaw)};
-    if (grounded) {
-        const auto& n = g_edge.collision.floorNormal;
-        const float projection = forward[0]*n.x + forward[2]*n.z;
-        forward[0] -= n.x * projection;
-        forward[1] -= n.y * projection;
-        forward[2] -= n.z * projection;
-        const float length = std::sqrt(
-            forward[0]*forward[0] + forward[1]*forward[1] +
-            forward[2]*forward[2]);
-        if (length > 0.000001f)
-            for (float& component : forward) component /= length;
+    if (!scriptedStepApplied) {
+        float forward[3] = {
+            -std::sin(g_edge.yaw), 0.0f, -std::cos(g_edge.yaw)};
+        if (grounded) {
+            const auto& n = g_edge.collision.floorNormal;
+            const float projection =
+                forward[0]*n.x + forward[2]*n.z;
+            forward[0] -= n.x * projection;
+            forward[1] -= n.y * projection;
+            forward[2] -= n.z * projection;
+            const float length = std::sqrt(
+                forward[0]*forward[0] +
+                forward[1]*forward[1] +
+                forward[2]*forward[2]);
+            if (length > 0.000001f)
+                for (float& component : forward)
+                    component /= length;
+        }
+        g_edge.position[0] +=
+            forward[0] * -g_edge.stepTranslation[2];
+        g_edge.position[1] +=
+            forward[1] * -g_edge.stepTranslation[2] +
+            g_edge.stepTranslation[1];
+        g_edge.position[2] +=
+            forward[2] * -g_edge.stepTranslation[2];
+    } else {
+        g_edge.position[1] += g_edge.stepTranslation[1];
     }
-    g_edge.position[0] += forward[0] * -g_edge.stepTranslation[2];
-    g_edge.position[1] +=
-        forward[1] * -g_edge.stepTranslation[2] + g_edge.stepTranslation[1];
-    g_edge.position[2] += forward[2] * -g_edge.stepTranslation[2];
 
     updateEdgeLookAt();
 
@@ -1052,9 +1151,9 @@ static s32 dispatchNative(u32 functionEA, unsigned argc, const s32* args)
     case 0x060144C0u:
         return argc == 2 ? updateWorldGridRaw(args[0], args[1]) : 0;
     case 0x06057058u: {
+        // TWN_RUIN::scriptFunction_6057058()
         const s32 result = setupCameraFollowMode();
-        setupNpcWalkInZDirection(
-            static_cast<float>(227) / 65536.0f, 36);
+        setupNpcWalkInZDirection(0, 227, 36);
         return result;
     }
     case 0x0600CC78u: // setSomethingInNpc0
@@ -1707,7 +1806,13 @@ struct TownEdgeTask final : s_workAreaTemplate<TownEdgeTask> {
             g_edge.animationLeftOver = 0;
             g_edge.transitionRemaining = 0;
             g_edge.ambientAnimation = 5;
-            g_edge.autoWalk = false;
+            g_edge.controlFlags = 0;
+            g_edge.actionFlags = 0;
+            std::fill(
+                std::begin(g_edge.scriptedTarget),
+                std::end(g_edge.scriptedTarget),
+                0.0f);
+            g_edge.scriptedTargetYaw = g_edge.yaw;
         }
 
         updateEdgePositionNative();
