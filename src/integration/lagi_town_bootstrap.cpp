@@ -1,6 +1,6 @@
-#include "lagi/azel_town_bootstrap.h"
+#include "lagi/lagi_town_bootstrap.h"
 
-#include "lagi/azel_direct_boot.h"
+#include "lagi/lagi_direct_boot.h"
 #include "lagi/disc_image.h"
 #include "lagi/platform.h"
 
@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <vector>
 
-// Implemented by azel_saturn_memory_vita.cpp.
+// Implemented by lagi_saturn_memory_vita.cpp.
 s8 readSaturnS8(sSaturnPtr ptr);
 s32 readSaturnS32(sSaturnPtr ptr);
 u32 readSaturnU32(sSaturnPtr ptr);
