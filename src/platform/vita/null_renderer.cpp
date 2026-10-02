@@ -1591,8 +1591,15 @@ bool prepare_vdp1_model(const Vdp1ModelSource& model)
         static_cast<unsigned int>(model.vertexCount);
     const unsigned int vertexBytes =
         vertexCount * sizeof(azel::DebugColorVertex);
+    // Filled geometry needs six indices per source quad. The Wires diagnostic
+    // follows the original Saturn quad perimeter directly, which needs four
+    // independent line segments (eight indices) per quad.
+    const std::size_t wireIndexCount = model.polygonCount * 8u;
+    const std::size_t genericIndexCount =
+        std::max<std::size_t>(model.vertexCount, wireIndexCount);
     const unsigned int indexBytes =
-        vertexCount * sizeof(std::uint16_t);
+        static_cast<unsigned int>(
+            genericIndexCount * sizeof(std::uint16_t));
 
     g_vdp1Vertices = static_cast<azel::DebugColorVertex*>(
         probeGpuAlloc(
@@ -5549,19 +5556,34 @@ bool submit_vdp1_model(
         g_liveTownGouraudPrepValid &&
         g_liveTownGouraudPrepPolygonCount == model.polygonCount &&
         g_liveTownGouraudPrep.size() == model.polygonCount) {
+        // The CPU model expands each original Saturn quad to:
+        //     A,B,C / A,C,D
+        // so triangle wireframe exposes an artificial A-C diagonal. Wires is
+        // intended to visualize the source VDP1 quads, not the GXM
+        // triangulation. Submit the four original perimeter edges explicitly.
+        static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
+        static const unsigned int edgeCorners[8] = {
+            0u,1u, 1u,2u, 2u,3u, 3u,0u
+        };
+
         unsigned int write = 0u;
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             if (!g_liveTownGouraudPrep[p].visible)
                 continue;
-            for (unsigned int k = 0; k < 6u; ++k)
+
+            const unsigned int base = p * 6u;
+            for (unsigned int k = 0; k < 8u; ++k) {
                 g_vdp1Indices[write++] =
-                    static_cast<std::uint16_t>(p * 6u + k);
+                    static_cast<std::uint16_t>(
+                        base + cornerVertex[edgeCorners[k]]);
+            }
         }
+
         if (write) {
             sceGxmDraw(
                 g_probeContext,
-                SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_PRIMITIVE_LINES,
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_vdp1Indices,
                 write);
