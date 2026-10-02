@@ -782,4 +782,76 @@ bool build_edge_idle_debug_mesh(BasicWingDebugMesh& out)
            textures;
 }
 
+bool build_edge_shadow_debug_mesh(BasicWingDebugMesh& out)
+{
+    out = {};
+
+    sSaturnMemoryFile* overlay = town_overlay_file();
+    const TownRuntimeState& runtime = town_runtime();
+    if (!overlay || !overlay->m_data ||
+        !runtime.initialized || !runtime.edgeEA ||
+        runtime.edgeEA < overlay->m_base)
+        return false;
+
+    const std::uint32_t edge = runtime.edgeEA - overlay->m_base;
+    if (edge + 0x30u > overlay->m_dataSize)
+        return false;
+
+    const auto* def = overlay->m_data + edge;
+    const std::uint32_t animationTableEA = be32(def + 0x2Cu);
+    if (animationTableEA < overlay->m_base)
+        return false;
+    const std::uint32_t animationTable =
+        animationTableEA - overlay->m_base;
+    if (animationTable + 4u > overlay->m_dataSize)
+        return false;
+
+    // sEdgeTask::Draw uses the second halfword of animation-table entry 0 as
+    // the COMMON3 shadow model key.
+    const std::uint16_t shadowKey =
+        be16(overlay->m_data + animationTable + 2u);
+
+    const std::vector<std::uint8_t>* mcbOwned =
+        town_runtime_resource("COMMON3.MCB");
+    if (!mcbOwned || shadowKey + 4u > mcbOwned->size())
+        return false;
+    const auto& mcb = *mcbOwned;
+
+    // File-bundle model keys point at a BE32 raw model offset.
+    const std::uint32_t modelOffset =
+        be32(mcb.data() + shadowKey);
+    if (!modelOffset ||
+        !appendModel(mcb, modelOffset, identity(), 0u, out))
+        return false;
+
+    // The Saturn shadow is a VDP1 mesh primitive: every other destination
+    // pixel is omitted. Preserve that semantic explicitly and feed a sentinel
+    // 1x1 material to the Vita fragment path; WPOS performs the stipple.
+    for (auto& record : out.polygonRecords)
+        record.cmdPmod |= 0x0100u;
+
+    DecodedMode1Texture marker{};
+    marker.cmdPmod = 0x0100u;
+    marker.width = 1u;
+    marker.height = 1u;
+    // Partial alpha is only a sentinel. Normal decoded Saturn texels are
+    // either 0x00 or 0xFF alpha, so this cannot collide with game textures.
+    marker.rgba.assign(1u, 0xC0000000u);
+    out.decodedTextureData.push_back(std::move(marker));
+    out.polygonTextureIndices.assign(out.polygons, 0u);
+    out.uniqueTextures = 1u;
+    out.decodedTextures = 1u;
+    out.mode1DecodeValid = true;
+    out.mode1DecodeFullyResolved = true;
+    out.cgbReferencesValid = true;
+
+    lagi::platform::logging::writef(
+        "[Edge] shadow model key=%04X raw=%08X polys=%u mesh-stipple\n",
+        shadowKey, modelOffset, out.polygons);
+
+    return out.polygons != 0u &&
+           out.vertices.size() == out.polygons * 6u &&
+           out.polygonRecords.size() == out.polygons;
+}
+
 } // namespace lagi::azel

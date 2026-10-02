@@ -1,15 +1,27 @@
-// Cheap textured RGB555 combine for the subdivided Mode 7 path.
-// The expensive projected-perimeter solve has already been sampled on the
-// CPU at each generated subdivision vertex.
-
+// Cheap textured RGB555 combine for the subdivided Full path.
+// The expensive projected-perimeter solve has already been approximated by
+// the cached subdivision vertices.
+//
+// 0xC0-alpha is a private material sentinel for Saturn VDP1 mesh mode.
+// Edge's actual shadow model uses this path so alternate screen pixels are
+// discarded exactly at the backend boundary.
 float4 main(
     float2 vTexcoord : TEXCOORD0,
     float3 vShade : TEXCOORD1,
+    float4 fragCoord : WPOS,
     uniform sampler2D tex)
 {
     float4 color = tex2D(tex, vTexcoord);
     if (color.a < 0.5f)
         discard;
+
+    if (color.a > 0.70f && color.a < 0.80f) {
+        float parity = frac(
+            (floor(fragCoord.x) + floor(fragCoord.y)) * 0.5f);
+        if (parity >= 0.5f)
+            discard;
+        return float4(0.0f, 0.0f, 0.0f, 1.0f);
+    }
 
     float3 base5 = floor(color.rgb * 31.0f + 0.5f);
     float3 result5 = clamp(base5 + vShade * 31.0f, 0.0f, 31.0f);

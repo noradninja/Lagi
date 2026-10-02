@@ -134,6 +134,19 @@ bool runtime_smoke_init()
         return false;
     }
 
+    lagi::azel::BasicWingDebugMesh edgeShadow{};
+    if (!lagi::azel::build_edge_shadow_debug_mesh(edgeShadow)) {
+        std::printf("[Edge] shadow reconstruction FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] EDGE SHADOW MODEL");
+        return false;
+    }
+    if (!lagi::platform::renderer::load_edge_shadow_model(
+            std::move(edgeShadow))) {
+        std::printf("[Edge] shadow renderer registration FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] EDGE SHADOW RENDER MODEL");
+        return false;
+    }
+
     if (!lagi::azel::load_dragon_common_data()) {
         std::printf("[Dragon] COMMON data initialization FAILED\n");
         lagi::platform::renderer::failure("[FAIL] DRAGON COMMON DATA");

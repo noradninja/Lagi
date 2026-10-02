@@ -189,6 +189,9 @@ static azel::StaticRoomDebugMesh g_staticRoomCpuMesh{};
 static bool g_staticRoomCpuReady = false;
 static azel::BasicWingDebugMesh g_edgeIdleCpuMesh{};
 static bool g_edgeIdleCpuReady = false;
+static azel::BasicWingDebugMesh g_edgeShadowCpuMesh{};
+static bool g_edgeShadowCpuReady = false;
+static std::vector<std::uint16_t> g_edgeShadowTownTextureIndices;
 static azel::BasicWingDebugMesh g_liveTownCpuMesh{};
 static std::uint64_t g_liveTownSignature = 0;
 static std::uint64_t g_liveTownStaticSignature = 0;
@@ -2413,6 +2416,22 @@ static void appendLiveTownEdge()
             edge.polygons.size(),
             g_staticRoomCpuMesh.polygonTextureIndices.size() -
                 g_edgeFirstPolygon);
+    }
+
+    // Original sEdgeTask::Draw submits the COMMON3 mesh shadow under the
+    // exact same Edge transform immediately before the animated actor.
+    if (g_edgeShadowCpuReady &&
+        !g_edgeShadowTownTextureIndices.empty()) {
+        azel_bridge::LiveVdp1Model shadow{};
+        shadow.vertices = g_edgeShadowCpuMesh.vertices;
+        shadow.lightingVertices = g_edgeShadowCpuMesh.lightingVertices;
+        shadow.polygons = g_edgeShadowCpuMesh.polygonRecords;
+        shadow.gouraud555.resize(shadow.polygons.size());
+        appendLiveTownModel(
+            shadow,
+            state,
+            g_edgeShadowTownTextureIndices.data(),
+            g_edgeShadowTownTextureIndices.size());
     }
 
     appendLiveTownModel(
@@ -4655,6 +4674,26 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
                 static_cast<std::uint16_t>(textureBase + index));
         }
 
+        g_edgeShadowTownTextureIndices.clear();
+        if (g_edgeShadowCpuReady &&
+            !g_edgeShadowCpuMesh.decodedTextureData.empty()) {
+            const std::uint16_t shadowTextureBase =
+                static_cast<std::uint16_t>(
+                    g_staticRoomCpuMesh.decodedTextureData.size());
+            g_staticRoomCpuMesh.decodedTextureData.insert(
+                g_staticRoomCpuMesh.decodedTextureData.end(),
+                g_edgeShadowCpuMesh.decodedTextureData.begin(),
+                g_edgeShadowCpuMesh.decodedTextureData.end());
+            g_edgeShadowTownTextureIndices.reserve(
+                g_edgeShadowCpuMesh.polygonTextureIndices.size());
+            for (const auto index :
+                 g_edgeShadowCpuMesh.polygonTextureIndices) {
+                g_edgeShadowTownTextureIndices.push_back(
+                    static_cast<std::uint16_t>(
+                        shadowTextureBase + index));
+            }
+        }
+
         g_staticRoomCpuMesh.polygons +=
             g_edgeIdleCpuMesh.polygons;
         g_staticRoomCpuMesh.models +=
@@ -4785,6 +4824,28 @@ bool load_basic_wing_viewer()
     }
     return true;
 }
+
+bool load_edge_shadow_model(azel::BasicWingDebugMesh&& mesh)
+{
+    if (mesh.vertices.empty() ||
+        mesh.vertices.size() != mesh.polygons * 6u ||
+        mesh.polygonRecords.size() != mesh.polygons ||
+        !mesh.mode1DecodeFullyResolved ||
+        mesh.polygonTextureIndices.size() != mesh.polygons)
+        return false;
+
+    g_edgeShadowCpuMesh = std::move(mesh);
+    g_edgeShadowCpuReady = true;
+
+    char line[78];
+    std::snprintf(
+        line, sizeof(line),
+        "[PASS] EDGE SHADOW %u POLYS / VDP1 MESH",
+        g_edgeShadowCpuMesh.polygons);
+    status(line, 0xFF70E0A0u);
+    return true;
+}
+
 
 bool submit_vdp1_model(
     const Vdp1ModelSource& model,
@@ -5016,6 +5077,9 @@ bool submit_vdp1_model(
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             if (!g_liveTownGouraudPrep[p].visible)
+                continue;
+            if (subdividedGouraudGray &&
+                (model.polygons[p].cmdPmod & 0x0100u))
                 continue;
 
             const std::uint16_t textureIndex =

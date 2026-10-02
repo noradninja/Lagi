@@ -238,6 +238,7 @@ struct BasicWingDebugMesh {
 
 bool build_basic_wing_debug_mesh(BasicWingDebugMesh& out);
 bool build_edge_idle_debug_mesh(BasicWingDebugMesh& out);
+bool build_edge_shadow_debug_mesh(BasicWingDebugMesh& out);
 bool build_town_world_scene(StaticRoomDebugMesh& out);
 
 // Decode one VDP1 material descriptor from the currently loaded Ruins town
