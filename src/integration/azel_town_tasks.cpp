@@ -113,6 +113,7 @@ struct MainLogicRuntimeState {
     float pitch = 0.0f;
     float yaw = 0.0f;
     float yawOffset = 0.0f;
+    float pitchOffset = 0.0f;
     TownCollisionBody collision{};
 };
 
@@ -199,6 +200,23 @@ static s32 setupCameraFollowMode()
     g_mainLogic.anchor[1] = g_edge.position[1] + kAnchorHeight;
     g_mainLogic.anchor[2] = g_edge.position[2];
 
+    // Vita camera modifier: Triangle holds manual camera control while the
+    // right stick adjusts the native follow-camera offsets. Square recenters.
+    if (platform::input::reset_view_pressed()) {
+        g_mainLogic.yawOffset = 0.0f;
+        g_mainLogic.pitchOffset = 0.0f;
+    }
+    if (platform::input::camera_held()) {
+        g_mainLogic.yawOffset = std::clamp(
+            g_mainLogic.yawOffset -
+                platform::input::analog_camera_x() * 0.055f,
+            -1.35f, 1.35f);
+        g_mainLogic.pitchOffset = std::clamp(
+            g_mainLogic.pitchOffset +
+                platform::input::analog_camera_y() * 0.040f,
+            -0.55f, 0.55f);
+    }
+
     float basisZ[3]{};
     cameraBasisZ(g_edge.yaw, g_edge.pitch, basisZ);
     for (unsigned i = 0; i < 3; ++i) {
@@ -215,6 +233,7 @@ static s32 setupCameraFollowMode()
     g_mainLogic.pitch = g_edge.pitch;
     g_mainLogic.yaw = g_edge.yaw;
     g_mainLogic.yawOffset = 0.0f;
+    g_mainLogic.pitchOffset = 0.0f;
     g_mainLogic.followReady = true;
     presentCamera();
     return 0;
@@ -328,8 +347,9 @@ static void updateFollowCamera()
         maxTurn,
         static_cast<float>(0x1555555) /
             static_cast<float>(0x10000000) * kTau);
-    const float desiredPitch = g_mainLogic.cameraParamsIndex
-        ? kDesiredPitch1 : kDesiredPitch0;
+    const float desiredPitch =
+        (g_mainLogic.cameraParamsIndex ? kDesiredPitch1 : kDesiredPitch0) +
+        g_mainLogic.pitchOffset;
     const float pitchStep = std::clamp(
         wrapAngle(desiredPitch - g_mainLogic.pitch), -maxTurn, maxTurn);
     g_mainLogic.pitch = std::clamp(

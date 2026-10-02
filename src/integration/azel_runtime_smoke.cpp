@@ -188,6 +188,11 @@ bool runtime_smoke_init()
     }
     lagi::platform::renderer::status("[PASS] TWN_RUIN TASK PIPELINE", 0xFF60A0F0u);
     std::printf("[Azel] TWN_RUIN native task pipeline started\n");
+
+    // Initialize the native GXM viewer immediately and leave the diagnostic
+    // console hidden. The town task will switch to Full as soon as Ruins is
+    // loaded, so no Select press is required to enter the scene.
+    lagi::platform::renderer::toggle_debug_console();
     return true;
 }
 

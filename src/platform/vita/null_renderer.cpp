@@ -333,8 +333,11 @@ static unsigned int g_townEdgePreviousAnimation = 0;
 static unsigned int g_townEdgePreviousFrame = 0;
 static float g_townEdgeTransition = 1.0f;
 
-static int g_viewMode = 0;
+static int g_viewMode = 7;
 static constexpr bool g_halfResolution = true;
+// Retain all capture/profiling overlays in code, but keep the normal scene
+// presentation clean. Flip this for renderer investigations.
+static constexpr bool kShowTownDiagnostics = false;
 static unsigned int g_basicWingAnimationFrame = 0;
 
 static Vdp1ModelSource basicWingVdp1Source()
@@ -584,26 +587,14 @@ static int viewerRenderHeight();
 
 static const char* viewerModeLabel(int mode)
 {
-    static const char* labels[] = {
-        "MODE 0 - BASIC WING TEXTURED",
-        "MODE 1 - BASIC WING GOURAUD",
-        "MODE 2 - BASIC WING GOURAUD GRAY",
-        "MODE 3 - BASIC WING POLY DEBUG",
-        "MODE 4 - BASIC WING WIREFRAME",
-        "MODE 5 - RUIN TEXTURED",
-        "MODE 6 - RUIN GOURAUD",
-        "MODE 7 - AUTH GOURAUD",
-        "MODE 8 - AUTH TEXTURED",
-        "MODE 9 - AUTH FLAT",
-        "MODE 10 - AUTH LIGHTING ONLY"
-    };
-
-    if (mode < 0 ||
-        mode >= static_cast<int>(
-            sizeof(labels) / sizeof(labels[0])))
-        return "MODE ?";
-
-    return labels[mode];
+    switch (mode) {
+    case 7:  return "FULL";
+    case 8:  return "TEXTURE";
+    case 10: return "LIGHTING";
+    case 9:  return "QUADS";
+    case 11: return "WIRES";
+    default: return "";
+    }
 }
 
 static void drawViewerModeOverlay(
@@ -4567,6 +4558,7 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
 
     g_staticRoomCpuMesh = mesh;
     g_staticRoomCpuReady = true;
+    g_viewMode = 7; // Full
 
     g_townPlayerReady =
         mesh.cameraValid &&
@@ -4921,6 +4913,57 @@ bool submit_vdp1_model(
         return false;
 
     if (textured) {
+        const bool liveVisibility =
+            g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+            g_liveTownGouraudPrepValid &&
+            g_liveTownGouraudPrepPolygonCount == model.polygonCount &&
+            g_liveTownGouraudPrep.size() == model.polygonCount;
+
+        if (liveVisibility) {
+            static std::vector<unsigned int> counts;
+            static std::vector<unsigned int> writes;
+            const unsigned int bucketCount =
+                static_cast<unsigned int>(g_vdp1GpuTextures.size());
+            counts.assign(bucketCount, 0u);
+            writes.assign(bucketCount, 0u);
+
+            for (unsigned int p = 0;
+                 p < static_cast<unsigned int>(model.polygonCount); ++p) {
+                if (!g_liveTownGouraudPrep[p].visible)
+                    continue;
+                const std::uint16_t textureIndex =
+                    model.polygonTextureIndices[p];
+                if (textureIndex < bucketCount)
+                    counts[textureIndex] += 6u;
+            }
+
+            unsigned int total = 0u;
+            if (g_vdp1TextureBatches.size() < bucketCount)
+                g_vdp1TextureBatches.resize(bucketCount);
+            for (unsigned int t = 0; t < bucketCount; ++t) {
+                g_vdp1TextureBatches[t].firstIndex = total;
+                g_vdp1TextureBatches[t].indexCount = counts[t];
+                writes[t] = total;
+                total += counts[t];
+            }
+            if (total > model.vertexCount)
+                return false;
+
+            for (unsigned int p = 0;
+                 p < static_cast<unsigned int>(model.polygonCount); ++p) {
+                if (!g_liveTownGouraudPrep[p].visible)
+                    continue;
+                const std::uint16_t textureIndex =
+                    model.polygonTextureIndices[p];
+                if (textureIndex >= bucketCount)
+                    continue;
+                unsigned int& write = writes[textureIndex];
+                for (unsigned int k = 0; k < 6u; ++k)
+                    g_vdp1TextureIndices[write++] =
+                        static_cast<std::uint16_t>(p * 6u + k);
+            }
+        }
+
         for (unsigned int t = 0; t < g_vdp1GpuTextures.size(); ++t) {
             const TextureBatch& batch = g_vdp1TextureBatches[t];
             if (!batch.indexCount)
@@ -5321,6 +5364,31 @@ bool submit_vdp1_model(
                totalVisibleIndices == 0u;
     }
 
+    if (wireframe &&
+        g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+        g_liveTownGouraudPrepValid &&
+        g_liveTownGouraudPrepPolygonCount == model.polygonCount &&
+        g_liveTownGouraudPrep.size() == model.polygonCount) {
+        unsigned int write = 0u;
+        for (unsigned int p = 0;
+             p < static_cast<unsigned int>(model.polygonCount); ++p) {
+            if (!g_liveTownGouraudPrep[p].visible)
+                continue;
+            for (unsigned int k = 0; k < 6u; ++k)
+                g_vdp1Indices[write++] =
+                    static_cast<std::uint16_t>(p * 6u + k);
+        }
+        if (write) {
+            sceGxmDraw(
+                g_probeContext,
+                SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16,
+                g_vdp1Indices,
+                write);
+        }
+        return true;
+    }
+
     // Auth Flat is the cleanest benchmark for backend submission cost. Keep
     // Azel's submitted model set intact and compact only the final index list:
     // reject a quad iff all four original Saturn corners lie outside one same
@@ -5394,36 +5462,29 @@ static void renderBasicWingViewer()
     g_profileGxmWaitUs = 0u;
     g_liveTownGouraudPrepValid = false;
 
-    const int previousMode = g_viewMode;
+    // User-facing scene views only. Dragon/regression modes remain in the
+    // codebase for bring-up, but are no longer part of the runtime viewer.
+    static constexpr int kSceneModes[5] = {7, 8, 10, 9, 11};
+    int sceneModeIndex = 0;
+    for (int i = 0; i < 5; ++i)
+        if (g_viewMode == kSceneModes[i])
+            sceneModeIndex = i;
 
-    const int viewerModeCount =
-        g_staticRoomCpuReady
-            ? (g_staticRoomCpuMesh.cameraValid &&
-               g_staticRoomCpuMesh.lightingValid
-                ? 11
-                : (g_staticRoomCpuMesh.lightingValid ? 7 : 6))
-            : 5;
     if (input::prev_mode_pressed())
-        g_viewMode = (g_viewMode + viewerModeCount - 1) % viewerModeCount;
+        sceneModeIndex = (sceneModeIndex + 4) % 5;
     if (input::next_mode_pressed())
-        g_viewMode = (g_viewMode + 1) % viewerModeCount;
-    const bool roomMode =
-        g_staticRoomCpuReady && g_viewMode >= 5;
-    const bool previousRoomMode =
-        g_staticRoomCpuReady && previousMode >= 5;
-    if (roomMode != previousRoomMode) {
-        g_viewDistance =
-            roomMode ? g_staticRoomFitDistance : g_basicWingFitDistance;
-    }
+        sceneModeIndex = (sceneModeIndex + 1) % 5;
+    g_viewMode = kSceneModes[sceneModeIndex];
 
+    const bool roomMode =
+        g_staticRoomCpuReady;
     const bool roomAuthenticCameraMode =
         g_staticRoomCpuReady &&
-        g_staticRoomCpuMesh.cameraValid &&
-        g_viewMode >= 7;
+        g_staticRoomCpuMesh.cameraValid;
 
     // Debug orbit controls alter only the view transform. Authentic modes use
     // the recovered Azel startup camera.
-    if (!roomAuthenticCameraMode) {
+    if (!roomMode) {
         g_viewYaw += input::analog_x() * 0.035f;
         g_viewPitch += input::analog_y() * 0.035f;
         g_viewPitch =
@@ -5440,7 +5501,7 @@ static void renderBasicWingViewer()
     }
 
     if (input::reset_view_pressed()) {
-        if (!roomAuthenticCameraMode) {
+        if (!roomMode) {
             g_viewYaw = 0.60f;
             g_viewPitch = -0.30f;
             g_viewDistance =
@@ -5464,6 +5525,9 @@ static void renderBasicWingViewer()
     const bool roomAuthenticLightingOnlyMode =
         roomAuthenticCameraMode &&
         g_viewMode == 10;
+    const bool roomAuthenticWireframeMode =
+        roomAuthenticCameraMode &&
+        g_viewMode == 11;
 
     if (!roomMode && g_residentVdp1Model != ResidentVdp1Model::BasicWing) {
         if (!prepare_vdp1_model(basicWingVdp1Source()))
@@ -5496,8 +5560,7 @@ static void renderBasicWingViewer()
             ? buildAuthenticRoomWvp()
             : buildViewerWvp(roomMode);
 
-    if (roomAuthenticCameraMode &&
-        (roomAuthenticLitMode || roomAuthenticLightingOnlyMode))
+    if (roomAuthenticCameraMode)
         prepareLiveTownGouraudVisibility(wvp);
 
     const int gxmPitch = viewerRenderPitch();
@@ -5546,6 +5609,8 @@ static void renderBasicWingViewer()
         renderMode = Vdp1RenderMode::PolygonColor;
     } else if (roomAuthenticLightingOnlyMode) {
         renderMode = Vdp1RenderMode::GouraudGrayscale;
+    } else if (roomAuthenticWireframeMode) {
+        renderMode = Vdp1RenderMode::Wireframe;
     } else if (roomDiagnosticLitMode || roomAuthenticLitMode) {
         renderMode = Vdp1RenderMode::TexturedGouraud;
     } else if (g_staticRoomCpuMesh.texturesFullyResolved ||
@@ -5603,12 +5668,14 @@ static void renderBasicWingViewer()
         gxmPitch,
         g_viewMode);
 
-    drawTownInputOverlay(
-        colorBuffer,
-        gxmPitch,
-        roomAuthenticCameraMode);
+    if (kShowTownDiagnostics) {
+        drawTownInputOverlay(
+            colorBuffer,
+            gxmPitch,
+            roomAuthenticCameraMode);
+    }
 
-    if (roomAuthenticFlatMode) {
+    if (kShowTownDiagnostics && roomAuthenticFlatMode) {
         char perfLine[80];
         char cacheLine[80];
         char splitLine[80];
@@ -5647,7 +5714,7 @@ static void renderBasicWingViewer()
             splitLine, 0xFFFFFFFFu);
     }
 
-    if (roomAuthenticCameraMode) {
+    if (kShowTownDiagnostics && roomAuthenticCameraMode) {
         char timing0[80], timing1[80], timing2[80], timing3[80], timing4[80];
         char timing5[80], timing6[80], timing7[80], timing8[80];
         std::snprintf(
@@ -5715,12 +5782,21 @@ static void renderBasicWingViewer()
         profileText(160, timing8);
     }
 
+    const char* resolutionLabel =
+        g_halfResolution ? "480X272 GXM" : "960X544 NATIVE";
+    drawTextSmallToBuffer(
+        colorBuffer,
+        gxmPitch,
+        17,
+        viewerRenderHeight() - 11,
+        resolutionLabel,
+        0xFF000000u);
     drawTextSmallToBuffer(
         colorBuffer,
         gxmPitch,
         16,
         viewerRenderHeight() - 12,
-        g_halfResolution ? "480X272 GXM" : "960X544 NATIVE",
+        resolutionLabel,
         0xFFFFFFFFu);
 
     SceDisplayFrameBuf fb{};
@@ -5904,8 +5980,11 @@ static void updateLiveTownAzelLighting()
 
 bool town_scene_active()
 {
+    const bool sceneMode =
+        g_viewMode == 7 || g_viewMode == 8 || g_viewMode == 10 ||
+        g_viewMode == 9 || g_viewMode == 11;
     return !g_debugVisible && g_staticRoomCpuReady &&
-           g_staticRoomCpuMesh.cameraValid && g_viewMode >= 7 &&
+           g_staticRoomCpuMesh.cameraValid && sceneMode &&
            g_townPlayerReady;
 }
 
