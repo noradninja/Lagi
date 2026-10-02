@@ -5111,10 +5111,8 @@ bool submit_vdp1_model(
                 g_probeContext,
                 mesh ? g_meshTextureFragmentProgram
                      : g_textureFragmentProgram);
-            if (!mesh) {
-                sceGxmSetFragmentTexture(
-                    g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
-            }
+            sceGxmSetFragmentTexture(
+                g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
             sceGxmDraw(
                 g_probeContext,
                 SCE_GXM_PRIMITIVE_TRIANGLES,
@@ -5295,10 +5293,8 @@ bool submit_vdp1_model(
                     g_probeContext,
                     mesh ? g_meshSubdivFragmentProgram
                          : g_texturedGouraudSubdivFragmentProgram);
-                if (!mesh) {
-                    sceGxmSetFragmentTexture(
-                        g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
-                }
+                sceGxmSetFragmentTexture(
+                    g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
             }
             sceGxmDraw(
                 g_probeContext,

@@ -1,13 +1,20 @@
 // Saturn VDP1 mesh primitive.
-// Mesh mode draws only alternating destination pixels; color calculation for
-// Edge's shadow is simply black, so no texture sample or Gouraud input is
-// needed. The same GXP is linked against both the texture-only and subdivided
-// vertex programs.
-float4 main(float4 fragCoord : WPOS)
+// The source texture still matters: it defines the sprite/polygon silhouette
+// (Edge's shadow is an oval alpha mask). Mesh mode then removes alternating
+// destination pixels from that already-masked shape.
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    float4 fragCoord : WPOS,
+    uniform sampler2D tex)
 {
+    float4 color = tex2D(tex, vTexcoord);
+    if (color.a < 0.5f)
+        discard;
+
     float parity = frac(
         (floor(fragCoord.x) + floor(fragCoord.y)) * 0.5f);
     if (parity >= 0.5f)
         discard;
-    return float4(0.0f, 0.0f, 0.0f, 1.0f);
+
+    return float4(color.rgb, 1.0f);
 }

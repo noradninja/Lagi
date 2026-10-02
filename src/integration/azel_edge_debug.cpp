@@ -824,34 +824,31 @@ bool build_edge_shadow_debug_mesh(BasicWingDebugMesh& out)
         !appendModel(mcb, modelOffset, identity(), 0u, out))
         return false;
 
-    // The Saturn shadow is a VDP1 mesh primitive: every other destination
-    // pixel is omitted. Preserve that semantic in CMDPMOD; the Vita backend
-    // dispatches mesh primitives directly from this flag.
+    // The Saturn shadow is a normal textured VDP1 model with mesh mode set.
+    // Its texture supplies the oval alpha silhouette; CMDPMOD mesh supplies
+    // the alternating destination-pixel coverage. Do not replace the material
+    // with a solid marker texture.
     for (auto& record : out.polygonRecords)
         record.cmdPmod |= 0x0100u;
 
-    DecodedMode1Texture marker{};
-    marker.cmdPmod = 0x0100u;
-    marker.width = 1u;
-    marker.height = 1u;
-    // The texture is intentionally boring: mesh semantics come from CMDPMOD,
-    // not from a magic alpha value.
-    marker.rgba.assign(1u, 0xFF000000u);
-    out.decodedTextureData.push_back(std::move(marker));
-    out.polygonTextureIndices.assign(out.polygons, 0u);
-    out.uniqueTextures = 1u;
-    out.decodedTextures = 1u;
-    out.mode1DecodeValid = true;
-    out.mode1DecodeFullyResolved = true;
-    out.cgbReferencesValid = true;
+    const std::vector<std::uint8_t>* cgbOwned =
+        town_runtime_resource("COMMON3.CGB");
+    if (!cgbOwned)
+        return false;
+    const bool textures = decodeTextures(*cgbOwned, out);
+    if (!textures)
+        return false;
 
     lagi::platform::logging::writef(
-        "[Edge] shadow model key=%04X raw=%08X polys=%u mesh-stipple\n",
-        shadowKey, modelOffset, out.polygons);
+        "[Edge] shadow model key=%04X raw=%08X polys=%u textures=%u/%u mesh-stipple\n",
+        shadowKey, modelOffset, out.polygons,
+        out.decodedTextures, out.uniqueTextures);
 
     return out.polygons != 0u &&
            out.vertices.size() == out.polygons * 6u &&
-           out.polygonRecords.size() == out.polygons;
+           out.polygonRecords.size() == out.polygons &&
+           out.polygonTextureIndices.size() == out.polygons &&
+           out.mode1DecodeFullyResolved;
 }
 
 } // namespace lagi::azel
