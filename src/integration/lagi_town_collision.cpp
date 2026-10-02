@@ -1,4 +1,4 @@
-#include "lagi/azel_town_collision.h"
+#include "lagi/lagi_town_collision.h"
 
 #include <algorithm>
 #include <array>
