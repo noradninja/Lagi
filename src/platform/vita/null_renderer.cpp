@@ -6088,10 +6088,12 @@ static void renderBasicWingViewer()
     g_profileRenderUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - renderStartUs);
 
-    drawViewerModeOverlay(
-        colorBuffer,
-        gxmPitch,
-        g_viewMode);
+    if (g_showThreadTimingOsd) {
+        drawViewerModeOverlay(
+            colorBuffer,
+            gxmPitch,
+            g_viewMode);
+    }
 
     if (g_showThreadTimingOsd && roomAuthenticCameraMode) {
         char thread0[64], thread1[64], thread2[64], thread3[64];
@@ -6250,22 +6252,24 @@ static void renderBasicWingViewer()
         profileText(160, timing8);
     }
 
-    const char* resolutionLabel =
-        g_halfResolution ? "480X272 GXM" : "960X544 NATIVE";
-    drawTextSmallToBuffer(
-        colorBuffer,
-        gxmPitch,
-        17,
-        viewerRenderHeight() - 11,
-        resolutionLabel,
-        0xFF000000u);
-    drawTextSmallToBuffer(
-        colorBuffer,
-        gxmPitch,
-        16,
-        viewerRenderHeight() - 12,
-        resolutionLabel,
-        0xFFFFFFFFu);
+    if (g_showThreadTimingOsd) {
+        const char* resolutionLabel =
+            g_halfResolution ? "480X272 GXM" : "960X544 NATIVE";
+        drawTextSmallToBuffer(
+            colorBuffer,
+            gxmPitch,
+            17,
+            viewerRenderHeight() - 11,
+            resolutionLabel,
+            0xFF000000u);
+        drawTextSmallToBuffer(
+            colorBuffer,
+            gxmPitch,
+            16,
+            viewerRenderHeight() - 12,
+            resolutionLabel,
+            0xFFFFFFFFu);
+    }
 
     SceDisplayFrameBuf fb{};
     fb.size = sizeof(fb);
