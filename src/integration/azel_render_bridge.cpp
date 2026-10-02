@@ -38,6 +38,9 @@ static SubmissionState g_lastState{};
 static std::unordered_map<sProcessed3dModel*, LiveVdp1Model> g_modelCache;
 static std::vector<const LiveVdp1Model*> g_adaptedModels;
 static std::vector<RenderSubmission> g_submissions;
+static std::vector<const LiveVdp1Model*> g_publishedAdaptedModels;
+static std::vector<RenderSubmission> g_publishedSubmissions;
+static std::uint64_t g_publishedFrameNumber = 0;
 static RenderSubmission g_pendingTownSubmission{};
 static bool g_hasPendingTownSubmission = false;
 static bool g_reportedFirstSubmission = false;
@@ -85,6 +88,33 @@ const LiveVdp1Model* adapted_model(std::uint32_t index)
     return index < g_adaptedModels.size()
         ? g_adaptedModels[index]
         : nullptr;
+}
+
+void publish_frame()
+{
+    // LiveVdp1Model objects themselves live in g_modelCache and therefore
+    // remain stable across frames. Only the per-frame ordering/state vectors
+    // need to be snapshotted here.
+    g_publishedSubmissions = g_submissions;
+    g_publishedAdaptedModels = g_adaptedModels;
+    ++g_publishedFrameNumber;
+}
+
+const std::vector<RenderSubmission>& published_submissions()
+{
+    return g_publishedSubmissions;
+}
+
+const LiveVdp1Model* published_adapted_model(std::uint32_t index)
+{
+    return index < g_publishedAdaptedModels.size()
+        ? g_publishedAdaptedModels[index]
+        : nullptr;
+}
+
+std::uint64_t published_frame_number()
+{
+    return g_publishedFrameNumber;
 }
 
 void set_town_submission_context(

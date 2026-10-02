@@ -342,6 +342,28 @@ static unsigned int g_townEdgePreviousAnimation = 0;
 static unsigned int g_townEdgePreviousFrame = 0;
 static float g_townEdgeTransition = 1.0f;
 
+// Game-thread presentation staging. town_present_* only writes these fields.
+// town_publish_frame() atomically defines the serial frame boundary by copying
+// them into the renderer-owned state above. This avoids a future render thread
+// reading task-owned state while the next Azel frame is mutating it.
+static float g_pendingTownPlayerPosition[3]{};
+static float g_pendingTownPlayerYaw = 0.0f;
+static float g_pendingTownCameraPosition[3]{};
+static float g_pendingTownCameraRawPosition[3]{};
+static float g_pendingTownCameraTarget[3]{};
+static float g_pendingTownCameraUp[3]{};
+static float g_pendingTownCameraYaw = 0.0f;
+static float g_pendingTownCameraPitch = 0.0f;
+static float g_pendingTownCameraDistance = 0.0f;
+static bool g_pendingTownPlayerGrounded = false;
+static unsigned int g_pendingTownCollisionContacts = 0;
+static unsigned int g_pendingTownEdgeAnimation = 0;
+static unsigned int g_pendingTownEdgeAnimationFrame = 0;
+static unsigned int g_pendingTownEdgePreviousAnimation = 0;
+static unsigned int g_pendingTownEdgePreviousFrame = 0;
+static float g_pendingTownEdgeTransition = 1.0f;
+static bool g_pendingTownPresentationValid = false;
+
 static int g_viewMode = 7;
 static constexpr bool g_halfResolution = true;
 // Retain all capture/profiling overlays in code, but keep the normal scene
@@ -2491,10 +2513,10 @@ static bool buildLiveTownFrame()
     g_liveTownStaticSubmittedPolygons = 0u;
     g_liveTownBillboardSubmittedPolygons = 0u;
 
-    for (const auto& submission : azel_bridge::submissions()) {
+    for (const auto& submission : azel_bridge::published_submissions()) {
         if (submission.adaptedModelIndex < 0)
             continue;
-        const auto* model = azel_bridge::adapted_model(
+        const auto* model = azel_bridge::published_adapted_model(
             static_cast<std::uint32_t>(submission.adaptedModelIndex));
         if (!model) continue;
 
@@ -2530,11 +2552,11 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.polygonRecords.clear();
         g_liveTownCpuMesh.gouraud555.clear();
         g_liveTownCpuMesh.polygonTextureIndices.clear();
-        for (const auto& submission : azel_bridge::submissions()) {
+        for (const auto& submission : azel_bridge::published_submissions()) {
             if (submission.state.dynamic ||
                 submission.adaptedModelIndex < 0)
                 continue;
-            const auto* model = azel_bridge::adapted_model(
+            const auto* model = azel_bridge::published_adapted_model(
                 static_cast<std::uint32_t>(submission.adaptedModelIndex));
             if (model) appendLiveTownModel(*model, submission.state);
         }
@@ -2558,11 +2580,11 @@ static bool buildLiveTownFrame()
     // reuses its already-resolved mapping. Only transforms/normals are rebuilt
     // per instance each frame.
     const std::uint64_t tObjects = sceKernelGetProcessTimeWide();
-    for (const auto& submission : azel_bridge::submissions()) {
+    for (const auto& submission : azel_bridge::published_submissions()) {
         if (!submission.state.dynamic ||
             submission.adaptedModelIndex < 0)
             continue;
-        const auto* model = azel_bridge::adapted_model(
+        const auto* model = azel_bridge::published_adapted_model(
             static_cast<std::uint32_t>(submission.adaptedModelIndex));
         if (!model)
             continue;
@@ -4694,6 +4716,32 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
         g_townCameraPitch =
             std::atan2(oy, std::sqrt(ox*ox + oz*oz));
 
+        std::memcpy(
+            g_pendingTownPlayerPosition,
+            g_townPlayerPosition,
+            sizeof(g_townPlayerPosition));
+        g_pendingTownPlayerYaw = g_townPlayerYaw;
+        std::memcpy(
+            g_pendingTownCameraPosition,
+            g_townCameraPosition,
+            sizeof(g_townCameraPosition));
+        std::memcpy(
+            g_pendingTownCameraRawPosition,
+            g_townCameraRawPosition,
+            sizeof(g_townCameraRawPosition));
+        std::memcpy(
+            g_pendingTownCameraTarget,
+            g_townCameraTarget,
+            sizeof(g_townCameraTarget));
+        std::memcpy(
+            g_pendingTownCameraUp,
+            g_townCameraUp,
+            sizeof(g_townCameraUp));
+        g_pendingTownCameraYaw = g_townCameraYaw;
+        g_pendingTownCameraPitch = g_townCameraPitch;
+        g_pendingTownCameraDistance = g_townCameraDistance;
+        g_pendingTownPresentationValid = true;
+
         status(
             "[PASS] RUIN LIVE EDGE/FOLLOW STATE",
             0xFF70E0A0u);
@@ -6236,6 +6284,45 @@ void town_profile_tasks_us(unsigned int microseconds)
     g_profileTasksUs = microseconds;
 }
 
+void town_publish_frame()
+{
+    if (!g_pendingTownPresentationValid)
+        return;
+
+    std::memcpy(
+        g_townPlayerPosition,
+        g_pendingTownPlayerPosition,
+        sizeof(g_townPlayerPosition));
+    g_townPlayerYaw = g_pendingTownPlayerYaw;
+    g_townPlayerGrounded = g_pendingTownPlayerGrounded;
+    g_townCollisionContacts = g_pendingTownCollisionContacts;
+    g_townEdgeAnimation = g_pendingTownEdgeAnimation;
+    g_townEdgeAnimationFrame = g_pendingTownEdgeAnimationFrame;
+    g_townEdgePreviousAnimation = g_pendingTownEdgePreviousAnimation;
+    g_townEdgePreviousFrame = g_pendingTownEdgePreviousFrame;
+    g_townEdgeTransition = g_pendingTownEdgeTransition;
+
+    std::memcpy(
+        g_townCameraPosition,
+        g_pendingTownCameraPosition,
+        sizeof(g_townCameraPosition));
+    std::memcpy(
+        g_townCameraRawPosition,
+        g_pendingTownCameraRawPosition,
+        sizeof(g_townCameraRawPosition));
+    std::memcpy(
+        g_townCameraTarget,
+        g_pendingTownCameraTarget,
+        sizeof(g_townCameraTarget));
+    std::memcpy(
+        g_townCameraUp,
+        g_pendingTownCameraUp,
+        sizeof(g_townCameraUp));
+    g_townCameraYaw = g_pendingTownCameraYaw;
+    g_townCameraPitch = g_pendingTownCameraPitch;
+    g_townCameraDistance = g_pendingTownCameraDistance;
+}
+
 void town_camera_update()
 {
     // Edge's current task-owned pose is consumed when the native town
@@ -6258,17 +6345,18 @@ void town_present_edge(
 {
     if (!g_townPlayerReady)
         return;
-    g_townPlayerPosition[0] = x;
-    g_townPlayerPosition[1] = y;
-    g_townPlayerPosition[2] = z;
-    g_townPlayerYaw = yaw;
-    g_townPlayerGrounded = grounded;
-    g_townCollisionContacts = contacts;
-    g_townEdgeAnimation = animation;
-    g_townEdgeAnimationFrame = frame;
-    g_townEdgePreviousAnimation = previousAnimation;
-    g_townEdgePreviousFrame = previousFrame;
-    g_townEdgeTransition = transition;
+    g_pendingTownPlayerPosition[0] = x;
+    g_pendingTownPlayerPosition[1] = y;
+    g_pendingTownPlayerPosition[2] = z;
+    g_pendingTownPlayerYaw = yaw;
+    g_pendingTownPlayerGrounded = grounded;
+    g_pendingTownCollisionContacts = contacts;
+    g_pendingTownEdgeAnimation = animation;
+    g_pendingTownEdgeAnimationFrame = frame;
+    g_pendingTownEdgePreviousAnimation = previousAnimation;
+    g_pendingTownEdgePreviousFrame = previousFrame;
+    g_pendingTownEdgeTransition = transition;
+    g_pendingTownPresentationValid = true;
 }
 
 void town_present_camera(
@@ -6280,13 +6368,26 @@ void town_present_camera(
 {
     if (!g_townPlayerReady)
         return;
-    std::memcpy(g_townCameraPosition, position, sizeof(g_townCameraPosition));
-    std::memcpy(g_townCameraRawPosition, rawPosition, sizeof(g_townCameraRawPosition));
-    std::memcpy(g_townCameraTarget, target, sizeof(g_townCameraTarget));
-    std::memcpy(g_townCameraUp, up, sizeof(g_townCameraUp));
-    g_townCameraYaw = yaw;
-    g_townCameraPitch = pitch;
-    g_townCameraDistance = distance;
+    std::memcpy(
+        g_pendingTownCameraPosition,
+        position,
+        sizeof(g_pendingTownCameraPosition));
+    std::memcpy(
+        g_pendingTownCameraRawPosition,
+        rawPosition,
+        sizeof(g_pendingTownCameraRawPosition));
+    std::memcpy(
+        g_pendingTownCameraTarget,
+        target,
+        sizeof(g_pendingTownCameraTarget));
+    std::memcpy(
+        g_pendingTownCameraUp,
+        up,
+        sizeof(g_pendingTownCameraUp));
+    g_pendingTownCameraYaw = yaw;
+    g_pendingTownCameraPitch = pitch;
+    g_pendingTownCameraDistance = distance;
+    g_pendingTownPresentationValid = true;
 }
 
 } // namespace lagi::platform::renderer

@@ -50,10 +50,17 @@ const LiveVdp1Model* last_adapted_model();
 // Transform/light state captured at the same addObjectToDrawList boundary.
 const SubmissionState& last_submission_state();
 
-// Ordered snapshot of every model submitted by Azel during the current task
-// frame. Entries remain valid until the next begin_frame().
+// Ordered submissions being produced by the current Azel task frame.
 const std::vector<RenderSubmission>& submissions();
 const LiveVdp1Model* adapted_model(std::uint32_t index);
+
+// Publish the completed task frame for renderer consumption. The published
+// vectors are not modified by the next begin_frame()/task pass, which gives
+// the renderer a stable frame boundary for the later threaded handoff.
+void publish_frame();
+const std::vector<RenderSubmission>& published_submissions();
+const LiveVdp1Model* published_adapted_model(std::uint32_t index);
+std::uint64_t published_frame_number();
 void set_town_submission_context(
     std::int8_t bundleIndex,
     std::uint32_t cellIndex,
