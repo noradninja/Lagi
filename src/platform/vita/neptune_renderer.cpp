@@ -1,9 +1,9 @@
 #include "lagi/platform.h"
 #include "lagi/debug_mesh.h"
 #include "lagi/vdp1_renderer.h"
-#include "lagi/azel_town_runtime.h"
-#include "lagi/azel_render_bridge.h"
-#include "lagi/azel_live_model_adapter.h"
+#include "lagi/lagi_town_runtime.h"
+#include "lagi/lagi_render_bridge.h"
+#include "lagi/lagi_live_model_adapter.h"
 
 #include <psp2/display.h>
 #include <psp2/gxm.h>
