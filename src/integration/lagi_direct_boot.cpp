@@ -1,13 +1,13 @@
-#include "lagi/azel_direct_boot.h"
+#include "lagi/lagi_direct_boot.h"
 
-#include "lagi/azel_compat.h"
+#include "lagi/lagi_compat.h"
 #include "lagi/disc_image.h"
 #include "lagi/platform.h"
 #include "commonOverlay.h"
 
 #include <cstdio>
 
-// Implemented by azel_saturn_memory_vita.cpp. Keep these narrow declarations
+// Implemented by lagi_saturn_memory_vita.cpp. Keep these narrow declarations
 // here instead of including Azel common.h, which drags in unrelated task/VDP2
 // definitions that the direct-boot resolver does not need.
 s8 readSaturnS8(sSaturnPtr ptr);
