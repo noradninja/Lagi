@@ -9,6 +9,8 @@
 #include <psp2/gxm.h>
 #include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr/thread.h>
+#include <psp2/kernel/threadmgr/semaphore.h>
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -63,6 +65,16 @@ struct StatusLine {
 static SceUID g_frameMem[2] = { -1, -1 };
 static std::uint32_t* g_frameBuffer[2] = { nullptr, nullptr };
 static int g_drawBuffer = 0;
+
+// One-slot game -> render pipeline. The game thread may simulate the next
+// Azel frame while the render thread owns the previously published frame.
+static SceUID g_renderThread = -1;
+static SceUID g_renderFrameReadySema = -1;
+static SceUID g_renderFrameFreeSema = -1;
+static volatile bool g_renderThreadRunning = false;
+static bool g_renderThreadStarted = false;
+static int renderThreadMain(SceSize args, void* argp);
+
 static bool g_azelAlive = false;
 static bool g_discAlive = false;
 static bool g_debugVisible = true;
@@ -363,6 +375,8 @@ static unsigned int g_pendingTownEdgePreviousAnimation = 0;
 static unsigned int g_pendingTownEdgePreviousFrame = 0;
 static float g_pendingTownEdgeTransition = 1.0f;
 static bool g_pendingTownPresentationValid = false;
+static int g_pendingViewMode = 7;
+static unsigned int g_pendingProfileTasksUs = 0u;
 
 static int g_viewMode = 7;
 static constexpr bool g_halfResolution = true;
@@ -793,11 +807,65 @@ bool init()
 
     sceDisplayWaitVblankStart();
     g_drawBuffer = 1;
+
+    g_renderFrameReadySema =
+        sceKernelCreateSema("LagiRenderReady", 0, 0, 1, nullptr);
+    g_renderFrameFreeSema =
+        sceKernelCreateSema("LagiRenderFree", 0, 1, 1, nullptr);
+    if (g_renderFrameReadySema < 0 || g_renderFrameFreeSema < 0) {
+        shutdown();
+        return false;
+    }
+
+    g_renderThreadRunning = true;
+    g_renderThread = sceKernelCreateThread(
+        "LagiRender",
+        renderThreadMain,
+        0x10000100,
+        0x20000,
+        0,
+        0,
+        nullptr);
+    if (g_renderThread < 0) {
+        g_renderThreadRunning = false;
+        shutdown();
+        return false;
+    }
+
+    if (sceKernelStartThread(g_renderThread, 0, nullptr) < 0) {
+        g_renderThreadRunning = false;
+        sceKernelDeleteThread(g_renderThread);
+        g_renderThread = -1;
+        shutdown();
+        return false;
+    }
+    g_renderThreadStarted = true;
+    status("[PASS] DEDICATED RENDER THREAD", 0xFF80E0FFu);
     return true;
 }
 
 void shutdown()
 {
+    // Stop renderer ownership before releasing any GXM/context resources.
+    if (g_renderThreadStarted && g_renderThread >= 0) {
+        g_renderThreadRunning = false;
+        if (g_renderFrameReadySema >= 0)
+            sceKernelSignalSema(g_renderFrameReadySema, 1);
+        int threadStatus = 0;
+        sceKernelWaitThreadEnd(g_renderThread, &threadStatus, nullptr);
+        sceKernelDeleteThread(g_renderThread);
+        g_renderThread = -1;
+        g_renderThreadStarted = false;
+    }
+    if (g_renderFrameReadySema >= 0) {
+        sceKernelDeleteSema(g_renderFrameReadySema);
+        g_renderFrameReadySema = -1;
+    }
+    if (g_renderFrameFreeSema >= 0) {
+        sceKernelDeleteSema(g_renderFrameFreeSema);
+        g_renderFrameFreeSema = -1;
+    }
+
     auto freeSimpleMappedProbe = [](SceUID& uid, void*& ptr) {
         if (uid >= 0) {
             void* mem = nullptr;
@@ -3339,8 +3407,16 @@ void toggle_debug_console()
         if (!g_viewerReady)
             return;
 
+        // Do not change presentation ownership while the render thread is
+        // inside GXM. Taking the free slot guarantees no frame is in flight.
+        if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
+            sceKernelWaitSema(g_renderFrameFreeSema, 1, nullptr);
+
         g_debugVisible = !g_debugVisible;
         g_probeDisplayingGxm = !g_debugVisible;
+
+        if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
+            sceKernelSignalSema(g_renderFrameFreeSema, 1);
         return;
     }
 
@@ -4669,6 +4745,7 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
     g_staticRoomCpuMesh = mesh;
     g_staticRoomCpuReady = true;
     g_viewMode = 7; // Full
+    g_pendingViewMode = 7;
 
     g_townPlayerReady =
         mesh.cameraValid &&
@@ -5753,19 +5830,8 @@ static void renderBasicWingViewer()
     g_profileGxmWaitUs = 0u;
     g_liveTownGouraudPrepValid = false;
 
-    // User-facing scene views only. Dragon/regression modes remain in the
-    // codebase for bring-up, but are no longer part of the runtime viewer.
-    static constexpr int kSceneModes[5] = {7, 8, 10, 9, 11};
-    int sceneModeIndex = 0;
-    for (int i = 0; i < 5; ++i)
-        if (g_viewMode == kSceneModes[i])
-            sceneModeIndex = i;
-
-    if (input::prev_mode_pressed())
-        sceneModeIndex = (sceneModeIndex + 4) % 5;
-    if (input::next_mode_pressed())
-        sceneModeIndex = (sceneModeIndex + 1) % 5;
-    g_viewMode = kSceneModes[sceneModeIndex];
+    // g_viewMode is part of the published game->render frame. The render
+    // thread never reads mutable controller state directly.
 
     const bool roomMode =
         g_staticRoomCpuReady;
@@ -5773,32 +5839,8 @@ static void renderBasicWingViewer()
         g_staticRoomCpuReady &&
         g_staticRoomCpuMesh.cameraValid;
 
-    // Debug orbit controls alter only the view transform. Authentic modes use
-    // the recovered Azel startup camera.
-    if (!roomMode) {
-        g_viewYaw += input::analog_x() * 0.035f;
-        g_viewPitch += input::analog_y() * 0.035f;
-        g_viewPitch =
-            std::max(-1.45f, std::min(1.45f, g_viewPitch));
-
-        const float fitDistance =
-            roomMode ? g_staticRoomFitDistance : g_basicWingFitDistance;
-        const float dollyStep =
-            std::max(0.0025f, fitDistance * 0.02f);
-
-        g_viewDistance += input::analog_zoom() * dollyStep;
-        g_viewDistance =
-            std::max(0.01f, std::min(32.0f, g_viewDistance));
-    }
-
-    if (input::reset_view_pressed()) {
-        if (!roomMode) {
-            g_viewYaw = 0.60f;
-            g_viewPitch = -0.30f;
-            g_viewDistance =
-                roomMode ? g_staticRoomFitDistance : g_basicWingFitDistance;
-        }
-    }
+    // Legacy Basic Wing regression camera state is renderer-owned. Interactive
+    // input is intentionally not sampled from this thread.
 
     const bool roomDiagnosticLitMode =
         g_staticRoomCpuReady &&
@@ -6112,10 +6154,40 @@ static void renderBasicWingViewer()
     g_gxmDrawBuffer ^= 1;
 }
 
+static int renderThreadMain(SceSize, void*)
+{
+    while (true) {
+        if (sceKernelWaitSema(g_renderFrameReadySema, 1, nullptr) < 0)
+            break;
+        if (!g_renderThreadRunning)
+            break;
+
+        if (!g_debugVisible)
+            renderBasicWingViewer();
+
+        // The published bridge/presentation state may now be overwritten by
+        // the game thread for the next completed frame.
+        sceKernelSignalSema(g_renderFrameFreeSema, 1);
+    }
+    return 0;
+}
+
 void begin_frame()
 {
     if (!g_debugVisible) {
-        renderBasicWingViewer();
+        // Controller state belongs to the game thread. Only the selected view
+        // is copied into the next published render frame.
+        static constexpr int kSceneModes[5] = {7, 8, 10, 9, 11};
+        int sceneModeIndex = 0;
+        for (int i = 0; i < 5; ++i)
+            if (g_pendingViewMode == kSceneModes[i])
+                sceneModeIndex = i;
+
+        if (input::prev_mode_pressed())
+            sceneModeIndex = (sceneModeIndex + 4) % 5;
+        if (input::next_mode_pressed())
+            sceneModeIndex = (sceneModeIndex + 1) % 5;
+        g_pendingViewMode = kSceneModes[sceneModeIndex];
         return;
     }
 
@@ -6272,8 +6344,9 @@ static void updateLiveTownAzelLighting()
 bool town_scene_active()
 {
     const bool sceneMode =
-        g_viewMode == 7 || g_viewMode == 8 || g_viewMode == 10 ||
-        g_viewMode == 9 || g_viewMode == 11;
+        g_pendingViewMode == 7 || g_pendingViewMode == 8 ||
+        g_pendingViewMode == 10 || g_pendingViewMode == 9 ||
+        g_pendingViewMode == 11;
     return !g_debugVisible && g_staticRoomCpuReady &&
            g_staticRoomCpuMesh.cameraValid && sceneMode &&
            g_townPlayerReady;
@@ -6281,7 +6354,13 @@ bool town_scene_active()
 
 void town_profile_tasks_us(unsigned int microseconds)
 {
-    g_profileTasksUs = microseconds;
+    g_pendingProfileTasksUs = microseconds;
+}
+
+void town_wait_render_slot()
+{
+    if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
+        sceKernelWaitSema(g_renderFrameFreeSema, 1, nullptr);
 }
 
 void town_publish_frame()
@@ -6321,6 +6400,11 @@ void town_publish_frame()
     g_townCameraYaw = g_pendingTownCameraYaw;
     g_townCameraPitch = g_pendingTownCameraPitch;
     g_townCameraDistance = g_pendingTownCameraDistance;
+    g_viewMode = g_pendingViewMode;
+    g_profileTasksUs = g_pendingProfileTasksUs;
+
+    if (g_renderThreadStarted && g_renderFrameReadySema >= 0)
+        sceKernelSignalSema(g_renderFrameReadySema, 1);
 }
 
 void town_camera_update()

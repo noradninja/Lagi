@@ -216,15 +216,15 @@ void runtime_smoke_frame()
     runTasks();
     const std::uint64_t tasksEnd = sceKernelGetProcessTimeWide();
 
-    // Freeze the completed Azel frame before the next task pass can mutate
-    // submission or presentation state. The renderer still consumes this
-    // serially today; this is the ownership boundary required by the upcoming
-    // dedicated render thread.
-    lagi::azel_bridge::publish_frame();
-    lagi::platform::renderer::town_publish_frame();
-
     lagi::platform::renderer::town_profile_tasks_us(
         static_cast<unsigned int>(tasksEnd - tasksStart));
+
+    // One queued frame: simulation may overlap the previous render, but the
+    // producer cannot overwrite the published frame until the renderer is
+    // finished with it. This bounds latency to a single frame.
+    lagi::platform::renderer::town_wait_render_slot();
+    lagi::azel_bridge::publish_frame();
+    lagi::platform::renderer::town_publish_frame();
     if (twn_ruin_task_pipeline_alive())
         lagi::platform::renderer::set_azel_alive(true);
 }
