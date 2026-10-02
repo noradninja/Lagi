@@ -2450,11 +2450,8 @@ static void appendLiveTownEdge()
         shadow.polygons = g_edgeShadowCpuMesh.polygonRecords;
         shadow.gouraud555.resize(shadow.polygons.size());
         azel_bridge::SubmissionState shadowState = state;
-        // VDP1 has no depth buffer; its mesh shadow is submitted after the
-        // floor and therefore remains visible. GXM's Z buffer would make the
-        // coplanar quad fight/vanish, so lift only this translated primitive
-        // by 2/4096 world units (32 in 16.16) -- visually imperceptible.
-        shadowState.modelMatrix[7] += 32;
+        // Keep Azel's original transform. VDP1 mesh visibility is reproduced
+        // in the GXM draw state below rather than by moving the geometry.
         appendLiveTownModel(
             shadow,
             shadowState,
@@ -5096,8 +5093,20 @@ bool submit_vdp1_model(
                 continue;
 
             const bool mesh = g_vdp1GpuTextures[t].mesh;
-            if (mesh)
+            if (mesh) {
                 sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+                // Saturn VDP1 is ordered, not Z-buffered. Edge's mesh shadow
+                // is intentionally submitted after the floor, so let it pass
+                // depth without writing a new depth value.
+                sceGxmSetFrontDepthFunc(
+                    g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+                sceGxmSetBackDepthFunc(
+                    g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+                sceGxmSetFrontDepthWriteEnable(
+                    g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+                sceGxmSetBackDepthWriteEnable(
+                    g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+            }
             sceGxmSetFragmentProgram(
                 g_probeContext,
                 mesh ? g_meshTextureFragmentProgram
@@ -5112,8 +5121,15 @@ bool submit_vdp1_model(
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_vdp1TextureIndices + batch.firstIndex,
                 batch.indexCount);
-            if (mesh)
+            if (mesh) {
                 sceGxmSetCullMode(g_probeContext, cullMode);
+                sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
+                sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
+                sceGxmSetFrontDepthWriteEnable(
+                    g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+                sceGxmSetBackDepthWriteEnable(
+                    g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+            }
         }
         return true;
     }
@@ -5264,8 +5280,17 @@ bool submit_vdp1_model(
             bool mesh = false;
             if (subdividedTexturedLit) {
                 mesh = g_vdp1GpuTextures[t].mesh;
-                if (mesh)
+                if (mesh) {
                     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+                    sceGxmSetFrontDepthFunc(
+                        g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+                    sceGxmSetBackDepthFunc(
+                        g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+                    sceGxmSetFrontDepthWriteEnable(
+                        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+                    sceGxmSetBackDepthWriteEnable(
+                        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+                }
                 sceGxmSetFragmentProgram(
                     g_probeContext,
                     mesh ? g_meshSubdivFragmentProgram
@@ -5281,8 +5306,15 @@ bool submit_vdp1_model(
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_vdp1SubdivIndices + batch.firstIndex,
                 batch.indexCount);
-            if (mesh)
+            if (mesh) {
                 sceGxmSetCullMode(g_probeContext, cullMode);
+                sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
+                sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
+                sceGxmSetFrontDepthWriteEnable(
+                    g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+                sceGxmSetBackDepthWriteEnable(
+                    g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+            }
             ++submittedBatches;
         }
         g_profileGouraudDrawUs = static_cast<unsigned int>(
@@ -5604,6 +5636,14 @@ bool submit_vdp1_model(
             static_cast<unsigned int>(model.vertexCount) - meshWrite;
         if (meshCount != 0u) {
             sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+            sceGxmSetFrontDepthFunc(
+                g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+            sceGxmSetBackDepthFunc(
+                g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+            sceGxmSetFrontDepthWriteEnable(
+                g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+            sceGxmSetBackDepthWriteEnable(
+                g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
             sceGxmDraw(
                 g_probeContext,
                 SCE_GXM_PRIMITIVE_TRIANGLES,
@@ -5611,6 +5651,12 @@ bool submit_vdp1_model(
                 g_vdp1Indices + meshWrite,
                 meshCount);
             sceGxmSetCullMode(g_probeContext, cullMode);
+            sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
+            sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
+            sceGxmSetFrontDepthWriteEnable(
+                g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+            sceGxmSetBackDepthWriteEnable(
+                g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
             ++g_authFlatDrawCalls;
         }
         return true;
