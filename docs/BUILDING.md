@@ -178,7 +178,7 @@ Current rendering configuration:
 - **L / R** — cycle `Full -> Texture -> Lighting -> Quads -> Wires`
 - **Triangle** — Azel follow-camera modifier
 - **Right stick + Triangle** — side/rear follow-camera selection
-- **SELECT** — diagnostic console
+- **SELECT** — performance timing OSD
 - **START + SELECT** — exit
 
 ## Renderer reference behavior

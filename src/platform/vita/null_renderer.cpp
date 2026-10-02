@@ -403,8 +403,10 @@ static float g_townFadeBlack = 1.0f;
 static int g_viewMode = 7;
 static constexpr bool g_halfResolution = true;
 // Compact timing HUD used for capture/video analysis of the game/render split.
-static constexpr bool kShowThreadTimingOsd = true;
-// Retain the larger legacy diagnostics in code, but keep them off normally.
+// Hidden by default; Select toggles it at runtime.
+static bool g_showThreadTimingOsd = false;
+// Retain the larger legacy diagnostics in code, but keep them inaccessible
+// during normal play. Logs/status collection remain active.
 static constexpr bool kShowTownDiagnostics = false;
 static unsigned int g_basicWingAnimationFrame = 0;
 
@@ -3446,23 +3448,29 @@ static void updateStaticRoomAzelLighting(bool authenticDepth)
 
 void toggle_debug_console()
 {
-    // Native GXM Basic Wing viewer. The proven draw/scanout path is retained;
-    // model rotation, camera placement, and perspective are now supplied
-    // through the vertex shader's WVP uniform.
+    // Select is reserved for the lightweight performance HUD. The original
+    // boot/debug status screen remains in code and in the log stream, but is
+    // no longer exposed as an in-game presentation mode.
+    if (!g_viewerReady)
+        return;
+
+    if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
+        sceKernelWaitSema(g_renderFrameFreeSema, 1, nullptr);
+    g_showThreadTimingOsd = !g_showThreadTimingOsd;
+    if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
+        sceKernelSignalSema(g_renderFrameFreeSema, 1);
+}
+
+void show_town_scene()
+{
+    // One-way handoff from the loading framebuffer to native GXM town
+    // presentation. The old diagnostic screen is intentionally not toggled
+    // back in during play.
     if (g_gxmProbeAttempted) {
         if (!g_viewerReady)
             return;
-
-        // Do not change presentation ownership while the render thread is
-        // inside GXM. Taking the free slot guarantees no frame is in flight.
-        if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
-            sceKernelWaitSema(g_renderFrameFreeSema, 1, nullptr);
-
-        g_debugVisible = !g_debugVisible;
-        g_probeDisplayingGxm = !g_debugVisible;
-
-        if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
-            sceKernelSignalSema(g_renderFrameFreeSema, 1);
+        g_debugVisible = false;
+        g_probeDisplayingGxm = true;
         return;
     }
 
@@ -6085,7 +6093,7 @@ static void renderBasicWingViewer()
         gxmPitch,
         g_viewMode);
 
-    if (kShowThreadTimingOsd && roomAuthenticCameraMode) {
+    if (g_showThreadTimingOsd && roomAuthenticCameraMode) {
         char thread0[64], thread1[64], thread2[64], thread3[64];
         std::snprintf(
             thread0, sizeof(thread0),

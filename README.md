@@ -116,7 +116,7 @@ Normal startup enters **Full** with the diagnostic console hidden.
 - **L / R** — previous / next scene view
 - **Triangle** — Azel follow-camera modifier
 - **Right stick while holding Triangle** — side/rear follow-camera selection
-- **SELECT** — diagnostic console toggle
+- **SELECT** — performance timing OSD toggle
 - **START + SELECT** — exit
 
 ## Performance
