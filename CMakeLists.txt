@@ -641,24 +641,24 @@ add_executable(lagi
  ${LAGI_TEXTURE_F_OBJ}
  ${LAGI_MESH_F_OBJ}
  src/platform/vita/null_audio.cpp
- src/integration/azel_runtime_smoke.cpp
- src/integration/azel_render_bridge.cpp
- src/integration/azel_live_model_adapter.cpp
- src/integration/azel_direct_boot.cpp
- src/integration/azel_town_bootstrap.cpp
- src/integration/azel_town_runtime.cpp
- src/integration/azel_town_collision.cpp
- src/integration/azel_town_tasks.cpp
- src/integration/azel_ruin_room_debug.cpp
- src/integration/azel_edge_debug.cpp
- src/integration/azel_fixedpoint_vita.cpp
- src/integration/azel_heap_vita.cpp
- src/integration/azel_task_vita.cpp
- src/integration/azel_saturn_memory_vita.cpp
- src/integration/azel_common_overlay_vita.cpp
- src/integration/azel_sound_table_vita.cpp
- src/integration/azel_dragon_common_vita.cpp
- src/integration/azel_hotpoint_vita.cpp
+ src/integration/lagi_runtime_smoke.cpp
+ src/integration/lagi_render_bridge.cpp
+ src/integration/lagi_live_model_adapter.cpp
+ src/integration/lagi_direct_boot.cpp
+ src/integration/lagi_town_bootstrap.cpp
+ src/integration/lagi_town_runtime.cpp
+ src/integration/lagi_town_collision.cpp
+ src/integration/lagi_town_tasks.cpp
+ src/integration/lagi_ruin_room_debug.cpp
+ src/integration/lagi_edge_debug.cpp
+ src/integration/lagi_fixedpoint_vita.cpp
+ src/integration/lagi_heap_vita.cpp
+ src/integration/lagi_task_vita.cpp
+ src/integration/lagi_saturn_memory_vita.cpp
+ src/integration/lagi_common_overlay_vita.cpp
+ src/integration/lagi_sound_table_vita.cpp
+ src/integration/lagi_dragon_common_vita.cpp
+ src/integration/lagi_hotpoint_vita.cpp
 )
 target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
@@ -671,7 +671,7 @@ if(LAGI_AZEL_PROBE)
  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib")
   message(FATAL_ERROR "Azel submodule missing. Run: git submodule update --init --recursive")
  endif()
- add_library(lagi_azel_probe OBJECT src/integration/azel_probe.cpp)
+ add_library(lagi_azel_probe OBJECT src/integration/lagi_probe.cpp)
  target_include_directories(lagi_azel_probe PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
@@ -680,9 +680,9 @@ if(LAGI_AZEL_PROBE)
  target_compile_definitions(lagi_azel_probe PRIVATE USE_NULL_RENDERER=1 LAGI_PLATFORM_VITA=1)
 
  add_library(lagi_azel_fixedpoint OBJECT
-  src/integration/azel_fixedpoint_vita.cpp
-  src/integration/azel_heap_vita.cpp
-  src/integration/azel_task_vita.cpp
+  src/integration/lagi_fixedpoint_vita.cpp
+  src/integration/lagi_heap_vita.cpp
+  src/integration/lagi_task_vita.cpp
  )
  target_include_directories(lagi_azel_fixedpoint PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
