@@ -809,7 +809,18 @@ bool init()
 
     for (int i = 0; i < 2; ++i) {
         g_drawBuffer = i;
-        fill(0xFF181818u);
+        fill(0xFF000000u);
+        static constexpr const char* kLoadingText = "Loading...";
+        static constexpr int kLoadingAdvance = 6;
+        static constexpr int kLoadingMarginX = 16;
+        static constexpr int kLoadingMarginY = 14;
+        const int loadingLength =
+            static_cast<int>(std::strlen(kLoadingText));
+        drawTextSmall(
+            kWidth - kLoadingMarginX - loadingLength * kLoadingAdvance,
+            kHeight - kLoadingMarginY,
+            kLoadingText,
+            0xFFFFFFFFu);
     }
     g_drawBuffer = 0;
 
@@ -6307,34 +6318,23 @@ void begin_frame()
         return;
     }
 
-    fill(0xFF181818u);
+    fill(0xFF000000u);
 
-    drawText(32, 24, "LAGI - PDS VITA RUNTIME", 0xFFFFFFFFu, 2);
-    drawTextSmall(32, 48, "BOOT / INTEGRATION STATUS", 0xFFB0B0B0u);
-
-    for (int i = 0; i < g_statusCount; ++i) {
-        const int column = i / kStatusRowsPerColumn;
-        const int row = i % kStatusRowsPerColumn;
-        if (column >= 2)
-            break;
-
-        drawTextSmall(
-            kStatusColumnX[column],
-            68 + row * kStatusLineHeight,
-            g_status[i].text,
-            g_status[i].color);
-    }
-
-    if (g_azelAlive) {
-        const int taskIndex = std::min(g_statusCount, kMaxStatus - 1);
-        const int column = std::min(taskIndex / kStatusRowsPerColumn, 1);
-        const int row = taskIndex % kStatusRowsPerColumn;
-        drawTextSmall(
-            kStatusColumnX[column],
-            72 + row * kStatusLineHeight,
-            "TASK LOOP: ACTIVE",
-            0xFF30E030u);
-    }
+    // Normal startup presentation stays intentionally minimal. Detailed boot
+    // status is still collected/logged, but the user sees only a black screen
+    // with a small loading indicator until the first completed town frame is
+    // handed to GXM. That first frame is itself held black by TwnFadeIn state.
+    static constexpr const char* kLoadingText = "Loading...";
+    static constexpr int kLoadingAdvance = 6;
+    static constexpr int kLoadingMarginX = 16;
+    static constexpr int kLoadingMarginY = 14;
+    const int loadingLength =
+        static_cast<int>(std::strlen(kLoadingText));
+    drawTextSmall(
+        kWidth - kLoadingMarginX - loadingLength * kLoadingAdvance,
+        kHeight - kLoadingMarginY,
+        kLoadingText,
+        0xFFFFFFFFu);
 }
 
 void end_frame()
