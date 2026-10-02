@@ -1,5 +1,5 @@
 #pragma once
-#include "lagi/azel_compat.h"
+#include "lagi/lagi_compat.h"
 
 namespace ImGui {
 inline bool InputFloat(const char*, float*, float = 0.0f, float = 0.0f) { return false; }
