@@ -1,7 +1,7 @@
 #include <psp2/kernel/processmgr.h>
 #include <cstdio>
 #include "lagi/platform.h"
-#include "lagi/azel_runtime.h"
+#include "lagi/lagi_runtime.h"
 
 int main()
 {
