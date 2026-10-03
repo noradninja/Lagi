@@ -45,11 +45,67 @@ struct sSaturnPtr {
         return p;
     }
 
-    sSaturnPtr& operator+=(unsigned int i) { m_offset += static_cast<s32>(i); return *this; }
-    sSaturnPtr operator-(unsigned int i) const { sSaturnPtr p = *this; p.m_offset -= static_cast<s32>(i); return p; }
-    bool operator==(const sSaturnPtr& other) const { return m_offset == other.m_offset && m_file == other.m_file; }
-    bool operator!=(const sSaturnPtr& other) const { return !(*this == other); }
+    sSaturnPtr& operator++() {
+        ++m_offset;
+        return *this;
+    }
+
+    sSaturnPtr operator++(int) {
+        sSaturnPtr result(*this);
+        ++(*this);
+        return result;
+    }
+
+    sSaturnPtr& operator--() {
+        --m_offset;
+        return *this;
+    }
+
+    sSaturnPtr operator--(int) {
+        sSaturnPtr result(*this);
+        --(*this);
+        return result;
+    }
+
+    sSaturnPtr& operator+=(unsigned int i) {
+        m_offset += static_cast<s32>(i);
+        return *this;
+    }
+
+    sSaturnPtr operator-(unsigned int i) const {
+        sSaturnPtr p = *this;
+        p.m_offset -= static_cast<s32>(i);
+        return p;
+    }
+
+    sSaturnPtr& operator-=(unsigned int i) {
+        m_offset -= static_cast<s32>(i);
+        return *this;
+    }
+
+    bool operator==(const sSaturnPtr& other) const {
+        return m_offset == other.m_offset && m_file == other.m_file;
+    }
+
+    bool operator!=(const sSaturnPtr& other) const {
+        return !(*this == other);
+    }
+
     bool isNull() const { return m_offset == 0; }
+
+    static sSaturnPtr& getNull() {
+        static sSaturnPtr temp{};
+        temp.m_offset = 0;
+        temp.m_file = nullptr;
+        return temp;
+    }
+
+    static sSaturnPtr& createFromRaw(u32 offset, sSaturnMemoryFile* file = nullptr) {
+        static sSaturnPtr temp{};
+        temp.m_offset = static_cast<s32>(offset);
+        temp.m_file = file;
+        return temp;
+    }
 };
 
 struct sSaturnMemoryFile {
