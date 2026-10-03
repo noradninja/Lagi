@@ -639,11 +639,46 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   "${source_text}"
  )
 
+ # The upstream Azel movie task/state machine remains authoritative. For the
+ # Vita build copy only, remove the desktop Cinepak/SoLoud stream backend and
+ # route those platform-facing calls through Lagi services. The filename table,
+ # timing table, countdown, CPK sequencing, fades, skip logic, subtitle task,
+ # and task completion all remain the original upstream code.
+ if(relative_path STREQUAL "movie/movie.cpp")
+  string(REPLACE
+   "#include \"cinepak.h\""
+   "#include \"lagi/azel_movie_runtime_hooks.h\""
+   source_text "${source_text}")
+  string(REPLACE
+   "#include \"movieAudio.h\""
+   ""
+   source_text "${source_text}")
+
+  string(REPLACE
+   "static GfsHn s_movieGfsHn;"
+   "#if 0 // Lagi Vita: desktop movie stream backend replaced below\nstatic GfsHn s_movieGfsHn;"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "// ============================================================================\n// clearMovieVdp2Vram  –  06010584"
+   "#endif // desktop movie stream backend\n\nstatic void openMovieStream(const char* cpkFileName)\n{\n    lagiAzelMovieStreamOpen(cpkFileName);\n}\n\nvoid closeMovieStream()\n{\n    lagiAzelMovieStreamClose();\n}\n\n// ============================================================================\n// clearMovieVdp2Vram  –  06010584"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "u32 lastUpdateFunction()\n{"
+   "#if 0 // Lagi Vita: desktop decoder polling replaced below\nu32 lastUpdateFunction()\n{"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "// ============================================================================\n// createMovieDebugTask  –  0602a314"
+   "#endif // desktop decoder polling\n\nu32 lastUpdateFunction()\n{\n    return static_cast<u32>(lagiAzelMovieLastUpdate());\n}\n\n// ============================================================================\n// createMovieDebugTask  –  0602a314"
+   source_text "${source_text}")
+
  # The Vita host owns filesystem access for files inside the mounted game
  # disc image. Keep the upstream desktop implementations available as weak
  # fallbacks in generated sources, while the strong Vita adapter supplies the
  # same engine API without changing extern/Azel.
- if(relative_path STREQUAL "PDS.cpp")
+ elseif(relative_path STREQUAL "PDS.cpp")
   string(REPLACE
    "bool findFileOnDisc(const std::string& filename)"
    "__attribute__((weak)) bool findFileOnDisc(const std::string& filename)"
@@ -759,6 +794,7 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  kernel/dialogTask.cpp
  kernel/receiveItemTask.cpp
  kernel/moduleManager.cpp
+ movie/movie.cpp
  kernel/loadSavegameScreen.cpp
  kernel/textDisplay.cpp
  items.cpp
@@ -821,7 +857,7 @@ add_executable(lagi
  src/movie/cinepak_decoder.cpp
  src/movie/movie_player.cpp
  src/integration/azel_movie_bridge.cpp
- src/integration/lagi_movie_sequence.cpp
+ src/integration/lagi_azel_movie_runtime.cpp
  src/integration/lagi_runtime_smoke.cpp
  src/integration/lagi_render_bridge.cpp
  src/integration/lagi_live_model_adapter.cpp
