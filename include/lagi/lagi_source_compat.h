@@ -75,3 +75,14 @@ inline IndexBufferHandle createIndexBuffer(const Memory*) { return {}; }
 #ifndef BGFX_INVALID_HANDLE
 #define BGFX_INVALID_HANDLE { 0xFFFFu }
 #endif
+
+
+#ifndef BGFX_SAMPLER_POINT
+#define BGFX_SAMPLER_POINT   (UINT64_C(1) << 0)
+#endif
+#ifndef BGFX_SAMPLER_U_CLAMP
+#define BGFX_SAMPLER_U_CLAMP (UINT64_C(1) << 1)
+#endif
+#ifndef BGFX_SAMPLER_V_CLAMP
+#define BGFX_SAMPLER_V_CLAMP (UINT64_C(1) << 2)
+#endif
