@@ -7583,9 +7583,12 @@ static void renderBasicWingViewer()
     }
 
     if (roomAuthenticCameraMode) {
-        drawPublishedVdp1Ui();
+        // Saturn UI composition: VDP2 supplies the dialog/window backing and
+        // cinematic matte; VDP1 sprites (including the multi-choice cursor)
+        // are composited above those planes.
         drawAzelVdp2Nbg1Gpu();
         drawAzelVdp2CinematicBarsGpu();
+        drawPublishedVdp1Ui();
     }
 
     if (roomAuthenticCameraMode)
