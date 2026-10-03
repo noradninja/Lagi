@@ -648,8 +648,35 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # dispatch table unchanged.
  if(relative_path STREQUAL "kernel/moduleManager.cpp" AND LAGI_AZEL_RUINS_LINK_TRIM)
   string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/platform.h\""
+   source_text "${source_text}")
+
+  string(REPLACE
    "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    loadTown,           // 1: town\n    loadTown2,          // 2: town (alt entry)\n    loadField,          // 3: field\n    loadBattle,         // 4: battle\n    loadWorldOverlay,   // 5: worldmap\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    initLoadSavegameScreen, // 9: save/load screen\n    NULL,\n};"
    "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    NULL,               // 1: town - already running in direct boot\n    NULL,               // 2: town alt - not linked in Ruins bring-up\n    NULL,               // 3: field - not linked yet\n    NULL,               // 4: battle - not linked yet\n    NULL,               // 5: worldmap - not linked yet\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    NULL,               // 9: save/load - not linked yet\n    NULL,\n};"
+   source_text "${source_text}")
+
+  # Pinpoint the direct-boot town -> movie handoff. These diagnostics are
+  # confined to the generated Vita copy and do not alter Azel decisions.
+  string(REPLACE
+   "case 4: // ruins\n        setNextGameStatus(5);\n        break;"
+   "case 4: // ruins\n        lagi::platform::logging::writef(\\"[AzelMM] status4 before setNext(5)\\\\n\\");\n        setNextGameStatus(5);\n        lagi::platform::logging::writef(\\"[AzelMM] status4 after setNext next=0x%02X\\\\n\\", static_cast<unsigned int>(gGameStatus.m8_nextGameStatus));\n        break;"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "if ((gGameStatus.m2 == 0) && (gGameStatus.m6_previousGameStatus != 0x4F))\n            {\n                initFileLayoutTable();\n            }"
+   "if ((gGameStatus.m2 == 0) && (gGameStatus.m6_previousGameStatus != 0x4F))\n            {\n                lagi::platform::logging::writef(\\"[AzelMM] before initFileLayoutTable next=0x%02X\\\\n\\", static_cast<unsigned int>(gGameStatus.m8_nextGameStatus));\n                initFileLayoutTable();\n                lagi::platform::logging::writef(\\"[AzelMM] after initFileLayoutTable\\\\n\\");\n            }"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "fadeOutAllSequences();\n        case 0xC:"
+   "lagi::platform::logging::writef(\\"[AzelMM] before fadeOutAllSequences\\\\n\\");\n            fadeOutAllSequences();\n            lagi::platform::logging::writef(\\"[AzelMM] after fadeOutAllSequences\\\\n\\");\n        case 0xC:"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), 0, 30);\n            fadePalette(&g_fadeControls.m24_fade1, convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color), 0, 30);"
+   "lagi::platform::logging::writef(\\"[AzelMM] before transition fadePalette\\\\n\\");\n            fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), 0, 30);\n            fadePalette(&g_fadeControls.m24_fade1, convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color), 0, 30);\n            lagi::platform::logging::writef(\\"[AzelMM] after transition fadePalette\\\\n\\");"
    source_text "${source_text}")
 
   # The battle-manager override is irrelevant to the direct-boot Ruins/movie
