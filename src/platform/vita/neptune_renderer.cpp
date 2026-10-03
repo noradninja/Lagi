@@ -2351,13 +2351,6 @@ static std::uint16_t liveTownTextureIndex(
         if (next < 0xFFFFu) {
             g_staticRoomCpuMesh.decodedTextureData.push_back(
                 std::move(decoded));
-            platform::logging::writef(
-                "[TownRender] added live material %u PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
-                static_cast<unsigned>(next),
-                static_cast<unsigned>(record.cmdPmod),
-                static_cast<unsigned>(record.cmdColr),
-                static_cast<unsigned>(record.cmdSrca),
-                static_cast<unsigned>(record.cmdSize));
             return static_cast<std::uint16_t>(next);
         }
     }
