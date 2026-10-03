@@ -933,12 +933,8 @@ bool decode_town_texture_descriptor(
             continue;
 
         SaturnPolygonRecord normalized = record;
-        if (record.colorMode() == 1u) {
-            // Lookup-table mode stores a relocated VDP1 address in CMDCOLR.
-            normalized.cmdColr = static_cast<std::uint16_t>(
-                record.cmdColr - bundle.vdp1Base);
-        }
-        // Bank-color modes keep their CRAM bank selector in CMDCOLR.
+        normalized.cmdColr = static_cast<std::uint16_t>(
+            record.cmdColr - bundle.vdp1Base);
         normalized.cmdSrca = relativeSrca;
         if (tryDecode(bundle.graphics->bytes, normalized))
             return true;
