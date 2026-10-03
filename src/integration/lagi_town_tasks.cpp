@@ -37,15 +37,24 @@ bool start_twn_ruin_task_pipeline()
     if (!town_runtime().initialized || !town_overlay_file())
         return false;
 
-    // Match the engine/grid initialization performed by upstream
-    // loadTownPrg() immediately before entering a town overlay. Lagi enters
-    // overlayStart_TWN_RUIN() directly, so without these calls the world-grid
-    // cell draw path inherits zero/stale 3D projection state and never reaches
-    // the static environment submissions.
+    // Match the gameplay-visible VDP1 projection state that upstream
+    // initVDP1() establishes before loadTownPrg(). Neptune owns the Vita
+    // renderer, so do not start Azel's desktop VDP1 backend; only restore the
+    // screen extents consumed by Azel's culling math, then let Azel compute
+    // the actual town projection ratios through initTownProjection().
+    graphicEngineStatus.m405C.VDP1_X1 = 0;
+    graphicEngineStatus.m405C.VDP1_Y1 = 0;
+    graphicEngineStatus.m405C.VDP1_X2 = 352;
+    graphicEngineStatus.m405C.VDP1_Y2 = 224;
+
     reset3dEngine();
+    initTownProjection();
     initTownGrid();
     platform::logging::writef(
-        "[LagiAdapter] upstream town engine/grid state initialized\n");
+        "[LagiAdapter] upstream town engine/grid/projection state initialized "
+        "wr=%.5f wr2=%.5f\n",
+        graphicEngineStatus.m405C.m2C_widthRatio.asS32() / 65536.0f,
+        graphicEngineStatus.m405C.m28_widthRatio2.asS32() / 65536.0f);
 
     // Instantiate Azel's real TWN_RUIN overlay and let its own
     // overlayStart_TWN_RUIN() construct the script/background/Edge/main/camera
