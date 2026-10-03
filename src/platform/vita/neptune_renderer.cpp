@@ -1513,7 +1513,7 @@ static bool ensureVdp1UiBuffers()
 
     g_vdp1UiVertices = static_cast<azel::DebugTextureVertex*>(
         probeGpuAlloc(
-            4u * sizeof(azel::DebugTextureVertex),
+            64u * 4u * sizeof(azel::DebugTextureVertex),
             SCE_GXM_MEMORY_ATTRIB_READ,
             &g_vdp1UiVertexUid));
     g_vdp1UiIndices = static_cast<std::uint16_t*>(
@@ -1646,6 +1646,7 @@ static void drawPublishedVdp1Ui()
     sceGxmSetUniformDataF(
         uniforms, g_textureWvpParam, 0, 16, identity);
 
+    unsigned int spriteSlot = 0u;
     for (const auto& command : commands) {
         const unsigned int commandType = command.cmdCtrl & 0x000Fu;
 
@@ -1779,17 +1780,27 @@ static void drawPublishedVdp1Ui()
             break;
         }
 
+        if (spriteSlot >= 64u)
+            continue;
+
+        azel::DebugTextureVertex* const spriteVertices =
+            g_vdp1UiVertices + spriteSlot * 4u;
+        ++spriteSlot;
+
         const float pos[4][2] = {
             {x0,y0}, {x1,y0}, {x1,y1}, {x0,y1}
         };
         for (unsigned int i = 0; i < 4u; ++i) {
-            g_vdp1UiVertices[i] = {
+            spriteVertices[i] = {
                 pos[i][0], pos[i][1], 0.0f,
                 uv[order[i]][0], uv[order[i]][1]
             };
         }
 
-        sceGxmSetVertexStream(g_probeContext, 0, g_vdp1UiVertices);
+        // GXM consumes vertex streams asynchronously. Never overwrite a
+        // vertex slice after issuing its draw within the same scene; the next
+        // VDP1 sprite gets a separate 4-vertex region.
+        sceGxmSetVertexStream(g_probeContext, 0, spriteVertices);
         sceGxmSetFragmentTexture(
             g_probeContext, 0, &texture->texture);
         sceGxmDraw(
