@@ -117,6 +117,19 @@ std::uint64_t published_frame_number()
     return g_publishedFrameNumber;
 }
 
+void capture_current_light(SubmissionState& state)
+{
+    if (&currentLightVector_M) {
+        for (unsigned int i = 0; i < 3; ++i) {
+            state.lightVector[i] =
+                currentLightVector_M.lightVector[i].asS32();
+            state.lightColor[i] =
+                currentLightVector_M.color[i];
+        }
+        state.hasLight = true;
+    }
+}
+
 void set_town_submission_context(
     std::int8_t bundleIndex,
     std::uint32_t cellIndex,
@@ -152,15 +165,7 @@ static void capture_runtime_state(bool billboard)
         g_lastState.hasModelMatrix = true;
     }
 
-    if (&currentLightVector_M) {
-        for (unsigned int i = 0; i < 3; ++i) {
-            g_lastState.lightVector[i] =
-                currentLightVector_M.lightVector[i].asS32();
-            g_lastState.lightColor[i] =
-                currentLightVector_M.color[i];
-        }
-        g_lastState.hasLight = true;
-    }
+    capture_current_light(g_lastState);
 }
 
 static void record_submission(sProcessed3dModel* model, bool billboard)
