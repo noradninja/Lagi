@@ -31,6 +31,7 @@ extern const unsigned char _binary_lagi_color_f_gxp_start[];
 extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
 extern const unsigned char _binary_lagi_mesh_f_gxp_start[];
+extern const unsigned char _binary_lagi_cinepak_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_subdiv_v_gxp_start[];
 extern const unsigned char _binary_lagi_textured_gouraud_subdiv_f_gxp_start[];
@@ -139,10 +140,14 @@ static std::uint16_t* g_fadeIndices = nullptr;
 
 static SceGxmShaderPatcherId g_textureVertexProgramId{};
 static SceGxmShaderPatcherId g_textureFragmentProgramId{};
+static SceGxmShaderPatcherId g_cinepakFragmentProgramId{};
 static bool g_textureVertexRegistered = false;
 static bool g_textureFragmentRegistered = false;
+static bool g_cinepakFragmentRegistered = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
+static SceGxmFragmentProgram* g_cinepakFragmentProgram = nullptr;
+static const SceGxmProgramParameter* g_cinepakMovieInfoParam = nullptr;
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
 static SceGxmFragmentProgram* g_meshTextureFragmentProgram = nullptr;
@@ -395,6 +400,9 @@ static SceGxmTexture g_movieTexture{};
 static unsigned int g_movieWidth = 0;
 static unsigned int g_movieHeight = 0;
 static unsigned int g_movieStridePixels = 0;
+static unsigned int g_moviePayloadWidth = 0;
+static unsigned int g_moviePayloadHeight = 0;
+static bool g_movieUsesCinepakPayload = false;
 static bool g_movieFrameVisible = false;
 static SceUID g_movieFrameSema = -1;
 static bool g_movieUploadLogged = false;
@@ -1368,6 +1376,11 @@ void shutdown()
                 g_probeShaderPatcher, g_meshTextureFragmentProgram);
             g_meshTextureFragmentProgram = nullptr;
         }
+        if (g_cinepakFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_cinepakFragmentProgram);
+            g_cinepakFragmentProgram = nullptr;
+        }
         if (g_textureFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_textureFragmentProgram);
@@ -1462,6 +1475,11 @@ void shutdown()
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_meshFragmentProgramId);
             g_meshFragmentRegistered = false;
+        }
+        if (g_cinepakFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_cinepakFragmentProgramId);
+            g_cinepakFragmentRegistered = false;
         }
         if (g_textureFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -1751,6 +1769,9 @@ static void freeMovieResources()
     g_movieWidth = 0;
     g_movieHeight = 0;
     g_movieStridePixels = 0;
+    g_moviePayloadWidth = 0;
+    g_moviePayloadHeight = 0;
+    g_movieUsesCinepakPayload = false;
     g_movieFrameVisible = false;
     g_movieUploadLogged = false;
     g_movieRenderLogged = false;
@@ -1844,6 +1865,10 @@ bool movie_present_frame(
         g_movieStridePixels = stridePixels;
     }
 
+    g_movieUsesCinepakPayload = false;
+    g_moviePayloadWidth = 0;
+    g_moviePayloadHeight = 0;
+
     auto* destination = static_cast<std::uint32_t*>(g_movieTextureData);
     for (unsigned int y = 0; y < height; ++y) {
         std::memcpy(
@@ -1861,6 +1886,116 @@ bool movie_present_frame(
 
     if (!renderSlot.publish()) {
         logging::writef("[MovieRender] FAIL publish render slot\n");
+        return false;
+    }
+    return true;
+}
+
+bool movie_present_cinepak_payload(
+    const std::uint32_t* payload,
+    unsigned int payloadWidth,
+    unsigned int payloadHeight,
+    unsigned int sourceWidth,
+    unsigned int sourceHeight)
+{
+    if (!g_gxmInitialized || !g_probeContext || !payload ||
+        !payloadWidth || !payloadHeight || !sourceWidth || !sourceHeight)
+        return false;
+
+    MovieRenderSlotGuard renderSlot;
+    if (!renderSlot)
+        return false;
+
+    MovieFrameGuard guard;
+    if (!guard)
+        return false;
+
+    // The payload texture is eight RGBA8 texels per 4x4 source block.
+    // payloadWidth is therefore naturally 8-texel aligned.
+    if (!g_movieTextureData ||
+        sourceWidth != g_movieWidth ||
+        sourceHeight != g_movieHeight ||
+        payloadWidth != g_moviePayloadWidth ||
+        payloadHeight != g_moviePayloadHeight ||
+        !g_movieUsesCinepakPayload) {
+        freeMovieResources();
+
+        const unsigned int textureBytes =
+            payloadWidth * payloadHeight * sizeof(std::uint32_t);
+        g_movieTextureData = probeGpuAlloc(
+            textureBytes,
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_movieTextureUid);
+        g_movieVertices = static_cast<azel::DebugTextureVertex*>(
+            probeGpuAlloc(
+                4u * sizeof(azel::DebugTextureVertex),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_movieVertexUid));
+        g_movieIndices = static_cast<std::uint16_t*>(
+            probeGpuAlloc(
+                6u * sizeof(std::uint16_t),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_movieIndexUid));
+        if (!g_movieTextureData || !g_movieVertices || !g_movieIndices) {
+            freeMovieResources();
+            return false;
+        }
+
+        if (sceGxmTextureInitLinear(
+                &g_movieTexture,
+                g_movieTextureData,
+                SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+                payloadWidth,
+                payloadHeight,
+                0) < 0) {
+            freeMovieResources();
+            return false;
+        }
+        sceGxmTextureSetMinFilter(
+            &g_movieTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(
+            &g_movieTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+
+        const float displayAspect =
+            static_cast<float>(viewerRenderWidth()) /
+            static_cast<float>(viewerRenderHeight());
+        const float xExtent = std::min(
+            1.0f,
+            ((4.0f / 3.0f) / displayAspect) *
+                (static_cast<float>(sourceWidth) / 352.0f));
+        const float yExtent = std::min(
+            1.0f, static_cast<float>(sourceHeight) / 224.0f);
+        g_movieVertices[0] = {-xExtent,  yExtent, 0.5f, 0.0f, 0.0f};
+        g_movieVertices[1] = { xExtent,  yExtent, 0.5f, 1.0f, 0.0f};
+        g_movieVertices[2] = {-xExtent, -yExtent, 0.5f, 0.0f, 1.0f};
+        g_movieVertices[3] = { xExtent, -yExtent, 0.5f, 1.0f, 1.0f};
+        const std::uint16_t indices[6] = {0, 1, 2, 2, 1, 3};
+        std::memcpy(g_movieIndices, indices, sizeof(indices));
+
+        g_movieWidth = sourceWidth;
+        g_movieHeight = sourceHeight;
+        g_movieStridePixels = 0;
+        g_moviePayloadWidth = payloadWidth;
+        g_moviePayloadHeight = payloadHeight;
+        g_movieUsesCinepakPayload = true;
+    }
+
+    std::memcpy(
+        g_movieTextureData,
+        payload,
+        static_cast<std::size_t>(payloadWidth) *
+            payloadHeight * sizeof(std::uint32_t));
+
+    g_movieFrameVisible = true;
+    if (!g_movieUploadLogged) {
+        logging::writef(
+            "[MovieRender] SGX Cinepak payload %ux%u for %ux%u source\n",
+            payloadWidth, payloadHeight, sourceWidth, sourceHeight);
+        g_movieUploadLogged = true;
+    }
+
+    if (!renderSlot.publish()) {
+        logging::writef("[MovieRender] FAIL publish SGX Cinepak slot\n");
         return false;
     }
     return true;
@@ -2720,7 +2855,11 @@ static void drawPublishedVdp1Ui()
         g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
 
     sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
-    sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
+    sceGxmSetFragmentProgram(
+        g_probeContext,
+        g_movieUsesCinepakPayload
+            ? g_cinepakFragmentProgram
+            : g_textureFragmentProgram);
 
     void* uniforms = nullptr;
     if (sceGxmReserveVertexDefaultUniformBuffer(
@@ -5529,10 +5668,14 @@ void show_town_scene()
     const SceGxmProgram* meshFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_mesh_f_gxp_start);
+    const SceGxmProgram* cinepakFragmentGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_cinepak_f_gxp_start);
 
     if (sceGxmProgramCheck(textureVertexGxp) < 0 ||
         sceGxmProgramCheck(textureFragmentGxp) < 0 ||
-        sceGxmProgramCheck(meshFragmentGxp) < 0) {
+        sceGxmProgramCheck(meshFragmentGxp) < 0 ||
+        sceGxmProgramCheck(cinepakFragmentGxp) < 0) {
         failure("[FAIL] TEXTURE GXP CHECK");
         return;
     }
@@ -5554,6 +5697,21 @@ void show_town_scene()
         return;
     }
     g_textureFragmentRegistered = true;
+
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_probeShaderPatcher,
+            cinepakFragmentGxp,
+            &g_cinepakFragmentProgramId) < 0) {
+        failure("[FAIL] CINEPAK FP REG");
+        return;
+    }
+    g_cinepakFragmentRegistered = true;
+    g_cinepakMovieInfoParam =
+        sceGxmProgramFindParameterByName(cinepakFragmentGxp, "movieInfo");
+    if (!g_cinepakMovieInfoParam) {
+        failure("[FAIL] CINEPAK SHADER PARAMS");
+        return;
+    }
 
     if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
@@ -5618,6 +5776,18 @@ void show_town_scene()
             textureVertexGxp,
             &g_textureFragmentProgram) < 0) {
         failure("[FAIL] CREATE TEXTURE FP");
+        return;
+    }
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_cinepakFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            kMultisampleMode,
+            nullptr,
+            textureVertexGxp,
+            &g_cinepakFragmentProgram) < 0) {
+        failure("[FAIL] CREATE CINEPAK FP");
         return;
     }
 
@@ -7712,6 +7882,9 @@ static bool renderMovieFrame()
         !g_probeContext || !g_textureVertexProgram ||
         !g_textureFragmentProgram || !g_textureWvpParam)
         return false;
+    if (g_movieUsesCinepakPayload &&
+        (!g_cinepakFragmentProgram || !g_cinepakMovieInfoParam))
+        return false;
 
     const int pitch = viewerRenderPitch();
     std::uint32_t* const colorBuffer =
@@ -7789,6 +7962,30 @@ static bool renderMovieFrame()
         };
         sceGxmSetUniformDataF(
             uniformBuffer, g_textureWvpParam, 0, 16, identity);
+
+        if (g_movieUsesCinepakPayload) {
+            void* fragmentUniforms = nullptr;
+            if (sceGxmReserveFragmentDefaultUniformBuffer(
+                    g_probeContext, &fragmentUniforms) < 0 ||
+                !fragmentUniforms) {
+                sceGxmEndScene(g_probeContext, nullptr, nullptr);
+                sceGxmFinish(g_probeContext);
+                logging::writef(
+                    "[MovieRender] FAIL reserve Cinepak fragment uniforms\n");
+                return true;
+            }
+            const float movieInfo[4] = {
+                static_cast<float>(g_movieWidth),
+                static_cast<float>(g_movieHeight),
+                static_cast<float>(g_moviePayloadWidth),
+                static_cast<float>(g_moviePayloadHeight),
+            };
+            sceGxmSetUniformDataF(
+                fragmentUniforms,
+                g_cinepakMovieInfoParam,
+                0, 4, movieInfo);
+        }
+
         sceGxmSetFragmentTexture(g_probeContext, 0, &g_movieTexture);
         if (sceGxmSetVertexStream(
                 g_probeContext, 0, g_movieVertices) >= 0) {
@@ -7810,9 +8007,10 @@ static bool renderMovieFrame()
 
     if (!g_movieRenderLogged) {
         logging::writef(
-            "[MovieRender] first GXM frame submitted %ux%u output=%dx%d\n",
+            "[MovieRender] first GXM frame submitted %ux%u output=%dx%d backend=%s\n",
             g_movieWidth, g_movieHeight,
-            viewerRenderWidth(), viewerRenderHeight());
+            viewerRenderWidth(), viewerRenderHeight(),
+            g_movieUsesCinepakPayload ? "SGX-Cinepak" : "RGBA");
         g_movieRenderLogged = true;
     }
 
