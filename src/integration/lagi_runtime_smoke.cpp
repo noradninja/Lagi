@@ -338,6 +338,38 @@ void runtime_smoke_frame()
                 vdp1Ctx.m0_currentVdp1WriteEA -
                 (mainContextVdp1[0].begin() + 6))
             : 0u;
+    static unsigned int reportedMultiVdp1Frames = 0;
+    if (vdp1CommandCount > 1 && reportedMultiVdp1Frames < 12) {
+        lagi::platform::logging::writef(
+            "[VDP1UI-MULTI] frame=%u commands=%u\n",
+            startupFrame, vdp1CommandCount);
+
+        const auto begin = mainContextVdp1[0].begin() + 6;
+        const auto end = vdp1Ctx.m0_currentVdp1WriteEA;
+        unsigned int commandIndex = 0;
+        for (auto cmd = begin; cmd != end; ++cmd, ++commandIndex) {
+            lagi::platform::logging::writef(
+                "[VDP1UI-MULTI] #%u CTRL=%04X PMOD=%04X COLR=%04X "
+                "SRCA=%04X SIZE=%04X A=(%d,%d) B=(%d,%d) "
+                "C=(%d,%d) D=(%d,%d)\n",
+                commandIndex,
+                static_cast<unsigned int>(cmd->m0_CMDCTRL),
+                static_cast<unsigned int>(cmd->m4_CMDPMOD),
+                static_cast<unsigned int>(cmd->m6_CMDCOLR),
+                static_cast<unsigned int>(cmd->m8_CMDSRCA),
+                static_cast<unsigned int>(cmd->mA_CMDSIZE),
+                static_cast<int>(cmd->mC_CMDXA),
+                static_cast<int>(cmd->mE_CMDYA),
+                static_cast<int>(cmd->m10_CMDXB),
+                static_cast<int>(cmd->m12_CMDYB),
+                static_cast<int>(cmd->m14_CMDXC),
+                static_cast<int>(cmd->m16_CMDYC),
+                static_cast<int>(cmd->m18_CMDXD),
+                static_cast<int>(cmd->m1A_CMDYD));
+        }
+        ++reportedMultiVdp1Frames;
+    }
+
     if (vdp1CommandCount && reportedVdp1Frames < 8) {
         const auto& firstVdp1 = *(mainContextVdp1[0].begin() + 6);
         lagi::platform::logging::writef(
