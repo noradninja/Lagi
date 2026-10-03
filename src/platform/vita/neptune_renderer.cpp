@@ -1616,9 +1616,14 @@ static void drawPublishedVdp1Ui()
     if (sceGxmReserveVertexDefaultUniformBuffer(
             g_probeContext, &uniforms) < 0 || !uniforms)
         return;
-    const ViewerMat4 identity = viewerIdentity();
+    static const float identity[16] = {
+        1.0f,0.0f,0.0f,0.0f,
+        0.0f,1.0f,0.0f,0.0f,
+        0.0f,0.0f,1.0f,0.0f,
+        0.0f,0.0f,0.0f,1.0f
+    };
     sceGxmSetUniformDataF(
-        uniforms, g_textureWvpParam, 0, 16, identity.m);
+        uniforms, g_textureWvpParam, 0, 16, identity);
 
     for (const auto& command : commands) {
         // First native Neptune UI primitive: VDP1 scaled sprite.
