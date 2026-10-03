@@ -10,6 +10,7 @@
 #include "town/townEdge.h"
 #include "town/ruin/twn_ruin.h"
 #include "kernel/fade.h"
+#include "3dEngine.h"
 
 #include <algorithm>
 #include <cmath>
@@ -35,6 +36,16 @@ bool start_twn_ruin_task_pipeline()
 {
     if (!town_runtime().initialized || !town_overlay_file())
         return false;
+
+    // Match the engine/grid initialization performed by upstream
+    // loadTownPrg() immediately before entering a town overlay. Lagi enters
+    // overlayStart_TWN_RUIN() directly, so without these calls the world-grid
+    // cell draw path inherits zero/stale 3D projection state and never reaches
+    // the static environment submissions.
+    reset3dEngine();
+    initTownGrid();
+    platform::logging::writef(
+        "[LagiAdapter] upstream town engine/grid state initialized\n");
 
     // Instantiate Azel's real TWN_RUIN overlay and let its own
     // overlayStart_TWN_RUIN() construct the script/background/Edge/main/camera
