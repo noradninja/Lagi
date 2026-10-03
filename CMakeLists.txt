@@ -663,6 +663,7 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  processModel.cpp
  VDP2.cpp
  menu_dragonMorph.cpp
+ dragonData.cpp
  mainMenuDebugTasks.cpp
  collision.cpp
  kernel/grid.cpp
@@ -675,11 +676,14 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  kernel/dialogTask.cpp
  kernel/receiveItemTask.cpp
  kernel/moduleManager.cpp
+ kernel/loadSavegameScreen.cpp
  kernel/textDisplay.cpp
  items.cpp
  menu_dragon.cpp
  field.cpp
+ field/field_a3/o_fld_a3.cpp
  shared/vdp2PlaneTask.cpp
+ battle/BTL_A3/BTL_A3_map6.cpp
  audio/systemSounds.cpp
  town/townCutscene.cpp
  town/town.cpp
