@@ -23,11 +23,23 @@ struct LagiCurrentLightVector
     u16 color[3];
 };
 
+// cameraProperties2.m28[0] is Azel's camera-to-world matrix.  At the native
+// addObjectToDrawList boundary pCurrentMatrix is already view * model, because
+// sMainLogic::Draw establishes the camera before town cell/object drawing.
+// Neptune applies the published town camera separately, so the bridge must
+// remove Azel's view transform and publish only the world/model transform.
+struct LagiCameraProperties2
+{
+    std::uint8_t prefix[0x28];
+    LagiMatrix4x3 m28[2];
+};
+
 // Full Azel builds provide these globals. They are weak here so the current
 // smoke runtime can link before 3dEngine.cpp/menu_dragonMorph.cpp are part of
 // the Vita executable.
 extern LagiMatrix4x3* pCurrentMatrix __attribute__((weak));
 extern LagiCurrentLightVector currentLightVector_M __attribute__((weak));
+extern LagiCameraProperties2 cameraProperties2 __attribute__((weak));
 
 namespace lagi::azel_bridge {
 
@@ -45,6 +57,7 @@ static RenderSubmission g_pendingTownSubmission{};
 static bool g_hasPendingTownSubmission = false;
 static bool g_reportedFirstSubmission = false;
 static bool g_reportedFirstAdaptedModel = false;
+static bool g_reportedWorldMatrix = false;
 
 void begin_frame()
 {
@@ -138,18 +151,63 @@ static void capture_runtime_state(bool billboard)
     g_lastState = {};
     g_lastState.billboard = billboard;
 
-    // For normal objects Azel's pCurrentMatrix already contains camera/view
-    // and model transforms at submission time. Billboard capture will later
-    // substitute cameraProperties2.m88_billboardViewMatrix when that path is
-    // linked into the Vita runtime.
-    if (&pCurrentMatrix && pCurrentMatrix) {
+    // Azel submits town geometry after the camera has already been folded
+    // into pCurrentMatrix, so this matrix is view * model. Neptune consumes
+    // world-space geometry and applies the town camera itself. Recover the
+    // model/world transform with Azel's own inverse-camera matrix:
+    //
+    //     cameraProperties2.m28[0] * pCurrentMatrix
+    //       = inverse(view) * (view * model)
+    //       = model
+    //
+    // This keeps all visibility, LOD and transform ownership in upstream Azel
+    // while adapting only the representation expected by the Vita renderer.
+    if (&pCurrentMatrix && pCurrentMatrix &&
+        &cameraProperties2) {
+        const LagiMatrix4x3& cameraToWorld = cameraProperties2.m28[0];
+        const LagiMatrix4x3& viewModel = *pCurrentMatrix;
+
         for (unsigned int row = 0; row < 3; ++row) {
-            for (unsigned int col = 0; col < 4; ++col) {
+            for (unsigned int col = 0; col < 3; ++col) {
+                std::int64_t value = 0;
+                for (unsigned int k = 0; k < 3; ++k) {
+                    value +=
+                        static_cast<std::int64_t>(
+                            cameraToWorld.m[row][k].asS32()) *
+                        static_cast<std::int64_t>(
+                            viewModel.m[k][col].asS32());
+                }
                 g_lastState.modelMatrix[row * 4u + col] =
-                    pCurrentMatrix->m[row][col].asS32();
+                    static_cast<std::int32_t>(value >> 16);
             }
+
+            std::int64_t translation = 0;
+            for (unsigned int k = 0; k < 3; ++k) {
+                translation +=
+                    static_cast<std::int64_t>(
+                        cameraToWorld.m[row][k].asS32()) *
+                    static_cast<std::int64_t>(
+                        viewModel.m[k][3].asS32());
+            }
+            g_lastState.modelMatrix[row * 4u + 3u] =
+                static_cast<std::int32_t>(translation >> 16) +
+                cameraToWorld.m[row][3].asS32();
         }
         g_lastState.hasModelMatrix = true;
+
+        if (!g_reportedWorldMatrix) {
+            lagi::platform::logging::writef(
+                "[TownRender] stripped Azel view matrix "
+                "cameraSpace=(%.5f,%.5f,%.5f) "
+                "world=(%.5f,%.5f,%.5f)\n",
+                viewModel.m[0][3].asS32() / 65536.0f,
+                viewModel.m[1][3].asS32() / 65536.0f,
+                viewModel.m[2][3].asS32() / 65536.0f,
+                g_lastState.modelMatrix[3] / 65536.0f,
+                g_lastState.modelMatrix[7] / 65536.0f,
+                g_lastState.modelMatrix[11] / 65536.0f);
+            g_reportedWorldMatrix = true;
+        }
     }
 
     if (&currentLightVector_M) {
