@@ -13,7 +13,7 @@
 #include "lagi/lagi_town_bootstrap.h"
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_town_tasks.h"
-#include "lagi/lagi_movie_sequence.h"
+#include "movie/movie.h"
 #include "lagi/disc_image.h"
 #include "commonOverlay.h"
 #include "audio/soundDataTable.h"
@@ -307,10 +307,6 @@ bool runtime_smoke_init()
         lagi::platform::renderer::failure("[FAIL] TWN_RUIN TASK PIPELINE");
         return false;
     }
-    if (!init_movie_sequence_adapter()) {
-        lagi::platform::renderer::failure("[FAIL] MOVIE SEQUENCE ADAPTER");
-        return false;
-    }
     lagi::platform::renderer::status("[PASS] TWN_RUIN TASK PIPELINE", 0xFF60A0F0u);
     std::printf("[Azel] TWN_RUIN native task pipeline started\n");
 
@@ -357,14 +353,9 @@ void runtime_smoke_frame()
 
     updateInputs();
 
-    // Direct boot skips Azel's module-manager task. Once the town script asks
-    // for game status 5, this adapter yields town ownership and services the
-    // original two-part elevator movie sequence until Azel advances again.
-    if (service_movie_sequence_adapter()) {
-        ++startupFrame;
-        return;
-    }
-
+    // The direct-boot task graph now includes Azel's original module manager.
+    // Status changes, overlay lookup, movie-index selection and movie task
+    // sequencing therefore remain inside upstream Azel.
     begin_azel_vdp1_frame();
 
     twn_ruin_frame_begin();
@@ -378,6 +369,20 @@ void runtime_smoke_frame()
     // frame. This is required for systems such as the cinematic-bar line
     // scroll table, which update through vdpVar1 rather than direct VRAM writes.
     interruptVDP2Update();
+
+    // Match Azel's original host-frame ordering: service asynchronous movie
+    // I/O/decoder work after the task graph has run. The Vita build copy of
+    // upstream lastUpdateFunction() routes only that platform service through
+    // Lagi's generic MoviePlayer backend.
+    lastUpdateFunction();
+
+    // Movie presentation is self-published by MoviePlayer/Neptune. Do not
+    // publish stale town state while Azel's module manager says the movie
+    // overlay owns the frame.
+    if (gGameStatus.m0_gameMode == 0) {
+        ++startupFrame;
+        return;
+    }
 
     twn_ruin_sync_platform_state();
 
