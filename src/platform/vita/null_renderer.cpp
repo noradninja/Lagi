@@ -257,6 +257,20 @@ static std::vector<TextureBatch> g_vdp1TextureBatches;
 static std::vector<GpuMode1Texture> g_vdp1GpuTextures;
 static bool g_vdp1TexturedReady = false;
 
+// Phase 1 movie presentation uses a dedicated dynamic RGBA texture so it
+// never disturbs the resident VDP1 model or Azel's scene resources.
+static SceUID g_movieTextureUid = -1;
+static SceUID g_movieVertexUid = -1;
+static SceUID g_movieIndexUid = -1;
+static void* g_movieTextureData = nullptr;
+static azel::DebugTextureVertex* g_movieVertices = nullptr;
+static std::uint16_t* g_movieIndices = nullptr;
+static SceGxmTexture g_movieTexture{};
+static unsigned int g_movieWidth = 0;
+static unsigned int g_movieHeight = 0;
+static unsigned int g_movieStridePixels = 0;
+static bool g_movieFrameVisible = false;
+
 static bool g_probeDisplayingGxm = false;
 static bool g_viewerReady = false;
 static float g_viewYaw = 0.0f;
@@ -341,6 +355,7 @@ static unsigned int g_lastPresentVcount = 0;
 
 // Defined below with the textured-viewer helpers; shutdown() needs it earlier.
 static void freeVdp1Textures();
+static void freeMovieResources();
 static void updateLiveTownAzelLighting();
 
 static void waitFor30HzPresentSlot()
@@ -762,6 +777,7 @@ void shutdown()
     freeSimpleMappedProbe(g_vdp1TextureIndexUid, textureIndexPtr);
     g_vdp1TextureIndices = nullptr;
     freeVdp1Textures();
+    freeMovieResources();
 
     if (g_probeShaderPatcher) {
         if (g_gouraudScanlineGrayFragmentProgram) {
@@ -1118,6 +1134,126 @@ static void* probeCdramAlloc(unsigned int size, unsigned int attribs, SceUID* ui
         return nullptr;
     }
     return mem;
+}
+
+static void freeMovieMappedBlock(SceUID& uid, void*& memory)
+{
+    if (uid >= 0) {
+        if (memory)
+            sceGxmUnmapMemory(memory);
+        sceKernelFreeMemBlock(uid);
+    }
+    uid = -1;
+    memory = nullptr;
+}
+
+static void freeMovieResources()
+{
+    freeMovieMappedBlock(g_movieTextureUid, g_movieTextureData);
+
+    void* vertices = g_movieVertices;
+    freeMovieMappedBlock(g_movieVertexUid, vertices);
+    g_movieVertices = nullptr;
+
+    void* indices = g_movieIndices;
+    freeMovieMappedBlock(g_movieIndexUid, indices);
+    g_movieIndices = nullptr;
+
+    g_movieTexture = {};
+    g_movieWidth = 0;
+    g_movieHeight = 0;
+    g_movieStridePixels = 0;
+    g_movieFrameVisible = false;
+}
+
+bool movie_present_frame(
+    const std::uint32_t* rgba,
+    unsigned int width,
+    unsigned int height,
+    unsigned int pitchPixels)
+{
+    if (!g_gxmInitialized || !g_probeContext || !rgba ||
+        !width || !height || pitchPixels < width)
+        return false;
+
+    const unsigned int stridePixels = (width + 7u) & ~7u;
+    if (!g_movieTextureData || width != g_movieWidth ||
+        height != g_movieHeight || stridePixels != g_movieStridePixels) {
+        freeMovieResources();
+
+        const unsigned int textureBytes =
+            stridePixels * height * sizeof(std::uint32_t);
+        g_movieTextureData = probeGpuAlloc(
+            textureBytes,
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_movieTextureUid);
+        g_movieVertices = static_cast<azel::DebugTextureVertex*>(
+            probeGpuAlloc(
+                4u * sizeof(azel::DebugTextureVertex),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_movieVertexUid));
+        g_movieIndices = static_cast<std::uint16_t*>(
+            probeGpuAlloc(
+                6u * sizeof(std::uint16_t),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_movieIndexUid));
+        if (!g_movieTextureData || !g_movieVertices || !g_movieIndices) {
+            freeMovieResources();
+            return false;
+        }
+
+        if (sceGxmTextureInitLinear(
+                &g_movieTexture,
+                g_movieTextureData,
+                SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+                width,
+                height,
+                0) < 0) {
+            freeMovieResources();
+            return false;
+        }
+        sceGxmTextureSetMinFilter(
+            &g_movieTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+        sceGxmTextureSetMagFilter(
+            &g_movieTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+
+        // Match Azel's original 352x224 movie window inside a centered 4:3
+        // Saturn presentation area on the Vita's 16:9 display.
+        const float displayAspect =
+            static_cast<float>(viewerRenderWidth()) /
+            static_cast<float>(viewerRenderHeight());
+        const float xExtent = std::min(
+            1.0f,
+            ((4.0f / 3.0f) / displayAspect) *
+                (static_cast<float>(width) / 352.0f));
+        const float yExtent = std::min(
+            1.0f, static_cast<float>(height) / 224.0f);
+        g_movieVertices[0] = {-xExtent,  yExtent, 0.5f, 0.0f, 0.0f};
+        g_movieVertices[1] = { xExtent,  yExtent, 0.5f, 1.0f, 0.0f};
+        g_movieVertices[2] = {-xExtent, -yExtent, 0.5f, 0.0f, 1.0f};
+        g_movieVertices[3] = { xExtent, -yExtent, 0.5f, 1.0f, 1.0f};
+        const std::uint16_t indices[6] = {0, 1, 2, 2, 1, 3};
+        std::memcpy(g_movieIndices, indices, sizeof(indices));
+
+        g_movieWidth = width;
+        g_movieHeight = height;
+        g_movieStridePixels = stridePixels;
+    }
+
+    auto* destination = static_cast<std::uint32_t*>(g_movieTextureData);
+    for (unsigned int y = 0; y < height; ++y) {
+        std::memcpy(
+            destination + y * g_movieStridePixels,
+            rgba + y * pitchPixels,
+            width * sizeof(std::uint32_t));
+    }
+    g_movieFrameVisible = true;
+    return true;
+}
+
+void movie_clear_frame()
+{
+    freeMovieResources();
 }
 
 static void* probeFragmentUsseAlloc(
@@ -4681,8 +4817,124 @@ bool submit_vdp1_model(
     return true;
 }
 
+static void renderMovieFrame()
+{
+    if (!g_movieFrameVisible || !g_movieTextureData ||
+        !g_movieVertices || !g_movieIndices ||
+        !g_probeContext || !g_textureVertexProgram ||
+        !g_textureFragmentProgram || !g_textureWvpParam)
+        return;
+
+    const int pitch = viewerRenderPitch();
+    std::uint32_t* const colorBuffer =
+        g_gxmDrawBuffer == 0 ? g_probeColorBuffer : g_probeColorBuffer2;
+    SceGxmColorSurface* const colorSurface =
+        g_halfResolution
+            ? (g_gxmDrawBuffer == 0
+                ? &g_probeColorSurfaceHalf
+                : &g_probeColorSurfaceHalf2)
+            : (g_gxmDrawBuffer == 0
+                ? &g_probeColorSurface
+                : &g_probeColorSurface2);
+    SceGxmSyncObject* const syncObject =
+        g_gxmDrawBuffer == 0 ? g_probeSync : g_probeSync2;
+    SceGxmRenderTarget* const renderTarget =
+        g_halfResolution ? g_probeRenderTargetHalf : g_probeRenderTarget;
+    SceGxmDepthStencilSurface* const depthSurface =
+        g_halfResolution ? &g_probeDepthSurfaceHalf : &g_probeDepthSurface;
+
+    const unsigned int alignedWidth =
+        (viewerRenderWidth() + SCE_GXM_TILE_SIZEX - 1) &
+        ~(SCE_GXM_TILE_SIZEX - 1);
+    const unsigned int alignedHeight =
+        (viewerRenderHeight() + SCE_GXM_TILE_SIZEY - 1) &
+        ~(SCE_GXM_TILE_SIZEY - 1);
+    std::memset(
+        colorBuffer,
+        0,
+        static_cast<std::size_t>(pitch) * viewerRenderHeight() *
+            sizeof(std::uint32_t));
+    std::memset(g_probeDepth, 0xFF, alignedWidth * alignedHeight * 4u);
+    std::memset(g_probeStencil, 0, alignedWidth * alignedHeight * 4u);
+
+    if (sceGxmBeginScene(
+            g_probeContext,
+            0,
+            renderTarget,
+            nullptr,
+            nullptr,
+            syncObject,
+            colorSurface,
+            depthSurface) < 0)
+        return;
+
+    sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetDefaultRegionClipAndViewport(
+        g_probeContext, viewerRenderWidth() - 1, viewerRenderHeight() - 1);
+    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetFrontPolygonMode(
+        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetBackPolygonMode(
+        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+
+    void* uniformBuffer = nullptr;
+    bool submitted = false;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniformBuffer) >= 0 && uniformBuffer) {
+        const float identity[16] = {
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f,
+        };
+        sceGxmSetUniformDataF(
+            uniformBuffer, g_textureWvpParam, 0, 16, identity);
+        sceGxmSetFragmentTexture(g_probeContext, 0, &g_movieTexture);
+        if (sceGxmSetVertexStream(
+                g_probeContext, 0, g_movieVertices) >= 0) {
+            submitted = sceGxmDraw(
+                g_probeContext,
+                SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16,
+                g_movieIndices,
+                6) >= 0;
+        }
+    }
+
+    sceGxmEndScene(g_probeContext, nullptr, nullptr);
+    sceGxmFinish(g_probeContext);
+    if (!submitted)
+        return;
+
+    SceDisplayFrameBuf frameBuffer{};
+    frameBuffer.size = sizeof(frameBuffer);
+    frameBuffer.base = colorBuffer;
+    frameBuffer.pitch = pitch;
+    frameBuffer.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
+    frameBuffer.width = viewerRenderWidth();
+    frameBuffer.height = viewerRenderHeight();
+
+    waitFor30HzPresentSlot();
+    sceDisplaySetFrameBuf(&frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
+    sceDisplayWaitVblankStart();
+    mark30HzPresented();
+    g_gxmDrawBuffer ^= 1;
+}
+
 static void renderBasicWingViewer()
 {
+    if (g_movieFrameVisible) {
+        renderMovieFrame();
+        return;
+    }
+
     if (!g_viewerReady || !g_gxmInitialized || !g_probeContext ||
         !g_probeRenderTarget || !g_probeColorBuffer || !g_probeColorBuffer2 ||
         !g_probeVertexProgram || !g_probeFragmentProgram ||

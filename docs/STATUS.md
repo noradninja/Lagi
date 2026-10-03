@@ -1,8 +1,36 @@
 # Lagi Development Status
 
-Last updated: 2026-09-29
+Last updated: 2026-10-03
 
 Lagi is a native PlayStation Vita reimplementation path for Panzer Dragoon Saga built around reconstructed Azel/ATOLM game logic. The current project executes reconstructed Saturn-era game/data logic directly on ARMv7 and translates the original rendering intent to native VitaSDK/SceGxm rather than emulating the Saturn CPUs or using a generic modern renderer.
+
+## 0.030-alpha Phase 1 Cinepak path
+
+Build-validated on 2026-10-03; real Vita movie/audio playback remains to be
+validated before this section can be called hardware-proven.
+
+- Azel remains the movie-sequencing owner through a thin Lagi movie-backend
+  bridge. The backend does not choose movies, transitions, fades, or scenes.
+- Sega FILM parsing covers FDSC/STAB metadata, absolute sample bounds,
+  per-stream PTS/duration, Cinepak keyframe flags, planar signed PCM, and the
+  container's independent video/audio clocks. Its bounded random-access data
+  source streams CPK samples directly from either a normal file or Lagi's
+  mounted MODE1/2048 or MODE1/2352 BIN/CUE image.
+- The CPU reference Cinepak decoder supports persistent strip codebooks,
+  full/partial 4-byte and 6-byte codebook chunks, V1/V4 vectors, interframe
+  skipped blocks, strip inheritance, and the Sega 2/6-byte header variants.
+- Decoded A8B8G8R8 frames use a dedicated dynamic Neptune/GXM texture and the
+  existing textured shader/presentation infrastructure without replacing the
+  resident Azel VDP1 scene resources.
+- Native SceAudioOut PCM playback runs on a dedicated producer/consumer
+  thread. The movie layer sees only the platform audio interface, queued and
+  played frame counts, drain state, and an audio-master presentation clock.
+- The video decoder has a stable decode/present backend contract. Phase 2 can
+  replace CPU RGBA reconstruction with SGX codebook/block-map reconstruction
+  without changing FILM demux, MoviePlayer timing, SceAudio, or Azel ownership.
+- Deterministic host tests cover FILM metadata/sample extraction and the CPU
+  V1 reconstruction layout. The complete Vita target links and packages as
+  `lagi.self` and `Lagi.vpk`.
 
 ## Current hardware-proven baseline
 
