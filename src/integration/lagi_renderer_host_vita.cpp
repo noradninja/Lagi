@@ -12,3 +12,8 @@ void invalidateCramRange(unsigned int start, unsigned int size)
 {
     lagi::platform::renderer::invalidate_cram_range(start, size);
 }
+
+void invalidateVdp1TextureRange(unsigned int start, unsigned int size)
+{
+    lagi::platform::renderer::invalidate_vdp1_texture_range(start, size);
+}
