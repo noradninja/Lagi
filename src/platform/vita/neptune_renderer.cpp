@@ -353,6 +353,7 @@ static float g_townCameraUp[3]{};
 static float g_townCameraYaw = 0.0f;
 static float g_townCameraPitch = 0.0f;
 static float g_townCameraDistance = 0.0f;
+static float g_azelProjectionFovDegrees = 80.0f;
 static bool g_townPlayerGrounded = false;
 static unsigned int g_townCollisionContacts = 0;
 static unsigned int g_townEdgeAnimation = 0;
@@ -786,6 +787,23 @@ static void drawTownInputOverlay(
     shadowed(x, y0 + lineStep * 3, line3);
 }
 
+
+void set_fov(float degrees)
+{
+    if (degrees > 1.0f && degrees < 179.0f)
+        g_azelProjectionFovDegrees = degrees;
+}
+
+void invalidate_cram_range(unsigned int, unsigned int)
+{
+    // Neptune decodes Saturn palette/material state into its own resident
+    // resources. Force the live-town material/model caches to be rebuilt on
+    // the next published frame when Azel writes CRAM.
+    g_liveTownMaterialCache.clear();
+    g_liveTownSignature = 0;
+    g_liveTownStaticSignature = 0;
+    g_liveTownPrepared = false;
+}
 
 bool init()
 {
@@ -2786,7 +2804,7 @@ static ViewerMat4 buildAuthenticRoomWvp()
 
     ViewerMat4 projection =
         buildAzelProjection(
-            g_staticRoomCpuMesh.cameraFovDegrees,
+            g_azelProjectionFovDegrees,
             0u,
             g_staticRoomCpuMesh.cameraNear,
             g_staticRoomCpuMesh.cameraFar);
