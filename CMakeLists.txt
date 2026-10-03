@@ -639,12 +639,33 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   "${source_text}"
  )
 
+ # During Ruins-only bring-up, retain Azel's original module-manager state
+ # machine and gameStatusTable, but do not make unintegrated overlays hard link
+ # dependencies merely because they appear in overlayDispatchTable. The current
+ # direct-boot task graph already owns TWN_RUIN; the only overlay it must
+ # dispatch for 0.030-alpha is Azel's movie overlay. Once full-game overlay
+ # integration lands, disabling LAGI_AZEL_RUINS_LINK_TRIM restores the upstream
+ # dispatch table unchanged.
+ if(relative_path STREQUAL "kernel/moduleManager.cpp" AND LAGI_AZEL_RUINS_LINK_TRIM)
+  string(REPLACE
+   "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    loadTown,           // 1: town\n    loadTown2,          // 2: town (alt entry)\n    loadField,          // 3: field\n    loadBattle,         // 4: battle\n    loadWorldOverlay,   // 5: worldmap\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    initLoadSavegameScreen, // 9: save/load screen\n    NULL,\n};"
+   "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    NULL,               // 1: town - already running in direct boot\n    NULL,               // 2: town alt - not linked in Ruins bring-up\n    NULL,               // 3: field - not linked yet\n    NULL,               // 4: battle - not linked yet\n    NULL,               // 5: worldmap - not linked yet\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    NULL,               // 9: save/load - not linked yet\n    NULL,\n};"
+   source_text "${source_text}")
+
+  # The battle-manager override is irrelevant to the direct-boot Ruins/movie
+  # path and would otherwise retain the unintegrated battle manager solely as
+  # a linker dependency. Full builds keep the original condition.
+  string(REPLACE
+   "if ((readSaturnS8(gCommonFile->getSaturnPtr(0x212EAC + gGameStatus.m4_gameStatus * 2)) == 4) && (gBattleManager->mE == 2))"
+   "if (false)"
+   source_text "${source_text}")
+
  # The upstream Azel movie task/state machine remains authoritative. For the
  # Vita build copy only, remove the desktop Cinepak/SoLoud stream backend and
  # route those platform-facing calls through Lagi services. The filename table,
  # timing table, countdown, CPK sequencing, fades, skip logic, subtitle task,
  # and task completion all remain the original upstream code.
- if(relative_path STREQUAL "movie/movie.cpp")
+ elseif(relative_path STREQUAL "movie/movie.cpp")
   string(REPLACE
    "#include \"movie.h\""
    "#include \"movie/movie.h\""
