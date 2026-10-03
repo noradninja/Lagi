@@ -92,6 +92,32 @@ public:
                 audioSamples.push_back(i);
         }
 
+        if (videoSamples.size() >= 2u) {
+            const FilmSample& first = table[videoSamples.front()];
+            const FilmSample& second = table[videoSamples[1]];
+            const FilmSample& last = table[videoSamples.back()];
+            const std::uint64_t spanTicks =
+                last.pts >= first.pts ? last.pts - first.pts : 0u;
+            const std::uint64_t intervalTicks =
+                second.pts >= first.pts ? second.pts - first.pts : 0u;
+            const std::uint64_t fpsMilli =
+                spanTicks != 0u
+                    ? (static_cast<std::uint64_t>(videoSamples.size() - 1u) *
+                       static_cast<std::uint64_t>(video.clockRate) *
+                       1000ull) / spanTicks
+                    : 0u;
+            platform::logging::writef(
+                "[MovieTiming] videoSamples=%u clock=%u firstDelta=%llu "
+                "avgFps=%llu.%03llu pts=%llu..%llu\n",
+                static_cast<unsigned int>(videoSamples.size()),
+                video.clockRate,
+                static_cast<unsigned long long>(intervalTicks),
+                static_cast<unsigned long long>(fpsMilli / 1000ull),
+                static_cast<unsigned long long>(fpsMilli % 1000ull),
+                static_cast<unsigned long long>(first.pts),
+                static_cast<unsigned long long>(last.pts));
+        }
+
         hasAudio = audio.codec == FilmAudioCodec::PcmS8Planar ||
                    audio.codec == FilmAudioCodec::PcmS16BePlanar;
         if (hasAudio &&
