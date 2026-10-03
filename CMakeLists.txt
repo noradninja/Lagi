@@ -677,6 +677,19 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "u32 getFileSizeFromFileId(const char* fileName)"
    "__attribute__((weak)) u32 getFileSizeFromFileId(const char* fileName)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/townMainLogic.cpp")
+  # Correct two reconstructed hard-coded town LCS physical-button tests to
+  # match the original manual: B cancels LCS, while A/C enter/select it.
+  # Keep this in the generated build copy so extern/Azel remains untouched.
+  string(REPLACE
+   "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 1)"
+   "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 2)"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/townScript.cpp")
+  string(REPLACE
+   "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 6)"
+   "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "town/town.cpp")
   # Vita bridge for the authentic upstream static world-grid submission path.
   # This modifies only the generated build copy, never extern/Azel.
