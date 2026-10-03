@@ -66,8 +66,6 @@ void update()
     if (buttons & SCE_CTRL_START)     saturn |= 0x0008; // Start
     if (buttons & SCE_CTRL_UP)        saturn |= 0x0010;
     if (buttons & SCE_CTRL_DOWN)      saturn |= 0x0020;
-    if (buttons & SCE_CTRL_LEFT)      saturn |= 0x0040;
-    if (buttons & SCE_CTRL_RIGHT)     saturn |= 0x0080;
     if (buttons & SCE_CTRL_RTRIGGER)  saturn |= 0x1000; // Saturn R
     if (buttons & SCE_CTRL_TRIANGLE)  saturn |= 0x4000; // Saturn Y
     if (buttons & SCE_CTRL_LTRIGGER)  saturn |= 0x8000; // Saturn L
@@ -92,8 +90,8 @@ void update()
     g_runHeld = false;
     g_cameraHeld = false;
     g_resetScene = false;
-    g_prevMode = false;
-    g_nextMode = false;
+    g_prevMode = (pressed & SCE_CTRL_LEFT) != 0;
+    g_nextMode = (pressed & SCE_CTRL_RIGHT) != 0;
 
     if (debugComboPressed) {
         renderer::toggle_full_debug_screen();
