@@ -63,9 +63,11 @@ float4 main(
         entry =
             (local.x >= 2.0f ? 1.0f : 0.0f) +
             (local.y >= 2.0f ? 2.0f : 0.0f);
-        yIndex =
-            fmod(local.x, 2.0f) +
-            fmod(local.y, 2.0f) * 2.0f;
+        const float localX2 =
+            local.x - floor(local.x * 0.5f) * 2.0f;
+        const float localY2 =
+            local.y - floor(local.y * 0.5f) * 2.0f;
+        yIndex = localX2 + localY2 * 2.0f;
     } else {
         yIndex =
             (local.x >= 2.0f ? 1.0f : 0.0f) +
