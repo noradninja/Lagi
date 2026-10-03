@@ -664,7 +664,7 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    [=[case 1:
         if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)]=]
    [=[case 1:
-        lagi::platform::logging::writef("[AzelMM] enter state1 current=0x%02X next=0x%02X m2=%d mC=%p\n", static_cast<unsigned int>(gGameStatus.m4_gameStatus), static_cast<unsigned int>(gGameStatus.m8_nextGameStatus), static_cast<int>(gGameStatus.m2), static_cast<void*>(pWorkArea->mC));
+        lagi::platform::logging::writef("[AzelMM] enter state1 current=0x%02X next=0x%02X m2=%d mC=0x%08X\n", static_cast<unsigned int>(gGameStatus.m4_gameStatus), static_cast<unsigned int>(gGameStatus.m8_nextGameStatus), static_cast<int>(gGameStatus.m2), static_cast<unsigned int>(pWorkArea->mC));
         if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)]=]
    source_text "${source_text}")
 
