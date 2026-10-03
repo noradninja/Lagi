@@ -45,8 +45,6 @@ static RenderSubmission g_pendingTownSubmission{};
 static bool g_hasPendingTownSubmission = false;
 static bool g_reportedFirstSubmission = false;
 static bool g_reportedFirstAdaptedModel = false;
-static unsigned int g_reportedCommonSubmissions = 0;
-static unsigned int g_reportedRuinSubmissions = 0;
 
 void begin_frame()
 {
@@ -191,51 +189,6 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
         g_adaptedModels.push_back(g_lastAdaptedModel);
         adaptedIndex = static_cast<std::int32_t>(g_adaptedModels.size() - 1u);
 
-        // Hardware bring-up diagnostic: identify the native submission's VDP1
-        // bundle from its relocated texture address and print the exact Azel
-        // matrix that arrived at addObjectToDrawList(). This deliberately does
-        // not alter transforms or runtime ownership.
-        if (!g_lastAdaptedModel->polygons.empty() &&
-            g_lastState.hasModelMatrix) {
-            const auto& first = g_lastAdaptedModel->polygons.front();
-            const std::uint16_t srca = first.cmdSrca;
-            const bool common =
-                srca >= 0xEE08u && srca < 0xF800u;
-            const bool ruin =
-                srca >= 0x77E4u && srca < 0xEE08u;
-            unsigned int* counter =
-                common ? &g_reportedCommonSubmissions :
-                (ruin ? &g_reportedRuinSubmissions : nullptr);
-            if (counter && *counter < 8u) {
-                lagi::platform::logging::writef(
-                    "[TownSubmit] %s #%u model=%p polys=%u "
-                    "SRCA=%04X bill=%u "
-                    "T=(%.5f,%.5f,%.5f) "
-                    "R0=(%.4f,%.4f,%.4f) "
-                    "R1=(%.4f,%.4f,%.4f) "
-                    "R2=(%.4f,%.4f,%.4f)\n",
-                    common ? "COMMON" : "RUIN",
-                    *counter,
-                    model,
-                    static_cast<unsigned>(
-                        g_lastAdaptedModel->polygons.size()),
-                    static_cast<unsigned>(srca),
-                    billboard ? 1u : 0u,
-                    g_lastState.modelMatrix[3] / 65536.0f,
-                    g_lastState.modelMatrix[7] / 65536.0f,
-                    g_lastState.modelMatrix[11] / 65536.0f,
-                    g_lastState.modelMatrix[0] / 65536.0f,
-                    g_lastState.modelMatrix[1] / 65536.0f,
-                    g_lastState.modelMatrix[2] / 65536.0f,
-                    g_lastState.modelMatrix[4] / 65536.0f,
-                    g_lastState.modelMatrix[5] / 65536.0f,
-                    g_lastState.modelMatrix[6] / 65536.0f,
-                    g_lastState.modelMatrix[8] / 65536.0f,
-                    g_lastState.modelMatrix[9] / 65536.0f,
-                    g_lastState.modelMatrix[10] / 65536.0f);
-                ++*counter;
-            }
-        }
     } else {
         g_lastAdaptedModel = nullptr;
     }
