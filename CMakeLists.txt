@@ -682,7 +682,7 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   # path. This modifies only the generated build copy, never extern/Azel.
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
-   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/platform.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/platform.h\"\n#include \"lagi/lagi_render_bridge.h\""
    source_text "${source_text}")
 
   string(REPLACE
@@ -703,6 +703,16 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   string(REPLACE
    "    }\n    popMatrix();\n}\n\ns32 isDataLoaded"
    "    }\n    popMatrix();\n    if (lagiTraceCell)\n        ++lagiCellTraceCount;\n}\n\ns32 isDataLoaded"
+   source_text "${source_text}")
+
+  # Preserve Azel's pre-view world transform for static world-grid objects.
+  # Neptune applies the authentic town camera later, so feeding it
+  # pCurrentMatrix (view*cell*object) would apply the camera twice. Scope this
+  # only to the static-cell addObjectToDrawList() boundary; actors/NPCs keep
+  # their native runtime capture path.
+  string(REPLACE
+   "                        if (offset)\n                        {\n                            addObjectToDrawList(pThis->m0_fileBundle->get3DModel(offset));\n                        }"
+   "                        if (offset)\n                        {\n                            sMatrix4x3 lagiWorldMatrix;\n                            initMatrixToIdentity(&lagiWorldMatrix);\n                            translateMatrix(pThis->mC_position, &lagiWorldMatrix);\n                            translateMatrix(readSaturnVec3(r14 + 4), &lagiWorldMatrix);\n\n                            sVec3_S16_12_4 lagiRotation;\n                            lagiRotation[0] = readSaturnS16(r14 + 0x10);\n                            lagiRotation[1] = readSaturnS16(r14 + 0x12);\n                            lagiRotation[2] = readSaturnS16(r14 + 0x14);\n                            rotateMatrixZYX_s16(lagiRotation, &lagiWorldMatrix);\n\n                            lagi::azel_bridge::SubmissionState lagiState{};\n                            for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n                            {\n                                for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n                                {\n                                    lagiState.modelMatrix[lagiRow * 4u + lagiCol] =\n                                        lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n                                }\n                            }\n                            lagiState.hasModelMatrix = true;\n                            lagiState.dynamic = false;\n\n                            lagi::azel_bridge::set_town_submission_context(\n                                -1,\n                                static_cast<std::uint32_t>(pThis->m8_cellPtr.m_offset),\n                                static_cast<std::uint32_t>(r14.m_offset),\n                                static_cast<std::uint32_t>(offset),\n                                lagiState);\n\n                            addObjectToDrawList(pThis->m0_fileBundle->get3DModel(offset));\n                        }"
    source_text "${source_text}")
  endif()
  if(source_text STREQUAL original_text)
