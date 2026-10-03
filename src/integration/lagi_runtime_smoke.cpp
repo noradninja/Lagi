@@ -21,6 +21,9 @@
 #include <vector>
 
 extern int numActiveTask;
+void initSMPC();
+void iniitInitialTaskStatsAndDebugSub();
+void updateInputs();
 
 namespace lagi::azel {
 
@@ -211,6 +214,12 @@ bool runtime_smoke_init()
 
     lagi::platform::renderer::set_disc_alive(true);
 
+    // Direct boot bypasses azelInit(), so restore the same physical-pad
+    // defaults and context-specific action tables that normal Azel startup
+    // establishes before gameplay begins.
+    initSMPC();
+    iniitInitialTaskStatsAndDebugSub();
+
     initHeap();
     resetTasks();
     if (!start_twn_ruin_task_pipeline()) {
@@ -236,20 +245,29 @@ void runtime_smoke_frame()
             "[AzelFrame] %u begin tasks=%d\n",
             startupFrame, numActiveTask);
 
-    // Square is a diagnostic scene restart, not an Edge/camera reset.
-    // Rebuild the native town task graph so the Ruins opening script owns
-    // Edge again and player control can only be released by Azel's normal
-    // scripted mF -> mC handoff.
-    if (lagi::platform::input::reset_scene_pressed()) {
-        lagi::platform::logging::writef(
-            "[Azel] Square: restarting TWN_RUIN task pipeline\n");
-        resetTasks();
-        if (!start_twn_ruin_task_pipeline()) {
-            lagi::platform::renderer::failure("[FAIL] TWN_RUIN SCENE RESET");
-            return;
-        }
-        lagi::platform::renderer::show_town_scene();
-    }
+    // Present the Vita controls to Azel exactly as a Saturn/3D-pad
+    // physical device. Azel then owns held/new-press state and translates the
+    // physical bits through its on-foot/dragon/battle buttonConfig tables.
+    auto& pending =
+        graphicEngineStatus.m4514.m0_inputDevices[0].m16_pending;
+    pending.m0_inputType = 2;
+    pending.m6_buttonDown = lagi::platform::input::saturn_buttons_down();
+    pending.m8_newButtonDown = lagi::platform::input::saturn_buttons_pressed();
+    pending.mC_newButtonDown2 =
+        lagi::platform::input::saturn_buttons_pressed();
+
+    const float analogX = lagi::platform::input::analog_x();
+    const float analogY = lagi::platform::input::analog_y();
+    pending.m2_analogX = static_cast<s8>(
+        analogX <= -1.0f ? -127 :
+        analogX >= 1.0f ? 127 :
+        analogX * 127.0f);
+    pending.m3_analogY = static_cast<s8>(
+        analogY <= -1.0f ? -127 :
+        analogY >= 1.0f ? 127 :
+        analogY * 127.0f);
+
+    updateInputs();
 
     twn_ruin_frame_begin();
     lagi::azel_bridge::begin_frame();
