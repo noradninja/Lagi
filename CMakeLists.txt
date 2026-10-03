@@ -638,6 +638,46 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   source_text
   "${source_text}"
  )
+
+ # The Vita host owns filesystem access for files inside the mounted game
+ # disc image. Keep the upstream desktop implementations available as weak
+ # fallbacks in generated sources, while the strong Vita adapter supplies the
+ # same engine API without changing extern/Azel.
+ if(relative_path STREQUAL "PDS.cpp")
+  string(REPLACE
+   "bool findFileOnDisc(const std::string& filename)"
+   "__attribute__((weak)) bool findFileOnDisc(const std::string& filename)"
+   source_text "${source_text}")
+  string(REPLACE
+   "u32 getFileSize(const char* fileName)"
+   "__attribute__((weak)) u32 getFileSize(const char* fileName)"
+   source_text "${source_text}")
+  string(REPLACE
+   "int loadFile2(const char* fileName, u8* destination, u16 vdp1Pointer)"
+   "__attribute__((weak)) int loadFile2(const char* fileName, u8* destination, u16 vdp1Pointer)"
+   source_text "${source_text}")
+  string(REPLACE
+   "int loadFile(const char* fileName, u8* destination, u16 vdp1Pointer)"
+   "__attribute__((weak)) int loadFile(const char* fileName, u8* destination, u16 vdp1Pointer)"
+   source_text "${source_text}")
+  string(REPLACE
+   "int loadFile(const char* fileName, s_fileBundle** destination, u16 vdp1Pointer)"
+   "__attribute__((weak)) int loadFile(const char* fileName, s_fileBundle** destination, u16 vdp1Pointer)"
+   source_text "${source_text}")
+  string(REPLACE
+   "sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)"
+   "__attribute__((weak)) sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "field.cpp")
+  string(REPLACE
+   "int findMandatoryFileOnDisc(const char* fileName)"
+   "__attribute__((weak)) int findMandatoryFileOnDisc(const char* fileName)"
+   source_text "${source_text}")
+  string(REPLACE
+   "u32 getFileSizeFromFileId(const char* fileName)"
+   "__attribute__((weak)) u32 getFileSizeFromFileId(const char* fileName)"
+   source_text "${source_text}")
+ endif()
  if(source_text STREQUAL original_text)
   message(FATAL_ERROR
    "Upstream Azel source no longer contains the expected PDS.h include: "
@@ -748,6 +788,7 @@ add_executable(lagi
  src/integration/lagi_heap_vita.cpp
  src/integration/lagi_task_vita.cpp
  src/integration/lagi_saturn_memory_vita.cpp
+ src/integration/lagi_disc_file_vita.cpp
  src/integration/lagi_common_overlay_vita.cpp
  src/integration/lagi_sound_table_vita.cpp
  src/integration/lagi_dragon_common_vita.cpp
