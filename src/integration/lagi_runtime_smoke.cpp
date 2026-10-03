@@ -23,6 +23,9 @@
 #include <vector>
 
 extern int numActiveTask;
+void azelInit();
+void resetEngine();
+void updateFadeInterrupt();
 void initSMPC();
 void initVDP1();
 void iniitInitialTaskStatsAndDebugSub();
@@ -134,202 +137,33 @@ bool runtime_smoke_init()
         return false;
     }
     std::printf("[Azel] Saturn memory reader smoke test passed\n");
-    lagi::platform::renderer::status("[PASS] SATURN MEMORY READERS", 0xFF40D0F0u);
 
     if (!lagi::disc::init()) {
         std::printf("[Disc] no valid ISO9660 image found in ux0:data/lagi\n");
         lagi::platform::renderer::failure("[FAIL] DISC 1 CUE/BIN MOUNT");
         return false;
     }
-    std::printf("[Disc] mounted %s\n", lagi::disc::image_path());
-    lagi::platform::renderer::status("[PASS] DISC 1 CUE/BIN + ISO9660", 0xFFF0C040u);
-
-    initCommonFile();
-    if (!gCommonFile ||
-        gCommonFile->dragonLevelStats.size() != 9 ||
-        SoundDataTable.size() != 79 ||
-        gCommonFile->battleOverlaySetup.size() != 27 ||
-        gCommonFile->battleActivationList.size() != 27) {
-        std::printf("[Common] initialization FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] COMMON.DAT TABLES");
-        return false;
-    }
-
-    std::printf("[Common] battle0: '%s' '%s' '%s' (%u sub-battles)\n",
-                gCommonFile->battleOverlaySetup[0].m0_name.c_str(),
-                gCommonFile->battleOverlaySetup[0].m4_prg.c_str(),
-                gCommonFile->battleOverlaySetup[0].m8_fnt.c_str(),
-                gCommonFile->battleOverlaySetup[0].mC_numSubBattles);
-
-    lagi::platform::renderer::status("[PASS] COMMON.DAT DRAGON/BATTLE TABLES", 0xFFF08040u);
-    lagi::platform::renderer::status("[PASS] SOUND TABLE 79/79", 0xFFE060E0u);
-
-    if (!lagi::azel::init_direct_boot_target()) {
-        std::printf("[DirectBoot] first 3D scene target resolution FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] DIRECT BOOT FIRST 3D TARGET");
-        return false;
-    }
-
-    if (!lagi::azel::init_town_bootstrap()) {
-        std::printf("[TownBoot] first 3D town overlay preflight FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] FIRST TOWN OVERLAY PREFLIGHT");
-        return false;
-    }
-
-    if (!lagi::azel::init_town_runtime()) {
-        std::printf("[TownRuntime] TWN_RUIN native scene owner FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] TWN_RUIN SCENE OWNER");
-        return false;
-    }
-
-    // Decode the immutable Ruins cell/material set for Neptune. Runtime
-    // transforms, camera, Edge and scripts remain owned by upstream Azel and
-    // are copied across the platform boundary after each task frame.
-    lagi::azel::StaticRoomDebugMesh townScene{};
-    if (!lagi::azel::build_town_world_scene(townScene)) {
-        std::printf("[TownRender] Ruins scene registration data FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] RUINS RENDER SCENE");
-        return false;
-    }
-
-    lagi::azel::BasicWingDebugMesh edgeIdle{};
-    if (!lagi::azel::build_edge_idle_debug_mesh(edgeIdle)) {
-        std::printf("[Edge] idle model/textures reconstruction FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] EDGE IDLE MODEL");
-        return false;
-    }
-    if (!lagi::platform::renderer::load_edge_idle_model(
-            std::move(edgeIdle))) {
-        std::printf("[Edge] renderer registration FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] EDGE IDLE RENDER MODEL");
-        return false;
-    }
-
-    lagi::azel::BasicWingDebugMesh edgeShadow{};
-    if (!lagi::azel::build_edge_shadow_debug_mesh(edgeShadow)) {
-        std::printf("[Edge] shadow reconstruction FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] EDGE SHADOW MODEL");
-        return false;
-    }
-    if (!lagi::platform::renderer::load_edge_shadow_model(
-            std::move(edgeShadow))) {
-        std::printf("[Edge] shadow renderer registration FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] EDGE SHADOW RENDER MODEL");
-        return false;
-    }
-
-    if (!lagi::platform::renderer::load_static_room_viewer(townScene)) {
-        std::printf("[TownRender] Neptune scene registration FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] RUINS RENDER REGISTRATION");
-        return false;
-    }
-
-    if (!lagi::azel::load_dragon_common_data()) {
-        std::printf("[Dragon] COMMON data initialization FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] DRAGON COMMON DATA");
-        return false;
-    }
-    lagi::platform::renderer::status("[PASS] DRAGON COMMON DATA", 0xFF40E0A0u);
-
-    unsigned basicWingBones = 0;
-    unsigned basicWingHotpoints = 0;
-    if (!lagi::azel::validate_basic_wing_hotpoints(&basicWingBones, &basicWingHotpoints)) {
-        std::printf("[Dragon] Basic Wing hierarchy/hotpoint validation FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] DRAGON0 MCB / HOTPOINT DATA");
-        return false;
-    }
-
-    char dragonStatus[78];
-    std::snprintf(dragonStatus, sizeof(dragonStatus),
-                  "[PASS] DRAGON0 MCB %u BONES / %u HOTPOINTS",
-                  basicWingBones, basicWingHotpoints);
-    lagi::platform::renderer::status(dragonStatus, 0xFF60D0FFu);
-
-    unsigned dragonModels = 0;
-    unsigned dragonVertices = 0;
-    unsigned dragonPolygons = 0;
-    if (!lagi::azel::validate_basic_wing_geometry(
-            &dragonModels, &dragonVertices, &dragonPolygons)) {
-        std::printf("[Dragon] Basic Wing geometry validation FAILED\n");
-        lagi::platform::renderer::failure("[FAIL] DRAGON0 MODEL GEOMETRY");
-        return false;
-    }
-
-    char geometryStatus[78];
-    std::snprintf(geometryStatus, sizeof(geometryStatus),
-                  "[PASS] DRAGON0 GEO %u MODELS / %u VERTS / %u POLYS",
-                  dragonModels, dragonVertices, dragonPolygons);
-    lagi::platform::renderer::status(geometryStatus, 0xFFC080FFu);
-
-    if (!lagi::platform::renderer::load_basic_wing_viewer()) {
-        std::printf("[GXM] Basic Wing viewer unavailable; continuing diagnostic runtime\n");
-        lagi::platform::renderer::failure("[FAIL] GXM BASIC WING VIEWER");
-    } else {
-        lagi::platform::renderer::status("[PASS] GXM BASIC WING VIEWER READY", 0xFF80E0FFu);
-    }
 
     lagi::platform::renderer::set_disc_alive(true);
 
-    // Direct boot bypasses azelInit(), so restore the same physical-pad
-    // state, action tables and VDP1 command context that normal Azel startup
-    // establishes before gameplay begins.
-    initSMPC();
-    iniitInitialTaskStatsAndDebugSub();
+    // 0.040-alpha: enter through Azel's native startup path. Azel owns all
+    // game/global initialization, VDP state, initial task creation, title
+    // sequencing, New Game setup and subsequent game-status transitions.
+    // Lagi provides only the Vita platform services underneath those calls.
+    azelInit();
+    resetEngine();
 
-    // The current upstream walk default reconstructs B/C as the LCS action
-    // and A as run. The original manual documents A/C as LCS and B as
-    // run/cancel. Keep the correction at the Lagi integration boundary until
-    // the upstream table itself is corrected.
-    const std::array<s32, 8> walkConfig = {
-        0, 0, 1, 8, 4, 8, 6, 7
-    };
-    writeInputConfig(0, walkConfig, 0);
-
-    // Town LCS/UI code writes authentic VDP1 commands even though Neptune,
-    // rather than Azel's desktop backend, ultimately renders them.
-    initVDP1();
-    if (!load_direct_boot_ui_vdp1_data()) {
-        lagi::platform::renderer::failure(
-            "[FAIL] DIRECT BOOT VDP1 UI DATA");
-        return false;
-    }
-
-    initHeap();
-
-    // Direct boot also bypasses resetEngine()'s VDP2 initialization. Restore
-    // Azel's real text-layer/font state before the town overlay loads
-    // EVTRUIN.FNT so script, item and dialog text populate VDP2 VRAM exactly
-    // as they do in the normal runtime.
-    initVDP2();
-    resetVdp2Strings();
-
-    resetTasks();
-    if (!start_twn_ruin_task_pipeline()) {
-        lagi::platform::renderer::failure("[FAIL] TWN_RUIN TASK PIPELINE");
-        return false;
-    }
-    lagi::platform::renderer::status("[PASS] TWN_RUIN TASK PIPELINE", 0xFF60A0F0u);
-    std::printf("[Azel] TWN_RUIN native task pipeline started\n");
-
-    // Hand presentation from the loading framebuffer to native GXM. The
-    // legacy diagnostic screen remains hidden; Select is reserved for the
-    // lightweight performance HUD.
-    lagi::platform::renderer::show_town_scene();
+    lagi::platform::logging::writef(
+        "[AzelBoot] native azelInit/resetEngine complete; initial task active\n");
     return true;
 }
-
 void runtime_smoke_frame()
 {
     static unsigned int startupFrame = 0;
     const bool traceStartup = startupFrame < 3;
-    if (traceStartup)
-        lagi::platform::logging::writef(
-            "[AzelFrame] %u begin tasks=%d\n",
-            startupFrame, numActiveTask);
 
-    // Present the Vita controls to Azel exactly as a Saturn/3D-pad
-    // physical device. Azel then owns held/new-press state and translates the
-    // physical bits through its on-foot/dragon/battle buttonConfig tables.
+    // Present Vita controls as Azel's Saturn 3D pad. Input translation stays a
+    // platform responsibility; task/menu/gameplay interpretation stays Azel's.
     auto& pending =
         graphicEngineStatus.m4514.m0_inputDevices[0].m16_pending;
     pending.m0_inputType = 2;
@@ -338,9 +172,6 @@ void runtime_smoke_frame()
     pending.mC_newButtonDown2 =
         lagi::platform::input::saturn_buttons_pressed();
 
-    // Vita's stick axes are opposite Azel's 3D-pad convention on both
-    // horizontal and vertical movement, so normalize them at the platform
-    // boundary rather than changing upstream gameplay semantics.
     const float analogX = -lagi::platform::input::analog_x();
     const float analogY = -lagi::platform::input::analog_y();
     pending.m2_analogX = static_cast<s8>(
@@ -354,139 +185,29 @@ void runtime_smoke_frame()
 
     updateInputs();
 
-    // Transition diagnostics for the direct-boot handoff. Log only changes so
-    // hardware traces remain compact while still showing the exact Azel-owned
-    // status/mode/module-manager state around town -> movie transitions.
-    static int lastStatus = -1;
-    static int lastNextStatus = -1;
-    static int lastMode = -2;
-    static int lastEntry = -2;
-    static unsigned int lastModuleState = ~0u;
-    const int currentStatus = static_cast<int>(gGameStatus.m4_gameStatus);
-    const int nextStatus = static_cast<int>(gGameStatus.m8_nextGameStatus);
-    const int currentMode = static_cast<int>(gGameStatus.m0_gameMode);
-    const int currentEntry = static_cast<int>(gGameStatus.m1);
-    const unsigned int moduleState =
-        gModuleManager ? static_cast<unsigned int>(gModuleManager->state) : ~0u;
-    if (currentStatus != lastStatus ||
-        nextStatus != lastNextStatus ||
-        currentMode != lastMode ||
-        currentEntry != lastEntry ||
-        moduleState != lastModuleState) {
-        lagi::platform::logging::writef(
-            "[AzelTransition] current=0x%02X next=0x%02X mode=%d entry=0x%02X "
-            "moduleState=%u overlay=%p overlayFinished=%d\n",
-            static_cast<unsigned int>(gGameStatus.m4_gameStatus),
-            static_cast<unsigned int>(gGameStatus.m8_nextGameStatus),
-            currentMode,
-            static_cast<unsigned int>(
-                static_cast<std::uint8_t>(gGameStatus.m1)),
-            moduleState,
-            gModuleManager ? static_cast<void*>(gModuleManager->m8) : nullptr,
-            (gModuleManager && gModuleManager->m8 &&
-             gModuleManager->m8->getTask())
-                ? (gModuleManager->m8->getTask()->isFinished() ? 1 : 0)
-                : -1);
-        lastStatus = currentStatus;
-        lastNextStatus = nextStatus;
-        lastMode = currentMode;
-        lastEntry = currentEntry;
-        lastModuleState = moduleState;
-    }
+    // Azel's Saturn VBlank normally advances fade state before the task pass.
+    updateFadeInterrupt();
 
-    // The direct-boot task graph now includes Azel's original module manager.
-    // Status changes, overlay lookup, movie-index selection and movie task
-    // sequencing therefore remain inside upstream Azel.
     begin_azel_vdp1_frame();
-
-    twn_ruin_frame_begin();
     lagi::azel_bridge::begin_frame();
-    const std::uint64_t tasksStart = sceKernelGetProcessTimeWide();
+
+    if (traceStartup)
+        lagi::platform::logging::writef(
+            "[AzelBoot] frame=%u tasks=%d currentInitial=%p pendingInitial=%p\n",
+            startupFrame,
+            numActiveTask,
+            reinterpret_cast<void*>(initialTaskStatus.m_currentTask),
+            reinterpret_cast<void*>(initialTaskStatus.m_pendingTask));
+
     runTasks();
 
-    // The desktop runtime normally services VDP2's queued DMA/register work
-    // from its V-blank interrupt path. Direct boot bypasses that engine loop,
-    // so flush the authentic pending transfers here once per completed task
-    // frame. This is required for systems such as the cinematic-bar line
-    // scroll table, which update through vdpVar1 rather than direct VRAM writes.
+    // Service the Saturn-side VDP2 deferred register/DMA work and the platform
+    // movie backend at the same host-frame boundary used by the existing
+    // native runtime integration.
     interruptVDP2Update();
-
-    // Match Azel's original host-frame ordering: service asynchronous movie
-    // I/O/decoder work after the task graph has run. The Vita build copy of
-    // upstream lastUpdateFunction() routes only that platform service through
-    // Lagi's generic MoviePlayer backend.
     lastUpdateFunction();
 
-    // Movie presentation is self-published by MoviePlayer/Neptune. Do not
-    // publish stale town state while Azel's module manager says the movie
-    // overlay owns the frame.
-    if (gGameStatus.m0_gameMode == 0) {
-        ++startupFrame;
-        return;
-    }
-
-    // Direct boot currently has Neptune presentation only for the town path.
-    // Once Azel advances beyond the movie into a field/world/battle overlay,
-    // do not touch pointers owned by the now-destroyed Ruins task graph.
-    if (gGameStatus.m0_gameMode != 1 &&
-        gGameStatus.m0_gameMode != 2) {
-        ++startupFrame;
-        return;
-    }
-
-    twn_ruin_sync_platform_state();
-
-    // Snapshot the Saturn VDP2 text plane at the same completed-task boundary
-    // as the rest of the town presentation. Neptune consumes the snapshot
-    // after the 3D/VDP1 scene, preserving Azel's ownership of all strings,
-    // cursor placement, palettes and font/tile generation.
-    lagi::platform::renderer::town_present_vdp2_text(
-        getVdp2Vram(0),
-        getVdp2Cram(0),
-        getVdp2Vram(0x3E000));
-
-    auto& vdp1Ctx = graphicEngineStatus.m14_vdp1Context[0];
-    if (mainContextVdp1[0].size() >= 6) {
-        const auto begin = mainContextVdp1[0].begin() + 6;
-        const auto end = vdp1Ctx.m0_currentVdp1WriteEA;
-        for (auto cmd = begin; cmd != end; ++cmd) {
-            lagi::azel_bridge::Vdp1UiCommand ui{};
-            ui.cmdCtrl = cmd->m0_CMDCTRL;
-            ui.cmdPmod = cmd->m4_CMDPMOD;
-            ui.cmdColr = cmd->m6_CMDCOLR;
-            ui.cmdSrca = cmd->m8_CMDSRCA;
-            ui.cmdSize = cmd->mA_CMDSIZE;
-            ui.xa = cmd->mC_CMDXA;   ui.ya = cmd->mE_CMDYA;
-            ui.xb = cmd->m10_CMDXB;  ui.yb = cmd->m12_CMDYB;
-            ui.xc = cmd->m14_CMDXC;  ui.yc = cmd->m16_CMDYC;
-            ui.xd = cmd->m18_CMDXD;  ui.yd = cmd->m1A_CMDYD;
-            lagi::azel_bridge::record_vdp1_ui_command(ui);
-        }
-    }
-
-    const std::uint64_t tasksEnd = sceKernelGetProcessTimeWide();
-    if (traceStartup)
-        lagi::platform::logging::writef(
-            "[AzelFrame] %u tasks complete us=%u tasks=%d\n",
-            startupFrame,
-            static_cast<unsigned int>(tasksEnd - tasksStart),
-            numActiveTask);
-
-    lagi::platform::renderer::town_profile_tasks_us(
-        static_cast<unsigned int>(tasksEnd - tasksStart));
-
-    // One queued frame: simulation may overlap the previous render, but the
-    // producer cannot overwrite the published frame until the renderer is
-    // finished with it. This bounds latency to a single frame.
-    lagi::platform::renderer::town_wait_render_slot();
-    lagi::azel_bridge::publish_frame();
-    lagi::platform::renderer::town_publish_frame();
-    if (traceStartup)
-        lagi::platform::logging::writef(
-            "[AzelFrame] %u publish complete\n", startupFrame);
     ++startupFrame;
-    if (twn_ruin_task_pipeline_alive())
-        lagi::platform::renderer::set_azel_alive(true);
 }
 
 } // namespace lagi::azel
