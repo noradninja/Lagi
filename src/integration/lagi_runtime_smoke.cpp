@@ -384,6 +384,15 @@ void runtime_smoke_frame()
         return;
     }
 
+    // Direct boot currently has Neptune presentation only for the town path.
+    // Once Azel advances beyond the movie into a field/world/battle overlay,
+    // do not touch pointers owned by the now-destroyed Ruins task graph.
+    if (gGameStatus.m0_gameMode != 1 &&
+        gGameStatus.m0_gameMode != 2) {
+        ++startupFrame;
+        return;
+    }
+
     twn_ruin_sync_platform_state();
 
     // Snapshot the Saturn VDP2 text plane at the same completed-task boundary
