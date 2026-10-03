@@ -326,7 +326,8 @@ void runtime_smoke_frame()
     // cursor placement, palettes and font/tile generation.
     lagi::platform::renderer::town_present_vdp2_text(
         getVdp2Vram(0),
-        getVdp2Cram(0));
+        getVdp2Cram(0),
+        getVdp2Vram(0x3E000));
 
     auto& vdp1Ctx = graphicEngineStatus.m14_vdp1Context[0];
     if (mainContextVdp1[0].size() >= 6) {
