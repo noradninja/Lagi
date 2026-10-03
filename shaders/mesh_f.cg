@@ -1,9 +1,19 @@
-// Edge shadow diagnostic.
-// Deliberately bypass texture sampling and VDP1 mesh stipple so we can prove
-// that the textured/subdivided GXM geometry reaches the fragment stage.
-// If this solid surface appears, the remaining fault is in the shadow
-// texture/alpha sampling path rather than geometry or draw submission.
-float4 main()
+// Saturn VDP1 mesh primitive.
+// The source texture defines the shadow silhouette. Mesh mode removes
+// alternating destination pixels from that already-masked shape.
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    float4 fragCoord : WPOS,
+    uniform sampler2D tex)
 {
-    return float4(1.0f, 0.0f, 1.0f, 1.0f);
+    float4 color = tex2D(tex, vTexcoord);
+    if (color.a < 0.5f)
+        discard;
+
+    float parity = frac(
+        (floor(fragCoord.x) + floor(fragCoord.y)) * 0.5f);
+    if (parity >= 0.5f)
+        discard;
+
+    return float4(color.rgb, 1.0f);
 }
