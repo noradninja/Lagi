@@ -15,6 +15,7 @@
 #include "lagi/lagi_source_compat.h"
 
 #include <cstdio>
+#include <cstdarg>
 #include <algorithm>
 #include <cmath>
 
