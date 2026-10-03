@@ -2874,11 +2874,7 @@ static void drawPublishedVdp1Ui()
         g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
 
     sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
-    sceGxmSetFragmentProgram(
-        g_probeContext,
-        g_movieUsesCinepakPayload
-            ? g_cinepakFragmentProgram
-            : g_movieTextureFragmentProgram);
+    sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
 
     void* uniforms = nullptr;
     if (sceGxmReserveVertexDefaultUniformBuffer(
@@ -8003,7 +7999,7 @@ static bool renderMovieFrame()
         g_probeContext,
         g_movieUsesCinepakPayload
             ? g_cinepakFragmentProgram
-            : g_textureFragmentProgram);
+            : g_movieTextureFragmentProgram);
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, movieOutputWidth - 1, movieOutputHeight - 1);
