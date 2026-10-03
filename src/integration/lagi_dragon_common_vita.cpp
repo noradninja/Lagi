@@ -15,13 +15,6 @@
 #include "lagi/platform.h"
 #include <cmath>
 
-sHotpointBundle* readRiderDefinitionSub(sSaturnPtr ptrEA)
-{
-    if (ptrEA.isNull())
-        return nullptr;
-    return new sHotpointBundle(ptrEA);
-}
-
 std::array<sDragonMorphDataPerLevel, DR_LEVEL_MAX> gDragonMorphDataPerLevel;
 
 struct sDragonAnimDataSub
