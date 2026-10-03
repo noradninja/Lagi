@@ -35,7 +35,7 @@ int main()
     }
 
     lagi::platform::logging::writef(
-        "Azel runtime: TWN_RUIN task pipeline active\n");
+        "Azel runtime: native boot task graph active\n");
 
     while (lagi::platform::running()) {
         lagi::platform::begin_frame();
