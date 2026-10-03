@@ -1,6 +1,6 @@
 # Lagi Development Status
 
-Current milestone: **0.2.0**
+Current milestone: **0.030-alpha**
 
 Last updated: 2026-10-03
 
@@ -8,7 +8,7 @@ Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Re
 
 ## Development stage
 
-Version 0.2.0 is centered on the first Ruins town as a live upstream-Azel runtime slice. Earlier work proved the data path, Basic Wing reconstruction, texture decode, animation, and native GXM rendering. The current runtime now drives the scene through Azel's real town tasks, scripts, player state, collision, camera, lock-on logic, dynamic objects, VDP1 command generation, and VDP2 text/window state. The playable sequence reaches the elevator decision and fades to the handoff where FMV playback remains to be implemented.
+Version 0.030-alpha builds Cinepak playback services on the hardware-proven first-Ruins and Neptune VDP2/VDP1 runtime slice. The current runtime drives the scene through Azel's real town tasks, scripts, player state, collision, camera, lock-on logic, dynamic objects, VDP1 command generation, and VDP2 text/window state. The playable sequence reaches the elevator decision and fades to the movie handoff; Azel remains responsible for invoking and sequencing that handoff.
 
 The first-Ruins execution path is:
 
@@ -24,6 +24,33 @@ Disc 1
   -> Lagi / Neptune presentation translation
   -> SceGxm
 ```
+
+## 0.030-alpha Phase 1 Cinepak path
+
+Build-validated on 2026-10-03. Real Vita movie/audio playback remains to be
+validated before this path can be called hardware-proven.
+
+- Azel remains the movie-sequencing owner through a thin Lagi movie-backend
+  bridge. The backend does not choose movies, transitions, fades, or scenes.
+- Sega FILM parsing covers FDSC/STAB metadata, bounded sample access,
+  per-stream PTS/duration, Cinepak keyframe flags, planar signed PCM, and the
+  container's independent video/audio clocks.
+- CPK samples stream from either a normal file or Lagi's mounted MODE1/2048 or
+  MODE1/2352 BIN/CUE image instead of loading a complete movie into memory.
+- The CPU Cinepak reference decoder supports persistent strip codebooks,
+  full/partial 4-byte and 6-byte codebook chunks, V1/V4 vectors, interframe
+  skipped blocks, strip inheritance, and Sega's 2/6-byte header variants.
+- Decoded frames use a dedicated Neptune/GXM movie texture. When no movie is
+  active, the existing VDP1 UI, VDP2 text/window/matte, MSAA, town fade, and
+  resident-scene rendering paths are unchanged.
+- Native SceAudioOut PCM playback runs through Lagi's platform audio backend
+  on a dedicated producer/consumer thread. Movie code does not call Vita audio
+  APIs directly.
+- The decode/present contract is stable so Phase 2 can replace CPU pixel
+  reconstruction with SGX-assisted reconstruction without changing FILM
+  demux, timing, audio, or Azel sequencing ownership.
+- Deterministic host tests cover FILM metadata/sample extraction, V1 and V4
+  reconstruction, skipped interframes, and Sega's short header variant.
 
 ## Hardware-proven runtime
 
@@ -259,13 +286,13 @@ Major systems still incomplete or not yet integrated include:
 - additional VDP1 UI command types beyond the current normal-sprite, scaled-sprite, and polyline subset
 - some collision interactions
 - Ruins sound/effects
-- completing the elevator transition after its scripted fade
-- Cinepak/FMV decoding and playback at the current handoff
+- connecting the elevator script's movie handoff to the Azel-owned sequencing call
+- on-device Cinepak video/audio timing and drain validation
 - broader UI/state flow beyond the first Ruins sequence
 - broader VDP2 background and compositing behavior beyond the current text/window/matte subset
 - battle systems
 - broader field systems
-- movies, menus, save flow, and complete game progression
+- remaining movies, menus, save flow, and complete game progression
 
 Renderer-side technical debt currently falls into two concrete areas:
 

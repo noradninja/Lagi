@@ -9,9 +9,9 @@ endif()
 project(Lagi LANGUAGES C CXX)
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
-set(VITA_APP_NAME "Lagi")
+set(VITA_APP_NAME "Lagi 0.030-alpha")
 set(VITA_TITLEID "LAGI00001")
-set(VITA_VERSION "00.02")
+set(VITA_VERSION "00.30")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -816,7 +816,11 @@ add_executable(lagi
  ${LAGI_TEXTURE_V_OBJ}
  ${LAGI_TEXTURE_F_OBJ}
  ${LAGI_MESH_F_OBJ}
- src/platform/vita/null_audio.cpp
+ src/platform/vita/vita_audio.cpp
+ src/movie/film_demuxer.cpp
+ src/movie/cinepak_decoder.cpp
+ src/movie/movie_player.cpp
+ src/integration/azel_movie_bridge.cpp
  src/integration/lagi_runtime_smoke.cpp
  src/integration/lagi_render_bridge.cpp
  src/integration/lagi_live_model_adapter.cpp
@@ -851,7 +855,7 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/battle/BTL_A3"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
 )
-target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 LAGI_NULL_AUDIO=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1)
+target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without
@@ -861,7 +865,7 @@ if(LAGI_AZEL_RUINS_LINK_TRIM)
  target_link_options(lagi PRIVATE -Wl,--gc-sections)
 endif()
 
-target_link_libraries(lagi m SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceSysmem_stub SceSysmodule_stub)
+target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceSysmem_stub SceSysmodule_stub)
 
 if(LAGI_AZEL_PROBE)
  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib")

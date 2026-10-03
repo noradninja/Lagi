@@ -1,5 +1,6 @@
 #include "lagi/disc_image.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <cctype>
@@ -268,23 +269,78 @@ bool file_size(const char* name, std::uint32_t& out)
 bool read_file(const char* name, std::vector<std::uint8_t>& out)
 {
     out.clear();
-    if (!g_mounted) return false;
+    FileHandle handle{};
+    if (!open_file(name, handle))
+        return false;
+    out.resize(handle.size);
+    const bool ok = read_file_at(handle, 0, out.data(), out.size());
+    close_file(handle);
+    if (!ok) out.clear();
+    return ok;
+}
 
-    FILE* f = std::fopen(g_imagePath.c_str(), "rb");
-    if (!f) return false;
+bool open_file(const char* name, FileHandle& handle)
+{
+    close_file(handle);
+    if (!g_mounted || !name)
+        return false;
 
-    const Entry e = find_root_file(f, name);
-    if (!e.valid) {
-        std::fclose(f);
+    FILE* file = std::fopen(g_imagePath.c_str(), "rb");
+    if (!file)
+        return false;
+    const Entry entry = find_root_file(file, name);
+    if (!entry.valid) {
+        std::fclose(file);
         return false;
     }
 
-    out.resize(e.size);
-    const bool ok = read_extent(f, e.extent, out.data(), out.size());
-    std::fclose(f);
+    handle.native = file;
+    handle.extent = entry.extent;
+    handle.size = entry.size;
+    return true;
+}
 
-    if (!ok) out.clear();
-    return ok;
+void close_file(FileHandle& handle)
+{
+    if (handle.native)
+        std::fclose(static_cast<FILE*>(handle.native));
+    handle = {};
+}
+
+bool read_file_at(
+    FileHandle& handle,
+    std::uint64_t offset,
+    void* destination,
+    std::size_t bytes)
+{
+    if (!handle.native || !destination ||
+        offset > handle.size || bytes > handle.size - offset)
+        return false;
+    if (!bytes)
+        return true;
+
+    FILE* file = static_cast<FILE*>(handle.native);
+    auto* output = static_cast<std::uint8_t*>(destination);
+    std::uint8_t sector[kLogicalSectorSize];
+    std::uint64_t cursor = offset;
+    std::size_t remaining = bytes;
+
+    while (remaining) {
+        const std::uint32_t sectorIndex =
+            handle.extent + static_cast<std::uint32_t>(cursor / kLogicalSectorSize);
+        const std::size_t withinSector =
+            static_cast<std::size_t>(cursor % kLogicalSectorSize);
+        if (!read_logical_sector(file, sectorIndex, sector))
+            return false;
+
+        const std::size_t copyBytes = std::min(
+            remaining, kLogicalSectorSize - withinSector);
+        std::memcpy(output, sector + withinSector, copyBytes);
+        output += copyBytes;
+        cursor += copyBytes;
+        remaining -= copyBytes;
+    }
+    return true;
 }
 
 } // namespace lagi::disc
