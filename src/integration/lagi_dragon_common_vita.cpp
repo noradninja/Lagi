@@ -18,7 +18,7 @@
 // Owned by upstream 3dModels.cpp; this Vita integration code consumes it.
 sHotpointBundle* readRiderDefinitionSub(sSaturnPtr ptrEA);
 
-std::array<sDragonMorphDataPerLevel, DR_LEVEL_MAX> gDragonMorphDataPerLevel;
+extern std::array<sDragonMorphDataPerLevel, DR_LEVEL_MAX> gDragonMorphDataPerLevel;
 
 struct sDragonAnimDataSub
 {
