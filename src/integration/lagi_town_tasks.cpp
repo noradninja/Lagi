@@ -65,40 +65,14 @@ bool start_twn_ruin_task_pipeline()
         graphicEngineStatus.m405C.m2C_widthRatio.asS32() / 65536.0f,
         graphicEngineStatus.m405C.m28_widthRatio2.asS32() / 65536.0f);
 
-    // Instantiate Azel's real TWN_RUIN overlay and let its own
-    // overlayStart_TWN_RUIN() construct the script/background/Edge/main/camera
-    // task graph. No Lagi-owned duplicate gameplay state is created here.
-    TWN_RUIN_data::makeCurrent();
-
-    auto* root = new townDebugTask2Function();
-    if (!createRootTask(static_cast<p_workArea>(root)))
-        return false;
-
-    root->m_UpdateMethod = &townDebugTask2Function::Update;
-    root->m_DrawMethod = nullptr;
-    root->m_DeleteMethod = nullptr;
-    root->getTask()->m_taskName = townDebugTask2Function::getTaskName();
-
-    // Normal Azel town startup assigns this global in createLocationTask().
-    // Direct boot constructs the same town root manually, so restore that
-    // ownership pointer before entering the overlay. Town scripts such as
-    // terminateTown() use it to finish the current town; the module manager
-    // then performs the authentic status-4 -> status-5 movie transition.
-    townDebugTask2 = root;
-
-    g_twnRuinRoot = overlayStart_TWN_RUIN(root, 0);
-    if (!g_twnRuinRoot) {
-        platform::logging::writef(
-            "[LagiAdapter] Azel overlayStart_TWN_RUIN failed\n");
-        return false;
-    }
-
     // Direct boot bypasses createModuleManager() because its normal Init
     // resets the save/game state and starts a new game. Restore the exact
     // module-manager-visible state that Azel would have established before
-    // entering this already-running town, then rejoin the authentic upstream
-    // Update/Draw pipeline. This is startup-state restoration only: all future
-    // status transitions and overlay/movie decisions remain Azel-owned.
+    // entering this already-running town. The manager must outlive the overlay:
+    // in normal Azel the town is a child of the module manager, never its
+    // parent. Keeping that lifetime relationship is essential because
+    // terminateTown() finishes the town root and the manager must survive to
+    // dispatch the next game status.
     const DirectBootTarget& boot = direct_boot_target();
     if (!boot.resolved) {
         platform::logging::writef(
@@ -114,27 +88,47 @@ bool start_twn_ruin_task_pipeline()
     gGameStatus.m6_previousGameStatus = 0;
     gGameStatus.m8_nextGameStatus = 0;
 
-    static const s_moduleManager::TypedTaskDefinition moduleDefinition = {
-        nullptr,
-        &moduleManager_Update,
-        &moduleManager_Draw,
-        nullptr,
-    };
-    g_directBootModuleManager =
-        createSubTaskWithArg<s_moduleManager, s32>(
-            root, 0, &moduleDefinition);
-    if (!g_directBootModuleManager) {
+    g_directBootModuleManager = new s_moduleManager();
+    if (!createRootTask(static_cast<p_workArea>(g_directBootModuleManager))) {
         platform::logging::writef(
-            "[LagiAdapter] failed to create upstream module manager\n");
+            "[LagiAdapter] failed to create upstream module manager root\n");
         return false;
     }
+    g_directBootModuleManager->m_UpdateMethod = &moduleManager_Update;
+    g_directBootModuleManager->m_DrawMethod = &moduleManager_Draw;
+    g_directBootModuleManager->m_DeleteMethod = nullptr;
+    g_directBootModuleManager->getTask()->m_taskName =
+        s_moduleManager::getTaskName();
     g_directBootModuleManager->state = 0;
     g_directBootModuleManager->m4 = 0;
     g_directBootModuleManager->m6_debugGameStatus =
         static_cast<s16>(gGameStatus.m4_gameStatus);
-    g_directBootModuleManager->m8 = g_twnRuinRoot;
+    g_directBootModuleManager->m8 = nullptr;
     g_directBootModuleManager->mC = 0;
     gModuleManager = g_directBootModuleManager;
+
+    // Match Azel's createLocationTask(): create the town root beneath the
+    // persistent module manager, publish townDebugTask2, then let the real
+    // TWN_RUIN overlay populate that root with its normal task graph.
+    TWN_RUIN_data::makeCurrent();
+    auto* root = createSubTaskFromFunction<townDebugTask2Function>(
+        g_directBootModuleManager,
+        &townDebugTask2Function::Update);
+    if (!root) {
+        platform::logging::writef(
+            "[LagiAdapter] failed to create TWN_RUIN town root\n");
+        return false;
+    }
+
+    townDebugTask2 = root;
+    g_twnRuinRoot = overlayStart_TWN_RUIN(root, 0);
+    if (!g_twnRuinRoot) {
+        platform::logging::writef(
+            "[LagiAdapter] Azel overlayStart_TWN_RUIN failed\n");
+        return false;
+    }
+
+    g_directBootModuleManager->m8 = g_twnRuinRoot;
 
     platform::logging::writef(
         "[LagiAdapter] rejoined upstream module manager "
