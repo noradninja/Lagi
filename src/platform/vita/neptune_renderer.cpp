@@ -8561,6 +8561,37 @@ static void renderBasicWingViewer()
     g_profilePresentUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - presentStartUs);
 
+    // Correlate the selection/lock-on UI with the already-existing whole
+    // frame profiler. This does not add any synchronization; it only samples
+    // counters after rendering/presentation has completed for this published
+    // frame.
+    const auto& profileUiCommands =
+        azel_bridge::published_vdp1_ui_commands();
+    static unsigned int reportedSelectionFrameProfiles = 0u;
+    if (profileUiCommands.size() > 1u &&
+        reportedSelectionFrameProfiles < 48u) {
+        logging::writef(
+            "[SELECT-PROFILE] cmds=%u task=%u gameWait=%u build=%u "
+            "prep=%u submit=%u ui=%u gxm=%u render=%u present=%u "
+            "gourPrep=%u gourDraw=%u objApp=%u objMat=%u objMiss=%u\n",
+            static_cast<unsigned int>(profileUiCommands.size()),
+            g_profileTasksUs,
+            g_profileGameWaitUs,
+            g_profileBuildUs,
+            g_profileRenderCpuPrepUs,
+            g_profileSubmitUs,
+            g_profileVdp1UiTotalUs,
+            g_profileGxmWaitUs,
+            g_profileRenderUs,
+            g_profilePresentUs,
+            g_profileGouraudPrepUs,
+            g_profileGouraudDrawUs,
+            g_profileObjectAppendUs,
+            g_profileObjectMaterialResolveUs,
+            g_profileObjectMaterialCacheMisses);
+        ++reportedSelectionFrameProfiles;
+    }
+
     // The buffer just queued is now front; draw the next frame into the
     // opposite GXM surface so scanout and rendering never touch the same
     // memory concurrently.
