@@ -331,6 +331,21 @@ static std::vector<TextureBatch> g_vdp1TextureBatches;
 static std::vector<GpuMode1Texture> g_vdp1GpuTextures;
 static bool g_vdp1TexturedReady = false;
 
+// Lightweight VDP1 2D/UI translator. These resources are separate from the
+// resident 3D town mesh so UI commands never invalidate or rebuild it.
+struct Vdp1UiTextureCacheEntry {
+    std::uint16_t cmdPmod = 0;
+    std::uint16_t cmdColr = 0;
+    std::uint16_t cmdSrca = 0;
+    std::uint16_t cmdSize = 0;
+    GpuMode1Texture gpu{};
+};
+static std::vector<Vdp1UiTextureCacheEntry> g_vdp1UiTextureCache;
+static SceUID g_vdp1UiVertexUid = -1;
+static SceUID g_vdp1UiIndexUid = -1;
+static azel::DebugTextureVertex* g_vdp1UiVertices = nullptr;
+static std::uint16_t* g_vdp1UiIndices = nullptr;
+
 static bool g_probeDisplayingGxm = false;
 static bool g_viewerReady = false;
 static float g_viewYaw = 0.0f;
@@ -1484,6 +1499,196 @@ static void freeVdp1Textures()
     g_vdp1GpuTextures.clear();
     g_vdp1TextureBatches.clear();
     g_vdp1TexturedReady = false;
+}
+
+static bool ensureVdp1UiBuffers()
+{
+    if (g_vdp1UiVertices && g_vdp1UiIndices)
+        return true;
+
+    g_vdp1UiVertices = static_cast<azel::DebugTextureVertex*>(
+        probeGpuAlloc(
+            4u * sizeof(azel::DebugTextureVertex),
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_vdp1UiVertexUid));
+    g_vdp1UiIndices = static_cast<std::uint16_t*>(
+        probeGpuAlloc(
+            6u * sizeof(std::uint16_t),
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_vdp1UiIndexUid));
+    if (!g_vdp1UiVertices || !g_vdp1UiIndices)
+        return false;
+
+    static const std::uint16_t kIndices[6] = {0, 1, 2, 0, 2, 3};
+    std::memcpy(g_vdp1UiIndices, kIndices, sizeof(kIndices));
+    return true;
+}
+
+static GpuMode1Texture* findOrUploadVdp1UiTexture(
+    const azel_bridge::Vdp1UiCommand& command)
+{
+    for (auto& entry : g_vdp1UiTextureCache) {
+        if (entry.cmdPmod == command.cmdPmod &&
+            entry.cmdColr == command.cmdColr &&
+            entry.cmdSrca == command.cmdSrca &&
+            entry.cmdSize == command.cmdSize)
+            return &entry.gpu;
+    }
+
+    azel::SaturnPolygonRecord record{};
+    record.cmdCtrl = command.cmdCtrl;
+    record.cmdPmod = command.cmdPmod;
+    record.cmdColr = command.cmdColr;
+    record.cmdSrca = command.cmdSrca;
+    record.cmdSize = command.cmdSize;
+
+    azel::DecodedMode1Texture decoded{};
+    if (!azel::decode_town_texture_descriptor(record, decoded) ||
+        !decoded.width || !decoded.height ||
+        decoded.rgba.size() != decoded.width * decoded.height)
+        return nullptr;
+
+    const unsigned int stridePixels = (decoded.width + 7u) & ~7u;
+    const unsigned int bytes =
+        stridePixels * decoded.height * sizeof(std::uint32_t);
+
+    Vdp1UiTextureCacheEntry entry{};
+    entry.cmdPmod = command.cmdPmod;
+    entry.cmdColr = command.cmdColr;
+    entry.cmdSrca = command.cmdSrca;
+    entry.cmdSize = command.cmdSize;
+    entry.gpu.data = probeGpuAlloc(
+        bytes, SCE_GXM_MEMORY_ATTRIB_READ, &entry.gpu.uid);
+    if (!entry.gpu.data)
+        return nullptr;
+
+    entry.gpu.width = decoded.width;
+    entry.gpu.height = decoded.height;
+    std::memset(entry.gpu.data, 0, bytes);
+    auto* dst = static_cast<std::uint32_t*>(entry.gpu.data);
+    for (unsigned int y = 0; y < decoded.height; ++y) {
+        std::memcpy(
+            dst + y * stridePixels,
+            decoded.rgba.data() + y * decoded.width,
+            decoded.width * sizeof(std::uint32_t));
+    }
+
+    if (sceGxmTextureInitLinear(
+            &entry.gpu.texture,
+            entry.gpu.data,
+            SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+            decoded.width,
+            decoded.height,
+            0) < 0) {
+        sceGxmUnmapMemory(entry.gpu.data);
+        sceKernelFreeMemBlock(entry.gpu.uid);
+        return nullptr;
+    }
+    sceGxmTextureSetMinFilter(
+        &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+    sceGxmTextureSetMagFilter(
+        &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+
+    g_vdp1UiTextureCache.push_back(std::move(entry));
+    return &g_vdp1UiTextureCache.back().gpu;
+}
+
+static void drawPublishedVdp1Ui()
+{
+    const auto& commands = azel_bridge::published_vdp1_ui_commands();
+    if (commands.empty() || !g_textureVertexProgram ||
+        !g_textureFragmentProgram || !g_textureWvpParam ||
+        !ensureVdp1UiBuffers())
+        return;
+
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+
+    sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
+
+    void* uniforms = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniforms) < 0 || !uniforms)
+        return;
+    const ViewerMat4 identity = viewerIdentity();
+    sceGxmSetUniformDataF(
+        uniforms, g_textureWvpParam, 0, 16, identity.m);
+
+    for (const auto& command : commands) {
+        // First native Neptune UI primitive: VDP1 scaled sprite.
+        if ((command.cmdCtrl & 0x000Fu) != 0x0001u ||
+            ((command.cmdCtrl >> 8) & 0xFu) != 0u ||
+            command.cmdSrca == 0u)
+            continue;
+
+        GpuMode1Texture* texture =
+            findOrUploadVdp1UiTexture(command);
+        if (!texture)
+            continue;
+
+        // Azel's VDP1 local coordinates for town UI are the Saturn screen
+        // center (176,112). Convert the centered VDP1 coordinates directly
+        // to clip space; this automatically scales correctly at 480x272 and
+        // 960x544 without a separate pixel-space projection.
+        const float x0 = static_cast<float>(command.xa) / 176.0f;
+        const float x1 =
+            static_cast<float>(command.xc + 1) / 176.0f;
+        const float y0 = -static_cast<float>(command.ya) / 112.0f;
+        const float y1 =
+            -static_cast<float>(command.yc + 1) / 112.0f;
+
+        const float u0 = 0.5f / static_cast<float>(texture->width);
+        const float v0 = 0.5f / static_cast<float>(texture->height);
+        const float u1 =
+            (static_cast<float>(texture->width) - 0.5f) /
+            static_cast<float>(texture->width);
+        const float v1 =
+            (static_cast<float>(texture->height) - 0.5f) /
+            static_cast<float>(texture->height);
+        const float uv[4][2] = {
+            {u0,v0}, {u1,v0}, {u1,v1}, {u0,v1}
+        };
+        int order[4] = {0,1,2,3};
+        switch ((command.cmdCtrl >> 4) & 3u) {
+        case 1:
+            order[0]=1; order[1]=0; order[2]=3; order[3]=2;
+            break;
+        case 2:
+            order[0]=3; order[1]=2; order[2]=1; order[3]=0;
+            break;
+        case 3:
+            order[0]=2; order[1]=3; order[2]=0; order[3]=1;
+            break;
+        default:
+            break;
+        }
+
+        const float pos[4][2] = {
+            {x0,y0}, {x1,y0}, {x1,y1}, {x0,y1}
+        };
+        for (unsigned int i = 0; i < 4u; ++i) {
+            g_vdp1UiVertices[i] = {
+                pos[i][0], pos[i][1], 0.0f,
+                uv[order[i]][0], uv[order[i]][1]
+            };
+        }
+
+        sceGxmSetVertexStream(g_probeContext, 0, g_vdp1UiVertices);
+        sceGxmSetFragmentTexture(
+            g_probeContext, 0, &texture->texture);
+        sceGxmDraw(
+            g_probeContext,
+            SCE_GXM_PRIMITIVE_TRIANGLES,
+            SCE_GXM_INDEX_FORMAT_U16,
+            g_vdp1UiIndices,
+            6);
+    }
 }
 
 static bool uploadVdp1Textures(const Vdp1ModelSource& model)
@@ -6107,6 +6312,9 @@ static void renderBasicWingViewer()
         sceGxmFinish(g_probeContext);
         return;
     }
+
+    if (roomAuthenticCameraMode)
+        drawPublishedVdp1Ui();
 
     if (roomAuthenticCameraMode)
         drawTownFadeOverlay(updateTownFadeAlpha());
