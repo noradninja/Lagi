@@ -1,4 +1,6 @@
 #include "lagi/platform.h"
+
+unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/debug_mesh.h"
 #include "lagi/vdp1_renderer.h"
 #include "lagi/lagi_town_runtime.h"
@@ -2138,15 +2140,22 @@ static void drawAzelVdp2CinematicBarsGpu()
 
     // Line scroll is defined in Saturn output scanlines. Preserve that
     // vertical fraction exactly; aspect correction belongs on X only.
+    // PDS's cinematic line-scroll table is authored at half the displayed
+    // vertical scanline cadence used by the 352-wide presentation. The live
+    // table reaches 16 entries here while the Saturn reference matte covers
+    // 32 of the 224 displayed lines (and the subtitle starts at y=200).
+    // Expand each table entry to its two displayed scanlines.
+    const unsigned int displayedBarLines =
+        std::min(224u, barLines * 2u);
     const float barTop =
         -1.0f +
-        static_cast<float>(barLines) / 112.0f;
+        static_cast<float>(displayedBarLines) / 112.0f;
 
     static unsigned int lastReportedBarLines = 0xFFFFFFFFu;
     if (barLines != lastReportedBarLines) {
         logging::writef(
-            "[CineBar] lines=%u top=%.4f\n",
-            barLines, barTop);
+            "[CineBar] tableLines=%u displayLines=%u top=%.4f\n",
+            barLines, displayedBarLines, barTop);
         lastReportedBarLines = barLines;
     }
 
@@ -2223,6 +2232,133 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
             entry.cmdSrca == command.cmdSrca &&
             entry.cmdSize == command.cmdSize)
             return &entry.gpu;
+    }
+
+    const unsigned int commandType =
+        static_cast<unsigned int>(command.cmdCtrl & 0x000Fu);
+    const unsigned int colorMode =
+        (static_cast<unsigned int>(command.cmdPmod) >> 3) & 7u;
+
+    // Multi-choice cursors are normal VDP1 sprites backed by live VDP1 VRAM
+    // and a live CRAM bank (PMOD=0x0080, CMDCOLR=0x47F0). They do not belong
+    // to a town CGB bundle, so decode that command exactly from Saturn memory
+    // instead of forcing it through the town-material decoder.
+    if (commandType == 0u && colorMode == 0u) {
+        const unsigned int width =
+            ((static_cast<unsigned int>(command.cmdSize) >> 8) & 0x3Fu) * 8u;
+        const unsigned int height =
+            static_cast<unsigned int>(command.cmdSize) & 0xFFu;
+        if (!width || !height)
+            return nullptr;
+
+        const unsigned int texBytes = (width * height) / 2u;
+        const unsigned int texAddress =
+            static_cast<unsigned int>(command.cmdSrca) << 3;
+        if (texAddress + texBytes > 0x80000u)
+            return nullptr;
+
+        const unsigned char* const src =
+            getVdp1Pointer(0x25C00000u + texAddress);
+        if (!src)
+            return nullptr;
+
+        azel::DecodedMode1Texture decoded{};
+        decoded.cmdPmod = command.cmdPmod;
+        decoded.cmdColr = command.cmdColr;
+        decoded.cmdSrca = command.cmdSrca;
+        decoded.cmdSize = command.cmdSize;
+        decoded.width = width;
+        decoded.height = height;
+        decoded.rgba.assign(width * height, 0u);
+
+        const bool spd = (command.cmdPmod & 0x40u) != 0u;
+        const bool endDisabled = (command.cmdPmod & 0x80u) != 0u;
+        const bool endMode = (command.cmdPmod & 0x20u) == 0u;
+        unsigned int pixel = 0u;
+        for (unsigned int y = 0; y < height; ++y) {
+            unsigned int endCount = 0u;
+            for (unsigned int x = 0; x < width; ++x, ++pixel) {
+                const unsigned char packed =
+                    src[(x + y * width) / 2u];
+                const unsigned int dot =
+                    (x & 1u) ? (packed & 0x0Fu) : (packed >> 4);
+
+                if (endMode && endCount >= 2u)
+                    continue;
+                if (dot == 0u && !spd)
+                    continue;
+                if (dot == 0x0Fu && !endDisabled) {
+                    ++endCount;
+                    continue;
+                }
+
+                const unsigned int paletteIndex =
+                    (static_cast<unsigned int>(command.cmdColr) & 0x07F0u) |
+                    dot;
+                const unsigned int cramByte = paletteIndex * 2u;
+                if (cramByte + 1u >= sizeof(g_vdp2Cram))
+                    continue;
+                const std::uint16_t color =
+                    readVdp2Be16(g_vdp2Cram, cramByte);
+                if (color)
+                    decoded.rgba[pixel] = vdp2Rgb555ToAbgr(color);
+            }
+        }
+
+        const unsigned int stridePixels =
+            (decoded.width + 7u) & ~7u;
+        const unsigned int bytes =
+            stridePixels * decoded.height * sizeof(std::uint32_t);
+
+        Vdp1UiTextureCacheEntry entry{};
+        entry.cmdPmod = command.cmdPmod;
+        entry.cmdColr = command.cmdColr;
+        entry.cmdSrca = command.cmdSrca;
+        entry.cmdSize = command.cmdSize;
+        entry.gpu.data = probeGpuAlloc(
+            bytes, SCE_GXM_MEMORY_ATTRIB_READ, &entry.gpu.uid);
+        if (!entry.gpu.data)
+            return nullptr;
+        entry.gpu.width = decoded.width;
+        entry.gpu.height = decoded.height;
+        std::memset(entry.gpu.data, 0, bytes);
+        auto* dst = static_cast<std::uint32_t*>(entry.gpu.data);
+        for (unsigned int y = 0; y < decoded.height; ++y) {
+            std::memcpy(
+                dst + y * stridePixels,
+                decoded.rgba.data() + y * decoded.width,
+                decoded.width * sizeof(std::uint32_t));
+        }
+
+        if (sceGxmTextureInitLinear(
+                &entry.gpu.texture,
+                entry.gpu.data,
+                SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+                decoded.width,
+                decoded.height,
+                0) < 0) {
+            sceGxmUnmapMemory(entry.gpu.data);
+            sceKernelFreeMemBlock(entry.gpu.uid);
+            return nullptr;
+        }
+        sceGxmTextureSetMinFilter(
+            &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(
+            &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+
+        static bool reportedNormalSprite = false;
+        if (!reportedNormalSprite) {
+            logging::writef(
+                "[VDP1Normal] SRCA=%04X SIZE=%04X COLR=%04X %ux%u live-vram/cram\n",
+                static_cast<unsigned int>(command.cmdSrca),
+                static_cast<unsigned int>(command.cmdSize),
+                static_cast<unsigned int>(command.cmdColr),
+                width, height);
+            reportedNormalSprite = true;
+        }
+
+        g_vdp1UiTextureCache.push_back(std::move(entry));
+        return &g_vdp1UiTextureCache.back().gpu;
     }
 
     azel::SaturnPolygonRecord record{};
