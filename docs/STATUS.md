@@ -1,12 +1,14 @@
 # Lagi Development Status
 
-Last updated: 2026-10-01
+Current milestone: **0.2.0**
+
+Last updated: 2026-10-03
 
 Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed Saturn-era game logic executes directly on ARMv7, with rendering and platform behavior translated to native VitaSDK/SceGxm.
 
 ## Development stage
 
-The project is currently centered on the first Ruins town. Earlier work proved the data path, Basic Wing reconstruction, texture decode, animation, and native GXM rendering. The current runtime now uses those pieces inside a live town scene.
+Version 0.2.0 is centered on the first Ruins town as a live upstream-Azel runtime slice. Earlier work proved the data path, Basic Wing reconstruction, texture decode, animation, and native GXM rendering. The current runtime now drives the scene through Azel's real town tasks, scripts, player state, collision, camera, lock-on logic, dynamic objects, and VDP1 UI command generation.
 
 The first-Ruins execution path is:
 
@@ -39,6 +41,10 @@ Verified on real Vita/Vita TV hardware:
 - Azel heap/task runtime
 - Saturn-addressed memory helpers
 - native SceGxm renderer
+- script-driven fade-in from black
+- Vita-to-Saturn physical controller bridge
+- town LCS / Lock-On state and target selection
+- native GXM translation of VDP1 scaled-sprite and polyline UI commands
 - 30 Hz presentation
 
 ## Town systems
@@ -83,9 +89,24 @@ The current Edge path includes:
 
 ### Camera
 
-The first Ruins scene uses the Azel-style follow camera.
+The first Ruins scene uses Azel's town camera and camera-state transitions. Vita analog input is normalized at the platform boundary and then consumed by Azel's original movement/camera logic.
 
-Triangle is mapped to the camera modifier. While held, the right stick selects the original side/rear follow-camera directions.
+### LCS / Lock-On
+
+Town Lock-On is now driven by the upstream Azel LCS path.
+
+Current hardware-proven behavior includes:
+
+- A/C entering Lock-On mode
+- B cancelling Lock-On
+- B acting as the walk-mode run modifier outside Lock-On
+- automatic target acquisition near interactable Ruins objects
+- target selection while retaining the independent white free cursor
+- separate selected-target NEAR marker
+- shrinking VDP1 polyline selection rectangle
+- original VDP1 cursor/marker texture descriptors translated to native GXM
+
+The Vita backend does not recreate LCS gameplay logic. Azel produces the physical-button interpretation, target state, camera behavior, and VDP1 commands; Neptune translates those commands to efficient screen-space GXM primitives.
 
 ### Ruins lock/switch objects
 
@@ -97,8 +118,10 @@ Current support includes:
 - task-owned state and transform
 - collision registration
 - native disable/wait script entry points
-- animated translation/removal
 - live material and texture resolution
+- authentic task-owned world transforms passed to Neptune without double-applying the town camera
+
+The scene currently allows the locks to be targeted and selected. Their later activation/translation depends on normal game progression state, including acquisition of the required weapon/item state.
 
 ## Renderer
 
@@ -171,7 +194,7 @@ Edge's original shadow is now reproduced from the game data:
 4. Texture alpha provides the oval silhouette.
 5. `CMDPMOD` mesh mode provides alternating-pixel coverage.
 6. The primitive is rendered two-sided.
-7. Ordered VDP1-style draw behavior is used so the shadow remains visible over the floor.
+7. Ordered VDP1-style draw behavior is used so the shadow remains visible over the floor: the mesh shadow is submitted after the environment with depth test forced to pass and depth writes disabled, matching the relevant Saturn draw-order behavior.
 
 ## Performance
 
@@ -193,7 +216,7 @@ Major systems still incomplete or not yet integrated include:
 
 - broader town object coverage
 - additional script behavior
-- LCS/target interaction
+- additional VDP1 UI command types beyond the current scaled-sprite/polyline subset
 - some collision interactions
 - Ruins sound/effects
 - town transitions
