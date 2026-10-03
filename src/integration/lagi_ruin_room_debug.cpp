@@ -3,7 +3,6 @@
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/disc_image.h"
 #include "lagi/platform.h"
-#include "VDP2.h"
 
 #include <algorithm>
 #include <array>
@@ -19,6 +18,7 @@ u16 readSaturnU16(sSaturnPtr ptr);
 u32 readSaturnU32(sSaturnPtr ptr);
 fixedPoint readSaturnFP(sSaturnPtr ptr);
 sSaturnPtr readSaturnEA(sSaturnPtr ptr);
+u8* getVdp2Cram(u32 offset);
 
 namespace lagi::azel {
 
