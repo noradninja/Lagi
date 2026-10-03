@@ -652,15 +652,31 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
 endfunction()
 
 set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
+ PDS.cpp
  common.cpp
  dummy.cpp
+ trigo.cpp
  3dEngine.cpp
+ 3dEngine_flush.cpp
+ 3dModels.cpp
+ processModel.cpp
+ VDP2.cpp
+ menu_dragonMorph.cpp
  mainMenuDebugTasks.cpp
+ collision.cpp
  kernel/grid.cpp
  kernel/fileBundle.cpp
  kernel/graphicalObject.cpp
  kernel/animation.cpp
  kernel/vdp1Allocator.cpp
+ kernel/fade.cpp
+ kernel/cinematicBarsTask.cpp
+ kernel/dialogTask.cpp
+ kernel/receiveItemTask.cpp
+ kernel/moduleManager.cpp
+ audio/soundDriver.cpp
+ audio/systemSounds.cpp
+ town/townCutscene.cpp
  town/town.cpp
  town/townScript.cpp
  town/townEdge.cpp
