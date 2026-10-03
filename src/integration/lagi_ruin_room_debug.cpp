@@ -18,7 +18,6 @@ u16 readSaturnU16(sSaturnPtr ptr);
 u32 readSaturnU32(sSaturnPtr ptr);
 fixedPoint readSaturnFP(sSaturnPtr ptr);
 sSaturnPtr readSaturnEA(sSaturnPtr ptr);
-u8* getVdp2Cram(u32 offset);
 
 namespace lagi::azel {
 
@@ -658,16 +657,13 @@ static void decodeRoomTextures(
                 }
             }
         } else if (colorMode == 0) {
-            // VDP1 16-color bank mode uses CMDCOLR's low 11 bits as the
-            // CRAM bank base. This is used not only by Ruins geometry but by
-            // common UI sprites such as drawMultiChoiceVdp1Cursor(), whose
-            // CMDCOLR is 0x47F0 (bank 0x7F0). Decode against Azel's live CRAM
-            // rather than assuming every bank lives in the Ruins 0x600-0x6FF
-            // palette window.
+            // Azel ruinBgInit() copies 0x200 bytes from TWN_RUIN:0x0605EBF8
+            // to vdp2Palette, which is CRAM byte offset 0xC00. That means
+            // palette indices 0x600-0x6FF are backed by this exact overlay
+            // palette image.
             const unsigned texBytes = (width * height) / 2u;
-            const u8* const liveCram = getVdp2Cram(0);
             if (static_cast<std::size_t>(texAddress) + texBytes > cgb.size() ||
-                !liveCram) {
+                !ruinPalette || ruinPaletteBytes < 0x200u) {
                 valid = false;
                 continue;
             }
@@ -692,18 +688,24 @@ static void decodeRoomTextures(
                     }
 
                     const unsigned paletteIndex =
-                        (static_cast<unsigned>(record.cmdColr) & 0x07F0u) |
+                        static_cast<unsigned>(record.cmdColr) |
                         static_cast<unsigned>(dot);
-                    const unsigned paletteByte = paletteIndex * 2u;
-                    if (paletteByte + 1u >= 0x1000u) {
+                    const unsigned paletteByte =
+                        paletteIndex * 2u;
+
+                    if (paletteByte < 0xC00u ||
+                        paletteByte + 1u >= 0xC00u + ruinPaletteBytes) {
                         valid = false;
                         continue;
                     }
 
+                    const unsigned localPaletteByte =
+                        paletteByte - 0xC00u;
                     const u16 color =
                         static_cast<u16>(
-                            (static_cast<u16>(liveCram[paletteByte]) << 8) |
-                            static_cast<u16>(liveCram[paletteByte + 1u]));
+                            (static_cast<u16>(ruinPalette[localPaletteByte]) << 8) |
+                            static_cast<u16>(ruinPalette[localPaletteByte + 1u]));
+
                     if (color != 0)
                         texture.rgba[pixel] =
                             rgb555ToRgba8888(color);
