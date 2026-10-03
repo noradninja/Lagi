@@ -657,6 +657,24 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    NULL,               // 1: town - already running in direct boot\n    NULL,               // 2: town alt - not linked in Ruins bring-up\n    NULL,               // 3: field - not linked yet\n    NULL,               // 4: battle - not linked yet\n    NULL,               // 5: worldmap - not linked yet\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    NULL,               // 9: save/load - not linked yet\n    NULL,\n};"
    source_text "${source_text}")
 
+  # Trace entry into module-manager state 1 before any transition helper.
+  # This catches stale direct-boot fields/assert paths that occur before the
+  # status-specific exit logic below.
+  string(REPLACE
+   "case 1:\n        if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)"
+   "case 1:\n        lagi::platform::logging::writef(\\"[AzelMM] enter state1 current=0x%02X next=0x%02X m2=%d mC=%p\\\\n\\", static_cast<unsigned int>(gGameStatus.m4_gameStatus), static_cast<unsigned int>(gGameStatus.m8_nextGameStatus), static_cast<int>(gGameStatus.m2), static_cast<void*>(pWorkArea->mC));\n        if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)\n        {\n            assert(0);\n        }"
+   "if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)\n        {\n            lagi::platform::logging::writef(\\"[AzelMM] ASSERT path: next=0 and mC non-null\\\\n\\");\n            assert(0);\n        }"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "else\n        {\n            if (gGameStatus.m2 == 0)"
+   "else\n        {\n            lagi::platform::logging::writef(\\"[AzelMM] state1 before status exit current=0x%02X m2=%d\\\\n\\", static_cast<unsigned int>(gGameStatus.m4_gameStatus), static_cast<int>(gGameStatus.m2));\n            if (gGameStatus.m2 == 0)"
+   source_text "${source_text}")
+
   # Pinpoint the direct-boot town -> movie handoff. These diagnostics are
   # confined to the generated Vita copy and do not alter Azel decisions.
   string(REPLACE
