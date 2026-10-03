@@ -3,6 +3,7 @@
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/disc_image.h"
 #include "lagi/platform.h"
+#include "VDP2.h"
 
 #include <algorithm>
 #include <array>
