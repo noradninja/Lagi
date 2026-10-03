@@ -1,3 +1,4 @@
+#include <unordered_map>
 #pragma once
 
 // Build adapter for compiling upstream Azel runtime sources on Vita.
