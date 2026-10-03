@@ -8,6 +8,9 @@
 s_task* taskListHead = nullptr;
 int numActiveTask = 0;
 
+// Owned by upstream PDS.cpp; the Vita task host only consumes the pause state.
+extern std::array<u8, 3> pauseEngine;
+
 void PrintDebugTaskHierarchy(s_task*) {}
 void PrintDebugTasksHierarchy() {}
 void PrintDebugTaskInfo(s_task*) {}
