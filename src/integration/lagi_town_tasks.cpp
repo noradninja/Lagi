@@ -3,6 +3,7 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_town_bootstrap.h"
+#include "lagi/lagi_direct_boot.h"
 #include "lagi/platform.h"
 
 #include "town/town.h"
@@ -86,11 +87,26 @@ bool start_twn_ruin_task_pipeline()
     }
 
     // Direct boot bypasses createModuleManager() because its normal Init
-    // resets the save/game state and starts a new game. Rejoin the authentic
-    // module-manager pipeline with the original upstream Update/Draw methods
-    // and point m8 at the already-running Ruins overlay. From this point on,
-    // Azel itself owns status transitions, gameStatusTable lookup, overlay
-    // dispatch, movie-index selection, and post-overlay sequencing.
+    // resets the save/game state and starts a new game. Restore the exact
+    // module-manager-visible state that Azel would have established before
+    // entering this already-running town, then rejoin the authentic upstream
+    // Update/Draw pipeline. This is startup-state restoration only: all future
+    // status transitions and overlay/movie decisions remain Azel-owned.
+    const DirectBootTarget& boot = direct_boot_target();
+    if (!boot.resolved) {
+        platform::logging::writef(
+            "[LagiAdapter] direct-boot target unavailable for module manager\n");
+        return false;
+    }
+
+    gGameStatus.m0_gameMode = static_cast<s8>(boot.gameMode);
+    gGameStatus.m1 = static_cast<s8>(boot.gameModeEntry);
+    gGameStatus.m2 = 0;
+    gGameStatus.m3_loadingSaveFile = 0;
+    gGameStatus.m4_gameStatus = boot.gameStatus;
+    gGameStatus.m6_previousGameStatus = 0;
+    gGameStatus.m8_nextGameStatus = 0;
+
     static const s_moduleManager::TypedTaskDefinition moduleDefinition = {
         nullptr,
         &moduleManager_Update,
@@ -114,8 +130,12 @@ bool start_twn_ruin_task_pipeline()
     gModuleManager = g_directBootModuleManager;
 
     platform::logging::writef(
-        "[LagiAdapter] rejoined upstream module manager at status 0x%02X\n",
-        static_cast<unsigned int>(gGameStatus.m4_gameStatus));
+        "[LagiAdapter] rejoined upstream module manager "
+        "status=0x%02X mode=%d entry=0x%02X\n",
+        static_cast<unsigned int>(gGameStatus.m4_gameStatus),
+        static_cast<int>(gGameStatus.m0_gameMode),
+        static_cast<unsigned int>(
+            static_cast<std::uint8_t>(gGameStatus.m1)));
 
     g_fadeCamera = cameraTaskPtr;
     g_fadeActive = false;
