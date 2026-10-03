@@ -673,7 +673,6 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  kernel/dialogTask.cpp
  kernel/receiveItemTask.cpp
  kernel/moduleManager.cpp
- audio/soundDriver.cpp
  audio/systemSounds.cpp
  town/townCutscene.cpp
  town/town.cpp
@@ -742,6 +741,7 @@ add_executable(lagi
  src/integration/lagi_sound_table_vita.cpp
  src/integration/lagi_dragon_common_vita.cpp
  src/integration/lagi_hotpoint_vita.cpp
+ src/integration/lagi_audio_vita.cpp
  ${LAGI_AZEL_UPSTREAM_SOURCES}
 )
 target_include_directories(lagi PRIVATE include
