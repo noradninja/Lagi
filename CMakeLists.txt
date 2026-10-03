@@ -878,6 +878,18 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "        if"
    source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "collision.cpp")
+  # Collision visualization is desktop-only debug tooling. Do not retain
+  # renderer-debug symbols in the shipping Vita build.
+  string(REPLACE
+   "                drawDebugFilledQuad(vector0, vector1, vector2, vector3, quadColor);"
+   "                (void)quadColor;"
+   source_text "${source_text}")
+  string(REPLACE
+   "                drawDebugLine(vector0, vector1, quadColor);\n                drawDebugLine(vector1, vector2, quadColor);\n                drawDebugLine(vector2, vector3, quadColor);\n                drawDebugLine(vector3, vector0, quadColor);"
+   "                (void)quadColor;"
+   source_text "${source_text}")
+
  elseif(relative_path STREQUAL "field/field_d5/o_fld_d5.cpp")
   # D5 intentionally reads shared camera/script data from FLD_A3.PRG. For the
   # 0.040 boot-to-Ruins milestone keep that exact Saturn data source without
@@ -886,6 +898,18 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   string(REPLACE
    "    // FLD_A3.PRG contains shared field infrastructure data (camera configs, etc.)\n    if (gFLD_A3 == NULL)\n    {\n        gFLD_A3 = new FLD_A3_data();\n    }\n    gFieldCameraConfigEA = { 0x6092EF0, gFLD_A3 };\n    gFieldDragonAnimTableEA = { 0x06094134, gFLD_A3 };\n    gFieldCameraDrawFunc = &cameraFollowMode_default;\n    gCurrentFieldOverlay = gFLD_A3;"
    "    // FLD_A3.PRG contains shared field infrastructure data (camera configs, etc.)\n    static sFieldOverlay* lagiSharedA3Data = nullptr;\n    if (lagiSharedA3Data == nullptr)\n    {\n        lagiSharedA3Data = new sFieldOverlay(\"FLD_A3.PRG\");\n    }\n    gFieldCameraConfigEA = { 0x6092EF0, lagiSharedA3Data };\n    gFieldDragonAnimTableEA = { 0x06094134, lagiSharedA3Data };\n    gFieldCameraDrawFunc = &cameraFollowMode_default;\n    gCurrentFieldOverlay = lagiSharedA3Data;"
+   source_text "${source_text}")
+
+ elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  # Field scripts own the decision to play PCM; Lagi supplies the platform
+  # service. Avoid the upstream desktop SoLoud backend on Vita.
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\nextern void lagiAzelFieldPlayPCM(const char* filename);"
+   source_text "${source_text}")
+  string(REPLACE
+   "    playPCMFile(pPcmName);"
+   "    lagiAzelFieldPlayPCM(pPcmName);"
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field.cpp")
@@ -897,6 +921,19 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "u32 getFileSizeFromFileId(const char* fileName)"
    "__attribute__((weak)) u32 getFileSizeFromFileId(const char* fileName)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleOverlay.cpp")
+  # Battle manager stays authentic, but no battle is reachable before the
+  # first-flight milestone. Remove references to every battle overlay from
+  # the generated 0.040 build so they do not force the whole battle graph in.
+  string(REGEX REPLACE
+   "BattleEnd_deleteSub0\\(\\);"
+   "/* Lagi 0.040: battle teardown deferred until battle milestone */"
+   source_text "${source_text}")
+  string(REGEX REPLACE
+   "overlayStart_BTL_[A-Za-z0-9_]+\\(pThis->m0_parent\\);"
+   "/* Lagi 0.040: battle overlay dispatch deferred */"
+   source_text "${source_text}")
+
  elseif(relative_path STREQUAL "town/ruin/twn_ruin_lock.cpp")
   # Task-owned Ruins lock/switch objects are drawn through Azel's normal
   # addObjectToDrawList() boundary, but pCurrentMatrix already contains the
@@ -1001,7 +1038,12 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  field/fieldDragon.cpp
  field/fieldVisibilityGrid.cpp
  field/fieldRadar.cpp
+ field/fieldCutsceneTask.cpp
+ field/fieldDragonMovement.cpp
+ field/dragonLightWingEvolution.cpp
  field/field_a3/o_fld_a3.cpp
+ field/field_a3/o_fld_a3_1.cpp
+ LCS.cpp
  field/field_d5/o_fld_d5.cpp
  field/field_d5/d5_nameEntry.cpp
  field/field_d5/d5_particles.cpp
@@ -1012,6 +1054,7 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  battle/battleManager.cpp
  battle/battleDebugList.cpp
  battle/battleOverlay.cpp
+ battle/battlePowerGauge.cpp
  kernel/menuSprite.cpp
  kernel/menuCursor.cpp
  kernel/flagEditor.cpp
