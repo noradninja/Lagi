@@ -1637,26 +1637,24 @@ static void drawPublishedVdp1Ui()
         if (!texture)
             continue;
 
-        // Azel's UI positions are centered in the Saturn 352x224 VDP1
-        // raster. Preserve that full-width position mapping so a lock-on
-        // cursor remains aligned with the widescreen 3D projection, but do
-        // not stretch the sprite itself to Neptune's 16:9 square-pixel
-        // target. Saturn's 352 mode was presented as ~4:3 with non-square
-        // pixels. Correct the horizontal extent around the Azel-selected
-        // center while leaving the center untouched.
-        const float rawX0 = static_cast<float>(command.xa) / 176.0f;
-        const float rawX1 =
-            static_cast<float>(command.xc + 1) / 176.0f;
-        const float centerX = (rawX0 + rawX1) * 0.5f;
+        // Match the horizontal presentation transform used by
+        // buildAzelProjection(). Azel emits centered 352x224 VDP1
+        // coordinates, while Neptune presents that Saturn-authored image in
+        // a centered 4:3 region of the Vita framebuffer. Applying the same
+        // correction to both endpoints preserves sprite shape AND keeps
+        // target-attached UI aligned with the projected 3D object.
         const float renderAspect =
             static_cast<float>(viewerRenderWidth()) /
             static_cast<float>(viewerRenderHeight());
         const float saturnAspectCorrection =
             (4.0f / 3.0f) / renderAspect;
-        const float halfWidth =
-            (rawX1 - rawX0) * 0.5f * saturnAspectCorrection;
-        const float x0 = centerX - halfWidth;
-        const float x1 = centerX + halfWidth;
+
+        const float x0 =
+            (static_cast<float>(command.xa) / 176.0f) *
+            saturnAspectCorrection;
+        const float x1 =
+            (static_cast<float>(command.xc + 1) / 176.0f) *
+            saturnAspectCorrection;
 
         const float y0 = -static_cast<float>(command.ya) / 112.0f;
         const float y1 =
