@@ -105,6 +105,8 @@ set(LAGI_TEXTURE_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v_gxp.o")
 set(LAGI_TEXTURE_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f_gxp.o")
 set(LAGI_MESH_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_mesh_f.gxp")
 set(LAGI_MESH_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_mesh_f_gxp.o")
+set(LAGI_CINEPAK_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_cinepak_f.gxp")
+set(LAGI_CINEPAK_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_cinepak_f_gxp.o")
 
 add_custom_command(
  OUTPUT "${LAGI_COLOR_V_GXP}"
@@ -557,6 +559,29 @@ add_custom_command(
 )
 
 add_custom_command(
+ OUTPUT "${LAGI_CINEPAK_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/cinepak_f.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_CINEPAK_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/cinepak_f.cg"
+ COMMENT "Compiling Lagi SGX Cinepak fragment shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_CINEPAK_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_cinepak_f.gxp" "${LAGI_CINEPAK_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_CINEPAK_F_GXP}"
+ COMMENT "Embedding Lagi SGX Cinepak fragment GXP"
+ VERBATIM
+)
+
+add_custom_command(
  OUTPUT "${LAGI_MESH_F_OBJ}"
  COMMAND "${CMAKE_OBJCOPY}"
   -I binary -O elf32-littlearm -B arm
@@ -609,6 +634,7 @@ set_source_files_properties(
  "${LAGI_GOURAUD_SUBDIV_GRAY_F_OBJ}"
  "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}"
  "${LAGI_MESH_F_OBJ}"
+ "${LAGI_CINEPAK_F_OBJ}"
  PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
 )
 
@@ -959,9 +985,11 @@ add_executable(lagi
  ${LAGI_TEXTURE_V_OBJ}
  ${LAGI_TEXTURE_F_OBJ}
  ${LAGI_MESH_F_OBJ}
+ ${LAGI_CINEPAK_F_OBJ}
  src/platform/vita/vita_audio.cpp
  src/movie/film_demuxer.cpp
  src/movie/cinepak_decoder.cpp
+ src/movie/cinepak_sgx_decoder.cpp
  src/movie/movie_player.cpp
  src/integration/azel_movie_bridge.cpp
  src/integration/lagi_azel_movie_runtime.cpp
