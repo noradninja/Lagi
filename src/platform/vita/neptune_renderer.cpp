@@ -381,6 +381,17 @@ static SceUID g_vdp1UiLineIndexUid = -1;
 static azel::DebugColorVertex* g_vdp1UiLineVertices = nullptr;
 static std::uint16_t* g_vdp1UiLineIndices = nullptr;
 
+// Selection/UI profiler. These counters are renderer-observation only and do
+// not alter Azel's VDP1 command stream or UI behavior.
+static unsigned int g_profileVdp1UiTotalUs = 0u;
+static unsigned int g_profileVdp1UiLookupUs = 0u;
+static unsigned int g_profileVdp1UiMissUs = 0u;
+static unsigned int g_profileVdp1UiCacheHits = 0u;
+static unsigned int g_profileVdp1UiCacheMisses = 0u;
+static unsigned int g_profileVdp1UiUploadBytes = 0u;
+static unsigned int g_profileVdp1UiLineDraws = 0u;
+static unsigned int g_profileVdp1UiSpriteDraws = 0u;
+
 static constexpr unsigned int kVdp2Nbg1AtlasWidth = 128u;
 static constexpr unsigned int kVdp2Nbg1AtlasHeight = 128u;
 static constexpr unsigned int kVdp2Nbg1MaxTiles = 64u;
@@ -2626,13 +2637,23 @@ static void drawAzelVdp2CinematicBarsGpu()
 static GpuMode1Texture* findOrUploadVdp1UiTexture(
     const azel_bridge::Vdp1UiCommand& command)
 {
+    const std::uint64_t lookupStartUs = sceKernelGetProcessTimeWide();
     for (auto& entry : g_vdp1UiTextureCache) {
         if (entry.cmdPmod == command.cmdPmod &&
             entry.cmdColr == command.cmdColr &&
             entry.cmdSrca == command.cmdSrca &&
-            entry.cmdSize == command.cmdSize)
+            entry.cmdSize == command.cmdSize) {
+            ++g_profileVdp1UiCacheHits;
+            g_profileVdp1UiLookupUs += static_cast<unsigned int>(
+                sceKernelGetProcessTimeWide() - lookupStartUs);
             return &entry.gpu;
+        }
     }
+
+    ++g_profileVdp1UiCacheMisses;
+    g_profileVdp1UiLookupUs += static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - lookupStartUs);
+    const std::uint64_t missStartUs = sceKernelGetProcessTimeWide();
 
     const unsigned int commandType =
         static_cast<unsigned int>(command.cmdCtrl & 0x000Fu);
@@ -2789,6 +2810,9 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
             reportedNormalSprite = true;
         }
 
+        g_profileVdp1UiUploadBytes += bytes;
+        g_profileVdp1UiMissUs += static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - missStartUs);
         g_vdp1UiTextureCache.push_back(std::move(entry));
         return &g_vdp1UiTextureCache.back().gpu;
     }
@@ -2847,6 +2871,9 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
     sceGxmTextureSetMagFilter(
         &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
 
+    g_profileVdp1UiUploadBytes += bytes;
+    g_profileVdp1UiMissUs += static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - missStartUs);
     g_vdp1UiTextureCache.push_back(std::move(entry));
     return &g_vdp1UiTextureCache.back().gpu;
 }
@@ -2858,6 +2885,15 @@ static void drawPublishedVdp1Ui()
         !g_textureFragmentProgram || !g_textureWvpParam ||
         !ensureVdp1UiBuffers())
         return;
+
+    g_profileVdp1UiLookupUs = 0u;
+    g_profileVdp1UiMissUs = 0u;
+    g_profileVdp1UiCacheHits = 0u;
+    g_profileVdp1UiCacheMisses = 0u;
+    g_profileVdp1UiUploadBytes = 0u;
+    g_profileVdp1UiLineDraws = 0u;
+    g_profileVdp1UiSpriteDraws = 0u;
+    const std::uint64_t uiStartUs = sceKernelGetProcessTimeWide();
 
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     // Screen-space VDP1 UI must not inherit polygon rasterization state from
@@ -2955,6 +2991,7 @@ static void drawPublishedVdp1Ui()
                     SCE_GXM_INDEX_FORMAT_U16,
                     g_vdp1UiLineIndices,
                     8);
+                ++g_profileVdp1UiLineDraws;
             }
 
             // Restore the textured UI pipeline for subsequent sprite commands.
@@ -3104,6 +3141,30 @@ static void drawPublishedVdp1Ui()
             SCE_GXM_INDEX_FORMAT_U16,
             g_vdp1UiIndices,
             6);
+        ++g_profileVdp1UiSpriteDraws;
+    }
+
+    g_profileVdp1UiTotalUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - uiStartUs);
+
+    // Multi-command frames correspond to the town selection/lock-on UI that
+    // exhibited the regression. Limit logging so profiling itself stays cheap.
+    static unsigned int reportedProfileFrames = 0u;
+    if (commands.size() > 1u && reportedProfileFrames < 32u) {
+        logging::writef(
+            "[VDP1UI-PROFILE] cmds=%u totalUs=%u lookupUs=%u missUs=%u "
+            "hit=%u miss=%u upload=%u line=%u sprite=%u cache=%u\n",
+            static_cast<unsigned int>(commands.size()),
+            g_profileVdp1UiTotalUs,
+            g_profileVdp1UiLookupUs,
+            g_profileVdp1UiMissUs,
+            g_profileVdp1UiCacheHits,
+            g_profileVdp1UiCacheMisses,
+            g_profileVdp1UiUploadBytes,
+            g_profileVdp1UiLineDraws,
+            g_profileVdp1UiSpriteDraws,
+            static_cast<unsigned int>(g_vdp1UiTextureCache.size()));
+        ++reportedProfileFrames;
     }
 }
 
