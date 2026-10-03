@@ -592,9 +592,37 @@ bool init_town_runtime()
         return nullptr;
     };
     g_runtime.bundles = {
-        {0, resourceByName("COMMON3.MCB"), resourceByName("COMMON3.CGB"), 0},
-        {2, resourceByName("RUINMP.MCB"), resourceByName("RUINMP.CGB"), 0},
+        {0, resourceByName("COMMON3.MCB"), resourceByName("COMMON3.CGB")},
+        {2, resourceByName("RUINMP.MCB"), resourceByName("RUINMP.CGB")},
     };
+
+    // Mirror the allocation order used by upstream createEnvironmentTask2Sub0Sub0().
+    // Azel patches every processed model's CMDCOLR/CMDSRCA with these VDP1
+    // address-unit bases. Retain the allocation metadata at the platform
+    // boundary so the Vita texture adapter can select the owning CGB and
+    // recover its bundle-relative descriptor without changing Azel.
+    constexpr std::uint32_t kTownVdp1Start = 0x25C18800u >> 3;
+    constexpr std::uint32_t kTownVdp1Units = 0x63800u >> 3;
+    std::uint32_t nextVdp1Unit = kTownVdp1Start + kTownVdp1Units;
+    for (auto& bundle : g_runtime.bundles) {
+        if (!bundle.graphics)
+            continue;
+        const std::uint32_t alignedBytes =
+            (static_cast<std::uint32_t>(bundle.graphics->bytes.size()) +
+             0x1Fu) & ~0x1Fu;
+        const std::uint32_t allocationUnits = alignedBytes >> 3;
+        if (allocationUnits > nextVdp1Unit - kTownVdp1Start)
+            return false;
+        nextVdp1Unit -= allocationUnits;
+        bundle.vdp1Base = static_cast<std::uint16_t>(nextVdp1Unit);
+        bundle.vdp1SizeUnits = static_cast<std::uint16_t>(allocationUnits);
+        lagi::platform::logging::writef(
+            "[TownRuntime] VDP1 bundle %d base=%04X units=%04X graphics=%s\n",
+            static_cast<int>(bundle.fileIndex),
+            static_cast<unsigned>(bundle.vdp1Base),
+            static_cast<unsigned>(bundle.vdp1SizeUnits),
+            bundle.graphics->name.c_str());
+    }
 
     g_runtime.initialized = validCells != 0;
     if (!g_runtime.initialized)
