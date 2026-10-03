@@ -845,6 +845,32 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)"
    "__attribute__((weak)) sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  # 0.040 boot-to-Ruins only needs the authentic D5 name-entry field before
+  # town handoff. Do not retain references to later field overlays merely
+  # because this large upstream translation unit contains the generic debug
+  # dispatcher; those overlays are restored with their milestones.
+  string(REPLACE
+   "        createSiblingTaskWithArg<s_flagEditTaskWorkArea, p_workArea>(pThis->m8, pThis->m8);"
+   "        // Lagi Vita 0.040: desktop/debug flag editor sibling omitted."
+   source_text "${source_text}")
+
+  string(REPLACE
+   "        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_A5.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_A5;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_C8.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_C8;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D3.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_D3;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D5.PRG\"))"
+   "        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D5.PRG\"))"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_A7.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_A7;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_B2.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_B2;\n        }"
+   ""
+   source_text "${source_text}")
+
+  # FLD_A3 belongs to the next milestone (first flight), not boot-to-Ruins.
+  string(REPLACE
+   "        if (!strcmp(pFieldDefinition->m_prg, \"FLD_A3.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_A3;\n        }\n        else if"
+   "        if"
+   source_text "${source_text}")
+
  elseif(relative_path STREQUAL "field.cpp")
   string(REPLACE
    "int findMandatoryFileOnDisc(const char* fileName)"
@@ -945,7 +971,16 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  items.cpp
  menu_dragon.cpp
  field.cpp
- field/field_a3/o_fld_a3.cpp
+ field/fieldEncounterTask.cpp
+ field/field_d5/o_fld_d5.cpp
+ field/field_d5/d5_nameEntry.cpp
+ field/field_d5/d5_particles.cpp
+ field/field_d5/d5_starfield.cpp
+ dragonMorphing.cpp
+ dragonRider.cpp
+ battle/battleManager.cpp
+ kernel/menuSprite.cpp
+ kernel/menuCursor.cpp
  shared/vdp2PlaneTask.cpp
  battle/BTL_A3/BTL_A3_map6.cpp
  audio/systemSounds.cpp
