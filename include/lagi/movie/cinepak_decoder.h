@@ -28,5 +28,6 @@ public:
 };
 
 std::unique_ptr<CinepakDecoder> make_cpu_cinepak_decoder();
+std::unique_ptr<CinepakDecoder> make_sgx_cinepak_decoder();
 
 } // namespace lagi::movie
