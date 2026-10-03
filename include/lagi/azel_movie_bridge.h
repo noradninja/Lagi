@@ -12,6 +12,8 @@ void movie_backend_close();
 bool movie_backend_active();
 bool movie_backend_finished();
 std::uint64_t movie_backend_pts();
+std::uint32_t movie_backend_video_width();
+std::uint32_t movie_backend_video_height();
 const char* movie_backend_error();
 
 } // namespace lagi::azel
