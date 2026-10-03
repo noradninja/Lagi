@@ -40,6 +40,8 @@ static std::vector<const LiveVdp1Model*> g_adaptedModels;
 static std::vector<RenderSubmission> g_submissions;
 static std::vector<const LiveVdp1Model*> g_publishedAdaptedModels;
 static std::vector<RenderSubmission> g_publishedSubmissions;
+static std::vector<Vdp1UiCommand> g_vdp1UiCommands;
+static std::vector<Vdp1UiCommand> g_publishedVdp1UiCommands;
 static std::uint64_t g_publishedFrameNumber = 0;
 static RenderSubmission g_pendingTownSubmission{};
 static bool g_hasPendingTownSubmission = false;
@@ -54,6 +56,7 @@ void begin_frame()
     g_lastState = {};
     g_adaptedModels.clear();
     g_submissions.clear();
+    g_vdp1UiCommands.clear();
     g_pendingTownSubmission = {};
     g_hasPendingTownSubmission = false;
 }
@@ -96,8 +99,19 @@ void publish_frame()
     // remain stable across frames. Only the per-frame ordering/state vectors
     // need to be snapshotted here.
     g_publishedSubmissions = g_submissions;
+    g_publishedVdp1UiCommands = g_vdp1UiCommands;
     g_publishedAdaptedModels = g_adaptedModels;
     ++g_publishedFrameNumber;
+}
+
+void record_vdp1_ui_command(const Vdp1UiCommand& command)
+{
+    g_vdp1UiCommands.push_back(command);
+}
+
+const std::vector<Vdp1UiCommand>& published_vdp1_ui_commands()
+{
+    return g_publishedVdp1UiCommands;
 }
 
 const std::vector<RenderSubmission>& published_submissions()
