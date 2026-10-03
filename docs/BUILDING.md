@@ -1,6 +1,6 @@
 # Building Lagi
 
-Current development milestone: **0.2.0**
+Current development milestone: **0.030-alpha**
 
 Last updated: 2026-10-03
 
@@ -142,6 +142,7 @@ Current Ruins work uses files including:
 - `RUINMP.MCB` / `RUINMP.CGB`
 - `RUINSCR.SCB` / `RUINSCR.PNB`
 - `EVTRUIN.FNT`
+- `EVT004_1.CPK` / `EVT004_2.CPK`
 
 ## Runtime log
 
@@ -164,6 +165,7 @@ Useful sections currently include:
 - material/texture decode
 - VDP1 UI command diagnostics
 - VDP2 text/window and line-scroll presentation
+- movie sequencing, FILM/Cinepak decode, and SceAudio PCM output
 - GXM initialization and failures
 
 ## Current startup behavior
@@ -175,7 +177,9 @@ A normal development launch:
 3. restores the resident VDP1 menu data and VDP2 startup state expected by the town runtime,
 4. starts the town task/script pipeline,
 5. enters the scene in **Full** view,
-6. leaves the diagnostic console hidden.
+6. leaves the diagnostic console hidden,
+7. after the elevator sequence, plays `EVT004_1.CPK` and `EVT004_2.CPK`
+   from Disc 1 before Azel requests the next game status.
 
 Current rendering configuration:
 

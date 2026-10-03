@@ -1,6 +1,6 @@
 # Lagi
 
-**Current development milestone: 0.2.0**
+**Current development milestone: 0.030-alpha**
 
 **Lagi** is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed game logic runs directly on the Vita's ARM CPU, while Saturn-era rendering and platform behavior are translated to VitaSDK and native SceGxm.
 
@@ -32,13 +32,14 @@ Working systems include:
 - original LCS cursor, target marker, and selection-box behavior
 - Azel-authored VDP2 text, framed windows, and cinematic matte presentation
 - area-name, item-pickup, interaction, subtitle, and multi-choice text
-- elevator choice flow through the script-driven fade to the FMV handoff
+- elevator choice flow through the script-driven fade and two-part Cinepak FMV
+- Sega FILM demuxing, Phase 1 CPU Cinepak reconstruction, and native SceAudio PCM output
 - Edge's original textured/stippled VDP1 mesh shadow
 - script-driven town fade-in
 - native GXM 2x multisample antialiasing
 - stable 30 Hz presentation
 
-Version **0.2.0** marks the transition from a rendered Ruins scene to a genuinely interactive upstream-Azel town slice: Azel owns movement, camera, collision, scripts, lock-on state, target selection, dynamic objects, text/window state, and UI command generation, while Lagi translates the platform and rendering boundaries to Vita. The playable sequence now reaches the elevator decision and its fade to the still-unimplemented FMV playback handoff.
+Version **0.030-alpha** adds the reference Cinepak playback path without moving movie sequencing into the platform layer. Azel still owns the elevator transition and post-movie game status; Lagi supplies Sega FILM demuxing, CPU pixel reconstruction, GXM frame upload, timing, and native SceAudio PCM output. The Phase 2 SGX-assisted decoder can replace reconstruction while retaining those boundaries.
 
 ## Architecture
 
