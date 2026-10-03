@@ -312,8 +312,26 @@ void runtime_smoke_frame()
     runTasks();
     twn_ruin_sync_platform_state();
 
-    static unsigned int reportedVdp1Frames = 0;
     auto& vdp1Ctx = graphicEngineStatus.m14_vdp1Context[0];
+    if (mainContextVdp1[0].size() >= 6) {
+        const auto* const begin = mainContextVdp1[0].begin() + 6;
+        const auto* const end = vdp1Ctx.m0_currentVdp1WriteEA;
+        for (const auto* cmd = begin; cmd < end; ++cmd) {
+            lagi::azel_bridge::Vdp1UiCommand ui{};
+            ui.cmdCtrl = cmd->m0_CMDCTRL;
+            ui.cmdPmod = cmd->m4_CMDPMOD;
+            ui.cmdColr = cmd->m6_CMDCOLR;
+            ui.cmdSrca = cmd->m8_CMDSRCA;
+            ui.cmdSize = cmd->mA_CMDSIZE;
+            ui.xa = cmd->mC_CMDXA;   ui.ya = cmd->mE_CMDYA;
+            ui.xb = cmd->m10_CMDXB;  ui.yb = cmd->m12_CMDYB;
+            ui.xc = cmd->m14_CMDXC;  ui.yc = cmd->m16_CMDYC;
+            ui.xd = cmd->m18_CMDXD;  ui.yd = cmd->m1A_CMDYD;
+            lagi::azel_bridge::record_vdp1_ui_command(ui);
+        }
+    }
+
+    static unsigned int reportedVdp1Frames = 0;
     const unsigned int vdp1CommandCount =
         mainContextVdp1[0].size() >= 6
             ? static_cast<unsigned int>(
