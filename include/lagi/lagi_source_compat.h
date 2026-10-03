@@ -25,9 +25,41 @@ template<typename T> constexpr T radians(T v) { return v * static_cast<T>(0.0174
 
 namespace SoLoud {
 using handle = unsigned int;
-class Wav {};
-class WavStream {};
-class Soloud {};
+static constexpr int SO_NO_ERROR = 0;
+
+class Wav {
+public:
+    int loadRawWave16(const short*, unsigned int, float, unsigned int) { return SO_NO_ERROR; }
+};
+
+class WavStream {
+public:
+    int load(const char*) { return SO_NO_ERROR; }
+    void setLooping(bool) {}
+};
+
+class Soloud {
+public:
+    int init() { return SO_NO_ERROR; }
+    handle play(Wav&) { return 1; }
+    handle play(WavStream&) { return 1; }
+    bool isValidVoiceHandle(handle h) const { return h != 0; }
+    void stop(handle) {}
+};
+}
+
+inline SoLoud::Soloud gSoloud;
+
+inline std::uint64_t SDL_GetPerformanceCounter()
+{
+    using namespace std::chrono;
+    return static_cast<std::uint64_t>(
+        duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count());
+}
+
+inline std::uint64_t SDL_GetPerformanceFrequency()
+{
+    return 1000000ull;
 }
 
 namespace bgfx {
