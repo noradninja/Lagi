@@ -657,13 +657,16 @@ static void decodeRoomTextures(
                 }
             }
         } else if (colorMode == 0) {
-            // Azel ruinBgInit() copies 0x200 bytes from TWN_RUIN:0x0605EBF8
-            // to vdp2Palette, which is CRAM byte offset 0xC00. That means
-            // palette indices 0x600-0x6FF are backed by this exact overlay
-            // palette image.
+            // VDP1 16-color bank mode uses CMDCOLR's low 11 bits as the
+            // CRAM bank base. This is used not only by Ruins geometry but by
+            // common UI sprites such as drawMultiChoiceVdp1Cursor(), whose
+            // CMDCOLR is 0x47F0 (bank 0x7F0). Decode against Azel's live CRAM
+            // rather than assuming every bank lives in the Ruins 0x600-0x6FF
+            // palette window.
             const unsigned texBytes = (width * height) / 2u;
+            const u8* const liveCram = getVdp2Cram(0);
             if (static_cast<std::size_t>(texAddress) + texBytes > cgb.size() ||
-                !ruinPalette || ruinPaletteBytes < 0x200u) {
+                !liveCram) {
                 valid = false;
                 continue;
             }
@@ -688,24 +691,18 @@ static void decodeRoomTextures(
                     }
 
                     const unsigned paletteIndex =
-                        static_cast<unsigned>(record.cmdColr) |
+                        (static_cast<unsigned>(record.cmdColr) & 0x07F0u) |
                         static_cast<unsigned>(dot);
-                    const unsigned paletteByte =
-                        paletteIndex * 2u;
-
-                    if (paletteByte < 0xC00u ||
-                        paletteByte + 1u >= 0xC00u + ruinPaletteBytes) {
+                    const unsigned paletteByte = paletteIndex * 2u;
+                    if (paletteByte + 1u >= 0x1000u) {
                         valid = false;
                         continue;
                     }
 
-                    const unsigned localPaletteByte =
-                        paletteByte - 0xC00u;
                     const u16 color =
                         static_cast<u16>(
-                            (static_cast<u16>(ruinPalette[localPaletteByte]) << 8) |
-                            static_cast<u16>(ruinPalette[localPaletteByte + 1u]));
-
+                            (static_cast<u16>(liveCram[paletteByte]) << 8) |
+                            static_cast<u16>(liveCram[paletteByte + 1u]));
                     if (color != 0)
                         texture.rgba[pixel] =
                             rgb555ToRgba8888(color);
@@ -933,8 +930,12 @@ bool decode_town_texture_descriptor(
             continue;
 
         SaturnPolygonRecord normalized = record;
-        normalized.cmdColr = static_cast<std::uint16_t>(
-            record.cmdColr - bundle.vdp1Base);
+        if (record.colorMode() == 1u) {
+            // Lookup-table mode stores a relocated VDP1 address in CMDCOLR.
+            normalized.cmdColr = static_cast<std::uint16_t>(
+                record.cmdColr - bundle.vdp1Base);
+        }
+        // Bank-color modes keep their CRAM bank selector in CMDCOLR.
         normalized.cmdSrca = relativeSrca;
         if (tryDecode(bundle.graphics->bytes, normalized))
             return true;
