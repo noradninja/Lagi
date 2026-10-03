@@ -7935,7 +7935,11 @@ static bool renderMovieFrame()
     }
 
     sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
-    sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
+    sceGxmSetFragmentProgram(
+        g_probeContext,
+        g_movieUsesCinepakPayload
+            ? g_cinepakFragmentProgram
+            : g_textureFragmentProgram);
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, viewerRenderWidth() - 1, viewerRenderHeight() - 1);
