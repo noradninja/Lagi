@@ -1,14 +1,9 @@
-// Saturn VDP1 mesh primitive diagnostic.
-// Preserve the source texture silhouette but temporarily bypass the
-// screen-space checkerboard test. If Edge's shadow becomes visible on
-// hardware, the remaining bug is isolated to the mesh parity/WPOS path.
-float4 main(
-    float2 vTexcoord : TEXCOORD0,
-    uniform sampler2D tex)
+// Edge shadow diagnostic.
+// Deliberately bypass texture sampling and VDP1 mesh stipple so we can prove
+// that the textured/subdivided GXM geometry reaches the fragment stage.
+// If this solid surface appears, the remaining fault is in the shadow
+// texture/alpha sampling path rather than geometry or draw submission.
+float4 main()
 {
-    float4 color = tex2D(tex, vTexcoord);
-    if (color.a < 0.5f)
-        discard;
-
-    return float4(color.rgb, 1.0f);
+    return float4(1.0f, 0.0f, 1.0f, 1.0f);
 }
