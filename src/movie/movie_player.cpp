@@ -312,6 +312,16 @@ std::uint64_t MoviePlayer::current_video_pts() const
     return impl_->currentPts;
 }
 
+std::uint32_t MoviePlayer::video_width() const
+{
+    return impl_->demuxer.video_info().width;
+}
+
+std::uint32_t MoviePlayer::video_height() const
+{
+    return impl_->demuxer.video_info().height;
+}
+
 const std::string& MoviePlayer::last_error() const
 {
     return impl_->error;
