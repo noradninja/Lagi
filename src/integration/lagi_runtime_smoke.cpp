@@ -257,7 +257,9 @@ void runtime_smoke_frame()
         lagi::platform::input::saturn_buttons_pressed();
 
     const float analogX = lagi::platform::input::analog_x();
-    const float analogY = lagi::platform::input::analog_y();
+    // Vita stick Y grows downward; Azel's 3D-pad convention expects
+    // forward/up to be positive, so invert Y at the platform boundary.
+    const float analogY = -lagi::platform::input::analog_y();
     pending.m2_analogX = static_cast<s8>(
         analogX <= -1.0f ? -127 :
         analogX >= 1.0f ? 127 :
