@@ -2114,79 +2114,48 @@ static void drawAzelVdp2CinematicBarsGpu()
         !ensureVdp2UiGpuBuffers())
         return;
 
-    constexpr unsigned int kVisibleLines = 224u;
-    unsigned int top = 0u;
-    while (top < kVisibleLines &&
+    // Azel's cinematic-bar transfer is configured for 0x100 bytes:
+    // 64 line-scroll entries. renderer_vdp2.cpp applies those entries to
+    // raw output Y and then vertically flips the rendered NBG1 surface.
+    // Therefore a run of 0x01010000 entries from table index 0 becomes the
+    // *bottom* dialogue bar on screen. The Saturn reference shows exactly
+    // this single lower bar for the Ruins interaction.
+    constexpr unsigned int kTransferredLines = 0x100u / 4u;
+    unsigned int barLines = 0u;
+    while (barLines < kTransferredLines &&
            readVdp2Be32(
                g_vdp2LineScroll,
-               top * 4u) == 0x01010000u)
-        ++top;
+               barLines * 4u) == 0x01010000u)
+        ++barLines;
 
-    unsigned int bottom = 0u;
-    while (bottom < kVisibleLines - top) {
-        const unsigned int y =
-            kVisibleLines - 1u - bottom;
-        if (readVdp2Be32(
-                g_vdp2LineScroll,
-                y * 4u) != 0x01010000u)
-            break;
-        ++bottom;
-    }
-
-    if (!top && !bottom)
+    if (!barLines)
         return;
 
-    const float renderAspect =
-        static_cast<float>(viewerRenderWidth()) /
-        static_cast<float>(viewerRenderHeight());
-    const float xCorrection =
-        (4.0f / 3.0f) / renderAspect;
-    const float left = -xCorrection;
-    const float right = xCorrection;
+    // Unlike the 4:3-corrected Saturn sprites/text, the cinematic matte is
+    // a presentation mask and spans the complete Vita render target.
+    const float left = -1.0f;
+    const float right = 1.0f;
 
-    unsigned int rectCount = 0u;
-    const auto appendBar =
-        [&](float yTop, float yBottom) {
-            const unsigned int base =
-                rectCount * 4u;
-            g_vdp2BarVertices[base + 0u] =
-                {left, yTop, 0.0f, 0u,0u,0u,255u};
-            g_vdp2BarVertices[base + 1u] =
-                {right, yTop, 0.0f, 0u,0u,0u,255u};
-            g_vdp2BarVertices[base + 2u] =
-                {right, yBottom, 0.0f, 0u,0u,0u,255u};
-            g_vdp2BarVertices[base + 3u] =
-                {left, yBottom, 0.0f, 0u,0u,0u,255u};
-            const unsigned int ib =
-                rectCount * 6u;
-            g_vdp2BarIndices[ib + 0u] =
-                static_cast<std::uint16_t>(base + 0u);
-            g_vdp2BarIndices[ib + 1u] =
-                static_cast<std::uint16_t>(base + 1u);
-            g_vdp2BarIndices[ib + 2u] =
-                static_cast<std::uint16_t>(base + 2u);
-            g_vdp2BarIndices[ib + 3u] =
-                static_cast<std::uint16_t>(base + 0u);
-            g_vdp2BarIndices[ib + 4u] =
-                static_cast<std::uint16_t>(base + 2u);
-            g_vdp2BarIndices[ib + 5u] =
-                static_cast<std::uint16_t>(base + 3u);
-            ++rectCount;
-        };
+    const float barTop =
+        -1.0f +
+        static_cast<float>(barLines) / 112.0f;
 
-    if (top) {
-        appendBar(
-            1.0f,
-            1.0f -
-                static_cast<float>(top) / 112.0f);
-    }
-    if (bottom) {
-        const float topY =
-            1.0f -
-            static_cast<float>(
-                kVisibleLines - bottom) / 112.0f;
-        appendBar(topY, -1.0f);
-    }
+    g_vdp2BarVertices[0] =
+        {left,  barTop, 0.0f, 0u,0u,0u,255u};
+    g_vdp2BarVertices[1] =
+        {right, barTop, 0.0f, 0u,0u,0u,255u};
+    g_vdp2BarVertices[2] =
+        {right, -1.0f,  0.0f, 0u,0u,0u,255u};
+    g_vdp2BarVertices[3] =
+        {left,  -1.0f,  0.0f, 0u,0u,0u,255u};
+
+    static const std::uint16_t kBarIndices[6] = {
+        0,1,2, 0,2,3
+    };
+    std::memcpy(
+        g_vdp2BarIndices,
+        kBarIndices,
+        sizeof(kBarIndices));
 
     sceGxmSetCullMode(
         g_probeContext, SCE_GXM_CULL_NONE);
@@ -2231,7 +2200,7 @@ static void drawAzelVdp2CinematicBarsGpu()
         SCE_GXM_PRIMITIVE_TRIANGLES,
         SCE_GXM_INDEX_FORMAT_U16,
         g_vdp2BarIndices,
-        rectCount * 6u);
+        6u);
 }
 
 
