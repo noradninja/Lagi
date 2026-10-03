@@ -46,6 +46,36 @@ Lagi platform/render/input adapters
 
 Where Azel's desktop umbrella header cannot be used on Vita, the build may redirect that include to a Lagi platform prelude. That adapter may provide declarations/stubs for unavailable host services, but it must not alter or replace Azel gameplay/runtime function bodies.
 
+## Movie pipeline
+
+Movie ownership follows the same rule as town/gameplay ownership:
+
+```text
+Azel module manager
+       ↓
+Azel gameStatusTable
+       ↓
+Azel movie timing table / CPK filename table
+       ↓
+Azel s_movieMainWorkArea state machine
+       ↓
+Lagi generic movie services
+  ├─ disc/filesystem reads
+  ├─ Sega FILM demux
+  ├─ Cinepak decode
+  ├─ PCM/audio timing
+  └─ Neptune frame presentation
+```
+
+Azel must own movie selection, multi-part CPK sequencing, countdowns, skip behavior,
+fades, subtitle-task creation, and post-movie status transitions. Lagi must never
+hardcode scene-specific movie filenames or reproduce Azel's movie timing/status
+tables in an integration adapter.
+
+For Vita builds, generated upstream source may replace only desktop/Saturn
+platform-facing stream/decode/audio calls with Lagi service hooks. The upstream
+movie task/state machine and its data tables remain authoritative.
+
 ## Presentation bridge
 
 The current town presentation path keeps state ownership on the Azel side:
