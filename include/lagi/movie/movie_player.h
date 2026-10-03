@@ -34,6 +34,8 @@ public:
     bool active() const { return state() == PlaybackState::Playing; }
     bool finished() const { return state() == PlaybackState::Finished; }
     std::uint64_t current_video_pts() const;
+    std::uint32_t video_width() const;
+    std::uint32_t video_height() const;
     const std::string& last_error() const;
 
 private:
