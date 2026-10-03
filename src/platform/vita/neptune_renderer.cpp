@@ -73,6 +73,7 @@ static SceUID g_renderFrameReadySema = -1;
 static SceUID g_renderFrameFreeSema = -1;
 static volatile bool g_renderThreadRunning = false;
 static bool g_renderThreadStarted = false;
+static unsigned int g_renderStartupFrame = 0;
 static int renderThreadMain(SceSize args, void* argp);
 
 static bool g_azelAlive = false;
@@ -6331,8 +6332,17 @@ static int renderThreadMain(SceSize, void*)
         if (!g_renderThreadRunning)
             break;
 
+        if (g_renderStartupFrame < 3)
+            logging::writef(
+                "[RenderFrame] %u begin\n",
+                g_renderStartupFrame);
         if (!g_debugVisible)
             renderBasicWingViewer();
+        if (g_renderStartupFrame < 3)
+            logging::writef(
+                "[RenderFrame] %u end\n",
+                g_renderStartupFrame);
+        ++g_renderStartupFrame;
 
         // The published bridge/presentation state may now be overwritten by
         // the game thread for the next completed frame.
@@ -6526,8 +6536,16 @@ void town_wait_render_slot()
 
 void town_publish_frame()
 {
-    if (!g_pendingTownPresentationValid)
+    if (!g_pendingTownPresentationValid) {
+        // town_wait_render_slot() has already consumed the producer token.
+        // Azel is allowed to spend startup frames without publishing Edge or
+        // camera state, so return that token when there is no frame to queue.
+        // Otherwise the next game frame waits forever and presentation stays
+        // black even though the process itself is still alive.
+        if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
+            sceKernelSignalSema(g_renderFrameFreeSema, 1);
         return;
+    }
 
     std::memcpy(
         g_townPlayerPosition,

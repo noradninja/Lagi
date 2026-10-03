@@ -20,6 +20,8 @@
 #include <utility>
 #include <vector>
 
+extern int numActiveTask;
+
 namespace lagi::azel {
 
 static bool saturn_memory_smoke_test()
@@ -211,6 +213,13 @@ bool runtime_smoke_init()
 
 void runtime_smoke_frame()
 {
+    static unsigned int startupFrame = 0;
+    const bool traceStartup = startupFrame < 3;
+    if (traceStartup)
+        lagi::platform::logging::writef(
+            "[AzelFrame] %u begin tasks=%d\n",
+            startupFrame, numActiveTask);
+
     // Square is a diagnostic scene restart, not an Edge/camera reset.
     // Rebuild the native town task graph so the Ruins opening script owns
     // Edge again and player control can only be released by Azel's normal
@@ -226,10 +235,18 @@ void runtime_smoke_frame()
         lagi::platform::renderer::show_town_scene();
     }
 
+    twn_ruin_frame_begin();
     lagi::azel_bridge::begin_frame();
     const std::uint64_t tasksStart = sceKernelGetProcessTimeWide();
     runTasks();
+    twn_ruin_sync_platform_state();
     const std::uint64_t tasksEnd = sceKernelGetProcessTimeWide();
+    if (traceStartup)
+        lagi::platform::logging::writef(
+            "[AzelFrame] %u tasks complete us=%u tasks=%d\n",
+            startupFrame,
+            static_cast<unsigned int>(tasksEnd - tasksStart),
+            numActiveTask);
 
     lagi::platform::renderer::town_profile_tasks_us(
         static_cast<unsigned int>(tasksEnd - tasksStart));
@@ -240,6 +257,10 @@ void runtime_smoke_frame()
     lagi::platform::renderer::town_wait_render_slot();
     lagi::azel_bridge::publish_frame();
     lagi::platform::renderer::town_publish_frame();
+    if (traceStartup)
+        lagi::platform::logging::writef(
+            "[AzelFrame] %u publish complete\n", startupFrame);
+    ++startupFrame;
     if (twn_ruin_task_pipeline_alive())
         lagi::platform::renderer::set_azel_alive(true);
 }
