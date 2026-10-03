@@ -354,6 +354,46 @@ void runtime_smoke_frame()
 
     updateInputs();
 
+    // Transition diagnostics for the direct-boot handoff. Log only changes so
+    // hardware traces remain compact while still showing the exact Azel-owned
+    // status/mode/module-manager state around town -> movie transitions.
+    static int lastStatus = -1;
+    static int lastNextStatus = -1;
+    static int lastMode = -2;
+    static int lastEntry = -2;
+    static unsigned int lastModuleState = ~0u;
+    const int currentStatus = static_cast<int>(gGameStatus.m4_gameStatus);
+    const int nextStatus = static_cast<int>(gGameStatus.m8_nextGameStatus);
+    const int currentMode = static_cast<int>(gGameStatus.m0_gameMode);
+    const int currentEntry = static_cast<int>(gGameStatus.m1);
+    const unsigned int moduleState =
+        gModuleManager ? static_cast<unsigned int>(gModuleManager->state) : ~0u;
+    if (currentStatus != lastStatus ||
+        nextStatus != lastNextStatus ||
+        currentMode != lastMode ||
+        currentEntry != lastEntry ||
+        moduleState != lastModuleState) {
+        lagi::platform::logging::writef(
+            "[AzelTransition] current=0x%02X next=0x%02X mode=%d entry=0x%02X "
+            "moduleState=%u overlay=%p overlayFinished=%d\n",
+            static_cast<unsigned int>(gGameStatus.m4_gameStatus),
+            static_cast<unsigned int>(gGameStatus.m8_nextGameStatus),
+            currentMode,
+            static_cast<unsigned int>(
+                static_cast<std::uint8_t>(gGameStatus.m1)),
+            moduleState,
+            gModuleManager ? static_cast<void*>(gModuleManager->m8) : nullptr,
+            (gModuleManager && gModuleManager->m8 &&
+             gModuleManager->m8->getTask())
+                ? (gModuleManager->m8->getTask()->isFinished() ? 1 : 0)
+                : -1);
+        lastStatus = currentStatus;
+        lastNextStatus = nextStatus;
+        lastMode = currentMode;
+        lastEntry = currentEntry;
+        lastModuleState = moduleState;
+    }
+
     // The direct-boot task graph now includes Azel's original module manager.
     // Status changes, overlay lookup, movie-index selection and movie task
     // sequencing therefore remain inside upstream Azel.
