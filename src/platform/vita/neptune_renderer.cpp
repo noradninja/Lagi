@@ -345,6 +345,10 @@ static SceUID g_vdp1UiVertexUid = -1;
 static SceUID g_vdp1UiIndexUid = -1;
 static azel::DebugTextureVertex* g_vdp1UiVertices = nullptr;
 static std::uint16_t* g_vdp1UiIndices = nullptr;
+static SceUID g_vdp1UiLineVertexUid = -1;
+static SceUID g_vdp1UiLineIndexUid = -1;
+static azel::DebugColorVertex* g_vdp1UiLineVertices = nullptr;
+static std::uint16_t* g_vdp1UiLineIndices = nullptr;
 
 static bool g_probeDisplayingGxm = false;
 static bool g_viewerReady = false;
@@ -1503,7 +1507,8 @@ static void freeVdp1Textures()
 
 static bool ensureVdp1UiBuffers()
 {
-    if (g_vdp1UiVertices && g_vdp1UiIndices)
+    if (g_vdp1UiVertices && g_vdp1UiIndices &&
+        g_vdp1UiLineVertices && g_vdp1UiLineIndices)
         return true;
 
     g_vdp1UiVertices = static_cast<azel::DebugTextureVertex*>(
@@ -1516,11 +1521,27 @@ static bool ensureVdp1UiBuffers()
             6u * sizeof(std::uint16_t),
             SCE_GXM_MEMORY_ATTRIB_READ,
             &g_vdp1UiIndexUid));
-    if (!g_vdp1UiVertices || !g_vdp1UiIndices)
+    g_vdp1UiLineVertices = static_cast<azel::DebugColorVertex*>(
+        probeGpuAlloc(
+            4u * sizeof(azel::DebugColorVertex),
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_vdp1UiLineVertexUid));
+    g_vdp1UiLineIndices = static_cast<std::uint16_t*>(
+        probeGpuAlloc(
+            8u * sizeof(std::uint16_t),
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_vdp1UiLineIndexUid));
+    if (!g_vdp1UiVertices || !g_vdp1UiIndices ||
+        !g_vdp1UiLineVertices || !g_vdp1UiLineIndices)
         return false;
 
     static const std::uint16_t kIndices[6] = {0, 1, 2, 0, 2, 3};
+    static const std::uint16_t kLineIndices[8] = {
+        0,1, 1,2, 2,3, 3,0
+    };
     std::memcpy(g_vdp1UiIndices, kIndices, sizeof(kIndices));
+    std::memcpy(
+        g_vdp1UiLineIndices, kLineIndices, sizeof(kLineIndices));
     return true;
 }
 
@@ -1626,8 +1647,86 @@ static void drawPublishedVdp1Ui()
         uniforms, g_textureWvpParam, 0, 16, identity);
 
     for (const auto& command : commands) {
-        // First native Neptune UI primitive: VDP1 scaled sprite.
-        if ((command.cmdCtrl & 0x000Fu) != 0x0001u ||
+        const unsigned int commandType = command.cmdCtrl & 0x000Fu;
+
+        const float renderAspect =
+            static_cast<float>(viewerRenderWidth()) /
+            static_cast<float>(viewerRenderHeight());
+        const float saturnAspectCorrection =
+            (4.0f / 3.0f) / renderAspect;
+
+        // VDP1 polyline. Town LCS uses this for the shrinking white
+        // selection rectangle before the steady-state cursor/target sprites.
+        if (commandType == 0x0005u) {
+            if (!g_probeVertexProgram || !g_probeFragmentProgram ||
+                !g_probeWvpParam)
+                continue;
+
+            const std::uint16_t c = command.cmdColr;
+            const std::uint8_t r = static_cast<std::uint8_t>(
+                (((c >> 0) & 31u) << 3) | (((c >> 0) & 31u) >> 2));
+            const std::uint8_t g = static_cast<std::uint8_t>(
+                (((c >> 5) & 31u) << 3) | (((c >> 5) & 31u) >> 2));
+            const std::uint8_t b = static_cast<std::uint8_t>(
+                (((c >> 10) & 31u) << 3) | (((c >> 10) & 31u) >> 2));
+
+            const float x[4] = {
+                (static_cast<float>(command.xa) / 176.0f) *
+                    saturnAspectCorrection,
+                (static_cast<float>(command.xb) / 176.0f) *
+                    saturnAspectCorrection,
+                (static_cast<float>(command.xc) / 176.0f) *
+                    saturnAspectCorrection,
+                (static_cast<float>(command.xd) / 176.0f) *
+                    saturnAspectCorrection
+            };
+            const float y[4] = {
+                -static_cast<float>(command.ya) / 112.0f,
+                -static_cast<float>(command.yb) / 112.0f,
+                -static_cast<float>(command.yc) / 112.0f,
+                -static_cast<float>(command.yd) / 112.0f
+            };
+            for (unsigned int i = 0; i < 4u; ++i)
+                g_vdp1UiLineVertices[i] = {
+                    x[i], y[i], 0.0f, r, g, b, 255u
+                };
+
+            sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
+            sceGxmSetFragmentProgram(
+                g_probeContext, g_probeFragmentProgram);
+            void* lineUniforms = nullptr;
+            if (sceGxmReserveVertexDefaultUniformBuffer(
+                    g_probeContext, &lineUniforms) >= 0 && lineUniforms) {
+                sceGxmSetUniformDataF(
+                    lineUniforms, g_probeWvpParam, 0, 16, identity);
+                sceGxmSetVertexStream(
+                    g_probeContext, 0, g_vdp1UiLineVertices);
+                sceGxmDraw(
+                    g_probeContext,
+                    SCE_GXM_PRIMITIVE_LINES,
+                    SCE_GXM_INDEX_FORMAT_U16,
+                    g_vdp1UiLineIndices,
+                    8);
+            }
+
+            // Restore the textured UI pipeline for subsequent sprite commands.
+            sceGxmSetVertexProgram(
+                g_probeContext, g_textureVertexProgram);
+            sceGxmSetFragmentProgram(
+                g_probeContext, g_textureFragmentProgram);
+            void* textureUniforms = nullptr;
+            if (sceGxmReserveVertexDefaultUniformBuffer(
+                    g_probeContext, &textureUniforms) >= 0 &&
+                textureUniforms) {
+                sceGxmSetUniformDataF(
+                    textureUniforms,
+                    g_textureWvpParam,
+                    0, 16, identity);
+            }
+            continue;
+        }
+
+        if (commandType != 0x0001u ||
             ((command.cmdCtrl >> 8) & 0xFu) != 0u ||
             command.cmdSrca == 0u)
             continue;
@@ -1643,12 +1742,6 @@ static void drawPublishedVdp1Ui()
         // a centered 4:3 region of the Vita framebuffer. Applying the same
         // correction to both endpoints preserves sprite shape AND keeps
         // target-attached UI aligned with the projected 3D object.
-        const float renderAspect =
-            static_cast<float>(viewerRenderWidth()) /
-            static_cast<float>(viewerRenderHeight());
-        const float saturnAspectCorrection =
-            (4.0f / 3.0f) / renderAspect;
-
         const float x0 =
             (static_cast<float>(command.xa) / 176.0f) *
             saturnAspectCorrection;
@@ -1902,6 +1995,27 @@ static bool buildVdp1TexturedBuffers(const Vdp1ModelSource& model)
         }
 
         batch.indexCount = outIndex - batch.firstIndex;
+    }
+
+    static bool reportedShadowGpu = false;
+    if (!reportedShadowGpu && !g_edgeShadowTownTextureIndices.empty()) {
+        for (const auto shadowIndex : g_edgeShadowTownTextureIndices) {
+            if (shadowIndex < g_vdp1GpuTextures.size() &&
+                shadowIndex < g_vdp1TextureBatches.size()) {
+                const auto& gpu = g_vdp1GpuTextures[shadowIndex];
+                const auto& batch = g_vdp1TextureBatches[shadowIndex];
+                platform::logging::writef(
+                    "[ShadowGPU] atlas=%u %ux%u mesh=%u "
+                    "batchFirst=%u batchCount=%u\n",
+                    static_cast<unsigned int>(shadowIndex),
+                    gpu.width,
+                    gpu.height,
+                    gpu.mesh ? 1u : 0u,
+                    batch.firstIndex,
+                    batch.indexCount);
+            }
+        }
+        reportedShadowGpu = true;
     }
 
     return outIndex == vertexCount;
@@ -5167,6 +5281,34 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
                 g_edgeShadowTownTextureIndices.push_back(
                     static_cast<std::uint16_t>(
                         shadowTextureBase + index));
+            }
+            if (!g_edgeShadowTownTextureIndices.empty()) {
+                const std::uint16_t atlasIndex =
+                    g_edgeShadowTownTextureIndices.front();
+                if (atlasIndex <
+                    g_staticRoomCpuMesh.decodedTextureData.size()) {
+                    const auto& shadowTex =
+                        g_staticRoomCpuMesh.decodedTextureData[atlasIndex];
+                    const unsigned int visiblePixels =
+                        static_cast<unsigned int>(std::count_if(
+                            shadowTex.rgba.begin(),
+                            shadowTex.rgba.end(),
+                            [](std::uint32_t px) {
+                                return (px >> 24) != 0u;
+                            }));
+                    platform::logging::writef(
+                        "[ShadowTex] atlas=%u PMOD=%04X COLR=%04X "
+                        "SRCA=%04X SIZE=%04X %ux%u visible=%u/%u\n",
+                        static_cast<unsigned int>(atlasIndex),
+                        static_cast<unsigned int>(shadowTex.cmdPmod),
+                        static_cast<unsigned int>(shadowTex.cmdColr),
+                        static_cast<unsigned int>(shadowTex.cmdSrca),
+                        static_cast<unsigned int>(shadowTex.cmdSize),
+                        shadowTex.width,
+                        shadowTex.height,
+                        visiblePixels,
+                        static_cast<unsigned int>(shadowTex.rgba.size()));
+                }
             }
         }
 
