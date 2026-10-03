@@ -727,6 +727,12 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
 )
 target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 LAGI_NULL_AUDIO=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1)
+# Upstream Azel translation units contain many unrelated game paths.
+# Put each function/data object in its own ELF section so the Vita link only
+# retains the runtime actually reachable from the Ruins direct-boot path.
+target_compile_options(lagi PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(lagi PRIVATE -Wl,--gc-sections)
+
 target_link_libraries(lagi m SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceSysmem_stub SceSysmodule_stub)
 
 if(LAGI_AZEL_PROBE)
