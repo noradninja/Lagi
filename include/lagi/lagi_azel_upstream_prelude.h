@@ -130,3 +130,10 @@ s32 udivsi3(s32 r0, s32 r1);
 #ifndef DEG_50
 #define DEG_50 (0x0238e38e)
 #endif
+
+
+// PDS.cpp contains the desktop top-level frame loop, but Lagi owns the Vita
+// host loop. These declarations exist only so that unused desktop loop code
+// compiles and can be removed by --gc-sections.
+void azelSdl_StartFrame();
+bool azelSdl_EndFrame();
