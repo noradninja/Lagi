@@ -865,10 +865,27 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    ""
    source_text "${source_text}")
 
+  # Status/inventory menus are not reachable in the 0.040 boot path. Avoid
+  # retaining inventoryMenu.cpp solely through static function-pointer tables.
+  string(REPLACE
+   "    createInventoryMenuTask,"
+   "    NULL,"
+   source_text "${source_text}")
+
   # FLD_A3 belongs to the next milestone (first flight), not boot-to-Ruins.
   string(REPLACE
    "        if (!strcmp(pFieldDefinition->m_prg, \"FLD_A3.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_A3;\n        }\n        else if"
    "        if"
+   source_text "${source_text}")
+
+ elseif(relative_path STREQUAL "field/field_d5/o_fld_d5.cpp")
+  # D5 intentionally reads shared camera/script data from FLD_A3.PRG. For the
+  # 0.040 boot-to-Ruins milestone keep that exact Saturn data source without
+  # instantiating FLD_A3_data, whose virtual gameplay surface pulls in the
+  # entire first-flight overlay.
+  string(REPLACE
+   "    // FLD_A3.PRG contains shared field infrastructure data (camera configs, etc.)\n    if (gFLD_A3 == NULL)\n    {\n        gFLD_A3 = new FLD_A3_data();\n    }\n    gFieldCameraConfigEA = { 0x6092EF0, gFLD_A3 };\n    gFieldDragonAnimTableEA = { 0x06094134, gFLD_A3 };\n    gFieldCameraDrawFunc = &cameraFollowMode_default;\n    gCurrentFieldOverlay = gFLD_A3;"
+   "    // FLD_A3.PRG contains shared field infrastructure data (camera configs, etc.)\n    static sFieldOverlay* lagiSharedA3Data = nullptr;\n    if (lagiSharedA3Data == nullptr)\n    {\n        lagiSharedA3Data = new sFieldOverlay(\"FLD_A3.PRG\");\n    }\n    gFieldCameraConfigEA = { 0x6092EF0, lagiSharedA3Data };\n    gFieldDragonAnimTableEA = { 0x06094134, lagiSharedA3Data };\n    gFieldCameraDrawFunc = &cameraFollowMode_default;\n    gCurrentFieldOverlay = lagiSharedA3Data;"
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field.cpp")
@@ -907,6 +924,14 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/town.cpp")
+  # 0.040 reaches only TWN_RUIN. Keep the authentic lookup and Ruins dispatch,
+  # but do not retain every later town overlay merely through this generic
+  # dispatcher.
+  string(REPLACE
+   "    else if (overlayFileName == \"TWN_EXCA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_EXCA;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E006;\n    }\n    else if (overlayFileName == \"TWN_E011.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E011;\n    }\n    else if (overlayFileName == \"TWN_E014.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E014;\n    }\n    else if (overlayFileName == \"TWN_CAMP.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CAMP;\n    }\n    else if (overlayFileName == \"TWN_ZOAH.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_ZOAH;\n    }\n    else if (overlayFileName == \"TWN_CARA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CARA;\n    }\n    else if (overlayFileName == \"TWN_SEEK.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_SEEK;\n    }"
+   ""
+   source_text "${source_text}")
+
   # Vita bridge for the authentic upstream static world-grid submission path.
   # This modifies only the generated build copy, never extern/Azel.
   string(REPLACE
@@ -972,17 +997,24 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  menu_dragon.cpp
  field.cpp
  field/fieldEncounterTask.cpp
+ field/fieldCamera.cpp
+ field/fieldDragon.cpp
+ field/fieldVisibilityGrid.cpp
+ field/fieldRadar.cpp
+ field/field_a3/o_fld_a3.cpp
  field/field_d5/o_fld_d5.cpp
  field/field_d5/d5_nameEntry.cpp
  field/field_d5/d5_particles.cpp
  field/field_d5/d5_starfield.cpp
+ field/field_d5/d5_gameOver.cpp
  dragonMorphing.cpp
  dragonRider.cpp
  battle/battleManager.cpp
+ battle/battleDebugList.cpp
+ battle/battleOverlay.cpp
  kernel/menuSprite.cpp
  kernel/menuCursor.cpp
  kernel/flagEditor.cpp
- menu/inventoryMenu.cpp
  shared/vdp2PlaneTask.cpp
  battle/BTL_A3/BTL_A3_map6.cpp
  audio/systemSounds.cpp
@@ -1063,6 +1095,7 @@ add_executable(lagi
  src/integration/lagi_hotpoint_vita.cpp
  src/integration/lagi_audio_vita.cpp
  src/integration/lagi_renderer_host_vita.cpp
+ src/integration/lagi_vdp1_animated_quad_vita.cpp
  ${LAGI_AZEL_UPSTREAM_SOURCES}
 )
 target_include_directories(lagi PRIVATE include
