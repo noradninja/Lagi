@@ -16,6 +16,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(LAGI_AZEL_PROBE "Compile an Azel source portability probe" ON)
+option(LAGI_AZEL_RUINS_LINK_TRIM "Temporarily discard unreachable Azel code for Ruins bring-up" ON)
 
 # GXM viewer shaders are compiled from readable Cg source using Sony's
 # psp2cgc so color/debug and texture paths share the same compiler/toolchain.
@@ -727,11 +728,14 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
 )
 target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 LAGI_NULL_AUDIO=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1)
-# Upstream Azel translation units contain many unrelated game paths.
-# Put each function/data object in its own ELF section so the Vita link only
-# retains the runtime actually reachable from the Ruins direct-boot path.
-target_compile_options(lagi PRIVATE -ffunction-sections -fdata-sections)
-target_link_options(lagi PRIVATE -Wl,--gc-sections)
+# Temporary bring-up aid only. The long-term target is the complete Azel
+# runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
+# code so adapter work can proceed against the first playable scene without
+# forcing every game subsystem to be integrated at once.
+if(LAGI_AZEL_RUINS_LINK_TRIM)
+ target_compile_options(lagi PRIVATE -ffunction-sections -fdata-sections)
+ target_link_options(lagi PRIVATE -Wl,--gc-sections)
+endif()
 
 target_link_libraries(lagi m SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceSysmem_stub SceSysmodule_stub)
 
