@@ -8592,6 +8592,38 @@ static void renderBasicWingViewer()
         ++reportedSelectionFrameProfiles;
     }
 
+    // Sample ordinary town frames with the exact same counters so selection
+    // can be compared against a true steady-state baseline. Keep this sparse
+    // to avoid turning logging itself into a frame-time cost.
+    static unsigned int baselineFrameCounter = 0u;
+    static unsigned int reportedBaselineProfiles = 0u;
+    if (profileUiCommands.size() <= 1u &&
+        reportedBaselineProfiles < 24u) {
+        ++baselineFrameCounter;
+        if ((baselineFrameCounter % 30u) == 0u) {
+            logging::writef(
+                "[TOWN-BASELINE] cmds=%u task=%u gameWait=%u build=%u "
+                "prep=%u submit=%u ui=%u gxm=%u render=%u present=%u "
+                "gourPrep=%u gourDraw=%u objApp=%u objMat=%u objMiss=%u\n",
+                static_cast<unsigned int>(profileUiCommands.size()),
+                g_profileTasksUs,
+                g_profileGameWaitUs,
+                g_profileBuildUs,
+                g_profileRenderCpuPrepUs,
+                g_profileSubmitUs,
+                g_profileVdp1UiTotalUs,
+                g_profileGxmWaitUs,
+                g_profileRenderUs,
+                g_profilePresentUs,
+                g_profileGouraudPrepUs,
+                g_profileGouraudDrawUs,
+                g_profileObjectAppendUs,
+                g_profileObjectMaterialResolveUs,
+                g_profileObjectMaterialCacheMisses);
+            ++reportedBaselineProfiles;
+        }
+    }
+
     // The buffer just queued is now front; draw the next frame into the
     // opposite GXM surface so scanout and rendering never touch the same
     // memory concurrently.
