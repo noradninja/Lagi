@@ -749,6 +749,7 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/ruin"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/kernel"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/audio"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
 )
 target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 LAGI_NULL_AUDIO=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1)
