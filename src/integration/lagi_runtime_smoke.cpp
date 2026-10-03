@@ -22,7 +22,9 @@
 
 extern int numActiveTask;
 void initSMPC();
+void initVDP1();
 void iniitInitialTaskStatsAndDebugSub();
+void writeInputConfig(s32 type, const std::array<s32, 8>& config, s32 inverseY);
 void updateInputs();
 
 namespace lagi::azel {
@@ -69,6 +71,23 @@ static bool saturn_memory_smoke_test()
            v[2].asS32() == vec[2];
 }
 
+
+static void begin_azel_vdp1_frame()
+{
+    // initVDP1() owns the first six setup commands in context 0. Gameplay/UI
+    // commands are emitted after them. Rewind only the transient tail each
+    // frame, matching the Saturn command-list lifecycle without asking the
+    // desktop renderer to flush it.
+    auto& ctx = graphicEngineStatus.m14_vdp1Context[0];
+    if (mainContextVdp1[0].size() < 1024)
+        return;
+
+    ctx.m0_currentVdp1WriteEA = mainContextVdp1[0].begin() + 6;
+    ctx.m20_pCurrentVdp1Packet = ctx.m24_vdp1Packets;
+    ctx.m1C = 0;
+    ctx.mC = 0;
+    ctx.m10 = ctx.m14[0].begin();
+}
 
 bool runtime_smoke_init()
 {
@@ -215,10 +234,23 @@ bool runtime_smoke_init()
     lagi::platform::renderer::set_disc_alive(true);
 
     // Direct boot bypasses azelInit(), so restore the same physical-pad
-    // defaults and context-specific action tables that normal Azel startup
+    // state, action tables and VDP1 command context that normal Azel startup
     // establishes before gameplay begins.
     initSMPC();
     iniitInitialTaskStatsAndDebugSub();
+
+    // The current upstream walk default reconstructs B/C as the LCS action
+    // and A as run. The original manual documents A/C as LCS and B as
+    // run/cancel. Keep the correction at the Lagi integration boundary until
+    // the upstream table itself is corrected.
+    const std::array<s32, 8> walkConfig = {
+        0, 0, 1, 8, 4, 8, 6, 7
+    };
+    writeInputConfig(0, walkConfig, 0);
+
+    // Town LCS/UI code writes authentic VDP1 commands even though Neptune,
+    // rather than Azel's desktop backend, ultimately renders them.
+    initVDP1();
 
     initHeap();
     resetTasks();
@@ -272,11 +304,35 @@ void runtime_smoke_frame()
 
     updateInputs();
 
+    begin_azel_vdp1_frame();
+
     twn_ruin_frame_begin();
     lagi::azel_bridge::begin_frame();
     const std::uint64_t tasksStart = sceKernelGetProcessTimeWide();
     runTasks();
     twn_ruin_sync_platform_state();
+
+    static unsigned int reportedVdp1Frames = 0;
+    auto& vdp1Ctx = graphicEngineStatus.m14_vdp1Context[0];
+    const unsigned int vdp1CommandCount =
+        mainContextVdp1[0].size() >= 6
+            ? static_cast<unsigned int>(
+                vdp1Ctx.m0_currentVdp1WriteEA -
+                (mainContextVdp1[0].begin() + 6))
+            : 0u;
+    if (vdp1CommandCount && reportedVdp1Frames < 8) {
+        lagi::platform::logging::writef(
+            "[VDP1UI] frame=%u commands=%u packets=%u first=%04X\n",
+            startupFrame,
+            vdp1CommandCount,
+            static_cast<unsigned int>(
+                vdp1Ctx.m20_pCurrentVdp1Packet -
+                vdp1Ctx.m24_vdp1Packets),
+            static_cast<unsigned int>(
+                (mainContextVdp1[0].begin() + 6)->m0_CMDCTRL));
+        ++reportedVdp1Frames;
+    }
+
     const std::uint64_t tasksEnd = sceKernelGetProcessTimeWide();
     if (traceStartup)
         lagi::platform::logging::writef(
