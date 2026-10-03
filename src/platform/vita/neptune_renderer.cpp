@@ -312,6 +312,13 @@ static unsigned int g_vdp1SubdivVertexCapacity = 0u;
 static unsigned int g_vdp1SubdivIndexCapacity = 0u;
 static std::vector<std::uint16_t> g_vdp1SubdivQuadIndices;
 
+static SceUID g_vdp1SubdivWireVertexUid = -1;
+static SceUID g_vdp1SubdivWireIndexUid = -1;
+static azel::DebugColorVertex* g_vdp1SubdivWireVertices = nullptr;
+static std::uint16_t* g_vdp1SubdivWireIndices = nullptr;
+static unsigned int g_vdp1SubdivWireVertexCapacity = 0u;
+static unsigned int g_vdp1SubdivWireIndexCapacity = 0u;
+
 struct TextureBatch {
     unsigned int firstIndex = 0;
     unsigned int indexCount = 0;
@@ -2094,6 +2101,16 @@ static void releaseResidentVdp1Model()
     g_vdp1SubdivIndexCapacity = 0u;
     g_vdp1SubdivQuadIndices.clear();
 
+    p = g_vdp1SubdivWireVertices;
+    freeMapped(g_vdp1SubdivWireVertexUid, p);
+    g_vdp1SubdivWireVertices = nullptr;
+
+    p = g_vdp1SubdivWireIndices;
+    freeMapped(g_vdp1SubdivWireIndexUid, p);
+    g_vdp1SubdivWireIndices = nullptr;
+    g_vdp1SubdivWireVertexCapacity = 0u;
+    g_vdp1SubdivWireIndexCapacity = 0u;
+
     freeVdp1Textures();
     g_vdp1TextureBatches.clear();
     g_vdp1TexturedReady = false;
@@ -2111,7 +2128,8 @@ bool prepare_vdp1_model(const Vdp1ModelSource& model)
     if (g_vdp1Vertices || g_vdp1LightingVertices || g_vdp1Indices ||
         g_vdp1TextureVertices || g_vdp1GouraudVertices ||
         g_vdp1TextureIndices || g_vdp1SubdivVertices ||
-        g_vdp1SubdivIndices || !g_vdp1GpuTextures.empty())
+        g_vdp1SubdivIndices || g_vdp1SubdivWireVertices ||
+        g_vdp1SubdivWireIndices || !g_vdp1GpuTextures.empty())
         releaseResidentVdp1Model();
 
     if (model.vertexCount > 65535u)
@@ -2151,6 +2169,40 @@ bool prepare_vdp1_model(const Vdp1ModelSource& model)
         !g_vdp1LightingVertices ||
         !g_vdp1Indices)
         return false;
+
+    // Wires mode overlays the same 2x2 subdivision used by Full mode.
+    // Keep this geometry in separate mapped buffers: the perimeter draw may
+    // still be in flight when the subdivision overlay is submitted.
+    const std::size_t subdivWireVertexCount = model.polygonCount * 4u;
+    if (subdivWireVertexCount && subdivWireVertexCount <= 65535u) {
+        g_vdp1SubdivWireVertexCapacity =
+            static_cast<unsigned int>(subdivWireVertexCount);
+        g_vdp1SubdivWireIndexCapacity =
+            static_cast<unsigned int>(subdivWireVertexCount);
+        g_vdp1SubdivWireVertices =
+            static_cast<azel::DebugColorVertex*>(
+                probeGpuAlloc(
+                    g_vdp1SubdivWireVertexCapacity *
+                        sizeof(azel::DebugColorVertex),
+                    SCE_GXM_MEMORY_ATTRIB_READ,
+                    &g_vdp1SubdivWireVertexUid));
+        g_vdp1SubdivWireIndices =
+            static_cast<std::uint16_t*>(
+                probeGpuAlloc(
+                    g_vdp1SubdivWireIndexCapacity *
+                        sizeof(std::uint16_t),
+                    SCE_GXM_MEMORY_ATTRIB_READ,
+                    &g_vdp1SubdivWireIndexUid));
+        if (!g_vdp1SubdivWireVertices || !g_vdp1SubdivWireIndices) {
+            g_vdp1SubdivWireVertexCapacity = 0u;
+            g_vdp1SubdivWireIndexCapacity = 0u;
+        } else {
+            for (unsigned int i = 0;
+                 i < g_vdp1SubdivWireIndexCapacity; ++i)
+                g_vdp1SubdivWireIndices[i] =
+                    static_cast<std::uint16_t>(i);
+        }
+    }
 
     if (model.texturesValid()) {
         if (!uploadVdp1Textures(model) ||
@@ -6208,6 +6260,76 @@ bool submit_vdp1_model(
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_vdp1Indices,
                 write);
+        }
+
+        // Visualize the two interior boundaries of Full mode's 3x3 vertex
+        // grid (four sub-quads). These are diagnostic-only and deliberately
+        // half as bright as the interpolated source-quad outline.
+        if (g_vdp1SubdivWireVertices &&
+            g_vdp1SubdivWireIndices &&
+            g_vdp1SubdivWireVertexCapacity >=
+                model.polygonCount * 4u) {
+            unsigned int subdivWrite = 0u;
+
+            auto midpoint = [](
+                const azel::DebugColorVertex& a,
+                const azel::DebugColorVertex& b) {
+                azel::DebugColorVertex v{};
+                v.x = (a.x + b.x) * 0.5f;
+                v.y = (a.y + b.y) * 0.5f;
+                v.z = (a.z + b.z) * 0.5f;
+
+                // Midpoint color would normally be (a+b)/2. Divide that by
+                // two again so the subdivision line is exactly 50% brightness.
+                v.r = static_cast<std::uint8_t>(
+                    (static_cast<unsigned int>(a.r) + b.r) / 4u);
+                v.g = static_cast<std::uint8_t>(
+                    (static_cast<unsigned int>(a.g) + b.g) / 4u);
+                v.b = static_cast<std::uint8_t>(
+                    (static_cast<unsigned int>(a.b) + b.b) / 4u);
+                v.a = 255u;
+                return v;
+            };
+
+            for (unsigned int p = 0;
+                 p < static_cast<unsigned int>(model.polygonCount); ++p) {
+                if (!g_liveTownGouraudPrep[p].visible)
+                    continue;
+
+                const unsigned int base = p * 6u;
+                const auto& a = model.vertices[base + cornerVertex[0]];
+                const auto& b = model.vertices[base + cornerVertex[1]];
+                const auto& c = model.vertices[base + cornerVertex[2]];
+                const auto& d = model.vertices[base + cornerVertex[3]];
+
+                // Vertical center boundary: midpoint(AB) -> midpoint(DC).
+                g_vdp1SubdivWireVertices[subdivWrite++] =
+                    midpoint(a, b);
+                g_vdp1SubdivWireVertices[subdivWrite++] =
+                    midpoint(d, c);
+
+                // Horizontal center boundary: midpoint(AD) -> midpoint(BC).
+                g_vdp1SubdivWireVertices[subdivWrite++] =
+                    midpoint(a, d);
+                g_vdp1SubdivWireVertices[subdivWrite++] =
+                    midpoint(b, c);
+            }
+
+            if (subdivWrite) {
+                sceGxmSetVertexStream(
+                    g_probeContext, 0, g_vdp1SubdivWireVertices);
+                sceGxmDraw(
+                    g_probeContext,
+                    SCE_GXM_PRIMITIVE_LINES,
+                    SCE_GXM_INDEX_FORMAT_U16,
+                    g_vdp1SubdivWireIndices,
+                    subdivWrite);
+
+                // Restore the normal stream even though this branch returns;
+                // keeping submission state local makes later refactors safe.
+                sceGxmSetVertexStream(
+                    g_probeContext, 0, g_vdp1Vertices);
+            }
         }
         return true;
     }
