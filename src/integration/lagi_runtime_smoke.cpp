@@ -314,9 +314,9 @@ void runtime_smoke_frame()
 
     auto& vdp1Ctx = graphicEngineStatus.m14_vdp1Context[0];
     if (mainContextVdp1[0].size() >= 6) {
-        const auto* const begin = mainContextVdp1[0].begin() + 6;
-        const auto* const end = vdp1Ctx.m0_currentVdp1WriteEA;
-        for (const auto* cmd = begin; cmd < end; ++cmd) {
+        const auto begin = mainContextVdp1[0].begin() + 6;
+        const auto end = vdp1Ctx.m0_currentVdp1WriteEA;
+        for (auto cmd = begin; cmd != end; ++cmd) {
             lagi::azel_bridge::Vdp1UiCommand ui{};
             ui.cmdCtrl = cmd->m0_CMDCTRL;
             ui.cmdPmod = cmd->m4_CMDPMOD;
