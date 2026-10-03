@@ -153,6 +153,11 @@ bool runtime_smoke_init()
     azelInit();
     resetEngine();
 
+    // Native boot can enter the title movie immediately. Stop the CPU loading
+    // framebuffer from overwriting GXM/movie presentation; front-end VDP2
+    // composition will be added to this same native presentation path.
+    lagi::platform::renderer::show_town_scene();
+
     lagi::platform::logging::writef(
         "[AzelBoot] native azelInit/resetEngine complete; initial task active\n");
     return true;
