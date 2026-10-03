@@ -2136,19 +2136,19 @@ static void drawAzelVdp2CinematicBarsGpu()
     const float left = -1.0f;
     const float right = 1.0f;
 
-    // The matte spans the widescreen target horizontally, but its thickness
-    // comes from Saturn's 4:3 presentation. Applying the same 4:3-to-current
-    // aspect correction used elsewhere keeps a 16-line Saturn matte from
-    // becoming disproportionately tall on Vita's wider viewport.
-    const float renderAspect =
-        static_cast<float>(viewerRenderWidth()) /
-        static_cast<float>(viewerRenderHeight());
-    const float verticalAspectCorrection =
-        (4.0f / 3.0f) / renderAspect;
+    // Line scroll is defined in Saturn output scanlines. Preserve that
+    // vertical fraction exactly; aspect correction belongs on X only.
     const float barTop =
         -1.0f +
-        (static_cast<float>(barLines) / 112.0f) *
-            verticalAspectCorrection;
+        static_cast<float>(barLines) / 112.0f;
+
+    static unsigned int lastReportedBarLines = 0xFFFFFFFFu;
+    if (barLines != lastReportedBarLines) {
+        logging::writef(
+            "[CineBar] lines=%u top=%.4f\n",
+            barLines, barTop);
+        lastReportedBarLines = barLines;
+    }
 
     g_vdp2BarVertices[0] =
         {left,  barTop, 0.0f, 0u,0u,0u,255u};
