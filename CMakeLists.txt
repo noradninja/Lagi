@@ -658,43 +658,80 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    source_text "${source_text}")
 
   # Trace entry into module-manager state 1 before any transition helper.
-  # This catches stale direct-boot fields/assert paths that occur before the
-  # status-specific exit logic below.
+  # Bracket-quoted CMake strings keep the generated C++ diagnostics readable
+  # and avoid escaping ambiguity inside nested string literals.
   string(REPLACE
-   "case 1:\n        if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)"
-   "case 1:\n        lagi::platform::logging::writef(\\"[AzelMM] enter state1 current=0x%02X next=0x%02X m2=%d mC=%p\\\\n\\", static_cast<unsigned int>(gGameStatus.m4_gameStatus), static_cast<unsigned int>(gGameStatus.m8_nextGameStatus), static_cast<int>(gGameStatus.m2), static_cast<void*>(pWorkArea->mC));\n        if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)"
+   [=[case 1:
+        if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)]=]
+   [=[case 1:
+        lagi::platform::logging::writef("[AzelMM] enter state1 current=0x%02X next=0x%02X m2=%d mC=%p\n", static_cast<unsigned int>(gGameStatus.m4_gameStatus), static_cast<unsigned int>(gGameStatus.m8_nextGameStatus), static_cast<int>(gGameStatus.m2), static_cast<void*>(pWorkArea->mC));
+        if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)]=]
    source_text "${source_text}")
 
   string(REPLACE
-   "if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)\n        {\n            assert(0);\n        }"
-   "if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)\n        {\n            lagi::platform::logging::writef(\\"[AzelMM] ASSERT path: next=0 and mC non-null\\\\n\\");\n            assert(0);\n        }"
+   [=[if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)
+        {
+            assert(0);
+        }]=]
+   [=[if ((gGameStatus.m8_nextGameStatus == 0) && pWorkArea->mC)
+        {
+            lagi::platform::logging::writef("[AzelMM] ASSERT path: next=0 and mC non-null\n");
+            assert(0);
+        }]=]
    source_text "${source_text}")
 
   string(REPLACE
-   "else\n        {\n            if (gGameStatus.m2 == 0)"
-   "else\n        {\n            lagi::platform::logging::writef(\\"[AzelMM] state1 before status exit current=0x%02X m2=%d\\\\n\\", static_cast<unsigned int>(gGameStatus.m4_gameStatus), static_cast<int>(gGameStatus.m2));\n            if (gGameStatus.m2 == 0)"
+   [=[else
+        {
+            if (gGameStatus.m2 == 0)]=]
+   [=[else
+        {
+            lagi::platform::logging::writef("[AzelMM] state1 before status exit current=0x%02X m2=%d\n", static_cast<unsigned int>(gGameStatus.m4_gameStatus), static_cast<int>(gGameStatus.m2));
+            if (gGameStatus.m2 == 0)]=]
    source_text "${source_text}")
 
   # Pinpoint the direct-boot town -> movie handoff. These diagnostics are
   # confined to the generated Vita copy and do not alter Azel decisions.
   string(REPLACE
-   "case 4: // ruins\n        setNextGameStatus(5);\n        break;"
-   "case 4: // ruins\n        lagi::platform::logging::writef(\\"[AzelMM] status4 before setNext(5)\\\\n\\");\n        setNextGameStatus(5);\n        lagi::platform::logging::writef(\\"[AzelMM] status4 after setNext next=0x%02X\\\\n\\", static_cast<unsigned int>(gGameStatus.m8_nextGameStatus));\n        break;"
+   [=[case 4: // ruins
+        setNextGameStatus(5);
+        break;]=]
+   [=[case 4: // ruins
+        lagi::platform::logging::writef("[AzelMM] status4 before setNext(5)\n");
+        setNextGameStatus(5);
+        lagi::platform::logging::writef("[AzelMM] status4 after setNext next=0x%02X\n", static_cast<unsigned int>(gGameStatus.m8_nextGameStatus));
+        break;]=]
    source_text "${source_text}")
 
   string(REPLACE
-   "if ((gGameStatus.m2 == 0) && (gGameStatus.m6_previousGameStatus != 0x4F))\n            {\n                initFileLayoutTable();\n            }"
-   "if ((gGameStatus.m2 == 0) && (gGameStatus.m6_previousGameStatus != 0x4F))\n            {\n                lagi::platform::logging::writef(\\"[AzelMM] before initFileLayoutTable next=0x%02X\\\\n\\", static_cast<unsigned int>(gGameStatus.m8_nextGameStatus));\n                initFileLayoutTable();\n                lagi::platform::logging::writef(\\"[AzelMM] after initFileLayoutTable\\\\n\\");\n            }"
+   [=[if ((gGameStatus.m2 == 0) && (gGameStatus.m6_previousGameStatus != 0x4F))
+            {
+                initFileLayoutTable();
+            }]=]
+   [=[if ((gGameStatus.m2 == 0) && (gGameStatus.m6_previousGameStatus != 0x4F))
+            {
+                lagi::platform::logging::writef("[AzelMM] before initFileLayoutTable next=0x%02X\n", static_cast<unsigned int>(gGameStatus.m8_nextGameStatus));
+                initFileLayoutTable();
+                lagi::platform::logging::writef("[AzelMM] after initFileLayoutTable\n");
+            }]=]
    source_text "${source_text}")
 
   string(REPLACE
-   "fadeOutAllSequences();\n        case 0xC:"
-   "lagi::platform::logging::writef(\\"[AzelMM] before fadeOutAllSequences\\\\n\\");\n            fadeOutAllSequences();\n            lagi::platform::logging::writef(\\"[AzelMM] after fadeOutAllSequences\\\\n\\");\n        case 0xC:"
+   [=[fadeOutAllSequences();
+        case 0xC:]=]
+   [=[lagi::platform::logging::writef("[AzelMM] before fadeOutAllSequences\n");
+            fadeOutAllSequences();
+            lagi::platform::logging::writef("[AzelMM] after fadeOutAllSequences\n");
+        case 0xC:]=]
    source_text "${source_text}")
 
   string(REPLACE
-   "fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), 0, 30);\n            fadePalette(&g_fadeControls.m24_fade1, convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color), 0, 30);"
-   "lagi::platform::logging::writef(\\"[AzelMM] before transition fadePalette\\\\n\\");\n            fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), 0, 30);\n            fadePalette(&g_fadeControls.m24_fade1, convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color), 0, 30);\n            lagi::platform::logging::writef(\\"[AzelMM] after transition fadePalette\\\\n\\");"
+   [=[fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), 0, 30);
+            fadePalette(&g_fadeControls.m24_fade1, convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color), 0, 30);]=]
+   [=[lagi::platform::logging::writef("[AzelMM] before transition fadePalette\n");
+            fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), 0, 30);
+            fadePalette(&g_fadeControls.m24_fade1, convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color), 0, 30);
+            lagi::platform::logging::writef("[AzelMM] after transition fadePalette\n");]=]
    source_text "${source_text}")
 
   # The battle-manager override is irrelevant to the direct-boot Ruins/movie
