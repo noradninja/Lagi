@@ -39,6 +39,16 @@ std::uint64_t movie_backend_pts()
     return g_moviePlayer.current_video_pts();
 }
 
+std::uint32_t movie_backend_video_width()
+{
+    return g_moviePlayer.video_width();
+}
+
+std::uint32_t movie_backend_video_height()
+{
+    return g_moviePlayer.video_height();
+}
+
 const char* movie_backend_error()
 {
     return g_moviePlayer.last_error().c_str();
