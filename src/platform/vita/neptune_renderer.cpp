@@ -397,6 +397,8 @@ static unsigned int g_movieHeight = 0;
 static unsigned int g_movieStridePixels = 0;
 static bool g_movieFrameVisible = false;
 static SceUID g_movieFrameSema = -1;
+static bool g_movieUploadLogged = false;
+static bool g_movieRenderLogged = false;
 
 class MovieFrameGuard {
 public:
@@ -416,6 +418,50 @@ public:
 
 private:
     bool locked_ = false;
+};
+
+class MovieRenderSlotGuard {
+public:
+    MovieRenderSlotGuard()
+    {
+        if (!g_renderThreadStarted || g_renderFrameFreeSema < 0 ||
+            g_renderFrameReadySema < 0) {
+            acquired_ = true;
+            return;
+        }
+
+        acquired_ =
+            sceKernelWaitSema(g_renderFrameFreeSema, 1, nullptr) >= 0;
+        ownsFreeSlot_ = acquired_;
+    }
+
+    ~MovieRenderSlotGuard()
+    {
+        if (ownsFreeSlot_)
+            sceKernelSignalSema(g_renderFrameFreeSema, 1);
+    }
+
+    explicit operator bool() const { return acquired_; }
+
+    bool publish()
+    {
+        if (!acquired_)
+            return false;
+        if (!ownsFreeSlot_)
+            return true;
+
+        if (sceKernelSignalSema(g_renderFrameReadySema, 1) < 0)
+            return false;
+
+        // The render thread now owns the slot and will return it after the
+        // submitted movie frame has finished using renderer-owned state.
+        ownsFreeSlot_ = false;
+        return true;
+    }
+
+private:
+    bool acquired_ = false;
+    bool ownsFreeSlot_ = false;
 };
 
 static bool g_probeDisplayingGxm = false;
@@ -1706,6 +1752,8 @@ static void freeMovieResources()
     g_movieHeight = 0;
     g_movieStridePixels = 0;
     g_movieFrameVisible = false;
+    g_movieUploadLogged = false;
+    g_movieRenderLogged = false;
 }
 
 bool movie_present_frame(
@@ -1714,12 +1762,21 @@ bool movie_present_frame(
     unsigned int height,
     unsigned int pitchPixels)
 {
-    MovieFrameGuard guard;
-    if (!guard)
-        return false;
-
     if (!g_gxmInitialized || !g_probeContext || !rgba ||
         !width || !height || pitchPixels < width)
+        return false;
+
+    // Town rendering normally acquires this producer token in
+    // town_wait_render_slot(). Movie playback bypasses the town publish path,
+    // so it must participate in the same one-frame ownership protocol itself.
+    // Without this handoff a movie upload can race the dedicated render thread
+    // or leave a ready notification disconnected from renderer ownership.
+    MovieRenderSlotGuard renderSlot;
+    if (!renderSlot)
+        return false;
+
+    MovieFrameGuard guard;
+    if (!guard)
         return false;
 
     const unsigned int stridePixels = (width + 7u) & ~7u;
@@ -1795,8 +1852,17 @@ bool movie_present_frame(
             width * sizeof(std::uint32_t));
     }
     g_movieFrameVisible = true;
-    if (g_renderThreadStarted && g_renderFrameReadySema >= 0)
-        sceKernelSignalSema(g_renderFrameReadySema, 1);
+    if (!g_movieUploadLogged) {
+        logging::writef(
+            "[MovieRender] first upload %ux%u pitch=%u textureStride=%u\n",
+            width, height, pitchPixels, g_movieStridePixels);
+        g_movieUploadLogged = true;
+    }
+
+    if (!renderSlot.publish()) {
+        logging::writef("[MovieRender] FAIL publish render slot\n");
+        return false;
+    }
     return true;
 }
 
@@ -7679,16 +7745,21 @@ static bool renderMovieFrame()
     std::memset(g_probeDepth, 0xFF, alignedWidth * alignedHeight * 4u);
     std::memset(g_probeStencil, 0, alignedWidth * alignedHeight * 4u);
 
-    if (sceGxmBeginScene(
-            g_probeContext,
-            0,
-            renderTarget,
-            nullptr,
-            nullptr,
-            syncObject,
-            colorSurface,
-            depthSurface) < 0)
+    const int beginResult = sceGxmBeginScene(
+        g_probeContext,
+        0,
+        renderTarget,
+        nullptr,
+        nullptr,
+        syncObject,
+        colorSurface,
+        depthSurface);
+    if (beginResult < 0) {
+        logging::writef(
+            "[MovieRender] FAIL sceGxmBeginScene=0x%08X\n",
+            static_cast<unsigned int>(beginResult));
         return true;
+    }
 
     sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
     sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
@@ -7732,8 +7803,18 @@ static bool renderMovieFrame()
 
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     sceGxmFinish(g_probeContext);
-    if (!submitted)
+    if (!submitted) {
+        logging::writef("[MovieRender] FAIL movie draw submission\n");
         return true;
+    }
+
+    if (!g_movieRenderLogged) {
+        logging::writef(
+            "[MovieRender] first GXM frame submitted %ux%u output=%dx%d\n",
+            g_movieWidth, g_movieHeight,
+            viewerRenderWidth(), viewerRenderHeight());
+        g_movieRenderLogged = true;
+    }
 
     SceDisplayFrameBuf frameBuffer{};
     frameBuffer.size = sizeof(frameBuffer);
