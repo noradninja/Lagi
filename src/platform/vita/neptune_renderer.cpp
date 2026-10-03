@@ -1623,6 +1623,12 @@ static void drawPublishedVdp1Ui()
         return;
 
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    // Screen-space VDP1 UI must not inherit polygon rasterization state from
+    // the preceding 3D diagnostic mode.
+    sceGxmSetFrontPolygonMode(
+        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetBackPolygonMode(
+        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
     sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetFrontDepthWriteEnable(
@@ -1695,6 +1701,10 @@ static void drawPublishedVdp1Ui()
             sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
             sceGxmSetFragmentProgram(
                 g_probeContext, g_probeFragmentProgram);
+            sceGxmSetFrontPolygonMode(
+                g_probeContext, SCE_GXM_POLYGON_MODE_LINE);
+            sceGxmSetBackPolygonMode(
+                g_probeContext, SCE_GXM_POLYGON_MODE_LINE);
             void* lineUniforms = nullptr;
             if (sceGxmReserveVertexDefaultUniformBuffer(
                     g_probeContext, &lineUniforms) >= 0 && lineUniforms) {
@@ -1711,6 +1721,10 @@ static void drawPublishedVdp1Ui()
             }
 
             // Restore the textured UI pipeline for subsequent sprite commands.
+            sceGxmSetFrontPolygonMode(
+                g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+            sceGxmSetBackPolygonMode(
+                g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
             sceGxmSetVertexProgram(
                 g_probeContext, g_textureVertexProgram);
             sceGxmSetFragmentProgram(
@@ -5476,6 +5490,15 @@ bool load_edge_shadow_model(azel::BasicWingDebugMesh&& mesh)
 }
 
 
+static bool isEdgeShadowTextureIndex(unsigned int textureIndex)
+{
+    return std::find(
+        g_edgeShadowTownTextureIndices.begin(),
+        g_edgeShadowTownTextureIndices.end(),
+        static_cast<std::uint16_t>(textureIndex)) !=
+        g_edgeShadowTownTextureIndices.end();
+}
+
 bool submit_vdp1_model(
     const Vdp1ModelSource& model,
     const Vdp1DrawState& drawState)
@@ -5660,7 +5683,15 @@ bool submit_vdp1_model(
                 continue;
 
             const bool mesh = g_vdp1GpuTextures[t].mesh;
+            const bool edgeShadow = mesh && isEdgeShadowTextureIndex(t);
             if (mesh) {
+                // A Saturn VDP1 mesh primitive is an ordered filled polygon.
+                // Establish every relevant GXM state locally rather than
+                // inheriting line/fill state from a prior render mode.
+                sceGxmSetFrontPolygonMode(
+                    g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+                sceGxmSetBackPolygonMode(
+                    g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
                 sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
                 // Saturn VDP1 is ordered, not Z-buffered. Edge's mesh shadow
                 // is intentionally submitted after the floor, so let it pass
@@ -5680,12 +5711,23 @@ bool submit_vdp1_model(
                      : g_textureFragmentProgram);
             sceGxmSetFragmentTexture(
                 g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
-            sceGxmDraw(
+            const int drawResult = sceGxmDraw(
                 g_probeContext,
                 SCE_GXM_PRIMITIVE_TRIANGLES,
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_vdp1TextureIndices + batch.firstIndex,
                 batch.indexCount);
+            if (edgeShadow) {
+                static bool reportedTextureShadowDraw = false;
+                if (!reportedTextureShadowDraw) {
+                    platform::logging::writef(
+                        "[ShadowDraw] mode=TEXTURE atlas=%u first=%u "
+                        "count=%u result=%08X\n",
+                        t, batch.firstIndex, batch.indexCount,
+                        static_cast<unsigned int>(drawResult));
+                    reportedTextureShadowDraw = true;
+                }
+            }
             if (mesh) {
                 sceGxmSetCullMode(g_probeContext, cullMode);
                 sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
@@ -5694,6 +5736,8 @@ bool submit_vdp1_model(
                     g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
                 sceGxmSetBackDepthWriteEnable(
                     g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+                sceGxmSetFrontPolygonMode(g_probeContext, polygonMode);
+                sceGxmSetBackPolygonMode(g_probeContext, polygonMode);
             }
         }
         return true;
@@ -5846,6 +5890,10 @@ bool submit_vdp1_model(
             if (subdividedTexturedLit) {
                 mesh = g_vdp1GpuTextures[t].mesh;
                 if (mesh) {
+                    sceGxmSetFrontPolygonMode(
+                        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+                    sceGxmSetBackPolygonMode(
+                        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
                     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
                     sceGxmSetFrontDepthFunc(
                         g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
@@ -5863,12 +5911,23 @@ bool submit_vdp1_model(
                 sceGxmSetFragmentTexture(
                     g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
             }
-            sceGxmDraw(
+            const int drawResult = sceGxmDraw(
                 g_probeContext,
                 SCE_GXM_PRIMITIVE_TRIANGLES,
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_vdp1SubdivIndices + batch.firstIndex,
                 batch.indexCount);
+            if (mesh && isEdgeShadowTextureIndex(t)) {
+                static bool reportedFullShadowDraw = false;
+                if (!reportedFullShadowDraw) {
+                    platform::logging::writef(
+                        "[ShadowDraw] mode=FULL atlas=%u first=%u "
+                        "count=%u result=%08X\n",
+                        t, batch.firstIndex, batch.indexCount,
+                        static_cast<unsigned int>(drawResult));
+                    reportedFullShadowDraw = true;
+                }
+            }
             if (mesh) {
                 sceGxmSetCullMode(g_probeContext, cullMode);
                 sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
@@ -5877,6 +5936,8 @@ bool submit_vdp1_model(
                     g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
                 sceGxmSetBackDepthWriteEnable(
                     g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+                sceGxmSetFrontPolygonMode(g_probeContext, polygonMode);
+                sceGxmSetBackPolygonMode(g_probeContext, polygonMode);
             }
             ++submittedBatches;
         }
