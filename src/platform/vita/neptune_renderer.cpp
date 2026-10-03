@@ -221,6 +221,11 @@ static std::uint64_t g_liveTownStaticSignature = 0;
 static std::size_t g_liveTownStaticVertexCount = 0;
 static std::size_t g_liveTownStaticPolygonCount = 0;
 static bool g_liveTownStaticRebuilt = true;
+
+static std::size_t g_liveTownShadowFirstPolygon = 0;
+static std::size_t g_liveTownShadowPolygonCount = 0;
+static std::size_t g_liveTownEdgeFirstPolygon = 0;
+static std::size_t g_liveTownEdgePolygonCount = 0;
 static bool g_liveTownPrepared = false;
 static std::size_t g_edgeFirstVertex = 0;
 static std::size_t g_edgeFirstPolygon = 0;
@@ -311,6 +316,13 @@ static std::uint16_t* g_vdp1SubdivIndices = nullptr;
 static unsigned int g_vdp1SubdivVertexCapacity = 0u;
 static unsigned int g_vdp1SubdivIndexCapacity = 0u;
 static std::vector<std::uint16_t> g_vdp1SubdivQuadIndices;
+
+static SceUID g_vdp1SubdivWireVertexUid = -1;
+static SceUID g_vdp1SubdivWireIndexUid = -1;
+static azel::DebugColorVertex* g_vdp1SubdivWireVertices = nullptr;
+static std::uint16_t* g_vdp1SubdivWireIndices = nullptr;
+static unsigned int g_vdp1SubdivWireVertexCapacity = 0u;
+static unsigned int g_vdp1SubdivWireIndexCapacity = 0u;
 
 struct TextureBatch {
     unsigned int firstIndex = 0;
@@ -1623,6 +1635,12 @@ static void drawPublishedVdp1Ui()
         return;
 
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    // Screen-space VDP1 UI must not inherit polygon rasterization state from
+    // the preceding 3D diagnostic mode.
+    sceGxmSetFrontPolygonMode(
+        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetBackPolygonMode(
+        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
     sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetFrontDepthWriteEnable(
@@ -1695,6 +1713,10 @@ static void drawPublishedVdp1Ui()
             sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
             sceGxmSetFragmentProgram(
                 g_probeContext, g_probeFragmentProgram);
+            sceGxmSetFrontPolygonMode(
+                g_probeContext, SCE_GXM_POLYGON_MODE_LINE);
+            sceGxmSetBackPolygonMode(
+                g_probeContext, SCE_GXM_POLYGON_MODE_LINE);
             void* lineUniforms = nullptr;
             if (sceGxmReserveVertexDefaultUniformBuffer(
                     g_probeContext, &lineUniforms) >= 0 && lineUniforms) {
@@ -1711,6 +1733,10 @@ static void drawPublishedVdp1Ui()
             }
 
             // Restore the textured UI pipeline for subsequent sprite commands.
+            sceGxmSetFrontPolygonMode(
+                g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+            sceGxmSetBackPolygonMode(
+                g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
             sceGxmSetVertexProgram(
                 g_probeContext, g_textureVertexProgram);
             sceGxmSetFragmentProgram(
@@ -2008,26 +2034,6 @@ static bool buildVdp1TexturedBuffers(const Vdp1ModelSource& model)
         batch.indexCount = outIndex - batch.firstIndex;
     }
 
-    static bool reportedShadowGpu = false;
-    if (!reportedShadowGpu && !g_edgeShadowTownTextureIndices.empty()) {
-        for (const auto shadowIndex : g_edgeShadowTownTextureIndices) {
-            if (shadowIndex < g_vdp1GpuTextures.size() &&
-                shadowIndex < g_vdp1TextureBatches.size()) {
-                const auto& gpu = g_vdp1GpuTextures[shadowIndex];
-                const auto& batch = g_vdp1TextureBatches[shadowIndex];
-                platform::logging::writef(
-                    "[ShadowGPU] atlas=%u %ux%u mesh=%u "
-                    "batchFirst=%u batchCount=%u\n",
-                    static_cast<unsigned int>(shadowIndex),
-                    gpu.width,
-                    gpu.height,
-                    gpu.mesh ? 1u : 0u,
-                    batch.firstIndex,
-                    batch.indexCount);
-            }
-        }
-        reportedShadowGpu = true;
-    }
 
     return outIndex == vertexCount;
 }
@@ -2080,6 +2086,16 @@ static void releaseResidentVdp1Model()
     g_vdp1SubdivIndexCapacity = 0u;
     g_vdp1SubdivQuadIndices.clear();
 
+    p = g_vdp1SubdivWireVertices;
+    freeMapped(g_vdp1SubdivWireVertexUid, p);
+    g_vdp1SubdivWireVertices = nullptr;
+
+    p = g_vdp1SubdivWireIndices;
+    freeMapped(g_vdp1SubdivWireIndexUid, p);
+    g_vdp1SubdivWireIndices = nullptr;
+    g_vdp1SubdivWireVertexCapacity = 0u;
+    g_vdp1SubdivWireIndexCapacity = 0u;
+
     freeVdp1Textures();
     g_vdp1TextureBatches.clear();
     g_vdp1TexturedReady = false;
@@ -2097,7 +2113,8 @@ bool prepare_vdp1_model(const Vdp1ModelSource& model)
     if (g_vdp1Vertices || g_vdp1LightingVertices || g_vdp1Indices ||
         g_vdp1TextureVertices || g_vdp1GouraudVertices ||
         g_vdp1TextureIndices || g_vdp1SubdivVertices ||
-        g_vdp1SubdivIndices || !g_vdp1GpuTextures.empty())
+        g_vdp1SubdivIndices || g_vdp1SubdivWireVertices ||
+        g_vdp1SubdivWireIndices || !g_vdp1GpuTextures.empty())
         releaseResidentVdp1Model();
 
     if (model.vertexCount > 65535u)
@@ -2137,6 +2154,40 @@ bool prepare_vdp1_model(const Vdp1ModelSource& model)
         !g_vdp1LightingVertices ||
         !g_vdp1Indices)
         return false;
+
+    // Wires mode overlays the same 2x2 subdivision used by Full mode.
+    // Keep this geometry in separate mapped buffers: the perimeter draw may
+    // still be in flight when the subdivision overlay is submitted.
+    const std::size_t subdivWireVertexCount = model.polygonCount * 4u;
+    if (subdivWireVertexCount && subdivWireVertexCount <= 65535u) {
+        g_vdp1SubdivWireVertexCapacity =
+            static_cast<unsigned int>(subdivWireVertexCount);
+        g_vdp1SubdivWireIndexCapacity =
+            static_cast<unsigned int>(subdivWireVertexCount);
+        g_vdp1SubdivWireVertices =
+            static_cast<azel::DebugColorVertex*>(
+                probeGpuAlloc(
+                    g_vdp1SubdivWireVertexCapacity *
+                        sizeof(azel::DebugColorVertex),
+                    SCE_GXM_MEMORY_ATTRIB_READ,
+                    &g_vdp1SubdivWireVertexUid));
+        g_vdp1SubdivWireIndices =
+            static_cast<std::uint16_t*>(
+                probeGpuAlloc(
+                    g_vdp1SubdivWireIndexCapacity *
+                        sizeof(std::uint16_t),
+                    SCE_GXM_MEMORY_ATTRIB_READ,
+                    &g_vdp1SubdivWireIndexUid));
+        if (!g_vdp1SubdivWireVertices || !g_vdp1SubdivWireIndices) {
+            g_vdp1SubdivWireVertexCapacity = 0u;
+            g_vdp1SubdivWireIndexCapacity = 0u;
+        } else {
+            for (unsigned int i = 0;
+                 i < g_vdp1SubdivWireIndexCapacity; ++i)
+                g_vdp1SubdivWireIndices[i] =
+                    static_cast<std::uint16_t>(i);
+        }
+    }
 
     if (model.texturesValid()) {
         if (!uploadVdp1Textures(model) ||
@@ -2855,6 +2906,11 @@ static void appendLiveTownModel(
 
 static void appendLiveTownEdge()
 {
+    g_liveTownShadowFirstPolygon = 0u;
+    g_liveTownShadowPolygonCount = 0u;
+    g_liveTownEdgeFirstPolygon = 0u;
+    g_liveTownEdgePolygonCount = 0u;
+
     g_profileEdgeCopyUs = 0u;
     g_profileEdgeAnimUs = 0u;
     g_profileEdgeAppendUs = 0u;
@@ -2968,15 +3024,25 @@ static void appendLiveTownEdge()
         azel_bridge::SubmissionState shadowState = state;
         // Keep Azel's original transform. VDP1 mesh visibility is reproduced
         // in the GXM draw state below rather than by moving the geometry.
+        g_liveTownShadowFirstPolygon =
+            g_liveTownCpuMesh.polygonRecords.size();
         appendLiveTownModel(
             shadow,
             shadowState,
             g_edgeShadowTownTextureIndices.data(),
             g_edgeShadowTownTextureIndices.size());
+        g_liveTownShadowPolygonCount =
+            g_liveTownCpuMesh.polygonRecords.size() -
+            g_liveTownShadowFirstPolygon;
     }
 
+    g_liveTownEdgeFirstPolygon =
+        g_liveTownCpuMesh.polygonRecords.size();
     appendLiveTownModel(
         edge, state, edgeTextureIndices, edgeTextureIndexCount);
+    g_liveTownEdgePolygonCount =
+        g_liveTownCpuMesh.polygonRecords.size() -
+        g_liveTownEdgeFirstPolygon;
     g_profileEdgeAppendUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tAppend);
 }
@@ -5293,34 +5359,6 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
                     static_cast<std::uint16_t>(
                         shadowTextureBase + index));
             }
-            if (!g_edgeShadowTownTextureIndices.empty()) {
-                const std::uint16_t atlasIndex =
-                    g_edgeShadowTownTextureIndices.front();
-                if (atlasIndex <
-                    g_staticRoomCpuMesh.decodedTextureData.size()) {
-                    const auto& shadowTex =
-                        g_staticRoomCpuMesh.decodedTextureData[atlasIndex];
-                    const unsigned int visiblePixels =
-                        static_cast<unsigned int>(std::count_if(
-                            shadowTex.rgba.begin(),
-                            shadowTex.rgba.end(),
-                            [](std::uint32_t px) {
-                                return (px >> 24) != 0u;
-                            }));
-                    platform::logging::writef(
-                        "[ShadowTex] atlas=%u PMOD=%04X COLR=%04X "
-                        "SRCA=%04X SIZE=%04X %ux%u visible=%u/%u\n",
-                        static_cast<unsigned int>(atlasIndex),
-                        static_cast<unsigned int>(shadowTex.cmdPmod),
-                        static_cast<unsigned int>(shadowTex.cmdColr),
-                        static_cast<unsigned int>(shadowTex.cmdSrca),
-                        static_cast<unsigned int>(shadowTex.cmdSize),
-                        shadowTex.width,
-                        shadowTex.height,
-                        visiblePixels,
-                        static_cast<unsigned int>(shadowTex.rgba.size()));
-                }
-            }
         }
 
         g_staticRoomCpuMesh.polygons +=
@@ -5609,17 +5647,36 @@ bool submit_vdp1_model(
             g_liveTownGouraudPrepPolygonCount == model.polygonCount &&
             g_liveTownGouraudPrep.size() == model.polygonCount;
 
-        if (liveVisibility) {
-            static std::vector<unsigned int> counts;
-            static std::vector<unsigned int> writes;
-            const unsigned int bucketCount =
-                static_cast<unsigned int>(g_vdp1GpuTextures.size());
-            counts.assign(bucketCount, 0u);
-            writes.assign(bucketCount, 0u);
+        const unsigned int bucketCount =
+            static_cast<unsigned int>(g_vdp1GpuTextures.size());
+        if (!bucketCount)
+            return false;
 
-            for (unsigned int p = 0;
-                 p < static_cast<unsigned int>(model.polygonCount); ++p) {
-                if (!g_liveTownGouraudPrep[p].visible)
+        static std::vector<unsigned int> counts;
+        static std::vector<unsigned int> writes;
+        counts.resize(bucketCount);
+        writes.resize(bucketCount);
+
+        const auto polygonVisible = [&](unsigned int p) {
+            return !liveVisibility || g_liveTownGouraudPrep[p].visible;
+        };
+
+        const auto submitRange = [&](std::size_t first,
+                                     std::size_t count,
+                                     bool orderedShadow) -> bool {
+            if (!count)
+                return true;
+
+            const std::size_t end =
+                std::min(first + count, model.polygonCount);
+            if (first >= end)
+                return true;
+
+            std::fill(counts.begin(), counts.end(), 0u);
+            std::fill(writes.begin(), writes.end(), 0u);
+
+            for (std::size_t p = first; p < end; ++p) {
+                if (!polygonVisible(static_cast<unsigned int>(p)))
                     continue;
                 const std::uint16_t textureIndex =
                     model.polygonTextureIndices[p];
@@ -5627,21 +5684,30 @@ bool submit_vdp1_model(
                     counts[textureIndex] += 6u;
             }
 
+            // Each ordered phase gets an immutable slice of the mapped
+            // index buffer. GXM consumes draws asynchronously, so reusing
+            // offset zero for world -> shadow -> Edge would let later CPU
+            // writes corrupt indices still referenced by earlier draws.
+            const unsigned int phaseBase =
+                static_cast<unsigned int>(first * 6u);
+            const unsigned int phaseCapacity =
+                static_cast<unsigned int>((end - first) * 6u);
             unsigned int total = 0u;
             if (g_vdp1TextureBatches.size() < bucketCount)
                 g_vdp1TextureBatches.resize(bucketCount);
             for (unsigned int t = 0; t < bucketCount; ++t) {
-                g_vdp1TextureBatches[t].firstIndex = total;
+                g_vdp1TextureBatches[t].firstIndex =
+                    phaseBase + total;
                 g_vdp1TextureBatches[t].indexCount = counts[t];
-                writes[t] = total;
+                writes[t] = phaseBase + total;
                 total += counts[t];
             }
-            if (total > model.vertexCount)
+            if (total > phaseCapacity ||
+                phaseBase + total > model.vertexCount)
                 return false;
 
-            for (unsigned int p = 0;
-                 p < static_cast<unsigned int>(model.polygonCount); ++p) {
-                if (!g_liveTownGouraudPrep[p].visible)
+            for (std::size_t p = first; p < end; ++p) {
+                if (!polygonVisible(static_cast<unsigned int>(p)))
                     continue;
                 const std::uint16_t textureIndex =
                     model.polygonTextureIndices[p];
@@ -5652,51 +5718,103 @@ bool submit_vdp1_model(
                     g_vdp1TextureIndices[write++] =
                         static_cast<std::uint16_t>(p * 6u + k);
             }
+
+            for (unsigned int t = 0; t < bucketCount; ++t) {
+                const TextureBatch& batch = g_vdp1TextureBatches[t];
+                if (!batch.indexCount)
+                    continue;
+
+                const bool mesh =
+                    orderedShadow || g_vdp1GpuTextures[t].mesh;
+                if (orderedShadow) {
+                    // Azel submits Edge's VDP1 mesh shadow after the town
+                    // environment and immediately before the actor. Preserve
+                    // that ordered phase explicitly rather than relying on
+                    // texture-batch order or the depth buffer to reconstruct
+                    // Saturn VDP1 semantics.
+                    sceGxmSetFrontPolygonMode(
+                        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+                    sceGxmSetBackPolygonMode(
+                        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+                    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+                    sceGxmSetFrontDepthFunc(
+                        g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+                    sceGxmSetBackDepthFunc(
+                        g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+                    sceGxmSetFrontDepthWriteEnable(
+                        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+                    sceGxmSetBackDepthWriteEnable(
+                        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+                }
+
+                sceGxmSetFragmentProgram(
+                    g_probeContext,
+                    mesh ? g_meshTextureFragmentProgram
+                         : g_textureFragmentProgram);
+                sceGxmSetFragmentTexture(
+                    g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
+                sceGxmDraw(
+                    g_probeContext,
+                    SCE_GXM_PRIMITIVE_TRIANGLES,
+                    SCE_GXM_INDEX_FORMAT_U16,
+                    g_vdp1TextureIndices + batch.firstIndex,
+                    batch.indexCount);
+
+                if (orderedShadow) {
+                    sceGxmSetCullMode(g_probeContext, cullMode);
+                    sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
+                    sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
+                    sceGxmSetFrontDepthWriteEnable(
+                        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+                    sceGxmSetBackDepthWriteEnable(
+                        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+                    sceGxmSetFrontPolygonMode(g_probeContext, polygonMode);
+                    sceGxmSetBackPolygonMode(g_probeContext, polygonMode);
+                }
+            }
+            return true;
+        };
+
+        if (g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+            g_liveTownEdgePolygonCount != 0u) {
+            const std::size_t worldEnd =
+                g_liveTownShadowPolygonCount != 0u
+                    ? g_liveTownShadowFirstPolygon
+                    : g_liveTownEdgeFirstPolygon;
+
+            // 1. Town/world and task-owned objects.
+            if (!submitRange(0u, worldEnd, false))
+                return false;
+
+            // 2. Edge's ordered VDP1 mesh shadow.
+            if (g_liveTownShadowPolygonCount != 0u &&
+                !submitRange(
+                    g_liveTownShadowFirstPolygon,
+                    g_liveTownShadowPolygonCount,
+                    true))
+                return false;
+
+            // 3. Edge actor. Normal depth testing now places Edge over its
+            // shadow while the already-rendered town remains underneath.
+            if (!submitRange(
+                    g_liveTownEdgeFirstPolygon,
+                    g_liveTownEdgePolygonCount,
+                    false))
+                return false;
+
+            const std::size_t tailFirst =
+                g_liveTownEdgeFirstPolygon +
+                g_liveTownEdgePolygonCount;
+            if (tailFirst < model.polygonCount &&
+                !submitRange(
+                    tailFirst,
+                    model.polygonCount - tailFirst,
+                    false))
+                return false;
+            return true;
         }
 
-        for (unsigned int t = 0; t < g_vdp1GpuTextures.size(); ++t) {
-            const TextureBatch& batch = g_vdp1TextureBatches[t];
-            if (!batch.indexCount)
-                continue;
-
-            const bool mesh = g_vdp1GpuTextures[t].mesh;
-            if (mesh) {
-                sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
-                // Saturn VDP1 is ordered, not Z-buffered. Edge's mesh shadow
-                // is intentionally submitted after the floor, so let it pass
-                // depth without writing a new depth value.
-                sceGxmSetFrontDepthFunc(
-                    g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
-                sceGxmSetBackDepthFunc(
-                    g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
-                sceGxmSetFrontDepthWriteEnable(
-                    g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
-                sceGxmSetBackDepthWriteEnable(
-                    g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
-            }
-            sceGxmSetFragmentProgram(
-                g_probeContext,
-                mesh ? g_meshTextureFragmentProgram
-                     : g_textureFragmentProgram);
-            sceGxmSetFragmentTexture(
-                g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
-            sceGxmDraw(
-                g_probeContext,
-                SCE_GXM_PRIMITIVE_TRIANGLES,
-                SCE_GXM_INDEX_FORMAT_U16,
-                g_vdp1TextureIndices + batch.firstIndex,
-                batch.indexCount);
-            if (mesh) {
-                sceGxmSetCullMode(g_probeContext, cullMode);
-                sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
-                sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
-                sceGxmSetFrontDepthWriteEnable(
-                    g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
-                sceGxmSetBackDepthWriteEnable(
-                    g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
-            }
-        }
-        return true;
+        return submitRange(0u, model.polygonCount, false);
     }
 
     if (subdividedGouraud) {
@@ -5804,85 +5922,172 @@ bool submit_vdp1_model(
             sceKernelGetProcessTimeWide() - tPayload);
 
         const std::uint64_t tBucket = sceKernelGetProcessTimeWide();
-        unsigned int totalVisibleIndices = 0u;
         if (g_vdp1TextureBatches.size() < bucketCount)
             g_vdp1TextureBatches.resize(bucketCount);
-        for (unsigned int t = 0; t < bucketCount; ++t) {
-            g_vdp1TextureBatches[t].firstIndex = totalVisibleIndices;
-            g_vdp1TextureBatches[t].indexCount = batchCounts[t];
-            batchWrite[t] = totalVisibleIndices;
-            totalVisibleIndices += batchCounts[t];
-        }
-        if (totalVisibleIndices > g_vdp1SubdivIndexCapacity)
-            return false;
         g_profileGouraudBucketUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - tBucket);
 
+        const auto submitSubdivRange = [&](std::size_t first,
+                                           std::size_t count,
+                                           bool orderedShadow) -> bool {
+            if (!count)
+                return true;
+
+            const std::size_t end =
+                std::min(first + count, model.polygonCount);
+            if (first >= end)
+                return true;
+
+            std::fill(batchCounts.begin(), batchCounts.end(), 0u);
+            std::fill(batchWrite.begin(), batchWrite.end(), 0u);
+
+            for (std::size_t p = first; p < end; ++p) {
+                if (!visibleQuads[p])
+                    continue;
+                const unsigned int bucket =
+                    subdividedTexturedLit
+                        ? model.polygonTextureIndices[p] : 0u;
+                if (bucket < bucketCount)
+                    batchCounts[bucket] += 24u;
+            }
+
+            // As above, preserve every phase's submitted indices until
+            // sceGxmEndScene/Finish. Full mode uses 24 generated indices per
+            // original Saturn quad, so the source polygon range maps directly
+            // to a non-overlapping buffer slice.
+            const unsigned int phaseBase =
+                static_cast<unsigned int>(first * 24u);
+            const unsigned int phaseCapacity =
+                static_cast<unsigned int>((end - first) * 24u);
+            unsigned int totalVisibleIndices = 0u;
+            for (unsigned int t = 0; t < bucketCount; ++t) {
+                g_vdp1TextureBatches[t].firstIndex =
+                    phaseBase + totalVisibleIndices;
+                g_vdp1TextureBatches[t].indexCount = batchCounts[t];
+                batchWrite[t] =
+                    phaseBase + totalVisibleIndices;
+                totalVisibleIndices += batchCounts[t];
+            }
+            if (totalVisibleIndices > phaseCapacity ||
+                phaseBase + totalVisibleIndices >
+                    g_vdp1SubdivIndexCapacity)
+                return false;
+
+            for (std::size_t p = first; p < end; ++p) {
+                if (!visibleQuads[p])
+                    continue;
+                const unsigned int bucket =
+                    subdividedTexturedLit
+                        ? model.polygonTextureIndices[p] : 0u;
+                if (bucket >= bucketCount)
+                    continue;
+                unsigned int& write = batchWrite[bucket];
+                const unsigned int quadIndexBase =
+                    static_cast<unsigned int>(p) * 24u;
+                std::memcpy(
+                    g_vdp1SubdivIndices + write,
+                    g_vdp1SubdivQuadIndices.data() + quadIndexBase,
+                    24u * sizeof(std::uint16_t));
+                write += 24u;
+            }
+
+            for (unsigned int t = 0; t < bucketCount; ++t) {
+                const TextureBatch& batch = g_vdp1TextureBatches[t];
+                if (!batch.indexCount)
+                    continue;
+
+                bool mesh = false;
+                if (subdividedTexturedLit) {
+                    mesh = orderedShadow || g_vdp1GpuTextures[t].mesh;
+                    if (orderedShadow) {
+                        sceGxmSetFrontPolygonMode(
+                            g_probeContext,
+                            SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+                        sceGxmSetBackPolygonMode(
+                            g_probeContext,
+                            SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+                        sceGxmSetCullMode(
+                            g_probeContext, SCE_GXM_CULL_NONE);
+                        sceGxmSetFrontDepthFunc(
+                            g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+                        sceGxmSetBackDepthFunc(
+                            g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+                        sceGxmSetFrontDepthWriteEnable(
+                            g_probeContext,
+                            SCE_GXM_DEPTH_WRITE_DISABLED);
+                        sceGxmSetBackDepthWriteEnable(
+                            g_probeContext,
+                            SCE_GXM_DEPTH_WRITE_DISABLED);
+                    }
+                    sceGxmSetFragmentProgram(
+                        g_probeContext,
+                        mesh ? g_meshSubdivFragmentProgram
+                             : g_texturedGouraudSubdivFragmentProgram);
+                    sceGxmSetFragmentTexture(
+                        g_probeContext, 0,
+                        &g_vdp1GpuTextures[t].texture);
+                }
+
+                sceGxmDraw(
+                    g_probeContext,
+                    SCE_GXM_PRIMITIVE_TRIANGLES,
+                    SCE_GXM_INDEX_FORMAT_U16,
+                    g_vdp1SubdivIndices + batch.firstIndex,
+                    batch.indexCount);
+
+                if (orderedShadow) {
+                    sceGxmSetCullMode(g_probeContext, cullMode);
+                    sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
+                    sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
+                    sceGxmSetFrontDepthWriteEnable(
+                        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+                    sceGxmSetBackDepthWriteEnable(
+                        g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
+                    sceGxmSetFrontPolygonMode(g_probeContext, polygonMode);
+                    sceGxmSetBackPolygonMode(g_probeContext, polygonMode);
+                }
+            }
+            return true;
+        };
+
         const std::uint64_t tIndex = sceKernelGetProcessTimeWide();
-        for (unsigned int p = 0;
-             p < static_cast<unsigned int>(model.polygonCount); ++p) {
-            if (!visibleQuads[p])
-                continue;
-            const unsigned int bucket =
-                subdividedTexturedLit ? model.polygonTextureIndices[p] : 0u;
-            unsigned int& write = batchWrite[bucket];
-            const unsigned int quadIndexBase = p * 24u;
-            std::memcpy(
-                g_vdp1SubdivIndices + write,
-                g_vdp1SubdivQuadIndices.data() + quadIndexBase,
-                24u * sizeof(std::uint16_t));
-            write += 24u;
+        bool phaseResult = true;
+        if (subdividedTexturedLit &&
+            g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+            g_liveTownEdgePolygonCount != 0u) {
+            const std::size_t worldEnd =
+                g_liveTownShadowPolygonCount != 0u
+                    ? g_liveTownShadowFirstPolygon
+                    : g_liveTownEdgeFirstPolygon;
+
+            phaseResult =
+                submitSubdivRange(0u, worldEnd, false) &&
+                (g_liveTownShadowPolygonCount == 0u ||
+                 submitSubdivRange(
+                    g_liveTownShadowFirstPolygon,
+                    g_liveTownShadowPolygonCount,
+                    true)) &&
+                submitSubdivRange(
+                    g_liveTownEdgeFirstPolygon,
+                    g_liveTownEdgePolygonCount,
+                    false);
+
+            const std::size_t tailFirst =
+                g_liveTownEdgeFirstPolygon +
+                g_liveTownEdgePolygonCount;
+            if (phaseResult && tailFirst < model.polygonCount)
+                phaseResult = submitSubdivRange(
+                    tailFirst,
+                    model.polygonCount - tailFirst,
+                    false);
+        } else {
+            phaseResult =
+                submitSubdivRange(0u, model.polygonCount, false);
         }
         g_profileGouraudIndexUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - tIndex);
-
-        const std::uint64_t tDraw = sceKernelGetProcessTimeWide();
-        unsigned int submittedBatches = 0u;
-        for (unsigned int t = 0; t < bucketCount; ++t) {
-            const TextureBatch& batch = g_vdp1TextureBatches[t];
-            if (!batch.indexCount)
-                continue;
-            bool mesh = false;
-            if (subdividedTexturedLit) {
-                mesh = g_vdp1GpuTextures[t].mesh;
-                if (mesh) {
-                    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
-                    sceGxmSetFrontDepthFunc(
-                        g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
-                    sceGxmSetBackDepthFunc(
-                        g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
-                    sceGxmSetFrontDepthWriteEnable(
-                        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
-                    sceGxmSetBackDepthWriteEnable(
-                        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
-                }
-                sceGxmSetFragmentProgram(
-                    g_probeContext,
-                    mesh ? g_meshSubdivFragmentProgram
-                         : g_texturedGouraudSubdivFragmentProgram);
-                sceGxmSetFragmentTexture(
-                    g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
-            }
-            sceGxmDraw(
-                g_probeContext,
-                SCE_GXM_PRIMITIVE_TRIANGLES,
-                SCE_GXM_INDEX_FORMAT_U16,
-                g_vdp1SubdivIndices + batch.firstIndex,
-                batch.indexCount);
-            if (mesh) {
-                sceGxmSetCullMode(g_probeContext, cullMode);
-                sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
-                sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
-                sceGxmSetFrontDepthWriteEnable(
-                    g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
-                sceGxmSetBackDepthWriteEnable(
-                    g_probeContext, SCE_GXM_DEPTH_WRITE_ENABLED);
-            }
-            ++submittedBatches;
-        }
-        g_profileGouraudDrawUs = static_cast<unsigned int>(
-            sceKernelGetProcessTimeWide() - tDraw);
-        return submittedBatches != 0u || totalVisibleIndices == 0u;
+        g_profileGouraudDrawUs = g_profileGouraudIndexUs;
+        return phaseResult;
     }
 
     if (gouraudPath) {
@@ -6147,6 +6352,76 @@ bool submit_vdp1_model(
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_vdp1Indices,
                 write);
+        }
+
+        // Visualize the two interior boundaries of Full mode's 3x3 vertex
+        // grid (four sub-quads). These are diagnostic-only and deliberately
+        // half as bright as the interpolated source-quad outline.
+        if (g_vdp1SubdivWireVertices &&
+            g_vdp1SubdivWireIndices &&
+            g_vdp1SubdivWireVertexCapacity >=
+                model.polygonCount * 4u) {
+            unsigned int subdivWrite = 0u;
+
+            auto midpoint = [](
+                const azel::DebugColorVertex& a,
+                const azel::DebugColorVertex& b) {
+                azel::DebugColorVertex v{};
+                v.x = (a.x + b.x) * 0.5f;
+                v.y = (a.y + b.y) * 0.5f;
+                v.z = (a.z + b.z) * 0.5f;
+
+                // Midpoint color would normally be (a+b)/2. Divide that by
+                // two again so the subdivision line is exactly 50% brightness.
+                v.r = static_cast<std::uint8_t>(
+                    (static_cast<unsigned int>(a.r) + b.r) / 4u);
+                v.g = static_cast<std::uint8_t>(
+                    (static_cast<unsigned int>(a.g) + b.g) / 4u);
+                v.b = static_cast<std::uint8_t>(
+                    (static_cast<unsigned int>(a.b) + b.b) / 4u);
+                v.a = 255u;
+                return v;
+            };
+
+            for (unsigned int p = 0;
+                 p < static_cast<unsigned int>(model.polygonCount); ++p) {
+                if (!g_liveTownGouraudPrep[p].visible)
+                    continue;
+
+                const unsigned int base = p * 6u;
+                const auto& a = model.vertices[base + cornerVertex[0]];
+                const auto& b = model.vertices[base + cornerVertex[1]];
+                const auto& c = model.vertices[base + cornerVertex[2]];
+                const auto& d = model.vertices[base + cornerVertex[3]];
+
+                // Vertical center boundary: midpoint(AB) -> midpoint(DC).
+                g_vdp1SubdivWireVertices[subdivWrite++] =
+                    midpoint(a, b);
+                g_vdp1SubdivWireVertices[subdivWrite++] =
+                    midpoint(d, c);
+
+                // Horizontal center boundary: midpoint(AD) -> midpoint(BC).
+                g_vdp1SubdivWireVertices[subdivWrite++] =
+                    midpoint(a, d);
+                g_vdp1SubdivWireVertices[subdivWrite++] =
+                    midpoint(b, c);
+            }
+
+            if (subdivWrite) {
+                sceGxmSetVertexStream(
+                    g_probeContext, 0, g_vdp1SubdivWireVertices);
+                sceGxmDraw(
+                    g_probeContext,
+                    SCE_GXM_PRIMITIVE_LINES,
+                    SCE_GXM_INDEX_FORMAT_U16,
+                    g_vdp1SubdivWireIndices,
+                    subdivWrite);
+
+                // Restore the normal stream even though this branch returns;
+                // keeping submission state local makes later refactors safe.
+                sceGxmSetVertexStream(
+                    g_probeContext, 0, g_vdp1Vertices);
+            }
         }
         return true;
     }
