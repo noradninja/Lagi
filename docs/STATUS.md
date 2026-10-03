@@ -8,7 +8,7 @@ Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Re
 
 ## Development stage
 
-Version 0.2.0 is centered on the first Ruins town as a live upstream-Azel runtime slice. Earlier work proved the data path, Basic Wing reconstruction, texture decode, animation, and native GXM rendering. The current runtime now drives the scene through Azel's real town tasks, scripts, player state, collision, camera, lock-on logic, dynamic objects, and VDP1 UI command generation.
+Version 0.2.0 is centered on the first Ruins town as a live upstream-Azel runtime slice. Earlier work proved the data path, Basic Wing reconstruction, texture decode, animation, and native GXM rendering. The current runtime now drives the scene through Azel's real town tasks, scripts, player state, collision, camera, lock-on logic, dynamic objects, VDP1 command generation, and VDP2 text/window state. The playable sequence reaches the elevator decision and fades to the handoff where FMV playback remains to be implemented.
 
 The first-Ruins execution path is:
 
@@ -20,8 +20,8 @@ Disc 1
   -> world grid / cells
   -> static + task-owned objects
   -> collision / Edge / camera / visibility
-  -> sProcessed3dModel
-  -> Lagi VDP1 translation
+  -> processed models + VDP1 commands + VDP2 state
+  -> Lagi / Neptune presentation translation
   -> SceGxm
 ```
 
@@ -45,6 +45,12 @@ Verified on real Vita/Vita TV hardware:
 - Vita-to-Saturn physical controller bridge
 - town LCS / Lock-On state and target selection
 - native GXM translation of VDP1 scaled-sprite and polyline UI commands
+- native GXM translation of VDP1 normal-sprite UI commands
+- VDP2 area-name, item-pickup, interaction, subtitle, and choice text
+- GPU-rendered NBG1 framed windows
+- line-scroll-driven lower cinematic matte
+- animated elevator-choice selector using the original resident menu sprite data
+- elevator choice and script-driven fade to the FMV handoff
 - 30 Hz presentation
 
 ## Town systems
@@ -108,6 +114,23 @@ Current hardware-proven behavior includes:
 
 The Vita backend does not recreate LCS gameplay logic. Azel produces the physical-button interpretation, target state, camera behavior, and VDP1 commands; Neptune translates those commands to efficient screen-space GXM primitives.
 
+### Town text, windows, and choices
+
+The current first-Ruins sequence uses Azel's live VDP2 and VDP1 state rather than Vita-authored replacements.
+
+Hardware-proven presentation includes:
+
+- the `Ruins - Bottom Floor` area banner
+- item-pickup text
+- object-interaction text
+- subtitle/dialog text
+- blue framed NBG1 windows rendered from the original 16x16-character map
+- the animated lower cinematic matte driven by Azel's vertical line-scroll table
+- the `Ride the Elevator` / `Don't Ride` choice box
+- the original animated VDP1 selection arrow
+
+Direct boot restores VDP2 initialization and services queued VDP2 transfers at the normal frame boundary. It also loads `MENU.CGB` at the VDP1 address where the full startup path leaves it resident. Neptune then composes the VDP2 backing, VDP1 selector, and text in the original layer relationship. Choice state, text, animation, and fade timing remain upstream-Azel-owned.
+
 ### Ruins lock/switch objects
 
 The first task-owned Ruins lock/switch objects are functional.
@@ -129,6 +152,7 @@ The scene currently allows the locks to be targeted and selected. Their later ac
 
 ```text
 internal GXM render: 480x272
+multisampling:       native 2x MSAA, hardware resolved
 display output:       960x544
 presentation target:  30 Hz
 ```
@@ -161,6 +185,22 @@ The live Ruins renderer resolves materials and textures for:
 - Edge's shadow
 
 Texture mode uses the same live-town visibility set as the other scene views.
+
+### VDP2 UI presentation
+
+The first Ruins VDP2 path currently translates:
+
+- the NBG3 text/font map and live palettes
+- the NBG1 framed-window map through a cached GPU tile atlas
+- the vertical line-scroll table used for the lower cinematic matte
+
+VDP1 bank-color UI sprites use live CRAM, while town materials retain their validated bundle-relative texture path. This keeps transient UI palette state from changing world-material resolution.
+
+### Multisample antialiasing
+
+Neptune now creates both full- and half-resolution render targets in `SCE_GXM_MULTISAMPLE_2X` mode. Every fragment-program variant is patched for the same mode, color surfaces use GXM's MSAA downscale/resolve path, and depth/stencil storage is allocated at sample resolution.
+
+The complete Vita package builds with this configuration. Updated on-device image-quality and timing measurements remain to be recorded.
 
 ### Gouraud lighting
 
@@ -198,9 +238,9 @@ Edge's original shadow is now reproduced from the game data:
 
 ## Performance
 
-The current scene is stable at the 30 FPS presentation target.
+The pre-MSAA scene was stable at the 30 FPS presentation target. The presentation target remains 30 Hz, but the new MSAA configuration still needs an updated hardware timing capture.
 
-Recent captures show roughly:
+Captures taken before 2x MSAA was enabled showed roughly:
 
 ```text
 20-23 ms render work
@@ -208,7 +248,7 @@ Recent captures show roughly:
 
 before the deliberate 30 Hz presentation wait.
 
-That corresponds to approximately 44-50 FPS of render throughput if uncapped.
+That corresponds to approximately 44-50 FPS of render throughput if uncapped. This is a pre-MSAA baseline, not a current measured cost.
 
 ## Remaining work
 
@@ -216,12 +256,13 @@ Major systems still incomplete or not yet integrated include:
 
 - broader town object coverage
 - additional script behavior
-- additional VDP1 UI command types beyond the current scaled-sprite/polyline subset
+- additional VDP1 UI command types beyond the current normal-sprite, scaled-sprite, and polyline subset
 - some collision interactions
 - Ruins sound/effects
-- town transitions
-- UI/state flow
-- VDP2/background/compositing behavior
+- completing the elevator transition after its scripted fade
+- Cinepak/FMV decoding and playback at the current handoff
+- broader UI/state flow beyond the first Ruins sequence
+- broader VDP2 background and compositing behavior beyond the current text/window/matte subset
 - battle systems
 - broader field systems
 - movies, menus, save flow, and complete game progression

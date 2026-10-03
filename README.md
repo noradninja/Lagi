@@ -28,12 +28,17 @@ Working systems include:
 - Saturn-style physical pad input translated from Vita controls
 - town LCS / lock-on state and target selection
 - native Neptune translation of VDP1 scaled-sprite and polyline UI commands
+- native Neptune translation of VDP1 normal-sprite UI commands
 - original LCS cursor, target marker, and selection-box behavior
+- Azel-authored VDP2 text, framed windows, and cinematic matte presentation
+- area-name, item-pickup, interaction, subtitle, and multi-choice text
+- elevator choice flow through the script-driven fade to the FMV handoff
 - Edge's original textured/stippled VDP1 mesh shadow
 - script-driven town fade-in
+- native GXM 2x multisample antialiasing
 - stable 30 Hz presentation
 
-Version **0.2.0** marks the transition from a rendered Ruins scene to a genuinely interactive upstream-Azel town slice: Azel owns movement, camera, collision, scripts, lock-on state, target selection, dynamic objects, and UI command generation, while Lagi translates the platform and rendering boundaries to Vita.
+Version **0.2.0** marks the transition from a rendered Ruins scene to a genuinely interactive upstream-Azel town slice: Azel owns movement, camera, collision, scripts, lock-on state, target selection, dynamic objects, text/window state, and UI command generation, while Lagi translates the platform and rendering boundaries to Vita. The playable sequence now reaches the elevator decision and its fade to the still-unimplemented FMV playback handoff.
 
 ## Architecture
 
@@ -68,16 +73,16 @@ world grid / cells / task-owned objects
     |
 collision / Edge / camera / visibility
     |
-sProcessed3dModel submissions
+processed models + VDP1 commands + VDP2 state
     |
-Lagi VDP1 translation
+Lagi / Neptune presentation translation
     |
 SceGxm
 ```
 
 ## Rendering
 
-The current Ruins renderer uses a 480x272 GXM render target and presents to the Vita's 960x544 display. Saturn-authored 3D and 2D presentation is aspect-corrected inside the widescreen output.
+The current Ruins renderer uses a 480x272 GXM render target with native 2x MSAA and presents its hardware-resolved image to the Vita's 960x544 display. Saturn-authored 3D and 2D presentation is aspect-corrected inside the widescreen output.
 
 ### Gouraud lighting
 
@@ -102,14 +107,29 @@ The texture supplies the oval silhouette. VDP1 `CMDPMOD` mesh mode supplies the 
 
 ### VDP1 town UI
 
-Azel retains ownership of town LCS state and emits its original VDP1 command stream. Neptune currently translates the command types required by the first Ruins lock-on sequence directly to native GXM:
+Azel retains ownership of town LCS and menu state and emits its original VDP1 command stream. Neptune currently translates the command types required by the first Ruins sequence directly to native GXM:
 
+- normal sprites -> cached textured screen-space quads
 - scaled sprites -> cached textured screen-space quads
 - polylines -> native GXM line primitives
 - independent white free cursor and selected target marker
 - original shrinking selection rectangle during target acquisition
+- animated selector for the elevator multi-choice menu
+
+The direct-boot adapter also restores the normally resident `MENU.CGB` data in VDP1 memory, allowing Azel's original menu sprite descriptors to resolve without replacing them with Vita-owned art.
 
 The bridge translates Azel's commands rather than recreating lock-on gameplay or UI behavior in Vita-specific code.
+
+### VDP2 town UI
+
+Azel's live VDP2 state supplies the first Ruins text and window presentation. Neptune translates the layers required by the current sequence:
+
+- NBG3 font/text map for area names, item pickups, interactions, subtitles, and choices
+- NBG1 16x16-character window map through a cached GPU tile atlas
+- the animated lower cinematic matte from Azel's vertical line-scroll table
+- live CRAM palette data for the VDP2 layers and bank-color VDP1 UI sprites
+
+Composition preserves the original layer relationship: VDP2 window and matte backing, VDP1 UI sprites, then text. Azel remains responsible for the strings, window contents, choice state, cursor animation, and scripted timing.
 
 ## Scene views
 
@@ -153,7 +173,7 @@ In walk mode, the current controls match the original manual behavior: A/C enter
 
 The game is currently presented at 30 FPS.
 
-Recent first-Ruins captures show approximately **20-23 ms** of render work before the deliberate presentation wait, corresponding to about **44-50 FPS** of render throughput if uncapped.
+First-Ruins captures taken before 2x MSAA was enabled showed approximately **20-23 ms** of render work before the deliberate presentation wait, corresponding to about **44-50 FPS** of render throughput if uncapped. Updated hardware measurements with MSAA enabled are still required.
 
 The 30 Hz cap remains in place because the game/simulation timing path has not been converted to a variable-rate model.
 

@@ -46,16 +46,21 @@ cmake .. `
 ## Incremental build
 
 ```powershell
-git pull
-cd build
-cmake --build . -j 8
+Set-Location E:\dev\Lagi
+
+git switch main
+git pull --ff-only origin main
+
+$env:PSP2CGC = 'E:\PSVITA\sdk\host_tools\bin\psp2cgc.exe'
+cmake --build build --parallel 8
 ```
 
 When CMake configuration or shader build rules change:
 
 ```powershell
 cd <Lagi checkout>
-git pull
+git switch main
+git pull --ff-only origin main
 cd build
 cmake ..
 cmake --build . -j 8
@@ -131,6 +136,7 @@ The runtime parses the CUE, locates the MODE1 data track, mounts ISO9660, and lo
 Current Ruins work uses files including:
 
 - `COMMON.DAT`
+- `MENU.CGB`
 - `TWN_RUIN.PRG`
 - `COMMON3.MCB` / `COMMON3.CGB`
 - `RUINMP.MCB` / `RUINMP.CGB`
@@ -157,6 +163,7 @@ Useful sections currently include:
 - collision setup
 - material/texture decode
 - VDP1 UI command diagnostics
+- VDP2 text/window and line-scroll presentation
 - GXM initialization and failures
 
 ## Current startup behavior
@@ -165,14 +172,16 @@ A normal development launch:
 
 1. initializes the runtime and GXM,
 2. resolves the first Ruins town from Disc 1,
-3. starts the town task/script pipeline,
-4. enters the scene in **Full** view,
-5. leaves the diagnostic console hidden.
+3. restores the resident VDP1 menu data and VDP2 startup state expected by the town runtime,
+4. starts the town task/script pipeline,
+5. enters the scene in **Full** view,
+6. leaves the diagnostic console hidden.
 
 Current rendering configuration:
 
 ```text
 480x272 GXM -> 960x544 display
+native 2x MSAA with GXM hardware resolve
 30 Hz presentation
 ```
 
@@ -205,6 +214,11 @@ The current live scene is expected to show:
 - correctly textured dynamic Ruins objects
 - working town Lock-On with independent white cursor and target marker
 - native VDP1 selection-polyline rendering
+- native VDP1 normal/scaled-sprite UI rendering
+- VDP2 area-name, item, interaction, subtitle, and multi-choice text
+- GPU-rendered NBG1 framed windows
+- the line-scroll-driven lower cinematic matte
+- the animated elevator-choice selector
 - Edge's oval stippled VDP1 mesh shadow with ordered draw/depth behavior
 - stable 30 FPS presentation
 
@@ -212,13 +226,15 @@ The hidden profiling overlay remains available for performance work.
 
 ## Performance reference
 
-Recent first-Ruins captures show approximately:
+First-Ruins captures taken before 2x MSAA was enabled showed approximately:
 
 ```text
 20-23 ms render work
 ```
 
 before the deliberate 30 Hz presentation wait.
+
+Updated on-device timing should be captured with 2x MSAA enabled before using that figure as the current renderer cost.
 
 ## Vita application assets
 
