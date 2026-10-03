@@ -821,6 +821,7 @@ add_executable(lagi
  src/movie/cinepak_decoder.cpp
  src/movie/movie_player.cpp
  src/integration/azel_movie_bridge.cpp
+ src/integration/lagi_movie_sequence.cpp
  src/integration/lagi_runtime_smoke.cpp
  src/integration/lagi_render_bridge.cpp
  src/integration/lagi_live_model_adapter.cpp

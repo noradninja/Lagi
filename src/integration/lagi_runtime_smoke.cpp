@@ -13,6 +13,7 @@
 #include "lagi/lagi_town_bootstrap.h"
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_town_tasks.h"
+#include "lagi/lagi_movie_sequence.h"
 #include "lagi/disc_image.h"
 #include "commonOverlay.h"
 #include "audio/soundDataTable.h"
@@ -306,6 +307,10 @@ bool runtime_smoke_init()
         lagi::platform::renderer::failure("[FAIL] TWN_RUIN TASK PIPELINE");
         return false;
     }
+    if (!init_movie_sequence_adapter()) {
+        lagi::platform::renderer::failure("[FAIL] MOVIE SEQUENCE ADAPTER");
+        return false;
+    }
     lagi::platform::renderer::status("[PASS] TWN_RUIN TASK PIPELINE", 0xFF60A0F0u);
     std::printf("[Azel] TWN_RUIN native task pipeline started\n");
 
@@ -351,6 +356,14 @@ void runtime_smoke_frame()
         analogY * 127.0f);
 
     updateInputs();
+
+    // Direct boot skips Azel's module-manager task. Once the town script asks
+    // for game status 5, this adapter yields town ownership and services the
+    // original two-part elevator movie sequence until Azel advances again.
+    if (service_movie_sequence_adapter()) {
+        ++startupFrame;
+        return;
+    }
 
     begin_azel_vdp1_frame();
 

@@ -1795,6 +1795,8 @@ bool movie_present_frame(
             width * sizeof(std::uint32_t));
     }
     g_movieFrameVisible = true;
+    if (g_renderThreadStarted && g_renderFrameReadySema >= 0)
+        sceKernelSignalSema(g_renderFrameReadySema, 1);
     return true;
 }
 

@@ -32,6 +32,10 @@ validated before this path can be called hardware-proven.
 
 - Azel remains the movie-sequencing owner through a thin Lagi movie-backend
   bridge. The backend does not choose movies, transitions, fades, or scenes.
+- The direct-boot adapter now observes Azel's authentic Ruins transition to
+  game status `0x05`. It follows Azel movie timing index `0x02` by playing
+  `EVT004_1.CPK` and `EVT004_2.CPK` in order, then calls Azel's original
+  post-movie status routine, which requests status `0x50`.
 - Sega FILM parsing covers FDSC/STAB metadata, bounded sample access,
   per-stream PTS/duration, Cinepak keyframe flags, planar signed PCM, and the
   container's independent video/audio clocks.
@@ -51,6 +55,17 @@ validated before this path can be called hardware-proven.
   demux, timing, audio, or Azel sequencing ownership.
 - Deterministic host tests cover FILM metadata/sample extraction, V1 and V4
   reconstruction, skipped interframes, and Sega's short header variant.
+
+Expected hardware-test log sequence after taking the Ruins elevator:
+
+```text
+[MovieSequence] Azel status 0x05 -> movie index 2
+[MovieSequence] open Azel movie=2 part=1/2 file=EVT004_1.CPK
+[MovieSequence] finished file=EVT004_1.CPK ...
+[MovieSequence] open Azel movie=2 part=2/2 file=EVT004_2.CPK
+[MovieSequence] finished file=EVT004_2.CPK ...
+[MovieSequence] complete; Azel requested next status 0x50
+```
 
 ## Hardware-proven runtime
 
@@ -286,7 +301,6 @@ Major systems still incomplete or not yet integrated include:
 - additional VDP1 UI command types beyond the current normal-sprite, scaled-sprite, and polyline subset
 - some collision interactions
 - Ruins sound/effects
-- connecting the elevator script's movie handoff to the Azel-owned sequencing call
 - on-device Cinepak video/audio timing and drain validation
 - broader UI/state flow beyond the first Ruins sequence
 - broader VDP2 background and compositing behavior beyond the current text/window/matte subset
