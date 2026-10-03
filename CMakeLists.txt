@@ -680,7 +680,7 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
 
   string(REPLACE
    "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    loadTown,           // 1: town\n    loadTown2,          // 2: town (alt entry)\n    loadField,          // 3: field\n    loadBattle,         // 4: battle\n    loadWorldOverlay,   // 5: worldmap\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    initLoadSavegameScreen, // 9: save/load screen\n    NULL,\n};"
-   "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    NULL,               // 1: town - already running in direct boot\n    NULL,               // 2: town alt - not linked in Ruins bring-up\n    NULL,               // 3: field - not linked yet\n    NULL,               // 4: battle - not linked yet\n    NULL,               // 5: worldmap - not linked yet\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    NULL,               // 9: save/load - not linked yet\n    NULL,\n};"
+   "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    loadTown,           // 1: town - authentic 0.040 boot path\n    loadTown2,          // 2: town alt - authentic 0.040 boot path\n    loadField,          // 3: field - D5 name entry\n    NULL,               // 4: battle - deferred until flight milestone\n    NULL,               // 5: worldmap - deferred\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    NULL,               // 9: save/load - deferred\n    NULL,\n};"
    source_text "${source_text}")
 
   # Trace entry into module-manager state 1 before any transition helper.
@@ -981,6 +981,8 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  battle/battleManager.cpp
  kernel/menuSprite.cpp
  kernel/menuCursor.cpp
+ kernel/flagEditor.cpp
+ menu/inventoryMenu.cpp
  shared/vdp2PlaneTask.cpp
  battle/BTL_A3/BTL_A3_map6.cpp
  audio/systemSounds.cpp
