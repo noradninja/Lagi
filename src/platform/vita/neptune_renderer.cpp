@@ -52,6 +52,8 @@ extern const unsigned char _binary_lagi_gouraud_scanline_gray_f_gxp_start[];
 static constexpr int kWidth = 960;
 static constexpr int kHeight = 544;
 static constexpr int kPitch = 960;
+static constexpr SceGxmMultisampleMode kMultisampleMode =
+    SCE_GXM_MULTISAMPLE_2X;
 static constexpr std::size_t kFrameBytes =
     static_cast<std::size_t>(kPitch) * kHeight * sizeof(std::uint32_t);
 static constexpr int kMaxStatus = 64;
@@ -4875,7 +4877,7 @@ void show_town_scene()
     rtParams.width = kWidth;
     rtParams.height = kHeight;
     rtParams.scenesPerFrame = 1;
-    rtParams.multisampleMode = SCE_GXM_MULTISAMPLE_NONE;
+    rtParams.multisampleMode = kMultisampleMode;
     rtParams.multisampleLocations = 0;
     rtParams.driverMemBlock = -1;
 
@@ -4929,7 +4931,7 @@ void show_town_scene()
         &g_probeColorSurface,
         SCE_GXM_COLOR_FORMAT_A8B8G8R8,
         SCE_GXM_COLOR_SURFACE_LINEAR,
-        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+        SCE_GXM_COLOR_SURFACE_SCALE_MSAA_DOWNSCALE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
         kWidth, kHeight, gxmPitch, g_probeColorBuffer);
     if (colorResult < 0) {
@@ -4944,7 +4946,7 @@ void show_town_scene()
         &g_probeColorSurfaceHalf,
         SCE_GXM_COLOR_FORMAT_A8B8G8R8,
         SCE_GXM_COLOR_SURFACE_LINEAR,
-        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+        SCE_GXM_COLOR_SURFACE_SCALE_MSAA_DOWNSCALE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
         kWidth / 2, kHeight / 2, 512, g_probeColorBuffer);
     if (halfColorResult < 0) {
@@ -4978,7 +4980,7 @@ void show_town_scene()
         &g_probeColorSurface2,
         SCE_GXM_COLOR_FORMAT_A8B8G8R8,
         SCE_GXM_COLOR_SURFACE_LINEAR,
-        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+        SCE_GXM_COLOR_SURFACE_SCALE_MSAA_DOWNSCALE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
         kWidth, kHeight, gxmPitch, g_probeColorBuffer2);
     if (colorResult2 < 0) {
@@ -4993,7 +4995,7 @@ void show_town_scene()
         &g_probeColorSurfaceHalf2,
         SCE_GXM_COLOR_FORMAT_A8B8G8R8,
         SCE_GXM_COLOR_SURFACE_LINEAR,
-        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+        SCE_GXM_COLOR_SURFACE_SCALE_MSAA_DOWNSCALE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
         kWidth / 2, kHeight / 2, 512, g_probeColorBuffer2);
     if (halfColorResult2 < 0) {
@@ -5015,7 +5017,9 @@ void show_town_scene()
         (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
     const unsigned int alignedH =
         (kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1);
-    const unsigned int samples = alignedW * alignedH;
+    // In GXM's 2x mode the extra depth/stencil samples are laid out in Y,
+    // while the color surface resolves directly into the scanout buffer.
+    const unsigned int samples = alignedW * alignedH * 2u;
 
     g_probeDepth = probeGpuAlloc(
         4u * samples,
@@ -5236,7 +5240,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_probeFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             vertexProgram,
             &g_probeFragmentProgram);
@@ -5264,7 +5268,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_probeFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             &fadeBlend,
             vertexProgram,
             &g_fadeFragmentProgram) < 0) {
@@ -5365,7 +5369,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_textureFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             textureVertexGxp,
             &g_textureFragmentProgram) < 0) {
@@ -5377,7 +5381,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_meshFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             textureVertexGxp,
             &g_meshTextureFragmentProgram) < 0) {
@@ -5642,7 +5646,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_texturedGouraudSubdivFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudSubdivVertexGxp,
             &g_texturedGouraudSubdivFragmentProgram) < 0) {
@@ -5654,7 +5658,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_meshFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudSubdivVertexGxp,
             &g_meshSubdivFragmentProgram) < 0) {
@@ -5666,7 +5670,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_gouraudSubdivGrayFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudSubdivVertexGxp,
             &g_gouraudSubdivGrayFragmentProgram) < 0) {
@@ -5760,7 +5764,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_gouraudDebugFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudPayloadVertexGxp,
             &g_gouraudDebugFragmentProgram) < 0) {
@@ -5772,7 +5776,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_texturedLitFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudPayloadVertexGxp,
             &g_texturedLitFragmentProgram) < 0) {
@@ -5784,7 +5788,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_texturedLitOpaqueFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudPayloadVertexGxp,
             &g_texturedLitOpaqueFragmentProgram) < 0) {
@@ -5796,7 +5800,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_texturedLitHalfFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudPayloadVertexGxp,
             &g_texturedLitHalfFragmentProgram) < 0) {
@@ -5808,7 +5812,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_texturedLitNewtonFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudPayloadVertexGxp,
             &g_texturedLitNewtonFragmentProgram) < 0) {
@@ -5820,7 +5824,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_texturedPayloadProbeFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudPayloadVertexGxp,
             &g_texturedPayloadProbeFragmentProgram) < 0) {
@@ -5832,7 +5836,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_texturedGouraudNoInverseFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudPayloadVertexGxp,
             &g_texturedGouraudNoInverseFragmentProgram) < 0) {
@@ -5844,7 +5848,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_texturedGouraudNoQuantFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudPayloadVertexGxp,
             &g_texturedGouraudNoQuantFragmentProgram) < 0) {
@@ -5856,7 +5860,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_texturedRgb555NoGouraudFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudPayloadVertexGxp,
             &g_texturedRgb555NoGouraudFragmentProgram) < 0) {
@@ -5868,7 +5872,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_texturedGouraudFinalQuantFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudPayloadVertexGxp,
             &g_texturedGouraudFinalQuantFragmentProgram) < 0) {
@@ -5880,7 +5884,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_texturedGouraudScanlineFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudPayloadVertexGxp,
             &g_texturedGouraudScanlineFragmentProgram) < 0) {
@@ -5892,7 +5896,7 @@ void show_town_scene()
             g_probeShaderPatcher,
             g_gouraudScanlineGrayFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE,
+            kMultisampleMode,
             nullptr,
             gouraudPayloadVertexGxp,
             &g_gouraudScanlineGrayFragmentProgram) < 0) {
