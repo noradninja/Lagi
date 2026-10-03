@@ -419,6 +419,15 @@ static int g_pendingViewMode = 7;
 static unsigned int g_pendingProfileTasksUs = 0u;
 static unsigned int g_pendingProfileGameWaitUs = 0u;
 
+static constexpr std::size_t kVdp2TextSnapshotBytes = 0x10000u;
+static constexpr std::size_t kVdp2CramSnapshotBytes = 0x1000u;
+static std::uint8_t g_pendingVdp2TextVram[kVdp2TextSnapshotBytes]{};
+static std::uint8_t g_pendingVdp2Cram[kVdp2CramSnapshotBytes]{};
+static std::uint8_t g_vdp2TextVram[kVdp2TextSnapshotBytes]{};
+static std::uint8_t g_vdp2Cram[kVdp2CramSnapshotBytes]{};
+static bool g_pendingVdp2TextValid = false;
+static bool g_vdp2TextValid = false;
+
 // Script-owned town fade command. The game thread stages commands here; the
 // completed-frame publish copies them across the existing render handoff.
 static unsigned int g_pendingTownFadeSerial = 0u;
@@ -729,6 +738,147 @@ static void drawViewerModeOverlay(
         buffer, pitch, x, y,
         label, 0xFFFFFFFFu);
 }
+
+static std::uint16_t readVdp2Be16(
+    const std::uint8_t* bytes,
+    std::size_t offset)
+{
+    return static_cast<std::uint16_t>(
+        (static_cast<std::uint16_t>(bytes[offset]) << 8) |
+        static_cast<std::uint16_t>(bytes[offset + 1]));
+}
+
+static std::uint32_t vdp2Rgb555ToAbgr(std::uint16_t color)
+{
+    const std::uint32_t r =
+        static_cast<std::uint32_t>(color & 0x1Fu) * 255u / 31u;
+    const std::uint32_t g =
+        static_cast<std::uint32_t>((color >> 5) & 0x1Fu) * 255u / 31u;
+    const std::uint32_t b =
+        static_cast<std::uint32_t>((color >> 10) & 0x1Fu) * 255u / 31u;
+    return 0xFF000000u | (b << 16) | (g << 8) | r;
+}
+
+static void drawAzelVdp2TextLayer(
+    std::uint32_t* buffer,
+    int pitch)
+{
+    if (!buffer || !g_vdp2TextValid)
+        return;
+
+    constexpr int kSaturnWidth = 352;
+    constexpr int kSaturnHeight = 224;
+    constexpr int kTileSize = 8;
+    constexpr int kMapColumns = 64;
+    constexpr int kVisibleColumns = kSaturnWidth / kTileSize;
+    constexpr int kVisibleRows = kSaturnHeight / kTileSize;
+    constexpr std::size_t kTextMapOffset = 0x6000u;
+    constexpr std::size_t kFontPaletteOffset = 0x0E00u;
+
+    const int outW = viewerRenderWidth();
+    const int outH = viewerRenderHeight();
+
+    // Match Neptune's VDP1 UI presentation: Saturn's 352x224 logical image
+    // occupies a centered 4:3 region while Y spans the full render height.
+    const float renderAspect =
+        static_cast<float>(outW) / static_cast<float>(outH);
+    const float xCorrection =
+        (4.0f / 3.0f) / renderAspect;
+    const float logicalW =
+        static_cast<float>(outW) * xCorrection;
+    const float left =
+        (static_cast<float>(outW) - logicalW) * 0.5f;
+
+    unsigned int activeCells = 0u;
+    for (int ty = 0; ty < kVisibleRows; ++ty) {
+        for (int tx = 0; tx < kVisibleColumns; ++tx) {
+            const std::size_t mapOffset =
+                kTextMapOffset +
+                static_cast<std::size_t>(
+                    (ty * kMapColumns + tx) * 2);
+            const std::uint16_t patternName =
+                readVdp2Be16(g_vdp2TextVram, mapOffset);
+            if (!patternName)
+                continue;
+            ++activeCells;
+
+            const unsigned int palette =
+                (patternName >> 12) & 0x0Fu;
+            const unsigned int tile =
+                patternName & 0x0FFFu;
+            const std::size_t tileOffset =
+                static_cast<std::size_t>(tile) * 32u;
+            if (tileOffset + 32u > kVdp2TextSnapshotBytes)
+                continue;
+
+            for (int py = 0; py < kTileSize; ++py) {
+                for (int px = 0; px < kTileSize; ++px) {
+                    const std::uint8_t packed =
+                        g_vdp2TextVram[
+                            tileOffset +
+                            static_cast<std::size_t>(py * 4 + px / 2)];
+                    const unsigned int colorIndex =
+                        (px & 1)
+                            ? static_cast<unsigned int>(packed & 0x0Fu)
+                            : static_cast<unsigned int>(packed >> 4);
+                    if (!colorIndex)
+                        continue;
+
+                    const std::size_t cramOffset =
+                        kFontPaletteOffset +
+                        static_cast<std::size_t>(
+                            (palette * 16u + colorIndex) * 2u);
+                    if (cramOffset + 1u >= kVdp2CramSnapshotBytes)
+                        continue;
+                    const std::uint32_t color =
+                        vdp2Rgb555ToAbgr(
+                            readVdp2Be16(g_vdp2Cram, cramOffset));
+
+                    const int sx = tx * kTileSize + px;
+                    const int sy = ty * kTileSize + py;
+
+                    const int dx0 = static_cast<int>(
+                        std::floor(
+                            left + logicalW *
+                            static_cast<float>(sx) /
+                            static_cast<float>(kSaturnWidth)));
+                    const int dx1 = static_cast<int>(
+                        std::ceil(
+                            left + logicalW *
+                            static_cast<float>(sx + 1) /
+                            static_cast<float>(kSaturnWidth)));
+                    const int dy0 = static_cast<int>(
+                        std::floor(
+                            static_cast<float>(outH) *
+                            static_cast<float>(sy) /
+                            static_cast<float>(kSaturnHeight)));
+                    const int dy1 = static_cast<int>(
+                        std::ceil(
+                            static_cast<float>(outH) *
+                            static_cast<float>(sy + 1) /
+                            static_cast<float>(kSaturnHeight)));
+
+                    for (int dy = std::max(0, dy0);
+                         dy < std::min(outH, dy1); ++dy) {
+                        for (int dx = std::max(0, dx0);
+                             dx < std::min(outW, dx1); ++dx) {
+                            buffer[dy * pitch + dx] = color;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    static bool reported = false;
+    if (!reported && activeCells) {
+        logging::writef(
+            "[VDP2Text] active cells=%u map=6000 font/palette snapshot ready\n",
+            activeCells);
+        reported = true;
+    }
+}
+
 
 static void drawTownInputOverlay(
     std::uint32_t* buffer,
@@ -6775,6 +6925,10 @@ static void renderBasicWingViewer()
     sceGxmFinish(g_probeContext);
     g_profileGxmWaitUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - gxmWaitStartUs);
+
+    if (roomAuthenticCameraMode)
+        drawAzelVdp2TextLayer(colorBuffer, gxmPitch);
+
     g_profileRenderUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - renderStartUs);
 
@@ -7269,6 +7423,18 @@ void town_publish_frame()
     g_townFadeIn = g_pendingTownFadeIn;
     g_townFadeFrames = g_pendingTownFadeFrames;
 
+    if (g_pendingVdp2TextValid) {
+        std::memcpy(
+            g_vdp2TextVram,
+            g_pendingVdp2TextVram,
+            sizeof(g_vdp2TextVram));
+        std::memcpy(
+            g_vdp2Cram,
+            g_pendingVdp2Cram,
+            sizeof(g_vdp2Cram));
+        g_vdp2TextValid = true;
+    }
+
     if (g_renderThreadStarted && g_renderFrameReadySema >= 0)
         sceKernelSignalSema(g_renderFrameReadySema, 1);
 }
@@ -7358,6 +7524,26 @@ void town_present_camera(
     g_pendingTownCameraPitch = pitch;
     g_pendingTownCameraDistance = distance;
     g_pendingTownPresentationValid = true;
+}
+
+void town_present_vdp2_text(
+    const unsigned char* vram,
+    const unsigned char* cram)
+{
+    if (!vram || !cram) {
+        g_pendingVdp2TextValid = false;
+        return;
+    }
+
+    std::memcpy(
+        g_pendingVdp2TextVram,
+        vram,
+        sizeof(g_pendingVdp2TextVram));
+    std::memcpy(
+        g_pendingVdp2Cram,
+        cram,
+        sizeof(g_pendingVdp2Cram));
+    g_pendingVdp2TextValid = true;
 }
 
 } // namespace lagi::platform::renderer
