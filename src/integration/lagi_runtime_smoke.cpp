@@ -318,6 +318,14 @@ void runtime_smoke_frame()
     lagi::azel_bridge::begin_frame();
     const std::uint64_t tasksStart = sceKernelGetProcessTimeWide();
     runTasks();
+
+    // The desktop runtime normally services VDP2's queued DMA/register work
+    // from its V-blank interrupt path. Direct boot bypasses that engine loop,
+    // so flush the authentic pending transfers here once per completed task
+    // frame. This is required for systems such as the cinematic-bar line
+    // scroll table, which update through vdpVar1 rather than direct VRAM writes.
+    interruptVDP2Update();
+
     twn_ruin_sync_platform_state();
 
     // Snapshot the Saturn VDP2 text plane at the same completed-task boundary
