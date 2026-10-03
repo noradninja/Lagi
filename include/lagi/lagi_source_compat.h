@@ -1,3 +1,4 @@
+#include <chrono>
 #pragma once
 #include "lagi/lagi_compat.h"
 
