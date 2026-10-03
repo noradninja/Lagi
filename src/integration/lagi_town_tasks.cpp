@@ -10,6 +10,7 @@
 #include "town/townEdge.h"
 #include "town/ruin/twn_ruin.h"
 #include "kernel/fade.h"
+#include "kernel/moduleManager.h"
 #include "3dEngine.h"
 
 #include <algorithm>
@@ -22,10 +23,17 @@
 // services, but it must not reproduce town script, NPC, Edge, camera,
 // animation, or collision behavior here.
 
+// Upstream module-manager callbacks are intentionally reused directly. The
+// direct-boot adapter supplies only a minimal initializer so Azel can resume
+// from the already-running Ruins state instead of resetting into a new game.
+void moduleManager_Update(s_moduleManager* pWorkArea);
+void moduleManager_Draw(s_moduleManager* pWorkArea);
+
 namespace lagi::azel {
 namespace {
 
 p_workArea g_twnRuinRoot = nullptr;
+s_moduleManager* g_directBootModuleManager = nullptr;
 sCameraTask* g_fadeCamera = nullptr;
 bool g_fadeActive = false;
 bool g_reportedPresentation = false;
@@ -76,6 +84,38 @@ bool start_twn_ruin_task_pipeline()
             "[LagiAdapter] Azel overlayStart_TWN_RUIN failed\n");
         return false;
     }
+
+    // Direct boot bypasses createModuleManager() because its normal Init
+    // resets the save/game state and starts a new game. Rejoin the authentic
+    // module-manager pipeline with the original upstream Update/Draw methods
+    // and point m8 at the already-running Ruins overlay. From this point on,
+    // Azel itself owns status transitions, gameStatusTable lookup, overlay
+    // dispatch, movie-index selection, and post-overlay sequencing.
+    static const s_moduleManager::TypedTaskDefinition moduleDefinition = {
+        nullptr,
+        &moduleManager_Update,
+        &moduleManager_Draw,
+        nullptr,
+    };
+    g_directBootModuleManager =
+        createSubTaskWithArg<s_moduleManager, s32>(
+            root, 0, &moduleDefinition);
+    if (!g_directBootModuleManager) {
+        platform::logging::writef(
+            "[LagiAdapter] failed to create upstream module manager\n");
+        return false;
+    }
+    g_directBootModuleManager->state = 0;
+    g_directBootModuleManager->m4 = 0;
+    g_directBootModuleManager->m6_debugGameStatus =
+        static_cast<s16>(gGameStatus.m4_gameStatus);
+    g_directBootModuleManager->m8 = g_twnRuinRoot;
+    g_directBootModuleManager->mC = 0;
+    gModuleManager = g_directBootModuleManager;
+
+    platform::logging::writef(
+        "[LagiAdapter] rejoined upstream module manager at status 0x%02X\n",
+        static_cast<unsigned int>(gGameStatus.m4_gameStatus));
 
     g_fadeCamera = cameraTaskPtr;
     g_fadeActive = false;
