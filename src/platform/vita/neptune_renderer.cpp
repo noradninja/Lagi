@@ -2136,9 +2136,19 @@ static void drawAzelVdp2CinematicBarsGpu()
     const float left = -1.0f;
     const float right = 1.0f;
 
+    // The matte spans the widescreen target horizontally, but its thickness
+    // comes from Saturn's 4:3 presentation. Applying the same 4:3-to-current
+    // aspect correction used elsewhere keeps a 16-line Saturn matte from
+    // becoming disproportionately tall on Vita's wider viewport.
+    const float renderAspect =
+        static_cast<float>(viewerRenderWidth()) /
+        static_cast<float>(viewerRenderHeight());
+    const float verticalAspectCorrection =
+        (4.0f / 3.0f) / renderAspect;
     const float barTop =
         -1.0f +
-        static_cast<float>(barLines) / 112.0f;
+        (static_cast<float>(barLines) / 112.0f) *
+            verticalAspectCorrection;
 
     g_vdp2BarVertices[0] =
         {left,  barTop, 0.0f, 0u,0u,0u,255u};
@@ -2400,7 +2410,11 @@ static void drawPublishedVdp1Ui()
             continue;
         }
 
-        if (commandType != 0x0001u ||
+        // Town Lock-On uses scaled sprites (type 1), while Azel's
+        // multi-choice cursor uses a normal VDP1 sprite (type 0). Both are
+        // authentic Azel commands and share the same decoded texture path.
+        if ((commandType != 0x0000u &&
+             commandType != 0x0001u) ||
             ((command.cmdCtrl >> 8) & 0xFu) != 0u ||
             command.cmdSrca == 0u)
             continue;
@@ -2413,19 +2427,46 @@ static void drawPublishedVdp1Ui()
         // Match the horizontal presentation transform used by
         // buildAzelProjection(). Azel emits centered 352x224 VDP1
         // coordinates, while Neptune presents that Saturn-authored image in
-        // a centered 4:3 region of the Vita framebuffer. Applying the same
-        // correction to both endpoints preserves sprite shape AND keeps
-        // target-attached UI aligned with the projected 3D object.
+        // a centered 4:3 region of the Vita framebuffer.
         const float x0 =
             (static_cast<float>(command.xa) / 176.0f) *
             saturnAspectCorrection;
-        const float x1 =
-            (static_cast<float>(command.xc + 1) / 176.0f) *
-            saturnAspectCorrection;
+        const float y0 =
+            -static_cast<float>(command.ya) / 112.0f;
 
-        const float y0 = -static_cast<float>(command.ya) / 112.0f;
-        const float y1 =
-            -static_cast<float>(command.yc + 1) / 112.0f;
+        float x1 = x0;
+        float y1 = y0;
+        if (commandType == 0x0001u) {
+            // Scaled sprite: Azel supplies the opposite corner directly.
+            x1 =
+                (static_cast<float>(command.xc + 1) / 176.0f) *
+                saturnAspectCorrection;
+            y1 =
+                -static_cast<float>(command.yc + 1) / 112.0f;
+        } else {
+            // Normal sprite: CMDSIZE stores width in 8-pixel units in the
+            // upper byte and height in pixels in the lower byte. XA/YA is
+            // the sprite origin; XB..YD are not geometry for this command.
+            const unsigned int spriteWidth =
+                ((static_cast<unsigned int>(command.cmdSize) >> 8) &
+                 0x3Fu) * 8u;
+            const unsigned int spriteHeight =
+                static_cast<unsigned int>(command.cmdSize) & 0xFFu;
+            if (!spriteWidth || !spriteHeight)
+                continue;
+
+            x1 =
+                (static_cast<float>(
+                    command.xa +
+                    static_cast<std::int16_t>(spriteWidth)) /
+                 176.0f) *
+                saturnAspectCorrection;
+            y1 =
+                -static_cast<float>(
+                    command.ya +
+                    static_cast<std::int16_t>(spriteHeight)) /
+                112.0f;
+        }
 
         const float u0 = 0.5f / static_cast<float>(texture->width);
         const float v0 = 0.5f / static_cast<float>(texture->height);
