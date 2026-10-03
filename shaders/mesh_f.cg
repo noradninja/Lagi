@@ -1,6 +1,7 @@
 // Saturn VDP1 mesh primitive.
-// The source texture defines the shadow silhouette. Mesh mode removes
-// alternating destination pixels from that already-masked shape.
+// The source texture still matters: it defines the sprite/polygon silhouette
+// (Edge's shadow is an oval alpha mask). Mesh mode then removes alternating
+// destination pixels from that already-masked shape.
 float4 main(
     float2 vTexcoord : TEXCOORD0,
     float4 fragCoord : WPOS,
