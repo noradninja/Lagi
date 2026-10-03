@@ -2,6 +2,8 @@
 #include "lagi/lagi_compat.h"
 
 namespace ImGui {
+struct IO { bool MouseClicked[5]{}; };
+inline IO& GetIO() { static IO io{}; return io; }
 inline bool InputFloat(const char*, float*, float = 0.0f, float = 0.0f) { return false; }
 inline bool Begin(const char*, bool* = nullptr) { return false; }
 inline void End() {}
@@ -29,10 +31,45 @@ class Soloud {};
 }
 
 namespace bgfx {
-struct VertexLayout {};
+enum class Attrib { Position, TexCoord0, TexCoord1 };
+enum class AttribType { Float };
+enum class TextureFormat { RGBA8, RGBA32F };
+
+struct Memory {};
+
+struct VertexLayout {
+    VertexLayout& begin() { return *this; }
+    VertexLayout& add(Attrib, std::uint8_t, AttribType) { return *this; }
+    void end() {}
+};
+
 struct VertexBufferHandle { std::uint16_t idx = 0xFFFFu; };
 struct IndexBufferHandle { std::uint16_t idx = 0xFFFFu; };
 struct TextureHandle { std::uint16_t idx = 0xFFFFu; };
+
+inline bool isValid(VertexBufferHandle h) { return h.idx != 0xFFFFu; }
+inline bool isValid(IndexBufferHandle h) { return h.idx != 0xFFFFu; }
+inline bool isValid(TextureHandle h) { return h.idx != 0xFFFFu; }
+
+inline void destroy(VertexBufferHandle) {}
+inline void destroy(IndexBufferHandle) {}
+inline void destroy(TextureHandle) {}
+
+inline const Memory* copy(const void*, std::uint32_t) {
+    static Memory memory{};
+    return &memory;
+}
+
+inline TextureHandle createTexture2D(
+    std::uint16_t, std::uint16_t, bool, std::uint16_t,
+    TextureFormat, std::uint64_t, const Memory*) { return {}; }
+
+inline TextureHandle createTexture2D(
+    std::uint16_t, std::uint16_t, bool, std::uint16_t,
+    TextureFormat, const Memory*) { return {}; }
+
+inline VertexBufferHandle createVertexBuffer(const Memory*, const VertexLayout&) { return {}; }
+inline IndexBufferHandle createIndexBuffer(const Memory*) { return {}; }
 }
 
 #ifndef BGFX_INVALID_HANDLE
