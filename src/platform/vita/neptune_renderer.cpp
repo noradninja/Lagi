@@ -5741,16 +5741,26 @@ bool submit_vdp1_model(
                     counts[textureIndex] += 6u;
             }
 
+            // Each ordered phase gets an immutable slice of the mapped
+            // index buffer. GXM consumes draws asynchronously, so reusing
+            // offset zero for world -> shadow -> Edge would let later CPU
+            // writes corrupt indices still referenced by earlier draws.
+            const unsigned int phaseBase =
+                static_cast<unsigned int>(first * 6u);
+            const unsigned int phaseCapacity =
+                static_cast<unsigned int>((end - first) * 6u);
             unsigned int total = 0u;
             if (g_vdp1TextureBatches.size() < bucketCount)
                 g_vdp1TextureBatches.resize(bucketCount);
             for (unsigned int t = 0; t < bucketCount; ++t) {
-                g_vdp1TextureBatches[t].firstIndex = total;
+                g_vdp1TextureBatches[t].firstIndex =
+                    phaseBase + total;
                 g_vdp1TextureBatches[t].indexCount = counts[t];
-                writes[t] = total;
+                writes[t] = phaseBase + total;
                 total += counts[t];
             }
-            if (total > model.vertexCount)
+            if (total > phaseCapacity ||
+                phaseBase + total > model.vertexCount)
                 return false;
 
             for (std::size_t p = first; p < end; ++p) {
@@ -6007,14 +6017,26 @@ bool submit_vdp1_model(
                     batchCounts[bucket] += 24u;
             }
 
+            // As above, preserve every phase's submitted indices until
+            // sceGxmEndScene/Finish. Full mode uses 24 generated indices per
+            // original Saturn quad, so the source polygon range maps directly
+            // to a non-overlapping buffer slice.
+            const unsigned int phaseBase =
+                static_cast<unsigned int>(first * 24u);
+            const unsigned int phaseCapacity =
+                static_cast<unsigned int>((end - first) * 24u);
             unsigned int totalVisibleIndices = 0u;
             for (unsigned int t = 0; t < bucketCount; ++t) {
-                g_vdp1TextureBatches[t].firstIndex = totalVisibleIndices;
+                g_vdp1TextureBatches[t].firstIndex =
+                    phaseBase + totalVisibleIndices;
                 g_vdp1TextureBatches[t].indexCount = batchCounts[t];
-                batchWrite[t] = totalVisibleIndices;
+                batchWrite[t] =
+                    phaseBase + totalVisibleIndices;
                 totalVisibleIndices += batchCounts[t];
             }
-            if (totalVisibleIndices > g_vdp1SubdivIndexCapacity)
+            if (totalVisibleIndices > phaseCapacity ||
+                phaseBase + totalVisibleIndices >
+                    g_vdp1SubdivIndexCapacity)
                 return false;
 
             for (std::size_t p = first; p < end; ++p) {
