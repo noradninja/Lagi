@@ -2,6 +2,7 @@
 
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/lagi_town_runtime.h"
+#include "lagi/lagi_town_bootstrap.h"
 #include "lagi/platform.h"
 
 #include "town/town.h"
