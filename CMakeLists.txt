@@ -678,31 +678,11 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "__attribute__((weak)) u32 getFileSizeFromFileId(const char* fileName)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/town.cpp")
-  # Hardware-only bring-up trace for the authentic upstream world-grid draw
-  # path. This modifies only the generated build copy, never extern/Azel.
+  # Vita bridge for the authentic upstream static world-grid submission path.
+  # This modifies only the generated build copy, never extern/Azel.
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
-   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/platform.h\"\n#include \"lagi/lagi_render_bridge.h\""
-   source_text "${source_text}")
-
-  string(REPLACE
-   "void sWorldGridCellTask::Draw(sTownCellTask* pThis)\n{\n    pushCurrentMatrix();"
-   "void sWorldGridCellTask::Draw(sTownCellTask* pThis)\n{\n    static unsigned int lagiCellTraceCount = 0;\n    const bool lagiTraceCell = lagiCellTraceCount < 8;\n    if (lagiTraceCell) {\n        lagi::platform::logging::writef(\n            \"[TownCell] enter #%u cell=%08X pos=(%.5f,%.5f,%.5f) static=%08X bill=%08X\\n\",\n            lagiCellTraceCount,\n            static_cast<unsigned>(pThis->m8_cellPtr.m_offset),\n            pThis->mC_position[0].asS32() / 65536.0f,\n            pThis->mC_position[1].asS32() / 65536.0f,\n            pThis->mC_position[2].asS32() / 65536.0f,\n            static_cast<unsigned>(readSaturnU32(pThis->m8_cellPtr + 0xC)),\n            static_cast<unsigned>(readSaturnU32(pThis->m8_cellPtr + 0x10)));\n    }\n    pushCurrentMatrix();"
-   source_text "${source_text}")
-
-  string(REPLACE
-   "        fixedPoint var0 = pCurrentMatrix->m[2][3];\n        if (var0 >= graphicEngineStatus.m405C.m10_nearClipDistance - gTownGrid.m2C)"
-   "        fixedPoint var0 = pCurrentMatrix->m[2][3];\n        if (lagiTraceCell) {\n            lagi::platform::logging::writef(\n                \"[TownCell] gate #%u x=%.5f z=%.5f near=%.5f radius=%.5f wr=%.5f wr2=%.5f\\n\",\n                lagiCellTraceCount,\n                pCurrentMatrix->m[0][3].asS32() / 65536.0f,\n                pCurrentMatrix->m[2][3].asS32() / 65536.0f,\n                graphicEngineStatus.m405C.m10_nearClipDistance.asS32() / 65536.0f,\n                gTownGrid.m2C.asS32() / 65536.0f,\n                graphicEngineStatus.m405C.m2C_widthRatio.asS32() / 65536.0f,\n                graphicEngineStatus.m405C.m28_widthRatio2.asS32() / 65536.0f);\n        }\n        if (var0 >= graphicEngineStatus.m405C.m10_nearClipDistance - gTownGrid.m2C)"
-   source_text "${source_text}")
-
-  string(REPLACE
-   "            if ((pCurrentMatrix->m[0][3] >= -r4) && (pCurrentMatrix->m[0][3] <= r4))\n            {\n                sSaturnPtr r14 = readSaturnEA(pThis->m8_cellPtr + 0xC);"
-   "            if ((pCurrentMatrix->m[0][3] >= -r4) && (pCurrentMatrix->m[0][3] <= r4))\n            {\n                if (lagiTraceCell) {\n                    lagi::platform::logging::writef(\n                        \"[TownCell] visible #%u horizLimit=%.5f\\n\",\n                        lagiCellTraceCount,\n                        r4.asS32() / 65536.0f);\n                }\n                sSaturnPtr r14 = readSaturnEA(pThis->m8_cellPtr + 0xC);"
-   source_text "${source_text}")
-
-  string(REPLACE
-   "    }\n    popMatrix();\n}\n\ns32 isDataLoaded"
-   "    }\n    popMatrix();\n    if (lagiTraceCell)\n        ++lagiCellTraceCount;\n}\n\ns32 isDataLoaded"
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\""
    source_text "${source_text}")
 
   # Preserve Azel's pre-view world transform for static world-grid objects.
