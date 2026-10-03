@@ -9,9 +9,9 @@ endif()
 project(Lagi LANGUAGES C CXX)
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
-set(VITA_APP_NAME "Lagi 0.030-alpha")
+set(VITA_APP_NAME "Lagi 0.040-alpha")
 set(VITA_TITLEID "LAGI00001")
-set(VITA_VERSION "00.30")
+set(VITA_VERSION "00.40")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -812,6 +812,15 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # fallbacks in generated sources, while the strong Vita adapter supplies the
  # same engine API without changing extern/Azel.
  elseif(relative_path STREQUAL "PDS.cpp")
+  # Upstream labels this battle generic-data initialization as "not in
+  # original". 0.040 now enters through Azel's native azelInit()/resetEngine()
+  # path, so omit only that desktop reconstruction helper rather than making
+  # boot depend on battle integration.
+  string(REPLACE
+   "    BTL_GenericData::staticInit(); // not in original"
+   "    // Lagi Vita: desktop-only, explicitly non-original helper omitted."
+   source_text "${source_text}")
+
   string(REPLACE
    "bool findFileOnDisc(const std::string& filename)"
    "__attribute__((weak)) bool findFileOnDisc(const std::string& filename)"
@@ -904,6 +913,9 @@ endfunction()
 
 set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  PDS.cpp
+ rootTask.cpp
+ titleScreen.cpp
+ o_title.cpp
  common.cpp
  common_generated.cpp
  dummy.cpp
