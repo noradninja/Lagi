@@ -5,6 +5,7 @@
 #include "lagi/platform.h"
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/disc_image.h"
+#include "lagi/lagi_azel_upstream_prelude.h"
 
 #include "task.h"
 #include "rootTask.h"
