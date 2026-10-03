@@ -1,6 +1,8 @@
 # Building Lagi
 
-Last updated: 2026-10-01
+Current development milestone: **0.2.0**
+
+Last updated: 2026-10-03
 
 ## Requirements
 
@@ -154,6 +156,7 @@ Useful sections currently include:
 - Edge state and animation
 - collision setup
 - material/texture decode
+- VDP1 UI command diagnostics
 - GXM initialization and failures
 
 ## Current startup behavior
@@ -175,11 +178,21 @@ Current rendering configuration:
 
 ## Controls
 
-- **L / R** — cycle `Full -> Texture -> Lighting -> Quads -> Wires`
-- **Triangle** — Azel follow-camera modifier
-- **Right stick + Triangle** — side/rear follow-camera selection
-- **SELECT** — performance timing OSD
-- **START + SELECT** — exit
+Current Vita-to-Saturn town mapping:
+
+- **Square** -> Saturn A
+- **Cross** -> Saturn B
+- **Circle** -> Saturn C
+- **Triangle** -> Saturn Y
+- **L / R** -> Saturn L / R
+- **Start** -> Saturn Start
+- **Left analog stick** -> Saturn analog X/Y
+- **D-pad Left / Right** -> cycle `Full -> Texture -> Lighting -> Quads -> Wires`
+- **D-pad Up / Down** -> Saturn D-pad Up / Down
+- **SELECT** -> performance timing OSD
+- **START + SELECT** -> full retained debug/status screen
+
+For the current walk-mode input table, A/C enter or select Lock-On targets and B runs while moving or cancels Lock-On.
 
 ## Renderer reference behavior
 
@@ -190,7 +203,9 @@ The current live scene is expected to show:
 - original quad boundaries in Wires
 - stable Edge animation
 - correctly textured dynamic Ruins objects
-- Edge's oval stippled VDP1 mesh shadow
+- working town Lock-On with independent white cursor and target marker
+- native VDP1 selection-polyline rendering
+- Edge's oval stippled VDP1 mesh shadow with ordered draw/depth behavior
 - stable 30 FPS presentation
 
 The hidden profiling overlay remains available for performance work.

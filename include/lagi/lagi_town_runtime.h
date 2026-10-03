@@ -54,6 +54,8 @@ struct TownRuntimeBundle {
     std::int8_t fileIndex = -1;
     const TownRuntimeResource* model = nullptr;
     const TownRuntimeResource* graphics = nullptr;
+    std::uint16_t vdp1Base = 0;
+    std::uint16_t vdp1SizeUnits = 0;
     unsigned refCount = 0;
     std::shared_ptr<ModelCache> modelCache;
 };

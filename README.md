@@ -1,5 +1,7 @@
 # Lagi
 
+**Current development milestone: 0.2.0**
+
 **Lagi** is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed game logic runs directly on the Vita's ARM CPU, while Saturn-era rendering and platform behavior are translated to VitaSDK and native SceGxm.
 
 Lagi is not a Sega Saturn emulator and does not use VitaGL.
@@ -23,10 +25,15 @@ Working systems include:
 - textured SceGxm rendering
 - RGB555-style Gouraud lighting
 - Ruins lock/switch objects
-- Edge's original VDP1 mesh shadow
+- Saturn-style physical pad input translated from Vita controls
+- town LCS / lock-on state and target selection
+- native Neptune translation of VDP1 scaled-sprite and polyline UI commands
+- original LCS cursor, target marker, and selection-box behavior
+- Edge's original textured/stippled VDP1 mesh shadow
+- script-driven town fade-in
 - stable 30 Hz presentation
 
-The current milestone is to continue bringing up the complete Ruins scene using the same systems and ownership boundaries as the original game.
+Version **0.2.0** marks the transition from a rendered Ruins scene to a genuinely interactive upstream-Azel town slice: Azel owns movement, camera, collision, scripts, lock-on state, target selection, dynamic objects, and UI command generation, while Lagi translates the platform and rendering boundaries to Vita.
 
 ## Architecture
 
@@ -70,7 +77,7 @@ SceGxm
 
 ## Rendering
 
-The current Ruins renderer uses a 480x272 GXM render target and presents to the Vita's display, maintaining the original object 4:3 scale while rendering in a 16:9 aspect.
+The current Ruins renderer uses a 480x272 GXM render target and presents to the Vita's 960x544 display. Saturn-authored 3D and 2D presentation is aspect-corrected inside the widescreen output.
 
 ### Gouraud lighting
 
@@ -93,9 +100,20 @@ Edge's shadow uses the original shadow model from `COMMON3.MCB` and its real tex
 
 The texture supplies the oval silhouette. VDP1 `CMDPMOD` mesh mode supplies the alternating-pixel stipple. The Vita backend renders that primitive two-sided and with ordered VDP1-style depth behavior so it remains visible over the floor.
 
+### VDP1 town UI
+
+Azel retains ownership of town LCS state and emits its original VDP1 command stream. Neptune currently translates the command types required by the first Ruins lock-on sequence directly to native GXM:
+
+- scaled sprites -> cached textured screen-space quads
+- polylines -> native GXM line primitives
+- independent white free cursor and selected target marker
+- original shrinking selection rectangle during target acquisition
+
+The bridge translates Azel's commands rather than recreating lock-on gameplay or UI behavior in Vita-specific code.
+
 ## Scene views
 
-L/R cycles through:
+Vita D-pad Left/Right cycles through:
 
 ```text
 Full -> Texture -> Lighting -> Quads -> Wires
@@ -113,11 +131,23 @@ Normal startup enters **Full** with the diagnostic console hidden.
 
 ## Controls
 
-- **L / R** — previous / next scene view
-- **Triangle** — Azel follow-camera modifier
-- **Right stick while holding Triangle** — side/rear follow-camera selection
-- **SELECT** — performance timing OSD toggle
-- **START + SELECT** — exit
+Lagi exposes the Vita controls to Azel as a Saturn-style physical pad so Azel's own walk/flight/battle action maps remain authoritative.
+
+Current town mapping:
+
+- **Square** -> Saturn A
+- **Cross** -> Saturn B
+- **Circle** -> Saturn C
+- **Triangle** -> Saturn Y
+- **L / R** -> Saturn L / R
+- **Start** -> Saturn Start
+- **Left analog stick** -> Saturn analog X/Y
+- **D-pad Left / Right** -> Neptune renderer-mode cycle during current development builds
+- **D-pad Up / Down** -> Saturn D-pad Up / Down
+- **SELECT** -> performance timing OSD toggle
+- **START + SELECT** -> full retained debug/status screen
+
+In walk mode, the current controls match the original manual behavior: A/C enter or select in Lock-On mode, B runs while moving and cancels Lock-On.
 
 ## Performance
 

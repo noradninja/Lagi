@@ -20,6 +20,13 @@
 #include <utility>
 #include <vector>
 
+extern int numActiveTask;
+void initSMPC();
+void initVDP1();
+void iniitInitialTaskStatsAndDebugSub();
+void writeInputConfig(s32 type, const std::array<s32, 8>& config, s32 inverseY);
+void updateInputs();
+
 namespace lagi::azel {
 
 static bool saturn_memory_smoke_test()
@@ -64,6 +71,23 @@ static bool saturn_memory_smoke_test()
            v[2].asS32() == vec[2];
 }
 
+
+static void begin_azel_vdp1_frame()
+{
+    // initVDP1() owns the first six setup commands in context 0. Gameplay/UI
+    // commands are emitted after them. Rewind only the transient tail each
+    // frame, matching the Saturn command-list lifecycle without asking the
+    // desktop renderer to flush it.
+    auto& ctx = graphicEngineStatus.m14_vdp1Context[0];
+    if (mainContextVdp1[0].size() < 1024)
+        return;
+
+    ctx.m0_currentVdp1WriteEA = mainContextVdp1[0].begin() + 6;
+    ctx.m20_pCurrentVdp1Packet = ctx.m24_vdp1Packets;
+    ctx.m1C = 0;
+    ctx.mC = 0;
+    ctx.m10 = ctx.m14[0].begin();
+}
 
 bool runtime_smoke_init()
 {
@@ -121,6 +145,16 @@ bool runtime_smoke_init()
         return false;
     }
 
+    // Decode the immutable Ruins cell/material set for Neptune. Runtime
+    // transforms, camera, Edge and scripts remain owned by upstream Azel and
+    // are copied across the platform boundary after each task frame.
+    lagi::azel::StaticRoomDebugMesh townScene{};
+    if (!lagi::azel::build_town_world_scene(townScene)) {
+        std::printf("[TownRender] Ruins scene registration data FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] RUINS RENDER SCENE");
+        return false;
+    }
+
     lagi::azel::BasicWingDebugMesh edgeIdle{};
     if (!lagi::azel::build_edge_idle_debug_mesh(edgeIdle)) {
         std::printf("[Edge] idle model/textures reconstruction FAILED\n");
@@ -144,6 +178,12 @@ bool runtime_smoke_init()
             std::move(edgeShadow))) {
         std::printf("[Edge] shadow renderer registration FAILED\n");
         lagi::platform::renderer::failure("[FAIL] EDGE SHADOW RENDER MODEL");
+        return false;
+    }
+
+    if (!lagi::platform::renderer::load_static_room_viewer(townScene)) {
+        std::printf("[TownRender] Neptune scene registration FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] RUINS RENDER REGISTRATION");
         return false;
     }
 
@@ -193,6 +233,25 @@ bool runtime_smoke_init()
 
     lagi::platform::renderer::set_disc_alive(true);
 
+    // Direct boot bypasses azelInit(), so restore the same physical-pad
+    // state, action tables and VDP1 command context that normal Azel startup
+    // establishes before gameplay begins.
+    initSMPC();
+    iniitInitialTaskStatsAndDebugSub();
+
+    // The current upstream walk default reconstructs B/C as the LCS action
+    // and A as run. The original manual documents A/C as LCS and B as
+    // run/cancel. Keep the correction at the Lagi integration boundary until
+    // the upstream table itself is corrected.
+    const std::array<s32, 8> walkConfig = {
+        0, 0, 1, 8, 4, 8, 6, 7
+    };
+    writeInputConfig(0, walkConfig, 0);
+
+    // Town LCS/UI code writes authentic VDP1 commands even though Neptune,
+    // rather than Azel's desktop backend, ultimately renders them.
+    initVDP1();
+
     initHeap();
     resetTasks();
     if (!start_twn_ruin_task_pipeline()) {
@@ -211,25 +270,140 @@ bool runtime_smoke_init()
 
 void runtime_smoke_frame()
 {
-    // Square is a diagnostic scene restart, not an Edge/camera reset.
-    // Rebuild the native town task graph so the Ruins opening script owns
-    // Edge again and player control can only be released by Azel's normal
-    // scripted mF -> mC handoff.
-    if (lagi::platform::input::reset_scene_pressed()) {
+    static unsigned int startupFrame = 0;
+    const bool traceStartup = startupFrame < 3;
+    if (traceStartup)
         lagi::platform::logging::writef(
-            "[Azel] Square: restarting TWN_RUIN task pipeline\n");
-        resetTasks();
-        if (!start_twn_ruin_task_pipeline()) {
-            lagi::platform::renderer::failure("[FAIL] TWN_RUIN SCENE RESET");
-            return;
-        }
-        lagi::platform::renderer::show_town_scene();
-    }
+            "[AzelFrame] %u begin tasks=%d\n",
+            startupFrame, numActiveTask);
 
+    // Present the Vita controls to Azel exactly as a Saturn/3D-pad
+    // physical device. Azel then owns held/new-press state and translates the
+    // physical bits through its on-foot/dragon/battle buttonConfig tables.
+    auto& pending =
+        graphicEngineStatus.m4514.m0_inputDevices[0].m16_pending;
+    pending.m0_inputType = 2;
+    pending.m6_buttonDown = lagi::platform::input::saturn_buttons_down();
+    pending.m8_newButtonDown = lagi::platform::input::saturn_buttons_pressed();
+    pending.mC_newButtonDown2 =
+        lagi::platform::input::saturn_buttons_pressed();
+
+    // Vita's stick axes are opposite Azel's 3D-pad convention on both
+    // horizontal and vertical movement, so normalize them at the platform
+    // boundary rather than changing upstream gameplay semantics.
+    const float analogX = -lagi::platform::input::analog_x();
+    const float analogY = -lagi::platform::input::analog_y();
+    pending.m2_analogX = static_cast<s8>(
+        analogX <= -1.0f ? -127 :
+        analogX >= 1.0f ? 127 :
+        analogX * 127.0f);
+    pending.m3_analogY = static_cast<s8>(
+        analogY <= -1.0f ? -127 :
+        analogY >= 1.0f ? 127 :
+        analogY * 127.0f);
+
+    updateInputs();
+
+    begin_azel_vdp1_frame();
+
+    twn_ruin_frame_begin();
     lagi::azel_bridge::begin_frame();
     const std::uint64_t tasksStart = sceKernelGetProcessTimeWide();
     runTasks();
+    twn_ruin_sync_platform_state();
+
+    auto& vdp1Ctx = graphicEngineStatus.m14_vdp1Context[0];
+    if (mainContextVdp1[0].size() >= 6) {
+        const auto begin = mainContextVdp1[0].begin() + 6;
+        const auto end = vdp1Ctx.m0_currentVdp1WriteEA;
+        for (auto cmd = begin; cmd != end; ++cmd) {
+            lagi::azel_bridge::Vdp1UiCommand ui{};
+            ui.cmdCtrl = cmd->m0_CMDCTRL;
+            ui.cmdPmod = cmd->m4_CMDPMOD;
+            ui.cmdColr = cmd->m6_CMDCOLR;
+            ui.cmdSrca = cmd->m8_CMDSRCA;
+            ui.cmdSize = cmd->mA_CMDSIZE;
+            ui.xa = cmd->mC_CMDXA;   ui.ya = cmd->mE_CMDYA;
+            ui.xb = cmd->m10_CMDXB;  ui.yb = cmd->m12_CMDYB;
+            ui.xc = cmd->m14_CMDXC;  ui.yc = cmd->m16_CMDYC;
+            ui.xd = cmd->m18_CMDXD;  ui.yd = cmd->m1A_CMDYD;
+            lagi::azel_bridge::record_vdp1_ui_command(ui);
+        }
+    }
+
+    static unsigned int reportedVdp1Frames = 0;
+    const unsigned int vdp1CommandCount =
+        mainContextVdp1[0].size() >= 6
+            ? static_cast<unsigned int>(
+                vdp1Ctx.m0_currentVdp1WriteEA -
+                (mainContextVdp1[0].begin() + 6))
+            : 0u;
+    static unsigned int reportedMultiVdp1Frames = 0;
+    if (vdp1CommandCount > 1 && reportedMultiVdp1Frames < 12) {
+        lagi::platform::logging::writef(
+            "[VDP1UI-MULTI] frame=%u commands=%u\n",
+            startupFrame, vdp1CommandCount);
+
+        const auto begin = mainContextVdp1[0].begin() + 6;
+        const auto end = vdp1Ctx.m0_currentVdp1WriteEA;
+        unsigned int commandIndex = 0;
+        for (auto cmd = begin; cmd != end; ++cmd, ++commandIndex) {
+            lagi::platform::logging::writef(
+                "[VDP1UI-MULTI] #%u CTRL=%04X PMOD=%04X COLR=%04X "
+                "SRCA=%04X SIZE=%04X A=(%d,%d) B=(%d,%d) "
+                "C=(%d,%d) D=(%d,%d)\n",
+                commandIndex,
+                static_cast<unsigned int>(cmd->m0_CMDCTRL),
+                static_cast<unsigned int>(cmd->m4_CMDPMOD),
+                static_cast<unsigned int>(cmd->m6_CMDCOLR),
+                static_cast<unsigned int>(cmd->m8_CMDSRCA),
+                static_cast<unsigned int>(cmd->mA_CMDSIZE),
+                static_cast<int>(cmd->mC_CMDXA),
+                static_cast<int>(cmd->mE_CMDYA),
+                static_cast<int>(cmd->m10_CMDXB),
+                static_cast<int>(cmd->m12_CMDYB),
+                static_cast<int>(cmd->m14_CMDXC),
+                static_cast<int>(cmd->m16_CMDYC),
+                static_cast<int>(cmd->m18_CMDXD),
+                static_cast<int>(cmd->m1A_CMDYD));
+        }
+        ++reportedMultiVdp1Frames;
+    }
+
+    if (vdp1CommandCount && reportedVdp1Frames < 8) {
+        const auto& firstVdp1 = *(mainContextVdp1[0].begin() + 6);
+        lagi::platform::logging::writef(
+            "[VDP1UI] frame=%u commands=%u packets=%u "
+            "CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X "
+            "A=(%d,%d) B=(%d,%d) C=(%d,%d) D=(%d,%d)\n",
+            startupFrame,
+            vdp1CommandCount,
+            static_cast<unsigned int>(
+                vdp1Ctx.m20_pCurrentVdp1Packet -
+                vdp1Ctx.m24_vdp1Packets),
+            static_cast<unsigned int>(firstVdp1.m0_CMDCTRL),
+            static_cast<unsigned int>(firstVdp1.m4_CMDPMOD),
+            static_cast<unsigned int>(firstVdp1.m6_CMDCOLR),
+            static_cast<unsigned int>(firstVdp1.m8_CMDSRCA),
+            static_cast<unsigned int>(firstVdp1.mA_CMDSIZE),
+            static_cast<int>(firstVdp1.mC_CMDXA),
+            static_cast<int>(firstVdp1.mE_CMDYA),
+            static_cast<int>(firstVdp1.m10_CMDXB),
+            static_cast<int>(firstVdp1.m12_CMDYB),
+            static_cast<int>(firstVdp1.m14_CMDXC),
+            static_cast<int>(firstVdp1.m16_CMDYC),
+            static_cast<int>(firstVdp1.m18_CMDXD),
+            static_cast<int>(firstVdp1.m1A_CMDYD));
+        ++reportedVdp1Frames;
+    }
+
     const std::uint64_t tasksEnd = sceKernelGetProcessTimeWide();
+    if (traceStartup)
+        lagi::platform::logging::writef(
+            "[AzelFrame] %u tasks complete us=%u tasks=%d\n",
+            startupFrame,
+            static_cast<unsigned int>(tasksEnd - tasksStart),
+            numActiveTask);
 
     lagi::platform::renderer::town_profile_tasks_us(
         static_cast<unsigned int>(tasksEnd - tasksStart));
@@ -240,6 +414,10 @@ void runtime_smoke_frame()
     lagi::platform::renderer::town_wait_render_slot();
     lagi::azel_bridge::publish_frame();
     lagi::platform::renderer::town_publish_frame();
+    if (traceStartup)
+        lagi::platform::logging::writef(
+            "[AzelFrame] %u publish complete\n", startupFrame);
+    ++startupFrame;
     if (twn_ruin_task_pipeline_alive())
         lagi::platform::renderer::set_azel_alive(true);
 }

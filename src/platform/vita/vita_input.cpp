@@ -5,6 +5,8 @@ namespace lagi::platform::input {
 
 static bool g_exit = false;
 static unsigned int g_previousButtons = 0;
+static unsigned short g_saturnButtonsDown = 0;
+static unsigned short g_saturnButtonsPressed = 0;
 static float g_analogX = 0.0f;
 static float g_analogY = 0.0f;
 static float g_analogZoom = 0.0f;
@@ -54,14 +56,45 @@ void update()
     g_digitalY =
         (buttons & SCE_CTRL_UP ? 1 : 0) -
         (buttons & SCE_CTRL_DOWN ? 1 : 0);
-    g_runHeld = (buttons & SCE_CTRL_CROSS) != 0;
-    g_cameraHeld = (buttons & SCE_CTRL_TRIANGLE) != 0;
-    g_resetScene = (pressed & SCE_CTRL_SQUARE) != 0;
-    g_prevMode = (pressed & SCE_CTRL_LTRIGGER) != 0;
-    g_nextMode = (pressed & SCE_CTRL_RTRIGGER) != 0;
+    // Vita -> Saturn physical pad mapping. Azel's own buttonConfig tables
+    // remain responsible for translating these physical bits into walking,
+    // dragon and battle actions.
+    unsigned short saturn = 0;
+    if (buttons & SCE_CTRL_SQUARE)    saturn |= 0x0001; // Saturn A
+    if (buttons & SCE_CTRL_CROSS)     saturn |= 0x0002; // Saturn B
+    if (buttons & SCE_CTRL_CIRCLE)    saturn |= 0x0004; // Saturn C
+    if (buttons & SCE_CTRL_START)     saturn |= 0x0008; // Start
+    if (buttons & SCE_CTRL_UP)        saturn |= 0x0010;
+    if (buttons & SCE_CTRL_DOWN)      saturn |= 0x0020;
+    if (buttons & SCE_CTRL_RTRIGGER)  saturn |= 0x1000; // Saturn R
+    if (buttons & SCE_CTRL_TRIANGLE)  saturn |= 0x4000; // Saturn Y
+    if (buttons & SCE_CTRL_LTRIGGER)  saturn |= 0x8000; // Saturn L
 
-    if ((buttons & SCE_CTRL_START) && (buttons & SCE_CTRL_SELECT)) {
-        g_exit = true;
+    const bool debugComboHeld =
+        (buttons & SCE_CTRL_START) && (buttons & SCE_CTRL_SELECT);
+    const bool debugComboPressed =
+        debugComboHeld &&
+        (pressed & (SCE_CTRL_START | SCE_CTRL_SELECT));
+
+    // Start+Select is a Lagi-only debug chord. Do not leak Start into Azel on
+    // the chord frame, otherwise gameplay may also react to the same press.
+    if (debugComboHeld)
+        saturn &= static_cast<unsigned short>(~0x0008u);
+
+    g_saturnButtonsPressed =
+        static_cast<unsigned short>(saturn & ~g_saturnButtonsDown);
+    g_saturnButtonsDown = saturn;
+
+    // Legacy diagnostic controls are retired now that the authentic Azel
+    // runtime owns gameplay input.
+    g_runHeld = false;
+    g_cameraHeld = false;
+    g_resetScene = false;
+    g_prevMode = (pressed & SCE_CTRL_LEFT) != 0;
+    g_nextMode = (pressed & SCE_CTRL_RIGHT) != 0;
+
+    if (debugComboPressed) {
+        renderer::toggle_full_debug_screen();
     } else if (pressed & SCE_CTRL_SELECT) {
         renderer::toggle_debug_console();
     }
@@ -70,6 +103,8 @@ void update()
 }
 
 bool exit_requested() { return g_exit; }
+unsigned short saturn_buttons_down() { return g_saturnButtonsDown; }
+unsigned short saturn_buttons_pressed() { return g_saturnButtonsPressed; }
 float analog_x() { return g_analogX; }
 float analog_y() { return g_analogY; }
 float analog_zoom() { return g_analogZoom; }

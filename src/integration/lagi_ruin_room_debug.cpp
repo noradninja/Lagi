@@ -879,10 +879,8 @@ bool decode_town_texture_descriptor(
     const SaturnPolygonRecord& record,
     DecodedMode1Texture& out)
 {
-    const std::vector<std::uint8_t>* const cgb =
-        town_runtime_resource("RUINMP.CGB");
     sSaturnMemoryFile* const overlay = town_overlay_file();
-    if (!cgb || !overlay || !overlay->m_data)
+    if (!overlay || !overlay->m_data)
         return false;
 
     constexpr u32 kPaletteEA = 0x0605EBF8u;
@@ -894,22 +892,59 @@ bool decode_town_texture_descriptor(
         kPaletteBytes > overlay->m_dataSize - paletteOffset)
         return false;
 
-    StaticRoomDebugMesh one{};
-    one.polygonRecords.push_back(record);
-    decodeRoomTextures(
-        *cgb,
-        overlay->m_data + paletteOffset,
-        kPaletteBytes,
-        one);
+    const auto tryDecode = [&](const std::vector<std::uint8_t>& cgb,
+                               const SaturnPolygonRecord& descriptor) {
+        StaticRoomDebugMesh one{};
+        one.polygonRecords.push_back(descriptor);
+        decodeRoomTextures(
+            cgb,
+            overlay->m_data + paletteOffset,
+            kPaletteBytes,
+            one);
 
-    if (!one.texturesValid ||
-        one.decodedTextureData.size() != 1u ||
-        one.polygonTextureIndices.size() != 1u ||
-        one.polygonTextureIndices[0] != 0u)
-        return false;
+        if (!one.texturesValid ||
+            one.decodedTextureData.size() != 1u ||
+            one.polygonTextureIndices.size() != 1u ||
+            one.polygonTextureIndices[0] != 0u)
+            return false;
 
-    out = std::move(one.decodedTextureData[0]);
-    return true;
+        out = std::move(one.decodedTextureData[0]);
+        // Keep the live, relocated descriptor as the atlas cache key. The
+        // pixels came from the normalized address, but subsequent polygons
+        // carry the same patched values and must reuse this material.
+        out.cmdPmod = record.cmdPmod;
+        out.cmdColr = record.cmdColr;
+        out.cmdSrca = record.cmdSrca;
+        out.cmdSize = record.cmdSize;
+        return true;
+    };
+
+    // Upstream s_fileBundle::get3DModel() patches VDP1 addresses in-place.
+    // Identify the allocation by CMDSRCA, remove its base, and decode from
+    // that allocation's paired CGB. This covers both COMMON3 actors and the
+    // RUINMP environment while leaving runtime/gameplay ownership in Azel.
+    const TownRuntimeState& runtime = town_runtime();
+    for (const auto& bundle : runtime.bundles) {
+        if (!bundle.graphics || !bundle.vdp1SizeUnits)
+            continue;
+        const std::uint16_t relativeSrca =
+            static_cast<std::uint16_t>(record.cmdSrca - bundle.vdp1Base);
+        if (relativeSrca >= bundle.vdp1SizeUnits)
+            continue;
+
+        SaturnPolygonRecord normalized = record;
+        normalized.cmdColr = static_cast<std::uint16_t>(
+            record.cmdColr - bundle.vdp1Base);
+        normalized.cmdSrca = relativeSrca;
+        if (tryDecode(bundle.graphics->bytes, normalized))
+            return true;
+    }
+
+    // Preserve support for descriptors produced by Lagi's unrelocated
+    // static/debug model adapter.
+    const std::vector<std::uint8_t>* const ruinCgb =
+        town_runtime_resource("RUINMP.CGB");
+    return ruinCgb && tryDecode(*ruinCgb, record);
 }
 
 bool build_town_world_scene(StaticRoomDebugMesh& out)

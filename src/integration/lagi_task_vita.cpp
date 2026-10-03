@@ -8,9 +8,8 @@
 s_task* taskListHead = nullptr;
 int numActiveTask = 0;
 
-// Normally owned by PDS.cpp. Keep the same type and default unpaused state
-// until the Vita runtime brings the full engine-global layer online.
-std::array<u8, 3> pauseEngine{};
+// Owned by upstream PDS.cpp; the Vita task host only consumes the pause state.
+extern std::array<u8, 3> pauseEngine;
 
 void PrintDebugTaskHierarchy(s_task*) {}
 void PrintDebugTasksHierarchy() {}

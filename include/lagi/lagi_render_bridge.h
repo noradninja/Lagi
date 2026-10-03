@@ -22,6 +22,18 @@ struct SubmissionState {
     bool dynamic = false;
 };
 
+struct Vdp1UiCommand {
+    std::uint16_t cmdCtrl = 0;
+    std::uint16_t cmdPmod = 0;
+    std::uint16_t cmdColr = 0;
+    std::uint16_t cmdSrca = 0;
+    std::uint16_t cmdSize = 0;
+    std::int16_t xa = 0, ya = 0;
+    std::int16_t xb = 0, yb = 0;
+    std::int16_t xc = 0, yc = 0;
+    std::int16_t xd = 0, yd = 0;
+};
+
 struct RenderSubmission {
     sProcessed3dModel* model = nullptr;
     std::int32_t adaptedModelIndex = -1;
@@ -58,9 +70,18 @@ const LiveVdp1Model* adapted_model(std::uint32_t index);
 // vectors are not modified by the next begin_frame()/task pass, which gives
 // the renderer a stable frame boundary for the later threaded handoff.
 void publish_frame();
+void record_vdp1_ui_command(const Vdp1UiCommand& command);
+const std::vector<Vdp1UiCommand>& published_vdp1_ui_commands();
+
 const std::vector<RenderSubmission>& published_submissions();
 const LiveVdp1Model* published_adapted_model(std::uint32_t index);
 std::uint64_t published_frame_number();
+
+// Copy Azel's current lighting payload into an explicitly constructed
+// submission state without also inheriting pCurrentMatrix (which may already
+// contain the camera/view transform).
+void capture_current_light(SubmissionState& state);
+
 void set_town_submission_context(
     std::int8_t bundleIndex,
     std::uint32_t cellIndex,

@@ -73,6 +73,7 @@ static SceUID g_renderFrameReadySema = -1;
 static SceUID g_renderFrameFreeSema = -1;
 static volatile bool g_renderThreadRunning = false;
 static bool g_renderThreadStarted = false;
+static unsigned int g_renderStartupFrame = 0;
 static int renderThreadMain(SceSize args, void* argp);
 
 static bool g_azelAlive = false;
@@ -330,6 +331,25 @@ static std::vector<TextureBatch> g_vdp1TextureBatches;
 static std::vector<GpuMode1Texture> g_vdp1GpuTextures;
 static bool g_vdp1TexturedReady = false;
 
+// Lightweight VDP1 2D/UI translator. These resources are separate from the
+// resident 3D town mesh so UI commands never invalidate or rebuild it.
+struct Vdp1UiTextureCacheEntry {
+    std::uint16_t cmdPmod = 0;
+    std::uint16_t cmdColr = 0;
+    std::uint16_t cmdSrca = 0;
+    std::uint16_t cmdSize = 0;
+    GpuMode1Texture gpu{};
+};
+static std::vector<Vdp1UiTextureCacheEntry> g_vdp1UiTextureCache;
+static SceUID g_vdp1UiVertexUid = -1;
+static SceUID g_vdp1UiIndexUid = -1;
+static azel::DebugTextureVertex* g_vdp1UiVertices = nullptr;
+static std::uint16_t* g_vdp1UiIndices = nullptr;
+static SceUID g_vdp1UiLineVertexUid = -1;
+static SceUID g_vdp1UiLineIndexUid = -1;
+static azel::DebugColorVertex* g_vdp1UiLineVertices = nullptr;
+static std::uint16_t* g_vdp1UiLineIndices = nullptr;
+
 static bool g_probeDisplayingGxm = false;
 static bool g_viewerReady = false;
 static float g_viewYaw = 0.0f;
@@ -353,6 +373,7 @@ static float g_townCameraUp[3]{};
 static float g_townCameraYaw = 0.0f;
 static float g_townCameraPitch = 0.0f;
 static float g_townCameraDistance = 0.0f;
+static float g_azelProjectionFovDegrees = 80.0f;
 static bool g_townPlayerGrounded = false;
 static unsigned int g_townCollisionContacts = 0;
 static unsigned int g_townEdgeAnimation = 0;
@@ -786,6 +807,35 @@ static void drawTownInputOverlay(
     shadowed(x, y0 + lineStep * 3, line3);
 }
 
+
+void set_fov(float degrees)
+{
+    if (degrees > 1.0f && degrees < 179.0f)
+        g_azelProjectionFovDegrees = degrees;
+}
+
+void invalidate_cram_range(unsigned int, unsigned int)
+{
+    // Neptune decodes Saturn palette/material state into its own resident
+    // resources. Force the live-town material/model caches to be rebuilt on
+    // the next published frame when Azel writes CRAM.
+    g_liveTownMaterialCache.clear();
+    g_liveTownSignature = 0;
+    g_liveTownStaticSignature = 0;
+    g_liveTownPrepared = false;
+}
+
+void invalidate_vdp1_texture_range(unsigned int, unsigned int)
+{
+    // Azel's desktop backend invalidates decoded VDP1 textures here. Neptune
+    // owns the Vita texture cache, so invalidate the resident live-town model
+    // and material bindings and rebuild them from the updated VDP1 data.
+    g_liveTownMaterialCache.clear();
+    g_liveTownSignature = 0;
+    g_liveTownStaticSignature = 0;
+    g_liveTownPrepared = false;
+    freeVdp1Textures();
+}
 
 bool init()
 {
@@ -1455,6 +1505,313 @@ static void freeVdp1Textures()
     g_vdp1TexturedReady = false;
 }
 
+static bool ensureVdp1UiBuffers()
+{
+    if (g_vdp1UiVertices && g_vdp1UiIndices &&
+        g_vdp1UiLineVertices && g_vdp1UiLineIndices)
+        return true;
+
+    g_vdp1UiVertices = static_cast<azel::DebugTextureVertex*>(
+        probeGpuAlloc(
+            64u * 4u * sizeof(azel::DebugTextureVertex),
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_vdp1UiVertexUid));
+    g_vdp1UiIndices = static_cast<std::uint16_t*>(
+        probeGpuAlloc(
+            6u * sizeof(std::uint16_t),
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_vdp1UiIndexUid));
+    g_vdp1UiLineVertices = static_cast<azel::DebugColorVertex*>(
+        probeGpuAlloc(
+            4u * sizeof(azel::DebugColorVertex),
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_vdp1UiLineVertexUid));
+    g_vdp1UiLineIndices = static_cast<std::uint16_t*>(
+        probeGpuAlloc(
+            8u * sizeof(std::uint16_t),
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_vdp1UiLineIndexUid));
+    if (!g_vdp1UiVertices || !g_vdp1UiIndices ||
+        !g_vdp1UiLineVertices || !g_vdp1UiLineIndices)
+        return false;
+
+    static const std::uint16_t kIndices[6] = {0, 1, 2, 0, 2, 3};
+    static const std::uint16_t kLineIndices[8] = {
+        0,1, 1,2, 2,3, 3,0
+    };
+    std::memcpy(g_vdp1UiIndices, kIndices, sizeof(kIndices));
+    std::memcpy(
+        g_vdp1UiLineIndices, kLineIndices, sizeof(kLineIndices));
+    return true;
+}
+
+static GpuMode1Texture* findOrUploadVdp1UiTexture(
+    const azel_bridge::Vdp1UiCommand& command)
+{
+    for (auto& entry : g_vdp1UiTextureCache) {
+        if (entry.cmdPmod == command.cmdPmod &&
+            entry.cmdColr == command.cmdColr &&
+            entry.cmdSrca == command.cmdSrca &&
+            entry.cmdSize == command.cmdSize)
+            return &entry.gpu;
+    }
+
+    azel::SaturnPolygonRecord record{};
+    record.cmdCtrl = command.cmdCtrl;
+    record.cmdPmod = command.cmdPmod;
+    record.cmdColr = command.cmdColr;
+    record.cmdSrca = command.cmdSrca;
+    record.cmdSize = command.cmdSize;
+
+    azel::DecodedMode1Texture decoded{};
+    if (!azel::decode_town_texture_descriptor(record, decoded) ||
+        !decoded.width || !decoded.height ||
+        decoded.rgba.size() != decoded.width * decoded.height)
+        return nullptr;
+
+    const unsigned int stridePixels = (decoded.width + 7u) & ~7u;
+    const unsigned int bytes =
+        stridePixels * decoded.height * sizeof(std::uint32_t);
+
+    Vdp1UiTextureCacheEntry entry{};
+    entry.cmdPmod = command.cmdPmod;
+    entry.cmdColr = command.cmdColr;
+    entry.cmdSrca = command.cmdSrca;
+    entry.cmdSize = command.cmdSize;
+    entry.gpu.data = probeGpuAlloc(
+        bytes, SCE_GXM_MEMORY_ATTRIB_READ, &entry.gpu.uid);
+    if (!entry.gpu.data)
+        return nullptr;
+
+    entry.gpu.width = decoded.width;
+    entry.gpu.height = decoded.height;
+    std::memset(entry.gpu.data, 0, bytes);
+    auto* dst = static_cast<std::uint32_t*>(entry.gpu.data);
+    for (unsigned int y = 0; y < decoded.height; ++y) {
+        std::memcpy(
+            dst + y * stridePixels,
+            decoded.rgba.data() + y * decoded.width,
+            decoded.width * sizeof(std::uint32_t));
+    }
+
+    if (sceGxmTextureInitLinear(
+            &entry.gpu.texture,
+            entry.gpu.data,
+            SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+            decoded.width,
+            decoded.height,
+            0) < 0) {
+        sceGxmUnmapMemory(entry.gpu.data);
+        sceKernelFreeMemBlock(entry.gpu.uid);
+        return nullptr;
+    }
+    sceGxmTextureSetMinFilter(
+        &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+    sceGxmTextureSetMagFilter(
+        &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+
+    g_vdp1UiTextureCache.push_back(std::move(entry));
+    return &g_vdp1UiTextureCache.back().gpu;
+}
+
+static void drawPublishedVdp1Ui()
+{
+    const auto& commands = azel_bridge::published_vdp1_ui_commands();
+    if (commands.empty() || !g_textureVertexProgram ||
+        !g_textureFragmentProgram || !g_textureWvpParam ||
+        !ensureVdp1UiBuffers())
+        return;
+
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+
+    sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
+
+    void* uniforms = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniforms) < 0 || !uniforms)
+        return;
+    static const float identity[16] = {
+        1.0f,0.0f,0.0f,0.0f,
+        0.0f,1.0f,0.0f,0.0f,
+        0.0f,0.0f,1.0f,0.0f,
+        0.0f,0.0f,0.0f,1.0f
+    };
+    sceGxmSetUniformDataF(
+        uniforms, g_textureWvpParam, 0, 16, identity);
+
+    unsigned int spriteSlot = 0u;
+    for (const auto& command : commands) {
+        const unsigned int commandType = command.cmdCtrl & 0x000Fu;
+
+        const float renderAspect =
+            static_cast<float>(viewerRenderWidth()) /
+            static_cast<float>(viewerRenderHeight());
+        const float saturnAspectCorrection =
+            (4.0f / 3.0f) / renderAspect;
+
+        // VDP1 polyline. Town LCS uses this for the shrinking white
+        // selection rectangle before the steady-state cursor/target sprites.
+        if (commandType == 0x0005u) {
+            if (!g_probeVertexProgram || !g_probeFragmentProgram ||
+                !g_probeWvpParam)
+                continue;
+
+            const std::uint16_t c = command.cmdColr;
+            const std::uint8_t r = static_cast<std::uint8_t>(
+                (((c >> 0) & 31u) << 3) | (((c >> 0) & 31u) >> 2));
+            const std::uint8_t g = static_cast<std::uint8_t>(
+                (((c >> 5) & 31u) << 3) | (((c >> 5) & 31u) >> 2));
+            const std::uint8_t b = static_cast<std::uint8_t>(
+                (((c >> 10) & 31u) << 3) | (((c >> 10) & 31u) >> 2));
+
+            const float x[4] = {
+                (static_cast<float>(command.xa) / 176.0f) *
+                    saturnAspectCorrection,
+                (static_cast<float>(command.xb) / 176.0f) *
+                    saturnAspectCorrection,
+                (static_cast<float>(command.xc) / 176.0f) *
+                    saturnAspectCorrection,
+                (static_cast<float>(command.xd) / 176.0f) *
+                    saturnAspectCorrection
+            };
+            const float y[4] = {
+                -static_cast<float>(command.ya) / 112.0f,
+                -static_cast<float>(command.yb) / 112.0f,
+                -static_cast<float>(command.yc) / 112.0f,
+                -static_cast<float>(command.yd) / 112.0f
+            };
+            for (unsigned int i = 0; i < 4u; ++i)
+                g_vdp1UiLineVertices[i] = {
+                    x[i], y[i], 0.0f, r, g, b, 255u
+                };
+
+            sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
+            sceGxmSetFragmentProgram(
+                g_probeContext, g_probeFragmentProgram);
+            void* lineUniforms = nullptr;
+            if (sceGxmReserveVertexDefaultUniformBuffer(
+                    g_probeContext, &lineUniforms) >= 0 && lineUniforms) {
+                sceGxmSetUniformDataF(
+                    lineUniforms, g_probeWvpParam, 0, 16, identity);
+                sceGxmSetVertexStream(
+                    g_probeContext, 0, g_vdp1UiLineVertices);
+                sceGxmDraw(
+                    g_probeContext,
+                    SCE_GXM_PRIMITIVE_LINES,
+                    SCE_GXM_INDEX_FORMAT_U16,
+                    g_vdp1UiLineIndices,
+                    8);
+            }
+
+            // Restore the textured UI pipeline for subsequent sprite commands.
+            sceGxmSetVertexProgram(
+                g_probeContext, g_textureVertexProgram);
+            sceGxmSetFragmentProgram(
+                g_probeContext, g_textureFragmentProgram);
+            void* textureUniforms = nullptr;
+            if (sceGxmReserveVertexDefaultUniformBuffer(
+                    g_probeContext, &textureUniforms) >= 0 &&
+                textureUniforms) {
+                sceGxmSetUniformDataF(
+                    textureUniforms,
+                    g_textureWvpParam,
+                    0, 16, identity);
+            }
+            continue;
+        }
+
+        if (commandType != 0x0001u ||
+            ((command.cmdCtrl >> 8) & 0xFu) != 0u ||
+            command.cmdSrca == 0u)
+            continue;
+
+        GpuMode1Texture* texture =
+            findOrUploadVdp1UiTexture(command);
+        if (!texture)
+            continue;
+
+        // Match the horizontal presentation transform used by
+        // buildAzelProjection(). Azel emits centered 352x224 VDP1
+        // coordinates, while Neptune presents that Saturn-authored image in
+        // a centered 4:3 region of the Vita framebuffer. Applying the same
+        // correction to both endpoints preserves sprite shape AND keeps
+        // target-attached UI aligned with the projected 3D object.
+        const float x0 =
+            (static_cast<float>(command.xa) / 176.0f) *
+            saturnAspectCorrection;
+        const float x1 =
+            (static_cast<float>(command.xc + 1) / 176.0f) *
+            saturnAspectCorrection;
+
+        const float y0 = -static_cast<float>(command.ya) / 112.0f;
+        const float y1 =
+            -static_cast<float>(command.yc + 1) / 112.0f;
+
+        const float u0 = 0.5f / static_cast<float>(texture->width);
+        const float v0 = 0.5f / static_cast<float>(texture->height);
+        const float u1 =
+            (static_cast<float>(texture->width) - 0.5f) /
+            static_cast<float>(texture->width);
+        const float v1 =
+            (static_cast<float>(texture->height) - 0.5f) /
+            static_cast<float>(texture->height);
+        const float uv[4][2] = {
+            {u0,v0}, {u1,v0}, {u1,v1}, {u0,v1}
+        };
+        int order[4] = {0,1,2,3};
+        switch ((command.cmdCtrl >> 4) & 3u) {
+        case 1:
+            order[0]=1; order[1]=0; order[2]=3; order[3]=2;
+            break;
+        case 2:
+            order[0]=3; order[1]=2; order[2]=1; order[3]=0;
+            break;
+        case 3:
+            order[0]=2; order[1]=3; order[2]=0; order[3]=1;
+            break;
+        default:
+            break;
+        }
+
+        if (spriteSlot >= 64u)
+            continue;
+
+        azel::DebugTextureVertex* const spriteVertices =
+            g_vdp1UiVertices + spriteSlot * 4u;
+        ++spriteSlot;
+
+        const float pos[4][2] = {
+            {x0,y0}, {x1,y0}, {x1,y1}, {x0,y1}
+        };
+        for (unsigned int i = 0; i < 4u; ++i) {
+            spriteVertices[i] = {
+                pos[i][0], pos[i][1], 0.0f,
+                uv[order[i]][0], uv[order[i]][1]
+            };
+        }
+
+        // GXM consumes vertex streams asynchronously. Never overwrite a
+        // vertex slice after issuing its draw within the same scene; the next
+        // VDP1 sprite gets a separate 4-vertex region.
+        sceGxmSetVertexStream(g_probeContext, 0, spriteVertices);
+        sceGxmSetFragmentTexture(
+            g_probeContext, 0, &texture->texture);
+        sceGxmDraw(
+            g_probeContext,
+            SCE_GXM_PRIMITIVE_TRIANGLES,
+            SCE_GXM_INDEX_FORMAT_U16,
+            g_vdp1UiIndices,
+            6);
+    }
+}
+
 static bool uploadVdp1Textures(const Vdp1ModelSource& model)
 {
     freeVdp1Textures();
@@ -1649,6 +2006,27 @@ static bool buildVdp1TexturedBuffers(const Vdp1ModelSource& model)
         }
 
         batch.indexCount = outIndex - batch.firstIndex;
+    }
+
+    static bool reportedShadowGpu = false;
+    if (!reportedShadowGpu && !g_edgeShadowTownTextureIndices.empty()) {
+        for (const auto shadowIndex : g_edgeShadowTownTextureIndices) {
+            if (shadowIndex < g_vdp1GpuTextures.size() &&
+                shadowIndex < g_vdp1TextureBatches.size()) {
+                const auto& gpu = g_vdp1GpuTextures[shadowIndex];
+                const auto& batch = g_vdp1TextureBatches[shadowIndex];
+                platform::logging::writef(
+                    "[ShadowGPU] atlas=%u %ux%u mesh=%u "
+                    "batchFirst=%u batchCount=%u\n",
+                    static_cast<unsigned int>(shadowIndex),
+                    gpu.width,
+                    gpu.height,
+                    gpu.mesh ? 1u : 0u,
+                    batch.firstIndex,
+                    batch.indexCount);
+            }
+        }
+        reportedShadowGpu = true;
     }
 
     return outIndex == vertexCount;
@@ -2320,13 +2698,6 @@ static std::uint16_t liveTownTextureIndex(
         if (next < 0xFFFFu) {
             g_staticRoomCpuMesh.decodedTextureData.push_back(
                 std::move(decoded));
-            platform::logging::writef(
-                "[TownRender] added live material %u PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
-                static_cast<unsigned>(next),
-                static_cast<unsigned>(record.cmdPmod),
-                static_cast<unsigned>(record.cmdColr),
-                static_cast<unsigned>(record.cmdSrca),
-                static_cast<unsigned>(record.cmdSize));
             return static_cast<std::uint16_t>(next);
         }
     }
@@ -2786,7 +3157,7 @@ static ViewerMat4 buildAuthenticRoomWvp()
 
     ViewerMat4 projection =
         buildAzelProjection(
-            g_staticRoomCpuMesh.cameraFovDegrees,
+            g_azelProjectionFovDegrees,
             0u,
             g_staticRoomCpuMesh.cameraNear,
             g_staticRoomCpuMesh.cameraFar);
@@ -3448,15 +3819,28 @@ static void updateStaticRoomAzelLighting(bool authenticDepth)
 
 void toggle_debug_console()
 {
-    // Select is reserved for the lightweight performance HUD. The original
-    // boot/debug status screen remains in code and in the log stream, but is
-    // no longer exposed as an in-game presentation mode.
+    // Plain Select toggles only the lightweight performance HUD.
     if (!g_viewerReady)
         return;
 
     if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
         sceKernelWaitSema(g_renderFrameFreeSema, 1, nullptr);
     g_showThreadTimingOsd = !g_showThreadTimingOsd;
+    if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
+        sceKernelSignalSema(g_renderFrameFreeSema, 1);
+}
+
+void toggle_full_debug_screen()
+{
+    if (!g_viewerReady || !g_gxmProbeAttempted)
+        return;
+
+    if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
+        sceKernelWaitSema(g_renderFrameFreeSema, 1, nullptr);
+
+    g_debugVisible = !g_debugVisible;
+    g_probeDisplayingGxm = !g_debugVisible;
+
     if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
         sceKernelSignalSema(g_renderFrameFreeSema, 1);
 }
@@ -4909,6 +5293,34 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
                     static_cast<std::uint16_t>(
                         shadowTextureBase + index));
             }
+            if (!g_edgeShadowTownTextureIndices.empty()) {
+                const std::uint16_t atlasIndex =
+                    g_edgeShadowTownTextureIndices.front();
+                if (atlasIndex <
+                    g_staticRoomCpuMesh.decodedTextureData.size()) {
+                    const auto& shadowTex =
+                        g_staticRoomCpuMesh.decodedTextureData[atlasIndex];
+                    const unsigned int visiblePixels =
+                        static_cast<unsigned int>(std::count_if(
+                            shadowTex.rgba.begin(),
+                            shadowTex.rgba.end(),
+                            [](std::uint32_t px) {
+                                return (px >> 24) != 0u;
+                            }));
+                    platform::logging::writef(
+                        "[ShadowTex] atlas=%u PMOD=%04X COLR=%04X "
+                        "SRCA=%04X SIZE=%04X %ux%u visible=%u/%u\n",
+                        static_cast<unsigned int>(atlasIndex),
+                        static_cast<unsigned int>(shadowTex.cmdPmod),
+                        static_cast<unsigned int>(shadowTex.cmdColr),
+                        static_cast<unsigned int>(shadowTex.cmdSrca),
+                        static_cast<unsigned int>(shadowTex.cmdSize),
+                        shadowTex.width,
+                        shadowTex.height,
+                        visiblePixels,
+                        static_cast<unsigned int>(shadowTex.rgba.size()));
+                }
+            }
         }
 
         g_staticRoomCpuMesh.polygons +=
@@ -6072,6 +6484,9 @@ static void renderBasicWingViewer()
     }
 
     if (roomAuthenticCameraMode)
+        drawPublishedVdp1Ui();
+
+    if (roomAuthenticCameraMode)
         drawTownFadeOverlay(updateTownFadeAlpha());
 
     const std::uint64_t gxmWaitStartUs = sceKernelGetProcessTimeWide();
@@ -6301,8 +6716,17 @@ static int renderThreadMain(SceSize, void*)
         if (!g_renderThreadRunning)
             break;
 
+        if (g_renderStartupFrame < 3)
+            logging::writef(
+                "[RenderFrame] %u begin\n",
+                g_renderStartupFrame);
         if (!g_debugVisible)
             renderBasicWingViewer();
+        if (g_renderStartupFrame < 3)
+            logging::writef(
+                "[RenderFrame] %u end\n",
+                g_renderStartupFrame);
+        ++g_renderStartupFrame;
 
         // The published bridge/presentation state may now be overwritten by
         // the game thread for the next completed frame.
@@ -6331,6 +6755,30 @@ void begin_frame()
     }
 
     fill(0xFF000000u);
+
+    if (g_gxmProbeAttempted && g_viewerReady) {
+        // Start+Select exposes the retained bring-up/status screen without
+        // stopping the Azel task graph. The game continues to simulate while
+        // this CPU-side diagnostic framebuffer is presented.
+        drawTextSmall(40, 18, "LAGI DEBUG STATUS", 0xFFFFFFFFu);
+        drawTextSmall(
+            40, 34,
+            "START+SELECT: RETURN   SELECT: PERFORMANCE OSD",
+            0xFFB0B0B0u);
+
+        for (int i = 0; i < g_statusCount; ++i) {
+            const int column = i / kStatusRowsPerColumn;
+            const int row = i % kStatusRowsPerColumn;
+            if (column >= 2)
+                break;
+            drawTextSmall(
+                kStatusColumnX[column],
+                58 + row * kStatusLineHeight,
+                g_status[i].text,
+                g_status[i].color);
+        }
+        return;
+    }
 
     // Normal startup presentation stays intentionally minimal. Detailed boot
     // status is still collected/logged, but the user sees only a black screen
@@ -6496,8 +6944,16 @@ void town_wait_render_slot()
 
 void town_publish_frame()
 {
-    if (!g_pendingTownPresentationValid)
+    if (!g_pendingTownPresentationValid) {
+        // town_wait_render_slot() has already consumed the producer token.
+        // Azel is allowed to spend startup frames without publishing Edge or
+        // camera state, so return that token when there is no frame to queue.
+        // Otherwise the next game frame waits forever and presentation stays
+        // black even though the process itself is still alive.
+        if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
+            sceKernelSignalSema(g_renderFrameFreeSema, 1);
         return;
+    }
 
     std::memcpy(
         g_townPlayerPosition,

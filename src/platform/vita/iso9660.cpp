@@ -249,6 +249,22 @@ bool has_file(const char* name)
     return e.valid;
 }
 
+bool file_size(const char* name, std::uint32_t& out)
+{
+    out = 0;
+    if (!g_mounted) return false;
+
+    FILE* f = std::fopen(g_imagePath.c_str(), "rb");
+    if (!f) return false;
+
+    const Entry e = find_root_file(f, name);
+    std::fclose(f);
+    if (!e.valid) return false;
+
+    out = e.size;
+    return true;
+}
+
 bool read_file(const char* name, std::vector<std::uint8_t>& out)
 {
     out.clear();
