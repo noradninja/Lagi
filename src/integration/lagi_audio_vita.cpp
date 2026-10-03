@@ -34,6 +34,16 @@ void playPCM(p_workArea, u32)
 {
 }
 
+void lagiAzelFieldPlayPCM(const char* filename)
+{
+    // Field-script PCM is a platform audio service. The native streaming path
+    // will be brought online separately; keep Azel's script sequencing intact
+    // and make any reached request visible during 0.040 bring-up.
+    lagi::platform::logging::writef(
+        "[AzelAudio] field PCM requested: %s\n",
+        filename ? filename : "<null>");
+}
+
 void enqueuePlaySoundEffect(s32, s32, s32, s32)
 {
 }
