@@ -2348,12 +2348,44 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
 
         static bool reportedNormalSprite = false;
         if (!reportedNormalSprite) {
+            unsigned int sourceNonZero = 0u;
+            unsigned int visiblePixels = 0u;
+            std::uint32_t sourceHash = 2166136261u;
+            std::uint32_t rgbaHash = 2166136261u;
+            for (unsigned int i = 0; i < texBytes; ++i) {
+                if (src[i] != 0u)
+                    ++sourceNonZero;
+                sourceHash ^= src[i];
+                sourceHash *= 16777619u;
+            }
+            for (const auto px : decoded.rgba) {
+                if ((px >> 24) != 0u)
+                    ++visiblePixels;
+                rgbaHash ^= px;
+                rgbaHash *= 16777619u;
+            }
+            const unsigned int base =
+                static_cast<unsigned int>(command.cmdColr) & 0x07F0u;
             logging::writef(
-                "[VDP1Normal] SRCA=%04X SIZE=%04X COLR=%04X %ux%u live-vram/cram\n",
+                "[VDP1Normal] SRCA=%04X SIZE=%04X COLR=%04X %ux%u "
+                "srcNZ=%u/%u vis=%u/%u srcHash=%08X rgbaHash=%08X "
+                "pal=%04X:%04X,%04X,%04X,%04X\n",
                 static_cast<unsigned int>(command.cmdSrca),
                 static_cast<unsigned int>(command.cmdSize),
                 static_cast<unsigned int>(command.cmdColr),
-                width, height);
+                width, height,
+                sourceNonZero, texBytes,
+                visiblePixels,
+                static_cast<unsigned int>(decoded.rgba.size()),
+                sourceHash, rgbaHash,
+                static_cast<unsigned int>(
+                    readVdp2Be16(g_vdp2Cram, ((base | 1u) * 2u) & 0x0FFFu)),
+                static_cast<unsigned int>(
+                    readVdp2Be16(g_vdp2Cram, ((base | 2u) * 2u) & 0x0FFFu)),
+                static_cast<unsigned int>(
+                    readVdp2Be16(g_vdp2Cram, ((base | 3u) * 2u) & 0x0FFFu)),
+                static_cast<unsigned int>(
+                    readVdp2Be16(g_vdp2Cram, ((base | 4u) * 2u) & 0x0FFFu)));
             reportedNormalSprite = true;
         }
 
@@ -2615,6 +2647,19 @@ static void drawPublishedVdp1Ui()
         const float uv[4][2] = {
             {u0,v0}, {u1,v0}, {u1,v1}, {u0,v1}
         };
+
+        if (commandType == 0x0000u) {
+            static bool reportedNormalGeometry = false;
+            if (!reportedNormalGeometry) {
+                logging::writef(
+                    "[VDP1NormalGeom] A=(%d,%d) ndc=(%.4f,%.4f)-(%.4f,%.4f) CTRL=%04X\n",
+                    static_cast<int>(command.xa),
+                    static_cast<int>(command.ya),
+                    x0, y0, x1, y1,
+                    static_cast<unsigned int>(command.cmdCtrl));
+                reportedNormalGeometry = true;
+            }
+        }
         int order[4] = {0,1,2,3};
         switch ((command.cmdCtrl >> 4) & 3u) {
         case 1:
