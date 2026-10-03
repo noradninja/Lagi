@@ -61,6 +61,12 @@ void publish_frame();
 const std::vector<RenderSubmission>& published_submissions();
 const LiveVdp1Model* published_adapted_model(std::uint32_t index);
 std::uint64_t published_frame_number();
+
+// Copy Azel's current lighting payload into an explicitly constructed
+// submission state without also inheriting pCurrentMatrix (which may already
+// contain the camera/view transform).
+void capture_current_light(SubmissionState& state);
+
 void set_town_submission_context(
     std::int8_t bundleIndex,
     std::uint32_t cellIndex,
