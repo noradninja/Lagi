@@ -99,6 +99,7 @@ s16 READ_BE_S16(const void* ptr);
 u8 READ_BE_U8(const void* ptr);
 s8 READ_BE_S8(const void* ptr);
 
+bool findFileOnDisc(const std::string& filename);
 u32 getFileSize(const char* fileName);
 
 void initVDP1Projection(fixedPoint r4, u32 mode);
