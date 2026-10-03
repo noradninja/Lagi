@@ -26,6 +26,8 @@ void initVDP1();
 void iniitInitialTaskStatsAndDebugSub();
 void writeInputConfig(s32 type, const std::array<s32, 8>& config, s32 inverseY);
 void updateInputs();
+u32 getFileSize(const char* fileName);
+int loadFile(const char* fileName, u8* destination, u16 vdp1Pointer);
 
 namespace lagi::azel {
 
@@ -87,6 +89,39 @@ static void begin_azel_vdp1_frame()
     ctx.m1C = 0;
     ctx.mC = 0;
     ctx.m10 = ctx.m14[0].begin();
+}
+
+static bool load_direct_boot_ui_vdp1_data()
+{
+    // Normal Azel startup reaches town through the main-menu module, which
+    // leaves MENU.CGB resident at VDP1 byte address 0x10000. Direct town boot
+    // bypasses that module, but dialogTask still uses the shared animated
+    // cursor descriptors in COMMON.DAT (SRCA 0x2000..0x2028) that point into
+    // this resident image. Restore the omitted platform state rather than
+    // replacing Azel's cursor with a Vita-owned sprite.
+    constexpr u32 kMenuVdp1Address = 0x25C10000u;
+    constexpr u32 kVdp1EndAddress = 0x25C80000u;
+    const u32 bytes = getFileSize("MENU.CGB");
+    if (!bytes || bytes > kVdp1EndAddress - kMenuVdp1Address) {
+        lagi::platform::logging::writef(
+            "[DirectBoot] invalid MENU.CGB size: %u\n",
+            static_cast<unsigned>(bytes));
+        return false;
+    }
+
+    if (loadFile(
+            "MENU.CGB",
+            getVdp1Pointer(kMenuVdp1Address),
+            0) < 0) {
+        lagi::platform::logging::writef(
+            "[DirectBoot] failed to restore resident MENU.CGB\n");
+        return false;
+    }
+
+    lagi::platform::logging::writef(
+        "[DirectBoot] resident MENU.CGB %u bytes -> VDP1 00010000\n",
+        static_cast<unsigned>(bytes));
+    return true;
 }
 
 bool runtime_smoke_init()
@@ -251,6 +286,11 @@ bool runtime_smoke_init()
     // Town LCS/UI code writes authentic VDP1 commands even though Neptune,
     // rather than Azel's desktop backend, ultimately renders them.
     initVDP1();
+    if (!load_direct_boot_ui_vdp1_data()) {
+        lagi::platform::renderer::failure(
+            "[FAIL] DIRECT BOOT VDP1 UI DATA");
+        return false;
+    }
 
     initHeap();
 
