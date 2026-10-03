@@ -362,6 +362,22 @@ static SceUID g_vdp1UiLineIndexUid = -1;
 static azel::DebugColorVertex* g_vdp1UiLineVertices = nullptr;
 static std::uint16_t* g_vdp1UiLineIndices = nullptr;
 
+static constexpr unsigned int kVdp2Nbg1AtlasWidth = 128u;
+static constexpr unsigned int kVdp2Nbg1AtlasHeight = 128u;
+static constexpr unsigned int kVdp2Nbg1MaxTiles = 64u;
+static constexpr unsigned int kVdp2Nbg1MaxCells = 32u * 14u;
+static SceUID g_vdp2Nbg1AtlasUid = -1;
+static std::uint32_t* g_vdp2Nbg1AtlasPixels = nullptr;
+static SceGxmTexture g_vdp2Nbg1AtlasTexture{};
+static SceUID g_vdp2Nbg1VertexUid = -1;
+static SceUID g_vdp2Nbg1IndexUid = -1;
+static azel::DebugTextureVertex* g_vdp2Nbg1Vertices = nullptr;
+static std::uint16_t* g_vdp2Nbg1Indices = nullptr;
+static SceUID g_vdp2BarVertexUid = -1;
+static SceUID g_vdp2BarIndexUid = -1;
+static azel::DebugColorVertex* g_vdp2BarVertices = nullptr;
+static std::uint16_t* g_vdp2BarIndices = nullptr;
+
 static bool g_probeDisplayingGxm = false;
 static bool g_viewerReady = false;
 static float g_viewYaw = 0.0f;
@@ -427,6 +443,10 @@ static std::uint8_t g_vdp2TextVram[kVdp2TextSnapshotBytes]{};
 static std::uint8_t g_vdp2Cram[kVdp2CramSnapshotBytes]{};
 static bool g_pendingVdp2TextValid = false;
 static bool g_vdp2TextValid = false;
+
+static constexpr std::size_t kVdp2LineScrollBytes = 0x400u;
+static std::uint8_t g_pendingVdp2LineScroll[kVdp2LineScrollBytes]{};
+static std::uint8_t g_vdp2LineScroll[kVdp2LineScrollBytes]{};
 
 // Script-owned town fade command. The game thread stages commands here; the
 // completed-frame publish copies them across the existing render handoff.
@@ -880,68 +900,6 @@ static void drawAzelVdp2TextLayer(
 }
 
 
-static void traceAzelVdp2BoxPlane()
-{
-    static bool reported = false;
-    if (reported || !g_vdp2TextValid)
-        return;
-
-    constexpr std::size_t kBoxMapOffset = 0x5800u;
-    constexpr int kMapColumns = 32;
-    constexpr int kMapRows = 16;
-
-    unsigned int active = 0u;
-    for (int y = 0; y < kMapRows; ++y) {
-        for (int x = 0; x < kMapColumns; ++x) {
-            const std::size_t mapOffset =
-                kBoxMapOffset +
-                static_cast<std::size_t>((y * kMapColumns + x) * 2);
-            const std::uint16_t patternName =
-                readVdp2Be16(g_vdp2TextVram, mapOffset);
-            if (!patternName)
-                continue;
-
-            ++active;
-            if (active <= 48u) {
-                const unsigned int characterNumber =
-                    static_cast<unsigned int>(
-                        patternName & 0x03FFu) << 2;
-                const std::size_t characterOffset =
-                    static_cast<std::size_t>(characterNumber) * 0x20u;
-                const unsigned int flip =
-                    (patternName >> 10) & 3u;
-                const unsigned int palette =
-                    (patternName >> 12) & 0x0Fu;
-
-                std::uint32_t hash = 2166136261u;
-                if (characterOffset + 128u <=
-                    kVdp2TextSnapshotBytes) {
-                    for (std::size_t i = 0; i < 128u; ++i) {
-                        hash ^= g_vdp2TextVram[characterOffset + i];
-                        hash *= 16777619u;
-                    }
-                }
-
-                logging::writef(
-                    "[VDP2Box] cell=%d,%d PN=%04X char=%u off=%04X "
-                    "flip=%u pal=%u hash=%08X\n",
-                    x, y,
-                    static_cast<unsigned int>(patternName),
-                    characterNumber,
-                    static_cast<unsigned int>(characterOffset),
-                    flip, palette, hash);
-            }
-        }
-    }
-
-    if (active) {
-        logging::writef(
-            "[VDP2Box] active=%u; NBG1 rendering disabled for decode probe\n",
-            active);
-        reported = true;
-    }
-}
-
 
 static void drawTownInputOverlay(
     std::uint32_t* buffer,
@@ -1194,6 +1152,22 @@ void shutdown()
     void* fadeIndexPtr = g_fadeIndices;
     freeSimpleMappedProbe(g_fadeIndexUid, fadeIndexPtr);
     g_fadeIndices = nullptr;
+
+    void* vdp2AtlasPtr = g_vdp2Nbg1AtlasPixels;
+    freeSimpleMappedProbe(g_vdp2Nbg1AtlasUid, vdp2AtlasPtr);
+    g_vdp2Nbg1AtlasPixels = nullptr;
+    void* vdp2VertexPtr = g_vdp2Nbg1Vertices;
+    freeSimpleMappedProbe(g_vdp2Nbg1VertexUid, vdp2VertexPtr);
+    g_vdp2Nbg1Vertices = nullptr;
+    void* vdp2IndexPtr = g_vdp2Nbg1Indices;
+    freeSimpleMappedProbe(g_vdp2Nbg1IndexUid, vdp2IndexPtr);
+    g_vdp2Nbg1Indices = nullptr;
+    void* vdp2BarVertexPtr = g_vdp2BarVertices;
+    freeSimpleMappedProbe(g_vdp2BarVertexUid, vdp2BarVertexPtr);
+    g_vdp2BarVertices = nullptr;
+    void* vdp2BarIndexPtr = g_vdp2BarIndices;
+    freeSimpleMappedProbe(g_vdp2BarIndexUid, vdp2BarIndexPtr);
+    g_vdp2BarIndices = nullptr;
 
     void* basicWingVertexPtr = g_vdp1Vertices;
     freeSimpleMappedProbe(g_vdp1VertexUid, basicWingVertexPtr);
@@ -1769,6 +1743,497 @@ static bool ensureVdp1UiBuffers()
         g_vdp1UiLineIndices, kLineIndices, sizeof(kLineIndices));
     return true;
 }
+
+static std::uint32_t readVdp2Be32(
+    const std::uint8_t* bytes,
+    std::size_t offset)
+{
+    return
+        (static_cast<std::uint32_t>(bytes[offset]) << 24) |
+        (static_cast<std::uint32_t>(bytes[offset + 1]) << 16) |
+        (static_cast<std::uint32_t>(bytes[offset + 2]) << 8) |
+        static_cast<std::uint32_t>(bytes[offset + 3]);
+}
+
+static bool ensureVdp2UiGpuBuffers()
+{
+    if (g_vdp2Nbg1AtlasPixels &&
+        g_vdp2Nbg1Vertices &&
+        g_vdp2Nbg1Indices &&
+        g_vdp2BarVertices &&
+        g_vdp2BarIndices)
+        return true;
+
+    const unsigned int atlasBytes =
+        kVdp2Nbg1AtlasWidth *
+        kVdp2Nbg1AtlasHeight *
+        sizeof(std::uint32_t);
+    g_vdp2Nbg1AtlasPixels =
+        static_cast<std::uint32_t*>(
+            probeGpuAlloc(
+                atlasBytes,
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp2Nbg1AtlasUid));
+    g_vdp2Nbg1Vertices =
+        static_cast<azel::DebugTextureVertex*>(
+            probeGpuAlloc(
+                kVdp2Nbg1MaxCells * 4u *
+                    sizeof(azel::DebugTextureVertex),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp2Nbg1VertexUid));
+    g_vdp2Nbg1Indices =
+        static_cast<std::uint16_t*>(
+            probeGpuAlloc(
+                kVdp2Nbg1MaxCells * 6u *
+                    sizeof(std::uint16_t),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp2Nbg1IndexUid));
+    g_vdp2BarVertices =
+        static_cast<azel::DebugColorVertex*>(
+            probeGpuAlloc(
+                8u * sizeof(azel::DebugColorVertex),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp2BarVertexUid));
+    g_vdp2BarIndices =
+        static_cast<std::uint16_t*>(
+            probeGpuAlloc(
+                12u * sizeof(std::uint16_t),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp2BarIndexUid));
+
+    if (!g_vdp2Nbg1AtlasPixels ||
+        !g_vdp2Nbg1Vertices ||
+        !g_vdp2Nbg1Indices ||
+        !g_vdp2BarVertices ||
+        !g_vdp2BarIndices)
+        return false;
+
+    std::memset(
+        g_vdp2Nbg1AtlasPixels, 0, atlasBytes);
+
+    if (sceGxmTextureInitLinear(
+            &g_vdp2Nbg1AtlasTexture,
+            g_vdp2Nbg1AtlasPixels,
+            SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+            kVdp2Nbg1AtlasWidth,
+            kVdp2Nbg1AtlasHeight,
+            0) < 0)
+        return false;
+
+    sceGxmTextureSetMinFilter(
+        &g_vdp2Nbg1AtlasTexture,
+        SCE_GXM_TEXTURE_FILTER_POINT);
+    sceGxmTextureSetMagFilter(
+        &g_vdp2Nbg1AtlasTexture,
+        SCE_GXM_TEXTURE_FILTER_POINT);
+
+    return true;
+}
+
+static std::uint32_t decodeVdp2Nbg1Pixel(
+    std::uint16_t patternName,
+    int px,
+    int py)
+{
+    const unsigned int flip =
+        (patternName >> 10) & 3u;
+    int x = px;
+    int y = py;
+
+    // Match Azel's renderer_vdp2.cpp 16x16 CHSZ=1 path exactly.
+    if (flip) {
+        y &= 15;
+        if (flip & 2u) {
+            if (!(y & 8))
+                y = 7 - y + 16;
+            else
+                y = 15 - y;
+        } else if (y & 8) {
+            y += 8;
+        }
+
+        if (flip & 1u) {
+            if (!(x & 8))
+                y += 8;
+            x &= 7;
+            x = 7 - x;
+        } else if (x & 8) {
+            y += 8;
+            x &= 7;
+        } else {
+            x &= 7;
+        }
+    } else {
+        y &= 15;
+        if (y & 8)
+            y += 8;
+        if (x & 8)
+            y += 8;
+        x &= 7;
+    }
+
+    const unsigned int characterNumber =
+        static_cast<unsigned int>(
+            patternName & 0x03FFu) << 2;
+    const std::size_t characterOffset =
+        static_cast<std::size_t>(
+            characterNumber) * 0x20u;
+    const std::size_t dotOffset =
+        characterOffset +
+        static_cast<std::size_t>(
+            (y * 8 + x) / 2);
+    if (dotOffset >= kVdp2TextSnapshotBytes)
+        return 0u;
+
+    const std::uint8_t packed =
+        g_vdp2TextVram[dotOffset];
+    const unsigned int colorIndex =
+        (x & 1)
+            ? static_cast<unsigned int>(packed & 0x0Fu)
+            : static_cast<unsigned int>(packed >> 4);
+    if (!colorIndex)
+        return 0u;
+
+    // NBG1: 4bpp, CAOS=7, SCN=0.
+    const unsigned int paladdr =
+        (patternName & 0xF000u) >> 8;
+    const unsigned int paletteEntry =
+        7u * 0x100u |
+        (paladdr | colorIndex);
+    const std::size_t cramOffset =
+        static_cast<std::size_t>(paletteEntry) * 2u;
+    if (cramOffset + 1u >= kVdp2CramSnapshotBytes)
+        return 0u;
+
+    return vdp2Rgb555ToAbgr(
+        readVdp2Be16(g_vdp2Cram, cramOffset));
+}
+
+static void drawAzelVdp2Nbg1Gpu()
+{
+    if (!g_vdp2TextValid ||
+        !g_textureVertexProgram ||
+        !g_textureFragmentProgram ||
+        !g_textureWvpParam ||
+        !ensureVdp2UiGpuBuffers())
+        return;
+
+    constexpr std::size_t kMapOffset = 0x5800u;
+    constexpr int kMapColumns = 32;
+    constexpr int kVisibleRows = 14;
+    constexpr int kTileSize = 16;
+
+    std::uint16_t uniqueTiles[kVdp2Nbg1MaxTiles]{};
+    unsigned int uniqueCount = 0u;
+    unsigned int cellCount = 0u;
+
+    const float renderAspect =
+        static_cast<float>(viewerRenderWidth()) /
+        static_cast<float>(viewerRenderHeight());
+    const float xCorrection =
+        (4.0f / 3.0f) / renderAspect;
+
+    std::memset(
+        g_vdp2Nbg1AtlasPixels,
+        0,
+        kVdp2Nbg1AtlasWidth *
+            kVdp2Nbg1AtlasHeight *
+            sizeof(std::uint32_t));
+
+    const auto findTileSlot =
+        [&](std::uint16_t patternName) -> int {
+            for (unsigned int i = 0; i < uniqueCount; ++i) {
+                if (uniqueTiles[i] == patternName)
+                    return static_cast<int>(i);
+            }
+            if (uniqueCount >= kVdp2Nbg1MaxTiles)
+                return -1;
+
+            const unsigned int slot = uniqueCount++;
+            uniqueTiles[slot] = patternName;
+            const unsigned int atlasX =
+                (slot & 7u) * kTileSize;
+            const unsigned int atlasY =
+                (slot >> 3) * kTileSize;
+            for (int py = 0; py < kTileSize; ++py) {
+                for (int px = 0; px < kTileSize; ++px) {
+                    g_vdp2Nbg1AtlasPixels[
+                        (atlasY + py) *
+                            kVdp2Nbg1AtlasWidth +
+                        atlasX + px] =
+                        decodeVdp2Nbg1Pixel(
+                            patternName, px, py);
+                }
+            }
+            return static_cast<int>(slot);
+        };
+
+    for (int ty = 0; ty < kVisibleRows; ++ty) {
+        for (int tx = 0; tx < kMapColumns; ++tx) {
+            const std::size_t mapAddress =
+                kMapOffset +
+                static_cast<std::size_t>(
+                    (ty * kMapColumns + tx) * 2);
+            const std::uint16_t patternName =
+                readVdp2Be16(
+                    g_vdp2TextVram, mapAddress);
+            if (!patternName)
+                continue;
+            if (cellCount >= kVdp2Nbg1MaxCells)
+                break;
+
+            const int slot = findTileSlot(patternName);
+            if (slot < 0)
+                continue;
+
+            const float sx0 =
+                static_cast<float>(tx * kTileSize);
+            const float sy0 =
+                static_cast<float>(ty * kTileSize);
+            const float sx1 = sx0 + kTileSize;
+            const float sy1 = sy0 + kTileSize;
+
+            const float x0 =
+                ((sx0 - 176.0f) / 176.0f) *
+                xCorrection;
+            const float x1 =
+                ((sx1 - 176.0f) / 176.0f) *
+                xCorrection;
+            const float y0 =
+                1.0f - sy0 / 112.0f;
+            const float y1 =
+                1.0f - sy1 / 112.0f;
+
+            const unsigned int atlasX =
+                (static_cast<unsigned int>(slot) & 7u) *
+                kTileSize;
+            const unsigned int atlasY =
+                (static_cast<unsigned int>(slot) >> 3) *
+                kTileSize;
+            const float u0 =
+                (static_cast<float>(atlasX) + 0.5f) /
+                kVdp2Nbg1AtlasWidth;
+            const float v0 =
+                (static_cast<float>(atlasY) + 0.5f) /
+                kVdp2Nbg1AtlasHeight;
+            const float u1 =
+                (static_cast<float>(atlasX + kTileSize) - 0.5f) /
+                kVdp2Nbg1AtlasWidth;
+            const float v1 =
+                (static_cast<float>(atlasY + kTileSize) - 0.5f) /
+                kVdp2Nbg1AtlasHeight;
+
+            const unsigned int base =
+                cellCount * 4u;
+            g_vdp2Nbg1Vertices[base + 0u] =
+                {x0, y0, 0.0f, u0, v0};
+            g_vdp2Nbg1Vertices[base + 1u] =
+                {x1, y0, 0.0f, u1, v0};
+            g_vdp2Nbg1Vertices[base + 2u] =
+                {x1, y1, 0.0f, u1, v1};
+            g_vdp2Nbg1Vertices[base + 3u] =
+                {x0, y1, 0.0f, u0, v1};
+
+            const unsigned int ibase =
+                cellCount * 6u;
+            g_vdp2Nbg1Indices[ibase + 0u] =
+                static_cast<std::uint16_t>(base + 0u);
+            g_vdp2Nbg1Indices[ibase + 1u] =
+                static_cast<std::uint16_t>(base + 1u);
+            g_vdp2Nbg1Indices[ibase + 2u] =
+                static_cast<std::uint16_t>(base + 2u);
+            g_vdp2Nbg1Indices[ibase + 3u] =
+                static_cast<std::uint16_t>(base + 0u);
+            g_vdp2Nbg1Indices[ibase + 4u] =
+                static_cast<std::uint16_t>(base + 2u);
+            g_vdp2Nbg1Indices[ibase + 5u] =
+                static_cast<std::uint16_t>(base + 3u);
+            ++cellCount;
+        }
+    }
+
+    if (!cellCount)
+        return;
+
+    sceGxmSetCullMode(
+        g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetFrontPolygonMode(
+        g_probeContext,
+        SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetBackPolygonMode(
+        g_probeContext,
+        SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetFrontDepthFunc(
+        g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(
+        g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetVertexProgram(
+        g_probeContext, g_textureVertexProgram);
+    sceGxmSetFragmentProgram(
+        g_probeContext, g_textureFragmentProgram);
+
+    void* uniforms = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniforms) < 0 ||
+        !uniforms)
+        return;
+
+    static const float identity[16] = {
+        1.0f,0.0f,0.0f,0.0f,
+        0.0f,1.0f,0.0f,0.0f,
+        0.0f,0.0f,1.0f,0.0f,
+        0.0f,0.0f,0.0f,1.0f
+    };
+    sceGxmSetUniformDataF(
+        uniforms, g_textureWvpParam,
+        0, 16, identity);
+    sceGxmSetVertexStream(
+        g_probeContext, 0,
+        g_vdp2Nbg1Vertices);
+    sceGxmSetFragmentTexture(
+        g_probeContext, 0,
+        &g_vdp2Nbg1AtlasTexture);
+    sceGxmDraw(
+        g_probeContext,
+        SCE_GXM_PRIMITIVE_TRIANGLES,
+        SCE_GXM_INDEX_FORMAT_U16,
+        g_vdp2Nbg1Indices,
+        cellCount * 6u);
+}
+
+static void drawAzelVdp2CinematicBarsGpu()
+{
+    if (!g_vdp2TextValid ||
+        !g_probeVertexProgram ||
+        !g_probeFragmentProgram ||
+        !g_probeWvpParam ||
+        !ensureVdp2UiGpuBuffers())
+        return;
+
+    constexpr unsigned int kVisibleLines = 224u;
+    unsigned int top = 0u;
+    while (top < kVisibleLines &&
+           readVdp2Be32(
+               g_vdp2LineScroll,
+               top * 4u) == 0x01010000u)
+        ++top;
+
+    unsigned int bottom = 0u;
+    while (bottom < kVisibleLines - top) {
+        const unsigned int y =
+            kVisibleLines - 1u - bottom;
+        if (readVdp2Be32(
+                g_vdp2LineScroll,
+                y * 4u) != 0x01010000u)
+            break;
+        ++bottom;
+    }
+
+    if (!top && !bottom)
+        return;
+
+    const float renderAspect =
+        static_cast<float>(viewerRenderWidth()) /
+        static_cast<float>(viewerRenderHeight());
+    const float xCorrection =
+        (4.0f / 3.0f) / renderAspect;
+    const float left = -xCorrection;
+    const float right = xCorrection;
+
+    unsigned int rectCount = 0u;
+    const auto appendBar =
+        [&](float yTop, float yBottom) {
+            const unsigned int base =
+                rectCount * 4u;
+            g_vdp2BarVertices[base + 0u] =
+                {left, yTop, 0.0f, 0u,0u,0u,255u};
+            g_vdp2BarVertices[base + 1u] =
+                {right, yTop, 0.0f, 0u,0u,0u,255u};
+            g_vdp2BarVertices[base + 2u] =
+                {right, yBottom, 0.0f, 0u,0u,0u,255u};
+            g_vdp2BarVertices[base + 3u] =
+                {left, yBottom, 0.0f, 0u,0u,0u,255u};
+            const unsigned int ib =
+                rectCount * 6u;
+            g_vdp2BarIndices[ib + 0u] =
+                static_cast<std::uint16_t>(base + 0u);
+            g_vdp2BarIndices[ib + 1u] =
+                static_cast<std::uint16_t>(base + 1u);
+            g_vdp2BarIndices[ib + 2u] =
+                static_cast<std::uint16_t>(base + 2u);
+            g_vdp2BarIndices[ib + 3u] =
+                static_cast<std::uint16_t>(base + 0u);
+            g_vdp2BarIndices[ib + 4u] =
+                static_cast<std::uint16_t>(base + 2u);
+            g_vdp2BarIndices[ib + 5u] =
+                static_cast<std::uint16_t>(base + 3u);
+            ++rectCount;
+        };
+
+    if (top) {
+        appendBar(
+            1.0f,
+            1.0f -
+                static_cast<float>(top) / 112.0f);
+    }
+    if (bottom) {
+        const float topY =
+            1.0f -
+            static_cast<float>(
+                kVisibleLines - bottom) / 112.0f;
+        appendBar(topY, -1.0f);
+    }
+
+    sceGxmSetCullMode(
+        g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetFrontPolygonMode(
+        g_probeContext,
+        SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetBackPolygonMode(
+        g_probeContext,
+        SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetFrontDepthFunc(
+        g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(
+        g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetVertexProgram(
+        g_probeContext, g_probeVertexProgram);
+    sceGxmSetFragmentProgram(
+        g_probeContext, g_probeFragmentProgram);
+
+    void* uniforms = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniforms) < 0 ||
+        !uniforms)
+        return;
+    static const float identity[16] = {
+        1.0f,0.0f,0.0f,0.0f,
+        0.0f,1.0f,0.0f,0.0f,
+        0.0f,0.0f,1.0f,0.0f,
+        0.0f,0.0f,0.0f,1.0f
+    };
+    sceGxmSetUniformDataF(
+        uniforms, g_probeWvpParam,
+        0, 16, identity);
+    sceGxmSetVertexStream(
+        g_probeContext, 0,
+        g_vdp2BarVertices);
+    sceGxmDraw(
+        g_probeContext,
+        SCE_GXM_PRIMITIVE_TRIANGLES,
+        SCE_GXM_INDEX_FORMAT_U16,
+        g_vdp2BarIndices,
+        rectCount * 6u);
+}
+
 
 static GpuMode1Texture* findOrUploadVdp1UiTexture(
     const azel_bridge::Vdp1UiCommand& command)
@@ -6971,8 +7436,11 @@ static void renderBasicWingViewer()
         return;
     }
 
-    if (roomAuthenticCameraMode)
+    if (roomAuthenticCameraMode) {
         drawPublishedVdp1Ui();
+        drawAzelVdp2Nbg1Gpu();
+        drawAzelVdp2CinematicBarsGpu();
+    }
 
     if (roomAuthenticCameraMode)
         drawTownFadeOverlay(updateTownFadeAlpha());
@@ -6989,10 +7457,8 @@ static void renderBasicWingViewer()
     g_profileGxmWaitUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - gxmWaitStartUs);
 
-    if (roomAuthenticCameraMode) {
+    if (roomAuthenticCameraMode)
         drawAzelVdp2TextLayer(colorBuffer, gxmPitch);
-        traceAzelVdp2BoxPlane();
-    }
 
     g_profileRenderUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - renderStartUs);
@@ -7497,6 +7963,10 @@ void town_publish_frame()
             g_vdp2Cram,
             g_pendingVdp2Cram,
             sizeof(g_vdp2Cram));
+        std::memcpy(
+            g_vdp2LineScroll,
+            g_pendingVdp2LineScroll,
+            sizeof(g_vdp2LineScroll));
         g_vdp2TextValid = true;
     }
 
@@ -7593,9 +8063,10 @@ void town_present_camera(
 
 void town_present_vdp2_text(
     const unsigned char* vram,
-    const unsigned char* cram)
+    const unsigned char* cram,
+    const unsigned char* lineScroll)
 {
-    if (!vram || !cram) {
+    if (!vram || !cram || !lineScroll) {
         g_pendingVdp2TextValid = false;
         return;
     }
@@ -7608,6 +8079,10 @@ void town_present_vdp2_text(
         g_pendingVdp2Cram,
         cram,
         sizeof(g_pendingVdp2Cram));
+    std::memcpy(
+        g_pendingVdp2LineScroll,
+        lineScroll,
+        sizeof(g_pendingVdp2LineScroll));
     g_pendingVdp2TextValid = true;
 }
 
