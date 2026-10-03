@@ -3472,15 +3472,28 @@ static void updateStaticRoomAzelLighting(bool authenticDepth)
 
 void toggle_debug_console()
 {
-    // Select is reserved for the lightweight performance HUD. The original
-    // boot/debug status screen remains in code and in the log stream, but is
-    // no longer exposed as an in-game presentation mode.
+    // Plain Select toggles only the lightweight performance HUD.
     if (!g_viewerReady)
         return;
 
     if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
         sceKernelWaitSema(g_renderFrameFreeSema, 1, nullptr);
     g_showThreadTimingOsd = !g_showThreadTimingOsd;
+    if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
+        sceKernelSignalSema(g_renderFrameFreeSema, 1);
+}
+
+void toggle_full_debug_screen()
+{
+    if (!g_viewerReady || !g_gxmProbeAttempted)
+        return;
+
+    if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
+        sceKernelWaitSema(g_renderFrameFreeSema, 1, nullptr);
+
+    g_debugVisible = !g_debugVisible;
+    g_probeDisplayingGxm = !g_debugVisible;
+
     if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
         sceKernelSignalSema(g_renderFrameFreeSema, 1);
 }
@@ -6364,6 +6377,30 @@ void begin_frame()
     }
 
     fill(0xFF000000u);
+
+    if (g_gxmProbeAttempted && g_viewerReady) {
+        // Start+Select exposes the retained bring-up/status screen without
+        // stopping the Azel task graph. The game continues to simulate while
+        // this CPU-side diagnostic framebuffer is presented.
+        drawTextSmall(40, 18, "LAGI DEBUG STATUS", 0xFFFFFFFFu);
+        drawTextSmall(
+            40, 34,
+            "START+SELECT: RETURN   SELECT: PERFORMANCE OSD",
+            0xFFB0B0B0u);
+
+        for (int i = 0; i < g_statusCount; ++i) {
+            const int column = i / kStatusRowsPerColumn;
+            const int row = i % kStatusRowsPerColumn;
+            if (column >= 2)
+                break;
+            drawTextSmall(
+                kStatusColumnX[column],
+                58 + row * kStatusLineHeight,
+                g_status[i].text,
+                g_status[i].color);
+        }
+        return;
+    }
 
     // Normal startup presentation stays intentionally minimal. Detailed boot
     // status is still collected/logged, but the user sees only a black screen
