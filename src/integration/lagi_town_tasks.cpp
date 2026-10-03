@@ -79,6 +79,13 @@ bool start_twn_ruin_task_pipeline()
     root->m_DeleteMethod = nullptr;
     root->getTask()->m_taskName = townDebugTask2Function::getTaskName();
 
+    // Normal Azel town startup assigns this global in createLocationTask().
+    // Direct boot constructs the same town root manually, so restore that
+    // ownership pointer before entering the overlay. Town scripts such as
+    // terminateTown() use it to finish the current town; the module manager
+    // then performs the authentic status-4 -> status-5 movie transition.
+    townDebugTask2 = root;
+
     g_twnRuinRoot = overlayStart_TWN_RUIN(root, 0);
     if (!g_twnRuinRoot) {
         platform::logging::writef(
