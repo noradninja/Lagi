@@ -805,6 +805,18 @@ void invalidate_cram_range(unsigned int, unsigned int)
     g_liveTownPrepared = false;
 }
 
+void invalidate_vdp1_texture_range(unsigned int, unsigned int)
+{
+    // Azel's desktop backend invalidates decoded VDP1 textures here. Neptune
+    // owns the Vita texture cache, so invalidate the resident live-town model
+    // and material bindings and rebuild them from the updated VDP1 data.
+    g_liveTownMaterialCache.clear();
+    g_liveTownSignature = 0;
+    g_liveTownStaticSignature = 0;
+    g_liveTownPrepared = false;
+    freeVdp1Textures();
+}
+
 bool init()
 {
     const std::size_t allocSize = (kFrameBytes + 0x3FFFFu) & ~0x3FFFFu;
