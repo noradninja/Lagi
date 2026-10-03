@@ -658,7 +658,6 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  dummy.cpp
  trigo.cpp
  3dEngine.cpp
- 3dEngine_textureCache.cpp
  VDP1.cpp
  3dModels.cpp
  processModel.cpp
@@ -750,6 +749,7 @@ add_executable(lagi
  src/integration/lagi_dragon_common_vita.cpp
  src/integration/lagi_hotpoint_vita.cpp
  src/integration/lagi_audio_vita.cpp
+ src/integration/lagi_renderer_host_vita.cpp
  ${LAGI_AZEL_UPSTREAM_SOURCES}
 )
 target_include_directories(lagi PRIVATE include
