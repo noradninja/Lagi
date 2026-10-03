@@ -14,6 +14,7 @@
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_town_tasks.h"
 #include "movie/movie.h"
+#include "kernel/moduleManager.h"
 #include "lagi/disc_image.h"
 #include "commonOverlay.h"
 #include "audio/soundDataTable.h"
