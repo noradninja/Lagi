@@ -276,7 +276,11 @@ public:
 };
 
 MoviePlayer::MoviePlayer()
+#if defined(LAGI_PLATFORM_VITA)
+    : impl_(std::make_unique<Impl>(make_sgx_cinepak_decoder()))
+#else
     : impl_(std::make_unique<Impl>(make_cpu_cinepak_decoder()))
+#endif
 {
 }
 
