@@ -253,6 +253,14 @@ bool runtime_smoke_init()
     initVDP1();
 
     initHeap();
+
+    // Direct boot also bypasses resetEngine()'s VDP2 initialization. Restore
+    // Azel's real text-layer/font state before the town overlay loads
+    // EVTRUIN.FNT so script, item and dialog text populate VDP2 VRAM exactly
+    // as they do in the normal runtime.
+    initVDP2();
+    resetVdp2Strings();
+
     resetTasks();
     if (!start_twn_ruin_task_pipeline()) {
         lagi::platform::renderer::failure("[FAIL] TWN_RUIN TASK PIPELINE");
@@ -311,6 +319,14 @@ void runtime_smoke_frame()
     const std::uint64_t tasksStart = sceKernelGetProcessTimeWide();
     runTasks();
     twn_ruin_sync_platform_state();
+
+    // Snapshot the Saturn VDP2 text plane at the same completed-task boundary
+    // as the rest of the town presentation. Neptune consumes the snapshot
+    // after the 3D/VDP1 scene, preserving Azel's ownership of all strings,
+    // cursor placement, palettes and font/tile generation.
+    lagi::platform::renderer::town_present_vdp2_text(
+        getVdp2Vram(0),
+        getVdp2Cram(0));
 
     auto& vdp1Ctx = graphicEngineStatus.m14_vdp1Context[0];
     if (mainContextVdp1[0].size() >= 6) {
