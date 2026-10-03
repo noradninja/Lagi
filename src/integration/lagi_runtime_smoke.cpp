@@ -123,6 +123,16 @@ bool runtime_smoke_init()
         return false;
     }
 
+    // Decode the immutable Ruins cell/material set for Neptune. Runtime
+    // transforms, camera, Edge and scripts remain owned by upstream Azel and
+    // are copied across the platform boundary after each task frame.
+    lagi::azel::StaticRoomDebugMesh townScene{};
+    if (!lagi::azel::build_town_world_scene(townScene)) {
+        std::printf("[TownRender] Ruins scene registration data FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] RUINS RENDER SCENE");
+        return false;
+    }
+
     lagi::azel::BasicWingDebugMesh edgeIdle{};
     if (!lagi::azel::build_edge_idle_debug_mesh(edgeIdle)) {
         std::printf("[Edge] idle model/textures reconstruction FAILED\n");
@@ -146,6 +156,12 @@ bool runtime_smoke_init()
             std::move(edgeShadow))) {
         std::printf("[Edge] shadow renderer registration FAILED\n");
         lagi::platform::renderer::failure("[FAIL] EDGE SHADOW RENDER MODEL");
+        return false;
+    }
+
+    if (!lagi::platform::renderer::load_static_room_viewer(townScene)) {
+        std::printf("[TownRender] Neptune scene registration FAILED\n");
+        lagi::platform::renderer::failure("[FAIL] RUINS RENDER REGISTRATION");
         return false;
     }
 

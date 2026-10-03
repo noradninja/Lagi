@@ -6,8 +6,13 @@
 #include "lagi/platform.h"
 
 #include "town/town.h"
+#include "town/townMainLogic.h"
+#include "town/townEdge.h"
 #include "town/ruin/twn_ruin.h"
 #include "kernel/fade.h"
+
+#include <algorithm>
+#include <cmath>
 
 // This file is intentionally a thin adapter.
 //
@@ -22,6 +27,7 @@ namespace {
 p_workArea g_twnRuinRoot = nullptr;
 sCameraTask* g_fadeCamera = nullptr;
 bool g_fadeActive = false;
+bool g_reportedPresentation = false;
 
 } // namespace
 
@@ -53,6 +59,7 @@ bool start_twn_ruin_task_pipeline()
 
     g_fadeCamera = cameraTaskPtr;
     g_fadeActive = false;
+    g_reportedPresentation = false;
 
     platform::logging::writef(
         "[LagiAdapter] upstream Azel TWN_RUIN task pipeline started\n");
@@ -85,17 +92,68 @@ void twn_ruin_sync_platform_state()
     }
 
     const bool fadeActive = cameraTaskPtr->m1_fadeActive != 0;
-    if (fadeActive == g_fadeActive)
+    if (fadeActive != g_fadeActive) {
+        const int remaining = g_fadeControls.m0_fade0.m1E_counter;
+        const unsigned int frames =
+            static_cast<unsigned int>(remaining > 0 ? remaining : 1);
+        if (fadeActive)
+            platform::renderer::town_fade_in(frames);
+        else
+            platform::renderer::town_fade_out(frames);
+        g_fadeActive = fadeActive;
+    }
+
+    if (!twnMainLogicTask || !twnMainLogicTask->m14_EdgeTask)
         return;
 
-    const int remaining = g_fadeControls.m0_fade0.m1E_counter;
-    const unsigned int frames =
-        static_cast<unsigned int>(remaining > 0 ? remaining : 1);
-    if (fadeActive)
-        platform::renderer::town_fade_in(frames);
-    else
-        platform::renderer::town_fade_out(frames);
-    g_fadeActive = fadeActive;
+    constexpr float kInvFixed = 1.0f / 65536.0f;
+    constexpr float kTurnsToRadians =
+        6.28318530717958647692f / static_cast<float>(0x10000000);
+    const auto vec3 = [=](const sVec3_FP& source, float out[3]) {
+        out[0] = source[0].asS32() * kInvFixed;
+        out[1] = source[1].asS32() * kInvFixed;
+        out[2] = source[2].asS32() * kInvFixed;
+    };
+
+    sEdgeTask* const edge = twnMainLogicTask->m14_EdgeTask;
+    float edgePosition[3]{};
+    vec3(edge->mE8.m0_position, edgePosition);
+    const unsigned int animation = static_cast<unsigned int>(
+        std::max<s32>(0, edge->m2C_currentAnimation.asS32()));
+    const unsigned int animationFrame =
+        edge->m34_3dModel.m10_currentAnimationFrame;
+    platform::renderer::town_present_edge(
+        edgePosition[0], edgePosition[1], edgePosition[2],
+        edge->mE8.mC_rotation[1].asS32() * kTurnsToRadians,
+        false, 0,
+        animation, animationFrame,
+        animation, animationFrame, 1.0f);
+
+    float cameraPosition[3]{};
+    float rawCameraPosition[3]{};
+    float cameraTarget[3]{};
+    float cameraUp[3]{};
+    vec3(twnMainLogicTask->m38_interpolatedCameraPosition, cameraPosition);
+    vec3(twnMainLogicTask->m5C_rawCameraPosition, rawCameraPosition);
+    vec3(twnMainLogicTask->m44_cameraTarget, cameraTarget);
+    vec3(twnMainLogicTask->m50_upVector, cameraUp);
+    platform::renderer::town_present_camera(
+        cameraPosition,
+        rawCameraPosition,
+        cameraTarget,
+        cameraUp,
+        twnMainLogicTask->m68_cameraRotation[1].asS32() * kTurnsToRadians,
+        twnMainLogicTask->m68_cameraRotation[0].asS32() * kTurnsToRadians,
+        twnMainLogicTask->m24_distance.asS32() * kInvFixed);
+
+    if (!g_reportedPresentation) {
+        platform::logging::writef(
+            "[LagiAdapter] upstream town presentation ready "
+            "edge=(%.5f,%.5f,%.5f) camera=(%.5f,%.5f,%.5f)\n",
+            edgePosition[0], edgePosition[1], edgePosition[2],
+            cameraPosition[0], cameraPosition[1], cameraPosition[2]);
+        g_reportedPresentation = true;
+    }
 }
 
 } // namespace lagi::azel
