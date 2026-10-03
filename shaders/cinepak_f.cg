@@ -1,0 +1,94 @@
+// SGX Cinepak reconstruction fragment shader.
+//
+// Payload layout: one 4x4 Cinepak block occupies eight RGBA8 texels:
+//   entry0 Y0/Y1/Y2/Y3, entry0 U/V/mode/-
+//   entry1 Y0/Y1/Y2/Y3, entry1 U/V/-/-
+//   entry2 ...
+//   entry3 ...
+//
+// mode < 0.5 => V1 (entry0 expanded 2x2 -> 4x4)
+// mode >= 0.5 => V4 (four 2x2 entries)
+// U and V are stored biased by +128.
+//
+// movieInfo = (sourceWidth, sourceHeight, payloadWidth, payloadHeight)
+float4 samplePayload(
+    uniform sampler2D payload,
+    float x,
+    float y,
+    float2 payloadSize)
+{
+    return tex2D(
+        payload,
+        float2(
+            (x + 0.5f) / payloadSize.x,
+            (y + 0.5f) / payloadSize.y));
+}
+
+float select4(float4 v, float index)
+{
+    if (index < 0.5f) return v.r;
+    if (index < 1.5f) return v.g;
+    if (index < 2.5f) return v.b;
+    return v.a;
+}
+
+float truncHalf(float value)
+{
+    const float h = value * 0.5f;
+    return value >= 0.0f ? floor(h) : ceil(h);
+}
+
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    uniform sampler2D payload,
+    uniform float4 movieInfo)
+{
+    const float2 sourceSize = movieInfo.xy;
+    const float2 payloadSize = movieInfo.zw;
+
+    float2 pixel = floor(vTexcoord * sourceSize);
+    pixel = min(pixel, sourceSize - 1.0f);
+
+    const float2 block = floor(pixel * 0.25f);
+    const float2 local = pixel - block * 4.0f;
+    const float baseX = block.x * 8.0f;
+
+    const float4 meta0 =
+        samplePayload(payload, baseX + 1.0f, block.y, payloadSize);
+    const bool v4 = meta0.b >= 0.5f;
+
+    float entry = 0.0f;
+    float yIndex = 0.0f;
+    if (v4) {
+        entry =
+            (local.x >= 2.0f ? 1.0f : 0.0f) +
+            (local.y >= 2.0f ? 2.0f : 0.0f);
+        yIndex =
+            fmod(local.x, 2.0f) +
+            fmod(local.y, 2.0f) * 2.0f;
+    } else {
+        yIndex =
+            (local.x >= 2.0f ? 1.0f : 0.0f) +
+            (local.y >= 2.0f ? 2.0f : 0.0f);
+    }
+
+    const float entryX = baseX + entry * 2.0f;
+    const float4 ys =
+        samplePayload(payload, entryX, block.y, payloadSize);
+    const float4 uv =
+        samplePayload(payload, entryX + 1.0f, block.y, payloadSize);
+
+    const float y = select4(ys, yIndex) * 255.0f;
+    const float u = uv.r * 255.0f - 128.0f;
+    const float v = uv.g * 255.0f - 128.0f;
+
+    const float r = y + v * 2.0f;
+    const float g = y - truncHalf(u) - v;
+    const float b = y + u * 2.0f;
+
+    return float4(
+        saturate(r / 255.0f),
+        saturate(g / 255.0f),
+        saturate(b / 255.0f),
+        1.0f);
+}
