@@ -646,6 +646,10 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # and task completion all remain the original upstream code.
  if(relative_path STREQUAL "movie/movie.cpp")
   string(REPLACE
+   "#include \"movie.h\""
+   "#include \"movie/movie.h\""
+   source_text "${source_text}")
+  string(REPLACE
    "#include \"cinepak.h\""
    "#include \"lagi/azel_movie_runtime_hooks.h\""
    source_text "${source_text}")
