@@ -101,15 +101,22 @@ static SceGxmContext* g_probeContext = nullptr;
 static void* g_probeContextHost = nullptr;
 static SceGxmRenderTarget* g_probeRenderTarget = nullptr;
 static SceGxmRenderTarget* g_probeRenderTargetHalf = nullptr;
+// Cinepak/movie presentation is a single textured quad at the final
+// 480x272 output resolution. Keep it on a separate non-MSAA target so the
+// decoder fragment shader runs once per output pixel while town rendering
+// retains Neptune's validated 2x MSAA path.
+static SceGxmRenderTarget* g_movieRenderTarget = nullptr;
 static SceUID g_probeColorUid = -1;
 static std::uint32_t* g_probeColorBuffer = nullptr;
 static SceGxmColorSurface g_probeColorSurface{};
 static SceGxmColorSurface g_probeColorSurfaceHalf{};
+static SceGxmColorSurface g_movieColorSurface{};
 static SceGxmSyncObject* g_probeSync = nullptr;
 static SceUID g_probeColorUid2 = -1;
 static std::uint32_t* g_probeColorBuffer2 = nullptr;
 static SceGxmColorSurface g_probeColorSurface2{};
 static SceGxmColorSurface g_probeColorSurfaceHalf2{};
+static SceGxmColorSurface g_movieColorSurface2{};
 static SceGxmSyncObject* g_probeSync2 = nullptr;
 static int g_gxmDrawBuffer = 1;
 static SceUID g_probeDepthUid = -1;
@@ -146,6 +153,9 @@ static bool g_textureFragmentRegistered = false;
 static bool g_cinepakFragmentRegistered = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
+// Movie variants are patched for SCE_GXM_MULTISAMPLE_NONE.  The normal
+// texture fragment program remains 2x MSAA for town/UI rendering.
+static SceGxmFragmentProgram* g_movieTextureFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_cinepakFragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_cinepakMovieInfoParam = nullptr;
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
@@ -1381,6 +1391,11 @@ void shutdown()
                 g_probeShaderPatcher, g_cinepakFragmentProgram);
             g_cinepakFragmentProgram = nullptr;
         }
+        if (g_movieTextureFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_movieTextureFragmentProgram);
+            g_movieTextureFragmentProgram = nullptr;
+        }
         if (g_textureFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_textureFragmentProgram);
@@ -1599,6 +1614,10 @@ void shutdown()
     freeProbeMapped(g_probeDepthUid, g_probeDepth);
     freeProbeMapped(g_probeStencilUid, g_probeStencil);
 
+    if (g_movieRenderTarget) {
+        sceGxmDestroyRenderTarget(g_movieRenderTarget);
+        g_movieRenderTarget = nullptr;
+    }
     if (g_probeRenderTargetHalf) {
         sceGxmDestroyRenderTarget(g_probeRenderTargetHalf);
         g_probeRenderTargetHalf = nullptr;
@@ -2859,7 +2878,7 @@ static void drawPublishedVdp1Ui()
         g_probeContext,
         g_movieUsesCinepakPayload
             ? g_cinepakFragmentProgram
-            : g_textureFragmentProgram);
+            : g_movieTextureFragmentProgram);
 
     void* uniforms = nullptr;
     if (sceGxmReserveVertexDefaultUniformBuffer(
@@ -5294,6 +5313,19 @@ void show_town_scene()
 
     status("[PASS] GXM HALF RENDER TARGET", 0xFF80E0FFu);
 
+    SceGxmRenderTargetParams movieRtParams = halfRtParams;
+    movieRtParams.multisampleMode = SCE_GXM_MULTISAMPLE_NONE;
+    const int movieRtResult =
+        sceGxmCreateRenderTarget(&movieRtParams, &g_movieRenderTarget);
+    if (movieRtResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM MOVIE TARGET 0X%08X",
+                      static_cast<unsigned int>(movieRtResult));
+        failure(line);
+        return;
+    }
+    status("[PASS] GXM MOVIE TARGET NO-MSAA", 0xFF80E0FFu);
+
     constexpr int gxmPitch = 1024;
     constexpr unsigned int colorBytes =
         static_cast<unsigned int>(gxmPitch * kHeight * sizeof(std::uint32_t));
@@ -5336,6 +5368,21 @@ void show_town_scene()
         char line[78];
         std::snprintf(line, sizeof(line), "[FAIL] GXM HALF COLOR 0X%08X",
                       static_cast<unsigned int>(halfColorResult));
+        failure(line);
+        return;
+    }
+
+    const int movieColorResult = sceGxmColorSurfaceInit(
+        &g_movieColorSurface,
+        SCE_GXM_COLOR_FORMAT_A8B8G8R8,
+        SCE_GXM_COLOR_SURFACE_LINEAR,
+        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+        SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+        kWidth / 2, kHeight / 2, 512, g_probeColorBuffer);
+    if (movieColorResult < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM MOVIE COLOR 0X%08X",
+                      static_cast<unsigned int>(movieColorResult));
         failure(line);
         return;
     }
@@ -5385,6 +5432,21 @@ void show_town_scene()
         char line[78];
         std::snprintf(line, sizeof(line), "[FAIL] GXM HALF COLOR2 0X%08X",
                       static_cast<unsigned int>(halfColorResult2));
+        failure(line);
+        return;
+    }
+
+    const int movieColorResult2 = sceGxmColorSurfaceInit(
+        &g_movieColorSurface2,
+        SCE_GXM_COLOR_FORMAT_A8B8G8R8,
+        SCE_GXM_COLOR_SURFACE_LINEAR,
+        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+        SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+        kWidth / 2, kHeight / 2, 512, g_probeColorBuffer2);
+    if (movieColorResult2 < 0) {
+        char line[78];
+        std::snprintf(line, sizeof(line), "[FAIL] GXM MOVIE COLOR2 0X%08X",
+                      static_cast<unsigned int>(movieColorResult2));
         failure(line);
         return;
     }
@@ -5781,13 +5843,25 @@ void show_town_scene()
 
     if (sceGxmShaderPatcherCreateFragmentProgram(
             g_probeShaderPatcher,
+            g_textureFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            textureVertexGxp,
+            &g_movieTextureFragmentProgram) < 0) {
+        failure("[FAIL] CREATE MOVIE TEXTURE FP");
+        return;
+    }
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
             g_cinepakFragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            kMultisampleMode,
+            SCE_GXM_MULTISAMPLE_NONE,
             nullptr,
             textureVertexGxp,
             &g_cinepakFragmentProgram) < 0) {
-        failure("[FAIL] CREATE CINEPAK FP");
+        failure("[FAIL] CREATE CINEPAK FP NO-MSAA");
         return;
     }
 
@@ -7879,54 +7953,44 @@ static bool renderMovieFrame()
 
     if (!g_movieFrameVisible || !g_movieTextureData ||
         !g_movieVertices || !g_movieIndices ||
-        !g_probeContext || !g_textureVertexProgram ||
-        !g_textureFragmentProgram || !g_textureWvpParam)
+        !g_probeContext || !g_movieRenderTarget ||
+        !g_textureVertexProgram || !g_movieTextureFragmentProgram ||
+        !g_textureWvpParam)
         return false;
     if (g_movieUsesCinepakPayload &&
         (!g_cinepakFragmentProgram || !g_cinepakMovieInfoParam))
         return false;
 
-    const int pitch = viewerRenderPitch();
+    // Movie presentation is always the final Lagi render resolution:
+    // 480x272.  Unlike town rendering this path intentionally uses no MSAA
+    // and no depth/stencil attachment.
+    constexpr int pitch = 512;
+    constexpr int movieOutputWidth = kWidth / 2;
+    constexpr int movieOutputHeight = kHeight / 2;
     std::uint32_t* const colorBuffer =
         g_gxmDrawBuffer == 0 ? g_probeColorBuffer : g_probeColorBuffer2;
     SceGxmColorSurface* const colorSurface =
-        g_halfResolution
-            ? (g_gxmDrawBuffer == 0
-                ? &g_probeColorSurfaceHalf
-                : &g_probeColorSurfaceHalf2)
-            : (g_gxmDrawBuffer == 0
-                ? &g_probeColorSurface
-                : &g_probeColorSurface2);
+        g_gxmDrawBuffer == 0
+            ? &g_movieColorSurface
+            : &g_movieColorSurface2;
     SceGxmSyncObject* const syncObject =
         g_gxmDrawBuffer == 0 ? g_probeSync : g_probeSync2;
-    SceGxmRenderTarget* const renderTarget =
-        g_halfResolution ? g_probeRenderTargetHalf : g_probeRenderTarget;
-    SceGxmDepthStencilSurface* const depthSurface =
-        g_halfResolution ? &g_probeDepthSurfaceHalf : &g_probeDepthSurface;
 
-    const unsigned int alignedWidth =
-        (viewerRenderWidth() + SCE_GXM_TILE_SIZEX - 1) &
-        ~(SCE_GXM_TILE_SIZEX - 1);
-    const unsigned int alignedHeight =
-        (viewerRenderHeight() + SCE_GXM_TILE_SIZEY - 1) &
-        ~(SCE_GXM_TILE_SIZEY - 1);
     std::memset(
         colorBuffer,
         0,
-        static_cast<std::size_t>(pitch) * viewerRenderHeight() *
+        static_cast<std::size_t>(pitch) * movieOutputHeight *
             sizeof(std::uint32_t));
-    std::memset(g_probeDepth, 0xFF, alignedWidth * alignedHeight * 4u);
-    std::memset(g_probeStencil, 0, alignedWidth * alignedHeight * 4u);
 
     const int beginResult = sceGxmBeginScene(
         g_probeContext,
         0,
-        renderTarget,
+        g_movieRenderTarget,
         nullptr,
         nullptr,
         syncObject,
         colorSurface,
-        depthSurface);
+        nullptr);
     if (beginResult < 0) {
         logging::writef(
             "[MovieRender] FAIL sceGxmBeginScene=0x%08X\n",
@@ -7942,7 +8006,7 @@ static bool renderMovieFrame()
             : g_textureFragmentProgram);
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     sceGxmSetDefaultRegionClipAndViewport(
-        g_probeContext, viewerRenderWidth() - 1, viewerRenderHeight() - 1);
+        g_probeContext, movieOutputWidth - 1, movieOutputHeight - 1);
     sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetFrontDepthWriteEnable(
@@ -8011,9 +8075,9 @@ static bool renderMovieFrame()
 
     if (!g_movieRenderLogged) {
         logging::writef(
-            "[MovieRender] first GXM frame submitted %ux%u output=%dx%d backend=%s\n",
+            "[MovieRender] first GXM frame submitted %ux%u output=%dx%d backend=%s msaa=OFF\n",
             g_movieWidth, g_movieHeight,
-            viewerRenderWidth(), viewerRenderHeight(),
+            movieOutputWidth, movieOutputHeight,
             g_movieUsesCinepakPayload ? "SGX-Cinepak" : "RGBA");
         g_movieRenderLogged = true;
     }
@@ -8023,8 +8087,8 @@ static bool renderMovieFrame()
     frameBuffer.base = colorBuffer;
     frameBuffer.pitch = pitch;
     frameBuffer.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
-    frameBuffer.width = viewerRenderWidth();
-    frameBuffer.height = viewerRenderHeight();
+    frameBuffer.width = movieOutputWidth;
+    frameBuffer.height = movieOutputHeight;
 
     waitFor30HzPresentSlot();
     sceDisplaySetFrameBuf(&frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
