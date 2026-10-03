@@ -2034,26 +2034,6 @@ static bool buildVdp1TexturedBuffers(const Vdp1ModelSource& model)
         batch.indexCount = outIndex - batch.firstIndex;
     }
 
-    static bool reportedShadowGpu = false;
-    if (!reportedShadowGpu && !g_edgeShadowTownTextureIndices.empty()) {
-        for (const auto shadowIndex : g_edgeShadowTownTextureIndices) {
-            if (shadowIndex < g_vdp1GpuTextures.size() &&
-                shadowIndex < g_vdp1TextureBatches.size()) {
-                const auto& gpu = g_vdp1GpuTextures[shadowIndex];
-                const auto& batch = g_vdp1TextureBatches[shadowIndex];
-                platform::logging::writef(
-                    "[ShadowGPU] atlas=%u %ux%u mesh=%u "
-                    "batchFirst=%u batchCount=%u\n",
-                    static_cast<unsigned int>(shadowIndex),
-                    gpu.width,
-                    gpu.height,
-                    gpu.mesh ? 1u : 0u,
-                    batch.firstIndex,
-                    batch.indexCount);
-            }
-        }
-        reportedShadowGpu = true;
-    }
 
     return outIndex == vertexCount;
 }
@@ -5379,34 +5359,6 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
                     static_cast<std::uint16_t>(
                         shadowTextureBase + index));
             }
-            if (!g_edgeShadowTownTextureIndices.empty()) {
-                const std::uint16_t atlasIndex =
-                    g_edgeShadowTownTextureIndices.front();
-                if (atlasIndex <
-                    g_staticRoomCpuMesh.decodedTextureData.size()) {
-                    const auto& shadowTex =
-                        g_staticRoomCpuMesh.decodedTextureData[atlasIndex];
-                    const unsigned int visiblePixels =
-                        static_cast<unsigned int>(std::count_if(
-                            shadowTex.rgba.begin(),
-                            shadowTex.rgba.end(),
-                            [](std::uint32_t px) {
-                                return (px >> 24) != 0u;
-                            }));
-                    platform::logging::writef(
-                        "[ShadowTex] atlas=%u PMOD=%04X COLR=%04X "
-                        "SRCA=%04X SIZE=%04X %ux%u visible=%u/%u\n",
-                        static_cast<unsigned int>(atlasIndex),
-                        static_cast<unsigned int>(shadowTex.cmdPmod),
-                        static_cast<unsigned int>(shadowTex.cmdColr),
-                        static_cast<unsigned int>(shadowTex.cmdSrca),
-                        static_cast<unsigned int>(shadowTex.cmdSize),
-                        shadowTex.width,
-                        shadowTex.height,
-                        visiblePixels,
-                        static_cast<unsigned int>(shadowTex.rgba.size()));
-                }
-            }
         }
 
         g_staticRoomCpuMesh.polygons +=
@@ -5561,15 +5513,6 @@ bool load_edge_shadow_model(azel::BasicWingDebugMesh&& mesh)
     return true;
 }
 
-
-static bool isEdgeShadowTextureIndex(unsigned int textureIndex)
-{
-    return std::find(
-        g_edgeShadowTownTextureIndices.begin(),
-        g_edgeShadowTownTextureIndices.end(),
-        static_cast<std::uint16_t>(textureIndex)) !=
-        g_edgeShadowTownTextureIndices.end();
-}
 
 bool submit_vdp1_model(
     const Vdp1ModelSource& model,
@@ -5810,7 +5753,7 @@ bool submit_vdp1_model(
                          : g_textureFragmentProgram);
                 sceGxmSetFragmentTexture(
                     g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
-                const int drawResult = sceGxmDraw(
+                sceGxmDraw(
                     g_probeContext,
                     SCE_GXM_PRIMITIVE_TRIANGLES,
                     SCE_GXM_INDEX_FORMAT_U16,
@@ -5818,15 +5761,6 @@ bool submit_vdp1_model(
                     batch.indexCount);
 
                 if (orderedShadow) {
-                    static bool reportedTextureShadowDraw = false;
-                    if (!reportedTextureShadowDraw) {
-                        platform::logging::writef(
-                            "[ShadowDraw] mode=TEXTURE atlas=%u first=%u "
-                            "count=%u result=%08X ordered=1\n",
-                            t, batch.firstIndex, batch.indexCount,
-                            static_cast<unsigned int>(drawResult));
-                        reportedTextureShadowDraw = true;
-                    }
                     sceGxmSetCullMode(g_probeContext, cullMode);
                     sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
                     sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
@@ -6094,7 +6028,7 @@ bool submit_vdp1_model(
                         &g_vdp1GpuTextures[t].texture);
                 }
 
-                const int drawResult = sceGxmDraw(
+                sceGxmDraw(
                     g_probeContext,
                     SCE_GXM_PRIMITIVE_TRIANGLES,
                     SCE_GXM_INDEX_FORMAT_U16,
@@ -6102,15 +6036,6 @@ bool submit_vdp1_model(
                     batch.indexCount);
 
                 if (orderedShadow) {
-                    static bool reportedFullShadowDraw = false;
-                    if (!reportedFullShadowDraw) {
-                        platform::logging::writef(
-                            "[ShadowDraw] mode=FULL atlas=%u first=%u "
-                            "count=%u result=%08X ordered=1\n",
-                            t, batch.firstIndex, batch.indexCount,
-                            static_cast<unsigned int>(drawResult));
-                        reportedFullShadowDraw = true;
-                    }
                     sceGxmSetCullMode(g_probeContext, cullMode);
                     sceGxmSetFrontDepthFunc(g_probeContext, depthFunc);
                     sceGxmSetBackDepthFunc(g_probeContext, depthFunc);
