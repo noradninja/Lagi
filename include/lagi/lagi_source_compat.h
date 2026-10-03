@@ -19,3 +19,22 @@ template<typename T> constexpr T pi() { return static_cast<T>(3.1415926535897932
 template<typename T> constexpr T degrees(T v) { return v * static_cast<T>(57.2957795130823208768); }
 template<typename T> constexpr T radians(T v) { return v * static_cast<T>(0.01745329251994329577); }
 }
+
+
+namespace SoLoud {
+using handle = unsigned int;
+class Wav {};
+class WavStream {};
+class Soloud {};
+}
+
+namespace bgfx {
+struct VertexLayout {};
+struct VertexBufferHandle { std::uint16_t idx = 0xFFFFu; };
+struct IndexBufferHandle { std::uint16_t idx = 0xFFFFu; };
+struct TextureHandle { std::uint16_t idx = 0xFFFFu; };
+}
+
+#ifndef BGFX_INVALID_HANDLE
+#define BGFX_INVALID_HANDLE { 0xFFFFu }
+#endif
