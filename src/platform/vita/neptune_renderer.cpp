@@ -427,6 +427,11 @@ static std::uint8_t g_vdp2TextVram[kVdp2TextSnapshotBytes]{};
 static std::uint8_t g_vdp2Cram[kVdp2CramSnapshotBytes]{};
 static bool g_pendingVdp2TextValid = false;
 static bool g_vdp2TextValid = false;
+static bool g_vdp2UiDirty = true;
+static constexpr int kVdp2LogicalWidth = 352;
+static constexpr int kVdp2LogicalHeight = 224;
+static std::uint32_t
+    g_vdp2UiLogical[kVdp2LogicalWidth * kVdp2LogicalHeight]{};
 
 // Script-owned town fade command. The game thread stages commands here; the
 // completed-frame publish copies them across the existing render handoff.
@@ -759,70 +764,19 @@ static std::uint32_t vdp2Rgb555ToAbgr(std::uint16_t color)
     return 0xFF000000u | (b << 16) | (g << 8) | r;
 }
 
-static void drawAzelVdp2UiLayers(
-    std::uint32_t* buffer,
-    int pitch)
+static void rebuildAzelVdp2UiLogical()
 {
-    if (!buffer || !g_vdp2TextValid)
-        return;
+    std::memset(
+        g_vdp2UiLogical, 0, sizeof(g_vdp2UiLogical));
 
-    constexpr int kSaturnWidth = 352;
-    constexpr int kSaturnHeight = 224;
     constexpr std::size_t kFontPaletteOffset = 0x0E00u;
 
-    const int outW = viewerRenderWidth();
-    const int outH = viewerRenderHeight();
-
-    // Match Neptune's VDP1 UI presentation: Saturn's 352x224 logical image
-    // occupies a centered 4:3 region while Y spans the full render height.
-    const float renderAspect =
-        static_cast<float>(outW) / static_cast<float>(outH);
-    const float xCorrection =
-        (4.0f / 3.0f) / renderAspect;
-    const float logicalW =
-        static_cast<float>(outW) * xCorrection;
-    const float left =
-        (static_cast<float>(outW) - logicalW) * 0.5f;
-
-    const auto plotLogicalPixel =
-        [&](int sx, int sy, std::uint32_t color) {
-            const int dx0 = static_cast<int>(
-                std::floor(
-                    left + logicalW *
-                    static_cast<float>(sx) /
-                    static_cast<float>(kSaturnWidth)));
-            const int dx1 = static_cast<int>(
-                std::ceil(
-                    left + logicalW *
-                    static_cast<float>(sx + 1) /
-                    static_cast<float>(kSaturnWidth)));
-            const int dy0 = static_cast<int>(
-                std::floor(
-                    static_cast<float>(outH) *
-                    static_cast<float>(sy) /
-                    static_cast<float>(kSaturnHeight)));
-            const int dy1 = static_cast<int>(
-                std::ceil(
-                    static_cast<float>(outH) *
-                    static_cast<float>(sy + 1) /
-                    static_cast<float>(kSaturnHeight)));
-
-            for (int dy = std::max(0, dy0);
-                 dy < std::min(outH, dy1); ++dy) {
-                for (int dx = std::max(0, dx0);
-                     dx < std::min(outW, dx1); ++dx) {
-                    buffer[dy * pitch + dx] = color;
-                }
-            }
-        };
-
     const auto paletteColor =
-        [&](unsigned int palette,
+        [&](unsigned int paletteBase,
             unsigned int colorIndex) -> std::uint32_t {
             const std::size_t cramOffset =
-                kFontPaletteOffset +
                 static_cast<std::size_t>(
-                    (palette * 16u + colorIndex) * 2u);
+                    (paletteBase + colorIndex) * 2u);
             if (cramOffset + 1u >= kVdp2CramSnapshotBytes)
                 return 0u;
             return vdp2Rgb555ToAbgr(
@@ -831,18 +785,19 @@ static void drawAzelVdp2UiLayers(
 
     unsigned int activeBoxCells = 0u;
 
-    // NBG1 window/box plane. Azel's drawBlueBox()/clearBlueBox() write this
-    // 32-column map at VRAM 0x5800. The layer uses 16x16 characters
-    // (CHSZ=1), one-word pattern names and 4bpp character data. This is the
-    // blue framed backing used by location banners, item-receive messages,
-    // dialog boxes and the cinematic-bar/window system.
+    // NBG1: 16x16 characters, 4bpp, one-word pattern names, CNSM=0,
+    // CAOS=7. Match Azel's own renderer_vdp2.cpp decoding exactly:
+    // the 10-bit pattern character number is shifted by two because a
+    // 16x16 character comprises four 8x8 cells. Bits 10-11 are flips,
+    // not part of the character number.
     constexpr std::size_t kBoxMapOffset = 0x5800u;
     constexpr int kBoxMapColumns = 32;
     constexpr int kBoxTileSize = 16;
     constexpr int kBoxVisibleColumns =
-        (kSaturnWidth + kBoxTileSize - 1) / kBoxTileSize;
+        (kVdp2LogicalWidth + kBoxTileSize - 1) / kBoxTileSize;
     constexpr int kBoxVisibleRows =
-        (kSaturnHeight + kBoxTileSize - 1) / kBoxTileSize;
+        (kVdp2LogicalHeight + kBoxTileSize - 1) / kBoxTileSize;
+    constexpr unsigned int kNbg1CramOffsetEntries = 7u * 0x100u;
 
     for (int ty = 0; ty < kBoxVisibleRows; ++ty) {
         for (int tx = 0; tx < kBoxVisibleColumns; ++tx) {
@@ -856,38 +811,63 @@ static void drawAzelVdp2UiLayers(
                 continue;
             ++activeBoxCells;
 
-            const unsigned int palette =
-                (patternName >> 12) & 0x0Fu;
-            const unsigned int tile =
-                patternName & 0x0FFFu;
-            const std::size_t tileOffset =
-                static_cast<std::size_t>(tile) * 128u;
-            if (tileOffset + 128u > kVdp2TextSnapshotBytes)
+            const unsigned int paletteBase =
+                kNbg1CramOffsetEntries +
+                ((patternName & 0xF000u) >> 8);
+            const unsigned int flip =
+                (patternName & 0x0C00u) >> 10;
+            const unsigned int characterNumber =
+                static_cast<unsigned int>(
+                    patternName & 0x03FFu) << 2;
+            const std::size_t characterOffset =
+                static_cast<std::size_t>(
+                    characterNumber) * 0x20u;
+            if (characterOffset + 128u >
+                kVdp2TextSnapshotBytes)
                 continue;
 
             for (int py = 0; py < kBoxTileSize; ++py) {
                 for (int px = 0; px < kBoxTileSize; ++px) {
+                    int sampleX = px;
+                    int sampleY = py;
+
+                    if (flip & 1u)
+                        sampleX = 15 - sampleX;
+                    if (flip & 2u)
+                        sampleY = 15 - sampleY;
+
+                    // Saturn stores the four 8x8 cells consecutively:
+                    // TL, TR, BL, BR. renderer_vdp2 encodes the cell
+                    // selection by extending Y in eight-line blocks.
+                    int encodedY = sampleY;
+                    if (encodedY & 8)
+                        encodedY += 8;
+                    if (sampleX & 8)
+                        encodedY += 8;
+                    const int encodedX = sampleX & 7;
+
+                    const std::size_t dotOffset =
+                        characterOffset +
+                        static_cast<std::size_t>(
+                            (encodedY * 8 + encodedX) / 2);
                     const std::uint8_t packed =
-                        g_vdp2TextVram[
-                            tileOffset +
-                            static_cast<std::size_t>(
-                                py * 8 + px / 2)];
+                        g_vdp2TextVram[dotOffset];
                     const unsigned int colorIndex =
-                        (px & 1)
+                        (encodedX & 1)
                             ? static_cast<unsigned int>(packed & 0x0Fu)
                             : static_cast<unsigned int>(packed >> 4);
                     if (!colorIndex)
                         continue;
 
-                    const std::uint32_t color =
-                        paletteColor(palette, colorIndex);
-                    if (!color)
+                    const int sx = tx * kBoxTileSize + px;
+                    const int sy = ty * kBoxTileSize + py;
+                    if (sx >= kVdp2LogicalWidth ||
+                        sy >= kVdp2LogicalHeight)
                         continue;
 
-                    plotLogicalPixel(
-                        tx * kBoxTileSize + px,
-                        ty * kBoxTileSize + py,
-                        color);
+                    g_vdp2UiLogical[
+                        sy * kVdp2LogicalWidth + sx] =
+                        paletteColor(paletteBase, colorIndex);
                 }
             }
         }
@@ -895,15 +875,15 @@ static void drawAzelVdp2UiLayers(
 
     unsigned int activeTextCells = 0u;
 
-    // NBG3 text plane. VDP2DrawString and the item/dialog helpers populate
-    // this 64-column 8x8 map at 0x6000 using the glyphs generated by Azel.
+    // NBG3: Azel's 8x8 text plane at 0x6000. This path was already
+    // hardware-proven by the first VDP2 text test; retain its decoding.
     constexpr std::size_t kTextMapOffset = 0x6000u;
     constexpr int kTextMapColumns = 64;
     constexpr int kTextTileSize = 8;
     constexpr int kTextVisibleColumns =
-        kSaturnWidth / kTextTileSize;
+        kVdp2LogicalWidth / kTextTileSize;
     constexpr int kTextVisibleRows =
-        kSaturnHeight / kTextTileSize;
+        kVdp2LogicalHeight / kTextTileSize;
 
     for (int ty = 0; ty < kTextVisibleRows; ++ty) {
         for (int tx = 0; tx < kTextVisibleColumns; ++tx) {
@@ -923,7 +903,8 @@ static void drawAzelVdp2UiLayers(
                 patternName & 0x0FFFu;
             const std::size_t tileOffset =
                 static_cast<std::size_t>(tile) * 32u;
-            if (tileOffset + 32u > kVdp2TextSnapshotBytes)
+            if (tileOffset + 32u >
+                kVdp2TextSnapshotBytes)
                 continue;
 
             for (int py = 0; py < kTextTileSize; ++py) {
@@ -940,15 +921,15 @@ static void drawAzelVdp2UiLayers(
                     if (!colorIndex)
                         continue;
 
-                    const std::uint32_t color =
-                        paletteColor(palette, colorIndex);
-                    if (!color)
-                        continue;
-
-                    plotLogicalPixel(
-                        tx * kTextTileSize + px,
-                        ty * kTextTileSize + py,
-                        color);
+                    const unsigned int paletteBase =
+                        static_cast<unsigned int>(
+                            kFontPaletteOffset / 2u) +
+                        palette * 16u;
+                    const int sx = tx * kTextTileSize + px;
+                    const int sy = ty * kTextTileSize + py;
+                    g_vdp2UiLogical[
+                        sy * kVdp2LogicalWidth + sx] =
+                        paletteColor(paletteBase, colorIndex);
                 }
             }
         }
@@ -957,10 +938,64 @@ static void drawAzelVdp2UiLayers(
     static bool reported = false;
     if (!reported && (activeBoxCells || activeTextCells)) {
         logging::writef(
-            "[VDP2UI] boxCells=%u textCells=%u maps=5800/6000 snapshot ready\n",
+            "[VDP2UI] boxCells=%u textCells=%u maps=5800/6000 cached\n",
             activeBoxCells,
             activeTextCells);
         reported = true;
+    }
+
+    g_vdp2UiDirty = false;
+}
+
+static void drawAzelVdp2UiLayers(
+    std::uint32_t* buffer,
+    int pitch)
+{
+    if (!buffer || !g_vdp2TextValid)
+        return;
+
+    if (g_vdp2UiDirty)
+        rebuildAzelVdp2UiLogical();
+
+    const int outW = viewerRenderWidth();
+    const int outH = viewerRenderHeight();
+
+    // Scale the cached 352x224 Saturn UI once per destination pixel.
+    // The previous implementation repeated floating-point floor/ceil and
+    // palette/tile decoding for every source pixel every frame, which was
+    // far too expensive on Vita.
+    const int logicalOutW =
+        (outH * 4) / 3;
+    const int left =
+        (outW - logicalOutW) / 2;
+    const int right =
+        std::min(outW, left + logicalOutW);
+
+    if (logicalOutW <= 0 || right <= left)
+        return;
+
+    for (int dy = 0; dy < outH; ++dy) {
+        const int sy =
+            std::min(
+                kVdp2LogicalHeight - 1,
+                (dy * kVdp2LogicalHeight) / outH);
+        const std::uint32_t* src =
+            g_vdp2UiLogical +
+            sy * kVdp2LogicalWidth;
+        std::uint32_t* dst =
+            buffer + dy * pitch;
+
+        for (int dx = std::max(0, left);
+             dx < right; ++dx) {
+            const int sx =
+                std::min(
+                    kVdp2LogicalWidth - 1,
+                    ((dx - left) * kVdp2LogicalWidth) /
+                    logicalOutW);
+            const std::uint32_t color = src[sx];
+            if (color)
+                dst[dx] = color;
+        }
     }
 }
 
@@ -7509,14 +7544,34 @@ void town_publish_frame()
     g_townFadeFrames = g_pendingTownFadeFrames;
 
     if (g_pendingVdp2TextValid) {
-        std::memcpy(
-            g_vdp2TextVram,
-            g_pendingVdp2TextVram,
-            sizeof(g_vdp2TextVram));
-        std::memcpy(
-            g_vdp2Cram,
-            g_pendingVdp2Cram,
-            sizeof(g_vdp2Cram));
+        const bool vramChanged =
+            !g_vdp2TextValid ||
+            std::memcmp(
+                g_vdp2TextVram,
+                g_pendingVdp2TextVram,
+                sizeof(g_vdp2TextVram)) != 0;
+        const bool cramChanged =
+            !g_vdp2TextValid ||
+            std::memcmp(
+                g_vdp2Cram,
+                g_pendingVdp2Cram,
+                sizeof(g_vdp2Cram)) != 0;
+
+        if (vramChanged) {
+            std::memcpy(
+                g_vdp2TextVram,
+                g_pendingVdp2TextVram,
+                sizeof(g_vdp2TextVram));
+        }
+        if (cramChanged) {
+            std::memcpy(
+                g_vdp2Cram,
+                g_pendingVdp2Cram,
+                sizeof(g_vdp2Cram));
+        }
+
+        if (vramChanged || cramChanged)
+            g_vdp2UiDirty = true;
         g_vdp2TextValid = true;
     }
 
