@@ -4842,6 +4842,18 @@ static bool buildLiveTownFrame()
             staticSignature *= 1099511628211ull;
             staticSignature ^= model->polygons.size();
             staticSignature *= 1099511628211ull;
+            if (submission.state.hasLight) {
+                for (unsigned axis = 0; axis < 3; ++axis) {
+                    staticSignature ^=
+                        static_cast<std::uint32_t>(
+                            submission.state.lightVector[axis]);
+                    staticSignature *= 1099511628211ull;
+                    staticSignature ^= submission.state.lightColor[axis];
+                    staticSignature *= 1099511628211ull;
+                    staticSignature ^= submission.state.lightFalloff[axis];
+                    staticSignature *= 1099511628211ull;
+                }
+            }
         }
         hasBillboards = hasBillboards || submission.state.billboard;
     }
