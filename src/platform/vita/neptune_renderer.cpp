@@ -2242,6 +2242,14 @@ bool frontend_present_vdp2(
     auto* raw = static_cast<unsigned char*>(g_movieTextureData);
     std::memcpy(raw, vram, vramBytes);
     std::memcpy(raw + vramBytes, cram, cramBytes);
+
+    // VDP1 sprite color-bank decoding shares the same live VDP2 CRAM as the
+    // front-end layers. Keep Neptune's CPU-side CRAM snapshot coherent with
+    // the raw SGX upload so native D5 cursors/particles resolve their palette.
+    static_assert(sizeof(g_vdp2Cram) <= cramBytes,
+                  "front-end CRAM snapshot exceeds uploaded CRAM");
+    std::memcpy(g_vdp2Cram, cram, sizeof(g_vdp2Cram));
+
     g_movieVdp2Info[0] = static_cast<float>(layout);
     g_movieVdp2Info[1] = static_cast<float>(scrollX);
     g_movieVdp2Info[2] = static_cast<float>(scrollY);
