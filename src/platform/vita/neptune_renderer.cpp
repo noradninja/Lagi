@@ -32,6 +32,7 @@ extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
 extern const unsigned char _binary_lagi_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_cinepak_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_title_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_subdiv_v_gxp_start[];
 extern const unsigned char _binary_lagi_textured_gouraud_subdiv_f_gxp_start[];
@@ -148,15 +149,18 @@ static std::uint16_t* g_fadeIndices = nullptr;
 static SceGxmShaderPatcherId g_textureVertexProgramId{};
 static SceGxmShaderPatcherId g_textureFragmentProgramId{};
 static SceGxmShaderPatcherId g_cinepakFragmentProgramId{};
+static SceGxmShaderPatcherId g_vdp2TitleFragmentProgramId{};
 static bool g_textureVertexRegistered = false;
 static bool g_textureFragmentRegistered = false;
 static bool g_cinepakFragmentRegistered = false;
+static bool g_vdp2TitleFragmentRegistered = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
 // Movie variants are patched for SCE_GXM_MULTISAMPLE_NONE.  The normal
 // texture fragment program remains 2x MSAA for town/UI rendering.
 static SceGxmFragmentProgram* g_movieTextureFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_cinepakFragmentProgram = nullptr;
+static SceGxmFragmentProgram* g_vdp2TitleFragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_cinepakMovieInfoParam = nullptr;
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
@@ -413,6 +417,7 @@ static unsigned int g_movieStridePixels = 0;
 static unsigned int g_moviePayloadWidth = 0;
 static unsigned int g_moviePayloadHeight = 0;
 static bool g_movieUsesCinepakPayload = false;
+static bool g_movieUsesVdp2Title = false;
 static bool g_movieFrameVisible = false;
 static SceUID g_movieFrameSema = -1;
 static bool g_movieUploadLogged = false;
@@ -1386,6 +1391,11 @@ void shutdown()
                 g_probeShaderPatcher, g_meshTextureFragmentProgram);
             g_meshTextureFragmentProgram = nullptr;
         }
+        if (g_vdp2TitleFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_vdp2TitleFragmentProgram);
+            g_vdp2TitleFragmentProgram = nullptr;
+        }
         if (g_cinepakFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_cinepakFragmentProgram);
@@ -1490,6 +1500,11 @@ void shutdown()
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_meshFragmentProgramId);
             g_meshFragmentRegistered = false;
+        }
+        if (g_vdp2TitleFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_vdp2TitleFragmentProgramId);
+            g_vdp2TitleFragmentRegistered = false;
         }
         if (g_cinepakFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -1791,6 +1806,7 @@ static void freeMovieResources()
     g_moviePayloadWidth = 0;
     g_moviePayloadHeight = 0;
     g_movieUsesCinepakPayload = false;
+    g_movieUsesVdp2Title = false;
     g_movieFrameVisible = false;
     g_movieUploadLogged = false;
     g_movieRenderLogged = false;
@@ -1884,6 +1900,7 @@ bool movie_present_frame(
     }
 
     g_movieUsesCinepakPayload = false;
+    g_movieUsesVdp2Title = false;
     g_moviePayloadWidth = 0;
     g_moviePayloadHeight = 0;
 
@@ -1995,6 +2012,7 @@ bool movie_present_cinepak_payload(
         g_moviePayloadWidth = payloadWidth;
         g_moviePayloadHeight = payloadHeight;
         g_movieUsesCinepakPayload = true;
+        g_movieUsesVdp2Title = false;
     }
 
     std::memcpy(
@@ -5728,11 +5746,15 @@ void show_town_scene()
     const SceGxmProgram* cinepakFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_cinepak_f_gxp_start);
+    const SceGxmProgram* vdp2TitleFragmentGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_vdp2_title_f_gxp_start);
 
     if (sceGxmProgramCheck(textureVertexGxp) < 0 ||
         sceGxmProgramCheck(textureFragmentGxp) < 0 ||
         sceGxmProgramCheck(meshFragmentGxp) < 0 ||
-        sceGxmProgramCheck(cinepakFragmentGxp) < 0) {
+        sceGxmProgramCheck(cinepakFragmentGxp) < 0 ||
+        sceGxmProgramCheck(vdp2TitleFragmentGxp) < 0) {
         failure("[FAIL] TEXTURE GXP CHECK");
         return;
     }
@@ -5763,6 +5785,16 @@ void show_town_scene()
         return;
     }
     g_cinepakFragmentRegistered = true;
+
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_probeShaderPatcher,
+            vdp2TitleFragmentGxp,
+            &g_vdp2TitleFragmentProgramId) < 0) {
+        failure("[FAIL] VDP2 TITLE FP REG");
+        return;
+    }
+    g_vdp2TitleFragmentRegistered = true;
+
     g_cinepakMovieInfoParam =
         sceGxmProgramFindParameterByName(cinepakFragmentGxp, "movieInfo");
     if (!g_cinepakMovieInfoParam) {
@@ -5857,6 +5889,18 @@ void show_town_scene()
             textureVertexGxp,
             &g_cinepakFragmentProgram) < 0) {
         failure("[FAIL] CREATE CINEPAK FP NO-MSAA");
+        return;
+    }
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_vdp2TitleFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            textureVertexGxp,
+            &g_vdp2TitleFragmentProgram) < 0) {
+        failure("[FAIL] CREATE VDP2 TITLE FP NO-MSAA");
         return;
     }
 
@@ -7952,6 +7996,8 @@ static bool renderMovieFrame()
     if (g_movieUsesCinepakPayload &&
         (!g_cinepakFragmentProgram || !g_cinepakMovieInfoParam))
         return false;
+    if (g_movieUsesVdp2Title && !g_vdp2TitleFragmentProgram)
+        return false;
 
     // Movie presentation is always the final Lagi render resolution:
     // 480x272.  Unlike town rendering this path intentionally uses no MSAA
@@ -7993,9 +8039,11 @@ static bool renderMovieFrame()
     sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
     sceGxmSetFragmentProgram(
         g_probeContext,
-        g_movieUsesCinepakPayload
-            ? g_cinepakFragmentProgram
-            : g_movieTextureFragmentProgram);
+        g_movieUsesVdp2Title
+            ? g_vdp2TitleFragmentProgram
+            : (g_movieUsesCinepakPayload
+                ? g_cinepakFragmentProgram
+                : g_movieTextureFragmentProgram));
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, movieOutputWidth - 1, movieOutputHeight - 1);
@@ -8070,7 +8118,9 @@ static bool renderMovieFrame()
             "[MovieRender] first GXM frame submitted %ux%u output=%dx%d backend=%s msaa=OFF\n",
             g_movieWidth, g_movieHeight,
             movieOutputWidth, movieOutputHeight,
-            g_movieUsesCinepakPayload ? "SGX-Cinepak" : "RGBA");
+            g_movieUsesVdp2Title
+                ? "SGX-VDP2"
+                : (g_movieUsesCinepakPayload ? "SGX-Cinepak" : "RGBA"));
         g_movieRenderLogged = true;
     }
 
