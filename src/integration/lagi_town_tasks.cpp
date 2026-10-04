@@ -4,6 +4,7 @@
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_town_bootstrap.h"
 #include "lagi/lagi_direct_boot.h"
+#include "lagi/debug_mesh.h"
 #include "lagi/platform.h"
 
 #include "town/town.h"
@@ -142,6 +143,20 @@ bool start_twn_ruin_task_pipeline()
     g_fadeActive = false;
     g_reportedPresentation = false;
 
+    // Restore the renderer resource that authentic sEdgeTask::Draw expects.
+    // This is presentation-only reconstruction from Azel's already-loaded
+    // COMMON3/town resources; gameplay/task ownership remains upstream.
+    BasicWingDebugMesh edgeShadow{};
+    if (build_edge_shadow_debug_mesh(edgeShadow)) {
+        if (!platform::renderer::load_edge_shadow_model(std::move(edgeShadow))) {
+            platform::logging::writef(
+                "[LagiAdapter] Edge shadow renderer registration failed\n");
+        }
+    } else {
+        platform::logging::writef(
+            "[LagiAdapter] Edge shadow reconstruction unavailable\n");
+    }
+
     platform::logging::writef(
         "[LagiAdapter] upstream Azel TWN_RUIN task pipeline started\n");
     return true;
@@ -226,6 +241,15 @@ void twn_ruin_sync_platform_state()
         twnMainLogicTask->m68_cameraRotation[1].asS32() * kTurnsToRadians,
         twnMainLogicTask->m68_cameraRotation[0].asS32() * kTurnsToRadians,
         twnMainLogicTask->m24_distance.asS32() * kInvFixed);
+
+    // Azel owns the live town VDP2 maps, CRAM and line-scroll table. Snapshot
+    // the exact Saturn-authored state into Neptune's serial presentation
+    // handoff. 0x3E000 is the original working line-scroll transfer source
+    // used by the town renderer path.
+    platform::renderer::presentation_set_vdp2_text(
+        getVdp2Vram(0),
+        getVdp2Cram(0),
+        getVdp2Vram(0x3E000));
 
     if (!g_reportedPresentation) {
         platform::logging::writef(

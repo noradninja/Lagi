@@ -3069,11 +3069,12 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
     const unsigned int colorMode =
         (static_cast<unsigned int>(command.cmdPmod) >> 3) & 7u;
 
-    // Multi-choice cursors are normal VDP1 sprites backed by live VDP1 VRAM
-    // and a live CRAM bank (PMOD=0x0080, CMDCOLR=0x47F0). They do not belong
-    // to a town CGB bundle, so decode that command exactly from Saturn memory
-    // instead of forcing it through the town-material decoder.
-    if (commandType == 0u && colorMode == 0u) {
+    // Screen-space UI commands are backed by live VDP1 VRAM rather than a
+    // town CGB bundle. Decode 4bpp color-bank and color-LUT sprites directly
+    // from Saturn memory for normal, scaled and distorted sprite commands.
+    // Geometry type does not change the texture encoding.
+    if ((commandType == 0u || commandType == 1u || commandType == 2u) &&
+        (colorMode == 0u || colorMode == 1u)) {
         const unsigned int width =
             ((static_cast<unsigned int>(command.cmdSize) >> 8) & 0x3Fu) * 8u;
         const unsigned int height =
@@ -3122,14 +3123,43 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                     continue;
                 }
 
-                const unsigned int paletteIndex =
-                    (static_cast<unsigned int>(command.cmdColr) & 0x07F0u) |
-                    dot;
-                const unsigned int cramByte = paletteIndex * 2u;
-                if (cramByte + 1u >= sizeof(g_vdp2Cram))
-                    continue;
-                const std::uint16_t color =
-                    readVdp2Be16(g_vdp2Cram, cramByte);
+                std::uint16_t color = 0u;
+                if (colorMode == 0u) {
+                    const unsigned int paletteIndex =
+                        (static_cast<unsigned int>(command.cmdColr) & 0x07F0u) |
+                        dot;
+                    const unsigned int cramByte = paletteIndex * 2u;
+                    if (cramByte + 1u >= sizeof(g_vdp2Cram))
+                        continue;
+                    color = readVdp2Be16(g_vdp2Cram, cramByte);
+                } else {
+                    // VDP1 color-LUT mode: CMDCOLR is the LUT address in
+                    // 8-byte units, and each 4bpp source dot selects one BE16
+                    // LUT entry. Direct RGB555 entries carry bit 15; indirect
+                    // entries address CRAM.
+                    const unsigned int lutAddress =
+                        (static_cast<unsigned int>(command.cmdColr) << 3) +
+                        dot * 2u;
+                    if (lutAddress + 1u >= 0x80000u)
+                        continue;
+                    const unsigned char* const lut =
+                        getVdp1Pointer(0x25C00000u + lutAddress);
+                    if (!lut)
+                        continue;
+                    const std::uint16_t lutValue =
+                        static_cast<std::uint16_t>(
+                            (static_cast<unsigned int>(lut[0]) << 8) |
+                            static_cast<unsigned int>(lut[1]));
+                    if (lutValue & 0x8000u) {
+                        color = lutValue;
+                    } else {
+                        const unsigned int cramByte =
+                            (static_cast<unsigned int>(lutValue) & 0x07FFu) * 2u;
+                        if (cramByte + 1u >= sizeof(g_vdp2Cram))
+                            continue;
+                        color = readVdp2Be16(g_vdp2Cram, cramByte);
+                    }
+                }
                 if (color)
                     decoded.rgba[pixel] = vdp2Rgb555ToAbgr(color);
             }
@@ -3176,8 +3206,8 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         sceGxmTextureSetMagFilter(
             &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
 
-        static bool reportedNormalSprite = false;
-        if (!reportedNormalSprite) {
+        static bool reportedLiveUiSprite = false;
+        if (!reportedLiveUiSprite) {
             unsigned int sourceNonZero = 0u;
             unsigned int visiblePixels = 0u;
             std::uint32_t sourceHash = 2166136261u;
@@ -3197,9 +3227,11 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
             const unsigned int base =
                 static_cast<unsigned int>(command.cmdColr) & 0x07F0u;
             logging::writef(
-                "[VDP1Normal] SRCA=%04X SIZE=%04X COLR=%04X %ux%u "
+                "[VDP1LiveUI] type=%u mode=%u SRCA=%04X SIZE=%04X COLR=%04X %ux%u "
                 "srcNZ=%u/%u vis=%u/%u srcHash=%08X rgbaHash=%08X "
                 "pal=%04X:%04X,%04X,%04X,%04X\n",
+                commandType,
+                colorMode,
                 static_cast<unsigned int>(command.cmdSrca),
                 static_cast<unsigned int>(command.cmdSize),
                 static_cast<unsigned int>(command.cmdColr),
@@ -3216,7 +3248,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                     readVdp2Be16(g_vdp2Cram, ((base | 3u) * 2u) & 0x0FFFu)),
                 static_cast<unsigned int>(
                     readVdp2Be16(g_vdp2Cram, ((base | 4u) * 2u) & 0x0FFFu)));
-            reportedNormalSprite = true;
+            reportedLiveUiSprite = true;
         }
 
         g_vdp1UiTextureCache.push_back(std::move(entry));
@@ -7828,6 +7860,34 @@ bool load_edge_shadow_model(azel::BasicWingDebugMesh&& mesh)
 
     g_edgeShadowCpuMesh = std::move(mesh);
     g_edgeShadowCpuReady = true;
+
+    // The legacy direct-room path populated these indices as a side effect of
+    // load_static_room_viewer(). Authentic boot does not call that path, so
+    // register the decoded shadow textures against the live town atlas here.
+    g_edgeShadowTownTextureIndices.clear();
+    if (!g_edgeShadowCpuMesh.decodedTextureData.empty()) {
+        const std::uint16_t shadowTextureBase =
+            static_cast<std::uint16_t>(
+                g_staticRoomCpuMesh.decodedTextureData.size());
+        g_staticRoomCpuMesh.decodedTextureData.insert(
+            g_staticRoomCpuMesh.decodedTextureData.end(),
+            g_edgeShadowCpuMesh.decodedTextureData.begin(),
+            g_edgeShadowCpuMesh.decodedTextureData.end());
+        g_edgeShadowTownTextureIndices.reserve(
+            g_edgeShadowCpuMesh.polygonTextureIndices.size());
+        for (const auto index : g_edgeShadowCpuMesh.polygonTextureIndices) {
+            g_edgeShadowTownTextureIndices.push_back(
+                static_cast<std::uint16_t>(shadowTextureBase + index));
+        }
+        g_staticRoomCpuMesh.decodedTextures =
+            static_cast<unsigned int>(
+                g_staticRoomCpuMesh.decodedTextureData.size());
+
+        // The resident GPU texture array no longer matches the CPU atlas.
+        // Force one normal live-town prepare on the next render frame.
+        g_liveTownPrepared = false;
+        g_liveTownSignature = 0u;
+    }
 
     char line[78];
     std::snprintf(
