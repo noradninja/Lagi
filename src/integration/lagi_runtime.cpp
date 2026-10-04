@@ -114,6 +114,31 @@ static void capture_azel_vdp1_frontend_commands()
             static_cast<unsigned int>(signature));
         lastSignature = signature;
     }
+
+    if (gGameStatus.m0_gameMode == 1 && commandCount != 0u) {
+        static unsigned int detailBudget = 48u;
+        if (detailBudget != 0u) {
+            unsigned int index = 0u;
+            for (auto cmd = begin;
+                 cmd != end && index < 8u && detailBudget != 0u;
+                 ++cmd, ++index, --detailBudget) {
+                lagi::platform::logging::writef(
+                    "[PresentationTrace][AzelVDP1Cmd] i=%u CTRL=%04X PMOD=%04X "
+                    "COLR=%04X SRCA=%04X SIZE=%04X "
+                    "A=(%d,%d) B=(%d,%d) C=(%d,%d) D=(%d,%d)\n",
+                    index,
+                    cmd->m0_CMDCTRL,
+                    cmd->m4_CMDPMOD,
+                    cmd->m6_CMDCOLR,
+                    cmd->m8_CMDSRCA,
+                    cmd->mA_CMDSIZE,
+                    cmd->mC_CMDXA, cmd->mE_CMDYA,
+                    cmd->m10_CMDXB, cmd->m12_CMDYB,
+                    cmd->m14_CMDXC, cmd->m16_CMDYC,
+                    cmd->m18_CMDXD, cmd->m1A_CMDYD);
+            }
+        }
+    }
 }
 
 static void build_rbg0_gpu_parameter(

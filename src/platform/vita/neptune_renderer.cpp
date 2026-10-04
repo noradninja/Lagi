@@ -3319,6 +3319,15 @@ static void drawPublishedVdp1Ui()
     sceGxmSetUniformDataF(
         uniforms, g_textureWvpParam, 0, 16, identity);
 
+    static unsigned int uiTraceBudget = 48u;
+    if (uiTraceBudget != 0u) {
+        logging::writef(
+            "[PresentationTrace][NeptuneUI] commands=%u render=%dx%d\n",
+            static_cast<unsigned int>(commands.size()),
+            viewerRenderWidth(),
+            viewerRenderHeight());
+    }
+
     unsigned int spriteSlot = 0u;
     for (const auto& command : commands) {
         const unsigned int commandType = command.cmdCtrl & 0x000Fu;
@@ -3420,8 +3429,37 @@ static void drawPublishedVdp1Ui()
 
         GpuMode1Texture* texture =
             findOrUploadVdp1UiTexture(command);
-        if (!texture)
+        if (!texture) {
+            if (uiTraceBudget != 0u) {
+                logging::writef(
+                    "[PresentationTrace][NeptuneUI] DROP type=%u CTRL=%04X "
+                    "PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X reason=texture\n",
+                    commandType,
+                    command.cmdCtrl,
+                    command.cmdPmod,
+                    command.cmdColr,
+                    command.cmdSrca,
+                    command.cmdSize);
+                --uiTraceBudget;
+            }
             continue;
+        }
+
+        if (uiTraceBudget != 0u) {
+            logging::writef(
+                "[PresentationTrace][NeptuneUI] DRAW type=%u CTRL=%04X "
+                "PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X "
+                "A=(%d,%d) B=(%d,%d)\n",
+                commandType,
+                command.cmdCtrl,
+                command.cmdPmod,
+                command.cmdColr,
+                command.cmdSrca,
+                command.cmdSize,
+                command.xa, command.ya,
+                command.xb, command.yb);
+            --uiTraceBudget;
+        }
 
         // Match the horizontal presentation transform used by
         // buildAzelProjection(). Azel emits centered 352x224 VDP1
@@ -8014,6 +8052,16 @@ bool submit_vdp1_model(
                 const bool mesh =
                     orderedShadow || g_vdp1GpuTextures[t].mesh;
                 if (orderedShadow) {
+                    static unsigned int orderedShadowTraceBudget = 8u;
+                    if (orderedShadowTraceBudget != 0u) {
+                        logging::writef(
+                            "[PresentationTrace][ShadowDraw] tex=%u indices=%u "
+                            "mesh=%u\n",
+                            t,
+                            batch.indexCount,
+                            mesh ? 1u : 0u);
+                        --orderedShadowTraceBudget;
+                    }
                     // Azel submits Edge's VDP1 mesh shadow after the town
                     // environment and immediately before the actor. Preserve
                     // that ordered phase explicitly rather than relying on
@@ -9654,6 +9702,23 @@ static void renderBasicWingViewer()
             : (roomMode
             ? staticRoomVdp1Source(false)
             : basicWingVdp1Source());
+
+    static unsigned int shadowTraceHeartbeat = 0u;
+    if (roomAuthenticCameraMode &&
+        ((shadowTraceHeartbeat++ % 60u) == 0u)) {
+        logging::writef(
+            "[PresentationTrace][NeptuneScene] modelPolys=%u "
+            "shadowReady=%u shadowTex=%u shadowFirst=%u shadowPolys=%u "
+            "edgeFirst=%u edgePolys=%u resident=%u\n",
+            static_cast<unsigned int>(model.polygonCount),
+            g_edgeShadowCpuReady ? 1u : 0u,
+            static_cast<unsigned int>(g_edgeShadowTownTextureIndices.size()),
+            static_cast<unsigned int>(g_liveTownShadowFirstPolygon),
+            static_cast<unsigned int>(g_liveTownShadowPolygonCount),
+            static_cast<unsigned int>(g_liveTownEdgeFirstPolygon),
+            static_cast<unsigned int>(g_liveTownEdgePolygonCount),
+            static_cast<unsigned int>(g_residentVdp1Model));
+    }
 
     const std::uint64_t submitStartUs = sceKernelGetProcessTimeWide();
     const bool submitted = submit_vdp1_model(model, drawState);
