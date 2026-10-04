@@ -15,9 +15,21 @@ constexpr int kLogicalHeight = 224;
 constexpr int kOutputWidth = 480;
 constexpr int kOutputHeight = 272;
 
-static std::array<std::uint32_t,
-                  static_cast<std::size_t>(kOutputWidth) *
-                  static_cast<std::size_t>(kOutputHeight)> g_titleFrame{};
+static constexpr int kActiveWidth =
+    (kOutputHeight * 4 + 1) / 3; // centered 4:3 presentation
+static constexpr int kActiveLeft =
+    (kOutputWidth - kActiveWidth) / 2;
+
+using TitleFrame = std::array<
+    std::uint32_t,
+    static_cast<std::size_t>(kOutputWidth) *
+    static_cast<std::size_t>(kOutputHeight)>;
+
+static TitleFrame g_titleBackground{};
+static TitleFrame g_titleFrame{};
+static bool g_titleBackgroundReady = false;
+static bool g_titleTextHashValid = false;
+static std::uint64_t g_titleTextHash = 0;
 
 static std::uint16_t readBe16(const unsigned char* p)
 {
@@ -157,34 +169,89 @@ static std::uint32_t sampleTitleNbg1(
 
 } // namespace
 
-bool present_native_title_vdp2()
+static std::uint64_t titleTextHash(const unsigned char* vram)
+{
+    // The title/menu text system writes its 64x64 pattern-name map here.
+    // Hashing 8 KiB is dramatically cheaper than reconstructing both VDP2
+    // layers every frame, while still catching blink/menu-selection updates.
+    std::uint64_t hash = 1469598103934665603ull;
+    for (std::size_t i = 0x6000u; i < 0x8000u; ++i) {
+        hash ^= static_cast<std::uint64_t>(vram[i]);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+static void buildTitleBackground(
+    const unsigned char* vram,
+    const unsigned char* cram)
+{
+    g_titleBackground.fill(0xFF000000u);
+
+    for (int oy = 0; oy < kOutputHeight; ++oy) {
+        const int ly = std::min(
+            kLogicalHeight - 1,
+            (oy * kLogicalHeight) / kOutputHeight);
+        for (int ax = 0; ax < kActiveWidth; ++ax) {
+            const int lx = std::min(
+                kLogicalWidth - 1,
+                (ax * kLogicalWidth) / kActiveWidth);
+            const int ox = kActiveLeft + ax;
+            g_titleBackground[
+                static_cast<std::size_t>(oy) * kOutputWidth +
+                static_cast<std::size_t>(ox)] =
+                sampleTitleNbg0(vram, cram, lx, ly);
+        }
+    }
+
+    g_titleBackgroundReady = true;
+}
+
+bool present_native_title_vdp2(bool force)
 {
     const unsigned char* const vram = getVdp2Vram(0);
     const unsigned char* const cram = getVdp2Cram(0);
     if (!vram || !cram)
         return false;
 
+    if (force) {
+        g_titleBackgroundReady = false;
+        g_titleTextHashValid = false;
+    }
+
+    if (!g_titleBackgroundReady)
+        buildTitleBackground(vram, cram);
+
+    const std::uint64_t textHash = titleTextHash(vram);
+    if (g_titleTextHashValid && textHash == g_titleTextHash)
+        return true;
+
+    // Full-screen Saturn UI is presented at its intended 4:3 display aspect.
+    // The Vita output remains 480x272, with opaque black pillar bars.
+    g_titleFrame = g_titleBackground;
+
     for (int oy = 0; oy < kOutputHeight; ++oy) {
         const int ly = std::min(
             kLogicalHeight - 1,
             (oy * kLogicalHeight) / kOutputHeight);
-        for (int ox = 0; ox < kOutputWidth; ++ox) {
+        for (int ax = 0; ax < kActiveWidth; ++ax) {
             const int lx = std::min(
                 kLogicalWidth - 1,
-                (ox * kLogicalWidth) / kOutputWidth);
-
-            std::uint32_t pixel =
-                sampleTitleNbg0(vram, cram, lx, ly);
+                (ax * kLogicalWidth) / kActiveWidth);
             const std::uint32_t text =
                 sampleTitleNbg1(vram, cram, lx, ly);
-            if (text)
-                pixel = text;
+            if (!text)
+                continue;
 
+            const int ox = kActiveLeft + ax;
             g_titleFrame[
                 static_cast<std::size_t>(oy) * kOutputWidth +
-                static_cast<std::size_t>(ox)] = pixel;
+                static_cast<std::size_t>(ox)] = text;
         }
     }
+
+    g_titleTextHash = textHash;
+    g_titleTextHashValid = true;
 
     return platform::renderer::movie_present_frame(
         g_titleFrame.data(),
