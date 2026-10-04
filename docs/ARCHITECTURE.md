@@ -231,3 +231,12 @@ The completed 0.040 path reaches the first Ruins scene without using the direct-
 Static world submissions preserve world-space transforms before Neptune applies the native town camera. Dynamic Edge hierarchy submissions are converted from Azel's view-relative matrix state back into world space at the render bridge. The hierarchy, pose evaluation, movement, and animation remain owned by `sEdgeTask`.
 
 Lighting is captured with each submission from Azel's active light state. Geometry/material cache identity is independent from lighting state; cached static polygons refresh their current light payload without forcing a room rebuild. Neptune's current Full/Lighting path still evaluates the Saturn-style Gouraud contribution on the CPU before GPU interpolation, leaving GPU-side lighting evaluation as a later renderer optimization rather than part of the 0.040 milestone.
+
+
+## VDP2 display framebuffer modes
+
+Front-end presentation follows Azel's live VDP2 TVMD state. The normal gameplay path uses the established 480x272 framebuffer. The title screen enters Azel's 704-dot high-resolution mode and is presented through a 720x408 Vita framebuffer.
+
+Neptune renders directly into the active framebuffer size and passes that same width, height, pitch, and buffer to `sceDisplaySetFrameBuf()`. The 720x408 title path does not use an intermediate 960x544 render target.
+
+The title NBG0 shader addresses the 704x448 VDP2 source raster directly. Raw VRAM and CRAM reads remain point-exact. When source pixels must be reduced into the 720x408 framebuffer, filtering is applied after CRAM lookup to decoded RGB colors rather than to Saturn memory bytes or palette indices.
