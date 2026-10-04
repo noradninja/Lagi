@@ -160,6 +160,7 @@ static bool g_textureFragmentRegistered = false;
 static bool g_cinepakFragmentRegistered = false;
 static bool g_vdp2NbgFragmentRegistered = false;
 static bool g_vdp2Rbg0FragmentRegistered = false;
+static bool g_vdp2Rbg0Available = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
 // Movie variants are patched for SCE_GXM_MULTISAMPLE_NONE.  The normal
@@ -1534,6 +1535,7 @@ void shutdown()
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_vdp2Rbg0FragmentProgramId);
             g_vdp2Rbg0FragmentRegistered = false;
+            g_vdp2Rbg0Available = false;
         }
         if (g_vdp2NbgFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -6043,8 +6045,7 @@ void show_town_scene()
         sceGxmProgramCheck(textureFragmentGxp) < 0 ||
         sceGxmProgramCheck(meshFragmentGxp) < 0 ||
         sceGxmProgramCheck(cinepakFragmentGxp) < 0 ||
-        sceGxmProgramCheck(vdp2NbgFragmentGxp) < 0 ||
-        sceGxmProgramCheck(vdp2Rbg0FragmentGxp) < 0) {
+        sceGxmProgramCheck(vdp2NbgFragmentGxp) < 0) {
         failure("[FAIL] GXP CHECK");
         return;
     }
@@ -6085,14 +6086,27 @@ void show_town_scene()
     }
     g_vdp2NbgFragmentRegistered = true;
 
-    if (sceGxmShaderPatcherRegisterProgram(
+    const int rbg0Check = sceGxmProgramCheck(vdp2Rbg0FragmentGxp);
+    if (rbg0Check >= 0) {
+        const int rbg0Register = sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
             vdp2Rbg0FragmentGxp,
-            &g_vdp2Rbg0FragmentProgramId) < 0) {
-        failure("[FAIL] VDP2 RBG0 FP REG");
-        return;
+            &g_vdp2Rbg0FragmentProgramId);
+        if (rbg0Register >= 0) {
+            g_vdp2Rbg0FragmentRegistered = true;
+            g_vdp2Rbg0Available = true;
+        } else {
+            logging::writef(
+                "[NeptuneVDP2] RBG0 register unavailable=0x%08X; "
+                "continuing with NBG/Cinepak\n",
+                static_cast<unsigned int>(rbg0Register));
+        }
+    } else {
+        logging::writef(
+            "[NeptuneVDP2] RBG0 program check unavailable=0x%08X; "
+            "continuing with NBG/Cinepak\n",
+            static_cast<unsigned int>(rbg0Check));
     }
-    g_vdp2Rbg0FragmentRegistered = true;
 
     g_cinepakMovieInfoParam =
         sceGxmProgramFindParameterByName(cinepakFragmentGxp, "movieInfo");
@@ -6108,23 +6122,33 @@ void show_town_scene()
         return;
     }
 
-    static const char* kRbg0PlaneNames[4] = {
-        "rbg0Plane0", "rbg0Plane1", "rbg0Plane2", "rbg0Plane3"
-    };
-    for (unsigned int i = 0; i < 4u; ++i) {
-        g_vdp2Rbg0PlaneParam[i] =
-            sceGxmProgramFindParameterByName(
-                vdp2Rbg0FragmentGxp, kRbg0PlaneNames[i]);
-        if (!g_vdp2Rbg0PlaneParam[i]) {
-            failure("[FAIL] VDP2 RBG0 PLANE PARAMS");
-            return;
+    if (g_vdp2Rbg0Available) {
+        static const char* kRbg0PlaneNames[4] = {
+            "rbg0Plane0", "rbg0Plane1", "rbg0Plane2", "rbg0Plane3"
+        };
+        for (unsigned int i = 0; i < 4u; ++i) {
+            g_vdp2Rbg0PlaneParam[i] =
+                sceGxmProgramFindParameterByName(
+                    vdp2Rbg0FragmentGxp, kRbg0PlaneNames[i]);
+            if (!g_vdp2Rbg0PlaneParam[i]) {
+                logging::writef(
+                    "[NeptuneVDP2] RBG0 plane uniform %u unavailable; "
+                    "disabling RBG0\n", i);
+                g_vdp2Rbg0Available = false;
+                break;
+            }
         }
-    }
-    g_vdp2Rbg0InfoParam =
-        sceGxmProgramFindParameterByName(vdp2Rbg0FragmentGxp, "rbg0Info");
-    if (!g_vdp2Rbg0InfoParam) {
-        failure("[FAIL] VDP2 RBG0 INFO PARAM");
-        return;
+        if (g_vdp2Rbg0Available) {
+            g_vdp2Rbg0InfoParam =
+                sceGxmProgramFindParameterByName(
+                    vdp2Rbg0FragmentGxp, "rbg0Info");
+            if (!g_vdp2Rbg0InfoParam) {
+                logging::writef(
+                    "[NeptuneVDP2] RBG0 info uniform unavailable; "
+                    "disabling RBG0\n");
+                g_vdp2Rbg0Available = false;
+            }
+        }
     }
 
     if (sceGxmShaderPatcherRegisterProgram(
@@ -6217,16 +6241,23 @@ void show_town_scene()
         return;
     }
 
-    if (sceGxmShaderPatcherCreateFragmentProgram(
+    if (g_vdp2Rbg0Available) {
+        const int rbg0Create = sceGxmShaderPatcherCreateFragmentProgram(
             g_probeShaderPatcher,
             g_vdp2Rbg0FragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
             SCE_GXM_MULTISAMPLE_NONE,
             nullptr,
             textureVertexGxp,
-            &g_vdp2Rbg0FragmentProgram) < 0) {
-        failure("[FAIL] CREATE VDP2 RBG0 FP NO-MSAA");
-        return;
+            &g_vdp2Rbg0FragmentProgram);
+        if (rbg0Create < 0) {
+            g_vdp2Rbg0FragmentProgram = nullptr;
+            g_vdp2Rbg0Available = false;
+            logging::writef(
+                "[NeptuneVDP2] RBG0 fragment creation unavailable=0x%08X; "
+                "continuing with NBG/Cinepak\n",
+                static_cast<unsigned int>(rbg0Create));
+        }
     }
 
     SceGxmBlendInfo vdp2NbgBlend{};
@@ -8438,8 +8469,7 @@ static bool renderMovieFrame()
         (!g_cinepakFragmentProgram || !g_cinepakMovieInfoParam))
         return false;
     if (g_movieUsesVdp2Title &&
-        (!g_vdp2NbgFragmentProgram || !g_vdp2Rbg0FragmentProgram ||
-         !g_vdp2InfoParam || !g_vdp2Rbg0InfoParam))
+        (!g_vdp2NbgFragmentProgram || !g_vdp2InfoParam))
         return false;
 
     // Movie presentation is always the final Lagi render resolution:
@@ -8516,7 +8546,8 @@ static bool renderMovieFrame()
             // VDP2 is now composed from reusable layer programs rather than
             // one screen-specific shader. D5 is the first RBG0 client.
             bool rbgSubmitted = true;
-            if (g_movieVdp2Info[0] >= 0.5f) {
+            if (g_movieVdp2Info[0] >= 0.5f && g_vdp2Rbg0Available &&
+                g_vdp2Rbg0FragmentProgram && g_vdp2Rbg0InfoParam) {
                 sceGxmSetFragmentProgram(
                     g_probeContext, g_vdp2Rbg0FragmentProgram);
 
