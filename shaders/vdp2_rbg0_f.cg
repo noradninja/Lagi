@@ -121,37 +121,11 @@ float4 main(
     uniform float4 rbg0Coefficient,
     // {coefficient table base, enabled, entry size, unused}
     uniform float4 rbg0Info,
-    // {line-window byte address, mask mode, area bit, enabled}
-    // mask mode is reserved for future W0/W1 combination; current generic
-    // single-window path uses one native Saturn line-window table.
-    uniform float4 rbg0Window)
+    // reserved for compositor-selected RBG parameter metadata
+    uniform float4 rbg0Info)
 {
     const float x = min(351.0f, floor(vTexcoord.x * 352.0f));
     const float y = min(223.0f, floor(vTexcoord.y * 224.0f));
-
-    // Native VDP2 line-window selection. Azel's D5 starfield writes the
-    // window table through host u16 stores, matching renderer_vdp2.cpp's
-    // direct-u16 reads, so decode these entries little-endian.
-    if (rbg0Window.w >= 0.5f) {
-        const float windowAddress =
-            rbg0Window.x + y * 4.0f;
-        const float xsRaw = readLE16(raw, windowAddress);
-        const float xeRaw = readLE16(raw, windowAddress + 2.0f);
-
-        float xStart = 0.0f;
-        float xEnd = 0.0f;
-        if (xeRaw < 65534.5f) {
-            xStart = fmod(floor(xsRaw / 2.0f), 512.0f);
-            xEnd = fmod(floor(xeRaw / 2.0f), 512.0f);
-        }
-
-        const bool inside =
-            x >= xStart && x <= xEnd;
-        const bool drawInside = rbg0Window.z >= 0.5f;
-        if ((drawInside && !inside) ||
-            (!drawInside && inside))
-            return float4(0.0f, 0.0f, 0.0f, 0.0f);
-    }
 
     float k = 1.0f;
     if (rbg0Info.y >= 0.5f) {
