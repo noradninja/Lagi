@@ -2133,6 +2133,10 @@ bool frontend_present_vdp2(
     if (!renderSlot)
         return false;
 
+    // The producer owns the render slot here, so it is safe to replace the
+    // published VDP1 front-end snapshot without racing the render thread.
+    azel_bridge::publish_frame();
+
     MovieFrameGuard guard;
     if (!guard)
         return false;
@@ -3212,7 +3216,8 @@ static void drawPublishedVdp1Ui()
         // multi-choice cursor uses a normal VDP1 sprite (type 0). Both are
         // authentic Azel commands and share the same decoded texture path.
         if ((commandType != 0x0000u &&
-             commandType != 0x0001u) ||
+             commandType != 0x0001u &&
+             commandType != 0x0002u) ||
             ((command.cmdCtrl >> 8) & 0xFu) != 0u ||
             command.cmdSrca == 0u)
             continue;
@@ -3312,9 +3317,25 @@ static void drawPublishedVdp1Ui()
             g_vdp1UiVertices + spriteSlot * 4u;
         ++spriteSlot;
 
-        const float pos[4][2] = {
+        float pos[4][2] = {
             {x0,y0}, {x1,y0}, {x1,y1}, {x0,y1}
         };
+        if (commandType == 0x0002u) {
+            // Distorted sprite: Azel supplies all four projected corners.
+            // D5's native particles and name-entry exit sprite use this path.
+            pos[0][0] = (static_cast<float>(command.xa) / 176.0f) *
+                saturnAspectCorrection;
+            pos[0][1] = -static_cast<float>(command.ya) / 112.0f;
+            pos[1][0] = (static_cast<float>(command.xb) / 176.0f) *
+                saturnAspectCorrection;
+            pos[1][1] = -static_cast<float>(command.yb) / 112.0f;
+            pos[2][0] = (static_cast<float>(command.xc) / 176.0f) *
+                saturnAspectCorrection;
+            pos[2][1] = -static_cast<float>(command.yc) / 112.0f;
+            pos[3][0] = (static_cast<float>(command.xd) / 176.0f) *
+                saturnAspectCorrection;
+            pos[3][1] = -static_cast<float>(command.yd) / 112.0f;
+        }
         for (unsigned int i = 0; i < 4u; ++i) {
             spriteVertices[i] = {
                 pos[i][0], pos[i][1], 0.0f,
