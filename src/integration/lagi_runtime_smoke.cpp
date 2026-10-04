@@ -592,12 +592,24 @@ void runtime_smoke_frame()
         // state machine still owns presentation.
         lagi::platform::renderer::movie_republish_frame();
     } else if (gGameStatus.m0_gameMode == 1) {
-        // Authentic town mode: release any retained movie frame, then publish
-        // the frame Azel just produced through the existing Neptune handoff.
-        // No direct-boot loader or reconstructed scene ownership is involved.
+        // The frame that *enters* town mode began as a movie/module-manager
+        // frame and therefore did not acquire the town producer slot. Release
+        // the retained movie immediately, but publish only on a frame that
+        // began in town mode and acquired that slot before runTasks().
         lagi::platform::renderer::movie_clear_frame();
-        lagi::azel_bridge::publish_frame();
-        lagi::platform::renderer::town_publish_frame();
+        if (authenticTownFrame) {
+            lagi::azel_bridge::publish_frame();
+            lagi::platform::renderer::town_publish_frame();
+
+            static unsigned int townHeartbeat = 0;
+            if ((townHeartbeat++ % 60u) == 0u) {
+                lagi::platform::logging::writef(
+                    "[AzelTown] frame heartbeat tasks=%d submissions=%u\n",
+                    numActiveTask,
+                    static_cast<unsigned int>(
+                        lagi::azel_bridge::published_submissions().size()));
+            }
+        }
     } else if (gGameStatus.m0_gameMode != 0) {
         // Other native gameplay modes are not yet presented by Neptune.
         lagi::platform::renderer::movie_clear_frame();
