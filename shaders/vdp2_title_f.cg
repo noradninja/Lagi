@@ -1,0 +1,157 @@
+// Native SGX VDP2 title/menu compositor.
+//
+// Raw memory texture layout (A8B8G8R8, point sampled):
+//   byte 0x00000..0x7FFFF : VDP2 VRAM
+//   byte 0x80000..0x80FFF : VDP2 CRAM
+// Packed linearly into a 512 x 258 RGBA8 texture.
+//
+// This shader implements the exact VDP2 formats used by Azel's title overlay:
+//   NBG0: 8bpp, CHSZ=1, PNB=1, CNSM=1, 16x16 patterns
+//   NBG1: 4bpp text, CHSZ=0, PNB=1, CNSM=1, CAOS=7
+//
+// Azel owns all VRAM/CRAM contents, maps, text and sequencing. Neptune only
+// presents that state.
+
+float4 rawTexel(uniform sampler2D raw, float texelIndex)
+{
+    const float x = fmod(texelIndex, 512.0f);
+    const float y = floor(texelIndex / 512.0f);
+    return tex2D(raw, float2(
+        (x + 0.5f) / 512.0f,
+        (y + 0.5f) / 258.0f));
+}
+
+float selectByte(float4 v, float lane)
+{
+    if (lane < 0.5f) return floor(v.r * 255.0f + 0.5f);
+    if (lane < 1.5f) return floor(v.g * 255.0f + 0.5f);
+    if (lane < 2.5f) return floor(v.b * 255.0f + 0.5f);
+    return floor(v.a * 255.0f + 0.5f);
+}
+
+float readByte(uniform sampler2D raw, float byteAddress)
+{
+    const float texelIndex = floor(byteAddress * 0.25f);
+    const float lane = byteAddress - texelIndex * 4.0f;
+    return selectByte(rawTexel(raw, texelIndex), lane);
+}
+
+float readBE16(uniform sampler2D raw, float byteAddress)
+{
+    return readByte(raw, byteAddress) * 256.0f +
+           readByte(raw, byteAddress + 1.0f);
+}
+
+float4 rgb555(float c)
+{
+    const float r5 = fmod(c, 32.0f);
+    const float g5 = fmod(floor(c / 32.0f), 32.0f);
+    const float b5 = fmod(floor(c / 1024.0f), 32.0f);
+    return float4(r5 / 31.0f, g5 / 31.0f, b5 / 31.0f, 1.0f);
+}
+
+float4 sampleNbg0(
+    uniform sampler2D raw,
+    float logicalX,
+    float logicalY)
+{
+    // Title TVMD is 704 horizontal dots and double-density interlace.
+    const float physicalX = floor(logicalX * 2.0f);
+    const float physicalY = floor(logicalY * 2.0f);
+
+    const float planeX = physicalX >= 512.0f ? physicalX - 512.0f
+                                             : physicalX;
+    const float planeBase = physicalX >= 512.0f ? 67584.0f  // 0x10800
+                                                 : 65536.0f; // 0x10000
+
+    const float patternX = floor(planeX / 16.0f);
+    const float patternY = floor(physicalY / 16.0f);
+    const float patternAddress =
+        planeBase + (patternY * 32.0f + patternX) * 2.0f;
+    const float patternName = readBE16(raw, patternAddress);
+
+    // PNB=1, CNSM=1, CHSZ=1, SCN=0.
+    const float characterNumber =
+        fmod(patternName, 4096.0f) * 4.0f;
+    const float characterOffset = characterNumber * 32.0f;
+
+    const float px = fmod(planeX, 16.0f);
+    const float py = fmod(physicalY, 16.0f);
+    const float cellX = floor(px / 8.0f);
+    const float cellY = floor(py / 8.0f);
+    const float cellIndex = cellX + cellY * 2.0f;
+    const float dotAddress =
+        characterOffset + cellIndex * 64.0f +
+        fmod(py, 8.0f) * 8.0f + fmod(px, 8.0f);
+
+    const float dotColor = readByte(raw, dotAddress);
+    if (dotColor < 0.5f)
+        return float4(0.0f, 0.0f, 0.0f, 1.0f);
+
+    // CHCN=1: palette bits are pattern[14:12], represented by the
+    // pre-shifted palette address used by Azel's renderer.
+    const float paletteNumber =
+        fmod(floor(patternName / 256.0f), 128.0f) -
+        fmod(floor(patternName / 256.0f), 16.0f);
+    const float paletteEntry = paletteNumber * 16.0f + dotColor;
+
+    // CRAM begins at packed byte 0x80000.
+    const float cramAddress = 524288.0f + paletteEntry * 2.0f;
+    return rgb555(readBE16(raw, cramAddress));
+}
+
+float4 sampleNbg1(
+    uniform sampler2D raw,
+    float logicalX,
+    float logicalY)
+{
+    const float tileX = floor(logicalX / 8.0f);
+    const float tileY = floor(logicalY / 8.0f);
+    const float patternAddress =
+        24576.0f + (tileY * 64.0f + tileX) * 2.0f; // 0x6000
+    const float patternName = readBE16(raw, patternAddress);
+
+    if (patternName < 0.5f)
+        return float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    const float characterNumber = fmod(patternName, 4096.0f);
+    const float characterOffset = characterNumber * 32.0f;
+    const float px = fmod(logicalX, 8.0f);
+    const float py = fmod(logicalY, 8.0f);
+    const float packed = readByte(
+        raw,
+        characterOffset + py * 4.0f + floor(px * 0.5f));
+
+    float dotColor;
+    if (fmod(px, 2.0f) >= 1.0f)
+        dotColor = fmod(packed, 16.0f);
+    else
+        dotColor = floor(packed / 16.0f);
+
+    if (dotColor < 0.5f)
+        return float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    // CAOS=7.  4bpp palette number is pattern[15:12].
+    const float palNibble = floor(patternName / 4096.0f);
+    const float paletteEntry =
+        1792.0f + palNibble * 16.0f + dotColor; // 7 * 0x100
+    const float cramAddress = 524288.0f + paletteEntry * 2.0f;
+    return rgb555(readBE16(raw, cramAddress));
+}
+
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    uniform sampler2D raw)
+{
+    const float logicalX = min(
+        351.0f, floor(vTexcoord.x * 352.0f));
+    const float logicalY = min(
+        223.0f, floor(vTexcoord.y * 224.0f));
+
+    float4 color = sampleNbg0(raw, logicalX, logicalY);
+    const float4 text = sampleNbg1(raw, logicalX, logicalY);
+    if (text.a > 0.5f)
+        color = text;
+
+    return color;
+}
