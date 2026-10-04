@@ -556,8 +556,8 @@ static unsigned int g_townEdgePreviousAnimation = 0;
 static unsigned int g_townEdgePreviousFrame = 0;
 static float g_townEdgeTransition = 1.0f;
 
-// Game-thread presentation staging. town_present_* only writes these fields.
-// town_publish_frame() atomically defines the serial frame boundary by copying
+// Game-thread presentation staging. presentation_set_* only writes these fields.
+// presentation_publish_frame() atomically defines the serial frame boundary by copying
 // them into the renderer-owned state above. This avoids a future render thread
 // reading task-owned state while the next Azel frame is mutating it.
 static float g_pendingTownPlayerPosition[3]{};
@@ -1888,8 +1888,8 @@ bool movie_present_frame(
         !width || !height || pitchPixels < width)
         return false;
 
-    // Town rendering normally acquires this producer token in
-    // town_wait_render_slot(). Movie playback bypasses the town publish path,
+    // Scene presentation normally acquires this producer token in
+    // presentation_wait_frame_slot(). Movie playback bypasses the town publish path,
     // so it must participate in the same one-frame ownership protocol itself.
     // Without this handoff a movie upload can race the dedicated render thread
     // or leave a ready notification disconnected from renderer ownership.
@@ -5516,7 +5516,7 @@ void toggle_full_debug_screen()
         sceKernelSignalSema(g_renderFrameFreeSema, 1);
 }
 
-void show_town_scene()
+void show_game_presentation()
 {
     // One-way handoff from the loading framebuffer to native GXM town
     // presentation. The old diagnostic screen is intentionally not toggled
@@ -9613,7 +9613,7 @@ static void updateLiveTownAzelLighting()
     }
 }
 
-bool town_scene_active()
+bool presentation_active()
 {
     const bool sceneMode =
         g_pendingViewMode == 7 || g_pendingViewMode == 8 ||
@@ -9627,12 +9627,12 @@ bool town_scene_active()
            (nativeTownReady || legacyRoomReady);
 }
 
-void town_profile_tasks_us(unsigned int microseconds)
+void presentation_profile_tasks_us(unsigned int microseconds)
 {
     g_pendingProfileTasksUs = microseconds;
 }
 
-void town_wait_render_slot()
+void presentation_wait_frame_slot()
 {
     const std::uint64_t waitStartUs = sceKernelGetProcessTimeWide();
     if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
@@ -9641,10 +9641,10 @@ void town_wait_render_slot()
         sceKernelGetProcessTimeWide() - waitStartUs);
 }
 
-void town_publish_frame()
+void presentation_publish_frame()
 {
     if (!g_pendingTownPresentationValid) {
-        // town_wait_render_slot() has already consumed the producer token.
+        // presentation_wait_frame_slot() has already consumed the producer token.
         // Azel is allowed to spend startup frames without publishing Edge or
         // camera state, so return that token when there is no frame to queue.
         // Otherwise the next game frame waits forever and presentation stays
@@ -9713,40 +9713,40 @@ void town_publish_frame()
         sceKernelSignalSema(g_renderFrameReadySema, 1);
 }
 
-void town_fade_in(unsigned int frames)
+void presentation_fade_in(unsigned int frames)
 {
     g_pendingTownFadeIn = true;
     g_pendingTownFadeFrames = std::max(1u, frames);
     ++g_pendingTownFadeSerial;
     logging::writef(
-        "[Town] TwnFadeIn frames=%u\n",
+        "[Presentation] FadeIn frames=%u\n",
         g_pendingTownFadeFrames);
 }
 
-void town_fade_out(unsigned int frames)
+void presentation_fade_out(unsigned int frames)
 {
     g_pendingTownFadeIn = false;
     g_pendingTownFadeFrames = std::max(1u, frames);
     ++g_pendingTownFadeSerial;
     logging::writef(
-        "[Town] TwnFadeOut frames=%u\n",
+        "[Presentation] FadeOut frames=%u\n",
         g_pendingTownFadeFrames);
 }
 
-void town_camera_update()
+void presentation_camera_update()
 {
     // Edge's current task-owned pose is consumed when the native town
     // submission batch is assembled. No renderer-owned room mesh is updated.
 }
 
-unsigned town_edge_animation_frames(unsigned animation)
+unsigned presentation_player_animation_frames(unsigned animation)
 {
     if (animation >= g_edgeIdleCpuMesh.edgeAnimationClips.size()) return 0;
     const auto& clip = g_edgeIdleCpuMesh.edgeAnimationClips[animation];
     return clip.valid ? static_cast<unsigned>(clip.frames.size()) : 0;
 }
 
-void town_present_edge(
+void presentation_set_player(
     float x, float y, float z, float yaw,
     bool grounded, unsigned contacts,
     unsigned animation, unsigned frame,
@@ -9768,7 +9768,7 @@ void town_present_edge(
     g_pendingTownPresentationValid = true;
 }
 
-void town_present_camera(
+void presentation_set_camera(
     const float position[3],
     const float rawPosition[3],
     const float target[3],
@@ -9810,7 +9810,7 @@ void town_present_camera(
     g_pendingTownPresentationValid = true;
 }
 
-void town_present_vdp2_text(
+void presentation_set_vdp2_text(
     const unsigned char* vram,
     const unsigned char* cram,
     const unsigned char* lineScroll)
