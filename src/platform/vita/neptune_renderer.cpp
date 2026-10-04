@@ -109,17 +109,20 @@ static SceGxmRenderTarget* g_probeRenderTargetHalf = nullptr;
 // decoder fragment shader runs once per output pixel while town rendering
 // retains Neptune's validated 2x MSAA path.
 static SceGxmRenderTarget* g_movieRenderTarget = nullptr;
+static SceGxmRenderTarget* g_frontendHighRenderTarget = nullptr;
 static SceUID g_probeColorUid = -1;
 static std::uint32_t* g_probeColorBuffer = nullptr;
 static SceGxmColorSurface g_probeColorSurface{};
 static SceGxmColorSurface g_probeColorSurfaceHalf{};
 static SceGxmColorSurface g_movieColorSurface{};
+static SceGxmColorSurface g_frontendHighColorSurface{};
 static SceGxmSyncObject* g_probeSync = nullptr;
 static SceUID g_probeColorUid2 = -1;
 static std::uint32_t* g_probeColorBuffer2 = nullptr;
 static SceGxmColorSurface g_probeColorSurface2{};
 static SceGxmColorSurface g_probeColorSurfaceHalf2{};
 static SceGxmColorSurface g_movieColorSurface2{};
+static SceGxmColorSurface g_frontendHighColorSurface2{};
 static SceGxmSyncObject* g_probeSync2 = nullptr;
 static int g_gxmDrawBuffer = 1;
 static SceUID g_probeDepthUid = -1;
@@ -449,6 +452,7 @@ static bool g_movieUsesCinepakPayload = false;
 static bool g_movieUsesVdp2Title = false;
 static bool g_movieFrameVisible = false;
 static float g_movieVdp2Info[4] = {};
+static unsigned int g_movieVdp2Tvmd = 0u;
 static float g_movieRbg0Planes[16] = {};
 static float g_movieRbg0PlanesB[16] = {};
 static float g_movieRbg0Ctrl[16] = {};
@@ -1696,6 +1700,10 @@ void shutdown()
     freeProbeMapped(g_probeDepthUid, g_probeDepth);
     freeProbeMapped(g_probeStencilUid, g_probeStencil);
 
+    if (g_frontendHighRenderTarget) {
+        sceGxmDestroyRenderTarget(g_frontendHighRenderTarget);
+        g_frontendHighRenderTarget = nullptr;
+    }
     if (g_movieRenderTarget) {
         sceGxmDestroyRenderTarget(g_movieRenderTarget);
         g_movieRenderTarget = nullptr;
@@ -2188,7 +2196,8 @@ bool frontend_present_vdp2(
     unsigned int layout,
     int scrollX,
     int scrollY,
-    unsigned int flags)
+    unsigned int flags,
+    unsigned int tvmd)
 {
     if (!g_gxmInitialized || !g_probeContext || !vram || !cram)
         return false;
@@ -2294,6 +2303,7 @@ bool frontend_present_vdp2(
     g_movieVdp2Info[1] = static_cast<float>(scrollX);
     g_movieVdp2Info[2] = static_cast<float>(scrollY);
     g_movieVdp2Info[3] = static_cast<float>(flags);
+    g_movieVdp2Tvmd = tvmd;
 
     g_movieFrameVisible = true;
     if (!g_movieUploadLogged) {
@@ -5910,6 +5920,22 @@ void show_game_presentation()
     }
     status("[PASS] GXM MOVIE TARGET NO-MSAA", 0xFF80E0FFu);
 
+    SceGxmRenderTargetParams frontendHighRtParams = movieRtParams;
+    frontendHighRtParams.width = 720;
+    frontendHighRtParams.height = 408;
+    const int frontendHighRtResult =
+        sceGxmCreateRenderTarget(
+            &frontendHighRtParams, &g_frontendHighRenderTarget);
+    if (frontendHighRtResult < 0) {
+        char line[78];
+        std::snprintf(
+            line, sizeof(line), "[FAIL] GXM FRONTEND 720X408 TARGET 0X%08X",
+            static_cast<unsigned int>(frontendHighRtResult));
+        failure(line);
+        return;
+    }
+    status("[PASS] GXM FRONTEND 720X408 TARGET", 0xFF80E0FFu);
+
     constexpr int gxmPitch = 1024;
     constexpr unsigned int colorBytes =
         static_cast<unsigned int>(gxmPitch * kHeight * sizeof(std::uint32_t));
@@ -5967,6 +5993,22 @@ void show_game_presentation()
         char line[78];
         std::snprintf(line, sizeof(line), "[FAIL] GXM MOVIE COLOR 0X%08X",
                       static_cast<unsigned int>(movieColorResult));
+        failure(line);
+        return;
+    }
+
+    const int frontendHighColorResult = sceGxmColorSurfaceInit(
+        &g_frontendHighColorSurface,
+        SCE_GXM_COLOR_FORMAT_A8B8G8R8,
+        SCE_GXM_COLOR_SURFACE_LINEAR,
+        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+        SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+        720, 408, gxmPitch, g_probeColorBuffer);
+    if (frontendHighColorResult < 0) {
+        char line[78];
+        std::snprintf(
+            line, sizeof(line), "[FAIL] GXM FRONTEND 720X408 COLOR 0X%08X",
+            static_cast<unsigned int>(frontendHighColorResult));
         failure(line);
         return;
     }
@@ -6031,6 +6073,22 @@ void show_game_presentation()
         char line[78];
         std::snprintf(line, sizeof(line), "[FAIL] GXM MOVIE COLOR2 0X%08X",
                       static_cast<unsigned int>(movieColorResult2));
+        failure(line);
+        return;
+    }
+
+    const int frontendHighColorResult2 = sceGxmColorSurfaceInit(
+        &g_frontendHighColorSurface2,
+        SCE_GXM_COLOR_FORMAT_A8B8G8R8,
+        SCE_GXM_COLOR_SURFACE_LINEAR,
+        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+        SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+        720, 408, gxmPitch, g_probeColorBuffer2);
+    if (frontendHighColorResult2 < 0) {
+        char line[78];
+        std::snprintf(
+            line, sizeof(line), "[FAIL] GXM FRONTEND 720X408 COLOR2 0X%08X",
+            static_cast<unsigned int>(frontendHighColorResult2));
         failure(line);
         return;
     }
@@ -8823,18 +8881,42 @@ static bool renderMovieFrame()
         (!g_vdp2NbgFragmentProgram || !g_vdp2InfoParam))
         return false;
 
-    // Movie presentation is always the final Lagi render resolution:
-    // 480x272.  Unlike town rendering this path intentionally uses no MSAA
-    // and no depth/stencil attachment.
-    constexpr int pitch = 512;
-    constexpr int movieOutputWidth = kWidth / 2;
-    constexpr int movieOutputHeight = kHeight / 2;
+    // Azel switches the title to HRESO=3 with double-density interlace.
+    // When that live TVMD mode is active, render and scan out a native
+    // 720x408 Vita framebuffer directly. There is no 960x544 intermediate
+    // and no Neptune scaling pass; sceDisplay receives the 720x408 frame.
+    const bool highResolutionFrontend =
+        g_movieUsesVdp2Title &&
+        (g_movieVdp2Tvmd & 0x00C7u) == 0x00C3u;
+    static int lastFrontendDisplayMode = -1;
+    const int frontendDisplayMode = highResolutionFrontend ? 1 : 0;
+    if (g_movieUsesVdp2Title &&
+        frontendDisplayMode != lastFrontendDisplayMode) {
+        logging::writef(
+            "[VDP2Display] TVMD=%04X framebuffer=%s\n",
+            g_movieVdp2Tvmd & 0xFFFFu,
+            highResolutionFrontend ? "720x408" : "480x272");
+        lastFrontendDisplayMode = frontendDisplayMode;
+    }
+    const int pitch = highResolutionFrontend ? 1024 : 512;
+    const int movieOutputWidth =
+        highResolutionFrontend ? 720 : (kWidth / 2);
+    const int movieOutputHeight =
+        highResolutionFrontend ? 408 : (kHeight / 2);
     std::uint32_t* const colorBuffer =
         g_gxmDrawBuffer == 0 ? g_probeColorBuffer : g_probeColorBuffer2;
     SceGxmColorSurface* const colorSurface =
         g_gxmDrawBuffer == 0
-            ? &g_movieColorSurface
-            : &g_movieColorSurface2;
+            ? (highResolutionFrontend
+                ? &g_frontendHighColorSurface
+                : &g_movieColorSurface)
+            : (highResolutionFrontend
+                ? &g_frontendHighColorSurface2
+                : &g_movieColorSurface2);
+    SceGxmRenderTarget* const activeRenderTarget =
+        highResolutionFrontend
+            ? g_frontendHighRenderTarget
+            : g_movieRenderTarget;
     SceGxmSyncObject* const syncObject =
         g_gxmDrawBuffer == 0 ? g_probeSync : g_probeSync2;
 
@@ -8847,7 +8929,7 @@ static bool renderMovieFrame()
     const int beginResult = sceGxmBeginScene(
         g_probeContext,
         0,
-        g_movieRenderTarget,
+        activeRenderTarget,
         nullptr,
         nullptr,
         syncObject,
@@ -9223,7 +9305,9 @@ static bool renderMovieFrame()
             g_movieWidth, g_movieHeight,
             movieOutputWidth, movieOutputHeight,
             g_movieUsesVdp2Title
-                ? "SGX-VDP2"
+                ? (highResolutionFrontend
+                    ? "SGX-VDP2-DISPLAY-720X408"
+                    : "SGX-VDP2")
                 : (g_movieUsesCinepakPayload ? "SGX-Cinepak" : "RGBA"));
         g_movieRenderLogged = true;
     }

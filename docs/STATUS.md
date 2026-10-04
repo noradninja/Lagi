@@ -312,11 +312,13 @@ Those renderer/platform capabilities are being reconnected to the authentic boot
 Current gameplay/front-end target:
 
 ```text
-internal authored/presentation space: Saturn-derived 352x224 / scene data
-Vita gameplay render target:           480x272
-Vita display output:                   960x544
-target presentation:                   30 Hz
+3D gameplay framebuffer:              480x272
+high-resolution title framebuffer:    720x408
+title source VDP2 raster:             704x448
+target presentation:                  30 Hz
 ```
+
+The active front-end framebuffer mode follows Azel's VDP2 TVMD state. The title path scans out 720x408 directly; gameplay retains the established 480x272 path.
 
 Saturn-authored content is presented at its intended aspect rather than stretched to match a 16:9 capture device.
 

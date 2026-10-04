@@ -181,13 +181,15 @@ A normal development launch:
 7. after the elevator sequence, plays `EVT004_1.CPK` and `EVT004_2.CPK`
    from Disc 1 before Azel requests the next game status.
 
-Current rendering configuration:
+Current display framebuffer configuration:
 
 ```text
-480x272 GXM -> 960x544 display
-native 2x MSAA with GXM hardware resolve
-30 Hz presentation
+3D gameplay:            480x272, native 2x MSAA
+high-resolution title:  720x408, no MSAA
+presentation cadence:   30 Hz
 ```
+
+The title framebuffer mode follows Azel's live VDP2 TVMD state. Neptune changes the GXM render target and the dimensions supplied to `sceDisplaySetFrameBuf()` when Azel enters or leaves the high-resolution title mode.
 
 ## Controls
 

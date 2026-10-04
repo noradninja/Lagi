@@ -443,7 +443,9 @@ void runtime_frame()
             nameKeyboardVisible
                 ? (vdp2Controls.m20_registers[0].m74_SCYN0 >> 16)
                 : 0,
-            nameKeyboardVisible ? 1u : 0u);
+            nameKeyboardVisible ? 1u : 0u,
+            static_cast<unsigned int>(
+                vdp2Controls.m20_registers[0].m0_TVMD));
     } else if (gGameStatus.m0_gameMode == 0 &&
                fileInfoStruct.mC_gfsHandle == nullptr) {
         // The native movie task closes its stream at the start of the exit
