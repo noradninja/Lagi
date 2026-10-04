@@ -85,6 +85,29 @@ static void begin_azel_vdp1_frame()
     ctx.m10 = ctx.m14[0].begin();
 }
 
+static void capture_azel_vdp1_frontend_commands()
+{
+    auto& ctx = graphicEngineStatus.m14_vdp1Context[0];
+    if (mainContextVdp1[0].size() < 6)
+        return;
+
+    const auto begin = mainContextVdp1[0].begin() + 6;
+    const auto end = ctx.m0_currentVdp1WriteEA;
+    for (auto cmd = begin; cmd != end; ++cmd) {
+        lagi::azel_bridge::Vdp1UiCommand ui{};
+        ui.cmdCtrl = cmd->m0_CMDCTRL;
+        ui.cmdPmod = cmd->m4_CMDPMOD;
+        ui.cmdColr = cmd->m6_CMDCOLR;
+        ui.cmdSrca = cmd->m8_CMDSRCA;
+        ui.cmdSize = cmd->mA_CMDSIZE;
+        ui.xa = cmd->mC_CMDXA;   ui.ya = cmd->mE_CMDYA;
+        ui.xb = cmd->m10_CMDXB;  ui.yb = cmd->m12_CMDYB;
+        ui.xc = cmd->m14_CMDXC;  ui.yc = cmd->m16_CMDYC;
+        ui.xd = cmd->m18_CMDXD;  ui.yd = cmd->m1A_CMDYD;
+        lagi::azel_bridge::record_vdp1_ui_command(ui);
+    }
+}
+
 static void log_title_vdp2_diagnostics_once()
 {
     static bool logged = false;
@@ -210,6 +233,11 @@ void runtime_smoke_frame()
             reinterpret_cast<void*>(initialTaskStatus.m_pendingTask));
 
     runTasks();
+
+    // Capture the VDP1 commands Azel emitted this frame before the transient
+    // command tail is rewound on the next host frame. Neptune publishes this
+    // snapshot only after it owns the front-end render slot.
+    capture_azel_vdp1_frontend_commands();
 
     // Service the Saturn-side VDP2 deferred register/DMA work and the platform
     // movie backend at the same host-frame boundary used by the existing
