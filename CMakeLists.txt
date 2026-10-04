@@ -800,6 +800,16 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # timing table, countdown, CPK sequencing, fades, skip logic, subtitle task,
  # and task completion all remain the original upstream code.
  elseif(relative_path STREQUAL "movie/movie.cpp")
+  # MOVIE1 is the attract/title movie (movie timing entry 0x20). The current
+  # reconstruction targets +white (0xFFFF) on exit, but Saturn hardware
+  # reference fades to black before the title appears. Correct only this
+  # reconstructed timing datum in the generated Vita copy; the native movie
+  # task, fadePalette(), countdown, and transition logic remain authoritative.
+  string(REPLACE
+   "    {0x31, 0x01, 0xFFFF}, // 0x20"
+   "    {0x31, 0x01, 0x8000}, // 0x20"
+   source_text "${source_text}")
+
   string(REPLACE
    "#include \"movie.h\""
    "#include \"movie/movie.h\""
@@ -927,6 +937,23 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "titleScreen.cpp")
+  # Hardware-validated front-end sequencing correction for the generated Vita
+  # copy. The reconstructed title menu currently queues the selected module in
+  # the same frame that it starts the 30-frame fade to black. The root task
+  # then replaces the title before that fade completes, allowing the incoming
+  # movie to start its fade-to-neutral early. Real Saturn capture completes the
+  # black fade first. Keep ownership in Azel: use title-menu state 2 solely to
+  # wait for Azel's own fade control, then queue the already-selected task.
+  string(REPLACE
+   "                clearVdp2TextMemory();\n                initialTaskStatus.m_pendingTask = pWorkArea->m_menu[pWorkArea->m_currentSelection].m_createTask;\n\n                titleScreenDrawSub3(2);\n\n                // fade out to black\n                fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), 0x8000, 30);\n                return;"
+   "                clearVdp2TextMemory();\n\n                titleScreenDrawSub3(2);\n\n                // fade out to black\n                fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), 0x8000, 30);\n                pWorkArea->m_status = 2;\n                return;"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "            break;\n\n        default:\n            assert(0);\n            break;\n        }\n    }\n\n    u16 m_status;"
+   "            break;\n\n        case 2:\n            if (g_fadeControls.m0_fade0.m20_stopped == 0)\n                return;\n            initialTaskStatus.m_pendingTask = pWorkArea->m_menu[pWorkArea->m_currentSelection].m_createTask;\n            return;\n\n        default:\n            assert(0);\n            break;\n        }\n    }\n\n    u16 m_status;"
+   source_text "${source_text}")
+
   # Upstream still has the Sega/Team Andromeda logo module as an assert-only
   # reconstruction stub. Until that static logo presentation is restored,
   # keep Azel's front-end attract loop alive by returning to the native title
