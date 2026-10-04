@@ -23,7 +23,7 @@ p_workArea createTitleMenuTask(p_workArea);
 
 namespace lagi::azel {
 
-bool present_native_title_vdp2();
+bool present_native_title_vdp2(bool force);
 
 static bool saturn_memory_smoke_test()
 {
@@ -176,7 +176,7 @@ void runtime_smoke_frame()
         initialTaskStatus.m_currentTask == createTitleMenuTask;
     static bool titleWasActive = false;
     if (titleActive) {
-        present_native_title_vdp2();
+        present_native_title_vdp2(!titleWasActive);
         titleWasActive = true;
     } else if (titleWasActive) {
         lagi::platform::renderer::movie_clear_frame();
