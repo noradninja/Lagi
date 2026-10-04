@@ -131,8 +131,14 @@ float4 main(
             rbg0Coefficient.x +
             rbg0Coefficient.y * y +
             rbg0Coefficient.z * x;
+        // Saturn takes the coefficient index from the upper 16 bits of a
+        // wrapping 32-bit accumulator. Keep the index in the 0..65535 domain
+        // before converting it to a VRAM byte address.
+        float coeffIndex = fmod(floor(accum), 65536.0f);
+        if (coeffIndex < 0.0f)
+            coeffIndex += 65536.0f;
         const float address =
-            rbg0Info.x + floor(accum) * rbg0Info.z;
+            rbg0Info.x + coeffIndex * rbg0Info.z;
         k = readRbgCoefficient(raw, address);
     }
 
