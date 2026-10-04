@@ -217,9 +217,6 @@ void runtime_frame()
     // present. This is a capability check, not Lagi ownership of "town".
     const bool nativeSceneFrame =
         gGameStatus.m0_gameMode == 1;
-    if (nativeSceneFrame)
-        lagi::platform::renderer::presentation_wait_frame_slot();
-
     if (traceStartup)
         lagi::platform::logging::writef(
             "[AzelBoot] frame=%u tasks=%d currentInitial=%p pendingInitial=%p\n",
@@ -460,6 +457,10 @@ void runtime_frame()
         // began in native scene mode and acquired that slot before runTasks().
         lagi::platform::renderer::movie_clear_frame();
         if (nativeSceneFrame) {
+            // All scene adapters write staging state. Acquire the render slot
+            // only at the publish boundary so a scene->movie/module transition
+            // inside runTasks() cannot deadlock against movie presentation.
+            lagi::platform::renderer::presentation_wait_frame_slot();
             lagi::azel_bridge::publish_frame();
             lagi::platform::renderer::presentation_publish_frame();
 
