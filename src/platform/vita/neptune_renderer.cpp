@@ -4838,22 +4838,12 @@ static bool buildLiveTownFrame()
         }
 
         if (!submission.state.dynamic) {
+            // Geometry/material identity only. Lighting is renderer state and
+            // must not invalidate/rebuild the static world mesh.
             staticSignature ^= submission.modelTableOffset;
             staticSignature *= 1099511628211ull;
             staticSignature ^= model->polygons.size();
             staticSignature *= 1099511628211ull;
-            if (submission.state.hasLight) {
-                for (unsigned axis = 0; axis < 3; ++axis) {
-                    staticSignature ^=
-                        static_cast<std::uint32_t>(
-                            submission.state.lightVector[axis]);
-                    staticSignature *= 1099511628211ull;
-                    staticSignature ^= submission.state.lightColor[axis];
-                    staticSignature *= 1099511628211ull;
-                    staticSignature ^= submission.state.lightFalloff[axis];
-                    staticSignature *= 1099511628211ull;
-                }
-            }
         }
         hasBillboards = hasBillboards || submission.state.billboard;
     }
@@ -9445,6 +9435,27 @@ static void renderBasicWingViewer()
 
     g_profileRenderUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - renderStartUs);
+
+    static unsigned int scenePerfHeartbeat = 0u;
+    if (nativeTownMode && ((scenePerfHeartbeat++ % 60u) == 0u)) {
+        logging::writef(
+            "[ScenePerf] build=%uus scan=%u cache=%u obj=%u edge=%u upload=%u "
+            "light=%u submit=%u gxmwait=%u render=%u polys=%u verts=%u "
+            "staticRebuilt=%u\n",
+            g_profileBuildUs,
+            g_profileBuildScanUs,
+            g_profileBuildCacheUs,
+            g_profileObjectAppendUs,
+            g_profileBuildEdgeUs,
+            g_profileBuildUploadUs,
+            g_profileLightingUs,
+            g_profileSubmitUs,
+            g_profileGxmWaitUs,
+            g_profileRenderUs,
+            static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
+            static_cast<unsigned>(g_liveTownCpuMesh.vertices.size()),
+            g_liveTownStaticRebuilt ? 1u : 0u);
+    }
 
     if (g_showThreadTimingOsd) {
         drawViewerModeOverlay(
