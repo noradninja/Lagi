@@ -23,8 +23,6 @@ p_workArea createTitleMenuTask(p_workArea);
 
 namespace lagi::azel {
 
-bool present_native_title_vdp2(bool force);
-
 static bool saturn_memory_smoke_test()
 {
     constexpr u32 base = 0x06054000;
@@ -176,7 +174,11 @@ void runtime_smoke_frame()
         initialTaskStatus.m_currentTask == createTitleMenuTask;
     static bool titleWasActive = false;
     if (titleActive) {
-        present_native_title_vdp2(!titleWasActive);
+        // Azel owns the VDP2 memory/register state. Neptune uploads the raw
+        // VRAM/CRAM and interprets the title layers directly on SGX.
+        lagi::platform::renderer::title_present_vdp2(
+            getVdp2Vram(0),
+            getVdp2Cram(0));
         titleWasActive = true;
     } else if (titleWasActive) {
         lagi::platform::renderer::movie_clear_frame();
