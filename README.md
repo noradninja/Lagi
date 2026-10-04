@@ -8,7 +8,7 @@ Lagi is not a Sega Saturn emulator and does not use VitaGL.
 
 ## Current status
 
-Development is currently focused on replacing the old direct-Ruins development path with Azel's authentic boot and module flow. The Vita build now enters through `azelInit()` / `resetEngine()`, follows Azel's native startup task graph through movies, title, New Game, the D5 name-entry sequence, and the pre-Ruins cinematic, then lets Azel's module manager load `TWN_RUIN.PRG` and create the town task graph.
+The 0.040-alpha milestone completes the transition from the old direct-Ruins development path to Azel's authentic boot and module flow. The Vita build enters through `azelInit()` / `resetEngine()`, follows Azel's native startup task graph through movies, title, New Game, the D5 name-entry sequence, and the pre-Ruins cinematic, then lets Azel's module manager load `TWN_RUIN.PRG`, create the native town task graph, and present the playable first Ruins scene through Neptune.
 
 Working systems include:
 
@@ -19,11 +19,13 @@ Working systems include:
 - Azel task scheduling and town task/script flow
 - world-grid and cell ownership
 - static and task-owned dynamic object submission
+- native Edge hierarchy submission through Azel's normal render boundary
 - native town collision
 - Edge movement and animation
 - Azel-style follow camera
 - town visibility and LOD selection
 - textured SceGxm rendering
+- live Azel directional/falloff lighting carried through the presentation bridge
 - RGB555-style Gouraud lighting
 - Ruins lock/switch objects
 - Saturn-style physical pad input translated from Vita controls
@@ -40,7 +42,7 @@ Working systems include:
 - native GXM 2x multisample antialiasing
 - stable 30 Hz presentation
 
-Version **0.040-alpha** is the authentic-boot milestone. The current branch keeps game-mode, scene, movie, title, script, task, and transition ownership in Azel while Lagi supplies Vita platform services and a generic presentation bridge. The Cinepak work introduced in 0.030 remains in place, including Sega FILM demuxing, SGX-assisted Cinepak presentation, and native SceAudio PCM output.
+Version **0.040-alpha** is the authentic-boot-to-Ruins milestone. It is published as **v0.3.0-alpha**. The current branch keeps game-mode, scene, movie, title, script, task, and transition ownership in Azel while Lagi supplies Vita platform services and a generic presentation bridge. The Cinepak work introduced in 0.030 remains in place, including Sega FILM demuxing, SGX-assisted Cinepak presentation, and native SceAudio PCM output.
 
 ## Architecture
 
@@ -185,7 +187,7 @@ In walk mode, the current controls match the original manual behavior: A/C enter
 
 The game is currently presented at 30 FPS.
 
-First-Ruins captures taken before 2x MSAA was enabled showed approximately **20-23 ms** of render work before the deliberate presentation wait, corresponding to about **44-50 FPS** of render throughput if uncapped. Updated hardware measurements with MSAA enabled are still required.
+The authentic first-Ruins path is hardware-proven at the intended **30 Hz** presentation rate with live world geometry, Edge, task-owned objects, textures, and Gouraud lighting active. Static geometry/material caching is kept independent from live lighting state so normal light updates do not invalidate and rebuild the room.
 
 The 30 Hz cap remains in place because the game/simulation timing path has not been converted to a variable-rate model.
 
