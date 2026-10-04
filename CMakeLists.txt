@@ -1062,6 +1062,7 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  field/fieldDragonMovement.cpp
  field/fieldDragonInput.cpp
  field/fieldDialog.cpp
+ field/fieldScriptWaitTask.cpp
  field/dragonLightWingEvolution.cpp
  field/field_a3/o_fld_a3.cpp
  field/field_a3/o_fld_a3_1.cpp
