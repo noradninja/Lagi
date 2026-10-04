@@ -4,7 +4,6 @@
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_town_bootstrap.h"
 #include "lagi/lagi_direct_boot.h"
-#include "lagi/debug_mesh.h"
 #include "lagi/platform.h"
 
 #include "town/town.h"
@@ -142,20 +141,6 @@ bool start_twn_ruin_task_pipeline()
     g_fadeCamera = cameraTaskPtr;
     g_fadeActive = false;
     g_reportedPresentation = false;
-
-    // Restore the renderer resource that authentic sEdgeTask::Draw expects.
-    // This is presentation-only reconstruction from Azel's already-loaded
-    // COMMON3/town resources; gameplay/task ownership remains upstream.
-    BasicWingDebugMesh edgeShadow{};
-    if (build_edge_shadow_debug_mesh(edgeShadow)) {
-        if (!platform::renderer::load_edge_shadow_model(std::move(edgeShadow))) {
-            platform::logging::writef(
-                "[LagiAdapter] Edge shadow renderer registration failed\n");
-        }
-    } else {
-        platform::logging::writef(
-            "[LagiAdapter] Edge shadow reconstruction unavailable\n");
-    }
 
     platform::logging::writef(
         "[LagiAdapter] upstream Azel TWN_RUIN task pipeline started\n");

@@ -4798,6 +4798,27 @@ static void appendLiveTownModel(
 
     for (std::size_t p = 0; p < model.polygons.size(); ++p) {
         auto record = model.polygons[p];
+
+        if (state.dynamic && (record.cmdPmod & 0x0100u)) {
+            static unsigned int liveMeshTraceBudget = 24u;
+            if (liveMeshTraceBudget != 0u) {
+                logging::writef(
+                    "[PresentationTrace][LiveMesh] p=%u CTRL=%04X PMOD=%04X "
+                    "COLR=%04X SRCA=%04X SIZE=%04X resolved=%u\n",
+                    static_cast<unsigned int>(p),
+                    static_cast<unsigned int>(record.cmdCtrl),
+                    static_cast<unsigned int>(record.cmdPmod),
+                    static_cast<unsigned int>(record.cmdColr),
+                    static_cast<unsigned int>(record.cmdSrca),
+                    static_cast<unsigned int>(record.cmdSize),
+                    static_cast<unsigned int>(
+                        resolvedTextureIndices &&
+                        p < resolvedTextureIndexCount
+                            ? resolvedTextureIndices[p]
+                            : 0xFFFFu));
+                --liveMeshTraceBudget;
+            }
+        }
         for (unsigned n = 0; n < record.lightingCount; ++n) {
             const float x = record.lighting[n].normal[0] / 4096.0f;
             const float y = record.lighting[n].normal[1] / 4096.0f;
@@ -7860,34 +7881,6 @@ bool load_edge_shadow_model(azel::BasicWingDebugMesh&& mesh)
 
     g_edgeShadowCpuMesh = std::move(mesh);
     g_edgeShadowCpuReady = true;
-
-    // The legacy direct-room path populated these indices as a side effect of
-    // load_static_room_viewer(). Authentic boot does not call that path, so
-    // register the decoded shadow textures against the live town atlas here.
-    g_edgeShadowTownTextureIndices.clear();
-    if (!g_edgeShadowCpuMesh.decodedTextureData.empty()) {
-        const std::uint16_t shadowTextureBase =
-            static_cast<std::uint16_t>(
-                g_staticRoomCpuMesh.decodedTextureData.size());
-        g_staticRoomCpuMesh.decodedTextureData.insert(
-            g_staticRoomCpuMesh.decodedTextureData.end(),
-            g_edgeShadowCpuMesh.decodedTextureData.begin(),
-            g_edgeShadowCpuMesh.decodedTextureData.end());
-        g_edgeShadowTownTextureIndices.reserve(
-            g_edgeShadowCpuMesh.polygonTextureIndices.size());
-        for (const auto index : g_edgeShadowCpuMesh.polygonTextureIndices) {
-            g_edgeShadowTownTextureIndices.push_back(
-                static_cast<std::uint16_t>(shadowTextureBase + index));
-        }
-        g_staticRoomCpuMesh.decodedTextures =
-            static_cast<unsigned int>(
-                g_staticRoomCpuMesh.decodedTextureData.size());
-
-        // The resident GPU texture array no longer matches the CPU atlas.
-        // Force one normal live-town prepare on the next render frame.
-        g_liveTownPrepared = false;
-        g_liveTownSignature = 0u;
-    }
 
     char line[78];
     std::snprintf(
