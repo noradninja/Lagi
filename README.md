@@ -86,7 +86,7 @@ Neptune
 SceGxm
 ```
 
-The ownership rule is intentionally simple:
+The runtime architecture is summarized as:
 
 ```text
 Azel decides.
