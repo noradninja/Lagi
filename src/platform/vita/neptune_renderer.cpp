@@ -9155,10 +9155,23 @@ static void renderBasicWingViewer()
 
     if (!g_viewerReady || !g_gxmInitialized || !g_probeContext ||
         !g_probeRenderTarget || !g_probeColorBuffer || !g_probeColorBuffer2 ||
-        !g_probeVertexProgram || !g_probeFragmentProgram ||
-        !g_vdp1Vertices || !g_vdp1LightingVertices ||
-        !g_vdp1Indices)
+        !g_probeVertexProgram || !g_probeFragmentProgram)
         return;
+
+    // Resident VDP1 geometry is scene data, not renderer initialization state.
+    // Authentic boot reaches the first native scene with no preloaded debug
+    // model, so buildLiveTownFrame()/prepare_vdp1_model() must be allowed to
+    // allocate these buffers on demand.
+
+    static bool loggedSceneRendererEntry = false;
+    if (!loggedSceneRendererEntry) {
+        logging::writef(
+            "[SceneRender] renderer entry viewer=%u gxm=%u context=%u\n",
+            g_viewerReady ? 1u : 0u,
+            g_gxmInitialized ? 1u : 0u,
+            g_probeContext ? 1u : 0u);
+        loggedSceneRendererEntry = true;
+    }
 
     const std::uint64_t renderStartUs = sceKernelGetProcessTimeWide();
     g_profileBuildUs = 0u;
