@@ -136,8 +136,15 @@ float4 sampleD5Rbg0Tile(
     const float characterNumber =
         fmod(patternName, 1024.0f) * 4.0f + 8192.0f;
 
-    const float px = fmod(inPlaneX, 16.0f);
-    const float py = fmod(inPlaneY, 16.0f);
+    float px = fmod(inPlaneX, 16.0f);
+    float py = fmod(inPlaneY, 16.0f);
+
+    // CNSM=0 carries horizontal/vertical flip in pattern bits 10/11.
+    if (fmod(floor(patternName / 1024.0f), 2.0f) >= 1.0f)
+        px = 15.0f - px;
+    if (fmod(floor(patternName / 2048.0f), 2.0f) >= 1.0f)
+        py = 15.0f - py;
+
     const float cellX = floor(px / 8.0f);
     const float cellY = floor(py / 8.0f);
     const float cellIndex = cellX + cellY * 2.0f;
