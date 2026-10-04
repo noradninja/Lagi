@@ -33,7 +33,8 @@ extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
 extern const unsigned char _binary_lagi_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_cinepak_f_gxp_start[];
-extern const unsigned char _binary_lagi_vdp2_title_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_rbg0_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_subdiv_v_gxp_start[];
 extern const unsigned char _binary_lagi_textured_gouraud_subdiv_f_gxp_start[];
@@ -152,29 +153,27 @@ static std::uint16_t* g_fadeIndices = nullptr;
 static SceGxmShaderPatcherId g_textureVertexProgramId{};
 static SceGxmShaderPatcherId g_textureFragmentProgramId{};
 static SceGxmShaderPatcherId g_cinepakFragmentProgramId{};
-static SceGxmShaderPatcherId g_vdp2TitleFragmentProgramId{};
+static SceGxmShaderPatcherId g_vdp2NbgFragmentProgramId{};
+static SceGxmShaderPatcherId g_vdp2Rbg0FragmentProgramId{};
 static bool g_textureVertexRegistered = false;
 static bool g_textureFragmentRegistered = false;
 static bool g_cinepakFragmentRegistered = false;
-static bool g_vdp2TitleFragmentRegistered = false;
+static bool g_vdp2NbgFragmentRegistered = false;
+static bool g_vdp2Rbg0FragmentRegistered = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
 // Movie variants are patched for SCE_GXM_MULTISAMPLE_NONE.  The normal
 // texture fragment program remains 2x MSAA for town/UI rendering.
 static SceGxmFragmentProgram* g_movieTextureFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_cinepakFragmentProgram = nullptr;
-static SceGxmFragmentProgram* g_vdp2TitleFragmentProgram = nullptr;
+static SceGxmFragmentProgram* g_vdp2NbgFragmentProgram = nullptr;
+static SceGxmFragmentProgram* g_vdp2Rbg0FragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_cinepakMovieInfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2InfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0PlaneParam[4] = {
     nullptr, nullptr, nullptr, nullptr
 };
-static const SceGxmProgramParameter* g_vdp2Rbg0PlaneBParam[4] = {
-    nullptr, nullptr, nullptr, nullptr
-};
-static const SceGxmProgramParameter* g_vdp2Rbg0CtrlParam[4] = {
-    nullptr, nullptr, nullptr, nullptr
-};
+static const SceGxmProgramParameter* g_vdp2Rbg0InfoParam = nullptr;
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
 static SceGxmFragmentProgram* g_meshTextureFragmentProgram = nullptr;
@@ -1416,10 +1415,15 @@ void shutdown()
                 g_probeShaderPatcher, g_meshTextureFragmentProgram);
             g_meshTextureFragmentProgram = nullptr;
         }
-        if (g_vdp2TitleFragmentProgram) {
+        if (g_vdp2Rbg0FragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
-                g_probeShaderPatcher, g_vdp2TitleFragmentProgram);
-            g_vdp2TitleFragmentProgram = nullptr;
+                g_probeShaderPatcher, g_vdp2Rbg0FragmentProgram);
+            g_vdp2Rbg0FragmentProgram = nullptr;
+        }
+        if (g_vdp2NbgFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_vdp2NbgFragmentProgram);
+            g_vdp2NbgFragmentProgram = nullptr;
         }
         if (g_cinepakFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
@@ -1526,10 +1530,15 @@ void shutdown()
                 g_probeShaderPatcher, g_meshFragmentProgramId);
             g_meshFragmentRegistered = false;
         }
-        if (g_vdp2TitleFragmentRegistered) {
+        if (g_vdp2Rbg0FragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
-                g_probeShaderPatcher, g_vdp2TitleFragmentProgramId);
-            g_vdp2TitleFragmentRegistered = false;
+                g_probeShaderPatcher, g_vdp2Rbg0FragmentProgramId);
+            g_vdp2Rbg0FragmentRegistered = false;
+        }
+        if (g_vdp2NbgFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_vdp2NbgFragmentProgramId);
+            g_vdp2NbgFragmentRegistered = false;
         }
         if (g_cinepakFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -6023,16 +6032,20 @@ void show_town_scene()
     const SceGxmProgram* cinepakFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_cinepak_f_gxp_start);
-    const SceGxmProgram* vdp2TitleFragmentGxp =
+    const SceGxmProgram* vdp2NbgFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
-            _binary_lagi_vdp2_title_f_gxp_start);
+            _binary_lagi_vdp2_nbg_f_gxp_start);
+    const SceGxmProgram* vdp2Rbg0FragmentGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_vdp2_rbg0_f_gxp_start);
 
     if (sceGxmProgramCheck(textureVertexGxp) < 0 ||
         sceGxmProgramCheck(textureFragmentGxp) < 0 ||
         sceGxmProgramCheck(meshFragmentGxp) < 0 ||
         sceGxmProgramCheck(cinepakFragmentGxp) < 0 ||
-        sceGxmProgramCheck(vdp2TitleFragmentGxp) < 0) {
-        failure("[FAIL] TEXTURE GXP CHECK");
+        sceGxmProgramCheck(vdp2NbgFragmentGxp) < 0 ||
+        sceGxmProgramCheck(vdp2Rbg0FragmentGxp) < 0) {
+        failure("[FAIL] GXP CHECK");
         return;
     }
 
@@ -6065,12 +6078,21 @@ void show_town_scene()
 
     if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
-            vdp2TitleFragmentGxp,
-            &g_vdp2TitleFragmentProgramId) < 0) {
-        failure("[FAIL] VDP2 TITLE FP REG");
+            vdp2NbgFragmentGxp,
+            &g_vdp2NbgFragmentProgramId) < 0) {
+        failure("[FAIL] VDP2 NBG FP REG");
         return;
     }
-    g_vdp2TitleFragmentRegistered = true;
+    g_vdp2NbgFragmentRegistered = true;
+
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_probeShaderPatcher,
+            vdp2Rbg0FragmentGxp,
+            &g_vdp2Rbg0FragmentProgramId) < 0) {
+        failure("[FAIL] VDP2 RBG0 FP REG");
+        return;
+    }
+    g_vdp2Rbg0FragmentRegistered = true;
 
     g_cinepakMovieInfoParam =
         sceGxmProgramFindParameterByName(cinepakFragmentGxp, "movieInfo");
@@ -6078,37 +6100,31 @@ void show_town_scene()
         failure("[FAIL] CINEPAK SHADER PARAMS");
         return;
     }
+
     g_vdp2InfoParam =
-        sceGxmProgramFindParameterByName(vdp2TitleFragmentGxp, "vdp2Info");
+        sceGxmProgramFindParameterByName(vdp2NbgFragmentGxp, "vdp2Info");
     if (!g_vdp2InfoParam) {
-        failure("[FAIL] VDP2 FRONTEND SHADER PARAMS");
+        failure("[FAIL] VDP2 NBG SHADER PARAMS");
         return;
     }
+
     static const char* kRbg0PlaneNames[4] = {
         "rbg0Plane0", "rbg0Plane1", "rbg0Plane2", "rbg0Plane3"
-    };
-    static const char* kRbg0PlaneBNames[4] = {
-        "rbg0PlaneB0", "rbg0PlaneB1", "rbg0PlaneB2", "rbg0PlaneB3"
-    };
-    static const char* kRbg0CtrlNames[4] = {
-        "rbg0Ctrl0", "rbg0Ctrl1", "rbg0Ctrl2", "rbg0Ctrl3"
     };
     for (unsigned int i = 0; i < 4u; ++i) {
         g_vdp2Rbg0PlaneParam[i] =
             sceGxmProgramFindParameterByName(
-                vdp2TitleFragmentGxp, kRbg0PlaneNames[i]);
-        g_vdp2Rbg0PlaneBParam[i] =
-            sceGxmProgramFindParameterByName(
-                vdp2TitleFragmentGxp, kRbg0PlaneBNames[i]);
-        g_vdp2Rbg0CtrlParam[i] =
-            sceGxmProgramFindParameterByName(
-                vdp2TitleFragmentGxp, kRbg0CtrlNames[i]);
-        if (!g_vdp2Rbg0PlaneParam[i] ||
-            !g_vdp2Rbg0PlaneBParam[i] ||
-            !g_vdp2Rbg0CtrlParam[i]) {
-            failure("[FAIL] VDP2 RBG0 SHADER PARAMS");
+                vdp2Rbg0FragmentGxp, kRbg0PlaneNames[i]);
+        if (!g_vdp2Rbg0PlaneParam[i]) {
+            failure("[FAIL] VDP2 RBG0 PLANE PARAMS");
             return;
         }
+    }
+    g_vdp2Rbg0InfoParam =
+        sceGxmProgramFindParameterByName(vdp2Rbg0FragmentGxp, "rbg0Info");
+    if (!g_vdp2Rbg0InfoParam) {
+        failure("[FAIL] VDP2 RBG0 INFO PARAM");
+        return;
     }
 
     if (sceGxmShaderPatcherRegisterProgram(
@@ -6203,13 +6219,34 @@ void show_town_scene()
 
     if (sceGxmShaderPatcherCreateFragmentProgram(
             g_probeShaderPatcher,
-            g_vdp2TitleFragmentProgramId,
+            g_vdp2Rbg0FragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
             SCE_GXM_MULTISAMPLE_NONE,
             nullptr,
             textureVertexGxp,
-            &g_vdp2TitleFragmentProgram) < 0) {
-        failure("[FAIL] CREATE VDP2 TITLE FP NO-MSAA");
+            &g_vdp2Rbg0FragmentProgram) < 0) {
+        failure("[FAIL] CREATE VDP2 RBG0 FP NO-MSAA");
+        return;
+    }
+
+    SceGxmBlendInfo vdp2NbgBlend{};
+    vdp2NbgBlend.colorFunc = SCE_GXM_BLEND_FUNC_ADD;
+    vdp2NbgBlend.alphaFunc = SCE_GXM_BLEND_FUNC_ADD;
+    vdp2NbgBlend.colorSrc = SCE_GXM_BLEND_FACTOR_SRC_ALPHA;
+    vdp2NbgBlend.colorDst = SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    vdp2NbgBlend.alphaSrc = SCE_GXM_BLEND_FACTOR_ONE;
+    vdp2NbgBlend.alphaDst = SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    vdp2NbgBlend.colorMask = SCE_GXM_COLOR_MASK_ALL;
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_vdp2NbgFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            &vdp2NbgBlend,
+            textureVertexGxp,
+            &g_vdp2NbgFragmentProgram) < 0) {
+        failure("[FAIL] CREATE VDP2 NBG FP NO-MSAA");
         return;
     }
 
