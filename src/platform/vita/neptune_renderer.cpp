@@ -9261,17 +9261,26 @@ static void drawColorOffsetPass(
         6u);
 }
 
-static void drawAzelColorOffset()
+static void drawAzelColorOffsetForLayer(
+    unsigned int layerBit,
+    bool requireEnable)
 {
-    // Azel's reconstructed reinitVdp2() clears CLOFEN while its fade
-    // channels continue to drive the signed VDP2 color offsets. The desktop
-    // runtime therefore treats those live offsets as authoritative even when
-    // CLOFEN has been reset. Match that behavior here; retain CLOFSL only for
-    // A/B bank selection.
-    constexpr unsigned int kNbg0Bit = 0x1u;
+    // CLOFEN/CLOFSL use the same per-layer bit assignment:
+    //   bit 6 SPRITE, bit 5 RBG0, bit 4 NBG0,
+    //   bit 3 NBG1, bit 2 NBG2, bit 1 NBG3, bit 0 BACK.
+    //
+    // Some front-end fade paths in the reconstructed Azel runtime clear
+    // CLOFEN while their live fade channel still carries the intended
+    // fullscreen transition. Those compatibility paths can opt out of the
+    // enable test, but real layer composition (D5 RBG0) must honor CLOFEN.
+    const unsigned int enable =
+        g_azelColorOffsetEnable.load(std::memory_order_relaxed);
+    if (requireEnable && (enable & layerBit) == 0u)
+        return;
+
     const unsigned int select =
         g_azelColorOffsetSelect.load(std::memory_order_relaxed);
-    const bool useB = (select & kNbg0Bit) != 0;
+    const bool useB = (select & layerBit) != 0u;
 
     const int red = useB
         ? g_azelColorOffsetBRed.load(std::memory_order_relaxed)
@@ -9283,16 +9292,10 @@ static void drawAzelColorOffset()
         ? g_azelColorOffsetBBlue.load(std::memory_order_relaxed)
         : g_azelColorOffsetABlue.load(std::memory_order_relaxed);
 
-    // Keep Azel's signed offset magnitude unchanged here. The previous
-    // experimental x2 conversion over-amplified front-end transitions and
-    // produced long white washes in D5.
     const int displayRed = std::clamp(red, -255, 255);
     const int displayGreen = std::clamp(green, -255, 255);
     const int displayBlue = std::clamp(blue, -255, 255);
 
-    // Split mixed-sign RGB values into two hardware blend passes. This is
-    // equivalent to Saturn's per-channel signed additive color offset and
-    // applies after VDP2 + VDP1 front-end composition.
     drawColorOffsetPass(
         g_colorOffsetAddFragmentProgram,
         std::max(displayRed, 0),
@@ -9303,6 +9306,12 @@ static void drawAzelColorOffset()
         std::max(-displayRed, 0),
         std::max(-displayGreen, 0),
         std::max(-displayBlue, 0));
+}
+
+static void drawAzelTitleColorOffset()
+{
+    constexpr unsigned int kNbg0Bit = 0x10u;
+    drawAzelColorOffsetForLayer(kNbg0Bit, false);
 }
 
 static bool renderMovieFrame()
@@ -9678,6 +9687,14 @@ static bool renderMovieFrame()
                         parameterAIndexCount);
                 }
 
+                // D5 enables color offset on RBG0 (CLOFEN bit 5).
+                // Apply it now, while only RBG0 is in the target, so NBG/text
+                // and VDP1 UI remain unaffected just as on Saturn.
+                if (rbgSubmitted) {
+                    constexpr unsigned int kRbg0Bit = 0x20u;
+                    drawAzelColorOffsetForLayer(kRbg0Bit, true);
+                }
+
                 // NBG uses the normal fullscreen front-end quad.
                 sceGxmSetVertexStream(
                     g_probeContext, 0, g_movieVertices);
@@ -9752,11 +9769,10 @@ static bool renderMovieFrame()
     if (submitted && g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f)
         drawPublishedVdp1Ui();
 
-    if (submitted) {
-        const bool d5FrontEnd =
-            g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f;
-        if (!d5FrontEnd)
-            drawAzelColorOffset();
+    if (submitted &&
+        g_movieUsesVdp2Title &&
+        g_movieVdp2Info[0] < 0.5f) {
+        drawAzelTitleColorOffset();
     }
 
     const std::uint64_t gpuWaitStartUs =
@@ -9810,15 +9826,27 @@ static bool renderMovieFrame()
     frameBuffer.width = movieOutputWidth;
     frameBuffer.height = movieOutputHeight;
 
-    // 480x272 scanout is 60 Hz and needs the explicit two-vblank 30 Hz
-    // limiter. The Vita's 720x408 display mode advances at the target 30 Hz
-    // cadence already; applying the same limiter there halves presentation
-    // to 15 Hz even though rendering completes in ~5 ms.
-    if (!highResolutionFrontend)
+    if (!highResolutionFrontend) {
         waitFor30HzPresentSlot();
-    sceDisplaySetFrameBuf(&frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
-    sceDisplayWaitVblankStart();
-    mark30HzPresented();
+        sceDisplaySetFrameBuf(
+            &frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
+        sceDisplayWaitVblankStart();
+        mark30HzPresented();
+    } else {
+        // Saturn's high-resolution title advances its animation state at the
+        // lower cadence even though the display is scanned more frequently.
+        // Keep Neptune's cheap 720x408 render, but hold each published Azel
+        // title state for two scanouts before returning the render slot.
+        // Re-queueing the same completed buffer gives two display presents
+        // without advancing the game/task graph twice.
+        sceDisplaySetFrameBuf(
+            &frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
+        sceDisplayWaitVblankStart();
+        sceDisplaySetFrameBuf(
+            &frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
+        sceDisplayWaitVblankStart();
+        mark30HzPresented();
+    }
     g_gxmDrawBuffer ^= 1;
     return true;
 }
