@@ -237,6 +237,6 @@ Lighting is captured with each submission from Azel's active light state. Geomet
 
 Front-end presentation follows Azel's live VDP2 TVMD state. The normal gameplay path uses the established 480x272 framebuffer. The title screen enters Azel's 704-dot high-resolution mode and is presented through a 720x408 Vita framebuffer.
 
-Neptune renders directly into the active framebuffer size and passes that same width, height, pitch, and buffer to `sceDisplaySetFrameBuf()`. The 720x408 title path does not use an intermediate 960x544 render target.
+Neptune renders directly into the active framebuffer size and passes that same width, height, pitch, and buffer to `sceDisplaySetFrameBuf()`.
 
 The title NBG0 shader addresses the 704x448 VDP2 source raster directly. Raw VRAM and CRAM reads remain point-exact. When source pixels must be reduced into the 720x408 framebuffer, filtering is applied after CRAM lookup to decoded RGB colors rather than to Saturn memory bytes or palette indices.
