@@ -911,6 +911,14 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  # Azel/Saturn work areas begin cleared. Make the field-script task's
+  # no-active-script invariant explicit on Vita so New Game cannot enter the
+  # interpreter with stale/poisoned state before a script is queued.
+  string(REPLACE
+   "void s_fieldScriptWorkArea::Init(s_fieldScriptWorkArea* pFieldScriptWorkArea)\n{\n    s_fieldTaskWorkArea* pFieldTaskWorkArea = getFieldTaskPtr();"
+   "void s_fieldScriptWorkArea::Init(s_fieldScriptWorkArea* pFieldScriptWorkArea)\n{\n    pFieldScriptWorkArea->m4_currentScript = sSaturnPtr::getNull();\n    pFieldScriptWorkArea->m30_cinematicBarTask = nullptr;\n    pFieldScriptWorkArea->m34 = 0;\n    pFieldScriptWorkArea->m38_dialogStringTask = nullptr;\n    pFieldScriptWorkArea->m3C_multichoiceTask = nullptr;\n    pFieldScriptWorkArea->m40_receivedItemTask = nullptr;\n    pFieldScriptWorkArea->m44_multiChoiceData = nullptr;\n    pFieldScriptWorkArea->m48_cutsceneTask = nullptr;\n    pFieldScriptWorkArea->m4C_PCMPlaying = 0;\n    pFieldScriptWorkArea->m50_scriptDelay = 0;\n    pFieldScriptWorkArea->m54_currentResult = 0;\n    pFieldScriptWorkArea->m58 = 0;\n    pFieldScriptWorkArea->m5C = 0;\n    pFieldScriptWorkArea->m60_canSkipScript = 0;\n    pFieldScriptWorkArea->m64 = 0;\n    pFieldScriptWorkArea->m80 = nullptr;\n    pFieldScriptWorkArea->m84 = nullptr;\n    s_fieldTaskWorkArea* pFieldTaskWorkArea = getFieldTaskPtr();"
+   source_text "${source_text}")
+
   # Field scripts own the decision to play PCM; Lagi supplies the platform
   # service. Avoid the upstream desktop SoLoud backend on Vita.
   string(REPLACE
