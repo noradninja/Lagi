@@ -2488,17 +2488,24 @@ bool frontend_present_vdp2(
     std::memcpy(g_vdp2TextVram, vram, sizeof(g_vdp2TextVram));
     g_vdp2TextValid = true;
 
-    if (layout == 0u && !updateTitleDecodedTexture(vram, cram)) {
-        logging::writef(
-            "[VDP2Title] FAIL decoded title cache\n");
-        return false;
-    }
-
     g_movieVdp2Info[0] = static_cast<float>(layout);
     g_movieVdp2Info[1] = static_cast<float>(scrollX);
     g_movieVdp2Info[2] = static_cast<float>(scrollY);
     g_movieVdp2Info[3] = static_cast<float>(flags);
     g_movieVdp2Tvmd = tvmd;
+
+    // The title task begins publishing VDP2 state while TVMD is still in the
+    // low-resolution setup mode. Do not freeze the decoded artwork at that
+    // transient point: wait until Azel switches to the real HRESO=3,
+    // double-density title mode, then decode the static 704x448 NBG0 once.
+    const bool titleHighResReady =
+        layout == 0u && (tvmd & 0x00C7u) == 0x00C3u;
+    if (titleHighResReady &&
+        !updateTitleDecodedTexture(vram, cram)) {
+        logging::writef(
+            "[VDP2Title] FAIL decoded title cache\n");
+        return false;
+    }
 
     g_movieFrameVisible = true;
     if (!g_movieUploadLogged) {
@@ -9276,12 +9283,12 @@ static void drawAzelColorOffset()
         ? g_azelColorOffsetBBlue.load(std::memory_order_relaxed)
         : g_azelColorOffsetABlue.load(std::memory_order_relaxed);
 
-    // Azel's reconstructed fade values are expressed in the Saturn RGB555
-    // intensity domain: +/-128 corresponds approximately to the full 8-bit
-    // display range. Convert once here before the final RGBA blend passes.
-    const int displayRed = std::clamp(red * 2, -255, 255);
-    const int displayGreen = std::clamp(green * 2, -255, 255);
-    const int displayBlue = std::clamp(blue * 2, -255, 255);
+    // Keep Azel's signed offset magnitude unchanged here. The previous
+    // experimental x2 conversion over-amplified front-end transitions and
+    // produced long white washes in D5.
+    const int displayRed = std::clamp(red, -255, 255);
+    const int displayGreen = std::clamp(green, -255, 255);
+    const int displayBlue = std::clamp(blue, -255, 255);
 
     // Split mixed-sign RGB values into two hardware blend passes. This is
     // equivalent to Saturn's per-channel signed additive color offset and
@@ -9745,8 +9752,12 @@ static bool renderMovieFrame()
     if (submitted && g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f)
         drawPublishedVdp1Ui();
 
-    if (submitted)
-        drawAzelColorOffset();
+    if (submitted) {
+        const bool d5FrontEnd =
+            g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f;
+        if (!d5FrontEnd)
+            drawAzelColorOffset();
+    }
 
     const std::uint64_t gpuWaitStartUs =
         sceKernelGetProcessTimeWide();
