@@ -4,6 +4,7 @@
 #include "lagi/lagi_compat.h"
 #include "lagi/platform.h"
 #include "lagi/lagi_render_bridge.h"
+#include "lagi/lagi_town_tasks.h"
 #include "lagi/disc_image.h"
 #include "lagi/lagi_azel_upstream_prelude.h"
 
@@ -352,6 +353,11 @@ void runtime_smoke_frame()
     begin_azel_vdp1_frame();
     lagi::azel_bridge::begin_frame();
 
+    const bool authenticTownFrame =
+        gGameStatus.m0_gameMode == 1;
+    if (authenticTownFrame)
+        lagi::platform::renderer::town_wait_render_slot();
+
     if (traceStartup)
         lagi::platform::logging::writef(
             "[AzelBoot] frame=%u tasks=%d currentInitial=%p pendingInitial=%p\n",
@@ -366,6 +372,13 @@ void runtime_smoke_frame()
     // command tail is rewound on the next host frame. Neptune publishes this
     // snapshot only after it owns the front-end render slot.
     capture_azel_vdp1_frontend_commands();
+
+    if (authenticTownFrame) {
+        // Azel owns town task execution, scripts, camera, Edge, collision and
+        // draw-list generation. This adapter only snapshots the resulting
+        // platform-visible state for Neptune after the native task pass.
+        lagi::azel::twn_ruin_sync_platform_state();
+    }
 
     if (gGameStatus.m4_gameStatus == 2 &&
         (vdp2Controls.m4_pendingVdp2Regs->m20_BGON & 0x1u) != 0) {
@@ -578,11 +591,15 @@ void runtime_smoke_frame()
         // fade. Re-submit the retained final frame only while the movie-mode
         // state machine still owns presentation.
         lagi::platform::renderer::movie_republish_frame();
+    } else if (gGameStatus.m0_gameMode == 1) {
+        // Authentic town mode: release any retained movie frame, then publish
+        // the frame Azel just produced through the existing Neptune handoff.
+        // No direct-boot loader or reconstructed scene ownership is involved.
+        lagi::platform::renderer::movie_clear_frame();
+        lagi::azel_bridge::publish_frame();
+        lagi::platform::renderer::town_publish_frame();
     } else if (gGameStatus.m0_gameMode != 0) {
-        // Once Azel hands ownership to a field/town/battle module the retained
-        // Cinepak frame must stop winning renderMovieFrame(). Leaving it marked
-        // visible makes the last movie frame permanently cover the newly
-        // loaded native scene even though Azel has already advanced.
+        // Other native gameplay modes are not yet presented by Neptune.
         lagi::platform::renderer::movie_clear_frame();
     }
 
