@@ -2268,14 +2268,24 @@ void set_azel_color_offset_state(
     int aRed, int aGreen, int aBlue,
     int bRed, int bGreen, int bBlue)
 {
+    // Saturn VDP2 COAR/COAG/COAB/COBR/COBG/COBB are signed 9-bit
+    // registers. Azel's host structs are wider and fade interpolation can
+    // temporarily produce values outside [-256,255]. Real hardware masks the
+    // write to 9 bits before interpreting the sign. Preserve that wrap here;
+    // clamping (our previous behavior) destroys authentic white/black flashes.
+    const auto signed9 = [](int value) -> int {
+        value &= 0x1FF;
+        return (value & 0x100) ? value - 0x200 : value;
+    };
+
     g_azelColorOffsetEnable.store(enableMask, std::memory_order_relaxed);
     g_azelColorOffsetSelect.store(selectMask, std::memory_order_relaxed);
-    g_azelColorOffsetARed.store(aRed, std::memory_order_relaxed);
-    g_azelColorOffsetAGreen.store(aGreen, std::memory_order_relaxed);
-    g_azelColorOffsetABlue.store(aBlue, std::memory_order_relaxed);
-    g_azelColorOffsetBRed.store(bRed, std::memory_order_relaxed);
-    g_azelColorOffsetBGreen.store(bGreen, std::memory_order_relaxed);
-    g_azelColorOffsetBBlue.store(bBlue, std::memory_order_relaxed);
+    g_azelColorOffsetARed.store(signed9(aRed), std::memory_order_relaxed);
+    g_azelColorOffsetAGreen.store(signed9(aGreen), std::memory_order_relaxed);
+    g_azelColorOffsetABlue.store(signed9(aBlue), std::memory_order_relaxed);
+    g_azelColorOffsetBRed.store(signed9(bRed), std::memory_order_relaxed);
+    g_azelColorOffsetBGreen.store(signed9(bGreen), std::memory_order_relaxed);
+    g_azelColorOffsetBBlue.store(signed9(bBlue), std::memory_order_relaxed);
 }
 
 void movie_clear_frame()
