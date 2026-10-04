@@ -1860,18 +1860,17 @@ bool movie_present_frame(
         sceGxmTextureSetMagFilter(
             &g_movieTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
 
-        // Match Azel's 352x224 movie window inside the centered 4:3 Saturn
-        // presentation region. Neptune's normal VDP2/UI geometry is retained
-        // and resumes unchanged as soon as the movie frame is cleared.
+        // Full-screen movie presentation preserves the source aspect while
+        // filling the Vita output vertically. Wider-than-display movies are
+        // clipped symmetrically at the left/right edges rather than distorted.
         const float displayAspect =
             static_cast<float>(viewerRenderWidth()) /
             static_cast<float>(viewerRenderHeight());
-        const float xExtent = std::min(
-            1.0f,
-            ((4.0f / 3.0f) / displayAspect) *
-                (static_cast<float>(width) / 352.0f));
-        const float yExtent = std::min(
-            1.0f, static_cast<float>(height) / 224.0f);
+        const float sourceAspect =
+            static_cast<float>(width) /
+            static_cast<float>(height);
+        const float xExtent = sourceAspect / displayAspect;
+        const float yExtent = 1.0f;
         g_movieVertices[0] = {-xExtent,  yExtent, 0.5f, 0.0f, 0.0f};
         g_movieVertices[1] = { xExtent,  yExtent, 0.5f, 1.0f, 0.0f};
         g_movieVertices[2] = {-xExtent, -yExtent, 0.5f, 0.0f, 1.0f};
@@ -1978,12 +1977,11 @@ bool movie_present_cinepak_payload(
         const float displayAspect =
             static_cast<float>(viewerRenderWidth()) /
             static_cast<float>(viewerRenderHeight());
-        const float xExtent = std::min(
-            1.0f,
-            ((4.0f / 3.0f) / displayAspect) *
-                (static_cast<float>(sourceWidth) / 352.0f));
-        const float yExtent = std::min(
-            1.0f, static_cast<float>(sourceHeight) / 224.0f);
+        const float sourceAspect =
+            static_cast<float>(sourceWidth) /
+            static_cast<float>(sourceHeight);
+        const float xExtent = sourceAspect / displayAspect;
+        const float yExtent = 1.0f;
         g_movieVertices[0] = {-xExtent,  yExtent, 0.5f, 0.0f, 0.0f};
         g_movieVertices[1] = { xExtent,  yExtent, 0.5f, 1.0f, 0.0f};
         g_movieVertices[2] = {-xExtent, -yExtent, 0.5f, 0.0f, 1.0f};
