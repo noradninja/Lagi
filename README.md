@@ -131,6 +131,7 @@ Azel retains ownership of town LCS and menu state and emits its original VDP1 co
 - independent white free cursor and selected target marker
 - original shrinking selection rectangle during target acquisition
 - animated selector for the elevator multi-choice menu
+- hardware-linear filtering for decoded VDP1 UI sprites, menu/window graphics, and VDP2 text presentation
 
 The current authentic-boot path no longer depends on a direct-Ruins loader to establish scene ownership. The bridge translates Azel's commands rather than recreating lock-on gameplay or UI behavior in Vita-specific code.
 
