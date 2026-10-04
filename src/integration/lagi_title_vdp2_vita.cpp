@@ -223,8 +223,16 @@ bool present_native_title_vdp2(bool force)
         buildTitleBackground(vram, cram);
 
     const std::uint64_t textHash = titleTextHash(vram);
-    if (g_titleTextHashValid && textHash == g_titleTextHash)
-        return true;
+    if (g_titleTextHashValid && textHash == g_titleTextHash) {
+        // Keep the render-slot/vblank pacing active even when Azel's VDP2
+        // content is unchanged. This republishes the cached frame without
+        // repeating the expensive VDP2 reconstruction.
+        return platform::renderer::movie_present_frame(
+            g_titleFrame.data(),
+            kOutputWidth,
+            kOutputHeight,
+            kOutputWidth);
+    }
 
     // Full-screen Saturn UI is presented at its intended 4:3 display aspect.
     // The Vita output remains 480x272, with opaque black pillar bars.
