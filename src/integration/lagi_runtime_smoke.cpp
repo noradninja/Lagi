@@ -571,9 +571,15 @@ void runtime_smoke_frame()
     } else if (gGameStatus.m0_gameMode == 0 &&
                fileInfoStruct.mC_gfsHandle == nullptr) {
         // The native movie task closes its stream at the start of the exit
-        // fade.  Re-submit the retained final frame so Azel's live color
-        // offset continues to reach the display until the next module owns it.
+        // fade. Re-submit the retained final frame only while the movie-mode
+        // state machine still owns presentation.
         lagi::platform::renderer::movie_republish_frame();
+    } else if (gGameStatus.m0_gameMode != 0) {
+        // Once Azel hands ownership to a field/town/battle module the retained
+        // Cinepak frame must stop winning renderMovieFrame(). Leaving it marked
+        // visible makes the last movie frame permanently cover the newly
+        // loaded native scene even though Azel has already advanced.
+        lagi::platform::renderer::movie_clear_frame();
     }
 
     ++startupFrame;
