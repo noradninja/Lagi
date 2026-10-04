@@ -11,6 +11,8 @@
 #include "common.h"
 #include "commonOverlay.h"
 #include "audio/soundDataTable.h"
+#include "dragonData.h"
+#include "dragonRider.h"
 
 sCommonOverlay_data* gCommonFile = nullptr;
 
@@ -81,6 +83,13 @@ sCommonOverlay_data::sCommonOverlay_data()
     sSaturnPtr battleActivationListEA = getSaturnPtr(0x002002BC);
     for (int i = 0; i < 27; ++i)
         battleActivationList.push_back(readSaturnS8(battleActivationListEA + i));
+
+    // Keep the native Azel COMMON initialization contract intact. The module
+    // manager loads the current dragon and riders synchronously during New
+    // Game/Continue startup, so their COMMON-backed descriptor graphs must be
+    // populated before a title-menu task can enter the module manager.
+    loadDragonDataFromCommon();
+    loadDragonRiderDataFromCommon();
 
     lagi::platform::logging::writef("[Common] loaded %u bytes: %u dragon stats, %u sound configs, %u battle descriptors, %u activation entries\n",
                 m_dataSize,
