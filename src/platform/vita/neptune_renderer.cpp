@@ -8287,6 +8287,9 @@ static bool renderMovieFrame()
         }
     }
 
+    if (submitted && g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f)
+        drawPublishedVdp1Ui();
+
     if (submitted)
         drawAzelFadeOverlay();
 
