@@ -26,9 +26,9 @@ int main()
     lagi::platform::renderer::status(
         "[PASS] VITA FRAMEBUFFER / PLATFORM", 0xFF30E030u);
 
-    if (!lagi::azel::runtime_smoke_init()) {
+    if (!lagi::azel::runtime_init()) {
         lagi::platform::logging::writef(
-            "Azel runtime smoke init failed.\n");
+            "Azel runtime init failed.\n");
         lagi::platform::shutdown();
         sceKernelExitProcess(2);
         return 2;
@@ -39,7 +39,7 @@ int main()
 
     while (lagi::platform::running()) {
         lagi::platform::begin_frame();
-        lagi::azel::runtime_smoke_frame();
+        lagi::azel::runtime_frame();
         lagi::platform::end_frame();
     }
 
