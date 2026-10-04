@@ -177,10 +177,10 @@ void twn_ruin_sync_platform_state()
         const int remaining = g_fadeControls.m0_fade0.m1E_counter;
         const unsigned int frames =
             static_cast<unsigned int>(remaining > 0 ? remaining : 1);
-        platform::logging::writef(
-            "[LagiAdapter] Azel town fade %s remaining=%u\n",
-            fadeActive ? "in" : "out",
-            frames);
+        if (fadeActive)
+            platform::renderer::presentation_fade_in(frames);
+        else
+            platform::renderer::presentation_fade_out(frames);
         g_fadeActive = fadeActive;
     }
 

@@ -471,7 +471,6 @@ static constexpr unsigned int kTitleDecodedHeight = 448u;
 static SceUID g_titleDecodedUid = -1;
 static std::uint32_t* g_titleDecodedPixels = nullptr;
 static SceGxmTexture g_titleDecodedTexture{};
-static std::uint64_t g_titleDecodedSignature = 0u;
 static bool g_titleDecodedValid = false;
 
 static unsigned int g_movieWidth = 0;
@@ -637,6 +636,21 @@ static bool g_vdp2TextValid = false;
 static constexpr std::size_t kVdp2LineScrollBytes = 0x400u;
 static std::uint8_t g_pendingVdp2LineScroll[kVdp2LineScrollBytes]{};
 static std::uint8_t g_vdp2LineScroll[kVdp2LineScrollBytes]{};
+
+// Script-owned town fade command. The game thread stages commands here; the
+// completed-frame publish copies them across the render handoff. This remains
+// separate from VDP2 color offset because Azel's town camera fade is a
+// full-presentation effect, not CLOFEN layer selection.
+static unsigned int g_pendingTownFadeSerial = 0u;
+static bool g_pendingTownFadeIn = false;
+static unsigned int g_pendingTownFadeFrames = 1u;
+
+static unsigned int g_townFadeSerial = 0u;
+static unsigned int g_townFadeAppliedSerial = 0u;
+static bool g_townFadeIn = false;
+static unsigned int g_townFadeFrames = 1u;
+static unsigned int g_townFadeElapsed = 0u;
+static float g_townFadeBlack = 1.0f;
 
 static int g_viewMode = 7;
 static constexpr bool g_halfResolution = true;
@@ -958,25 +972,6 @@ static std::uint16_t readVdp2Be16(
 }
 
 
-static std::uint64_t titleSourceSignature(
-    const unsigned char* vram,
-    const unsigned char* cram)
-{
-    // Hash the published source rather than infer dirty ranges from game
-    // behavior. 528 KiB/frame is tiny compared with the fragment work this
-    // replaces and keeps the cache correct for palette or tile updates.
-    std::uint64_t hash = 1469598103934665603ull;
-    auto mix = [&](const unsigned char* bytes, std::size_t size) {
-        for (std::size_t i = 0; i < size; ++i) {
-            hash ^= static_cast<std::uint64_t>(bytes[i]);
-            hash *= 1099511628211ull;
-        }
-    };
-    mix(vram, 0x80000u);
-    mix(cram, 0x1000u);
-    return hash;
-}
-
 static bool ensureTitleDecodedTexture()
 {
     if (g_titleDecodedPixels)
@@ -1020,10 +1015,10 @@ static bool updateTitleDecodedTexture(
     if (!vram || !cram || !ensureTitleDecodedTexture())
         return false;
 
-    const std::uint64_t signature =
-        titleSourceSignature(vram, cram);
-    if (g_titleDecodedValid &&
-        signature == g_titleDecodedSignature)
+    // The title NBG0 artwork is static for the lifetime of this front-end
+    // resource set. Dynamic PRESS START/menu text and selectors are separate
+    // VDP2/VDP1 layers, so unrelated VRAM changes must not rebuild 704x448.
+    if (g_titleDecodedValid)
         return true;
 
     for (unsigned int y = 0; y < kTitleDecodedHeight; ++y) {
@@ -1066,7 +1061,6 @@ static bool updateTitleDecodedTexture(
         }
     }
 
-    g_titleDecodedSignature = signature;
     g_titleDecodedValid = true;
 
     static bool logged = false;
@@ -2050,7 +2044,6 @@ static void freeMovieResources()
     freeMovieMappedBlock(g_titleDecodedUid, titlePixels);
     g_titleDecodedPixels = nullptr;
     g_titleDecodedTexture = {};
-    g_titleDecodedSignature = 0u;
     g_titleDecodedValid = false;
 
     void* vertices = g_movieVertices;
@@ -9143,6 +9136,74 @@ bool submit_vdp1_model(
     return true;
 }
 
+static float updateTownFadeAlpha()
+{
+    if (g_townFadeSerial != g_townFadeAppliedSerial) {
+        g_townFadeAppliedSerial = g_townFadeSerial;
+        g_townFadeElapsed = 0u;
+    }
+
+    const unsigned int duration = std::max(1u, g_townFadeFrames);
+    if (g_townFadeElapsed < duration) {
+        const float t =
+            static_cast<float>(g_townFadeElapsed + 1u) /
+            static_cast<float>(duration);
+        g_townFadeBlack = g_townFadeIn
+            ? std::max(0.0f, 1.0f - t)
+            : std::min(1.0f, t);
+        ++g_townFadeElapsed;
+    } else {
+        g_townFadeBlack = g_townFadeIn ? 0.0f : 1.0f;
+    }
+    return g_townFadeBlack;
+}
+
+static void drawFadeOverlay(
+    float alpha,
+    std::uint8_t red,
+    std::uint8_t green,
+    std::uint8_t blue)
+{
+    if (alpha <= 0.0f || !g_fadeVertices || !g_fadeIndices ||
+        !g_fadeFragmentProgram)
+        return;
+
+    const std::uint8_t a = static_cast<std::uint8_t>(
+        std::clamp<int>(
+            static_cast<int>(std::lround(alpha * 255.0f)), 0, 255));
+    for (unsigned i = 0; i < 6u; ++i) {
+        g_fadeVertices[i].r = red;
+        g_fadeVertices[i].g = green;
+        g_fadeVertices[i].b = blue;
+        g_fadeVertices[i].a = a;
+    }
+
+    sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext, g_fadeFragmentProgram);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+
+    void* uniforms = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniforms) >= 0 && uniforms) {
+        const ViewerMat4 identity = viewerIdentity();
+        sceGxmSetUniformDataF(
+            uniforms, g_probeWvpParam, 0, 16, identity.m);
+        sceGxmSetVertexStream(g_probeContext, 0, g_fadeVertices);
+        sceGxmDraw(
+            g_probeContext,
+            SCE_GXM_PRIMITIVE_TRIANGLES,
+            SCE_GXM_INDEX_FORMAT_U16,
+            g_fadeIndices,
+            6u);
+    }
+}
+
 static void drawColorOffsetPass(
     SceGxmFragmentProgram* program,
     int red, int green, int blue)
@@ -9215,19 +9276,26 @@ static void drawAzelColorOffset()
         ? g_azelColorOffsetBBlue.load(std::memory_order_relaxed)
         : g_azelColorOffsetABlue.load(std::memory_order_relaxed);
 
+    // Azel's reconstructed fade values are expressed in the Saturn RGB555
+    // intensity domain: +/-128 corresponds approximately to the full 8-bit
+    // display range. Convert once here before the final RGBA blend passes.
+    const int displayRed = std::clamp(red * 2, -255, 255);
+    const int displayGreen = std::clamp(green * 2, -255, 255);
+    const int displayBlue = std::clamp(blue * 2, -255, 255);
+
     // Split mixed-sign RGB values into two hardware blend passes. This is
     // equivalent to Saturn's per-channel signed additive color offset and
     // applies after VDP2 + VDP1 front-end composition.
     drawColorOffsetPass(
         g_colorOffsetAddFragmentProgram,
-        std::max(red, 0),
-        std::max(green, 0),
-        std::max(blue, 0));
+        std::max(displayRed, 0),
+        std::max(displayGreen, 0),
+        std::max(displayBlue, 0));
     drawColorOffsetPass(
         g_colorOffsetSubtractFragmentProgram,
-        std::max(-red, 0),
-        std::max(-green, 0),
-        std::max(-blue, 0));
+        std::max(-displayRed, 0),
+        std::max(-displayGreen, 0),
+        std::max(-displayBlue, 0));
 }
 
 static bool renderMovieFrame()
@@ -9731,7 +9799,12 @@ static bool renderMovieFrame()
     frameBuffer.width = movieOutputWidth;
     frameBuffer.height = movieOutputHeight;
 
-    waitFor30HzPresentSlot();
+    // 480x272 scanout is 60 Hz and needs the explicit two-vblank 30 Hz
+    // limiter. The Vita's 720x408 display mode advances at the target 30 Hz
+    // cadence already; applying the same limiter there halves presentation
+    // to 15 Hz even though rendering completes in ~5 ms.
+    if (!highResolutionFrontend)
+        waitFor30HzPresentSlot();
     sceDisplaySetFrameBuf(&frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
     sceDisplayWaitVblankStart();
     mark30HzPresented();
@@ -9972,7 +10045,7 @@ static void renderBasicWingViewer()
     }
 
     if (roomAuthenticCameraMode)
-        drawAzelColorOffset();
+        drawFadeOverlay(updateTownFadeAlpha(), 0u, 0u, 0u);
 
     const std::uint64_t gxmWaitStartUs = sceKernelGetProcessTimeWide();
     const unsigned int renderCpuBeforeWaitUs =
@@ -10532,6 +10605,9 @@ void presentation_publish_frame()
     g_viewMode = g_pendingViewMode;
     g_profileTasksUs = g_pendingProfileTasksUs;
     g_profileGameWaitUs = g_pendingProfileGameWaitUs;
+    g_townFadeSerial = g_pendingTownFadeSerial;
+    g_townFadeIn = g_pendingTownFadeIn;
+    g_townFadeFrames = g_pendingTownFadeFrames;
     if (g_pendingVdp2TextValid) {
         std::memcpy(
             g_vdp2TextVram,
@@ -10590,19 +10666,22 @@ void presentation_publish_frame()
 
 void presentation_fade_in(unsigned int frames)
 {
-    // Compatibility shim for the thin town adapter. Azel's fade task and
-    // updateFadeInterrupt() own the actual VDP2 color-offset progression.
+    g_pendingTownFadeIn = true;
+    g_pendingTownFadeFrames = std::max(1u, frames);
+    ++g_pendingTownFadeSerial;
     logging::writef(
-        "[Presentation] Azel FadeIn observed frames=%u\n",
-        std::max(1u, frames));
+        "[Presentation] FadeIn frames=%u\n",
+        g_pendingTownFadeFrames);
 }
 
 void presentation_fade_out(unsigned int frames)
 {
-    // Compatibility shim only; Neptune no longer owns a separate town fade.
+    g_pendingTownFadeIn = false;
+    g_pendingTownFadeFrames = std::max(1u, frames);
+    ++g_pendingTownFadeSerial;
     logging::writef(
-        "[Presentation] Azel FadeOut observed frames=%u\n",
-        std::max(1u, frames));
+        "[Presentation] FadeOut frames=%u\n",
+        g_pendingTownFadeFrames);
 }
 
 void presentation_camera_update()
