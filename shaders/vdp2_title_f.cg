@@ -159,63 +159,310 @@ float4 sampleD5Rbg0Tile(
     return rgb555(readBE16(raw, 524288.0f + paletteEntry * 2.0f));
 }
 
-float4 sampleD5Rbg0(
+float readLEFixedTrunc6(
     uniform sampler2D raw,
+    float byteAddress)
+{
+    float lo = readLE16(raw, byteAddress);
+    lo = floor(lo / 64.0f) * 64.0f;
+    float hi = readLE16(raw, byteAddress + 2.0f);
+    if (hi >= 32768.0f)
+        hi -= 65536.0f;
+    return hi + lo / 65536.0f;
+}
+
+float readLESignExt14(
+    uniform sampler2D raw,
+    float byteAddress)
+{
+    float v = fmod(readLE16(raw, byteAddress), 16384.0f);
+    if (v >= 8192.0f)
+        v -= 16384.0f;
+    return v;
+}
+
+float readLEFixedSigned30Trunc6(
+    uniform sampler2D raw,
+    float byteAddress)
+{
+    float lo = readLE16(raw, byteAddress);
+    lo = floor(lo / 64.0f) * 64.0f;
+    float hi14 = fmod(readLE16(raw, byteAddress + 2.0f), 16384.0f);
+    if (hi14 >= 8192.0f)
+        hi14 -= 16384.0f;
+    return hi14 + lo / 65536.0f;
+}
+
+float readD5Coefficient(
+    uniform sampler2D raw,
+    float byteAddress)
+{
+    byteAddress = fmod(byteAddress, 524288.0f);
+    if (byteAddress < 0.0f)
+        byteAddress += 524288.0f;
+
+    const float b0 = readByte(raw, byteAddress + 0.0f);
+    const float b1 = readByte(raw, byteAddress + 1.0f);
+    const float b2 = readByte(raw, byteAddress + 2.0f);
+
+    float value = b0 + b1 * 256.0f + b2 * 65536.0f;
+    if (b2 >= 128.0f)
+        value -= 16777216.0f;
+    return value / 65536.0f;
+}
+
+float readD5CoefficientMsb(
+    uniform sampler2D raw,
+    float byteAddress)
+{
+    byteAddress = fmod(byteAddress, 524288.0f);
+    if (byteAddress < 0.0f)
+        byteAddress += 524288.0f;
+    return readByte(raw, byteAddress + 3.0f) >= 128.0f ? 1.0f : 0.0f;
+}
+
+float2 d5MapCoordinate(
+    uniform sampler2D raw,
+    float paramBase,
     float screenX,
     float screenY,
-    float4 p0,
-    float4 p1,
-    float4 p2,
-    float4 p3)
+    float coefficient)
 {
-    // sCoefficientTableData parameter A is DMA'd by Azel to 0x3D000.
-    // For this first native RBG0 bring-up we consume the live rotation
-    // parameter matrix/translation exactly and use unity K. The coefficient
-    // and RPMD=3 window-selection stage is layered on after hardware proof.
-    const float base = 249856.0f; // 0x3D000
+    // Mirror Azel renderer_vdp2.cpp / renderLayerCPU_RBG0. Saturn truncates
+    // the low six fractional bits when consuming the parameter table.
+    const float Xst = readLEFixedTrunc6(raw, paramBase + 0.0f);
+    const float Yst = readLEFixedTrunc6(raw, paramBase + 4.0f);
+    const float Zst = readLEFixedTrunc6(raw, paramBase + 8.0f);
+    const float deltaXst = readLEFixedTrunc6(raw, paramBase + 12.0f);
+    const float deltaYst = readLEFixedTrunc6(raw, paramBase + 16.0f);
+    const float deltaX = readLEFixedTrunc6(raw, paramBase + 20.0f);
+    const float deltaY = readLEFixedTrunc6(raw, paramBase + 24.0f);
 
-    const float Xst = readLEFixed16_16(raw, base + 0.0f);
-    const float Yst = readLEFixed16_16(raw, base + 4.0f);
-    const float Zst = readLEFixed16_16(raw, base + 8.0f);
-    const float dXst = readLEFixed16_16(raw, base + 12.0f);
-    const float dYst = readLEFixed16_16(raw, base + 16.0f);
-    const float dX = readLEFixed16_16(raw, base + 20.0f);
-    const float dY = readLEFixed16_16(raw, base + 24.0f);
+    const float A = readLEFixedTrunc6(raw, paramBase + 28.0f);
+    const float B = readLEFixedTrunc6(raw, paramBase + 32.0f);
+    const float C = readLEFixedTrunc6(raw, paramBase + 36.0f);
+    const float D = readLEFixedTrunc6(raw, paramBase + 40.0f);
+    const float E = readLEFixedTrunc6(raw, paramBase + 44.0f);
+    const float F = readLEFixedTrunc6(raw, paramBase + 48.0f);
 
-    const float A = readLEFixed16_16(raw, base + 28.0f);
-    const float B = readLEFixed16_16(raw, base + 32.0f);
-    const float C = readLEFixed16_16(raw, base + 36.0f);
-    const float D = readLEFixed16_16(raw, base + 40.0f);
-    const float E = readLEFixed16_16(raw, base + 44.0f);
-    const float F = readLEFixed16_16(raw, base + 48.0f);
-
-    const float Px = readLESigned16(raw, base + 52.0f);
-    const float Py = readLESigned16(raw, base + 54.0f);
-    const float Pz = readLESigned16(raw, base + 56.0f);
-    const float Cx = readLESigned16(raw, base + 60.0f);
-    const float Cy = readLESigned16(raw, base + 62.0f);
-    const float Cz = readLESigned16(raw, base + 64.0f);
-    const float Mx = readLEFixed16_16(raw, base + 68.0f);
-    const float My = readLEFixed16_16(raw, base + 72.0f);
+    const float Px = readLESignExt14(raw, paramBase + 52.0f);
+    const float Py = readLESignExt14(raw, paramBase + 54.0f);
+    const float Pz = readLESignExt14(raw, paramBase + 56.0f);
+    const float Cx = readLESignExt14(raw, paramBase + 60.0f);
+    const float Cy = readLESignExt14(raw, paramBase + 62.0f);
+    const float Cz = readLESignExt14(raw, paramBase + 64.0f);
+    const float Mx = readLEFixedSigned30Trunc6(raw, paramBase + 68.0f);
+    const float My = readLEFixedSigned30Trunc6(raw, paramBase + 72.0f);
 
     const float Xp =
         A * (Px - Cx) + B * (Py - Cy) + C * (Pz - Cz) + Cx + Mx;
     const float Yp =
         D * (Px - Cx) + E * (Py - Cy) + F * (Pz - Cz) + Cy + My;
 
-    const float xmul = Xst - Px + dXst * screenY;
-    const float ymul = Yst - Py + dYst * screenY;
+    const float xmul = Xst - Px + deltaXst * screenY;
+    const float ymul = Yst - Py + deltaYst * screenY;
     const float zrel = Zst - Pz;
 
-    const float Xsp = A * xmul + B * ymul + C * zrel;
-    const float Ysp = D * xmul + E * ymul + F * zrel;
-    const float stepX = A * dX + B * dY;
-    const float stepY = D * dX + E * dY;
+    const float Xsp =
+        A * xmul + B * ymul + C * zrel;
+    const float Ysp =
+        D * xmul + E * ymul + F * zrel;
+    const float dX =
+        A * deltaX + B * deltaY;
+    const float dY =
+        D * deltaX + E * deltaY;
 
-    const float mapX = Xsp + stepX * screenX + Xp;
-    const float mapY = Ysp + stepY * screenX + Yp;
+    return float2(
+        coefficient * (Xsp + dX * screenX) + Xp,
+        coefficient * (Ysp + dY * screenX) + Yp);
+}
 
-    return sampleD5Rbg0Tile(raw, mapX, mapY, p0, p1, p2, p3);
+float4 d5ResolveWindow(
+    uniform sampler2D raw,
+    float4 baseWindow,
+    float lineAddress,
+    float lineEnabled,
+    float screenY)
+{
+    if (lineEnabled < 0.5f)
+        return baseWindow;
+
+    const float address =
+        lineAddress + floor(screenY) * 4.0f;
+    const float xs = readLE16(raw, address + 0.0f);
+    const float xe = readLE16(raw, address + 2.0f);
+    if (xe >= 65535.0f)
+        return float4(0.0f, baseWindow.y, 0.0f, baseWindow.w);
+
+    return float4(
+        fmod(floor(xs / 2.0f), 512.0f),
+        baseWindow.y,
+        fmod(floor(xe / 2.0f), 512.0f),
+        baseWindow.w);
+}
+
+float d5WindowTest(
+    float enabled,
+    float areaInside,
+    float4 windowRect,
+    float screenX,
+    float screenY)
+{
+    if (enabled < 0.5f)
+        return 3.0f;
+
+    const bool inside =
+        screenX >= windowRect.x &&
+        screenX <= windowRect.z &&
+        screenY >= windowRect.y &&
+        screenY <= windowRect.w;
+
+    if (areaInside >= 0.5f)
+        return inside ? 1.0f : 0.0f;
+    return inside ? 0.0f : 1.0f;
+}
+
+float4 sampleD5Rbg0(
+    uniform sampler2D raw,
+    float screenX,
+    float screenY,
+    float4 a0,
+    float4 a1,
+    float4 a2,
+    float4 a3,
+    float4 b0,
+    float4 b1,
+    float4 b2,
+    float4 b3,
+    float4 ctrl0,
+    float4 ctrl1,
+    float4 ctrl2,
+    float4 ctrl3)
+{
+    // ctrl0 = RPMD, KTCTL, KTAOF, WCTLC
+    // ctrl1 = WCTLD, LWTA0 byte address, LWTA1 byte address, line-window mask
+    // ctrl2 = window 0 x0,y0,x1,y1
+    // ctrl3 = window 1 x0,y0,x1,y1
+    const float rpmd = ctrl0.x;
+    const float ktctl = ctrl0.y;
+    const float ktaof = ctrl0.z;
+    const float wctlc = ctrl0.w;
+    const float wctld = ctrl1.x;
+
+    const float line0Enabled =
+        fmod(ctrl1.w, 2.0f);
+    const float line1Enabled =
+        fmod(floor(ctrl1.w / 2.0f), 2.0f);
+
+    const float4 window0 =
+        d5ResolveWindow(raw, ctrl2, ctrl1.y, line0Enabled, screenY);
+    const float4 window1 =
+        d5ResolveWindow(raw, ctrl3, ctrl1.z, line1Enabled, screenY);
+
+    // RBG0 layer window clipping (WCTLC), same logic as Azel's CPU reference.
+    const float layerWnd0Enabled =
+        fmod(floor(wctlc / 2.0f), 2.0f);
+    const float layerWnd0Inside =
+        fmod(wctlc, 2.0f);
+    if (layerWnd0Enabled >= 0.5f) {
+        const bool inside =
+            screenX >= ctrl2.x && screenX <= ctrl2.z &&
+            screenY >= ctrl2.y && screenY <= ctrl2.w;
+        if ((layerWnd0Inside >= 0.5f && !inside) ||
+            (layerWnd0Inside < 0.5f && inside))
+            return float4(0.0f, 0.0f, 0.0f, 1.0f);
+    }
+
+    const float paramABase = 249856.0f; // 0x3D000
+    const float paramBBase = 249984.0f; // 0x3D080
+
+    const float kAstA = readLEFixedTrunc6(raw, paramABase + 84.0f);
+    const float dKAstA = readLEFixedTrunc6(raw, paramABase + 88.0f);
+    const float dKAxA = readLEFixedTrunc6(raw, paramABase + 92.0f);
+    const float kAstB = readLEFixedTrunc6(raw, paramBBase + 84.0f);
+    const float dKAstB = readLEFixedTrunc6(raw, paramBBase + 88.0f);
+    const float dKAxB = readLEFixedTrunc6(raw, paramBBase + 92.0f);
+
+    const float coefEnableA = fmod(ktctl, 2.0f);
+    const float coefEnableB =
+        fmod(floor(ktctl / 256.0f), 2.0f);
+    const float coefSizeA =
+        fmod(floor(ktctl / 2.0f), 2.0f) >= 0.5f ? 2.0f : 4.0f;
+    const float coefSizeB =
+        fmod(floor(ktctl / 512.0f), 2.0f) >= 0.5f ? 2.0f : 4.0f;
+
+    const float coefBaseA =
+        fmod(ktaof, 8.0f) * coefSizeA * 65536.0f;
+    const float coefBaseB =
+        fmod(floor(ktaof / 256.0f), 8.0f) *
+        coefSizeB * 65536.0f;
+
+    const float accumA =
+        kAstA + dKAstA * screenY + dKAxA * screenX;
+    const float accumB =
+        kAstB + dKAstB * screenY + dKAxB * screenX;
+
+    const float coefAddrA =
+        coefBaseA + floor(accumA) * coefSizeA;
+    const float coefAddrB =
+        coefBaseB + floor(accumB) * coefSizeB;
+
+    // D5 config leaves coefficient data size at 4 bytes. Keep unity only for
+    // a disabled coefficient table; all active D5 K values come from Azel's
+    // native VRAM coefficient tables.
+    float kA = 1.0f;
+    float kB = 1.0f;
+    float msbA = 0.0f;
+    if (coefEnableA >= 0.5f && coefSizeA > 3.0f) {
+        kA = readD5Coefficient(raw, coefAddrA);
+        msbA = readD5CoefficientMsb(raw, coefAddrA);
+    }
+    if (coefEnableB >= 0.5f && coefSizeB > 3.0f)
+        kB = readD5Coefficient(raw, coefAddrB);
+
+    bool useB = false;
+    if (rpmd >= 2.5f) {
+        // RPMD=3: rotation parameter selection is owned by WCTLD/windows.
+        const float w0Enabled =
+            fmod(floor(wctld / 2.0f), 2.0f);
+        const float w0Area =
+            fmod(wctld, 2.0f);
+        const float w1Enabled =
+            fmod(floor(wctld / 8.0f), 2.0f);
+        const float w1Area =
+            fmod(floor(wctld / 4.0f), 2.0f);
+        const float w0 =
+            d5WindowTest(w0Enabled, w0Area, window0, screenX, screenY);
+        const float w1 =
+            d5WindowTest(w1Enabled, w1Area, window1, screenX, screenY);
+
+        float selected;
+        if (w0 >= 2.0f)
+            selected = fmod(w1, 2.0f);
+        else if (w1 >= 2.0f)
+            selected = fmod(w0, 2.0f);
+        else if (fmod(floor(wctld / 128.0f), 2.0f) >= 0.5f)
+            selected = (w0 >= 0.5f || w1 >= 0.5f) ? 1.0f : 0.0f;
+        else
+            selected = (w0 >= 0.5f && w1 >= 0.5f) ? 1.0f : 0.0f;
+
+        useB = selected < 0.5f;
+    } else if (rpmd >= 1.5f) {
+        // RPMD=2 coefficient-MSB switching.
+        useB = msbA >= 0.5f;
+    }
+
+    if (!useB) {
+        const float2 map =
+            d5MapCoordinate(raw, paramABase, screenX, screenY, kA);
+        return sampleD5Rbg0Tile(
+            raw, map.x, map.y, a0, a1, a2, a3);
+    }
+
+    const float2 map =
+        d5MapCoordinate(raw, paramBBase, screenX, screenY, kB);
+    return sampleD5Rbg0Tile(
+        raw, map.x, map.y, b0, b1, b2, b3);
 }
 
 float4 rgb555(float c)
@@ -336,7 +583,7 @@ float4 sampleNameNbg0(
     else
         dotColor = floor(packedByte / 16.0f);
     if (dotColor < 0.5f)
-        return float4(0.0f, 0.0f, 0.0f, 1.0f);
+        return float4(0.0f, 0.0f, 0.0f, 0.0f);
 
     const float palNibble = floor(patternName / 4096.0f);
     const float paletteEntry =
@@ -344,7 +591,7 @@ float4 sampleNameNbg0(
     return rgb555(readBE16(raw, 524288.0f + paletteEntry * 2.0f));
 }
 
-float4 sampleNbg1(
+float4 sampleNativeTextLayer(
     uniform sampler2D raw,
     float logicalX,
     float logicalY)
@@ -390,7 +637,15 @@ float4 main(
     uniform float4 rbg0Plane0,
     uniform float4 rbg0Plane1,
     uniform float4 rbg0Plane2,
-    uniform float4 rbg0Plane3)
+    uniform float4 rbg0Plane3,
+    uniform float4 rbg0PlaneB0,
+    uniform float4 rbg0PlaneB1,
+    uniform float4 rbg0PlaneB2,
+    uniform float4 rbg0PlaneB3,
+    uniform float4 rbg0Ctrl0,
+    uniform float4 rbg0Ctrl1,
+    uniform float4 rbg0Ctrl2,
+    uniform float4 rbg0Ctrl3)
 {
     const float logicalX = min(
         351.0f, floor(vTexcoord.x * 352.0f));
@@ -405,20 +660,25 @@ float4 main(
         // Neptune reads its live VRAM parameter table and rotation-map planes.
         color = sampleD5Rbg0(
             raw, logicalX, logicalY,
-            rbg0Plane0, rbg0Plane1, rbg0Plane2, rbg0Plane3);
+            rbg0Plane0, rbg0Plane1, rbg0Plane2, rbg0Plane3,
+            rbg0PlaneB0, rbg0PlaneB1, rbg0PlaneB2, rbg0PlaneB3,
+            rbg0Ctrl0, rbg0Ctrl1, rbg0Ctrl2, rbg0Ctrl3);
 
         // Azel keeps NBG0 disabled while script 0 presents the lead-in text.
         // flags bit 0 is the live BGON.NBG0 state from nameEntryEnable().
-        if (vdp2Info.w >= 0.5f)
-            color = sampleNameNbg0(
+        if (vdp2Info.w >= 0.5f) {
+            const float4 keyboard = sampleNameNbg0(
                 raw, logicalX, logicalY, vdp2Info.y, vdp2Info.z);
+            if (keyboard.a > 0.5f)
+                color = keyboard;
+        }
     }
 
     // The common text map lives at VRAM 0x6000. On the title it is NBG1;
     // during normal field operation Azel maps the same text memory through
     // NBG3. Sampling the native memory here therefore preserves the field
     // script dialogue before the keyboard becomes visible.
-    const float4 text = sampleNbg1(raw, logicalX, logicalY);
+    const float4 text = sampleNativeTextLayer(raw, logicalX, logicalY);
     if (text.a > 0.5f)
         color = text;
 
