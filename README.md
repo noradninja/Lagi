@@ -1,6 +1,6 @@
 # Lagi
 
-**Current development milestone: 0.030-alpha**
+**Current development milestone: 0.040-alpha — authentic boot flow**
 
 **Lagi** is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed game logic runs directly on the Vita's ARM CPU, while Saturn-era rendering and platform behavior are translated to VitaSDK and native SceGxm.
 
@@ -8,13 +8,14 @@ Lagi is not a Sega Saturn emulator and does not use VitaGL.
 
 ## Current status
 
-Development is currently focused on the first Ruins town. The scene now runs on real Vita hardware through the native town task/script pipeline rather than as a standalone geometry demo.
+Development is currently focused on replacing the old direct-Ruins development path with Azel's authentic boot and module flow. The Vita build now enters through `azelInit()` / `resetEngine()`, follows Azel's native startup task graph through movies, title, New Game, the D5 name-entry sequence, and the pre-Ruins cinematic, then lets Azel's module manager load `TWN_RUIN.PRG` and create the town task graph.
 
 Working systems include:
 
 - Disc 1 CUE/BIN and ISO9660 access
 - `COMMON.DAT` and town resource loading
-- direct development boot into `TWN_RUIN`
+- authentic Azel boot through title, New Game, D5 name entry, and the pre-Ruins cinematic
+- native module-manager load of `TWN_RUIN.PRG`
 - Azel task scheduling and town task/script flow
 - world-grid and cell ownership
 - static and task-owned dynamic object submission
@@ -35,11 +36,11 @@ Working systems include:
 - elevator choice flow through the script-driven fade and two-part Cinepak FMV
 - Sega FILM demuxing, Phase 1 CPU Cinepak reconstruction, and native SceAudio PCM output
 - Edge's original textured/stippled VDP1 mesh shadow
-- script-driven town fade-in
+- Azel-driven fade state bridged to Neptune color-offset presentation
 - native GXM 2x multisample antialiasing
 - stable 30 Hz presentation
 
-Version **0.030-alpha** adds the reference Cinepak playback path without moving movie sequencing into the platform layer. Azel still owns the elevator transition and post-movie game status; Lagi supplies Sega FILM demuxing, CPU pixel reconstruction, GXM frame upload, timing, and native SceAudio PCM output. The Phase 2 SGX-assisted decoder can replace reconstruction while retaining those boundaries.
+Version **0.040-alpha** is the authentic-boot milestone. The current branch keeps game-mode, scene, movie, title, script, task, and transition ownership in Azel while Lagi supplies Vita platform services and a generic presentation bridge. The Cinepak work introduced in 0.030 remains in place, including Sega FILM demuxing, SGX-assisted Cinepak presentation, and native SceAudio PCM output.
 
 ## Architecture
 
@@ -57,28 +58,40 @@ SceGxm / SceCtrl / SceAudioOut
 PlayStation Vita
 ```
 
-The game-side runtime owns tasks, scripts, town grids, collision, camera state, animation, visibility, and object lifetimes. Vita-specific code is concentrated in the platform and rendering translation layers.
+The game-side runtime owns tasks, scripts, game modes, scene selection, collision, camera state, animation, visibility, object lifetimes, and transition timing. Lagi owns the boundary between that runtime and the Vita: input, filesystem/disc access, timing/VBlank services, audio, memory/resource adaptation, frame synchronization, and presentation snapshots. Neptune renders those snapshots.
 
-The current first-Ruins path is:
+The current 0.040 boot path is:
 
 ```text
 Disc 1 BIN/CUE
     |
-COMMON.DAT + TWN_RUIN resources
+azelInit() / resetEngine()
     |
-town bootstrap
+native Azel startup task graph
     |
-town tasks / scripts
+MOVIE1.CPK -> title -> New Game
     |
-world grid / cells / task-owned objects
+FLD_D5 name-entry sequence
     |
-collision / Edge / camera / visibility
+EVT002.CPK
     |
-processed models + VDP1 commands + VDP2 state
+Azel module manager
     |
-Lagi / Neptune presentation translation
+TWN_RUIN.PRG + native town task graph
+    |
+generic Lagi scene/presentation bridge
+    |
+Neptune
     |
 SceGxm
+```
+
+The ownership rule is intentionally simple:
+
+```text
+Azel decides.
+Lagi services.
+Neptune renders.
 ```
 
 ## Rendering
@@ -117,13 +130,11 @@ Azel retains ownership of town LCS and menu state and emits its original VDP1 co
 - original shrinking selection rectangle during target acquisition
 - animated selector for the elevator multi-choice menu
 
-The direct-boot adapter also restores the normally resident `MENU.CGB` data in VDP1 memory, allowing Azel's original menu sprite descriptors to resolve without replacing them with Vita-owned art.
+The current authentic-boot path no longer depends on a direct-Ruins loader to establish scene ownership. The bridge translates Azel's commands rather than recreating lock-on gameplay or UI behavior in Vita-specific code.
 
-The bridge translates Azel's commands rather than recreating lock-on gameplay or UI behavior in Vita-specific code.
+### VDP2 presentation
 
-### VDP2 town UI
-
-Azel's live VDP2 state supplies the first Ruins text and window presentation. Neptune translates the layers required by the current sequence:
+Azel's live VDP2 state supplies front-end and in-game presentation. Neptune translates the layers currently required by the authentic boot and first-Ruins path:
 
 - NBG3 font/text map for area names, item pickups, interactions, subtitles, and choices
 - NBG1 16x16-character window map through a cached GPU tile atlas
@@ -132,7 +143,7 @@ Azel's live VDP2 state supplies the first Ruins text and window presentation. Ne
 
 Composition preserves the original layer relationship: VDP2 window and matte backing, VDP1 UI sprites, then text. Azel remains responsible for the strings, window contents, choice state, cursor animation, and scripted timing.
 
-## Scene views
+## Renderer diagnostic views
 
 Vita D-pad Left/Right cycles through:
 
