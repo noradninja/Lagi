@@ -186,7 +186,9 @@ public:
     void close()
     {
         platform::audio::stop_pcm_stream();
-        platform::renderer::movie_clear_frame();
+        // Azel closes the CPK stream before its native 30-frame fade-out has
+        // completed.  Keep the final decoded texture alive so the renderer can
+        // apply that fade; the next movie or VDP2 front-end upload replaces it.
         demuxer.close();
         videoSamples.clear();
         audioSamples.clear();

@@ -14,6 +14,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include <psp2/kernel/threadmgr/thread.h>
 #include <psp2/kernel/threadmgr/semaphore.h>
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -162,6 +163,7 @@ static SceGxmFragmentProgram* g_movieTextureFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_cinepakFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_vdp2TitleFragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_cinepakMovieInfoParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2InfoParam = nullptr;
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
 static SceGxmFragmentProgram* g_meshTextureFragmentProgram = nullptr;
@@ -419,6 +421,10 @@ static unsigned int g_moviePayloadHeight = 0;
 static bool g_movieUsesCinepakPayload = false;
 static bool g_movieUsesVdp2Title = false;
 static bool g_movieFrameVisible = false;
+static float g_movieVdp2Info[4] = {};
+static std::atomic<int> g_azelFadeRed{0};
+static std::atomic<int> g_azelFadeGreen{0};
+static std::atomic<int> g_azelFadeBlue{0};
 static SceUID g_movieFrameSema = -1;
 static bool g_movieUploadLogged = false;
 static bool g_movieRenderLogged = false;
@@ -2036,9 +2042,25 @@ bool movie_present_cinepak_payload(
     return true;
 }
 
-bool title_present_vdp2(
+bool movie_republish_frame()
+{
+    MovieRenderSlotGuard renderSlot;
+    if (!renderSlot)
+        return false;
+
+    MovieFrameGuard guard;
+    if (!guard || !g_movieFrameVisible || !g_movieTextureData)
+        return false;
+
+    return renderSlot.publish();
+}
+
+bool frontend_present_vdp2(
     const unsigned char* vram,
-    const unsigned char* cram)
+    const unsigned char* cram,
+    unsigned int layout,
+    int scrollX,
+    int scrollY)
 {
     if (!g_gxmInitialized || !g_probeContext || !vram || !cram)
         return false;
@@ -2128,12 +2150,16 @@ bool title_present_vdp2(
     auto* raw = static_cast<unsigned char*>(g_movieTextureData);
     std::memcpy(raw, vram, vramBytes);
     std::memcpy(raw + vramBytes, cram, cramBytes);
+    g_movieVdp2Info[0] = static_cast<float>(layout);
+    g_movieVdp2Info[1] = static_cast<float>(scrollX);
+    g_movieVdp2Info[2] = static_cast<float>(scrollY);
+    g_movieVdp2Info[3] = 0.0f;
 
     g_movieFrameVisible = true;
     if (!g_movieUploadLogged) {
         logging::writef(
-            "[VDP2Title] raw VRAM/CRAM upload %u bytes backend=SGX-VDP2\n",
-            rawBytes);
+            "[VDP2FrontEnd] raw VRAM/CRAM upload %u bytes backend=SGX-VDP2 layout=%u\n",
+            rawBytes, layout);
         g_movieUploadLogged = true;
     }
 
@@ -2142,6 +2168,13 @@ bool title_present_vdp2(
         return false;
     }
     return true;
+}
+
+void set_azel_fade_color(int red, int green, int blue)
+{
+    g_azelFadeRed.store(red, std::memory_order_relaxed);
+    g_azelFadeGreen.store(green, std::memory_order_relaxed);
+    g_azelFadeBlue.store(blue, std::memory_order_relaxed);
 }
 
 void movie_clear_frame()
@@ -5909,6 +5942,12 @@ void show_town_scene()
         failure("[FAIL] CINEPAK SHADER PARAMS");
         return;
     }
+    g_vdp2InfoParam =
+        sceGxmProgramFindParameterByName(vdp2TitleFragmentGxp, "vdp2Info");
+    if (!g_vdp2InfoParam) {
+        failure("[FAIL] VDP2 FRONTEND SHADER PARAMS");
+        return;
+    }
 
     if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
@@ -8051,7 +8090,11 @@ static float updateTownFadeAlpha()
     return g_townFadeBlack;
 }
 
-static void drawTownFadeOverlay(float alpha)
+static void drawFadeOverlay(
+    float alpha,
+    std::uint8_t red,
+    std::uint8_t green,
+    std::uint8_t blue)
 {
     if (alpha <= 0.0f || !g_fadeVertices || !g_fadeIndices ||
         !g_fadeFragmentProgram)
@@ -8060,8 +8103,12 @@ static void drawTownFadeOverlay(float alpha)
     const std::uint8_t a = static_cast<std::uint8_t>(
         std::clamp<int>(
             static_cast<int>(std::lround(alpha * 255.0f)), 0, 255));
-    for (unsigned i = 0; i < 6u; ++i)
+    for (unsigned i = 0; i < 6u; ++i) {
+        g_fadeVertices[i].r = red;
+        g_fadeVertices[i].g = green;
+        g_fadeVertices[i].b = blue;
         g_fadeVertices[i].a = a;
+    }
 
     sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
     sceGxmSetFragmentProgram(g_probeContext, g_fadeFragmentProgram);
@@ -8089,6 +8136,24 @@ static void drawTownFadeOverlay(float alpha)
     }
 }
 
+static void drawAzelFadeOverlay()
+{
+    const int red = g_azelFadeRed.load(std::memory_order_relaxed);
+    const int green = g_azelFadeGreen.load(std::memory_order_relaxed);
+    const int blue = g_azelFadeBlue.load(std::memory_order_relaxed);
+    const int darkest = std::min(red, std::min(green, blue));
+    const int brightest = std::max(red, std::max(green, blue));
+    if (darkest < 0) {
+        drawFadeOverlay(
+            std::min(1.0f, static_cast<float>(-darkest) / 128.0f),
+            0u, 0u, 0u);
+    } else if (brightest > 0) {
+        drawFadeOverlay(
+            std::min(1.0f, static_cast<float>(brightest) / 135.0f),
+            255u, 255u, 255u);
+    }
+}
+
 static bool renderMovieFrame()
 {
     MovieFrameGuard guard;
@@ -8104,7 +8169,8 @@ static bool renderMovieFrame()
     if (g_movieUsesCinepakPayload &&
         (!g_cinepakFragmentProgram || !g_cinepakMovieInfoParam))
         return false;
-    if (g_movieUsesVdp2Title && !g_vdp2TitleFragmentProgram)
+    if (g_movieUsesVdp2Title &&
+        (!g_vdp2TitleFragmentProgram || !g_vdp2InfoParam))
         return false;
 
     // Movie presentation is always the final Lagi render resolution:
@@ -8179,7 +8245,7 @@ static bool renderMovieFrame()
         sceGxmSetUniformDataF(
             uniformBuffer, g_textureWvpParam, 0, 16, identity);
 
-        if (g_movieUsesCinepakPayload) {
+        if (g_movieUsesCinepakPayload || g_movieUsesVdp2Title) {
             void* fragmentUniforms = nullptr;
             if (sceGxmReserveFragmentDefaultUniformBuffer(
                     g_probeContext, &fragmentUniforms) < 0 ||
@@ -8187,19 +8253,26 @@ static bool renderMovieFrame()
                 sceGxmEndScene(g_probeContext, nullptr, nullptr);
                 sceGxmFinish(g_probeContext);
                 logging::writef(
-                    "[MovieRender] FAIL reserve Cinepak fragment uniforms\n");
+                    "[MovieRender] FAIL reserve fragment uniforms\n");
                 return true;
             }
-            const float movieInfo[4] = {
-                static_cast<float>(g_movieWidth),
-                static_cast<float>(g_movieHeight),
-                static_cast<float>(g_moviePayloadWidth),
-                static_cast<float>(g_moviePayloadHeight),
-            };
-            sceGxmSetUniformDataF(
-                fragmentUniforms,
-                g_cinepakMovieInfoParam,
-                0, 4, movieInfo);
+            if (g_movieUsesCinepakPayload) {
+                const float movieInfo[4] = {
+                    static_cast<float>(g_movieWidth),
+                    static_cast<float>(g_movieHeight),
+                    static_cast<float>(g_moviePayloadWidth),
+                    static_cast<float>(g_moviePayloadHeight),
+                };
+                sceGxmSetUniformDataF(
+                    fragmentUniforms,
+                    g_cinepakMovieInfoParam,
+                    0, 4, movieInfo);
+            } else {
+                sceGxmSetUniformDataF(
+                    fragmentUniforms,
+                    g_vdp2InfoParam,
+                    0, 4, g_movieVdp2Info);
+            }
         }
 
         sceGxmSetFragmentTexture(g_probeContext, 0, &g_movieTexture);
@@ -8213,6 +8286,9 @@ static bool renderMovieFrame()
                 6) >= 0;
         }
     }
+
+    if (submitted)
+        drawAzelFadeOverlay();
 
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     sceGxmFinish(g_probeContext);
@@ -8435,7 +8511,7 @@ static void renderBasicWingViewer()
     }
 
     if (roomAuthenticCameraMode)
-        drawTownFadeOverlay(updateTownFadeAlpha());
+        drawFadeOverlay(updateTownFadeAlpha(), 0u, 0u, 0u);
 
     const std::uint64_t gxmWaitStartUs = sceKernelGetProcessTimeWide();
     const unsigned int renderCpuBeforeWaitUs =

@@ -1,4 +1,4 @@
-// Native SGX VDP2 title/menu compositor.
+// Native SGX VDP2 front-end compositor.
 //
 // Raw memory texture layout (A8B8G8R8, point sampled):
 //   byte 0x00000..0x7FFFF : VDP2 VRAM
@@ -8,6 +8,9 @@
 // This shader implements the exact VDP2 formats used by Azel's title overlay:
 //   NBG0: 8bpp, CHSZ=1, PNB=1, CNSM=1, 16x16 patterns
 //   NBG1: 4bpp text, CHSZ=0, PNB=1, CNSM=1, CAOS=7
+// and by the native FLD_D5 name-entry overlay:
+//   NBG0: 4bpp, CHSZ=1, PNB=1, CNSM=0, CAOS=4
+//   NBG3: 4bpp text, CHSZ=0, PNB=1, CNSM=1, CAOS=7
 //
 // Azel owns all VRAM/CRAM contents, maps, text and sequencing. Neptune only
 // presents that state.
@@ -50,7 +53,7 @@ float4 rgb555(float c)
     return float4(r5 / 31.0f, g5 / 31.0f, b5 / 31.0f, 1.0f);
 }
 
-float4 sampleNbg0(
+float4 sampleTitleNbg0(
     uniform sampler2D raw,
     float logicalX,
     float logicalY)
@@ -88,16 +91,66 @@ float4 sampleNbg0(
     if (dotColor < 0.5f)
         return float4(0.0f, 0.0f, 0.0f, 1.0f);
 
-    // CHCN=1: palette bits are pattern[14:12], represented by the
-    // pre-shifted palette address used by Azel's renderer.
-    const float paletteNumber =
-        fmod(floor(patternName / 256.0f), 128.0f) -
-        fmod(floor(patternName / 256.0f), 16.0f);
-    const float paletteEntry = paletteNumber * 16.0f + dotColor;
+    // CHCN=1 is one 256-color bank.  Azel uploads TITLEE's complete
+    // 256-entry palette at CRAM 0, so the 8-bit dot is already the final
+    // palette index.  Applying the 4bpp pattern palette field here selected
+    // unrelated CRAM banks and produced the cyan/teal title corruption.
+    const float paletteEntry = dotColor;
 
     // CRAM begins at packed byte 0x80000.
     const float cramAddress = 524288.0f + paletteEntry * 2.0f;
     return rgb555(readBE16(raw, cramAddress));
+}
+
+float4 sampleNameNbg0(
+    uniform sampler2D raw,
+    float logicalX,
+    float logicalY,
+    float scrollX,
+    float scrollY)
+{
+    const float mapX = fmod(logicalX + scrollX, 1024.0f);
+    const float mapY = fmod(logicalY + scrollY, 512.0f);
+    const float planeX = mapX >= 512.0f ? mapX - 512.0f : mapX;
+    const float planeBase = mapX >= 512.0f ? 124928.0f  // 0x1E800
+                                              : 122880.0f; // 0x1E000
+
+    const float patternX = floor(planeX / 16.0f);
+    const float patternY = floor(mapY / 16.0f);
+    const float patternAddress =
+        planeBase + (patternY * 32.0f + patternX) * 2.0f;
+    const float patternName = readBE16(raw, patternAddress);
+
+    // PNB=1, CNSM=0: bits 9:0 character, 10 H flip, 11 V flip,
+    // bits 15:12 palette.  CHSZ=1 makes each pattern four 8x8 cells.
+    float px = fmod(planeX, 16.0f);
+    float py = fmod(mapY, 16.0f);
+    if (fmod(floor(patternName / 1024.0f), 2.0f) >= 1.0f)
+        px = 15.0f - px;
+    if (fmod(floor(patternName / 2048.0f), 2.0f) >= 1.0f)
+        py = 15.0f - py;
+
+    const float characterNumber = fmod(patternName, 1024.0f) * 4.0f;
+    const float cellX = floor(px / 8.0f);
+    const float cellY = floor(py / 8.0f);
+    const float cellIndex = cellX + cellY * 2.0f;
+    const float packedByte = readByte(
+        raw,
+        characterNumber * 32.0f + cellIndex * 32.0f +
+        fmod(py, 8.0f) * 4.0f + floor(fmod(px, 8.0f) * 0.5f));
+
+    float dotColor;
+    if (fmod(px, 2.0f) >= 1.0f)
+        dotColor = fmod(packedByte, 16.0f);
+    else
+        dotColor = floor(packedByte / 16.0f);
+    if (dotColor < 0.5f)
+        return float4(0.0f, 0.0f, 0.0f, 1.0f);
+
+    const float palNibble = floor(patternName / 4096.0f);
+    const float paletteEntry =
+        1024.0f + palNibble * 16.0f + dotColor; // CAOS=4
+    return rgb555(readBE16(raw, 524288.0f + paletteEntry * 2.0f));
 }
 
 float4 sampleNbg1(
@@ -141,14 +194,20 @@ float4 sampleNbg1(
 
 float4 main(
     float2 vTexcoord : TEXCOORD0,
-    uniform sampler2D raw)
+    uniform sampler2D raw,
+    uniform float4 vdp2Info)
 {
     const float logicalX = min(
         351.0f, floor(vTexcoord.x * 352.0f));
     const float logicalY = min(
         223.0f, floor(vTexcoord.y * 224.0f));
 
-    float4 color = sampleNbg0(raw, logicalX, logicalY);
+    float4 color;
+    if (vdp2Info.x < 0.5f)
+        color = sampleTitleNbg0(raw, logicalX, logicalY);
+    else
+        color = sampleNameNbg0(
+            raw, logicalX, logicalY, vdp2Info.y, vdp2Info.z);
     const float4 text = sampleNbg1(raw, logicalX, logicalY);
     if (text.a > 0.5f)
         color = text;

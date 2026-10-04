@@ -13,6 +13,7 @@
 #include "VDP2.h"
 #include "movie/movie.h"
 #include "titleScreen.h"
+#include "kernel/moduleManager.h"
 
 extern int numActiveTask;
 void azelInit();
@@ -146,6 +147,10 @@ void runtime_smoke_frame()
 
     // Azel's Saturn VBlank normally advances fade state before the task pass.
     updateFadeInterrupt();
+    lagi::platform::renderer::set_azel_fade_color(
+        vdp2Controls.m20_registers[0].m114_COAR,
+        vdp2Controls.m20_registers[0].m116_COAG,
+        vdp2Controls.m20_registers[0].m118_COAB);
 
     begin_azel_vdp1_frame();
     lagi::azel_bridge::begin_frame();
@@ -172,17 +177,27 @@ void runtime_smoke_frame()
     const bool titleActive =
         initialTaskStatus.m_currentTask == createTitleScreenTask ||
         initialTaskStatus.m_currentTask == createTitleMenuTask;
-    static bool titleWasActive = false;
-    if (titleActive) {
+    const bool nameEntryActive = gGameStatus.m4_gameStatus == 2;
+    if (titleActive || nameEntryActive) {
         // Azel owns the VDP2 memory/register state. Neptune uploads the raw
-        // VRAM/CRAM and interprets the title layers directly on SGX.
-        lagi::platform::renderer::title_present_vdp2(
+        // VRAM/CRAM and interprets the active front-end layers directly on
+        // SGX.  FLD_D5 scrolls its 2-plane keyboard map to change pages.
+        lagi::platform::renderer::frontend_present_vdp2(
             getVdp2Vram(0),
-            getVdp2Cram(0));
-        titleWasActive = true;
-    } else if (titleWasActive) {
-        lagi::platform::renderer::movie_clear_frame();
-        titleWasActive = false;
+            getVdp2Cram(0),
+            nameEntryActive ? 1u : 0u,
+            nameEntryActive
+                ? (vdp2Controls.m20_registers[0].m70_SCXN0 >> 16)
+                : 0,
+            nameEntryActive
+                ? (vdp2Controls.m20_registers[0].m74_SCYN0 >> 16)
+                : 0);
+    } else if (gGameStatus.m0_gameMode == 0 &&
+               fileInfoStruct.mC_gfsHandle == nullptr) {
+        // The native movie task closes its stream at the start of the exit
+        // fade.  Re-submit the retained final frame so Azel's live color
+        // offset continues to reach the display until the next module owns it.
+        lagi::platform::renderer::movie_republish_frame();
     }
 
     ++startupFrame;
