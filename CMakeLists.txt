@@ -900,6 +900,16 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "    // FLD_A3.PRG contains shared field infrastructure data (camera configs, etc.)\n    static sFieldOverlay* lagiSharedA3Data = nullptr;\n    if (lagiSharedA3Data == nullptr)\n    {\n        lagiSharedA3Data = new sFieldOverlay(\"FLD_A3.PRG\");\n    }\n    gFieldCameraConfigEA = { 0x6092EF0, lagiSharedA3Data };\n    gFieldDragonAnimTableEA = { 0x06094134, lagiSharedA3Data };\n    gFieldCameraDrawFunc = &cameraFollowMode_default;\n    gCurrentFieldOverlay = lagiSharedA3Data;"
    source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "titleScreen.cpp")
+  # Upstream still has the Sega/Team Andromeda logo module as an assert-only
+  # reconstruction stub. Until that static logo presentation is restored,
+  # keep Azel's front-end attract loop alive by returning to the native title
+  # movie wrapper instead of aborting after the title timeout.
+  string(REPLACE
+   "p_workArea startSegaLogoModule(p_workArea workArea)\n{\n    assert(false);\n    return NULL;\n}"
+   "p_workArea startSegaLogoModule(p_workArea workArea)\n{\n    return startTitleScreenVideo(workArea);\n}"
+   source_text "${source_text}")
+
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
   # Field scripts own the decision to play PCM; Lagi supplies the platform
   # service. Avoid the upstream desktop SoLoud backend on Vita.
@@ -1162,6 +1172,7 @@ add_executable(lagi
  src/integration/lagi_audio_vita.cpp
  src/integration/lagi_renderer_host_vita.cpp
  src/integration/lagi_vdp1_animated_quad_vita.cpp
+ src/integration/lagi_title_vdp2_vita.cpp
  ${LAGI_AZEL_UPSTREAM_SOURCES}
 )
 target_include_directories(lagi PRIVATE include
