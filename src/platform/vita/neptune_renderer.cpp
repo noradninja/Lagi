@@ -2077,7 +2077,8 @@ bool frontend_present_vdp2(
     const unsigned char* cram,
     unsigned int layout,
     int scrollX,
-    int scrollY)
+    int scrollY,
+    unsigned int flags)
 {
     if (!g_gxmInitialized || !g_probeContext || !vram || !cram)
         return false;
@@ -2170,7 +2171,7 @@ bool frontend_present_vdp2(
     g_movieVdp2Info[0] = static_cast<float>(layout);
     g_movieVdp2Info[1] = static_cast<float>(scrollX);
     g_movieVdp2Info[2] = static_cast<float>(scrollY);
-    g_movieVdp2Info[3] = 0.0f;
+    g_movieVdp2Info[3] = static_cast<float>(flags);
 
     g_movieFrameVisible = true;
     if (!g_movieUploadLogged) {
@@ -8256,14 +8257,12 @@ static void drawColorOffsetPass(
 
 static void drawAzelColorOffset()
 {
-    // The full-screen boot/title/movie surface represents Saturn NBG0. Follow
-    // the native VDP2 enable and A/B selector for that layer.
+    // Azel's reconstructed reinitVdp2() clears CLOFEN while its fade
+    // channels continue to drive the signed VDP2 color offsets. The desktop
+    // runtime therefore treats those live offsets as authoritative even when
+    // CLOFEN has been reset. Match that behavior here; retain CLOFSL only for
+    // A/B bank selection.
     constexpr unsigned int kNbg0Bit = 0x1u;
-    const unsigned int enable =
-        g_azelColorOffsetEnable.load(std::memory_order_relaxed);
-    if ((enable & kNbg0Bit) == 0)
-        return;
-
     const unsigned int select =
         g_azelColorOffsetSelect.load(std::memory_order_relaxed);
     const bool useB = (select & kNbg0Bit) != 0;
