@@ -9807,7 +9807,7 @@ static void updateLiveTownAzelLighting()
     std::uint32_t cachedFalloff[3]{0xFFFFFFFFu,0xFFFFFFFFu,0xFFFFFFFFu};
     std::int16_t falloffMap[32][3]{};
     bool haveFalloff = false;
-    bool reportedLiveLighting = false;
+    static bool reportedLiveLighting = false;
 
     for (std::size_t p = 0;
          p < g_liveTownCpuMesh.polygonRecords.size(); ++p) {
