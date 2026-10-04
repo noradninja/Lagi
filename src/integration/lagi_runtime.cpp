@@ -52,6 +52,14 @@ static void capture_azel_vdp1_frontend_commands()
 
     const auto begin = mainContextVdp1[0].begin() + 6;
     const auto end = ctx.m0_currentVdp1WriteEA;
+    unsigned int commandCount = 0u;
+    unsigned int normalSprites = 0u;
+    unsigned int scaledSprites = 0u;
+    unsigned int distortedSprites = 0u;
+    unsigned int polylines = 0u;
+    unsigned int otherCommands = 0u;
+    std::uint32_t signature = 2166136261u;
+
     for (auto cmd = begin; cmd != end; ++cmd) {
         lagi::azel_bridge::Vdp1UiCommand ui{};
         ui.cmdCtrl = cmd->m0_CMDCTRL;
@@ -64,6 +72,47 @@ static void capture_azel_vdp1_frontend_commands()
         ui.xc = cmd->m14_CMDXC;  ui.yc = cmd->m16_CMDYC;
         ui.xd = cmd->m18_CMDXD;  ui.yd = cmd->m1A_CMDYD;
         lagi::azel_bridge::record_vdp1_ui_command(ui);
+
+        ++commandCount;
+        switch (ui.cmdCtrl & 0x000Fu) {
+        case 0x0u: ++normalSprites; break;
+        case 0x1u: ++scaledSprites; break;
+        case 0x2u: ++distortedSprites; break;
+        case 0x5u: ++polylines; break;
+        default: ++otherCommands; break;
+        }
+
+        const std::uint16_t words[] = {
+            ui.cmdCtrl, ui.cmdPmod, ui.cmdColr, ui.cmdSrca, ui.cmdSize,
+            static_cast<std::uint16_t>(ui.xa),
+            static_cast<std::uint16_t>(ui.ya),
+            static_cast<std::uint16_t>(ui.xb),
+            static_cast<std::uint16_t>(ui.yb)
+        };
+        for (const std::uint16_t word : words) {
+            signature ^= static_cast<std::uint8_t>(word & 0xFFu);
+            signature *= 16777619u;
+            signature ^= static_cast<std::uint8_t>(word >> 8);
+            signature *= 16777619u;
+        }
+    }
+
+    static std::uint32_t lastSignature = 0u;
+    static unsigned int heartbeat = 0u;
+    if (signature != lastSignature || ((heartbeat++ % 120u) == 0u)) {
+        lagi::platform::logging::writef(
+            "[PresentationTrace][AzelVDP1] mode=%d status=%d cmds=%u "
+            "normal=%u scaled=%u distorted=%u polyline=%u other=%u hash=%08X\n",
+            static_cast<int>(gGameStatus.m0_gameMode),
+            static_cast<int>(gGameStatus.m4_gameStatus),
+            commandCount,
+            normalSprites,
+            scaledSprites,
+            distortedSprites,
+            polylines,
+            otherCommands,
+            static_cast<unsigned int>(signature));
+        lastSignature = signature;
     }
 }
 

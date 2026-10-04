@@ -10256,6 +10256,42 @@ void presentation_publish_frame()
         g_vdp2TextValid = true;
     }
 
+    static unsigned int presentationTraceHeartbeat = 0u;
+    if ((presentationTraceHeartbeat++ % 60u) == 0u) {
+        unsigned int publishedNbg1Cells = 0u;
+        unsigned int publishedTextCells = 0u;
+        if (g_vdp2TextValid) {
+            constexpr unsigned int kNbg1MapOffset = 0x5800u;
+            constexpr unsigned int kNbg1Cells = 32u * 14u;
+            constexpr unsigned int kTextMapOffset = 0x6000u;
+            constexpr unsigned int kTextCells = 64u * 28u;
+            for (unsigned int i = 0; i < kNbg1Cells; ++i) {
+                if (readVdp2Be16(
+                        g_vdp2TextVram,
+                        kNbg1MapOffset + i * 2u) != 0u)
+                    ++publishedNbg1Cells;
+            }
+            for (unsigned int i = 0; i < kTextCells; ++i) {
+                if (readVdp2Be16(
+                        g_vdp2TextVram,
+                        kTextMapOffset + i * 2u) != 0u)
+                    ++publishedTextCells;
+            }
+        }
+
+        logging::writef(
+            "[PresentationTrace][Publish] pendingVDP2=%u publishedVDP2=%u "
+            "nbg1Cells=%u textCells=%u uiCmds=%u shadowPolys=%u edgePolys=%u\n",
+            g_pendingVdp2TextValid ? 1u : 0u,
+            g_vdp2TextValid ? 1u : 0u,
+            publishedNbg1Cells,
+            publishedTextCells,
+            static_cast<unsigned int>(
+                azel_bridge::published_vdp1_ui_commands().size()),
+            static_cast<unsigned int>(g_liveTownShadowPolygonCount),
+            static_cast<unsigned int>(g_liveTownEdgePolygonCount));
+    }
+
     if (g_renderThreadStarted && g_renderFrameReadySema >= 0)
         sceKernelSignalSema(g_renderFrameReadySema, 1);
 }
@@ -10409,6 +10445,15 @@ void presentation_set_vdp2_text(
         lineScroll,
         sizeof(g_pendingVdp2LineScroll));
     g_pendingVdp2TextValid = true;
+
+    static unsigned int setVdp2TraceHeartbeat = 0u;
+    if ((setVdp2TraceHeartbeat++ % 60u) == 0u) {
+        logging::writef(
+            "[PresentationTrace][SetVDP2] snapshot staged vram=%u cram=%u lineScroll=%u\n",
+            static_cast<unsigned int>(sizeof(g_pendingVdp2TextVram)),
+            static_cast<unsigned int>(sizeof(g_pendingVdp2Cram)),
+            static_cast<unsigned int>(sizeof(g_pendingVdp2LineScroll)));
+    }
 }
 
 } // namespace lagi::platform::renderer

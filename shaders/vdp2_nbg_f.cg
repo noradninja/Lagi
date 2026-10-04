@@ -208,9 +208,11 @@ float4 main(
         }
     }
 
-    // NBG1/NBG3 text is composited separately from a decoded RGBA texture.
-    // Keeping it out of this raw-memory shader lets SGX apply hardware linear
-    // filtering after palette decode without ever filtering VRAM/CRAM bytes.
+    // The common text map lives at VRAM 0x6000. On the title it is NBG1;
+    // during field operation Azel maps the same memory through NBG3.
+    const float4 text = sampleNativeTextLayer(raw, logicalX, logicalY);
+    if (text.a > 0.5f)
+        color = text;
 
     return color;
 }

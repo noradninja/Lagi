@@ -681,9 +681,13 @@ float4 main(
         }
     }
 
-    // NBG1/NBG3 text is composited separately from a decoded RGBA texture.
-    // The raw VDP2 shader remains responsible only for Saturn background data;
-    // glyph filtering happens after palette decode in the SGX text pass.
+    // The common text map lives at VRAM 0x6000. On the title it is NBG1;
+    // during normal field operation Azel maps the same text memory through
+    // NBG3. Sampling the native memory here therefore preserves the field
+    // script dialogue before the keyboard becomes visible.
+    const float4 text = sampleNativeTextLayer(raw, logicalX, logicalY);
+    if (text.a > 0.5f)
+        color = text;
 
     return color;
 }

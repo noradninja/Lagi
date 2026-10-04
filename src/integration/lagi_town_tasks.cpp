@@ -12,7 +12,7 @@
 #include "town/ruin/twn_ruin.h"
 #include "kernel/fade.h"
 #include "kernel/moduleManager.h"
-#include "3dEngine.h"
+#include "3dEngine.h"\n#include "VDP2.h"
 
 #include <algorithm>
 #include <cmath>
@@ -234,6 +234,40 @@ void twn_ruin_sync_platform_state()
             edgePosition[0], edgePosition[1], edgePosition[2],
             cameraPosition[0], cameraPosition[1], cameraPosition[2]);
         g_reportedPresentation = true;
+    }
+
+    // Diagnostic only: prove whether Azel's live town VDP2 maps still contain
+    // UI/text content before the presentation bridge. Do not publish or alter
+    // renderer state here yet.
+    static unsigned int vdp2TraceHeartbeat = 0u;
+    if ((vdp2TraceHeartbeat++ % 60u) == 0u) {
+        const unsigned char* const vram = getVdp2Vram(0);
+        unsigned int nbg1Cells = 0u;
+        unsigned int textCells = 0u;
+        if (vram) {
+            constexpr unsigned int kNbg1MapOffset = 0x5800u;
+            constexpr unsigned int kNbg1Cells = 32u * 14u;
+            constexpr unsigned int kTextMapOffset = 0x6000u;
+            constexpr unsigned int kTextCells = 64u * 28u;
+            for (unsigned int i = 0; i < kNbg1Cells; ++i) {
+                const unsigned int o = kNbg1MapOffset + i * 2u;
+                if ((static_cast<unsigned int>(vram[o]) << 8 |
+                     static_cast<unsigned int>(vram[o + 1u])) != 0u)
+                    ++nbg1Cells;
+            }
+            for (unsigned int i = 0; i < kTextCells; ++i) {
+                const unsigned int o = kTextMapOffset + i * 2u;
+                if ((static_cast<unsigned int>(vram[o]) << 8 |
+                     static_cast<unsigned int>(vram[o + 1u])) != 0u)
+                    ++textCells;
+            }
+        }
+        platform::logging::writef(
+            "[PresentationTrace][AzelVDP2] BGON=%04X nbg1Cells=%u textCells=%u\n",
+            static_cast<unsigned int>(
+                vdp2Controls.m20_registers[0].m20_BGON),
+            nbg1Cells,
+            textCells);
     }
 }
 

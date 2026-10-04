@@ -131,7 +131,6 @@ Azel retains ownership of town LCS and menu state and emits its original VDP1 co
 - independent white free cursor and selected target marker
 - original shrinking selection rectangle during target acquisition
 - animated selector for the elevator multi-choice menu
-- hardware-linear filtering for decoded VDP1 UI sprites, menu/window graphics, and VDP2 text presentation
 
 The current authentic-boot path no longer depends on a direct-Ruins loader to establish scene ownership. The bridge translates Azel's commands rather than recreating lock-on gameplay or UI behavior in Vita-specific code.
 
@@ -144,7 +143,7 @@ Azel's live VDP2 state supplies front-end and in-game presentation. Neptune tran
 - the animated lower cinematic matte from Azel's vertical line-scroll table
 - live CRAM palette data for the VDP2 layers and bank-color VDP1 UI sprites
 
-Composition preserves Azel's authored layer relationships while allowing decoded presentation assets to use hardware filtering. Front-end/menu text is reconstructed into a 352x224 RGBA text layer and composited by SGX with linear filtering; decoded VDP1 selector/cursor sprites are likewise linearly filtered after palette decode. Azel remains responsible for the strings, window contents, choice state, cursor animation, and scripted timing.
+Composition preserves the original layer relationship: VDP2 window and matte backing, VDP1 UI sprites, then text. Azel remains responsible for the strings, window contents, choice state, cursor animation, and scripted timing.
 
 ## Renderer diagnostic views
 
