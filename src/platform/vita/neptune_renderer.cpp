@@ -7038,6 +7038,11 @@ void show_game_presentation()
     }
 
     sceDisplayWaitVblankStart();
+
+    // Renderer readiness belongs to the completed Neptune/GXM backend, not to
+    // any optional regression asset. Authentic boot reaches native scenes
+    // without ever calling load_basic_wing_viewer().
+    g_viewerReady = true;
     g_probeDisplayingGxm = true;
     g_gxmDrawBuffer = 1;
     g_debugVisible = false;
@@ -9783,10 +9788,39 @@ void presentation_set_camera(
     const float uy = up[1] - position[1];
     const float uz = up[2] - position[2];
     const float upLenSq = ux*ux + uy*uy + uz*uz;
-    g_townCameraReady =
+    const bool cameraReady =
         viewLenSq > 0.000001f && upLenSq > 0.000001f;
-    if (!g_townCameraReady)
+
+    static bool loggedValidCamera = false;
+    static unsigned int invalidCameraSamples = 0u;
+    if (!cameraReady) {
+        if (invalidCameraSamples < 4u) {
+            logging::writef(
+                "[PresentationCamera] invalid sample=%u "
+                "pos=(%.5f,%.5f,%.5f) raw=(%.5f,%.5f,%.5f) "
+                "target=(%.5f,%.5f,%.5f) up=(%.5f,%.5f,%.5f)\n",
+                invalidCameraSamples,
+                position[0], position[1], position[2],
+                rawPosition[0], rawPosition[1], rawPosition[2],
+                target[0], target[1], target[2],
+                up[0], up[1], up[2]);
+        }
+        ++invalidCameraSamples;
+        g_townCameraReady = false;
         return;
+    }
+
+    g_townCameraReady = true;
+    if (!loggedValidCamera) {
+        logging::writef(
+            "[PresentationCamera] valid "
+            "pos=(%.5f,%.5f,%.5f) target=(%.5f,%.5f,%.5f) "
+            "up=(%.5f,%.5f,%.5f)\n",
+            position[0], position[1], position[2],
+            target[0], target[1], target[2],
+            up[0], up[1], up[2]);
+        loggedValidCamera = true;
+    }
 
     std::memcpy(
         g_pendingTownCameraPosition,
