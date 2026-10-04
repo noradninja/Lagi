@@ -298,28 +298,70 @@ void runtime_smoke_frame()
     }
 
     if (d5NameSequenceActive) {
-        // RBG0 is a 4x4 rotation map. D5 uses CHSZ=1 / PNB=1, so each
-        // plane is one 0x800-byte page. Convert Azel's native MPOFR/MPxxRA
-        // register encoding to byte offsets exactly as renderer_vdp2.cpp does.
+        // Snapshot the RBG0 control surface that Azel already produced.
+        // Neptune consumes this as renderer state only; all map selection,
+        // coefficient generation, windows and sequencing remain Azel-owned.
         const auto* regs = vdp2Controls.m4_pendingVdp2Regs;
-        const unsigned int pageSize = 0x800u;
-        const unsigned int mapOffset =
+        lagi::platform::renderer::FrontendRbg0State state{};
+
+        // D5 config is CHSZ=1 / PNB=1, therefore each 4x4 rotation-map
+        // plane occupies one 0x800-byte page. Derive both parameter A and B
+        // maps exactly as renderer_vdp2.cpp does from MPOFR + MPxxR[A/B].
+        constexpr unsigned int pageSize = 0x800u;
+        const unsigned int mapOffsetA =
             ((regs->m3E_MPOFR >> 0) & 7u) << 6;
-        const u16 packed[8] = {
+        const unsigned int mapOffsetB =
+            ((regs->m3E_MPOFR >> 4) & 7u) << 6;
+        const u16 packedA[8] = {
             regs->m50_MPABRA, regs->m52_MPCDRA,
             regs->m54_MPEFRA, regs->m56_MPGHRA,
             regs->m58_MPIJRA, regs->m5A_MPKLRA,
             regs->m5C_MPMNRA, regs->m5E_MPOPRA
         };
-        unsigned int planeOffsets[16] = {};
+        const u16 packedB[8] = {
+            regs->m60_MPABRB, regs->m62_MPCDRB,
+            regs->m64_MPEFRB, regs->m66_MPGHRB,
+            regs->m68_MPIJRB, regs->m6A_MPKLRB,
+            regs->m6C_MPMNRB, regs->m6E_MPOPRB
+        };
         for (unsigned int i = 0; i < 8; ++i) {
-            planeOffsets[i * 2 + 0] =
-                (mapOffset + (packed[i] & 0x3Fu)) * pageSize;
-            planeOffsets[i * 2 + 1] =
-                (mapOffset + ((packed[i] >> 8) & 0x3Fu)) * pageSize;
+            state.planeA[i * 2 + 0] =
+                (mapOffsetA + (packedA[i] & 0x3Fu)) * pageSize;
+            state.planeA[i * 2 + 1] =
+                (mapOffsetA + ((packedA[i] >> 8) & 0x3Fu)) * pageSize;
+            state.planeB[i * 2 + 0] =
+                (mapOffsetB + (packedB[i] & 0x3Fu)) * pageSize;
+            state.planeB[i * 2 + 1] =
+                (mapOffsetB + ((packedB[i] >> 8) & 0x3Fu)) * pageSize;
         }
-        lagi::platform::renderer::frontend_set_rbg0_planes(
-            planeOffsets, 16u);
+
+        state.rpmd = regs->mB0_RPMD & 3u;
+        state.ktctl = regs->mB4_KTCTL;
+        state.ktaof = regs->mB6_KTAOF;
+        state.wctlc = regs->mD4_WCTLC;
+        state.wctld = regs->mD6_WCTLD;
+
+        state.window0[0] = (regs->mC0_WPSX0 >> 1) & 0x1FF;
+        state.window0[1] = regs->mC2_WPSY0 & 0x1FF;
+        state.window0[2] = (regs->mC4_WPEX0 >> 1) & 0x1FF;
+        state.window0[3] = regs->mC6_WPEY0 & 0x1FF;
+        state.window1[0] = (regs->mC8_WPSX1 >> 1) & 0x1FF;
+        state.window1[1] = regs->mCA_WPSY1 & 0x1FF;
+        state.window1[2] = (regs->mCC_WPEX1 >> 1) & 0x1FF;
+        state.window1[3] = regs->mCE_WPEY1 & 0x1FF;
+
+        if (regs->mD8_LWTA0 & 0x80000000u) {
+            state.lineWindowMask |= 1u;
+            state.lineWindow0Address =
+                ((regs->mD8_LWTA0 & 0x7FFFEu) << 1) & 0x7FFFFu;
+        }
+        if (regs->mDC_LWTA1 & 0x80000000u) {
+            state.lineWindowMask |= 2u;
+            state.lineWindow1Address =
+                ((regs->mDC_LWTA1 & 0x7FFFEu) << 1) & 0x7FFFFu;
+        }
+
+        lagi::platform::renderer::frontend_set_rbg0_state(state);
     }
 
     if (titleActive || d5NameSequenceActive) {
