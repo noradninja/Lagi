@@ -4323,9 +4323,42 @@ static bool decodeLiveVdp1Texture(
     const azel::SaturnPolygonRecord& record,
     azel::DecodedMode1Texture& out)
 {
+    const unsigned commandType =
+        static_cast<unsigned>(record.cmdCtrl) & 0x000Fu;
     const unsigned width = record.textureWidth();
     const unsigned height = record.textureHeight();
     const unsigned mode = record.colorMode();
+
+    out = {};
+    out.cmdPmod = record.cmdPmod;
+    out.cmdColr = record.cmdColr;
+    out.cmdSrca = record.cmdSrca;
+    out.cmdSize = record.cmdSize;
+
+    // VDP1 command type 4 is an untextured polygon. CMDSIZE is therefore
+    // legitimately zero; CMDCOLR supplies the flat RGB555 color. Represent
+    // it as a 1x1 material so it can stay on the same batched GXM path.
+    if (commandType == 4u) {
+        if ((record.cmdColr & 0x8000u) == 0u)
+            return false;
+
+        out.width = 1u;
+        out.height = 1u;
+        out.rgba.assign(1u, vdp2Rgb555ToAbgr(record.cmdColr));
+
+        static bool loggedSolidPolygon = false;
+        if (!loggedSolidPolygon) {
+            logging::writef(
+                "[SceneRender] native flat polygon "
+                "CTRL=%04X PMOD=%04X COLR=%04X\n",
+                static_cast<unsigned>(record.cmdCtrl),
+                static_cast<unsigned>(record.cmdPmod),
+                static_cast<unsigned>(record.cmdColr));
+            loggedSolidPolygon = true;
+        }
+        return true;
+    }
+
     if (!width || !height)
         return false;
 
@@ -4336,11 +4369,6 @@ static bool decodeLiveVdp1Texture(
     if (!src)
         return false;
 
-    out = {};
-    out.cmdPmod = record.cmdPmod;
-    out.cmdColr = record.cmdColr;
-    out.cmdSrca = record.cmdSrca;
-    out.cmdSize = record.cmdSize;
     out.width = width;
     out.height = height;
     out.rgba.assign(static_cast<std::size_t>(width) * height, 0u);
@@ -4455,7 +4483,8 @@ static std::uint16_t liveTownTextureIndex(
     if (unresolvedLogged < 16u) {
         platform::logging::writef(
             "[SceneRender] unresolved live material "
-            "PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X mode=%u\n",
+            "CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X mode=%u\n",
+            static_cast<unsigned>(record.cmdCtrl),
             static_cast<unsigned>(record.cmdPmod),
             static_cast<unsigned>(record.cmdColr),
             static_cast<unsigned>(record.cmdSrca),
