@@ -120,8 +120,6 @@ float4 main(
     // {KAst, dKAst, dKAx, unused}
     uniform float4 rbg0Coefficient,
     // {coefficient table base, enabled, entry size, unused}
-    uniform float4 rbg0Info,
-    // reserved for compositor-selected RBG parameter metadata
     uniform float4 rbg0Info)
 {
     const float x = min(351.0f, floor(vTexcoord.x * 352.0f));
