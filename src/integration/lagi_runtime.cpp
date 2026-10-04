@@ -4,7 +4,7 @@
 #include "lagi/lagi_compat.h"
 #include "lagi/platform.h"
 #include "lagi/lagi_render_bridge.h"
-#include "lagi/lagi_town_tasks.h"
+#include "lagi/lagi_scene_bridge.h"
 #include "lagi/lagi_input_bridge.h"
 #include "lagi/lagi_diagnostics.h"
 #include "lagi/disc_image.h"
@@ -179,7 +179,7 @@ bool runtime_init()
     // Native boot can enter the title movie immediately. Stop the CPU loading
     // framebuffer from overwriting GXM/movie presentation; front-end VDP2
     // composition will be added to this same native presentation path.
-    lagi::platform::renderer::show_town_scene();
+    lagi::platform::renderer::show_game_presentation();
 
     lagi::platform::logging::writef(
         "[AzelBoot] native azelInit/resetEngine complete; initial task active\n");
@@ -213,10 +213,12 @@ void runtime_frame()
     begin_azel_vdp1_frame();
     lagi::azel_bridge::begin_frame();
 
-    const bool authenticTownFrame =
+    // Mode 1 is currently the first native 3D scene class Neptune can
+    // present. This is a capability check, not Lagi ownership of "town".
+    const bool nativeSceneFrame =
         gGameStatus.m0_gameMode == 1;
-    if (authenticTownFrame)
-        lagi::platform::renderer::town_wait_render_slot();
+    if (nativeSceneFrame)
+        lagi::platform::renderer::presentation_wait_frame_slot();
 
     if (traceStartup)
         lagi::platform::logging::writef(
@@ -233,11 +235,11 @@ void runtime_frame()
     // snapshot only after it owns the front-end render slot.
     capture_azel_vdp1_frontend_commands();
 
-    if (authenticTownFrame) {
-        // Azel owns town task execution, scripts, camera, Edge, collision and
-        // draw-list generation. This adapter only snapshots the resulting
-        // platform-visible state for Neptune after the native task pass.
-        lagi::azel::twn_ruin_sync_platform_state();
+    if (nativeSceneFrame) {
+        // Azel owns the active scene and all of its task/gameplay state.
+        // Lagi snapshots only renderer-facing state through the generic scene
+        // bridge after the native task pass.
+        lagi::scene_bridge::sync_presentation_state();
     }
 
     if (gGameStatus.m4_gameStatus == 2 &&
@@ -452,19 +454,19 @@ void runtime_frame()
         // state machine still owns presentation.
         lagi::platform::renderer::movie_republish_frame();
     } else if (gGameStatus.m0_gameMode == 1) {
-        // The frame that *enters* town mode began as a movie/module-manager
-        // frame and therefore did not acquire the town producer slot. Release
+        // The frame that *enters* native scene mode began as a movie/module-manager
+        // frame and therefore did not acquire the scene producer slot. Release
         // the retained movie immediately, but publish only on a frame that
-        // began in town mode and acquired that slot before runTasks().
+        // began in native scene mode and acquired that slot before runTasks().
         lagi::platform::renderer::movie_clear_frame();
-        if (authenticTownFrame) {
+        if (nativeSceneFrame) {
             lagi::azel_bridge::publish_frame();
-            lagi::platform::renderer::town_publish_frame();
+            lagi::platform::renderer::presentation_publish_frame();
 
-            static unsigned int townHeartbeat = 0;
-            if ((townHeartbeat++ % 60u) == 0u) {
+            static unsigned int sceneHeartbeat = 0;
+            if ((sceneHeartbeat++ % 60u) == 0u) {
                 lagi::platform::logging::writef(
-                    "[AzelTown] frame heartbeat tasks=%d submissions=%u\n",
+                    "[AzelScene] frame heartbeat tasks=%d submissions=%u\n",
                     numActiveTask,
                     static_cast<unsigned int>(
                         lagi::azel_bridge::published_submissions().size()));
