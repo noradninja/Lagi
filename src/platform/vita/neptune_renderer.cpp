@@ -141,6 +141,8 @@ static bool g_probeFragmentRegistered = false;
 static SceGxmVertexProgram* g_probeVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_probeFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_fadeFragmentProgram = nullptr;
+static SceGxmFragmentProgram* g_colorOffsetAddFragmentProgram = nullptr;
+static SceGxmFragmentProgram* g_colorOffsetSubtractFragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_probeWvpParam = nullptr;
 static SceUID g_fadeVertexUid = -1;
 static SceUID g_fadeIndexUid = -1;
@@ -1553,6 +1555,16 @@ void shutdown()
             g_textureVertexRegistered = false;
         }
 
+        if (g_colorOffsetAddFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_colorOffsetAddFragmentProgram);
+            g_colorOffsetAddFragmentProgram = nullptr;
+        }
+        if (g_colorOffsetSubtractFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_colorOffsetSubtractFragmentProgram);
+            g_colorOffsetSubtractFragmentProgram = nullptr;
+        }
         if (g_fadeFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_fadeFragmentProgram);
@@ -5889,6 +5901,48 @@ void show_town_scene()
         return;
     }
 
+    // Saturn VDP2 color offsets are signed additive RGB operations applied
+    // after layer composition. Use GXM fixed-function blending directly:
+    //   ADD              => dst + constant
+    //   REVERSE_SUBTRACT => dst - constant
+    // Alpha is preserved from the destination in both passes.
+    SceGxmBlendInfo offsetAddBlend{};
+    offsetAddBlend.colorFunc = SCE_GXM_BLEND_FUNC_ADD;
+    offsetAddBlend.alphaFunc = SCE_GXM_BLEND_FUNC_ADD;
+    offsetAddBlend.colorSrc = SCE_GXM_BLEND_FACTOR_ONE;
+    offsetAddBlend.colorDst = SCE_GXM_BLEND_FACTOR_ONE;
+    offsetAddBlend.alphaSrc = SCE_GXM_BLEND_FACTOR_ZERO;
+    offsetAddBlend.alphaDst = SCE_GXM_BLEND_FACTOR_ONE;
+    offsetAddBlend.colorMask = SCE_GXM_COLOR_MASK_ALL;
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_probeFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            &offsetAddBlend,
+            vertexProgram,
+            &g_colorOffsetAddFragmentProgram) < 0) {
+        failure("[FAIL] CREATE COLOR OFFSET ADD FP");
+        return;
+    }
+
+    SceGxmBlendInfo offsetSubtractBlend = offsetAddBlend;
+    offsetSubtractBlend.colorFunc =
+        SCE_GXM_BLEND_FUNC_REVERSE_SUBTRACT;
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_probeFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            &offsetSubtractBlend,
+            vertexProgram,
+            &g_colorOffsetSubtractFragmentProgram) < 0) {
+        failure("[FAIL] CREATE COLOR OFFSET SUB FP");
+        return;
+    }
+
     const SceGxmProgram* textureVertexGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_texture_v_gxp_start);
@@ -8150,11 +8204,60 @@ static void drawFadeOverlay(
     }
 }
 
-static void drawAzelFadeOverlay()
+static void drawColorOffsetPass(
+    SceGxmFragmentProgram* program,
+    int red, int green, int blue)
 {
-    // The front-end/movie surface stands in for Saturn NBG0. Honor VDP2's
-    // native layer enable and A/B color-offset selection rather than treating
-    // whichever COA values happen to be resident as a global fullscreen fade.
+    if (!program || !g_fadeVertices || !g_fadeIndices)
+        return;
+    if (red <= 0 && green <= 0 && blue <= 0)
+        return;
+
+    const std::uint8_t r = static_cast<std::uint8_t>(
+        std::clamp(red, 0, 255));
+    const std::uint8_t g = static_cast<std::uint8_t>(
+        std::clamp(green, 0, 255));
+    const std::uint8_t b = static_cast<std::uint8_t>(
+        std::clamp(blue, 0, 255));
+
+    for (unsigned i = 0; i < 6u; ++i) {
+        g_fadeVertices[i].r = r;
+        g_fadeVertices[i].g = g;
+        g_fadeVertices[i].b = b;
+        g_fadeVertices[i].a = 255u;
+    }
+
+    sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext, program);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+
+    void* uniforms = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniforms) < 0 || !uniforms)
+        return;
+
+    const ViewerMat4 identity = viewerIdentity();
+    sceGxmSetUniformDataF(
+        uniforms, g_probeWvpParam, 0, 16, identity.m);
+    sceGxmSetVertexStream(g_probeContext, 0, g_fadeVertices);
+    sceGxmDraw(
+        g_probeContext,
+        SCE_GXM_PRIMITIVE_TRIANGLES,
+        SCE_GXM_INDEX_FORMAT_U16,
+        g_fadeIndices,
+        6u);
+}
+
+static void drawAzelColorOffset()
+{
+    // The full-screen boot/title/movie surface represents Saturn NBG0. Follow
+    // the native VDP2 enable and A/B selector for that layer.
     constexpr unsigned int kNbg0Bit = 0x1u;
     const unsigned int enable =
         g_azelColorOffsetEnable.load(std::memory_order_relaxed);
@@ -8175,20 +8278,19 @@ static void drawAzelFadeOverlay()
         ? g_azelColorOffsetBBlue.load(std::memory_order_relaxed)
         : g_azelColorOffsetABlue.load(std::memory_order_relaxed);
 
-    // The boot/title/movie transitions use equal RGB offsets. A black/white
-    // alpha overlay is equivalent to Saturn's clamped additive offset at the
-    // extrema while preserving the native signed fade curve.
-    const int darkest = std::min(red, std::min(green, blue));
-    const int brightest = std::max(red, std::max(green, blue));
-    if (darkest < 0) {
-        drawFadeOverlay(
-            std::min(1.0f, static_cast<float>(-darkest) / 128.0f),
-            0u, 0u, 0u);
-    } else if (brightest > 0) {
-        drawFadeOverlay(
-            std::min(1.0f, static_cast<float>(brightest) / 135.0f),
-            255u, 255u, 255u);
-    }
+    // Split mixed-sign RGB values into two hardware blend passes. This is
+    // equivalent to Saturn's per-channel signed additive color offset and
+    // applies after VDP2 + VDP1 front-end composition.
+    drawColorOffsetPass(
+        g_colorOffsetAddFragmentProgram,
+        std::max(red, 0),
+        std::max(green, 0),
+        std::max(blue, 0));
+    drawColorOffsetPass(
+        g_colorOffsetSubtractFragmentProgram,
+        std::max(-red, 0),
+        std::max(-green, 0),
+        std::max(-blue, 0));
 }
 
 static bool renderMovieFrame()
@@ -8328,7 +8430,7 @@ static bool renderMovieFrame()
         drawPublishedVdp1Ui();
 
     if (submitted)
-        drawAzelFadeOverlay();
+        drawAzelColorOffset();
 
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     sceGxmFinish(g_probeContext);
