@@ -221,11 +221,25 @@ float4 main(
         223.0f, floor(vTexcoord.y * 224.0f));
 
     float4 color;
-    if (vdp2Info.x < 0.5f)
+    if (vdp2Info.x < 0.5f) {
         color = sampleTitleNbg0(raw, logicalX, logicalY);
-    else
-        color = sampleNameNbg0(
-            raw, logicalX, logicalY, vdp2Info.y, vdp2Info.z);
+    } else {
+        // FLD_D5 remains visible for the entire scripted name-entry sequence.
+        // RBG0 will be composed underneath here by the native rotation-layer
+        // path; until that pass is bound, preserve black as the back screen.
+        color = float4(0.0f, 0.0f, 0.0f, 1.0f);
+
+        // Azel keeps NBG0 disabled while script 0 presents the lead-in text.
+        // flags bit 0 is the live BGON.NBG0 state from nameEntryEnable().
+        if (vdp2Info.w >= 0.5f)
+            color = sampleNameNbg0(
+                raw, logicalX, logicalY, vdp2Info.y, vdp2Info.z);
+    }
+
+    // The common text map lives at VRAM 0x6000. On the title it is NBG1;
+    // during normal field operation Azel maps the same text memory through
+    // NBG3. Sampling the native memory here therefore preserves the field
+    // script dialogue before the keyboard becomes visible.
     const float4 text = sampleNbg1(raw, logicalX, logicalY);
     if (text.a > 0.5f)
         color = text;
