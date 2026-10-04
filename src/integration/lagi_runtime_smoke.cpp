@@ -108,6 +108,87 @@ static void capture_azel_vdp1_frontend_commands()
     }
 }
 
+static void build_rbg0_gpu_parameter(
+    const sCoefficientTableData& t,
+    float transform[8],
+    float coefficient[4])
+{
+    auto truncFP = [](s32 v) -> s32 {
+        return v & static_cast<s32>(0xFFFFFFC0u);
+    };
+    auto signExt14fp = [](s16 v) -> s32 {
+        s32 x = static_cast<s32>(v) & 0x3FFF;
+        if (x & 0x2000)
+            x |= static_cast<s32>(0xFFFFC000u);
+        return x << 16;
+    };
+    auto truncMx = [](s32 v) -> s32 {
+        return (v & 0x3FFFFFC0) |
+            ((v & 0x20000000) ? static_cast<s32>(0xE0000000u) : 0);
+    };
+    auto fpMul = [](s32 a, s32 b) -> s32 {
+        return static_cast<s32>(
+            (static_cast<long long>(a) * static_cast<long long>(b)) >> 16);
+    };
+    auto fp = [](s32 v) -> float {
+        return static_cast<float>(v) / 65536.0f;
+    };
+
+    const s32 A = truncFP(t.m1C);
+    const s32 B = truncFP(t.m20);
+    const s32 C = truncFP(t.m24);
+    const s32 D = truncFP(t.m28);
+    const s32 E = truncFP(t.m2C);
+    const s32 F = truncFP(t.m30);
+
+    const s32 Px = signExt14fp(t.m34);
+    const s32 Py = signExt14fp(t.m36);
+    const s32 Pz = signExt14fp(t.m38);
+    const s32 Cx = signExt14fp(t.m3C);
+    const s32 Cy = signExt14fp(t.m3E);
+    const s32 Cz = signExt14fp(t.m40);
+
+    const s32 Xp =
+        fpMul(A, Px - Cx) + fpMul(B, Py - Cy) +
+        fpMul(C, Pz - Cz) + Cx + truncMx(t.m44);
+    const s32 Yp =
+        fpMul(D, Px - Cx) + fpMul(E, Py - Cy) +
+        fpMul(F, Pz - Cz) + Cy + truncMx(t.m48);
+
+    const s32 xmul = truncFP(t.m0) - Px;
+    const s32 ymul = truncFP(t.m4) - Py;
+    const s32 zrel = truncFP(t.m8_Zst) - Pz;
+
+    const s32 xBase =
+        fpMul(A, xmul) + fpMul(B, ymul) + fpMul(C, zrel);
+    const s32 yBase =
+        fpMul(D, xmul) + fpMul(E, ymul) + fpMul(F, zrel);
+
+    const s32 xStep =
+        fpMul(A, truncFP(t.m14)) + fpMul(B, truncFP(t.m18));
+    const s32 yStep =
+        fpMul(D, truncFP(t.m14)) + fpMul(E, truncFP(t.m18));
+
+    const s32 xYStep =
+        fpMul(A, truncFP(t.mC)) + fpMul(B, truncFP(t.m10));
+    const s32 yYStep =
+        fpMul(D, truncFP(t.mC)) + fpMul(E, truncFP(t.m10));
+
+    transform[0] = fp(xBase);
+    transform[1] = fp(yBase);
+    transform[2] = fp(xStep);
+    transform[3] = fp(yStep);
+    transform[4] = fp(xYStep);
+    transform[5] = fp(yYStep);
+    transform[6] = fp(Xp);
+    transform[7] = fp(Yp);
+
+    coefficient[0] = fp(truncFP(t.m54));
+    coefficient[1] = fp(truncFP(t.m58));
+    coefficient[2] = fp(truncFP(t.m5C));
+    coefficient[3] = 0.0f;
+}
+
 static void log_title_vdp2_diagnostics_once()
 {
     static bool logged = false;
@@ -282,6 +363,34 @@ void runtime_smoke_frame()
     // snapshot only after it owns the front-end render slot.
     capture_azel_vdp1_frontend_commands();
 
+    if (gGameStatus.m4_gameStatus == 2) {
+        static unsigned int d5Vdp1DiagFrames = 0;
+        if (d5Vdp1DiagFrames < 8u) {
+            // The current frame is not published until frontend_present_vdp2(),
+            // so inspect the live command buffer directly through the capture
+            // count by walking the native VDP1 tail here.
+            auto& ctx = graphicEngineStatus.m14_vdp1Context[0];
+            const auto begin = mainContextVdp1[0].begin() + 6;
+            const auto end = ctx.m0_currentVdp1WriteEA;
+            unsigned int count = 0;
+            for (auto cmd = begin; cmd != end && count < 12u; ++cmd, ++count) {
+                lagi::platform::logging::writef(
+                    "[D5VDP1] f=%u i=%u CTRL=%04X PMOD=%04X COLR=%04X "
+                    "SRCA=%04X SIZE=%04X A=(%d,%d) B=(%d,%d) "
+                    "C=(%d,%d) D=(%d,%d)\n",
+                    d5Vdp1DiagFrames, count,
+                    cmd->m0_CMDCTRL, cmd->m4_CMDPMOD,
+                    cmd->m6_CMDCOLR, cmd->m8_CMDSRCA,
+                    cmd->mA_CMDSIZE,
+                    cmd->mC_CMDXA, cmd->mE_CMDYA,
+                    cmd->m10_CMDXB, cmd->m12_CMDYB,
+                    cmd->m14_CMDXC, cmd->m16_CMDYC,
+                    cmd->m18_CMDXD, cmd->m1A_CMDYD);
+            }
+            ++d5Vdp1DiagFrames;
+        }
+    }
+
     // Service the Saturn-side VDP2 deferred register/DMA work and the platform
     // movie backend at the same host-frame boundary used by the existing
     // native runtime integration.
@@ -431,6 +540,15 @@ void runtime_smoke_frame()
             state.lineWindow1Address =
                 ((regs->mDC_LWTA1 & 0x7FFFEu) << 1) & 0x7FFFFu;
         }
+
+        const auto& paramA =
+            gCoefficientTables[0][vdp2Controls.m0_doubleBufferIndex];
+        const auto& paramB =
+            gCoefficientTables[1][vdp2Controls.m0_doubleBufferIndex];
+        build_rbg0_gpu_parameter(
+            paramA, state.transformA, state.coefficientA);
+        build_rbg0_gpu_parameter(
+            paramB, state.transformB, state.coefficientB);
 
         lagi::platform::renderer::frontend_set_rbg0_state(state);
     }
