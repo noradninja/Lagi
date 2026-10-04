@@ -2548,12 +2548,15 @@ static bool ensureVdp2UiGpuBuffers()
             0) < 0)
         return false;
 
+    // Decoded 2D presentation assets are ordinary RGBA textures at this
+    // point. Use SGX linear filtering when Saturn-authored UI is rescaled
+    // into the active Vita framebuffer.
     sceGxmTextureSetMinFilter(
         &g_vdp2Nbg1AtlasTexture,
-        SCE_GXM_TEXTURE_FILTER_POINT);
+        SCE_GXM_TEXTURE_FILTER_LINEAR);
     sceGxmTextureSetMagFilter(
         &g_vdp2Nbg1AtlasTexture,
-        SCE_GXM_TEXTURE_FILTER_POINT);
+        SCE_GXM_TEXTURE_FILTER_LINEAR);
 
     return true;
 }
@@ -3169,9 +3172,9 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         return nullptr;
     }
     sceGxmTextureSetMinFilter(
-        &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
     sceGxmTextureSetMagFilter(
-        &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
 
     g_vdp1UiTextureCache.push_back(std::move(entry));
     return &g_vdp1UiTextureCache.back().gpu;
