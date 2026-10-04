@@ -183,7 +183,11 @@ static void build_rbg0_gpu_parameter(
     transform[6] = fp(Xp);
     transform[7] = fp(Yp);
 
-    coefficient[0] = fp(truncFP(t.m54));
+    // KAst is consumed as an unsigned 32-bit fixed-point accumulator by
+    // Azel's RBG0 renderer before the >>16 table index extraction. Preserve
+    // that wrap domain here instead of interpreting 0x80000000 as -32768.
+    coefficient[0] =
+        static_cast<float>(static_cast<u32>(t.m54)) / 65536.0f;
     coefficient[1] = fp(truncFP(t.m58));
     coefficient[2] = fp(truncFP(t.m5C));
     coefficient[3] = 0.0f;
