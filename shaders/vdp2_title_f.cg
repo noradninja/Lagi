@@ -72,6 +72,8 @@ float readLESigned16(uniform sampler2D raw, float byteAddress)
     return v;
 }
 
+float4 rgb555(float c);
+
 float selectRbg0Plane(
     float index,
     float4 p0,
