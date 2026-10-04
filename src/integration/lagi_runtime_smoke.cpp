@@ -147,10 +147,18 @@ void runtime_smoke_frame()
 
     // Azel's Saturn VBlank normally advances fade state before the task pass.
     updateFadeInterrupt();
-    lagi::platform::renderer::set_azel_fade_color(
-        vdp2Controls.m20_registers[0].m114_COAR,
-        vdp2Controls.m20_registers[0].m116_COAG,
-        vdp2Controls.m20_registers[0].m118_COAB);
+    {
+        const auto& regs = vdp2Controls.m20_registers[0];
+        lagi::platform::renderer::set_azel_color_offset_state(
+            regs.m110_CLOFEN,
+            regs.m112_CLOFSL,
+            regs.m114_COAR,
+            regs.m116_COAG,
+            regs.m118_COAB,
+            regs.m11A_COBR,
+            regs.m11C_COBG,
+            regs.m11E_COBB);
+    }
 
     begin_azel_vdp1_frame();
     lagi::azel_bridge::begin_frame();
