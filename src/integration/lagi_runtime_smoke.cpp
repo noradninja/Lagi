@@ -363,7 +363,8 @@ void runtime_smoke_frame()
     // snapshot only after it owns the front-end render slot.
     capture_azel_vdp1_frontend_commands();
 
-    if (gGameStatus.m4_gameStatus == 2) {
+    if (gGameStatus.m4_gameStatus == 2 &&
+        (vdp2Controls.m4_pendingVdp2Regs->m20_BGON & 0x1u) != 0) {
         static unsigned int d5Vdp1DiagFrames = 0;
         if (d5Vdp1DiagFrames < 8u) {
             // The current frame is not published until frontend_present_vdp2(),
