@@ -118,15 +118,15 @@ float4 sampleNbg1(
     const float characterOffset = characterNumber * 32.0f;
     const float px = fmod(logicalX, 8.0f);
     const float py = fmod(logicalY, 8.0f);
-    const float packed = readByte(
+    const float packedByte = readByte(
         raw,
         characterOffset + py * 4.0f + floor(px * 0.5f));
 
     float dotColor;
     if (fmod(px, 2.0f) >= 1.0f)
-        dotColor = fmod(packed, 16.0f);
+        dotColor = fmod(packedByte, 16.0f);
     else
-        dotColor = floor(packed / 16.0f);
+        dotColor = floor(packedByte / 16.0f);
 
     if (dotColor < 0.5f)
         return float4(0.0f, 0.0f, 0.0f, 0.0f);
