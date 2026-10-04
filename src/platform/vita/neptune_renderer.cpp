@@ -255,6 +255,15 @@ static azel::BasicWingDebugMesh g_edgeShadowCpuMesh{};
 static bool g_edgeShadowCpuReady = false;
 static std::vector<std::uint16_t> g_edgeShadowTownTextureIndices;
 static azel::BasicWingDebugMesh g_liveTownCpuMesh{};
+
+struct LivePolygonLightState {
+    std::int32_t vector[3]{};
+    std::uint16_t color[3]{};
+    std::uint32_t falloff[3]{};
+    bool valid = false;
+};
+static std::vector<LivePolygonLightState> g_liveTownPolygonLights;
+
 static std::uint64_t g_liveTownSignature = 0;
 static std::uint64_t g_liveTownStaticSignature = 0;
 static std::size_t g_liveTownStaticVertexCount = 0;
@@ -4634,6 +4643,17 @@ static void appendLiveTownModel(
                 : liveTownTextureIndex(record);
         g_liveTownCpuMesh.polygonTextureIndices.push_back(textureIndex);
         g_liveTownCpuMesh.gouraud555.push_back({});
+
+        LivePolygonLightState polygonLight{};
+        if (state.hasLight) {
+            for (unsigned axis = 0; axis < 3; ++axis) {
+                polygonLight.vector[axis] = state.lightVector[axis];
+                polygonLight.color[axis] = state.lightColor[axis];
+                polygonLight.falloff[axis] = state.lightFalloff[axis];
+            }
+            polygonLight.valid = true;
+        }
+        g_liveTownPolygonLights.push_back(polygonLight);
     }
 }
 
@@ -4838,6 +4858,7 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.polygonRecords.clear();
         g_liveTownCpuMesh.gouraud555.clear();
         g_liveTownCpuMesh.polygonTextureIndices.clear();
+        g_liveTownPolygonLights.clear();
         for (const auto& submission : azel_bridge::published_submissions()) {
             if (submission.state.dynamic ||
                 submission.adaptedModelIndex < 0)
@@ -4856,6 +4877,7 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.gouraud555.resize(g_liveTownStaticPolygonCount);
         g_liveTownCpuMesh.polygonTextureIndices.resize(
             g_liveTownStaticPolygonCount);
+        g_liveTownPolygonLights.resize(g_liveTownStaticPolygonCount);
     }
     g_profileBuildCacheUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tCache);
@@ -4902,6 +4924,8 @@ static bool buildLiveTownFrame()
     if (g_liveTownCpuMesh.vertices.empty() ||
         g_liveTownCpuMesh.vertices.size() > 65535u ||
         g_liveTownCpuMesh.polygonTextureIndices.size() !=
+            g_liveTownCpuMesh.polygonRecords.size() ||
+        g_liveTownPolygonLights.size() !=
             g_liveTownCpuMesh.polygonRecords.size()) {
         static bool loggedInvalidGeometry = false;
         if (!loggedInvalidGeometry) {
@@ -9228,14 +9252,22 @@ static void renderBasicWingViewer()
         g_staticRoomCpuReady &&
         g_staticRoomCpuMesh.lightingValid &&
         g_viewMode == 6;
+    const bool liveSceneLighting =
+        nativeTownMode &&
+        std::any_of(
+            g_liveTownPolygonLights.begin(),
+            g_liveTownPolygonLights.end(),
+            [](const LivePolygonLightState& light) { return light.valid; });
     const bool roomAuthenticLitMode =
         roomAuthenticCameraMode &&
-        g_staticRoomCpuMesh.lightingValid &&
+        (liveSceneLighting ||
+         (g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)) &&
         g_viewMode == 7;
     const bool roomAuthenticTexturedMode =
         roomAuthenticCameraMode &&
         (g_viewMode == 8 ||
-         (g_viewMode == 7 && !g_staticRoomCpuMesh.lightingValid));
+         (g_viewMode == 7 && !liveSceneLighting &&
+          !(g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)));
     const bool roomAuthenticFlatMode =
         roomAuthenticCameraMode &&
         g_viewMode == 9;
@@ -9716,8 +9748,9 @@ void end_frame()
 
 static void updateLiveTownAzelLighting()
 {
-    if (!g_staticRoomCpuMesh.lightingValid ||
-        g_liveTownCpuMesh.gouraud555.size() !=
+    if (g_liveTownCpuMesh.gouraud555.size() !=
+            g_liveTownCpuMesh.polygonRecords.size() ||
+        g_liveTownPolygonLights.size() !=
             g_liveTownCpuMesh.polygonRecords.size())
         return;
 
@@ -9728,12 +9761,6 @@ static void updateLiveTownAzelLighting()
             g_liveTownCpuMesh.polygonRecords.size() &&
         g_liveTownGouraudPrep.size() ==
             g_liveTownCpuMesh.polygonRecords.size();
-
-    std::int16_t falloffMap[32][3]{};
-    generateAzelFalloff(
-        g_staticRoomCpuMesh.lightFalloff[0],
-        g_staticRoomCpuMesh.lightFalloff[1],
-        g_staticRoomCpuMesh.lightFalloff[2], falloffMap);
 
     float cameraForward[3] = {
         g_townCameraTarget[0] - g_townCameraPosition[0],
@@ -9746,8 +9773,6 @@ static void updateLiveTownAzelLighting()
     if (length > 0.000001f)
         for (float& v : cameraForward) v /= length;
 
-    // TWN_RUIN initializes far clip to 0xF000. Preserve the Saturn integer
-    // scale and 32-entry byte-offset quantization used by GetDistanceFalloff.
     constexpr std::int64_t farRaw = 0xF000;
     constexpr std::int64_t oneOverFar =
         (static_cast<std::int64_t>(0x8000) << 16) / farRaw;
@@ -9767,45 +9792,81 @@ static void updateLiveTownAzelLighting()
         return std::clamp(byteOffset >> 3, 0, 31);
     };
 
-    const int lightVector[3] = {
-        static_cast<int>(std::lround(-g_staticRoomCpuMesh.lightDirection[0] * 4096.0f)),
-        static_cast<int>(std::lround(-g_staticRoomCpuMesh.lightDirection[1] * 4096.0f)),
-        static_cast<int>(std::lround(-g_staticRoomCpuMesh.lightDirection[2] * 4096.0f))};
+    std::uint32_t cachedFalloff[3]{0xFFFFFFFFu,0xFFFFFFFFu,0xFFFFFFFFu};
+    std::int16_t falloffMap[32][3]{};
+    bool haveFalloff = false;
+    bool reportedLiveLighting = false;
 
     for (std::size_t p = 0;
          p < g_liveTownCpuMesh.polygonRecords.size(); ++p) {
         if (usePreparedVisibility && !g_liveTownGouraudPrep[p].visible)
             continue;
+
         const auto& record = g_liveTownCpuMesh.polygonRecords[p];
+        const auto& light = g_liveTownPolygonLights[p];
         const unsigned mode = (record.lightingControl >> 8) & 3u;
         auto& out = g_liveTownCpuMesh.gouraud555[p];
         out = {};
-        if (mode == 0u || record.lightingCount == 0u)
+        if (!light.valid || mode == 0u || record.lightingCount == 0u)
             continue;
+
+        if (!haveFalloff ||
+            cachedFalloff[0] != light.falloff[0] ||
+            cachedFalloff[1] != light.falloff[1] ||
+            cachedFalloff[2] != light.falloff[2]) {
+            cachedFalloff[0] = light.falloff[0];
+            cachedFalloff[1] = light.falloff[1];
+            cachedFalloff[2] = light.falloff[2];
+            generateAzelFalloff(
+                cachedFalloff[0], cachedFalloff[1], cachedFalloff[2],
+                falloffMap);
+            haveFalloff = true;
+        }
+
+        if (!reportedLiveLighting) {
+            logging::writef(
+                "[SceneLight] live light vec=(%d,%d,%d) rgb=(%u,%u,%u) "
+                "falloff=%08X/%08X/%08X\n",
+                light.vector[0], light.vector[1], light.vector[2],
+                static_cast<unsigned>(light.color[0]),
+                static_cast<unsigned>(light.color[1]),
+                static_cast<unsigned>(light.color[2]),
+                static_cast<unsigned>(light.falloff[0]),
+                static_cast<unsigned>(light.falloff[1]),
+                static_cast<unsigned>(light.falloff[2]));
+            reportedLiveLighting = true;
+        }
+
         const int depthIndex = falloffIndex(p);
         for (unsigned corner = 0; corner < 4u; ++corner) {
             const unsigned normalIndex = mode == 1u ? 0u : corner;
-            if (normalIndex >= record.lightingCount) continue;
+            if (normalIndex >= record.lightingCount)
+                continue;
+
             const auto& lighting = record.lighting[normalIndex];
             const int dotProduct =
-                static_cast<int>(lighting.normal[0]) * lightVector[0] +
-                static_cast<int>(lighting.normal[1]) * lightVector[1] +
-                static_cast<int>(lighting.normal[2]) * lightVector[2];
+                static_cast<int>(lighting.normal[0]) * light.vector[0] +
+                static_cast<int>(lighting.normal[1]) * light.vector[1] +
+                static_cast<int>(lighting.normal[2]) * light.vector[2];
+
             int accum[3] = {
-                falloffMap[depthIndex][0], falloffMap[depthIndex][1],
+                falloffMap[depthIndex][0],
+                falloffMap[depthIndex][1],
                 falloffMap[depthIndex][2]};
+
             if (mode == 2u && lighting.hasColor) {
                 for (unsigned channel = 0; channel < 3; ++channel)
                     accum[channel] += static_cast<std::int16_t>(
                         lighting.color[channel]);
             }
+
             if (dotProduct > 0) {
                 const int dotHi = static_cast<int>(
                     static_cast<std::uint32_t>(dotProduct) >> 16);
                 for (unsigned channel = 0; channel < 3; ++channel)
-                    accum[channel] +=
-                        g_staticRoomCpuMesh.lightColor[channel] * dotHi;
+                    accum[channel] += light.color[channel] * dotHi;
             }
+
             for (unsigned channel = 0; channel < 3; ++channel) {
                 const int gouraud5 =
                     (std::clamp(accum[channel], 0, 0x1F00) >> 8) & 0x1F;
