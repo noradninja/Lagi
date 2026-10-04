@@ -1244,6 +1244,7 @@ add_executable(lagi
  src/integration/lagi_azel_movie_runtime.cpp
  src/integration/lagi_runtime.cpp
  src/integration/lagi_input_bridge.cpp
+ src/integration/lagi_scene_bridge.cpp
  src/integration/lagi_diagnostics.cpp
  src/integration/lagi_render_bridge.cpp
  src/integration/lagi_live_model_adapter.cpp
