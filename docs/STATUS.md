@@ -151,6 +151,7 @@ Verified on real Vita/Vita TV hardware:
 - title NBG presentation
 - D5 NBG0 keyboard presentation
 - D5 NBG3 subtitle/text presentation
+- hardware-linear front-end/menu/name-entry text presentation
 - D5 VDP1 cursor data/CRAM decoding
 - RBG0 SGX program registration after register-pressure reduction
 - native RBG0 parameter/coefficient state capture
@@ -160,15 +161,11 @@ Verified on real Vita/Vita TV hardware:
 
 ### Title
 
-The title screen renders through Azel's native VDP2 state, but color/palette/fade presentation is not yet accurate to Saturn hardware.
+The title screen now follows Azel's live TVMD state into a native 720x408 Vita framebuffer and addresses the full 704x448 source raster. Hardware testing confirms the title artwork now matches the expected presentation closely enough for the current milestone.
 
-Current known mismatch:
+Raw VRAM/CRAM reads remain point-exact. The title artwork's reduction into the Vita framebuffer filters only after palette lookup / RGB555 decode, so packed Saturn memory and palette indices are never interpolated.
 
-- layout/geometry is substantially correct;
-- title colors differ from the Saturn reference;
-- fade/color-offset interaction still needs validation against hardware semantics.
-
-Title color correction remains a generic VDP2/CRAM/color-offset problem rather than a title-specific art or palette issue.
+The live title/menu text layer (PRESS START, CONTINUE, NEW GAME and related prompts) is decoded separately to RGBA and composited through SGX with hardware linear filtering. The high-resolution title artwork path itself is not modified by that text filtering pass.
 
 ### D5 name-entry sequence
 
@@ -387,7 +384,7 @@ The current live 3D renderer still flattens active work into shared buffers with
 
 ## Current development focus
 
-With the authentic first-Ruins handoff now hardware-proven, current work is concentrated on D5 RBG0 A/B and window composition, generic VDP2 fade/color-offset accuracy, title color/palette accuracy, migration of remaining historical `town_*` renderer state into scene/presentation terminology, broader scene/resource lifetime handling, and moving more of the active Saturn lighting work from CPU preparation into SGX where practical.
+With the authentic first-Ruins handoff now hardware-proven, current work is concentrated on D5 RBG0 A/B and window composition, generic VDP2 fade/color-offset accuracy, migration of remaining historical `town_*` renderer state into scene/presentation terminology, broader scene/resource lifetime handling, and moving more of the active Saturn lighting work from CPU preparation into SGX where practical.
 
 ## Historical reference paths
 
@@ -411,7 +408,7 @@ Decoded 2D presentation resources now use SGX linear filtering when scaled:
 
 - VDP1 UI sprites, including Lock-On/LCS cursors and menu selectors
 - NBG1 menu/window atlas
-- VDP2 subtitle, interaction, item, and menu text through a 352x224 logical text layer
+- VDP2 subtitle, interaction, item, title-menu, and name-entry text through a 352x224 logical text layer
 
 Raw Saturn memory fetches remain point-exact. VDP2 image-plane filtering is tracked separately because those backgrounds are still decoded directly from VRAM/CRAM during composition.
 

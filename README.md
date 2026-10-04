@@ -144,7 +144,7 @@ Azel's live VDP2 state supplies front-end and in-game presentation. Neptune tran
 - the animated lower cinematic matte from Azel's vertical line-scroll table
 - live CRAM palette data for the VDP2 layers and bank-color VDP1 UI sprites
 
-Composition preserves the original layer relationship: VDP2 window and matte backing, VDP1 UI sprites, then text. Azel remains responsible for the strings, window contents, choice state, cursor animation, and scripted timing.
+Composition preserves Azel's authored layer relationships while allowing decoded presentation assets to use hardware filtering. Front-end/menu text is reconstructed into a 352x224 RGBA text layer and composited by SGX with linear filtering; decoded VDP1 selector/cursor sprites are likewise linearly filtered after palette decode. Azel remains responsible for the strings, window contents, choice state, cursor animation, and scripted timing.
 
 ## Renderer diagnostic views
 

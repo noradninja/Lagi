@@ -246,7 +246,7 @@ The title NBG0 shader addresses the 704x448 VDP2 source raster directly. Raw VRA
 
 Neptune keeps Saturn memory interpretation separate from presentation filtering. Raw VDP1/VDP2 VRAM, CRAM, pattern names, palette indices, and command data are addressed without texture filtering. Once a 2D asset has been decoded into an ordinary RGBA texture, SGX linear filtering is used when that asset is rescaled into the active Vita framebuffer.
 
-Current decoded linear-filtered paths include VDP1 UI sprites such as Lock-On/LCS cursors and menu selectors, the decoded NBG1 UI/window atlas, and the logical 352x224 VDP2 text layer used by subtitles, interaction text, item text, and menu text.
+Current decoded linear-filtered paths include VDP1 UI sprites such as Lock-On/LCS cursors and menu selectors, the decoded NBG1 UI/window atlas, and the logical 352x224 VDP2 text layer used by subtitles, interaction text, item text, title-menu prompts, and D5 name-entry text.
 
 The text layer is reconstructed at Saturn logical resolution and composited by SGX rather than expanded directly into the final framebuffer by the CPU.
 
