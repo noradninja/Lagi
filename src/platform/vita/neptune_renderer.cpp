@@ -1889,7 +1889,7 @@ bool movie_present_frame(
         return false;
 
     // Scene presentation normally acquires this producer token in
-    // presentation_wait_frame_slot(). Movie playback bypasses the town publish path,
+    // presentation_wait_frame_slot(). Movie playback bypasses the scene presentation publish path,
     // so it must participate in the same one-frame ownership protocol itself.
     // Without this handoff a movie upload can race the dedicated render thread
     // or leave a ready notification disconnected from renderer ownership.
