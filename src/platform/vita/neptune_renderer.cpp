@@ -3163,9 +3163,9 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
             return nullptr;
         }
         sceGxmTextureSetMinFilter(
-            &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+            &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
         sceGxmTextureSetMagFilter(
-            &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+            &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
 
         static bool reportedNormalSprite = false;
         if (!reportedNormalSprite) {
