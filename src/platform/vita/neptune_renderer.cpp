@@ -940,6 +940,14 @@ static void drawViewerModeOverlay(
         label, 0xFFFFFFFFu);
 }
 
+// Forward declarations used by the decoded title cache helpers below.
+static void* probeGpuAlloc(
+    unsigned int size,
+    unsigned int attribs,
+    SceUID* uid);
+static void freeMovieMappedBlock(SceUID& uid, void*& memory);
+static std::uint32_t vdp2Rgb555ToAbgr(std::uint16_t color);
+
 static std::uint16_t readVdp2Be16(
     const std::uint8_t* bytes,
     std::size_t offset)
