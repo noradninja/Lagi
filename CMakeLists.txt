@@ -1242,7 +1242,9 @@ add_executable(lagi
  src/movie/movie_player.cpp
  src/integration/azel_movie_bridge.cpp
  src/integration/lagi_azel_movie_runtime.cpp
- src/integration/lagi_runtime_smoke.cpp
+ src/integration/lagi_runtime.cpp
+ src/integration/lagi_input_bridge.cpp
+ src/integration/lagi_diagnostics.cpp
  src/integration/lagi_render_bridge.cpp
  src/integration/lagi_live_model_adapter.cpp
  src/integration/lagi_direct_boot.cpp
