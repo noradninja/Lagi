@@ -588,8 +588,7 @@ add_custom_command(
  COMMAND "${PSP2CGC_EXECUTABLE}"
   -profile sce_fp_psp2
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_title_f.cg"
-  -Wperf -fastprecision -O3
-  -o "${LAGI_VDP2_TITLE_F_GXP}"
+  # This shader now contains the native D5 RBG0 rotation/coefficient path.\n  # PSP2CGC ICEs in its aggressive optimizer at -O3; keep fast precision but\n  # use -O1 for this target only. Other SGX shaders remain at -O3.\n  -Wperf -fastprecision -O1\n  -o "${LAGI_VDP2_TITLE_F_GXP}"
  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_title_f.cg"
  COMMENT "Compiling Lagi SGX VDP2 title fragment shader"
  VERBATIM
