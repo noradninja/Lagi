@@ -208,6 +208,49 @@ void runtime_smoke_frame()
 
     // Azel's Saturn VBlank normally advances fade state before the task pass.
     updateFadeInterrupt();
+
+    // Trace only fade lifecycle edges and a few progress points. This does not
+    // participate in presentation; it lets hardware logs prove whether Azel
+    // is producing signed VDP2 offsets when a visible fade is expected.
+    {
+        static bool previousFade0Stopped = true;
+        static bool previousFade1Stopped = true;
+        static unsigned int previousFade0Counter = ~0u;
+        const bool fade0Stopped = g_fadeControls.m0_fade0.m20_stopped != 0;
+        const bool fade1Stopped = g_fadeControls.m24_fade1.m20_stopped != 0;
+        const unsigned int fade0Counter =
+            static_cast<unsigned int>(g_fadeControls.m0_fade0.m1E_counter);
+        const bool progressSample =
+            !fade0Stopped &&
+            fade0Counter != previousFade0Counter &&
+            ((fade0Counter % 10u) == 0u);
+        if (fade0Stopped != previousFade0Stopped ||
+            fade1Stopped != previousFade1Stopped ||
+            progressSample) {
+            const auto& regs = vdp2Controls.m20_registers[0];
+            lagi::platform::logging::writef(
+                "[AzelFade] f0stop=%u count=%u f1stop=%u "
+                "CLOFEN=%04X CLOFSL=%04X "
+                "A=(%d,%d,%d) B=(%d,%d,%d) status=%02X mode=%u\n",
+                fade0Stopped ? 1u : 0u,
+                fade0Counter,
+                fade1Stopped ? 1u : 0u,
+                regs.m110_CLOFEN,
+                regs.m112_CLOFSL,
+                static_cast<int>(regs.m114_COAR),
+                static_cast<int>(regs.m116_COAG),
+                static_cast<int>(regs.m118_COAB),
+                static_cast<int>(regs.m11A_COBR),
+                static_cast<int>(regs.m11C_COBG),
+                static_cast<int>(regs.m11E_COBB),
+                static_cast<unsigned int>(gGameStatus.m4_gameStatus),
+                static_cast<unsigned int>(gGameStatus.m0_gameMode));
+        }
+        previousFade0Stopped = fade0Stopped;
+        previousFade1Stopped = fade1Stopped;
+        previousFade0Counter = fade0Counter;
+    }
+
     {
         const auto& regs = vdp2Controls.m20_registers[0];
         lagi::platform::renderer::set_azel_color_offset_state(
