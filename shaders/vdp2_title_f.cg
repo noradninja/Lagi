@@ -45,6 +45,177 @@ float readBE16(uniform sampler2D raw, float byteAddress)
            readByte(raw, byteAddress + 1.0f);
 }
 
+float readLE16(uniform sampler2D raw, float byteAddress)
+{
+    return readByte(raw, byteAddress) +
+           readByte(raw, byteAddress + 1.0f) * 256.0f;
+}
+
+// Native Azel rotation/coefficient work areas are copied to emulated VRAM
+// from the little-endian Vita CPU. Decode a signed 16.16 value without first
+// constructing a 32-bit integer in float (which would discard useful low
+// bits near the signed range limits).
+float readLEFixed16_16(uniform sampler2D raw, float byteAddress)
+{
+    const float lo = readLE16(raw, byteAddress);
+    float hi = readLE16(raw, byteAddress + 2.0f);
+    if (hi >= 32768.0f)
+        hi -= 65536.0f;
+    return hi + lo / 65536.0f;
+}
+
+float readLESigned16(uniform sampler2D raw, float byteAddress)
+{
+    float v = readLE16(raw, byteAddress);
+    if (v >= 32768.0f)
+        v -= 65536.0f;
+    return v;
+}
+
+float selectRbg0Plane(
+    float index,
+    float4 p0,
+    float4 p1,
+    float4 p2,
+    float4 p3)
+{
+    if (index < 0.5f) return p0.x;
+    if (index < 1.5f) return p0.y;
+    if (index < 2.5f) return p0.z;
+    if (index < 3.5f) return p0.w;
+    if (index < 4.5f) return p1.x;
+    if (index < 5.5f) return p1.y;
+    if (index < 6.5f) return p1.z;
+    if (index < 7.5f) return p1.w;
+    if (index < 8.5f) return p2.x;
+    if (index < 9.5f) return p2.y;
+    if (index < 10.5f) return p2.z;
+    if (index < 11.5f) return p2.w;
+    if (index < 12.5f) return p3.x;
+    if (index < 13.5f) return p3.y;
+    if (index < 14.5f) return p3.z;
+    return p3.w;
+}
+
+float4 sampleD5Rbg0Tile(
+    uniform sampler2D raw,
+    float mapX,
+    float mapY,
+    float4 p0,
+    float4 p1,
+    float4 p2,
+    float4 p3)
+{
+    // D5 config from s_d5StarfieldTask::Init:
+    // CHCN=1 (8bpp), CHSZ=1 (16x16), PNB=1, CNSM=0, SCN=8.
+    // Rotation maps are 4x4 planes; each plane is one 512x512 page here.
+    mapX = fmod(floor(mapX), 2048.0f);
+    mapY = fmod(floor(mapY), 2048.0f);
+    if (mapX < 0.0f) mapX += 2048.0f;
+    if (mapY < 0.0f) mapY += 2048.0f;
+
+    const float planeX = floor(mapX / 512.0f);
+    const float planeY = floor(mapY / 512.0f);
+    const float planeIndex = planeY * 4.0f + planeX;
+    const float planeBase =
+        selectRbg0Plane(planeIndex, p0, p1, p2, p3);
+
+    const float inPlaneX = mapX - planeX * 512.0f;
+    const float inPlaneY = mapY - planeY * 512.0f;
+    const float patternX = floor(inPlaneX / 16.0f);
+    const float patternY = floor(inPlaneY / 16.0f);
+    const float patternAddress =
+        planeBase + (patternY * 32.0f + patternX) * 2.0f;
+    const float patternName = readBE16(raw, patternAddress);
+
+    // CNSM=0 / CHSZ=1:
+    // character = (PN & 0x3ff) << 2 | (SCN & 3) | (SCN & 0x1c) << 10
+    // SCN=8, therefore the supplemental high part is 0x2000.
+    const float characterNumber =
+        fmod(patternName, 1024.0f) * 4.0f + 8192.0f;
+
+    const float px = fmod(inPlaneX, 16.0f);
+    const float py = fmod(inPlaneY, 16.0f);
+    const float cellX = floor(px / 8.0f);
+    const float cellY = floor(py / 8.0f);
+    const float cellIndex = cellX + cellY * 2.0f;
+    const float dotAddress =
+        characterNumber * 32.0f +
+        cellIndex * 64.0f +
+        fmod(py, 8.0f) * 8.0f +
+        fmod(px, 8.0f);
+    const float dotColor = readByte(raw, dotAddress);
+
+    if (dotColor < 0.5f)
+        return float4(0.0f, 0.0f, 0.0f, 1.0f);
+
+    // For 8bpp one-word patterns Azel's renderer uses pattern bits 14:12
+    // as the 256-color palette bank. D5 leaves CAOS at zero.
+    const float paletteBank =
+        fmod(floor(patternName / 4096.0f), 8.0f);
+    const float paletteEntry = paletteBank * 256.0f + dotColor;
+    return rgb555(readBE16(raw, 524288.0f + paletteEntry * 2.0f));
+}
+
+float4 sampleD5Rbg0(
+    uniform sampler2D raw,
+    float screenX,
+    float screenY,
+    float4 p0,
+    float4 p1,
+    float4 p2,
+    float4 p3)
+{
+    // sCoefficientTableData parameter A is DMA'd by Azel to 0x3D000.
+    // For this first native RBG0 bring-up we consume the live rotation
+    // parameter matrix/translation exactly and use unity K. The coefficient
+    // and RPMD=3 window-selection stage is layered on after hardware proof.
+    const float base = 249856.0f; // 0x3D000
+
+    const float Xst = readLEFixed16_16(raw, base + 0.0f);
+    const float Yst = readLEFixed16_16(raw, base + 4.0f);
+    const float Zst = readLEFixed16_16(raw, base + 8.0f);
+    const float dXst = readLEFixed16_16(raw, base + 12.0f);
+    const float dYst = readLEFixed16_16(raw, base + 16.0f);
+    const float dX = readLEFixed16_16(raw, base + 20.0f);
+    const float dY = readLEFixed16_16(raw, base + 24.0f);
+
+    const float A = readLEFixed16_16(raw, base + 28.0f);
+    const float B = readLEFixed16_16(raw, base + 32.0f);
+    const float C = readLEFixed16_16(raw, base + 36.0f);
+    const float D = readLEFixed16_16(raw, base + 40.0f);
+    const float E = readLEFixed16_16(raw, base + 44.0f);
+    const float F = readLEFixed16_16(raw, base + 48.0f);
+
+    const float Px = readLESigned16(raw, base + 52.0f);
+    const float Py = readLESigned16(raw, base + 54.0f);
+    const float Pz = readLESigned16(raw, base + 56.0f);
+    const float Cx = readLESigned16(raw, base + 60.0f);
+    const float Cy = readLESigned16(raw, base + 62.0f);
+    const float Cz = readLESigned16(raw, base + 64.0f);
+    const float Mx = readLEFixed16_16(raw, base + 68.0f);
+    const float My = readLEFixed16_16(raw, base + 72.0f);
+
+    const float Xp =
+        A * (Px - Cx) + B * (Py - Cy) + C * (Pz - Cz) + Cx + Mx;
+    const float Yp =
+        D * (Px - Cx) + E * (Py - Cy) + F * (Pz - Cz) + Cy + My;
+
+    const float xmul = Xst - Px + dXst * screenY;
+    const float ymul = Yst - Py + dYst * screenY;
+    const float zrel = Zst - Pz;
+
+    const float Xsp = A * xmul + B * ymul + C * zrel;
+    const float Ysp = D * xmul + E * ymul + F * zrel;
+    const float stepX = A * dX + B * dY;
+    const float stepY = D * dX + E * dY;
+
+    const float mapX = Xsp + stepX * screenX + Xp;
+    const float mapY = Ysp + stepY * screenX + Yp;
+
+    return sampleD5Rbg0Tile(raw, mapX, mapY, p0, p1, p2, p3);
+}
+
 float4 rgb555(float c)
 {
     const float r5 = fmod(c, 32.0f);
@@ -213,7 +384,11 @@ float4 sampleNbg1(
 float4 main(
     float2 vTexcoord : TEXCOORD0,
     uniform sampler2D raw,
-    uniform float4 vdp2Info)
+    uniform float4 vdp2Info,
+    uniform float4 rbg0Plane0,
+    uniform float4 rbg0Plane1,
+    uniform float4 rbg0Plane2,
+    uniform float4 rbg0Plane3)
 {
     const float logicalX = min(
         351.0f, floor(vTexcoord.x * 352.0f));
@@ -224,10 +399,11 @@ float4 main(
     if (vdp2Info.x < 0.5f) {
         color = sampleTitleNbg0(raw, logicalX, logicalY);
     } else {
-        // FLD_D5 remains visible for the entire scripted name-entry sequence.
-        // RBG0 will be composed underneath here by the native rotation-layer
-        // path; until that pass is bound, preserve black as the back screen.
-        color = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        // FLD_D5's s_d5StarfieldTask owns the animated RBG0 state.
+        // Neptune reads its live VRAM parameter table and rotation-map planes.
+        color = sampleD5Rbg0(
+            raw, logicalX, logicalY,
+            rbg0Plane0, rbg0Plane1, rbg0Plane2, rbg0Plane3);
 
         // Azel keeps NBG0 disabled while script 0 presents the lead-in text.
         // flags bit 0 is the live BGON.NBG0 state from nameEntryEnable().
