@@ -8438,7 +8438,8 @@ static bool renderMovieFrame()
         (!g_cinepakFragmentProgram || !g_cinepakMovieInfoParam))
         return false;
     if (g_movieUsesVdp2Title &&
-        (!g_vdp2TitleFragmentProgram || !g_vdp2InfoParam))
+        (!g_vdp2NbgFragmentProgram || !g_vdp2Rbg0FragmentProgram ||
+         !g_vdp2InfoParam || !g_vdp2Rbg0InfoParam))
         return false;
 
     // Movie presentation is always the final Lagi render resolution:
@@ -8479,13 +8480,6 @@ static bool renderMovieFrame()
     }
 
     sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
-    sceGxmSetFragmentProgram(
-        g_probeContext,
-        g_movieUsesVdp2Title
-            ? g_vdp2TitleFragmentProgram
-            : (g_movieUsesCinepakPayload
-                ? g_cinepakFragmentProgram
-                : g_movieTextureFragmentProgram));
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext, movieOutputWidth - 1, movieOutputHeight - 1);
@@ -8512,63 +8506,117 @@ static bool renderMovieFrame()
         };
         sceGxmSetUniformDataF(
             uniformBuffer, g_textureWvpParam, 0, 16, identity);
+        sceGxmSetFragmentTexture(g_probeContext, 0, &g_movieTexture);
 
-        if (g_movieUsesCinepakPayload || g_movieUsesVdp2Title) {
-            void* fragmentUniforms = nullptr;
-            if (sceGxmReserveFragmentDefaultUniformBuffer(
-                    g_probeContext, &fragmentUniforms) < 0 ||
-                !fragmentUniforms) {
-                sceGxmEndScene(g_probeContext, nullptr, nullptr);
-                sceGxmFinish(g_probeContext);
-                logging::writef(
-                    "[MovieRender] FAIL reserve fragment uniforms\n");
-                return true;
-            }
-            if (g_movieUsesCinepakPayload) {
-                const float movieInfo[4] = {
-                    static_cast<float>(g_movieWidth),
-                    static_cast<float>(g_movieHeight),
-                    static_cast<float>(g_moviePayloadWidth),
-                    static_cast<float>(g_moviePayloadHeight),
-                };
-                sceGxmSetUniformDataF(
-                    fragmentUniforms,
-                    g_cinepakMovieInfoParam,
-                    0, 4, movieInfo);
-            } else {
-                sceGxmSetUniformDataF(
-                    fragmentUniforms,
-                    g_vdp2InfoParam,
-                    0, 4, g_movieVdp2Info);
-                for (unsigned int i = 0; i < 4u; ++i) {
+        const bool streamReady =
+            sceGxmSetVertexStream(
+                g_probeContext, 0, g_movieVertices) >= 0;
+
+        if (streamReady && g_movieUsesVdp2Title) {
+            // VDP2 is now composed from reusable layer programs rather than
+            // one screen-specific shader. D5 is the first RBG0 client.
+            bool rbgSubmitted = true;
+            if (g_movieVdp2Info[0] >= 0.5f) {
+                sceGxmSetFragmentProgram(
+                    g_probeContext, g_vdp2Rbg0FragmentProgram);
+
+                void* rbgUniforms = nullptr;
+                if (sceGxmReserveFragmentDefaultUniformBuffer(
+                        g_probeContext, &rbgUniforms) < 0 ||
+                    !rbgUniforms) {
+                    rbgSubmitted = false;
+                } else {
+                    for (unsigned int i = 0; i < 4u; ++i) {
+                        sceGxmSetUniformDataF(
+                            rbgUniforms,
+                            g_vdp2Rbg0PlaneParam[i],
+                            0, 4,
+                            &g_movieRbg0Planes[i * 4u]);
+                    }
+
+                    const unsigned int ktctl =
+                        static_cast<unsigned int>(g_movieRbg0Ctrl[1]);
+                    const unsigned int ktaof =
+                        static_cast<unsigned int>(g_movieRbg0Ctrl[2]);
+                    const float coefficientSize =
+                        (ktctl & 0x2u) ? 2.0f : 4.0f;
+                    const float rbgInfo[4] = {
+                        249856.0f, // Azel rotation parameter A: VRAM 0x3D000
+                        static_cast<float>(ktaof & 0x7u) *
+                            coefficientSize * 65536.0f,
+                        (ktctl & 0x1u) ? 1.0f : 0.0f,
+                        coefficientSize,
+                    };
                     sceGxmSetUniformDataF(
-                        fragmentUniforms,
-                        g_vdp2Rbg0PlaneParam[i],
-                        0, 4,
-                        &g_movieRbg0Planes[i * 4u]);
-                    sceGxmSetUniformDataF(
-                        fragmentUniforms,
-                        g_vdp2Rbg0PlaneBParam[i],
-                        0, 4,
-                        &g_movieRbg0PlanesB[i * 4u]);
-                    sceGxmSetUniformDataF(
-                        fragmentUniforms,
-                        g_vdp2Rbg0CtrlParam[i],
-                        0, 4,
-                        &g_movieRbg0Ctrl[i * 4u]);
+                        rbgUniforms,
+                        g_vdp2Rbg0InfoParam,
+                        0, 4, rbgInfo);
+
+                    rbgSubmitted = sceGxmDraw(
+                        g_probeContext,
+                        SCE_GXM_PRIMITIVE_TRIANGLES,
+                        SCE_GXM_INDEX_FORMAT_U16,
+                        g_movieIndices,
+                        6) >= 0;
                 }
             }
-        }
 
-        sceGxmSetFragmentTexture(g_probeContext, 0, &g_movieTexture);
-        if (sceGxmSetVertexStream(
-                g_probeContext, 0, g_movieVertices) >= 0) {
-            submitted = sceGxmDraw(
+            sceGxmSetFragmentProgram(
+                g_probeContext, g_vdp2NbgFragmentProgram);
+            void* nbgUniforms = nullptr;
+            bool nbgSubmitted = false;
+            if (sceGxmReserveFragmentDefaultUniformBuffer(
+                    g_probeContext, &nbgUniforms) >= 0 &&
+                nbgUniforms) {
+                sceGxmSetUniformDataF(
+                    nbgUniforms,
+                    g_vdp2InfoParam,
+                    0, 4, g_movieVdp2Info);
+                nbgSubmitted = sceGxmDraw(
+                    g_probeContext,
+                    SCE_GXM_PRIMITIVE_TRIANGLES,
+                    SCE_GXM_INDEX_FORMAT_U16,
+                    g_movieIndices,
+                    6) >= 0;
+            }
+            submitted = rbgSubmitted && nbgSubmitted;
+        } else if (streamReady) {
+            sceGxmSetFragmentProgram(
                 g_probeContext,
-                SCE_GXM_PRIMITIVE_TRIANGLES,
-                SCE_GXM_INDEX_FORMAT_U16,
-                g_movieIndices,
-                6) >= 0;
+                g_movieUsesCinepakPayload
+                    ? g_cinepakFragmentProgram
+                    : g_movieTextureFragmentProgram);
+
+            if (g_movieUsesCinepakPayload) {
+                void* fragmentUniforms = nullptr;
+                if (sceGxmReserveFragmentDefaultUniformBuffer(
+                        g_probeContext, &fragmentUniforms) >= 0 &&
+                    fragmentUniforms) {
+                    const float movieInfo[4] = {
+                        static_cast<float>(g_movieWidth),
+                        static_cast<float>(g_movieHeight),
+                        static_cast<float>(g_moviePayloadWidth),
+                        static_cast<float>(g_moviePayloadHeight),
+                    };
+                    sceGxmSetUniformDataF(
+                        fragmentUniforms,
+                        g_cinepakMovieInfoParam,
+                        0, 4, movieInfo);
+                    submitted = sceGxmDraw(
+                        g_probeContext,
+                        SCE_GXM_PRIMITIVE_TRIANGLES,
+                        SCE_GXM_INDEX_FORMAT_U16,
+                        g_movieIndices,
+                        6) >= 0;
+                }
+            } else {
+                submitted = sceGxmDraw(
+                    g_probeContext,
+                    SCE_GXM_PRIMITIVE_TRIANGLES,
+                    SCE_GXM_INDEX_FORMAT_U16,
+                    g_movieIndices,
+                    6) >= 0;
+            }
         }
     }
 
