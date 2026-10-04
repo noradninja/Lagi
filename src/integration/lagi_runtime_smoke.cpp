@@ -84,6 +84,43 @@ static void begin_azel_vdp1_frame()
     ctx.m10 = ctx.m14[0].begin();
 }
 
+static void log_title_vdp2_diagnostics_once()
+{
+    static bool logged = false;
+    if (logged)
+        return;
+
+    unsigned int banks[8] = {};
+    unsigned int nonzeroPatterns = 0;
+    // Title NBG0 uses two 0x800-byte 1-word pattern-name pages at 0x10000
+    // and 0x10800. Inspect only metadata; rendering remains entirely SGX.
+    for (unsigned int page = 0; page < 2; ++page) {
+        const unsigned int base = 0x10000u + page * 0x800u;
+        for (unsigned int i = 0; i < 0x400u; ++i) {
+            const u16 pattern = getVdp2VramU16(base + i * 2u);
+            if (pattern != 0)
+                ++nonzeroPatterns;
+            ++banks[(pattern >> 12) & 7u];
+        }
+    }
+
+    // Avoid logging before TITLEE.PNB has actually been loaded.
+    if (nonzeroPatterns == 0)
+        return;
+
+    lagi::platform::logging::writef(
+        "[VDP2TitleDiag] patterns=%u banks=%u,%u,%u,%u,%u,%u,%u,%u "
+        "cram0=%04X cram1=%04X cram2=%04X cram3=%04X\n",
+        nonzeroPatterns,
+        banks[0], banks[1], banks[2], banks[3],
+        banks[4], banks[5], banks[6], banks[7],
+        getVdp2CramU16(0),
+        getVdp2CramU16(2),
+        getVdp2CramU16(4),
+        getVdp2CramU16(6));
+    logged = true;
+}
+
 bool runtime_smoke_init()
 {
     if (!saturn_memory_smoke_test()) {
@@ -193,6 +230,9 @@ void runtime_smoke_frame()
     const bool nameEntryActive =
         gGameStatus.m4_gameStatus == 2 &&
         (vdp2Controls.m4_pendingVdp2Regs->m20_BGON & 0x1) != 0;
+    if (titleActive)
+        log_title_vdp2_diagnostics_once();
+
     if (titleActive || nameEntryActive) {
         // Azel owns the VDP2 memory/register state. Neptune uploads the raw
         // VRAM/CRAM and interprets the active front-end layers directly on
