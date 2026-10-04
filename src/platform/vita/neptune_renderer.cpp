@@ -166,6 +166,9 @@ static SceGxmFragmentProgram* g_cinepakFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_vdp2TitleFragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_cinepakMovieInfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2InfoParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0PlaneParam[4] = {
+    nullptr, nullptr, nullptr, nullptr
+};
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
 static SceGxmFragmentProgram* g_meshTextureFragmentProgram = nullptr;
@@ -424,6 +427,7 @@ static bool g_movieUsesCinepakPayload = false;
 static bool g_movieUsesVdp2Title = false;
 static bool g_movieFrameVisible = false;
 static float g_movieVdp2Info[4] = {};
+static float g_movieRbg0Planes[16] = {};
 static std::atomic<unsigned int> g_azelColorOffsetEnable{0};
 static std::atomic<unsigned int> g_azelColorOffsetSelect{0};
 static std::atomic<int> g_azelColorOffsetARed{0};
@@ -2070,6 +2074,19 @@ bool movie_republish_frame()
         return false;
 
     return renderSlot.publish();
+}
+
+void frontend_set_rbg0_planes(
+    const unsigned int* offsets,
+    unsigned int count)
+{
+    if (!offsets)
+        return;
+    const unsigned int n = std::min(count, 16u);
+    for (unsigned int i = 0; i < n; ++i)
+        g_movieRbg0Planes[i] = static_cast<float>(offsets[i]);
+    for (unsigned int i = n; i < 16u; ++i)
+        g_movieRbg0Planes[i] = 0.0f;
 }
 
 bool frontend_present_vdp2(
@@ -6017,6 +6034,18 @@ void show_town_scene()
         failure("[FAIL] VDP2 FRONTEND SHADER PARAMS");
         return;
     }
+    static const char* kRbg0PlaneNames[4] = {
+        "rbg0Plane0", "rbg0Plane1", "rbg0Plane2", "rbg0Plane3"
+    };
+    for (unsigned int i = 0; i < 4u; ++i) {
+        g_vdp2Rbg0PlaneParam[i] =
+            sceGxmProgramFindParameterByName(
+                vdp2TitleFragmentGxp, kRbg0PlaneNames[i]);
+        if (!g_vdp2Rbg0PlaneParam[i]) {
+            failure("[FAIL] VDP2 RBG0 SHADER PARAMS");
+            return;
+        }
+    }
 
     if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
@@ -8410,6 +8439,13 @@ static bool renderMovieFrame()
                     fragmentUniforms,
                     g_vdp2InfoParam,
                     0, 4, g_movieVdp2Info);
+                for (unsigned int i = 0; i < 4u; ++i) {
+                    sceGxmSetUniformDataF(
+                        fragmentUniforms,
+                        g_vdp2Rbg0PlaneParam[i],
+                        0, 4,
+                        &g_movieRbg0Planes[i * 4u]);
+                }
             }
         }
 
