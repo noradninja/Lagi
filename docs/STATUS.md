@@ -8,7 +8,7 @@ Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Re
 
 ## Current development stage
 
-The 0.040 milestone replaces the first Ruins room's special direct-boot path with Azel's own startup, movie, title, New Game, field, and module-manager flow.
+The 0.040 milestone replaces the first Ruins room's special direct-boot path with Azel's own startup, movie, title, New Game, field, module-manager, and native town presentation flow. The milestone is hardware-proven through a playable first Ruins scene.
 
 The current hardware path reaches:
 
@@ -134,6 +134,11 @@ Verified on real Vita/Vita TV hardware:
 - Start movie skip without leaking the same Start edge into gameplay
 - native module-manager load of `TWN_RUIN.PRG`
 - entry into game mode 1 / first Ruins town task graph
+- continuous native first-Ruins world presentation
+- native Edge animated hierarchy presentation
+- task-owned switch/object presentation
+- live Azel light/falloff state on static and dynamic submissions
+- Full, Texture, Lighting, Quads, and Wires renderer views
 - Vita-to-Saturn physical controller bridge
 - Sega FILM demux
 - Cinepak playback
@@ -380,7 +385,7 @@ The current live 3D renderer still flattens active work into shared buffers with
 
 ## Current development focus
 
-Current work is concentrated on the authentic first-Ruins presentation handoff, D5 RBG0 A/B and window composition, generic VDP2 fade/color-offset accuracy, title color/palette accuracy, removal of direct-boot-only renderer assumptions, and continued generalization of historical `town_*` renderer state into scene/presentation terminology.
+With the authentic first-Ruins handoff now hardware-proven, current work is concentrated on D5 RBG0 A/B and window composition, generic VDP2 fade/color-offset accuracy, title color/palette accuracy, migration of remaining historical `town_*` renderer state into scene/presentation terminology, broader scene/resource lifetime handling, and moving more of the active Saturn lighting work from CPU preparation into SGX where practical.
 
 ## Historical reference paths
 
