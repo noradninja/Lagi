@@ -155,7 +155,9 @@ Current hardware-tested coverage includes:
 - scaled sprites;
 - polylines;
 - first-Ruins world geometry;
-- Edge and task-owned object submissions;
+- task-owned dynamic objects;
+- Edge's animated hierarchy submitted through Azel's normal `addObjectToDrawList()` boundary;
+- per-submission Azel light vector, RGB, and falloff state;
 - Edge's original mesh-shadow path.
 
 Lock-On state, menu behavior, cursor behavior, animation state, and other gameplay decisions remain part of Azel's task graph.
@@ -220,3 +222,12 @@ Normal authentic boot does not depend on state established exclusively by the di
 ## Upstream integration
 
 Azel's desktop-facing host interfaces are adapted at the Lagi boundary for Vita builds. The Vita prelude supplies declarations and platform substitutions required for compilation while gameplay and task/state-machine behavior remains in the upstream implementation.
+
+
+## 0.040 native Ruins presentation
+
+The completed 0.040 path reaches the first Ruins scene without using the direct-Ruins bootstrap. Azel creates and updates the scene, then Lagi captures renderer-facing output at the existing Azel boundaries.
+
+Static world submissions preserve world-space transforms before Neptune applies the native town camera. Dynamic Edge hierarchy submissions are converted from Azel's view-relative matrix state back into world space at the render bridge. The hierarchy, pose evaluation, movement, and animation remain owned by `sEdgeTask`.
+
+Lighting is captured with each submission from Azel's active light state. Geometry/material cache identity is independent from lighting state; cached static polygons refresh their current light payload without forcing a room rebuild. Neptune's current Full/Lighting path still evaluates the Saturn-style Gouraud contribution on the CPU before GPU interpolation, leaving GPU-side lighting evaluation as a later renderer optimization rather than part of the 0.040 milestone.
