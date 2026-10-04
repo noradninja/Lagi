@@ -923,15 +923,15 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleOverlay.cpp")
   # Battle manager stays authentic, but no battle is reachable before the
-  # first-flight milestone. Remove references to every battle overlay from
-  # the generated 0.040 build so they do not force the whole battle graph in.
-  string(REGEX REPLACE
-   "BattleEnd_deleteSub0\\(\\);"
-   "/* Lagi 0.040: battle teardown deferred until battle milestone */"
+  # first-flight milestone. Remove only executable battle-overlay references;
+  # keep declarations and surrounding task structure valid.
+  string(REPLACE
+   "        BattleEnd_deleteSub0();"
+   "        /* Lagi 0.040: battle teardown deferred until battle milestone */"
    source_text "${source_text}")
   string(REGEX REPLACE
-   "overlayStart_BTL_[A-Za-z0-9_]+\\(pThis->m0_parent\\);"
-   "/* Lagi 0.040: battle overlay dispatch deferred */"
+   "                overlayStart_BTL_[A-Za-z0-9_]+\\(pThis\\);"
+   "                /* Lagi 0.040: battle overlay dispatch deferred */"
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "town/ruin/twn_ruin_lock.cpp")
