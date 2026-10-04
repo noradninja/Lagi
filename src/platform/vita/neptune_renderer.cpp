@@ -178,7 +178,6 @@ static const SceGxmProgramParameter* g_vdp2Rbg0Transform0Param = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0Transform1Param = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0CoefficientParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0InfoParam = nullptr;
-static const SceGxmProgramParameter* g_vdp2Rbg0WindowParam = nullptr;
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
 static SceGxmFragmentProgram* g_meshTextureFragmentProgram = nullptr;
@@ -427,6 +426,10 @@ static SceUID g_movieIndexUid = -1;
 static void* g_movieTextureData = nullptr;
 static azel::DebugTextureVertex* g_movieVertices = nullptr;
 static std::uint16_t* g_movieIndices = nullptr;
+static SceUID g_vdp2WindowVertexUid = -1;
+static SceUID g_vdp2WindowIndexUid = -1;
+static azel::DebugTextureVertex* g_vdp2WindowVertices = nullptr;
+static std::uint16_t* g_vdp2WindowIndices = nullptr;
 static SceGxmTexture g_movieTexture{};
 static unsigned int g_movieWidth = 0;
 static unsigned int g_movieHeight = 0;
@@ -1853,6 +1856,14 @@ static void freeMovieResources()
     freeMovieMappedBlock(g_movieIndexUid, indices);
     g_movieIndices = nullptr;
 
+    void* windowVertices = g_vdp2WindowVertices;
+    freeMovieMappedBlock(g_vdp2WindowVertexUid, windowVertices);
+    g_vdp2WindowVertices = nullptr;
+
+    void* windowIndices = g_vdp2WindowIndices;
+    freeMovieMappedBlock(g_vdp2WindowIndexUid, windowIndices);
+    g_vdp2WindowIndices = nullptr;
+
     g_movieTexture = {};
     g_movieWidth = 0;
     g_movieHeight = 0;
@@ -1910,7 +1921,25 @@ bool movie_present_frame(
                 6u * sizeof(std::uint16_t),
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_movieIndexUid));
-        if (!g_movieTextureData || !g_movieVertices || !g_movieIndices) {
+
+        // A Saturn line window can expose up to two horizontal spans on each
+        // of 224 scanlines (outside-window mode). Build that coverage as
+        // reusable textured geometry instead of branching/reading VRAM inside
+        // the RBG0 fragment shader.
+        constexpr unsigned int kWindowMaxQuads = 224u * 2u;
+        g_vdp2WindowVertices = static_cast<azel::DebugTextureVertex*>(
+            probeGpuAlloc(
+                kWindowMaxQuads * 4u * sizeof(azel::DebugTextureVertex),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp2WindowVertexUid));
+        g_vdp2WindowIndices = static_cast<std::uint16_t*>(
+            probeGpuAlloc(
+                kWindowMaxQuads * 6u * sizeof(std::uint16_t),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp2WindowIndexUid));
+
+        if (!g_movieTextureData || !g_movieVertices || !g_movieIndices ||
+            !g_vdp2WindowVertices || !g_vdp2WindowIndices) {
             freeMovieResources();
             return false;
         }
@@ -6183,14 +6212,10 @@ void show_town_scene()
             g_vdp2Rbg0InfoParam =
                 sceGxmProgramFindParameterByName(
                     vdp2Rbg0FragmentGxp, "rbg0Info");
-            g_vdp2Rbg0WindowParam =
-                sceGxmProgramFindParameterByName(
-                    vdp2Rbg0FragmentGxp, "rbg0Window");
             if (!g_vdp2Rbg0Transform0Param ||
                 !g_vdp2Rbg0Transform1Param ||
                 !g_vdp2Rbg0CoefficientParam ||
-                !g_vdp2Rbg0InfoParam ||
-                !g_vdp2Rbg0WindowParam) {
+                !g_vdp2Rbg0InfoParam) {
                 logging::writef(
                     "[NeptuneVDP2] RBG0 compact uniforms unavailable; "
                     "disabling RBG0\n");
@@ -8604,8 +8629,7 @@ static bool renderMovieFrame()
             // one screen-specific shader. D5 is the first RBG0 client.
             bool rbgSubmitted = true;
             if (g_movieVdp2Info[0] >= 0.5f && g_vdp2Rbg0Available &&
-                g_vdp2Rbg0FragmentProgram && g_vdp2Rbg0InfoParam &&
-                g_vdp2Rbg0WindowParam) {
+                g_vdp2Rbg0FragmentProgram && g_vdp2Rbg0InfoParam) {
                 sceGxmSetFragmentProgram(
                     g_probeContext, g_vdp2Rbg0FragmentProgram);
 
@@ -8627,7 +8651,9 @@ static bool renderMovieFrame()
                         unsigned int coefficientEnableBit,
                         unsigned int coefficientSizeBit,
                         unsigned int coefficientOffsetShift,
-                        const float window[4]) -> bool {
+                        const azel::DebugTextureVertex* vertices,
+                        const std::uint16_t* indices,
+                        unsigned int indexCount) -> bool {
                     void* rbgUniforms = nullptr;
                     if (sceGxmReserveFragmentDefaultUniformBuffer(
                             g_probeContext, &rbgUniforms) < 0 ||
@@ -8670,67 +8696,184 @@ static bool renderMovieFrame()
                         rbgUniforms,
                         g_vdp2Rbg0InfoParam,
                         0, 4, rbgInfo);
-                    sceGxmSetUniformDataF(
-                        rbgUniforms,
-                        g_vdp2Rbg0WindowParam,
-                        0, 4, window);
+
+                    if (sceGxmSetVertexStream(
+                            g_probeContext, 0, vertices) < 0)
+                        return false;
 
                     return sceGxmDraw(
                         g_probeContext,
                         SCE_GXM_PRIMITIVE_TRIANGLES,
                         SCE_GXM_INDEX_FORMAT_U16,
-                        g_movieIndices,
-                        6) >= 0;
+                        indices,
+                        indexCount) >= 0;
                 };
 
-                const float noWindow[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-
                 if (rpmd == 1u || rpmd == 3u) {
-                    // Parameter B is the base for RPMD=3. Parameter A is then
-                    // composited only where the native rotation window selects
-                    // it. This mirrors renderer_vdp2.cpp without combining both
-                    // expensive rotation paths into one SGX fragment program.
+                    // Parameter B is the base for RPMD=3.
                     rbgSubmitted = submitRbgParameter(
                         g_movieRbg0PlanesB,
                         g_movieRbg0TransformB,
                         g_movieRbg0CoefficientB,
                         0x100u, 0x200u, 8u,
-                        noWindow);
+                        g_movieVertices, g_movieIndices, 6u);
                 }
 
-                if (rbgSubmitted && rpmd != 1u) {
-                    float parameterAWindow[4] = {
-                        0.0f, 0.0f, 0.0f, 0.0f
-                    };
+                unsigned int parameterAIndexCount = 6u;
+                const azel::DebugTextureVertex* parameterAVertices =
+                    g_movieVertices;
+                const std::uint16_t* parameterAIndices =
+                    g_movieIndices;
 
-                    if (rpmd == 3u) {
-                        // Support the native single active line-window cases.
-                        // Combined W0/W1 boolean logic remains a compositor
-                        // extension, but D5 uses only line Window 1 (WCTLD=C).
-                        if ((wctld & 0x8u) != 0u &&
-                            (lineWindowMask & 0x2u) != 0u) {
-                            parameterAWindow[0] = g_movieRbg0Ctrl[6];
-                            parameterAWindow[1] = 1.0f;
-                            parameterAWindow[2] =
-                                (wctld & 0x4u) ? 1.0f : 0.0f;
-                            parameterAWindow[3] = 1.0f;
-                        } else if ((wctld & 0x2u) != 0u &&
-                                   (lineWindowMask & 0x1u) != 0u) {
-                            parameterAWindow[0] = g_movieRbg0Ctrl[5];
-                            parameterAWindow[1] = 1.0f;
-                            parameterAWindow[2] =
-                                (wctld & 0x1u) ? 1.0f : 0.0f;
-                            parameterAWindow[3] = 1.0f;
-                        }
+                if (rbgSubmitted && rpmd == 3u &&
+                    g_vdp2WindowVertices && g_vdp2WindowIndices) {
+                    unsigned int lineAddress = 0u;
+                    bool drawInside = true;
+                    int yStart = 0;
+                    int yEnd = 223;
+                    bool haveSingleLineWindow = false;
+
+                    if ((wctld & 0x8u) != 0u &&
+                        (lineWindowMask & 0x2u) != 0u) {
+                        lineAddress =
+                            static_cast<unsigned int>(g_movieRbg0Ctrl[6]);
+                        drawInside = (wctld & 0x4u) != 0u;
+                        yStart = static_cast<int>(g_movieRbg0Ctrl[13]);
+                        yEnd = static_cast<int>(g_movieRbg0Ctrl[15]);
+                        haveSingleLineWindow = true;
+                    } else if ((wctld & 0x2u) != 0u &&
+                               (lineWindowMask & 0x1u) != 0u) {
+                        lineAddress =
+                            static_cast<unsigned int>(g_movieRbg0Ctrl[5]);
+                        drawInside = (wctld & 0x1u) != 0u;
+                        yStart = static_cast<int>(g_movieRbg0Ctrl[9]);
+                        yEnd = static_cast<int>(g_movieRbg0Ctrl[11]);
+                        haveSingleLineWindow = true;
                     }
 
+                    if (haveSingleLineWindow) {
+                        const auto* rawBytes =
+                            static_cast<const unsigned char*>(
+                                g_movieTextureData);
+                        const float displayAspect =
+                            static_cast<float>(viewerRenderWidth()) /
+                            static_cast<float>(viewerRenderHeight());
+                        const float xExtent =
+                            (4.0f / 3.0f) / displayAspect;
+
+                        unsigned int quadCount = 0u;
+                        auto emitSpan =
+                            [&](int y, int x0, int x1) {
+                            if (quadCount >= 224u * 2u)
+                                return;
+                            x0 = std::clamp(x0, 0, 351);
+                            x1 = std::clamp(x1, 0, 351);
+                            if (x1 < x0)
+                                return;
+
+                            const float u0 =
+                                static_cast<float>(x0) / 352.0f;
+                            const float u1 =
+                                static_cast<float>(x1 + 1) / 352.0f;
+                            const float v0 =
+                                static_cast<float>(y) / 224.0f;
+                            const float v1 =
+                                static_cast<float>(y + 1) / 224.0f;
+                            const float px0 =
+                                -xExtent + 2.0f * xExtent * u0;
+                            const float px1 =
+                                -xExtent + 2.0f * xExtent * u1;
+                            const float py0 = 1.0f - 2.0f * v0;
+                            const float py1 = 1.0f - 2.0f * v1;
+
+                            const unsigned int base = quadCount * 4u;
+                            g_vdp2WindowVertices[base + 0u] =
+                                {px0, py0, 0.5f, u0, v0};
+                            g_vdp2WindowVertices[base + 1u] =
+                                {px1, py0, 0.5f, u1, v0};
+                            g_vdp2WindowVertices[base + 2u] =
+                                {px0, py1, 0.5f, u0, v1};
+                            g_vdp2WindowVertices[base + 3u] =
+                                {px1, py1, 0.5f, u1, v1};
+
+                            const unsigned int ii = quadCount * 6u;
+                            g_vdp2WindowIndices[ii + 0u] =
+                                static_cast<std::uint16_t>(base + 0u);
+                            g_vdp2WindowIndices[ii + 1u] =
+                                static_cast<std::uint16_t>(base + 1u);
+                            g_vdp2WindowIndices[ii + 2u] =
+                                static_cast<std::uint16_t>(base + 2u);
+                            g_vdp2WindowIndices[ii + 3u] =
+                                static_cast<std::uint16_t>(base + 2u);
+                            g_vdp2WindowIndices[ii + 4u] =
+                                static_cast<std::uint16_t>(base + 1u);
+                            g_vdp2WindowIndices[ii + 5u] =
+                                static_cast<std::uint16_t>(base + 3u);
+                            ++quadCount;
+                        };
+
+                        for (int y = 0; y < 224; ++y) {
+                            const unsigned int addr =
+                                (lineAddress +
+                                 static_cast<unsigned int>(y) * 4u) &
+                                0x7FFFFu;
+                            const unsigned int xsRaw =
+                                static_cast<unsigned int>(rawBytes[addr]) |
+                                (static_cast<unsigned int>(
+                                    rawBytes[(addr + 1u) & 0x7FFFFu]) << 8);
+                            const unsigned int xeRaw =
+                                static_cast<unsigned int>(
+                                    rawBytes[(addr + 2u) & 0x7FFFFu]) |
+                                (static_cast<unsigned int>(
+                                    rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
+
+                            int xs = 0;
+                            int xe = 0;
+                            if (xeRaw != 0xFFFFu) {
+                                xs = static_cast<int>((xsRaw >> 1) & 0x1FFu);
+                                xe = static_cast<int>((xeRaw >> 1) & 0x1FFu);
+                            }
+
+                            const bool yInside =
+                                y >= yStart && y <= yEnd;
+                            if (drawInside) {
+                                if (yInside)
+                                    emitSpan(y, xs, xe);
+                            } else {
+                                if (!yInside) {
+                                    emitSpan(y, 0, 351);
+                                } else {
+                                    emitSpan(y, 0, xs - 1);
+                                    emitSpan(y, xe + 1, 351);
+                                }
+                            }
+                        }
+
+                        if (quadCount) {
+                            parameterAVertices = g_vdp2WindowVertices;
+                            parameterAIndices = g_vdp2WindowIndices;
+                            parameterAIndexCount = quadCount * 6u;
+                        } else {
+                            parameterAIndexCount = 0u;
+                        }
+                    }
+                }
+
+                if (rbgSubmitted && rpmd != 1u &&
+                    parameterAIndexCount != 0u) {
                     rbgSubmitted = submitRbgParameter(
                         g_movieRbg0Planes,
                         g_movieRbg0TransformA,
                         g_movieRbg0CoefficientA,
                         0x1u, 0x2u, 0u,
-                        parameterAWindow);
+                        parameterAVertices,
+                        parameterAIndices,
+                        parameterAIndexCount);
                 }
+
+                // NBG uses the normal fullscreen front-end quad.
+                sceGxmSetVertexStream(
+                    g_probeContext, 0, g_movieVertices);
             }
 
             sceGxmSetFragmentProgram(
