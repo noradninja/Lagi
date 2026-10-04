@@ -4800,6 +4800,42 @@ static void appendLiveTownEdge()
         sceKernelGetProcessTimeWide() - tAppend);
 }
 
+static void refreshLiveTownStaticLighting()
+{
+    std::size_t polygonBase = 0u;
+
+    for (const auto& submission : azel_bridge::published_submissions()) {
+        if (submission.state.dynamic ||
+            submission.adaptedModelIndex < 0)
+            continue;
+
+        const auto* model = azel_bridge::published_adapted_model(
+            static_cast<std::uint32_t>(submission.adaptedModelIndex));
+        if (!model)
+            continue;
+
+        const std::size_t polygonCount = model->polygons.size();
+        if (polygonBase + polygonCount > g_liveTownStaticPolygonCount ||
+            polygonBase + polygonCount > g_liveTownPolygonLights.size())
+            break;
+
+        LivePolygonLightState light{};
+        if (submission.state.hasLight) {
+            for (unsigned axis = 0; axis < 3; ++axis) {
+                light.vector[axis] = submission.state.lightVector[axis];
+                light.color[axis] = submission.state.lightColor[axis];
+                light.falloff[axis] = submission.state.lightFalloff[axis];
+            }
+            light.valid = true;
+        }
+
+        for (std::size_t p = 0; p < polygonCount; ++p)
+            g_liveTownPolygonLights[polygonBase + p] = light;
+
+        polygonBase += polygonCount;
+    }
+}
+
 static bool buildLiveTownFrame()
 {
     g_profileBuildScanUs = 0u;
@@ -4883,6 +4919,11 @@ static bool buildLiveTownFrame()
     }
     g_profileBuildCacheUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tCache);
+
+    // Geometry/materials are cached independently from lighting. Refresh the
+    // current Azel light payload for the cached static polygon ranges every
+    // frame without rebuilding or re-uploading the static mesh.
+    refreshLiveTownStaticLighting();
 
     // Task-owned town objects retain their native per-frame transform
     // lifecycle. Their model/material mapping is immutable, though, so cache
@@ -9846,9 +9887,12 @@ static void updateLiveTownAzelLighting()
             haveFalloff = true;
         }
 
-        if (!reportedLiveLighting) {
+        if (!reportedLiveLighting &&
+            (light.vector[0] != 0 || light.vector[1] != 0 ||
+             light.vector[2] != 0 || light.color[0] != 0 ||
+             light.color[1] != 0 || light.color[2] != 0)) {
             logging::writef(
-                "[SceneLight] live light vec=(%d,%d,%d) rgb=(%u,%u,%u) "
+                "[SceneLight] active light vec=(%d,%d,%d) rgb=(%u,%u,%u) "
                 "falloff=%08X/%08X/%08X\n",
                 light.vector[0], light.vector[1], light.vector[2],
                 static_cast<unsigned>(light.color[0]),
