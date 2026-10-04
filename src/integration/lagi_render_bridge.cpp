@@ -240,6 +240,7 @@ static void capture_runtime_state(bool billboard)
 {
     g_lastState = {};
     g_lastState.billboard = billboard;
+    g_lastState.dynamic = g_viewRelativeScope;
 
     // For normal objects Azel's pCurrentMatrix already contains camera/view
     // and model transforms at submission time. Billboard capture will later
