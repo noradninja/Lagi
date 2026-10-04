@@ -240,3 +240,16 @@ Front-end presentation follows Azel's live VDP2 TVMD state. The normal gameplay 
 Neptune renders directly into the active framebuffer size and passes that same width, height, pitch, and buffer to `sceDisplaySetFrameBuf()`.
 
 The title NBG0 shader addresses the 704x448 VDP2 source raster directly. Raw VRAM and CRAM reads remain point-exact. When source pixels must be reduced into the 720x408 framebuffer, filtering is applied after CRAM lookup to decoded RGB colors rather than to Saturn memory bytes or palette indices.
+
+
+## 2D presentation filtering
+
+Neptune keeps Saturn memory interpretation separate from presentation filtering. Raw VDP1/VDP2 VRAM, CRAM, pattern names, palette indices, and command data are addressed without texture filtering. Once a 2D asset has been decoded into an ordinary RGBA texture, SGX linear filtering is used when that asset is rescaled into the active Vita framebuffer.
+
+Current decoded linear-filtered paths include VDP1 UI sprites such as Lock-On/LCS cursors and menu selectors, the decoded NBG1 UI/window atlas, and the logical 352x224 VDP2 text layer used by subtitles, interaction text, item text, and menu text.
+
+The text layer is reconstructed at Saturn logical resolution and composited by SGX rather than expanded directly into the final framebuffer by the CPU.
+
+Trilinear filtering is not currently used. These UI textures have a single mip level, so mip filtering would not improve presentation until a real mip chain exists.
+
+Raw VDP2 image planes such as title and field/name-entry backgrounds remain a separate presentation class. Hardware linear filtering for those planes requires a decoded layer surface before final composition, preserving exact VRAM/CRAM reads while allowing SGX to filter decoded RGB pixels.
