@@ -277,6 +277,15 @@ static std::size_t g_liveTownShadowFirstPolygon = 0;
 static std::size_t g_liveTownShadowPolygonCount = 0;
 static std::size_t g_liveTownEdgeFirstPolygon = 0;
 static std::size_t g_liveTownEdgePolygonCount = 0;
+
+// Authentic Azel mesh-mode primitives (CMDPMOD bit 8) need Saturn-style
+// ordered overdraw rather than ordinary z-buffer ownership. Track their
+// source polygon ranges generically; do not attach object identity here.
+struct LiveTownMeshRange {
+    std::size_t first = 0;
+    std::size_t count = 0;
+};
+static std::vector<LiveTownMeshRange> g_liveTownMeshRanges;
 static bool g_liveTownPrepared = false;
 static std::size_t g_edgeFirstVertex = 0;
 static std::size_t g_edgeFirstPolygon = 0;
@@ -4864,6 +4873,27 @@ static void appendLiveTownModel(
         }
         g_liveTownPolygonLights.push_back(polygonLight);
     }
+
+    // Preserve the exact positions of Azel-authored VDP1 mesh commands in the
+    // flattened live-town stream. Adjacent mesh polygons from the same model
+    // are coalesced into ranges, but no scene/object identity is inferred.
+    std::size_t runStart = 0u;
+    std::size_t runCount = 0u;
+    for (std::size_t p = 0; p < model.polygons.size(); ++p) {
+        const bool mesh = (model.polygons[p].cmdPmod & 0x0100u) != 0u;
+        if (mesh) {
+            if (runCount == 0u)
+                runStart = p;
+            ++runCount;
+        } else if (runCount != 0u) {
+            g_liveTownMeshRanges.push_back(
+                {polygonBase + runStart, runCount});
+            runCount = 0u;
+        }
+    }
+    if (runCount != 0u)
+        g_liveTownMeshRanges.push_back(
+            {polygonBase + runStart, runCount});
 }
 
 static void appendLiveTownEdge()
@@ -5059,6 +5089,7 @@ static bool buildLiveTownFrame()
     std::uint64_t staticSignature = 1469598103934665603ull;
     bool hasBillboards = false;
     g_liveTownSubmissionCount = 0u;
+    g_liveTownMeshRanges.clear();
     g_liveTownStaticSubmissionCount = 0u;
     g_liveTownBillboardSubmissionCount = 0u;
     g_liveTownStaticSubmittedPolygons = 0u;
@@ -8112,18 +8143,17 @@ bool submit_vdp1_model(
                     static unsigned int orderedShadowTraceBudget = 8u;
                     if (orderedShadowTraceBudget != 0u) {
                         logging::writef(
-                            "[PresentationTrace][ShadowDraw] tex=%u indices=%u "
+                            "[PresentationTrace][MeshDraw] tex=%u indices=%u "
                             "mesh=%u\n",
                             t,
                             batch.indexCount,
                             mesh ? 1u : 0u);
                         --orderedShadowTraceBudget;
                     }
-                    // Azel submits Edge's VDP1 mesh shadow after the town
-                    // environment and immediately before the actor. Preserve
-                    // that ordered phase explicitly rather than relying on
-                    // texture-batch order or the depth buffer to reconstruct
-                    // Saturn VDP1 semantics.
+                    // Saturn VDP1 mesh mode is ordered overdraw, not a z-buffered
+                    // material. Preserve this Azel-authored command phase
+                    // explicitly rather than allowing texture batching/depth
+                    // testing to reorder or reject it.
                     sceGxmSetFrontPolygonMode(
                         g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
                     sceGxmSetBackPolygonMode(
@@ -8201,6 +8231,34 @@ bool submit_vdp1_model(
                 !submitRange(
                     tailFirst,
                     model.polygonCount - tailFirst,
+                    false))
+                return false;
+            return true;
+        }
+
+        if (g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+            !g_liveTownMeshRanges.empty()) {
+            std::size_t cursor = 0u;
+            for (const auto& meshRange : g_liveTownMeshRanges) {
+                if (meshRange.first > cursor &&
+                    !submitRange(
+                        cursor,
+                        meshRange.first - cursor,
+                        false))
+                    return false;
+
+                if (!submitRange(
+                        meshRange.first,
+                        meshRange.count,
+                        true))
+                    return false;
+
+                cursor = meshRange.first + meshRange.count;
+            }
+            if (cursor < model.polygonCount &&
+                !submitRange(
+                    cursor,
+                    model.polygonCount - cursor,
                     false))
                 return false;
             return true;
@@ -8472,6 +8530,33 @@ bool submit_vdp1_model(
                     tailFirst,
                     model.polygonCount - tailFirst,
                     false);
+        } else if (
+            subdividedTexturedLit &&
+            g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+            !g_liveTownMeshRanges.empty()) {
+            std::size_t cursor = 0u;
+            for (const auto& meshRange : g_liveTownMeshRanges) {
+                if (phaseResult &&
+                    meshRange.first > cursor) {
+                    phaseResult = submitSubdivRange(
+                        cursor,
+                        meshRange.first - cursor,
+                        false);
+                }
+                if (phaseResult) {
+                    phaseResult = submitSubdivRange(
+                        meshRange.first,
+                        meshRange.count,
+                        true);
+                }
+                cursor = meshRange.first + meshRange.count;
+            }
+            if (phaseResult && cursor < model.polygonCount) {
+                phaseResult = submitSubdivRange(
+                    cursor,
+                    model.polygonCount - cursor,
+                    false);
+            }
         } else {
             phaseResult =
                 submitSubdivRange(0u, model.polygonCount, false);
