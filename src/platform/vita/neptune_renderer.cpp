@@ -2348,7 +2348,7 @@ static bool ensureVdp1UiBuffers()
 
     g_vdp1UiVertices = static_cast<azel::DebugTextureVertex*>(
         probeGpuAlloc(
-            64u * 4u * sizeof(azel::DebugTextureVertex),
+            128u * 4u * sizeof(azel::DebugTextureVertex),
             SCE_GXM_MEMORY_ATTRIB_READ,
             &g_vdp1UiVertexUid));
     g_vdp1UiIndices = static_cast<std::uint16_t*>(
@@ -3310,7 +3310,7 @@ static void drawPublishedVdp1Ui()
             break;
         }
 
-        if (spriteSlot >= 64u)
+        if (spriteSlot >= 128u)
             continue;
 
         azel::DebugTextureVertex* const spriteVertices =
