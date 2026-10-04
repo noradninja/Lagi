@@ -462,6 +462,18 @@ static SceUID g_vdp2WindowIndexUid = -1;
 static azel::DebugTextureVertex* g_vdp2WindowVertices = nullptr;
 static std::uint16_t* g_vdp2WindowIndices = nullptr;
 static SceGxmTexture g_movieTexture{};
+
+// Title NBG0 is decoded once from Azel's exact VRAM/CRAM representation into
+// a conventional RGBA surface. Raw Saturn memory remains point-exact during
+// decode; SGX performs only the final presentation-scale bilinear sample.
+static constexpr unsigned int kTitleDecodedWidth = 704u;
+static constexpr unsigned int kTitleDecodedHeight = 448u;
+static SceUID g_titleDecodedUid = -1;
+static std::uint32_t* g_titleDecodedPixels = nullptr;
+static SceGxmTexture g_titleDecodedTexture{};
+static std::uint64_t g_titleDecodedSignature = 0u;
+static bool g_titleDecodedValid = false;
+
 static unsigned int g_movieWidth = 0;
 static unsigned int g_movieHeight = 0;
 static unsigned int g_movieStridePixels = 0;
@@ -625,20 +637,6 @@ static bool g_vdp2TextValid = false;
 static constexpr std::size_t kVdp2LineScrollBytes = 0x400u;
 static std::uint8_t g_pendingVdp2LineScroll[kVdp2LineScrollBytes]{};
 static std::uint8_t g_vdp2LineScroll[kVdp2LineScrollBytes]{};
-
-// Script-owned town fade command. The game thread stages commands here; the
-// completed-frame publish copies them across the existing render handoff.
-static unsigned int g_pendingTownFadeSerial = 0u;
-static bool g_pendingTownFadeIn = false;
-static unsigned int g_pendingTownFadeFrames = 1u;
-
-static unsigned int g_townFadeSerial = 0u;
-static unsigned int g_townFadeAppliedSerial = 0u;
-static bool g_townFadeIn = false;
-static unsigned int g_townFadeFrames = 1u;
-static unsigned int g_townFadeElapsed = 0u;
-// Town boot begins black. Azel's TwnFadeIn script call releases presentation.
-static float g_townFadeBlack = 1.0f;
 
 static int g_viewMode = 7;
 static constexpr bool g_halfResolution = true;
@@ -949,6 +947,129 @@ static std::uint16_t readVdp2Be16(
     return static_cast<std::uint16_t>(
         (static_cast<std::uint16_t>(bytes[offset]) << 8) |
         static_cast<std::uint16_t>(bytes[offset + 1]));
+}
+
+
+static std::uint64_t titleSourceSignature(
+    const unsigned char* vram,
+    const unsigned char* cram)
+{
+    // Hash the published source rather than infer dirty ranges from game
+    // behavior. 528 KiB/frame is tiny compared with the fragment work this
+    // replaces and keeps the cache correct for palette or tile updates.
+    std::uint64_t hash = 1469598103934665603ull;
+    auto mix = [&](const unsigned char* bytes, std::size_t size) {
+        for (std::size_t i = 0; i < size; ++i) {
+            hash ^= static_cast<std::uint64_t>(bytes[i]);
+            hash *= 1099511628211ull;
+        }
+    };
+    mix(vram, 0x80000u);
+    mix(cram, 0x1000u);
+    return hash;
+}
+
+static bool ensureTitleDecodedTexture()
+{
+    if (g_titleDecodedPixels)
+        return true;
+
+    const unsigned int bytes =
+        kTitleDecodedWidth * kTitleDecodedHeight *
+        sizeof(std::uint32_t);
+    g_titleDecodedPixels = static_cast<std::uint32_t*>(
+        probeGpuAlloc(
+            bytes,
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_titleDecodedUid));
+    if (!g_titleDecodedPixels)
+        return false;
+
+    if (sceGxmTextureInitLinear(
+            &g_titleDecodedTexture,
+            g_titleDecodedPixels,
+            SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+            kTitleDecodedWidth,
+            kTitleDecodedHeight,
+            0) < 0) {
+        void* pixels = g_titleDecodedPixels;
+        freeMovieMappedBlock(g_titleDecodedUid, pixels);
+        g_titleDecodedPixels = nullptr;
+        return false;
+    }
+
+    sceGxmTextureSetMinFilter(
+        &g_titleDecodedTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+    sceGxmTextureSetMagFilter(
+        &g_titleDecodedTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+    return true;
+}
+
+static bool updateTitleDecodedTexture(
+    const unsigned char* vram,
+    const unsigned char* cram)
+{
+    if (!vram || !cram || !ensureTitleDecodedTexture())
+        return false;
+
+    const std::uint64_t signature =
+        titleSourceSignature(vram, cram);
+    if (g_titleDecodedValid &&
+        signature == g_titleDecodedSignature)
+        return true;
+
+    for (unsigned int y = 0; y < kTitleDecodedHeight; ++y) {
+        const unsigned int patternY = y >> 4;
+        const unsigned int py = y & 15u;
+        const unsigned int cellY = py >> 3;
+        const unsigned int inCellY = py & 7u;
+
+        for (unsigned int x = 0; x < kTitleDecodedWidth; ++x) {
+            const unsigned int planeX =
+                x >= 512u ? x - 512u : x;
+            const unsigned int planeBase =
+                x >= 512u ? 0x10800u : 0x10000u;
+            const unsigned int patternX = planeX >> 4;
+            const unsigned int patternAddress =
+                planeBase + (patternY * 32u + patternX) * 2u;
+            const std::uint16_t patternName =
+                readVdp2Be16(vram, patternAddress);
+
+            // Title: PNB=1, CNSM=1, CHSZ=1. Each 16x16 pattern is four
+            // consecutive 8x8 cells, 8bpp, with the dot value selecting
+            // Azel's 256-entry TITLEE palette at CRAM 0.
+            const unsigned int characterNumber =
+                static_cast<unsigned int>(patternName & 0x0FFFu) * 4u;
+            const unsigned int px = planeX & 15u;
+            const unsigned int cellX = px >> 3;
+            const unsigned int cellIndex = cellX + cellY * 2u;
+            const unsigned int dotAddress =
+                characterNumber * 32u +
+                cellIndex * 64u +
+                inCellY * 8u +
+                (px & 7u);
+            const unsigned int paletteEntry =
+                static_cast<unsigned int>(vram[dotAddress & 0x7FFFFu]);
+            const std::uint16_t color =
+                readVdp2Be16(cram, paletteEntry * 2u);
+            g_titleDecodedPixels[
+                y * kTitleDecodedWidth + x] =
+                vdp2Rgb555ToAbgr(color);
+        }
+    }
+
+    g_titleDecodedSignature = signature;
+    g_titleDecodedValid = true;
+
+    static bool logged = false;
+    if (!logged) {
+        logging::writef(
+            "[VDP2Title] decoded %ux%u RGBA cache; SGX LINEAR presentation\n",
+            kTitleDecodedWidth,
+            kTitleDecodedHeight);
+        logged = true;
+    }
+    return true;
 }
 
 static std::uint32_t vdp2Rgb555ToAbgr(std::uint16_t color)
@@ -1917,6 +2038,13 @@ static void freeMovieResources()
 {
     freeMovieMappedBlock(g_movieTextureUid, g_movieTextureData);
 
+    void* titlePixels = g_titleDecodedPixels;
+    freeMovieMappedBlock(g_titleDecodedUid, titlePixels);
+    g_titleDecodedPixels = nullptr;
+    g_titleDecodedTexture = {};
+    g_titleDecodedSignature = 0u;
+    g_titleDecodedValid = false;
+
     void* vertices = g_movieVertices;
     freeMovieMappedBlock(g_movieVertexUid, vertices);
     g_movieVertices = nullptr;
@@ -2358,6 +2486,12 @@ bool frontend_present_vdp2(
     // instead of filtering packed Saturn memory.
     std::memcpy(g_vdp2TextVram, vram, sizeof(g_vdp2TextVram));
     g_vdp2TextValid = true;
+
+    if (layout == 0u && !updateTitleDecodedTexture(vram, cram)) {
+        logging::writef(
+            "[VDP2Title] FAIL decoded title cache\n");
+        return false;
+    }
 
     g_movieVdp2Info[0] = static_cast<float>(layout);
     g_movieVdp2Info[1] = static_cast<float>(scrollX);
@@ -9001,74 +9135,6 @@ bool submit_vdp1_model(
     return true;
 }
 
-static float updateTownFadeAlpha()
-{
-    if (g_townFadeSerial != g_townFadeAppliedSerial) {
-        g_townFadeAppliedSerial = g_townFadeSerial;
-        g_townFadeElapsed = 0u;
-    }
-
-    const unsigned int duration = std::max(1u, g_townFadeFrames);
-    if (g_townFadeElapsed < duration) {
-        const float t =
-            static_cast<float>(g_townFadeElapsed + 1u) /
-            static_cast<float>(duration);
-        g_townFadeBlack = g_townFadeIn
-            ? std::max(0.0f, 1.0f - t)
-            : std::min(1.0f, t);
-        ++g_townFadeElapsed;
-    } else {
-        g_townFadeBlack = g_townFadeIn ? 0.0f : 1.0f;
-    }
-    return g_townFadeBlack;
-}
-
-static void drawFadeOverlay(
-    float alpha,
-    std::uint8_t red,
-    std::uint8_t green,
-    std::uint8_t blue)
-{
-    if (alpha <= 0.0f || !g_fadeVertices || !g_fadeIndices ||
-        !g_fadeFragmentProgram)
-        return;
-
-    const std::uint8_t a = static_cast<std::uint8_t>(
-        std::clamp<int>(
-            static_cast<int>(std::lround(alpha * 255.0f)), 0, 255));
-    for (unsigned i = 0; i < 6u; ++i) {
-        g_fadeVertices[i].r = red;
-        g_fadeVertices[i].g = green;
-        g_fadeVertices[i].b = blue;
-        g_fadeVertices[i].a = a;
-    }
-
-    sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
-    sceGxmSetFragmentProgram(g_probeContext, g_fadeFragmentProgram);
-    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
-    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
-    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
-    sceGxmSetFrontDepthWriteEnable(
-        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
-    sceGxmSetBackDepthWriteEnable(
-        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
-
-    void* uniforms = nullptr;
-    if (sceGxmReserveVertexDefaultUniformBuffer(
-            g_probeContext, &uniforms) >= 0 && uniforms) {
-        const ViewerMat4 identity = viewerIdentity();
-        sceGxmSetUniformDataF(
-            uniforms, g_probeWvpParam, 0, 16, identity.m);
-        sceGxmSetVertexStream(g_probeContext, 0, g_fadeVertices);
-        sceGxmDraw(
-            g_probeContext,
-            SCE_GXM_PRIMITIVE_TRIANGLES,
-            SCE_GXM_INDEX_FORMAT_U16,
-            g_fadeIndices,
-            6u);
-    }
-}
-
 static void drawColorOffsetPass(
     SceGxmFragmentProgram* program,
     int red, int green, int blue)
@@ -9271,9 +9337,20 @@ static bool renderMovieFrame()
             sceGxmSetVertexStream(
                 g_probeContext, 0, g_movieVertices) >= 0;
 
-        if (streamReady && g_movieUsesVdp2Title) {
-            // VDP2 is now composed from reusable layer programs rather than
-            // one screen-specific shader. D5 is the first RBG0 client.
+        if (streamReady && g_movieUsesVdp2Title &&
+            g_movieVdp2Info[0] < 0.5f && g_titleDecodedValid) {
+            sceGxmSetFragmentTexture(
+                g_probeContext, 0, &g_titleDecodedTexture);
+            sceGxmSetFragmentProgram(
+                g_probeContext, g_movieTextureFragmentProgram);
+            submitted = sceGxmDraw(
+                g_probeContext,
+                SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16,
+                g_movieIndices,
+                6) >= 0;
+        } else if (streamReady && g_movieUsesVdp2Title) {
+            // D5 still consumes live raw VDP2 state for RBG0/NBG0 composition.
             bool rbgSubmitted = true;
             if (g_movieVdp2Info[0] >= 0.5f && g_vdp2Rbg0Available &&
                 g_vdp2Rbg0FragmentProgram && g_vdp2Rbg0InfoParam) {
@@ -9629,8 +9706,10 @@ static bool renderMovieFrame()
             g_movieWidth, g_movieHeight,
             movieOutputWidth, movieOutputHeight,
             g_movieUsesVdp2Title
-                ? (highResolutionFrontend
-                    ? "SGX-VDP2-DISPLAY-720X408"
+                ? (g_movieVdp2Info[0] < 0.5f && g_titleDecodedValid
+                    ? (highResolutionFrontend
+                        ? "SGX-RGBA-TITLE-720X408"
+                        : "SGX-RGBA-TITLE")
                     : "SGX-VDP2")
                 : (g_movieUsesCinepakPayload ? "SGX-Cinepak" : "RGBA"));
         g_movieRenderLogged = true;
@@ -9885,7 +9964,7 @@ static void renderBasicWingViewer()
     }
 
     if (roomAuthenticCameraMode)
-        drawFadeOverlay(updateTownFadeAlpha(), 0u, 0u, 0u);
+        drawAzelColorOffset();
 
     const std::uint64_t gxmWaitStartUs = sceKernelGetProcessTimeWide();
     const unsigned int renderCpuBeforeWaitUs =
@@ -10445,10 +10524,6 @@ void presentation_publish_frame()
     g_viewMode = g_pendingViewMode;
     g_profileTasksUs = g_pendingProfileTasksUs;
     g_profileGameWaitUs = g_pendingProfileGameWaitUs;
-    g_townFadeSerial = g_pendingTownFadeSerial;
-    g_townFadeIn = g_pendingTownFadeIn;
-    g_townFadeFrames = g_pendingTownFadeFrames;
-
     if (g_pendingVdp2TextValid) {
         std::memcpy(
             g_vdp2TextVram,
@@ -10507,22 +10582,19 @@ void presentation_publish_frame()
 
 void presentation_fade_in(unsigned int frames)
 {
-    g_pendingTownFadeIn = true;
-    g_pendingTownFadeFrames = std::max(1u, frames);
-    ++g_pendingTownFadeSerial;
+    // Compatibility shim for the thin town adapter. Azel's fade task and
+    // updateFadeInterrupt() own the actual VDP2 color-offset progression.
     logging::writef(
-        "[Presentation] FadeIn frames=%u\n",
-        g_pendingTownFadeFrames);
+        "[Presentation] Azel FadeIn observed frames=%u\n",
+        std::max(1u, frames));
 }
 
 void presentation_fade_out(unsigned int frames)
 {
-    g_pendingTownFadeIn = false;
-    g_pendingTownFadeFrames = std::max(1u, frames);
-    ++g_pendingTownFadeSerial;
+    // Compatibility shim only; Neptune no longer owns a separate town fade.
     logging::writef(
-        "[Presentation] FadeOut frames=%u\n",
-        g_pendingTownFadeFrames);
+        "[Presentation] Azel FadeOut observed frames=%u\n",
+        std::max(1u, frames));
 }
 
 void presentation_camera_update()
