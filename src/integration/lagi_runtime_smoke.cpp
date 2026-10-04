@@ -11,15 +11,19 @@
 #include "rootTask.h"
 #include "VDP1.h"
 #include "VDP2.h"
-#include "movie/movie.h"\n#include "titleScreen.h"
+#include "movie/movie.h"
+#include "titleScreen.h"
 
 extern int numActiveTask;
 void azelInit();
 void resetEngine();
 void updateFadeInterrupt();
-void updateInputs();\np_workArea createTitleMenuTask(p_workArea);\nnamespace lagi::azel { bool present_native_title_vdp2(); }
+void updateInputs();
+p_workArea createTitleMenuTask(p_workArea);
 
 namespace lagi::azel {
+
+bool present_native_title_vdp2();
 
 static bool saturn_memory_smoke_test()
 {
