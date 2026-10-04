@@ -9027,10 +9027,12 @@ static void renderBasicWingViewer()
         g_viewMode == 6;
     const bool roomAuthenticLitMode =
         roomAuthenticCameraMode &&
+        g_staticRoomCpuMesh.lightingValid &&
         g_viewMode == 7;
     const bool roomAuthenticTexturedMode =
         roomAuthenticCameraMode &&
-        g_viewMode == 8;
+        (g_viewMode == 8 ||
+         (g_viewMode == 7 && !g_staticRoomCpuMesh.lightingValid));
     const bool roomAuthenticFlatMode =
         roomAuthenticCameraMode &&
         g_viewMode == 9;
@@ -9773,7 +9775,19 @@ void town_present_camera(
     const float up[3],
     float yaw, float pitch, float distance)
 {
-    g_townCameraReady = true;
+    const float dx = target[0] - position[0];
+    const float dy = target[1] - position[1];
+    const float dz = target[2] - position[2];
+    const float viewLenSq = dx*dx + dy*dy + dz*dz;
+    const float ux = up[0] - position[0];
+    const float uy = up[1] - position[1];
+    const float uz = up[2] - position[2];
+    const float upLenSq = ux*ux + uy*uy + uz*uz;
+    g_townCameraReady =
+        viewLenSq > 0.000001f && upLenSq > 0.000001f;
+    if (!g_townCameraReady)
+        return;
+
     std::memcpy(
         g_pendingTownCameraPosition,
         position,
