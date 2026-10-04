@@ -178,6 +178,7 @@ static const SceGxmProgramParameter* g_vdp2Rbg0Transform0Param = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0Transform1Param = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0CoefficientParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0InfoParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0WindowParam = nullptr;
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
 static SceGxmFragmentProgram* g_meshTextureFragmentProgram = nullptr;
@@ -6182,10 +6183,14 @@ void show_town_scene()
             g_vdp2Rbg0InfoParam =
                 sceGxmProgramFindParameterByName(
                     vdp2Rbg0FragmentGxp, "rbg0Info");
+            g_vdp2Rbg0WindowParam =
+                sceGxmProgramFindParameterByName(
+                    vdp2Rbg0FragmentGxp, "rbg0Window");
             if (!g_vdp2Rbg0Transform0Param ||
                 !g_vdp2Rbg0Transform1Param ||
                 !g_vdp2Rbg0CoefficientParam ||
-                !g_vdp2Rbg0InfoParam) {
+                !g_vdp2Rbg0InfoParam ||
+                !g_vdp2Rbg0WindowParam) {
                 logging::writef(
                     "[NeptuneVDP2] RBG0 compact uniforms unavailable; "
                     "disabling RBG0\n");
@@ -6285,12 +6290,21 @@ void show_town_scene()
     }
 
     if (g_vdp2Rbg0Available) {
+        SceGxmBlendInfo rbg0Blend{};
+        rbg0Blend.colorFunc = SCE_GXM_BLEND_FUNC_ADD;
+        rbg0Blend.alphaFunc = SCE_GXM_BLEND_FUNC_ADD;
+        rbg0Blend.colorSrc = SCE_GXM_BLEND_FACTOR_SRC_ALPHA;
+        rbg0Blend.colorDst = SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        rbg0Blend.alphaSrc = SCE_GXM_BLEND_FACTOR_ONE;
+        rbg0Blend.alphaDst = SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        rbg0Blend.colorMask = SCE_GXM_COLOR_MASK_ALL;
+
         const int rbg0Create = sceGxmShaderPatcherCreateFragmentProgram(
             g_probeShaderPatcher,
             g_vdp2Rbg0FragmentProgramId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
             SCE_GXM_MULTISAMPLE_NONE,
-            nullptr,
+            &rbg0Blend,
             textureVertexGxp,
             &g_vdp2Rbg0FragmentProgram);
         if (rbg0Create < 0) {
@@ -8590,60 +8604,132 @@ static bool renderMovieFrame()
             // one screen-specific shader. D5 is the first RBG0 client.
             bool rbgSubmitted = true;
             if (g_movieVdp2Info[0] >= 0.5f && g_vdp2Rbg0Available &&
-                g_vdp2Rbg0FragmentProgram && g_vdp2Rbg0InfoParam) {
+                g_vdp2Rbg0FragmentProgram && g_vdp2Rbg0InfoParam &&
+                g_vdp2Rbg0WindowParam) {
                 sceGxmSetFragmentProgram(
                     g_probeContext, g_vdp2Rbg0FragmentProgram);
 
-                void* rbgUniforms = nullptr;
-                if (sceGxmReserveFragmentDefaultUniformBuffer(
-                        g_probeContext, &rbgUniforms) < 0 ||
-                    !rbgUniforms) {
-                    rbgSubmitted = false;
-                } else {
+                const unsigned int rpmd =
+                    static_cast<unsigned int>(g_movieRbg0Ctrl[0]) & 3u;
+                const unsigned int ktctl =
+                    static_cast<unsigned int>(g_movieRbg0Ctrl[1]);
+                const unsigned int ktaof =
+                    static_cast<unsigned int>(g_movieRbg0Ctrl[2]);
+                const unsigned int wctld =
+                    static_cast<unsigned int>(g_movieRbg0Ctrl[4]);
+                const unsigned int lineWindowMask =
+                    static_cast<unsigned int>(g_movieRbg0Ctrl[7]);
+
+                auto submitRbgParameter =
+                    [&](const float* planes,
+                        const float* transform,
+                        const float* coefficient,
+                        unsigned int coefficientEnableBit,
+                        unsigned int coefficientSizeBit,
+                        unsigned int coefficientOffsetShift,
+                        const float window[4]) -> bool {
+                    void* rbgUniforms = nullptr;
+                    if (sceGxmReserveFragmentDefaultUniformBuffer(
+                            g_probeContext, &rbgUniforms) < 0 ||
+                        !rbgUniforms)
+                        return false;
+
                     for (unsigned int i = 0; i < 4u; ++i) {
                         sceGxmSetUniformDataF(
                             rbgUniforms,
                             g_vdp2Rbg0PlaneParam[i],
                             0, 4,
-                            &g_movieRbg0Planes[i * 4u]);
+                            &planes[i * 4u]);
                     }
 
-                    const unsigned int ktctl =
-                        static_cast<unsigned int>(g_movieRbg0Ctrl[1]);
-                    const unsigned int ktaof =
-                        static_cast<unsigned int>(g_movieRbg0Ctrl[2]);
                     const float coefficientSize =
-                        (ktctl & 0x2u) ? 2.0f : 4.0f;
+                        (ktctl & coefficientSizeBit) ? 2.0f : 4.0f;
+                    const unsigned int coefficientOffset =
+                        (ktaof >> coefficientOffsetShift) & 0x7u;
                     const float rbgInfo[4] = {
-                        static_cast<float>(ktaof & 0x7u) *
+                        static_cast<float>(coefficientOffset) *
                             coefficientSize * 65536.0f,
-                        (ktctl & 0x1u) ? 1.0f : 0.0f,
+                        (ktctl & coefficientEnableBit) ? 1.0f : 0.0f,
                         coefficientSize,
                         0.0f,
                     };
+
                     sceGxmSetUniformDataF(
                         rbgUniforms,
                         g_vdp2Rbg0Transform0Param,
-                        0, 4, &g_movieRbg0TransformA[0]);
+                        0, 4, &transform[0]);
                     sceGxmSetUniformDataF(
                         rbgUniforms,
                         g_vdp2Rbg0Transform1Param,
-                        0, 4, &g_movieRbg0TransformA[4]);
+                        0, 4, &transform[4]);
                     sceGxmSetUniformDataF(
                         rbgUniforms,
                         g_vdp2Rbg0CoefficientParam,
-                        0, 4, g_movieRbg0CoefficientA);
+                        0, 4, coefficient);
                     sceGxmSetUniformDataF(
                         rbgUniforms,
                         g_vdp2Rbg0InfoParam,
                         0, 4, rbgInfo);
+                    sceGxmSetUniformDataF(
+                        rbgUniforms,
+                        g_vdp2Rbg0WindowParam,
+                        0, 4, window);
 
-                    rbgSubmitted = sceGxmDraw(
+                    return sceGxmDraw(
                         g_probeContext,
                         SCE_GXM_PRIMITIVE_TRIANGLES,
                         SCE_GXM_INDEX_FORMAT_U16,
                         g_movieIndices,
                         6) >= 0;
+                };
+
+                const float noWindow[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+                if (rpmd == 1u || rpmd == 3u) {
+                    // Parameter B is the base for RPMD=3. Parameter A is then
+                    // composited only where the native rotation window selects
+                    // it. This mirrors renderer_vdp2.cpp without combining both
+                    // expensive rotation paths into one SGX fragment program.
+                    rbgSubmitted = submitRbgParameter(
+                        g_movieRbg0PlanesB,
+                        g_movieRbg0TransformB,
+                        g_movieRbg0CoefficientB,
+                        0x100u, 0x200u, 8u,
+                        noWindow);
+                }
+
+                if (rbgSubmitted && rpmd != 1u) {
+                    float parameterAWindow[4] = {
+                        0.0f, 0.0f, 0.0f, 0.0f
+                    };
+
+                    if (rpmd == 3u) {
+                        // Support the native single active line-window cases.
+                        // Combined W0/W1 boolean logic remains a compositor
+                        // extension, but D5 uses only line Window 1 (WCTLD=C).
+                        if ((wctld & 0x8u) != 0u &&
+                            (lineWindowMask & 0x2u) != 0u) {
+                            parameterAWindow[0] = g_movieRbg0Ctrl[6];
+                            parameterAWindow[1] = 1.0f;
+                            parameterAWindow[2] =
+                                (wctld & 0x4u) ? 1.0f : 0.0f;
+                            parameterAWindow[3] = 1.0f;
+                        } else if ((wctld & 0x2u) != 0u &&
+                                   (lineWindowMask & 0x1u) != 0u) {
+                            parameterAWindow[0] = g_movieRbg0Ctrl[5];
+                            parameterAWindow[1] = 1.0f;
+                            parameterAWindow[2] =
+                                (wctld & 0x1u) ? 1.0f : 0.0f;
+                            parameterAWindow[3] = 1.0f;
+                        }
+                    }
+
+                    rbgSubmitted = submitRbgParameter(
+                        g_movieRbg0Planes,
+                        g_movieRbg0TransformA,
+                        g_movieRbg0CoefficientA,
+                        0x1u, 0x2u, 0u,
+                        parameterAWindow);
                 }
             }
 
