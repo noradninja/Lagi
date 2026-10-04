@@ -6484,22 +6484,19 @@ void show_town_scene()
     g_probeScenePassed = true;
     status("[PASS] GXM END SCENE", 0xFF80E0FFu);
 
-    // Keep the Basic Wing CPU/GXM resources available as an internal
-    // regression path, but do not present that model during normal town boot.
-    // The display stays black until the first valid Ruins frame is rendered;
-    // the original town script then controls TwnFadeIn.
-    if (!g_basicWingCpuReady || g_basicWingCpuMesh.vertices.empty()) {
-        failure("[FAIL] BASIC WING CPU MESH");
-        return;
+    // Basic Wing is retained only as an optional renderer regression path.
+    // Native 0.040 boot can enter the title movie before that debug asset has
+    // been prepared, so it must not gate display ownership or movie output.
+    if (g_basicWingCpuReady && !g_basicWingCpuMesh.vertices.empty()) {
+        const Vdp1ModelSource vdp1Source = basicWingVdp1Source();
+        if (prepare_vdp1_model(vdp1Source)) {
+            g_residentVdp1Model = ResidentVdp1Model::BasicWing;
+            status("[PASS] GXM BASIC WING VDP1 PREPARE", 0xFF80E0FFu);
+        } else {
+            status("[INFO] BASIC WING VDP1 REGRESSION PATH UNAVAILABLE",
+                   0xFFB0B0B0u);
+        }
     }
-
-    const Vdp1ModelSource vdp1Source = basicWingVdp1Source();
-    if (!prepare_vdp1_model(vdp1Source)) {
-        failure("[FAIL] BASIC WING VDP1 PREPARE");
-        return;
-    }
-    g_residentVdp1Model = ResidentVdp1Model::BasicWing;
-    status("[PASS] GXM BASIC WING VDP1 PREPARE", 0xFF80E0FFu);
 
     std::memset(
         g_probeColorBuffer,
