@@ -1,6 +1,13 @@
 // Neptune VDP2 RBG0 fragment program.
-// RBG0 is a reusable Saturn rotation-background pipeline; D5 is its first
-// client. Azel supplies VRAM/CRAM and live rotation/window register state.
+//
+// This program renders ONE Saturn rotation parameter at a time. The same
+// compiled program is reusable for parameter A and parameter B; Neptune owns
+// composition/window masking while Azel owns the VDP2 state and VRAM tables.
+//
+// D5 is the first client. Its RBG0 cell format is currently the first format
+// implemented here (8bpp, 16x16, PNB=1, CNSM=0, SCN=8). Additional RBG0
+// formats should extend this pipeline rather than create screen-specific
+// shaders.
 #include "vdp2_common.cginc"
 
 float selectRbg0Plane(
@@ -28,7 +35,7 @@ float selectRbg0Plane(
     return p3.w;
 }
 
-float4 sampleD5Rbg0Tile(
+float4 sampleRbg0D5Cell(
     uniform sampler2D raw,
     float mapX,
     float mapY,
@@ -37,9 +44,6 @@ float4 sampleD5Rbg0Tile(
     float4 p2,
     float4 p3)
 {
-    // D5 config from s_d5StarfieldTask::Init:
-    // CHCN=1 (8bpp), CHSZ=1 (16x16), PNB=1, CNSM=0, SCN=8.
-    // Rotation maps are 4x4 planes; each plane is one 512x512 page here.
     mapX = fmod(floor(mapX), 2048.0f);
     mapY = fmod(floor(mapY), 2048.0f);
     if (mapX < 0.0f) mapX += 2048.0f;
@@ -48,8 +52,8 @@ float4 sampleD5Rbg0Tile(
     const float planeX = floor(mapX / 512.0f);
     const float planeY = floor(mapY / 512.0f);
     const float planeIndex = planeY * 4.0f + planeX;
-    const float planeBase =
-        selectRbg0Plane(planeIndex, p0, p1, p2, p3);
+    const float planeBase = selectRbg0Plane(
+        planeIndex, p0, p1, p2, p3);
 
     const float inPlaneX = mapX - planeX * 512.0f;
     const float inPlaneY = mapY - planeY * 512.0f;
@@ -59,16 +63,12 @@ float4 sampleD5Rbg0Tile(
         planeBase + (patternY * 32.0f + patternX) * 2.0f;
     const float patternName = readBE16(raw, patternAddress);
 
-    // CNSM=0 / CHSZ=1:
-    // character = (PN & 0x3ff) << 2 | (SCN & 3) | (SCN & 0x1c) << 10
-    // SCN=8, therefore the supplemental high part is 0x2000.
+    // D5: CNSM=0 / CHSZ=1 / SCN=8.
     const float characterNumber =
         fmod(patternName, 1024.0f) * 4.0f + 8192.0f;
 
     float px = fmod(inPlaneX, 16.0f);
     float py = fmod(inPlaneY, 16.0f);
-
-    // CNSM=0 carries horizontal/vertical flip in pattern bits 10/11.
     if (fmod(floor(patternName / 1024.0f), 2.0f) >= 1.0f)
         px = 15.0f - px;
     if (fmod(floor(patternName / 2048.0f), 2.0f) >= 1.0f)
@@ -85,17 +85,15 @@ float4 sampleD5Rbg0Tile(
     const float dotColor = readByte(raw, dotAddress);
 
     if (dotColor < 0.5f)
-        return float4(0.0f, 0.0f, 0.0f, 1.0f);
+        return float4(0.0f, 0.0f, 0.0f, 0.0f);
 
-    // For 8bpp one-word patterns Azel's renderer uses pattern bits 14:12
-    // as the 256-color palette bank. D5 leaves CAOS at zero.
     const float paletteBank =
         fmod(floor(patternName / 4096.0f), 8.0f);
     const float paletteEntry = paletteBank * 256.0f + dotColor;
     return rgb555(readBE16(raw, 524288.0f + paletteEntry * 2.0f));
 }
 
-float readLEFixedTrunc6(
+float readRbgFixedTrunc6(
     uniform sampler2D raw,
     float byteAddress)
 {
@@ -107,7 +105,7 @@ float readLEFixedTrunc6(
     return hi + lo / 65536.0f;
 }
 
-float readLESignExt14(
+float readRbgSignExt14(
     uniform sampler2D raw,
     float byteAddress)
 {
@@ -117,19 +115,19 @@ float readLESignExt14(
     return v;
 }
 
-float readLEFixedSigned30Trunc6(
+float readRbgSigned30Trunc6(
     uniform sampler2D raw,
     float byteAddress)
 {
     float lo = readLE16(raw, byteAddress);
     lo = floor(lo / 64.0f) * 64.0f;
-    float hi14 = fmod(readLE16(raw, byteAddress + 2.0f), 16384.0f);
-    if (hi14 >= 8192.0f)
-        hi14 -= 16384.0f;
-    return hi14 + lo / 65536.0f;
+    float hi = fmod(readLE16(raw, byteAddress + 2.0f), 16384.0f);
+    if (hi >= 8192.0f)
+        hi -= 16384.0f;
+    return hi + lo / 65536.0f;
 }
 
-float readD5Coefficient(
+float readRbgCoefficient(
     uniform sampler2D raw,
     float byteAddress)
 {
@@ -137,7 +135,7 @@ float readD5Coefficient(
     if (byteAddress < 0.0f)
         byteAddress += 524288.0f;
 
-    const float b0 = readByte(raw, byteAddress + 0.0f);
+    const float b0 = readByte(raw, byteAddress);
     const float b1 = readByte(raw, byteAddress + 1.0f);
     const float b2 = readByte(raw, byteAddress + 2.0f);
 
@@ -147,48 +145,36 @@ float readD5Coefficient(
     return value / 65536.0f;
 }
 
-float readD5CoefficientMsb(
-    uniform sampler2D raw,
-    float byteAddress)
-{
-    byteAddress = fmod(byteAddress, 524288.0f);
-    if (byteAddress < 0.0f)
-        byteAddress += 524288.0f;
-    return readByte(raw, byteAddress + 3.0f) >= 128.0f ? 1.0f : 0.0f;
-}
-
-float2 d5MapCoordinate(
+float2 rbg0MapCoordinate(
     uniform sampler2D raw,
     float paramBase,
     float screenX,
     float screenY,
     float coefficient)
 {
-    // Mirror Azel renderer_vdp2.cpp / renderLayerCPU_RBG0. Saturn truncates
-    // the low six fractional bits when consuming the parameter table.
-    const float Xst = readLEFixedTrunc6(raw, paramBase + 0.0f);
-    const float Yst = readLEFixedTrunc6(raw, paramBase + 4.0f);
-    const float Zst = readLEFixedTrunc6(raw, paramBase + 8.0f);
-    const float deltaXst = readLEFixedTrunc6(raw, paramBase + 12.0f);
-    const float deltaYst = readLEFixedTrunc6(raw, paramBase + 16.0f);
-    const float deltaX = readLEFixedTrunc6(raw, paramBase + 20.0f);
-    const float deltaY = readLEFixedTrunc6(raw, paramBase + 24.0f);
+    const float Xst = readRbgFixedTrunc6(raw, paramBase + 0.0f);
+    const float Yst = readRbgFixedTrunc6(raw, paramBase + 4.0f);
+    const float Zst = readRbgFixedTrunc6(raw, paramBase + 8.0f);
+    const float deltaXst = readRbgFixedTrunc6(raw, paramBase + 12.0f);
+    const float deltaYst = readRbgFixedTrunc6(raw, paramBase + 16.0f);
+    const float deltaX = readRbgFixedTrunc6(raw, paramBase + 20.0f);
+    const float deltaY = readRbgFixedTrunc6(raw, paramBase + 24.0f);
 
-    const float A = readLEFixedTrunc6(raw, paramBase + 28.0f);
-    const float B = readLEFixedTrunc6(raw, paramBase + 32.0f);
-    const float C = readLEFixedTrunc6(raw, paramBase + 36.0f);
-    const float D = readLEFixedTrunc6(raw, paramBase + 40.0f);
-    const float E = readLEFixedTrunc6(raw, paramBase + 44.0f);
-    const float F = readLEFixedTrunc6(raw, paramBase + 48.0f);
+    const float A = readRbgFixedTrunc6(raw, paramBase + 28.0f);
+    const float B = readRbgFixedTrunc6(raw, paramBase + 32.0f);
+    const float C = readRbgFixedTrunc6(raw, paramBase + 36.0f);
+    const float D = readRbgFixedTrunc6(raw, paramBase + 40.0f);
+    const float E = readRbgFixedTrunc6(raw, paramBase + 44.0f);
+    const float F = readRbgFixedTrunc6(raw, paramBase + 48.0f);
 
-    const float Px = readLESignExt14(raw, paramBase + 52.0f);
-    const float Py = readLESignExt14(raw, paramBase + 54.0f);
-    const float Pz = readLESignExt14(raw, paramBase + 56.0f);
-    const float Cx = readLESignExt14(raw, paramBase + 60.0f);
-    const float Cy = readLESignExt14(raw, paramBase + 62.0f);
-    const float Cz = readLESignExt14(raw, paramBase + 64.0f);
-    const float Mx = readLEFixedSigned30Trunc6(raw, paramBase + 68.0f);
-    const float My = readLEFixedSigned30Trunc6(raw, paramBase + 72.0f);
+    const float Px = readRbgSignExt14(raw, paramBase + 52.0f);
+    const float Py = readRbgSignExt14(raw, paramBase + 54.0f);
+    const float Pz = readRbgSignExt14(raw, paramBase + 56.0f);
+    const float Cx = readRbgSignExt14(raw, paramBase + 60.0f);
+    const float Cy = readRbgSignExt14(raw, paramBase + 62.0f);
+    const float Cz = readRbgSignExt14(raw, paramBase + 64.0f);
+    const float Mx = readRbgSigned30Trunc6(raw, paramBase + 68.0f);
+    const float My = readRbgSigned30Trunc6(raw, paramBase + 72.0f);
 
     const float Xp =
         A * (Px - Cx) + B * (Py - Cy) + C * (Pz - Cz) + Cx + Mx;
@@ -199,208 +185,15 @@ float2 d5MapCoordinate(
     const float ymul = Yst - Py + deltaYst * screenY;
     const float zrel = Zst - Pz;
 
-    const float Xsp =
-        A * xmul + B * ymul + C * zrel;
-    const float Ysp =
-        D * xmul + E * ymul + F * zrel;
-    const float dX =
-        A * deltaX + B * deltaY;
-    const float dY =
-        D * deltaX + E * deltaY;
+    const float Xsp = A * xmul + B * ymul + C * zrel;
+    const float Ysp = D * xmul + E * ymul + F * zrel;
+    const float dX = A * deltaX + B * deltaY;
+    const float dY = D * deltaX + E * deltaY;
 
     return float2(
         coefficient * (Xsp + dX * screenX) + Xp,
         coefficient * (Ysp + dY * screenX) + Yp);
 }
-
-float4 d5ResolveWindow(
-    uniform sampler2D raw,
-    float4 baseWindow,
-    float lineAddress,
-    float lineEnabled,
-    float screenY)
-{
-    if (lineEnabled < 0.5f)
-        return baseWindow;
-
-    const float address =
-        lineAddress + floor(screenY) * 4.0f;
-    const float xs = readLE16(raw, address + 0.0f);
-    const float xe = readLE16(raw, address + 2.0f);
-    if (xe >= 65535.0f)
-        return float4(0.0f, baseWindow.y, 0.0f, baseWindow.w);
-
-    return float4(
-        fmod(floor(xs / 2.0f), 512.0f),
-        baseWindow.y,
-        fmod(floor(xe / 2.0f), 512.0f),
-        baseWindow.w);
-}
-
-float d5WindowTest(
-    float enabled,
-    float areaInside,
-    float4 windowRect,
-    float screenX,
-    float screenY)
-{
-    if (enabled < 0.5f)
-        return 3.0f;
-
-    const bool inside =
-        screenX >= windowRect.x &&
-        screenX <= windowRect.z &&
-        screenY >= windowRect.y &&
-        screenY <= windowRect.w;
-
-    if (areaInside >= 0.5f)
-        return inside ? 1.0f : 0.0f;
-    return inside ? 0.0f : 1.0f;
-}
-
-float4 sampleD5Rbg0(
-    uniform sampler2D raw,
-    float screenX,
-    float screenY,
-    float4 a0,
-    float4 a1,
-    float4 a2,
-    float4 a3,
-    float4 b0,
-    float4 b1,
-    float4 b2,
-    float4 b3,
-    float4 ctrl0,
-    float4 ctrl1,
-    float4 ctrl2,
-    float4 ctrl3)
-{
-    // ctrl0 = RPMD, KTCTL, KTAOF, WCTLC
-    // ctrl1 = WCTLD, LWTA0 byte address, LWTA1 byte address, line-window mask
-    // ctrl2 = window 0 x0,y0,x1,y1
-    // ctrl3 = window 1 x0,y0,x1,y1
-    const float rpmd = ctrl0.x;
-    const float ktctl = ctrl0.y;
-    const float ktaof = ctrl0.z;
-    const float wctlc = ctrl0.w;
-    const float wctld = ctrl1.x;
-
-    const float line0Enabled =
-        fmod(ctrl1.w, 2.0f);
-    const float line1Enabled =
-        fmod(floor(ctrl1.w / 2.0f), 2.0f);
-
-    const float4 window0 =
-        d5ResolveWindow(raw, ctrl2, ctrl1.y, line0Enabled, screenY);
-    const float4 window1 =
-        d5ResolveWindow(raw, ctrl3, ctrl1.z, line1Enabled, screenY);
-
-    // RBG0 layer window clipping (WCTLC), same logic as Azel's CPU reference.
-    const float layerWnd0Enabled =
-        fmod(floor(wctlc / 2.0f), 2.0f);
-    const float layerWnd0Inside =
-        fmod(wctlc, 2.0f);
-    if (layerWnd0Enabled >= 0.5f) {
-        const bool inside =
-            screenX >= ctrl2.x && screenX <= ctrl2.z &&
-            screenY >= ctrl2.y && screenY <= ctrl2.w;
-        if ((layerWnd0Inside >= 0.5f && !inside) ||
-            (layerWnd0Inside < 0.5f && inside))
-            return float4(0.0f, 0.0f, 0.0f, 1.0f);
-    }
-
-    const float paramABase = 249856.0f; // 0x3D000
-    const float paramBBase = 249984.0f; // 0x3D080
-
-    const float kAstA = readLEFixedTrunc6(raw, paramABase + 84.0f);
-    const float dKAstA = readLEFixedTrunc6(raw, paramABase + 88.0f);
-    const float dKAxA = readLEFixedTrunc6(raw, paramABase + 92.0f);
-    const float kAstB = readLEFixedTrunc6(raw, paramBBase + 84.0f);
-    const float dKAstB = readLEFixedTrunc6(raw, paramBBase + 88.0f);
-    const float dKAxB = readLEFixedTrunc6(raw, paramBBase + 92.0f);
-
-    const float coefEnableA = fmod(ktctl, 2.0f);
-    const float coefEnableB =
-        fmod(floor(ktctl / 256.0f), 2.0f);
-    const float coefSizeA =
-        fmod(floor(ktctl / 2.0f), 2.0f) >= 0.5f ? 2.0f : 4.0f;
-    const float coefSizeB =
-        fmod(floor(ktctl / 512.0f), 2.0f) >= 0.5f ? 2.0f : 4.0f;
-
-    const float coefBaseA =
-        fmod(ktaof, 8.0f) * coefSizeA * 65536.0f;
-    const float coefBaseB =
-        fmod(floor(ktaof / 256.0f), 8.0f) *
-        coefSizeB * 65536.0f;
-
-    const float accumA =
-        kAstA + dKAstA * screenY + dKAxA * screenX;
-    const float accumB =
-        kAstB + dKAstB * screenY + dKAxB * screenX;
-
-    const float coefAddrA =
-        coefBaseA + floor(accumA) * coefSizeA;
-    const float coefAddrB =
-        coefBaseB + floor(accumB) * coefSizeB;
-
-    // D5 config leaves coefficient data size at 4 bytes. Keep unity only for
-    // a disabled coefficient table; all active D5 K values come from Azel's
-    // native VRAM coefficient tables.
-    float kA = 1.0f;
-    float kB = 1.0f;
-    float msbA = 0.0f;
-    if (coefEnableA >= 0.5f && coefSizeA > 3.0f) {
-        kA = readD5Coefficient(raw, coefAddrA);
-        msbA = readD5CoefficientMsb(raw, coefAddrA);
-    }
-    if (coefEnableB >= 0.5f && coefSizeB > 3.0f)
-        kB = readD5Coefficient(raw, coefAddrB);
-
-    bool useB = false;
-    if (rpmd >= 2.5f) {
-        // RPMD=3: rotation parameter selection is owned by WCTLD/windows.
-        const float w0Enabled =
-            fmod(floor(wctld / 2.0f), 2.0f);
-        const float w0Area =
-            fmod(wctld, 2.0f);
-        const float w1Enabled =
-            fmod(floor(wctld / 8.0f), 2.0f);
-        const float w1Area =
-            fmod(floor(wctld / 4.0f), 2.0f);
-        const float w0 =
-            d5WindowTest(w0Enabled, w0Area, window0, screenX, screenY);
-        const float w1 =
-            d5WindowTest(w1Enabled, w1Area, window1, screenX, screenY);
-
-        float selected;
-        if (w0 >= 2.0f)
-            selected = fmod(w1, 2.0f);
-        else if (w1 >= 2.0f)
-            selected = fmod(w0, 2.0f);
-        else if (fmod(floor(wctld / 128.0f), 2.0f) >= 0.5f)
-            selected = (w0 >= 0.5f || w1 >= 0.5f) ? 1.0f : 0.0f;
-        else
-            selected = (w0 >= 0.5f && w1 >= 0.5f) ? 1.0f : 0.0f;
-
-        useB = selected < 0.5f;
-    } else if (rpmd >= 1.5f) {
-        // RPMD=2 coefficient-MSB switching.
-        useB = msbA >= 0.5f;
-    }
-
-    if (!useB) {
-        const float2 map =
-            d5MapCoordinate(raw, paramABase, screenX, screenY, kA);
-        return sampleD5Rbg0Tile(
-            raw, map.x, map.y, a0, a1, a2, a3);
-    }
-
-    const float2 map =
-        d5MapCoordinate(raw, paramBBase, screenX, screenY, kB);
-    return sampleD5Rbg0Tile(
-        raw, map.x, map.y, b0, b1, b2, b3);
-}
-
 
 float4 main(
     float2 vTexcoord : TEXCOORD0,
@@ -409,23 +202,36 @@ float4 main(
     uniform float4 rbg0Plane1,
     uniform float4 rbg0Plane2,
     uniform float4 rbg0Plane3,
-    uniform float4 rbg0PlaneB0,
-    uniform float4 rbg0PlaneB1,
-    uniform float4 rbg0PlaneB2,
-    uniform float4 rbg0PlaneB3,
-    uniform float4 rbg0Ctrl0,
-    uniform float4 rbg0Ctrl1,
-    uniform float4 rbg0Ctrl2,
-    uniform float4 rbg0Ctrl3)
+    // x = rotation parameter table byte address
+    // y = coefficient table byte base
+    // z = coefficient enabled (0/1)
+    // w = coefficient entry size in bytes (D5 uses 4)
+    uniform float4 rbg0Info)
 {
-    const float logicalX = min(
+    const float screenX = min(
         351.0f, floor(vTexcoord.x * 352.0f));
-    const float logicalY = min(
+    const float screenY = min(
         223.0f, floor(vTexcoord.y * 224.0f));
 
-    return sampleD5Rbg0(
-        raw, logicalX, logicalY,
-        rbg0Plane0, rbg0Plane1, rbg0Plane2, rbg0Plane3,
-        rbg0PlaneB0, rbg0PlaneB1, rbg0PlaneB2, rbg0PlaneB3,
-        rbg0Ctrl0, rbg0Ctrl1, rbg0Ctrl2, rbg0Ctrl3);
+    float coefficient = 1.0f;
+    if (rbg0Info.z >= 0.5f) {
+        const float kAst =
+            readRbgFixedTrunc6(raw, rbg0Info.x + 84.0f);
+        const float dKAst =
+            readRbgFixedTrunc6(raw, rbg0Info.x + 88.0f);
+        const float dKAx =
+            readRbgFixedTrunc6(raw, rbg0Info.x + 92.0f);
+        const float accum =
+            kAst + dKAst * screenY + dKAx * screenX;
+        const float coefficientAddress =
+            rbg0Info.y + floor(accum) * rbg0Info.w;
+        coefficient = readRbgCoefficient(raw, coefficientAddress);
+    }
+
+    const float2 map = rbg0MapCoordinate(
+        raw, rbg0Info.x, screenX, screenY, coefficient);
+
+    return sampleRbg0D5Cell(
+        raw, map.x, map.y,
+        rbg0Plane0, rbg0Plane1, rbg0Plane2, rbg0Plane3);
 }
