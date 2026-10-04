@@ -692,6 +692,7 @@ static unsigned int g_lastPresentVcount = 0;
 static void freeVdp1Textures();
 static void freeMovieResources();
 static void updateLiveTownAzelLighting();
+static bool ensureVdp2UiGpuBuffers();
 static int viewerRenderWidth();
 static int viewerRenderHeight();
 static int viewerRenderPitch();
@@ -8958,6 +8959,8 @@ static void drawAzelColorOffset()
 
 static bool renderMovieFrame()
 {
+    const std::uint64_t frameStartUs =
+        sceKernelGetProcessTimeWide();
     MovieFrameGuard guard;
     if (!guard)
         return false;
@@ -9386,8 +9389,29 @@ static bool renderMovieFrame()
     if (submitted)
         drawAzelColorOffset();
 
+    const std::uint64_t gpuWaitStartUs =
+        sceKernelGetProcessTimeWide();
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     sceGxmFinish(g_probeContext);
+    const unsigned int gpuWaitUs =
+        static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - gpuWaitStartUs);
+    const unsigned int frameRenderUs =
+        static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - frameStartUs);
+
+    static unsigned int frontendPerfFrames = 0u;
+    if (g_movieUsesVdp2Title &&
+        ((frontendPerfFrames++ % 60u) == 0u)) {
+        logging::writef(
+            "[VDP2Perf] fb=%ux%u frame=%uus gpuWait=%uus layout=%u\n",
+            static_cast<unsigned int>(movieOutputWidth),
+            static_cast<unsigned int>(movieOutputHeight),
+            frameRenderUs,
+            gpuWaitUs,
+            static_cast<unsigned int>(g_movieVdp2Info[0]));
+    }
+
     if (!submitted) {
         logging::writef("[MovieRender] FAIL movie draw submission\n");
         return true;
