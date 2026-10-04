@@ -14,6 +14,7 @@
 #include "movie/movie.h"
 #include "titleScreen.h"
 #include "kernel/moduleManager.h"
+#include "battle/BTL_A3/BTL_A3_map6.h"
 
 extern int numActiveTask;
 void azelInit();
@@ -222,31 +223,94 @@ void runtime_smoke_frame()
     const bool titleActive =
         initialTaskStatus.m_currentTask == createTitleScreenTask ||
         initialTaskStatus.m_currentTask == createTitleMenuTask;
-    // FLD_D5 creates the name-entry UI while its opening field script is
-    // still running, then immediately disables NBG0 and pauses the UI. Azel
-    // later calls nameEntryEnable() when that script completes. Respect that
-    // native layer ownership instead of exposing the staged keyboard merely
-    // because gameStatus has already reached 2.
-    const bool nameEntryActive =
-        gGameStatus.m4_gameStatus == 2 &&
+    // Game status 2 is the complete FLD_D5 name-entry sequence, not merely
+    // the keyboard. Azel deliberately keeps NBG0 disabled while field script 0
+    // presents the opening background/dialogue, then nameEntryEnable() turns
+    // NBG0 on when the keyboard is actually allowed to appear. Keep presenting
+    // D5 throughout that sequence and carry NBG0 visibility separately.
+    const bool d5NameSequenceActive =
+        gGameStatus.m4_gameStatus == 2;
+    const bool nameKeyboardVisible =
+        d5NameSequenceActive &&
         (vdp2Controls.m4_pendingVdp2Regs->m20_BGON & 0x1) != 0;
+
     if (titleActive)
         log_title_vdp2_diagnostics_once();
 
-    if (titleActive || nameEntryActive) {
-        // Azel owns the VDP2 memory/register state. Neptune uploads the raw
-        // VRAM/CRAM and interprets the active front-end layers directly on
-        // SGX.  FLD_D5 scrolls its 2-plane keyboard map to change pages.
+    if (d5NameSequenceActive) {
+        static bool loggedD5Vdp2 = false;
+        if (!loggedD5Vdp2) {
+            const auto* regs = vdp2Controls.m4_pendingVdp2Regs;
+            const auto& a = gCoefficientTables[0][vdp2Controls.m0_doubleBufferIndex];
+            const auto& b = gCoefficientTables[1][vdp2Controls.m0_doubleBufferIndex];
+            lagi::platform::logging::writef(
+                "[D5VDP2] BGON=%04X RPMD=%u PLSZ=%04X PNCR=%04X MPOFR=%04X "
+                "KTCTL=%04X KTAOF=%04X WCTLC=%04X WCTLD=%04X LWTA1=%08X\n",
+                regs->m20_BGON,
+                static_cast<unsigned int>(regs->mB0_RPMD & 3u),
+                regs->m3A_PLSZ, regs->m38_PNCR, regs->m3E_MPOFR,
+                regs->mB4_KTCTL, regs->mB6_KTAOF,
+                regs->mD4_WCTLC, regs->mD6_WCTLD,
+                static_cast<unsigned int>(regs->mDC_LWTA1));
+            lagi::platform::logging::writef(
+                "[D5RBG0A] Xst=%08X Yst=%08X DXx=%08X DXy=%08X DYx=%08X DYy=%08X "
+                "A=%08X B=%08X D=%08X E=%08X Px=%04X Py=%04X Cx=%04X Cy=%04X "
+                "Mx=%08X My=%08X KAst=%08X DKAx=%08X DKAy=%08X\n",
+                static_cast<unsigned int>(a.m0),
+                static_cast<unsigned int>(a.m4),
+                static_cast<unsigned int>(a.mC),
+                static_cast<unsigned int>(a.m10),
+                static_cast<unsigned int>(a.m14),
+                static_cast<unsigned int>(a.m18),
+                static_cast<unsigned int>(a.m1C),
+                static_cast<unsigned int>(a.m20),
+                static_cast<unsigned int>(a.m28),
+                static_cast<unsigned int>(a.m2C),
+                static_cast<unsigned int>(static_cast<u16>(a.m34)),
+                static_cast<unsigned int>(static_cast<u16>(a.m36)),
+                static_cast<unsigned int>(static_cast<u16>(a.m3C)),
+                static_cast<unsigned int>(static_cast<u16>(a.m3E)),
+                static_cast<unsigned int>(a.m44),
+                static_cast<unsigned int>(a.m48),
+                static_cast<unsigned int>(a.m54),
+                static_cast<unsigned int>(a.m58),
+                static_cast<unsigned int>(a.m5C));
+            lagi::platform::logging::writef(
+                "[D5RBG0B] Xst=%08X Yst=%08X DXx=%08X DXy=%08X DYx=%08X DYy=%08X "
+                "A=%08X B=%08X D=%08X E=%08X Mx=%08X My=%08X KAst=%08X DKAx=%08X DKAy=%08X\n",
+                static_cast<unsigned int>(b.m0),
+                static_cast<unsigned int>(b.m4),
+                static_cast<unsigned int>(b.mC),
+                static_cast<unsigned int>(b.m10),
+                static_cast<unsigned int>(b.m14),
+                static_cast<unsigned int>(b.m18),
+                static_cast<unsigned int>(b.m1C),
+                static_cast<unsigned int>(b.m20),
+                static_cast<unsigned int>(b.m28),
+                static_cast<unsigned int>(b.m2C),
+                static_cast<unsigned int>(b.m44),
+                static_cast<unsigned int>(b.m48),
+                static_cast<unsigned int>(b.m54),
+                static_cast<unsigned int>(b.m58),
+                static_cast<unsigned int>(b.m5C));
+            loggedD5Vdp2 = true;
+        }
+    }
+
+    if (titleActive || d5NameSequenceActive) {
+        // Layout 0 = title. Layout 2 = complete FLD_D5 name-entry sequence.
+        // Bit 0 of flags is Azel's native NBG0 keyboard visibility.
         lagi::platform::renderer::frontend_present_vdp2(
             getVdp2Vram(0),
             getVdp2Cram(0),
-            nameEntryActive ? 1u : 0u,
-            nameEntryActive
+            d5NameSequenceActive ? 2u : 0u,
+            nameKeyboardVisible
                 ? (vdp2Controls.m20_registers[0].m70_SCXN0 >> 16)
                 : 0,
-            nameEntryActive
+            nameKeyboardVisible
                 ? (vdp2Controls.m20_registers[0].m74_SCYN0 >> 16)
-                : 0);
+                : 0,
+            nameKeyboardVisible ? 1u : 0u);
     } else if (gGameStatus.m0_gameMode == 0 &&
                fileInfoStruct.mC_gfsHandle == nullptr) {
         // The native movie task closes its stream at the start of the exit
