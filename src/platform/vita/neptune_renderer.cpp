@@ -4319,6 +4319,111 @@ static void transformTownEdgeVertices()
     }
 }
 
+static bool decodeLiveVdp1Texture(
+    const azel::SaturnPolygonRecord& record,
+    azel::DecodedMode1Texture& out)
+{
+    const unsigned width = record.textureWidth();
+    const unsigned height = record.textureHeight();
+    const unsigned mode = record.colorMode();
+    if (!width || !height)
+        return false;
+
+    const unsigned textureAddress =
+        static_cast<unsigned>(record.cmdSrca) << 3;
+    const unsigned char* const src =
+        getVdp1Pointer(0x25C00000u + textureAddress);
+    if (!src)
+        return false;
+
+    out = {};
+    out.cmdPmod = record.cmdPmod;
+    out.cmdColr = record.cmdColr;
+    out.cmdSrca = record.cmdSrca;
+    out.cmdSize = record.cmdSize;
+    out.width = width;
+    out.height = height;
+    out.rgba.assign(static_cast<std::size_t>(width) * height, 0u);
+
+    const bool spd = (record.cmdPmod & 0x40u) != 0u;
+    const bool endDisabled = (record.cmdPmod & 0x80u) != 0u;
+    const bool endMode = (record.cmdPmod & 0x20u) == 0u;
+
+    auto cramColor = [](unsigned index) -> std::uint32_t {
+        const unsigned byte = (index * 2u) & 0x0FFFu;
+        const std::uint16_t c = readVdp2Be16(g_vdp2Cram, byte);
+        return c ? vdp2Rgb555ToAbgr(c) : 0u;
+    };
+
+    auto decodeDot4 = [&](auto resolveColor) {
+        unsigned pixel = 0u;
+        for (unsigned y = 0; y < height; ++y) {
+            unsigned endCount = 0u;
+            for (unsigned x = 0; x < width; ++x, ++pixel) {
+                const std::uint8_t packed =
+                    src[(x + y * width) / 2u];
+                const unsigned dot =
+                    (x & 1u) ? (packed & 0x0Fu) : (packed >> 4);
+                if (endMode && endCount >= 2u)
+                    continue;
+                if (dot == 0u && !spd)
+                    continue;
+                if (dot == 0x0Fu && !endDisabled) {
+                    ++endCount;
+                    continue;
+                }
+                out.rgba[pixel] = resolveColor(dot);
+            }
+        }
+    };
+
+    switch (mode) {
+    case 0u: {
+        const unsigned bank =
+            static_cast<unsigned>(record.cmdColr) & 0x07F0u;
+        decodeDot4([&](unsigned dot) {
+            return cramColor(bank | dot);
+        });
+        return true;
+    }
+
+    case 1u: {
+        const unsigned lutAddress =
+            static_cast<unsigned>(record.cmdColr) << 3;
+        const unsigned char* const lut =
+            getVdp1Pointer(0x25C00000u + lutAddress);
+        if (!lut)
+            return false;
+
+        decodeDot4([&](unsigned dot) {
+            const std::uint16_t entry =
+                static_cast<std::uint16_t>(
+                    (static_cast<unsigned>(lut[dot * 2u]) << 8) |
+                    static_cast<unsigned>(lut[dot * 2u + 1u]));
+            if (entry & 0x8000u)
+                return vdp2Rgb555ToAbgr(entry);
+            return entry ? cramColor(entry & 0x07FFu) : 0u;
+        });
+        return true;
+    }
+
+    case 5u: {
+        for (unsigned p = 0; p < width * height; ++p) {
+            const std::uint16_t color =
+                static_cast<std::uint16_t>(
+                    (static_cast<unsigned>(src[p * 2u]) << 8) |
+                    static_cast<unsigned>(src[p * 2u + 1u]));
+            if (color & 0x8000u)
+                out.rgba[p] = vdp2Rgb555ToAbgr(color);
+        }
+        return true;
+    }
+
+    default:
+        return false;
+    }
+}
+
 static std::uint16_t liveTownTextureIndex(
     const azel::SaturnPolygonRecord& record)
 {
@@ -4332,12 +4437,11 @@ static std::uint16_t liveTownTextureIndex(
             return static_cast<std::uint16_t>(i);
     }
 
-    // Static room bring-up only decoded materials referenced by static cell
-    // geometry. Native task-owned objects can legitimately introduce more
-    // descriptors from the same RUINMP bundle. Decode them into the shared
-    // town atlas on demand instead of rejecting the entire live frame.
+    // Authentic boot has already populated VDP1 memory. Decode the live
+    // descriptor directly from that Saturn address space rather than relying
+    // on the historical direct-boot town bundle/overlay registry.
     azel::DecodedMode1Texture decoded{};
-    if (azel::decode_town_texture_descriptor(record, decoded)) {
+    if (decodeLiveVdp1Texture(record, decoded)) {
         const std::size_t next =
             g_staticRoomCpuMesh.decodedTextureData.size();
         if (next < 0xFFFFu) {
@@ -4347,12 +4451,18 @@ static std::uint16_t liveTownTextureIndex(
         }
     }
 
-    platform::logging::writef(
-        "[TownRender] unresolved live material PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
-        static_cast<unsigned>(record.cmdPmod),
-        static_cast<unsigned>(record.cmdColr),
-        static_cast<unsigned>(record.cmdSrca),
-        static_cast<unsigned>(record.cmdSize));
+    static unsigned int unresolvedLogged = 0u;
+    if (unresolvedLogged < 16u) {
+        platform::logging::writef(
+            "[SceneRender] unresolved live material "
+            "PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X mode=%u\n",
+            static_cast<unsigned>(record.cmdPmod),
+            static_cast<unsigned>(record.cmdColr),
+            static_cast<unsigned>(record.cmdSrca),
+            static_cast<unsigned>(record.cmdSize),
+            record.colorMode());
+        ++unresolvedLogged;
+    }
     return 0xFFFFu;
 }
 
@@ -4763,10 +4873,43 @@ static bool buildLiveTownFrame()
     if (g_liveTownCpuMesh.vertices.empty() ||
         g_liveTownCpuMesh.vertices.size() > 65535u ||
         g_liveTownCpuMesh.polygonTextureIndices.size() !=
-            g_liveTownCpuMesh.polygonRecords.size())
+            g_liveTownCpuMesh.polygonRecords.size()) {
+        static bool loggedInvalidGeometry = false;
+        if (!loggedInvalidGeometry) {
+            logging::writef(
+                "[SceneRender] live frame validation failed "
+                "verts=%u polys=%u texIndices=%u submissions=%u atlas=%u\n",
+                static_cast<unsigned>(g_liveTownCpuMesh.vertices.size()),
+                static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
+                static_cast<unsigned>(
+                    g_liveTownCpuMesh.polygonTextureIndices.size()),
+                g_liveTownSubmissionCount,
+                static_cast<unsigned>(
+                    g_staticRoomCpuMesh.decodedTextureData.size()));
+            loggedInvalidGeometry = true;
+        }
         return false;
-    for (const auto index : g_liveTownCpuMesh.polygonTextureIndices)
-        if (index == 0xFFFFu) return false;
+    }
+
+    for (std::size_t i = 0;
+         i < g_liveTownCpuMesh.polygonTextureIndices.size(); ++i) {
+        if (g_liveTownCpuMesh.polygonTextureIndices[i] == 0xFFFFu) {
+            static bool loggedInvalidMaterial = false;
+            if (!loggedInvalidMaterial) {
+                logging::writef(
+                    "[SceneRender] live frame rejected unresolved material "
+                    "poly=%u polys=%u atlas=%u submissions=%u\n",
+                    static_cast<unsigned>(i),
+                    static_cast<unsigned>(
+                        g_liveTownCpuMesh.polygonRecords.size()),
+                    static_cast<unsigned>(
+                        g_staticRoomCpuMesh.decodedTextureData.size()),
+                    g_liveTownSubmissionCount);
+                loggedInvalidMaterial = true;
+            }
+            return false;
+        }
+    }
     g_profileBuildValidateUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tValidate);
 
@@ -4798,6 +4941,19 @@ static bool buildLiveTownFrame()
     }
     g_profileBuildUploadUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tUpload);
+
+    static bool loggedFirstLiveFrame = false;
+    if (!loggedFirstLiveFrame) {
+        logging::writef(
+            "[SceneRender] live frame ready verts=%u polys=%u "
+            "atlas=%u submissions=%u\n",
+            static_cast<unsigned>(g_liveTownCpuMesh.vertices.size()),
+            static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
+            static_cast<unsigned>(
+                g_staticRoomCpuMesh.decodedTextureData.size()),
+            g_liveTownSubmissionCount);
+        loggedFirstLiveFrame = true;
+    }
     return true;
 }
 
