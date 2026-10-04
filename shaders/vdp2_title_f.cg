@@ -109,21 +109,39 @@ float4 sampleNameNbg0(
     float scrollX,
     float scrollY)
 {
-    const float mapX = fmod(logicalX + scrollX, 1024.0f);
-    const float mapY = fmod(logicalY + scrollY, 512.0f);
-    const float planeX = mapX >= 512.0f ? mapX - 512.0f : mapX;
-    const float planeBase = mapX >= 512.0f ? 124928.0f  // 0x1E800
-                                              : 122880.0f; // 0x1E000
+    // Azel renderer_vdp2.cpp semantics for PLSZ=1:
+    //   page width       = 512 dots
+    //   plane width      = 1024 dots (2 pages)
+    //   NBG map width    = 2048 dots (2 horizontal planes)
+    //   page size        = 0x800 bytes for CHSZ=1 / PNB=1
+    //
+    // Do not switch plane at x=512: that is only the second page of the
+    // current plane. Plane B begins at x=1024.
+    float mapX = fmod(logicalX + scrollX, 2048.0f);
+    float mapY = fmod(logicalY + scrollY, 512.0f);
+    if (mapX < 0.0f) mapX += 2048.0f;
+    if (mapY < 0.0f) mapY += 512.0f;
 
-    const float patternX = floor(planeX / 16.0f);
+    const float planeIndex = floor(mapX / 1024.0f);
+    const float dotInPlaneX = mapX - planeIndex * 1024.0f;
+    const float pageX = floor(dotInPlaneX / 512.0f);
+    const float dotInPageX = dotInPlaneX - pageX * 512.0f;
+
+    // Exact plane bases produced by Azel's initLayerMap() for the D5
+    // name-entry setup. Page selection is then applied independently.
+    const float planeBase =
+        planeIndex < 0.5f ? 122880.0f : 124928.0f; // 0x1E000 / 0x1E800
+    const float pageBase = planeBase + pageX * 2048.0f; // pageSize=0x800
+
+    const float patternX = floor(dotInPageX / 16.0f);
     const float patternY = floor(mapY / 16.0f);
     const float patternAddress =
-        planeBase + (patternY * 32.0f + patternX) * 2.0f;
+        pageBase + (patternY * 32.0f + patternX) * 2.0f;
     const float patternName = readBE16(raw, patternAddress);
 
     // PNB=1, CNSM=0: bits 9:0 character, 10 H flip, 11 V flip,
     // bits 15:12 palette.  CHSZ=1 makes each pattern four 8x8 cells.
-    float px = fmod(planeX, 16.0f);
+    float px = fmod(dotInPageX, 16.0f);
     float py = fmod(mapY, 16.0f);
     if (fmod(floor(patternName / 1024.0f), 2.0f) >= 1.0f)
         px = 15.0f - px;
