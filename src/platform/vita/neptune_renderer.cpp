@@ -8220,7 +8220,7 @@ static void drawColorOffsetPass(
     const std::uint8_t b = static_cast<std::uint8_t>(
         std::clamp(blue, 0, 255));
 
-    for (unsigned i = 0; i < 6u; ++i) {
+    for (unsigned i = 0; i < 4u; ++i) {
         g_fadeVertices[i].r = r;
         g_fadeVertices[i].g = g;
         g_fadeVertices[i].b = b;
