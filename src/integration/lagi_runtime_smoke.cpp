@@ -297,6 +297,31 @@ void runtime_smoke_frame()
         }
     }
 
+    if (d5NameSequenceActive) {
+        // RBG0 is a 4x4 rotation map. D5 uses CHSZ=1 / PNB=1, so each
+        // plane is one 0x800-byte page. Convert Azel's native MPOFR/MPxxRA
+        // register encoding to byte offsets exactly as renderer_vdp2.cpp does.
+        const auto* regs = vdp2Controls.m4_pendingVdp2Regs;
+        const unsigned int pageSize = 0x800u;
+        const unsigned int mapOffset =
+            ((regs->m3E_MPOFR >> 0) & 7u) << 6;
+        const u16 packed[8] = {
+            regs->m50_MPABRA, regs->m52_MPCDRA,
+            regs->m54_MPEFRA, regs->m56_MPGHRA,
+            regs->m58_MPIJRA, regs->m5A_MPKLRA,
+            regs->m5C_MPMNRA, regs->m5E_MPOPRA
+        };
+        unsigned int planeOffsets[16] = {};
+        for (unsigned int i = 0; i < 8; ++i) {
+            planeOffsets[i * 2 + 0] =
+                (mapOffset + (packed[i] & 0x3Fu)) * pageSize;
+            planeOffsets[i * 2 + 1] =
+                (mapOffset + ((packed[i] >> 8) & 0x3Fu)) * pageSize;
+        }
+        lagi::platform::renderer::frontend_set_rbg0_planes(
+            planeOffsets, 16u);
+    }
+
     if (titleActive || d5NameSequenceActive) {
         // Layout 0 = title. Layout 2 = complete FLD_D5 name-entry sequence.
         // Bit 0 of flags is Azel's native NBG0 keyboard visibility.
