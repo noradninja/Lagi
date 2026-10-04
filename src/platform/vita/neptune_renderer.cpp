@@ -422,9 +422,14 @@ static bool g_movieUsesCinepakPayload = false;
 static bool g_movieUsesVdp2Title = false;
 static bool g_movieFrameVisible = false;
 static float g_movieVdp2Info[4] = {};
-static std::atomic<int> g_azelFadeRed{0};
-static std::atomic<int> g_azelFadeGreen{0};
-static std::atomic<int> g_azelFadeBlue{0};
+static std::atomic<unsigned int> g_azelColorOffsetEnable{0};
+static std::atomic<unsigned int> g_azelColorOffsetSelect{0};
+static std::atomic<int> g_azelColorOffsetARed{0};
+static std::atomic<int> g_azelColorOffsetAGreen{0};
+static std::atomic<int> g_azelColorOffsetABlue{0};
+static std::atomic<int> g_azelColorOffsetBRed{0};
+static std::atomic<int> g_azelColorOffsetBGreen{0};
+static std::atomic<int> g_azelColorOffsetBBlue{0};
 static SceUID g_movieFrameSema = -1;
 static bool g_movieUploadLogged = false;
 static bool g_movieRenderLogged = false;
@@ -2170,11 +2175,20 @@ bool frontend_present_vdp2(
     return true;
 }
 
-void set_azel_fade_color(int red, int green, int blue)
+void set_azel_color_offset_state(
+    unsigned int enableMask,
+    unsigned int selectMask,
+    int aRed, int aGreen, int aBlue,
+    int bRed, int bGreen, int bBlue)
 {
-    g_azelFadeRed.store(red, std::memory_order_relaxed);
-    g_azelFadeGreen.store(green, std::memory_order_relaxed);
-    g_azelFadeBlue.store(blue, std::memory_order_relaxed);
+    g_azelColorOffsetEnable.store(enableMask, std::memory_order_relaxed);
+    g_azelColorOffsetSelect.store(selectMask, std::memory_order_relaxed);
+    g_azelColorOffsetARed.store(aRed, std::memory_order_relaxed);
+    g_azelColorOffsetAGreen.store(aGreen, std::memory_order_relaxed);
+    g_azelColorOffsetABlue.store(aBlue, std::memory_order_relaxed);
+    g_azelColorOffsetBRed.store(bRed, std::memory_order_relaxed);
+    g_azelColorOffsetBGreen.store(bGreen, std::memory_order_relaxed);
+    g_azelColorOffsetBBlue.store(bBlue, std::memory_order_relaxed);
 }
 
 void movie_clear_frame()
@@ -8138,9 +8152,32 @@ static void drawFadeOverlay(
 
 static void drawAzelFadeOverlay()
 {
-    const int red = g_azelFadeRed.load(std::memory_order_relaxed);
-    const int green = g_azelFadeGreen.load(std::memory_order_relaxed);
-    const int blue = g_azelFadeBlue.load(std::memory_order_relaxed);
+    // The front-end/movie surface stands in for Saturn NBG0. Honor VDP2's
+    // native layer enable and A/B color-offset selection rather than treating
+    // whichever COA values happen to be resident as a global fullscreen fade.
+    constexpr unsigned int kNbg0Bit = 0x1u;
+    const unsigned int enable =
+        g_azelColorOffsetEnable.load(std::memory_order_relaxed);
+    if ((enable & kNbg0Bit) == 0)
+        return;
+
+    const unsigned int select =
+        g_azelColorOffsetSelect.load(std::memory_order_relaxed);
+    const bool useB = (select & kNbg0Bit) != 0;
+
+    const int red = useB
+        ? g_azelColorOffsetBRed.load(std::memory_order_relaxed)
+        : g_azelColorOffsetARed.load(std::memory_order_relaxed);
+    const int green = useB
+        ? g_azelColorOffsetBGreen.load(std::memory_order_relaxed)
+        : g_azelColorOffsetAGreen.load(std::memory_order_relaxed);
+    const int blue = useB
+        ? g_azelColorOffsetBBlue.load(std::memory_order_relaxed)
+        : g_azelColorOffsetABlue.load(std::memory_order_relaxed);
+
+    // The boot/title/movie transitions use equal RGB offsets. A black/white
+    // alpha overlay is equivalent to Saturn's clamped additive offset at the
+    // extrema while preserving the native signed fade curve.
     const int darkest = std::min(red, std::min(green, blue));
     const int brightest = std::max(red, std::max(green, blue));
     if (darkest < 0) {
