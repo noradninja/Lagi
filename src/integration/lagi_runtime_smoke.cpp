@@ -177,7 +177,14 @@ void runtime_smoke_frame()
     const bool titleActive =
         initialTaskStatus.m_currentTask == createTitleScreenTask ||
         initialTaskStatus.m_currentTask == createTitleMenuTask;
-    const bool nameEntryActive = gGameStatus.m4_gameStatus == 2;
+    // FLD_D5 creates the name-entry UI while its opening field script is
+    // still running, then immediately disables NBG0 and pauses the UI. Azel
+    // later calls nameEntryEnable() when that script completes. Respect that
+    // native layer ownership instead of exposing the staged keyboard merely
+    // because gameStatus has already reached 2.
+    const bool nameEntryActive =
+        gGameStatus.m4_gameStatus == 2 &&
+        (vdp2Controls.m4_pendingVdp2Regs->m20_BGON & 0x1) != 0;
     if (titleActive || nameEntryActive) {
         // Azel owns the VDP2 memory/register state. Neptune uploads the raw
         // VRAM/CRAM and interprets the active front-end layers directly on
