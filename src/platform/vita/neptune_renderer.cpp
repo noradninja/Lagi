@@ -2339,7 +2339,16 @@ bool frontend_present_vdp2(
     // the raw SGX upload so native D5 cursors/particles resolve their palette.
     static_assert(sizeof(g_vdp2Cram) <= cramBytes,
                   "front-end CRAM snapshot exceeds uploaded CRAM");
+    static_assert(sizeof(g_vdp2TextVram) <= vramBytes,
+                  "front-end text snapshot exceeds uploaded VRAM");
     std::memcpy(g_vdp2Cram, cram, sizeof(g_vdp2Cram));
+
+    // The front-end NBG1/NBG3 font map uses the same Azel-authored VRAM/CRAM
+    // representation as the in-game text path. Publish that snapshot to the
+    // decoded RGBA text layer so SGX can bilinear-filter the final glyph image
+    // instead of filtering packed Saturn memory.
+    std::memcpy(g_vdp2TextVram, vram, sizeof(g_vdp2TextVram));
+    g_vdp2TextValid = true;
 
     g_movieVdp2Info[0] = static_cast<float>(layout);
     g_movieVdp2Info[1] = static_cast<float>(scrollX);
@@ -9382,6 +9391,13 @@ static bool renderMovieFrame()
             }
         }
     }
+
+    // Front-end text is decoded from Azel's NBG1/NBG3 VRAM/CRAM snapshot
+    // into an ordinary RGBA texture. Draw it after the VDP2 backgrounds so
+    // the existing LINEAR sampler handles presentation scaling in hardware.
+    // VDP1 selectors/arrows remain above the text layer.
+    if (submitted && g_movieUsesVdp2Title)
+        drawAzelVdp2TextLayerGpu();
 
     if (submitted && g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f)
         drawPublishedVdp1Ui();
