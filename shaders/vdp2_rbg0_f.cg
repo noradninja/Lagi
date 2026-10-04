@@ -8,6 +8,7 @@
 // implemented here (8bpp, 16x16, PNB=1, CNSM=0, SCN=8). Additional RBG0
 // formats should extend this pipeline rather than create screen-specific
 // shaders.
+#pragma warning (disable:7203)
 #include "vdp2_common.cginc"
 
 float selectRbg0Plane(
