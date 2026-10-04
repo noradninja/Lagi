@@ -537,6 +537,7 @@ static float g_staticRoomFitDistance = 3.0f;
 // First playable-town runtime slice. The recovered Edge transform is kept
 // mutable here instead of baking movement into the reconstructed room mesh.
 static bool g_townPlayerReady = false;
+static bool g_townCameraReady = false;
 static float g_townPlayerPosition[3]{};
 static float g_townPlayerYaw = 0.0f;
 static float g_townCameraPosition[3]{};
@@ -4802,24 +4803,35 @@ static bool buildLiveTownFrame()
 
 static ViewerMat4 buildAuthenticRoomWvp()
 {
+    const bool nativeCamera =
+        g_townPlayerReady && g_townCameraReady;
     const ViewerMat4 view =
         viewerLookAtLH(
-            g_townPlayerReady
+            nativeCamera
                 ? g_townCameraPosition
                 : g_staticRoomCpuMesh.cameraPosition,
-            g_townPlayerReady
+            nativeCamera
                 ? g_townCameraTarget
                 : g_staticRoomCpuMesh.cameraTarget,
-            g_townPlayerReady
+            nativeCamera
                 ? g_townCameraUp
                 : g_staticRoomCpuMesh.cameraUp);
+
+    const float nearPlane =
+        g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraNear > 0.0f
+            ? g_staticRoomCpuMesh.cameraNear
+            : static_cast<float>(0x999) / 65536.0f;
+    const float farPlane =
+        g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraFar > nearPlane
+            ? g_staticRoomCpuMesh.cameraFar
+            : static_cast<float>(0xF000) / 65536.0f;
 
     ViewerMat4 projection =
         buildAzelProjection(
             g_azelProjectionFovDegrees,
             0u,
-            g_staticRoomCpuMesh.cameraNear,
-            g_staticRoomCpuMesh.cameraFar);
+            nearPlane,
+            farPlane);
 
     // Saturn reference captures show our reconstructed town presentation is
     // horizontally reversed. Mirror only clip-space X here so camera-space
@@ -8997,11 +9009,14 @@ static void renderBasicWingViewer()
     // g_viewMode is part of the published game->render frame. The render
     // thread never reads mutable controller state directly.
 
+    const bool nativeTownMode =
+        g_townPlayerReady && g_townCameraReady &&
+        !azel_bridge::published_submissions().empty();
     const bool roomMode =
-        g_staticRoomCpuReady;
+        g_staticRoomCpuReady || nativeTownMode;
     const bool roomAuthenticCameraMode =
-        g_staticRoomCpuReady &&
-        g_staticRoomCpuMesh.cameraValid;
+        nativeTownMode ||
+        (g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraValid);
 
     // Legacy Basic Wing regression camera state is renderer-owned. Interactive
     // input is intentionally not sampled from this thread.
@@ -9602,9 +9617,12 @@ bool town_scene_active()
         g_pendingViewMode == 7 || g_pendingViewMode == 8 ||
         g_pendingViewMode == 10 || g_pendingViewMode == 9 ||
         g_pendingViewMode == 11;
-    return !g_debugVisible && g_staticRoomCpuReady &&
-           g_staticRoomCpuMesh.cameraValid && sceneMode &&
-           g_townPlayerReady;
+    const bool nativeTownReady =
+        g_townPlayerReady && g_townCameraReady;
+    const bool legacyRoomReady =
+        g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraValid;
+    return !g_debugVisible && sceneMode &&
+           (nativeTownReady || legacyRoomReady);
 }
 
 void town_profile_tasks_us(unsigned int microseconds)
@@ -9733,8 +9751,7 @@ void town_present_edge(
     unsigned previousAnimation, unsigned previousFrame,
     float transition)
 {
-    if (!g_townPlayerReady)
-        return;
+    g_townPlayerReady = true;
     g_pendingTownPlayerPosition[0] = x;
     g_pendingTownPlayerPosition[1] = y;
     g_pendingTownPlayerPosition[2] = z;
@@ -9756,8 +9773,7 @@ void town_present_camera(
     const float up[3],
     float yaw, float pitch, float distance)
 {
-    if (!g_townPlayerReady)
-        return;
+    g_townCameraReady = true;
     std::memcpy(
         g_pendingTownCameraPosition,
         position,
