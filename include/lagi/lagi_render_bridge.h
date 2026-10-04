@@ -13,6 +13,7 @@ struct SubmissionState {
     std::int32_t modelMatrix[12]{};
     std::int32_t lightVector[3]{};
     std::uint16_t lightColor[3]{};
+    std::uint32_t lightFalloff[3]{};
     bool hasModelMatrix = false;
     bool hasLight = false;
     bool billboard = false;
@@ -81,6 +82,12 @@ std::uint64_t published_frame_number();
 // submission state without also inheriting pCurrentMatrix (which may already
 // contain the camera/view transform).
 void capture_current_light(SubmissionState& state);
+
+// Begin/end a draw scope where Azel's pCurrentMatrix is already view-space.
+// Submissions inside the scope are converted back to world space before they
+// are published to Neptune.
+void begin_view_relative_submission_scope();
+void end_view_relative_submission_scope();
 
 void set_town_submission_context(
     std::int8_t bundleIndex,
