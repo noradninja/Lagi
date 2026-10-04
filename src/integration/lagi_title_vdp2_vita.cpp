@@ -1,4 +1,5 @@
 #include "lagi/platform.h"
+#include "lagi/lagi_azel_upstream_prelude.h"
 #include "VDP2.h"
 
 #include <algorithm>
