@@ -424,6 +424,16 @@ static SceUID g_vdp2Nbg1VertexUid = -1;
 static SceUID g_vdp2Nbg1IndexUid = -1;
 static azel::DebugTextureVertex* g_vdp2Nbg1Vertices = nullptr;
 static std::uint16_t* g_vdp2Nbg1Indices = nullptr;
+
+static constexpr unsigned int kVdp2TextLayerWidth = 352u;
+static constexpr unsigned int kVdp2TextLayerHeight = 224u;
+static SceUID g_vdp2TextLayerUid = -1;
+static std::uint32_t* g_vdp2TextLayerPixels = nullptr;
+static SceGxmTexture g_vdp2TextLayerTexture{};
+static SceUID g_vdp2TextLayerVertexUid = -1;
+static SceUID g_vdp2TextLayerIndexUid = -1;
+static azel::DebugTextureVertex* g_vdp2TextLayerVertices = nullptr;
+static std::uint16_t* g_vdp2TextLayerIndices = nullptr;
 static SceUID g_vdp2BarVertexUid = -1;
 static SceUID g_vdp2BarIndexUid = -1;
 static azel::DebugColorVertex* g_vdp2BarVertices = nullptr;
@@ -682,6 +692,7 @@ static unsigned int g_lastPresentVcount = 0;
 static void freeVdp1Textures();
 static void freeMovieResources();
 static void updateLiveTownAzelLighting();
+static bool ensureVdp2UiGpuBuffers();
 static int viewerRenderWidth();
 static int viewerRenderHeight();
 static int viewerRenderPitch();
@@ -942,35 +953,29 @@ static std::uint32_t vdp2Rgb555ToAbgr(std::uint16_t color)
     return 0xFF000000u | (b << 16) | (g << 8) | r;
 }
 
-static void drawAzelVdp2TextLayer(
-    std::uint32_t* buffer,
-    int pitch)
+static void drawAzelVdp2TextLayerGpu()
 {
-    if (!buffer || !g_vdp2TextValid)
+    if (!g_vdp2TextValid ||
+        !g_textureVertexProgram ||
+        !g_textureFragmentProgram ||
+        !g_textureWvpParam ||
+        !ensureVdp2UiGpuBuffers())
         return;
 
-    constexpr int kSaturnWidth = 352;
-    constexpr int kSaturnHeight = 224;
     constexpr int kTileSize = 8;
     constexpr int kMapColumns = 64;
-    constexpr int kVisibleColumns = kSaturnWidth / kTileSize;
-    constexpr int kVisibleRows = kSaturnHeight / kTileSize;
+    constexpr int kVisibleColumns =
+        static_cast<int>(kVdp2TextLayerWidth) / kTileSize;
+    constexpr int kVisibleRows =
+        static_cast<int>(kVdp2TextLayerHeight) / kTileSize;
     constexpr std::size_t kTextMapOffset = 0x6000u;
     constexpr std::size_t kFontPaletteOffset = 0x0E00u;
 
-    const int outW = viewerRenderWidth();
-    const int outH = viewerRenderHeight();
-
-    // Match Neptune's VDP1 UI presentation: Saturn's 352x224 logical image
-    // occupies a centered 4:3 region while Y spans the full render height.
-    const float renderAspect =
-        static_cast<float>(outW) / static_cast<float>(outH);
-    const float xCorrection =
-        (4.0f / 3.0f) / renderAspect;
-    const float logicalW =
-        static_cast<float>(outW) * xCorrection;
-    const float left =
-        (static_cast<float>(outW) - logicalW) * 0.5f;
+    std::memset(
+        g_vdp2TextLayerPixels,
+        0,
+        kVdp2TextLayerWidth * kVdp2TextLayerHeight *
+            sizeof(std::uint32_t));
 
     unsigned int activeCells = 0u;
     for (int ty = 0; ty < kVisibleRows; ++ty) {
@@ -999,11 +1004,14 @@ static void drawAzelVdp2TextLayer(
                     const std::uint8_t packed =
                         g_vdp2TextVram[
                             tileOffset +
-                            static_cast<std::size_t>(py * 4 + px / 2)];
+                            static_cast<std::size_t>(
+                                py * 4 + px / 2)];
                     const unsigned int colorIndex =
                         (px & 1)
-                            ? static_cast<unsigned int>(packed & 0x0Fu)
-                            : static_cast<unsigned int>(packed >> 4);
+                            ? static_cast<unsigned int>(
+                                packed & 0x0Fu)
+                            : static_cast<unsigned int>(
+                                packed >> 4);
                     if (!colorIndex)
                         continue;
 
@@ -1011,57 +1019,82 @@ static void drawAzelVdp2TextLayer(
                         kFontPaletteOffset +
                         static_cast<std::size_t>(
                             (palette * 16u + colorIndex) * 2u);
-                    if (cramOffset + 1u >= kVdp2CramSnapshotBytes)
+                    if (cramOffset + 1u >=
+                        kVdp2CramSnapshotBytes)
                         continue;
-                    const std::uint32_t color =
+
+                    const unsigned int sx =
+                        static_cast<unsigned int>(
+                            tx * kTileSize + px);
+                    const unsigned int sy =
+                        static_cast<unsigned int>(
+                            ty * kTileSize + py);
+                    g_vdp2TextLayerPixels[
+                        sy * kVdp2TextLayerWidth + sx] =
                         vdp2Rgb555ToAbgr(
-                            readVdp2Be16(g_vdp2Cram, cramOffset));
-
-                    const int sx = tx * kTileSize + px;
-                    const int sy = ty * kTileSize + py;
-
-                    const int dx0 = static_cast<int>(
-                        std::floor(
-                            left + logicalW *
-                            static_cast<float>(sx) /
-                            static_cast<float>(kSaturnWidth)));
-                    const int dx1 = static_cast<int>(
-                        std::ceil(
-                            left + logicalW *
-                            static_cast<float>(sx + 1) /
-                            static_cast<float>(kSaturnWidth)));
-                    const int dy0 = static_cast<int>(
-                        std::floor(
-                            static_cast<float>(outH) *
-                            static_cast<float>(sy) /
-                            static_cast<float>(kSaturnHeight)));
-                    const int dy1 = static_cast<int>(
-                        std::ceil(
-                            static_cast<float>(outH) *
-                            static_cast<float>(sy + 1) /
-                            static_cast<float>(kSaturnHeight)));
-
-                    for (int dy = std::max(0, dy0);
-                         dy < std::min(outH, dy1); ++dy) {
-                        for (int dx = std::max(0, dx0);
-                             dx < std::min(outW, dx1); ++dx) {
-                            buffer[dy * pitch + dx] = color;
-                        }
-                    }
+                            readVdp2Be16(
+                                g_vdp2Cram, cramOffset));
                 }
             }
         }
     }
 
+    if (!activeCells)
+        return;
+
+    const float renderAspect =
+        static_cast<float>(viewerRenderWidth()) /
+        static_cast<float>(viewerRenderHeight());
+    const float xExtent =
+        (4.0f / 3.0f) / renderAspect;
+    g_vdp2TextLayerVertices[0] =
+        {-xExtent,  1.0f, 0.5f, 0.0f, 0.0f};
+    g_vdp2TextLayerVertices[1] =
+        { xExtent,  1.0f, 0.5f, 1.0f, 0.0f};
+    g_vdp2TextLayerVertices[2] =
+        { xExtent, -1.0f, 0.5f, 1.0f, 1.0f};
+    g_vdp2TextLayerVertices[3] =
+        {-xExtent, -1.0f, 0.5f, 0.0f, 1.0f};
+
+    sceGxmSetVertexProgram(
+        g_probeContext, g_textureVertexProgram);
+    sceGxmSetFragmentProgram(
+        g_probeContext, g_textureFragmentProgram);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+
+    void* uniforms = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniforms) < 0 || !uniforms)
+        return;
+    static const float identity[16] = {
+        1.0f,0.0f,0.0f,0.0f,
+        0.0f,1.0f,0.0f,0.0f,
+        0.0f,0.0f,1.0f,0.0f,
+        0.0f,0.0f,0.0f,1.0f
+    };
+    sceGxmSetUniformDataF(
+        uniforms, g_textureWvpParam, 0, 16, identity);
+    sceGxmSetVertexStream(
+        g_probeContext, 0, g_vdp2TextLayerVertices);
+    sceGxmSetFragmentTexture(
+        g_probeContext, 0, &g_vdp2TextLayerTexture);
+    sceGxmDraw(
+        g_probeContext,
+        SCE_GXM_PRIMITIVE_TRIANGLES,
+        SCE_GXM_INDEX_FORMAT_U16,
+        g_vdp2TextLayerIndices,
+        6);
+
     static bool reported = false;
-    if (!reported && activeCells) {
+    if (!reported) {
         logging::writef(
-            "[VDP2Text] active cells=%u map=6000 font/palette snapshot ready\n",
+            "[VDP2Text] SGX bilinear logical layer %ux%u activeCells=%u\n",
+            kVdp2TextLayerWidth,
+            kVdp2TextLayerHeight,
             activeCells);
         reported = true;
     }
 }
-
 
 
 static void drawTownInputOverlay(
@@ -1332,6 +1365,15 @@ void shutdown()
     void* vdp2IndexPtr = g_vdp2Nbg1Indices;
     freeSimpleMappedProbe(g_vdp2Nbg1IndexUid, vdp2IndexPtr);
     g_vdp2Nbg1Indices = nullptr;
+    void* vdp2TextLayerPtr = g_vdp2TextLayerPixels;
+    freeSimpleMappedProbe(g_vdp2TextLayerUid, vdp2TextLayerPtr);
+    g_vdp2TextLayerPixels = nullptr;
+    void* vdp2TextVertexPtr = g_vdp2TextLayerVertices;
+    freeSimpleMappedProbe(g_vdp2TextLayerVertexUid, vdp2TextVertexPtr);
+    g_vdp2TextLayerVertices = nullptr;
+    void* vdp2TextIndexPtr = g_vdp2TextLayerIndices;
+    freeSimpleMappedProbe(g_vdp2TextLayerIndexUid, vdp2TextIndexPtr);
+    g_vdp2TextLayerIndices = nullptr;
     void* vdp2BarVertexPtr = g_vdp2BarVertices;
     freeSimpleMappedProbe(g_vdp2BarVertexUid, vdp2BarVertexPtr);
     g_vdp2BarVertices = nullptr;
@@ -2297,7 +2339,16 @@ bool frontend_present_vdp2(
     // the raw SGX upload so native D5 cursors/particles resolve their palette.
     static_assert(sizeof(g_vdp2Cram) <= cramBytes,
                   "front-end CRAM snapshot exceeds uploaded CRAM");
+    static_assert(sizeof(g_vdp2TextVram) <= vramBytes,
+                  "front-end text snapshot exceeds uploaded VRAM");
     std::memcpy(g_vdp2Cram, cram, sizeof(g_vdp2Cram));
+
+    // The front-end NBG1/NBG3 font map uses the same Azel-authored VRAM/CRAM
+    // representation as the in-game text path. Publish that snapshot to the
+    // decoded RGBA text layer so SGX can bilinear-filter the final glyph image
+    // instead of filtering packed Saturn memory.
+    std::memcpy(g_vdp2TextVram, vram, sizeof(g_vdp2TextVram));
+    g_vdp2TextValid = true;
 
     g_movieVdp2Info[0] = static_cast<float>(layout);
     g_movieVdp2Info[1] = static_cast<float>(scrollX);
@@ -2488,6 +2539,9 @@ static bool ensureVdp2UiGpuBuffers()
     if (g_vdp2Nbg1AtlasPixels &&
         g_vdp2Nbg1Vertices &&
         g_vdp2Nbg1Indices &&
+        g_vdp2TextLayerPixels &&
+        g_vdp2TextLayerVertices &&
+        g_vdp2TextLayerIndices &&
         g_vdp2BarVertices &&
         g_vdp2BarIndices)
         return true;
@@ -2516,6 +2570,28 @@ static bool ensureVdp2UiGpuBuffers()
                     sizeof(std::uint16_t),
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_vdp2Nbg1IndexUid));
+    const unsigned int textLayerBytes =
+        kVdp2TextLayerWidth * kVdp2TextLayerHeight *
+        sizeof(std::uint32_t);
+    g_vdp2TextLayerPixels =
+        static_cast<std::uint32_t*>(
+            probeGpuAlloc(
+                textLayerBytes,
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp2TextLayerUid));
+    g_vdp2TextLayerVertices =
+        static_cast<azel::DebugTextureVertex*>(
+            probeGpuAlloc(
+                4u * sizeof(azel::DebugTextureVertex),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp2TextLayerVertexUid));
+    g_vdp2TextLayerIndices =
+        static_cast<std::uint16_t*>(
+            probeGpuAlloc(
+                6u * sizeof(std::uint16_t),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp2TextLayerIndexUid));
+
     g_vdp2BarVertices =
         static_cast<azel::DebugColorVertex*>(
             probeGpuAlloc(
@@ -2532,6 +2608,9 @@ static bool ensureVdp2UiGpuBuffers()
     if (!g_vdp2Nbg1AtlasPixels ||
         !g_vdp2Nbg1Vertices ||
         !g_vdp2Nbg1Indices ||
+        !g_vdp2TextLayerPixels ||
+        !g_vdp2TextLayerVertices ||
+        !g_vdp2TextLayerIndices ||
         !g_vdp2BarVertices ||
         !g_vdp2BarIndices)
         return false;
@@ -2548,12 +2627,37 @@ static bool ensureVdp2UiGpuBuffers()
             0) < 0)
         return false;
 
+    // Decoded 2D presentation assets are ordinary RGBA textures at this
+    // point. Use SGX linear filtering when Saturn-authored UI is rescaled
+    // into the active Vita framebuffer.
     sceGxmTextureSetMinFilter(
         &g_vdp2Nbg1AtlasTexture,
-        SCE_GXM_TEXTURE_FILTER_POINT);
+        SCE_GXM_TEXTURE_FILTER_LINEAR);
     sceGxmTextureSetMagFilter(
         &g_vdp2Nbg1AtlasTexture,
-        SCE_GXM_TEXTURE_FILTER_POINT);
+        SCE_GXM_TEXTURE_FILTER_LINEAR);
+
+    std::memset(g_vdp2TextLayerPixels, 0, textLayerBytes);
+    if (sceGxmTextureInitLinear(
+            &g_vdp2TextLayerTexture,
+            g_vdp2TextLayerPixels,
+            SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+            kVdp2TextLayerWidth,
+            kVdp2TextLayerHeight,
+            0) < 0)
+        return false;
+    sceGxmTextureSetMinFilter(
+        &g_vdp2TextLayerTexture,
+        SCE_GXM_TEXTURE_FILTER_LINEAR);
+    sceGxmTextureSetMagFilter(
+        &g_vdp2TextLayerTexture,
+        SCE_GXM_TEXTURE_FILTER_LINEAR);
+
+    const std::uint16_t textIndices[6] = {0,1,2,0,2,3};
+    std::memcpy(
+        g_vdp2TextLayerIndices,
+        textIndices,
+        sizeof(textIndices));
 
     return true;
 }
@@ -3068,9 +3172,9 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
             return nullptr;
         }
         sceGxmTextureSetMinFilter(
-            &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+            &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
         sceGxmTextureSetMagFilter(
-            &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+            &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
 
         static bool reportedNormalSprite = false;
         if (!reportedNormalSprite) {
@@ -3169,9 +3273,9 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         return nullptr;
     }
     sceGxmTextureSetMinFilter(
-        &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
     sceGxmTextureSetMagFilter(
-        &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
 
     g_vdp1UiTextureCache.push_back(std::move(entry));
     return &g_vdp1UiTextureCache.back().gpu;
@@ -8864,6 +8968,8 @@ static void drawAzelColorOffset()
 
 static bool renderMovieFrame()
 {
+    const std::uint64_t frameStartUs =
+        sceKernelGetProcessTimeWide();
     MovieFrameGuard guard;
     if (!guard)
         return false;
@@ -9286,14 +9392,42 @@ static bool renderMovieFrame()
         }
     }
 
+    // Front-end text is decoded from Azel's NBG1/NBG3 VRAM/CRAM snapshot
+    // into an ordinary RGBA texture. Draw it after the VDP2 backgrounds so
+    // the existing LINEAR sampler handles presentation scaling in hardware.
+    // VDP1 selectors/arrows remain above the text layer.
+    if (submitted && g_movieUsesVdp2Title)
+        drawAzelVdp2TextLayerGpu();
+
     if (submitted && g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f)
         drawPublishedVdp1Ui();
 
     if (submitted)
         drawAzelColorOffset();
 
+    const std::uint64_t gpuWaitStartUs =
+        sceKernelGetProcessTimeWide();
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     sceGxmFinish(g_probeContext);
+    const unsigned int gpuWaitUs =
+        static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - gpuWaitStartUs);
+    const unsigned int frameRenderUs =
+        static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - frameStartUs);
+
+    static unsigned int frontendPerfFrames = 0u;
+    if (g_movieUsesVdp2Title &&
+        ((frontendPerfFrames++ % 60u) == 0u)) {
+        logging::writef(
+            "[VDP2Perf] fb=%ux%u frame=%uus gpuWait=%uus layout=%u\n",
+            static_cast<unsigned int>(movieOutputWidth),
+            static_cast<unsigned int>(movieOutputHeight),
+            frameRenderUs,
+            gpuWaitUs,
+            static_cast<unsigned int>(g_movieVdp2Info[0]));
+    }
+
     if (!submitted) {
         logging::writef("[MovieRender] FAIL movie draw submission\n");
         return true;
@@ -9536,6 +9670,7 @@ static void renderBasicWingViewer()
         // cinematic matte; VDP1 sprites (including the multi-choice cursor)
         // are composited above those planes.
         drawAzelVdp2Nbg1Gpu();
+        drawAzelVdp2TextLayerGpu();
         drawAzelVdp2CinematicBarsGpu();
         drawPublishedVdp1Ui();
     }
@@ -9554,9 +9689,6 @@ static void renderBasicWingViewer()
     sceGxmFinish(g_probeContext);
     g_profileGxmWaitUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - gxmWaitStartUs);
-
-    if (roomAuthenticCameraMode)
-        drawAzelVdp2TextLayer(colorBuffer, gxmPitch);
 
     g_profileRenderUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - renderStartUs);
