@@ -8,7 +8,7 @@ Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Re
 
 ## Current development stage
 
-The main 0.040 goal is to stop treating the first Ruins room as a special direct-boot target and instead run the game through Azel's own startup, movie, title, New Game, field, and module-manager flow.
+The 0.040 milestone replaces the first Ruins room's special direct-boot path with Azel's own startup, movie, title, New Game, field, and module-manager flow.
 
 The current hardware path reaches:
 
@@ -46,7 +46,7 @@ Azel remains responsible for game status, module transitions, scripts, task crea
 
 ## Runtime architecture
 
-The current ownership rule is:
+The current ownership model is:
 
 ```text
 Azel decides.
@@ -313,7 +313,7 @@ Vita display output:                   960x544
 target presentation:                   30 Hz
 ```
 
-Saturn-authored content should be presented with the intended aspect rather than stretched to match a 16:9 capture device.
+Saturn-authored content is presented at its intended aspect rather than stretched to match a 16:9 capture device.
 
 ### Diagnostic views
 
