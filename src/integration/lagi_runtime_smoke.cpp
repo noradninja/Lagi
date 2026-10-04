@@ -11,13 +11,13 @@
 #include "rootTask.h"
 #include "VDP1.h"
 #include "VDP2.h"
-#include "movie/movie.h"
+#include "movie/movie.h"\n#include "titleScreen.h"
 
 extern int numActiveTask;
 void azelInit();
 void resetEngine();
 void updateFadeInterrupt();
-void updateInputs();
+void updateInputs();\np_workArea createTitleMenuTask(p_workArea);\nnamespace lagi::azel { bool present_native_title_vdp2(); }
 
 namespace lagi::azel {
 
@@ -163,6 +163,21 @@ void runtime_smoke_frame()
     // native runtime integration.
     interruptVDP2Update();
     lastUpdateFunction();
+
+    // Front-end VDP2 presentation is a platform service. Azel owns all title
+    // graphics, text, palettes, blinking, input and state transitions; Lagi
+    // simply presents the VDP2 memory that Azel has already produced.
+    const bool titleActive =
+        initialTaskStatus.m_currentTask == createTitleScreenTask ||
+        initialTaskStatus.m_currentTask == createTitleMenuTask;
+    static bool titleWasActive = false;
+    if (titleActive) {
+        present_native_title_vdp2();
+        titleWasActive = true;
+    } else if (titleWasActive) {
+        lagi::platform::renderer::movie_clear_frame();
+        titleWasActive = false;
+    }
 
     ++startupFrame;
 }
