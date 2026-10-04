@@ -403,3 +403,16 @@ The older direct-Ruins and Basic Wing work remains useful for:
 - GXM resource validation.
 
 They are no longer the intended normal execution path.
+
+
+### 2D filtering
+
+Decoded 2D presentation resources now use SGX linear filtering when scaled:
+
+- VDP1 UI sprites, including Lock-On/LCS cursors and menu selectors
+- NBG1 menu/window atlas
+- VDP2 subtitle, interaction, item, and menu text through a 352x224 logical text layer
+
+Raw Saturn memory fetches remain point-exact. VDP2 image-plane filtering is tracked separately because those backgrounds are still decoded directly from VRAM/CRAM during composition.
+
+Frontend timing now reports `[VDP2Perf]` with framebuffer dimensions, total front-end render time, and GPU wait time. The current high-resolution title shader performs multiple VDP2 decodes per output pixel during filtered sampling; a decode-once layer surface is the planned optimization for that path.
