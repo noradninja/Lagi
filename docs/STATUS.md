@@ -1,205 +1,328 @@
 # Lagi Development Status
 
-Current milestone: **0.030-alpha**
+Current milestone: **0.040-alpha — authentic boot flow**
 
-Last updated: 2026-10-03
+Last updated: 2026-10-04
 
-Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed Saturn-era game logic executes directly on ARMv7, with rendering and platform behavior translated to native VitaSDK/SceGxm.
+Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed game logic executes directly on ARMv7; Saturn rendering and platform-facing behavior are translated to VitaSDK and native SceGxm.
 
-## Development stage
+## Current development stage
 
-Version 0.030-alpha builds Cinepak playback services on the hardware-proven first-Ruins and Neptune VDP2/VDP1 runtime slice. The current runtime drives the scene through Azel's real town tasks, scripts, player state, collision, camera, lock-on logic, dynamic objects, VDP1 command generation, and VDP2 text/window state. The playable sequence reaches the elevator decision and fades to the movie handoff; Azel remains responsible for invoking and sequencing that handoff.
+The 0.040 milestone replaces the first Ruins room's special direct-boot path with Azel's own startup, movie, title, New Game, field, module-manager, and native town presentation flow. The milestone is hardware-proven through a playable first Ruins scene.
 
-The first-Ruins execution path is:
-
-```text
-Disc 1
-  -> COMMON.DAT / TWN_RUIN resources
-  -> town bootstrap
-  -> tasks + scripts
-  -> world grid / cells
-  -> static + task-owned objects
-  -> collision / Edge / camera / visibility
-  -> processed models + VDP1 commands + VDP2 state
-  -> Lagi / Neptune presentation translation
-  -> SceGxm
-```
-
-## 0.030-alpha Phase 1 Cinepak path
-
-Build-validated on 2026-10-03. Real Vita movie/audio playback remains to be
-validated before this path can be called hardware-proven.
-
-- Azel remains the movie-sequencing owner through a thin Lagi movie-backend
-  bridge. The backend does not choose movies, transitions, fades, or scenes.
-- The direct-boot adapter now observes Azel's authentic Ruins transition to
-  game status `0x05`. It follows Azel movie timing index `0x02` by playing
-  `EVT004_1.CPK` and `EVT004_2.CPK` in order, then calls Azel's original
-  post-movie status routine, which requests status `0x50`.
-- Sega FILM parsing covers FDSC/STAB metadata, bounded sample access,
-  per-stream PTS/duration, Cinepak keyframe flags, planar signed PCM, and the
-  container's independent video/audio clocks.
-- CPK samples stream from either a normal file or Lagi's mounted MODE1/2048 or
-  MODE1/2352 BIN/CUE image instead of loading a complete movie into memory.
-- The CPU Cinepak reference decoder supports persistent strip codebooks,
-  full/partial 4-byte and 6-byte codebook chunks, V1/V4 vectors, interframe
-  skipped blocks, strip inheritance, and Sega's 2/6-byte header variants.
-- Decoded frames use a dedicated Neptune/GXM movie texture. When no movie is
-  active, the existing VDP1 UI, VDP2 text/window/matte, MSAA, town fade, and
-  resident-scene rendering paths are unchanged.
-- Native SceAudioOut PCM playback runs through Lagi's platform audio backend
-  on a dedicated producer/consumer thread. Movie code does not call Vita audio
-  APIs directly.
-- The decode/present contract is stable so Phase 2 can replace CPU pixel
-  reconstruction with SGX-assisted reconstruction without changing FILM
-  demux, timing, audio, or Azel sequencing ownership.
-- Deterministic host tests cover FILM metadata/sample extraction, V1 and V4
-  reconstruction, skipped interframes, and Sega's short header variant.
-
-Expected hardware-test log sequence after taking the Ruins elevator:
+The current hardware path reaches:
 
 ```text
-[MovieSequence] Azel status 0x05 -> movie index 2
-[MovieSequence] open Azel movie=2 part=1/2 file=EVT004_1.CPK
-[MovieSequence] finished file=EVT004_1.CPK ...
-[MovieSequence] open Azel movie=2 part=2/2 file=EVT004_2.CPK
-[MovieSequence] finished file=EVT004_2.CPK ...
-[MovieSequence] complete; Azel requested next status 0x50
+Lagi startup
+  ↓
+azelInit()
+  ↓
+resetEngine()
+  ↓
+MOVIE1.CPK
+  ↓
+title / menu
+  ↓
+New Game
+  ↓
+EVT000_1.CPK
+  ↓
+FLD_D5 name-entry sequence
+  ↓
+name confirmation
+  ↓
+EVT002.CPK
+  ↓
+Azel module manager
+  ↓
+TWN_RUIN.PRG
+  ↓
+native town task graph
 ```
 
-## Hardware-proven runtime
+The normal 0.040 path does **not** use the old direct-Ruins loader to choose or start `TWN_RUIN`.
+
+Azel remains responsible for game status, module transitions, scripts, task creation, movies, fades, camera/gameplay state, and scene ownership.
+
+## Runtime architecture
+
+The current ownership model is:
+
+```text
+Azel decides.
+Lagi services.
+Neptune renders.
+```
+
+The old `runtime_smoke_*` host loop has been retired.
+
+Current host structure:
+
+```text
+src/integration/lagi_runtime.cpp
+    native Azel host loop
+
+src/integration/lagi_input_bridge.cpp
+    Vita physical input -> Saturn/Azel input state
+
+src/integration/lagi_diagnostics.cpp
+    smoke checks and runtime diagnostics
+
+src/integration/lagi_scene_bridge.cpp
+    active Azel scene -> generic presentation adapter
+
+src/platform/vita/neptune_renderer.cpp
+    native SceGxm presentation
+```
+
+The renderer-facing API is mode-agnostic. Lagi no longer conceptually takes "town ownership" to synchronize or publish a frame.
+
+Mode 1 currently dispatches to the existing town adapter because it is the first native 3D scene class supported by the presentation bridge.
+
+## Generic presentation boundary
+
+Current flow:
+
+```text
+runTasks()
+    ↓
+capture Azel VDP1 / renderer-facing state
+    ↓
+sync active scene presentation state
+    ↓
+acquire presentation slot
+    ↓
+publish immutable frame
+    ↓
+Neptune render thread
+```
+
+Frame synchronization is deliberately acquired at the publish boundary rather than before `runTasks()`. This prevents a mode transition inside the Azel task pass from deadlocking with another presentation owner such as movie playback.
+
+The platform API now uses generic names such as:
+
+- `presentation_wait_frame_slot()`
+- `presentation_publish_frame()`
+- `presentation_set_player()`
+- `presentation_set_camera()`
+- `presentation_set_vdp2_text()`
+- `presentation_fade_in()`
+- `presentation_fade_out()`
+
+Some Neptune internal variables still use historical `g_town*` names. Those are implementation cleanup items, not ownership semantics.
+
+## Hardware-proven 0.040 boot systems
 
 Verified on real Vita/Vita TV hardware:
 
 - Vita process/platform startup
 - persistent logging
-- CUE/BIN access
+- Disc 1 CUE/BIN access
 - MODE1/2352 and MODE1/2048 support
 - ISO9660 traversal
 - `COMMON.DAT` parsing
-- town overlay/resource loading
-- direct development boot into `TWN_RUIN`
-- Azel fixed-point support
-- Azel heap/task runtime
-- Saturn-addressed memory helpers
-- native SceGxm renderer
-- script-driven fade-in from black
+- native `azelInit()` / `resetEngine()` startup
+- Azel initial-task switching
+- authentic boot movie launch
+- native title task/menu flow
+- New Game transition
+- native D5 field load
+- name-entry keyboard input
+- entered player name display
+- "this is your real name" confirmation flow
+- pre-Ruins `EVT002.CPK` movie launch
+- Start movie skip without leaking the same Start edge into gameplay
+- native module-manager load of `TWN_RUIN.PRG`
+- entry into game mode 1 / first Ruins town task graph
+- continuous native first-Ruins world presentation
+- native Edge animated hierarchy presentation
+- task-owned switch/object presentation
+- live Azel light/falloff state on static and dynamic submissions
+- Full, Texture, Lighting, Quads, and Wires renderer views
 - Vita-to-Saturn physical controller bridge
-- town LCS / Lock-On state and target selection
-- native GXM translation of VDP1 scaled-sprite and polyline UI commands
-- native GXM translation of VDP1 normal-sprite UI commands
-- VDP2 area-name, item-pickup, interaction, subtitle, and choice text
-- GPU-rendered NBG1 framed windows
-- line-scroll-driven lower cinematic matte
-- animated elevator-choice selector using the original resident menu sprite data
-- elevator choice and script-driven fade to the FMV handoff
-- 30 Hz presentation
+- Sega FILM demux
+- Cinepak playback
+- SGX Cinepak presentation
+- native SceAudio output
+- Azel VDP1 command capture
+- native GXM VDP1 normal/scaled sprite translation
+- native GXM VDP1 polyline translation
+- live VDP2 VRAM/CRAM upload
+- title NBG presentation
+- D5 NBG0 keyboard presentation
+- D5 NBG3 subtitle/text presentation
+- D5 VDP1 cursor data/CRAM decoding
+- RBG0 SGX program registration after register-pressure reduction
+- native RBG0 parameter/coefficient state capture
+- generic presentation producer/consumer synchronization
 
-## Town systems
+## Current front-end rendering state
 
-### Tasks and scripts
+### Title
 
-The first Ruins scene is driven by the town task/script structure rather than by a standalone room viewer.
+The title screen renders through Azel's native VDP2 state, but color/palette/fade presentation is not yet accurate to Saturn hardware.
 
-Active pieces include:
+Current known mismatch:
 
-- town root/task lifecycle
-- town script task
-- world-grid and cell ownership
-- static object submission
-- task-owned dynamic object submission
-- live render bridge from processed models to the Vita renderer
+- layout/geometry is substantially correct;
+- title colors differ from the Saturn reference;
+- fade/color-offset interaction still needs validation against hardware semantics.
 
-### Collision
+Title color correction remains a generic VDP2/CRAM/color-offset problem rather than a title-specific art or palette issue.
 
-The current collision path uses the recovered town collision data and the `processTownMeshCollision()` pipeline.
+### D5 name-entry sequence
 
-Implemented pieces include:
+The D5 field is being rendered from Azel's real VDP2 state.
 
-- collision mesh decoding
-- collision body registration
-- Edge collision body
-- room/floor collision used by the current scene
+Confirmed state includes:
 
-Body-to-body interaction remains incomplete.
+- `BGON=0x101A`
+- `RPMD=3`
+- RBG0 parameter A/B data
+- live coefficient tables
+- native window registers
+- native line-window table
+- NBG0 keyboard
+- NBG3 text
+- VDP1 sprite stream
 
-### Edge
+The upper portion of the RBG0 scene has shown recognizable/correct-looking portions on hardware, proving that the native content and part of the addressing/rotation path are valid.
 
-The current Edge path includes:
+Remaining D5 issues:
 
-- town-owned position and yaw
-- movement
-- walk/run/idle animation selection
-- animation stepping and interpolation
-- transformed geometry and normals
-- collision body registration
-- live renderer submission
+- RBG0 composition still does not visually match Saturn;
+- parameter A/B and window behavior require more accuracy work;
+- lower-half composition has been a primary mismatch;
+- fade/flash presentation remains visibly incorrect;
+- complete VDP2 priority/color-calculation behavior is not yet implemented;
+- D5 sprites/compositing still need continued hardware comparison.
 
-### Camera
+The Saturn reference capture is authoritative for content, timing, color, fades, and layer relationships. Its external HDMI converter stretches the source to 16:9; The HDMI converter stretch is not representative of the intended aspect; Vita presentation retains the Saturn-authored framing instead.
 
-The first Ruins scene uses Azel's town camera and camera-state transitions. Vita analog input is normalized at the platform boundary and then consumed by Azel's original movement/camera logic.
+## VDP2 direction
 
-### LCS / Lock-On
+Neptune is being refactored toward a generic VDP2 renderer rather than screen-specific shaders.
 
-Town Lock-On is now driven by the upstream Azel LCS path.
+Conceptual direction:
 
-Current hardware-proven behavior includes:
+```text
+Azel
+  ↓
+VRAM / CRAM / VDP2 registers
+  ↓
+Neptune
+  ├─ generic NBG pipeline
+  ├─ generic RBG pipeline
+  ├─ back/line/color state
+  ├─ windows
+  └─ composition
+  ↓
+SGX
+```
 
-- A/C entering Lock-On mode
-- B cancelling Lock-On
-- B acting as the walk-mode run modifier outside Lock-On
-- automatic target acquisition near interactable Ruins objects
-- target selection while retaining the independent white free cursor
-- separate selected-target NEAR marker
-- shrinking VDP1 polyline selection rectangle
-- original VDP1 cursor/marker texture descriptors translated to native GXM
+The RBG0 shader was split from the NBG path after PSP2CGC hit internal-compiler/register-pressure limits.
 
-The Vita backend does not recreate LCS gameplay logic. Azel produces the physical-button interpretation, target state, camera behavior, and VDP1 commands; Neptune translates those commands to efficient screen-space GXM primitives.
+Current RBG0 strategy:
 
-### Town text, windows, and choices
+- invariant Saturn rotation terms are precomputed once per host frame;
+- SGX performs coefficient lookup, rotated coordinate generation, tile lookup, CRAM lookup, and pixel rendering;
+- line-window visibility is handled at the compositor level rather than inside the heavy RBG0 fragment shader.
 
-The current first-Ruins sequence uses Azel's live VDP2 and VDP1 state rather than Vita-authored replacements.
+A fragment-side line-window implementation caused a real SGX GPU crash and was removed.
 
-Hardware-proven presentation includes:
+## Fade / color-offset status
 
-- the `Ruins - Bottom Floor` area banner
-- item-pickup text
-- object-interaction text
-- subtitle/dialog text
-- blue framed NBG1 windows rendered from the original 16x16-character map
-- the animated lower cinematic matte driven by Azel's vertical line-scroll table
-- the `Ride the Elevator` / `Don't Ride` choice box
-- the original animated VDP1 selection arrow
+Azel's fade state is running and hardware logs show the expected changing VDP2 offset values.
 
-Direct boot restores VDP2 initialization and services queued VDP2 transfers at the normal frame boundary. It also loads `MENU.CGB` at the VDP1 address where the full startup path leaves it resident. Neptune then composes the VDP2 backing, VDP1 selector, and text in the original layer relationship. Choice state, text, animation, and fade timing remain upstream-Azel-owned.
+Neptune currently bridges Azel color offsets into native presentation. The bridge now applies signed 9-bit VDP2 wrapping semantics instead of naïve clamping.
 
-### Ruins lock/switch objects
+Visible fades are still not Saturn-accurate.
 
-The first task-owned Ruins lock/switch objects are functional.
+Remaining work includes:
 
-Current support includes:
+- honoring the appropriate VDP2 enable/select semantics;
+- validating A/B offset selection by layer;
+- matching Saturn white/black flashes;
+- ensuring movie, title, field, and scene transitions use the same generic VDP2 color path.
 
-- creation from cell data
-- task-owned state and transform
-- collision registration
-- native disable/wait script entry points
-- live material and texture resolution
-- authentic task-owned world transforms passed to Neptune without double-applying the town camera
+## Movie pipeline
 
-The scene currently allows the locks to be targeted and selected. Their later activation/translation depends on normal game progression state, including acquisition of the required weapon/item state.
+Movie sequencing remains Azel-owned.
+
+```text
+Azel movie task/state machine
+       ↓
+Lagi movie backend
+  ├─ disc streaming
+  ├─ Sega FILM demux
+  ├─ Cinepak decode
+  ├─ native SceAudio
+  └─ Neptune presentation
+```
+
+The movie backend does not choose the next game mode.
+
+A Start edge used to skip a movie is consumed at the movie handoff so the same physical press cannot open the gameplay pause menu on the first scene frame.
+
+A previous retained-frame bug that allowed the last Cinepak frame to cover a scene after Azel had already advanced has also been corrected.
+
+## First Ruins transition status
+
+Azel is confirmed to:
+
+- finish/skip `EVT002.CPK`;
+- load `TWN_RUIN.PRG`;
+- enter status `0x04`, mode `1`;
+- create native town state;
+- run the first town fade sequence.
+
+This proves the game transition itself is no longer dependent on the old loader bypass.
+
+The remaining black-screen/first-scene work is in the native scene-to-Neptune presentation path.
+
+Historically, Neptune's live-town rendering depended on readiness flags initialized by `load_static_room_viewer()`, which belongs to the earlier direct-boot reconstruction path. The 0.040 work is removing those hidden dependencies so authentic boot can source all required presentation state from live Azel output.
+
+## First Ruins systems already proven in earlier direct-boot work
+
+The earlier bring-up remains valuable because the underlying systems were hardware-proven before authentic boot integration:
+
+- native town tasks/scripts
+- world-grid/cell ownership
+- static and dynamic object submission
+- `processTownMeshCollision()` pipeline
+- Edge movement
+- Edge animation
+- Edge collision
+- Azel follow camera
+- visibility/LOD
+- Ruins lock/switch objects
+- Lock-On/LCS
+- VDP1 cursor/marker/selection-box behavior
+- VDP2 text/windows
+- elevator choice flow
+- Edge's original textured/stippled VDP1 mesh shadow
+- stable 30 Hz town presentation
+
+Those renderer/platform capabilities are being reconnected to the authentic boot path without restoring direct-loader ownership.
 
 ## Renderer
 
-### Resolution and presentation
+### Resolution
+
+Current gameplay/front-end target:
 
 ```text
-internal GXM render: 480x272
-multisampling:       native 2x MSAA, hardware resolved
-display output:       960x544
-presentation target:  30 Hz
+internal authored/presentation space: Saturn-derived 352x224 / scene data
+Vita gameplay render target:           480x272
+Vita display output:                   960x544
+target presentation:                   30 Hz
 ```
 
-### Scene modes
+Saturn-authored content is presented at its intended aspect rather than stretched to match a 16:9 capture device.
+
+### Diagnostic views
+
+The existing scene renderer retains:
 
 ```text
 Full
@@ -209,119 +332,72 @@ Quads
 Wires
 ```
 
-- **Full** uses textures and the active Gouraud path.
-- **Texture** shows the scene without Gouraud contribution.
-- **Lighting** shows the lighting field by itself.
-- **Quads** shows filled polygon topology.
-- **Wires** draws the four original edges of each Saturn quad rather than the internal GXM triangle diagonal.
+These modes are renderer diagnostics and are independent of game-mode ownership.
 
-The Basic Wing/dragon views remain in code as regression/reference paths but are not part of the normal runtime mode cycle.
+### Gouraud
 
-### Texture/material path
-
-The live Ruins renderer resolves materials and textures for:
-
-- static room geometry
-- task-owned dynamic objects
-- Edge
-- Edge's shadow
-
-Texture mode uses the same live-town visibility set as the other scene views.
-
-### VDP2 UI presentation
-
-The first Ruins VDP2 path currently translates:
-
-- the NBG3 text/font map and live palettes
-- the NBG1 framed-window map through a cached GPU tile atlas
-- the vertical line-scroll table used for the lower cinematic matte
-
-VDP1 bank-color UI sprites use live CRAM, while town materials retain their validated bundle-relative texture path. This keeps transient UI palette state from changing world-material resolution.
-
-### Multisample antialiasing
-
-Neptune now creates both full- and half-resolution render targets in `SCE_GXM_MULTISAMPLE_2X` mode. Every fragment-program variant is patched for the same mode, color surfaces use GXM's MSAA downscale/resolve path, and depth/stencil storage is allocated at sample resolution.
-
-The complete Vita package builds with this configuration. Updated on-device image-quality and timing measurements remain to be recorded.
-
-### Gouraud lighting
-
-The exact projected-perimeter/four-edge fragment implementation remains available as a reference.
-
-The active `Full` path uses a cached 3x3 subdivision approximation:
+The current Vita renderer retains the hardware-tested subdivision approximation used for first-Ruins bring-up:
 
 ```text
 Saturn quad
- -> 9 unique subdivision vertices
+ -> 3x3 subdivision
  -> 8 GXM triangles
  -> four-corner lighting field
- -> RGB555 add / clamp / quantize
+ -> RGB555-style add/clamp/quantize
 ```
 
-Cached data includes:
+The exact inverse-bilinear reference path remains useful for comparison but is too expensive for the active Vita scene path.
 
-- subdivision topology
-- UVs
-- static positions
+## Known architectural debt
 
-Dynamic polygons refresh the changing position/shade data.
+### Historical town naming inside Neptune
 
-### Edge VDP1 mesh shadow
+The public presentation API is now generic, but internal renderer data still contains names such as:
 
-Edge's original shadow is now reproduced from the game data:
+- `g_townPlayerReady`
+- `g_townCameraPosition`
+- `buildLiveTownFrame()`
 
-1. The shadow model key is read from Edge's animation table.
-2. The model is loaded from `COMMON3.MCB`.
-3. The texture/mask is decoded from `COMMON3.CGB`.
-4. Texture alpha provides the oval silhouette.
-5. `CMDPMOD` mesh mode provides alternating-pixel coverage.
-6. The primitive is rendered two-sided.
-7. Ordered VDP1-style draw behavior is used so the shadow remains visible over the floor: the mesh shadow is submitted after the environment with depth test forced to pass and depth writes disabled, matching the relevant Saturn draw-order behavior.
+These names are expected to migrate toward generic scene/VDP1 presentation terminology as additional game modes come online.
 
-## Performance
+This is naming and organization debt rather than a runtime ownership dependency.
 
-The pre-MSAA scene was stable at the 30 FPS presentation target. The presentation target remains 30 Hz, but the new MSAA configuration still needs an updated hardware timing capture.
+### Direct-boot source files
 
-Captures taken before 2x MSAA was enabled showed roughly:
+Earlier direct-boot/bootstrap source remains compiled for development/reference purposes.
 
-```text
-20-23 ms render work
-```
+Authentic boot currently avoids state established exclusively by:
 
-before the deliberate 30 Hz presentation wait.
+- `init_town_bootstrap()`
+- `init_town_runtime()`
+- manual `overlayStart_TWN_RUIN()`
+- static-room viewer registration
 
-That corresponds to approximately 44-50 FPS of render throughput if uncapped. This is a pre-MSAA baseline, not a current measured cost.
+Renderer data for the native path is sourced from generic platform initialization or live Azel output.
 
-## Remaining work
+### Material/resource lifetime
 
-Major systems still incomplete or not yet integrated include:
+The live material cache still lacks generation-aware lifetime invalidation for frequent scene/resource transitions.
 
-- broader town object coverage
-- additional script behavior
-- additional VDP1 UI command types beyond the current normal-sprite, scaled-sprite, and polyline subset
-- some collision interactions
-- Ruins sound/effects
-- on-device Cinepak video/audio timing and drain validation
-- broader UI/state flow beyond the first Ruins sequence
-- broader VDP2 background and compositing behavior beyond the current text/window/matte subset
-- battle systems
-- broader field systems
-- remaining movies, menus, save flow, and complete game progression
+### Batching/index limits
 
-Renderer-side technical debt currently falls into two concrete areas:
+The current live 3D renderer still flattens active work into shared buffers with 16-bit indices. Larger scenes are expected to require multiple resident batches while preserving Azel draw ordering, visibility, materials, and dynamic updates.
 
-- **Material-cache lifetime/invalidation.** The live town material cache currently keys resolved polygon-to-texture mappings by model identity and polygon count. That is sufficient for the present Ruins scene, where resources are effectively stable, but it is not yet tied to a scene/resource generation. After town transitions or bundle reloads, pointer reuse could make an old cache entry appear valid for a different model with the same shape. Failed resolutions also should not become permanent cache state. Before frequent town transitions are enabled, the cache needs explicit invalidation on town/resource teardown or a stronger key that includes stable bundle/model identity plus a generation/version.
-- **Batching and 16-bit index limits.** The current live renderer flattens the active town into shared CPU/GPU buffers and uses 16-bit indices. The 3x3 Gouraud subdivision expands each Saturn quad to 9 vertices and 24 indices, so large towns can exhaust a single 65,535-vertex/index address space much sooner than the original model data would. The current Ruins room fits comfortably, but broader towns will need the renderer to split work into multiple resident batches—most likely per model, object group, or world-grid cell—while preserving Azel's original draw ordering, material state, visibility decisions, and dynamic-object updates.
+## Current development focus
+
+With the authentic first-Ruins handoff now hardware-proven, current work is concentrated on D5 RBG0 A/B and window composition, generic VDP2 fade/color-offset accuracy, title color/palette accuracy, migration of remaining historical `town_*` renderer state into scene/presentation terminology, broader scene/resource lifetime handling, and moving more of the active Saturn lighting work from CPU preparation into SGX where practical.
 
 ## Historical reference paths
 
-The earlier Basic Wing work remains useful for:
+The older direct-Ruins and Basic Wing work remains useful for:
 
-- VDP1 texture decoding
-- hierarchy/hotpoint validation
-- animation decoding
-- Gouraud/RGB555 comparison
-- shader bring-up
-- GXM resource validation
+- regression testing;
+- VDP1 texture decoding;
+- hierarchy/hotpoint validation;
+- animation decoding;
+- collision validation;
+- Gouraud/RGB555 comparison;
+- shader bring-up;
+- GXM resource validation.
 
-It is no longer the primary development target.
+They are no longer the intended normal execution path.

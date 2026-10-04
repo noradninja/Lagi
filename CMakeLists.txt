@@ -9,9 +9,9 @@ endif()
 project(Lagi LANGUAGES C CXX)
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
-set(VITA_APP_NAME "Lagi 0.030-alpha")
+set(VITA_APP_NAME "Lagi 0.040-alpha")
 set(VITA_TITLEID "LAGI00001")
-set(VITA_VERSION "00.30")
+set(VITA_VERSION "00.40")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -107,6 +107,10 @@ set(LAGI_MESH_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_mesh_f.gxp")
 set(LAGI_MESH_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_mesh_f_gxp.o")
 set(LAGI_CINEPAK_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_cinepak_f.gxp")
 set(LAGI_CINEPAK_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_cinepak_f_gxp.o")
+set(LAGI_VDP2_NBG_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_nbg_f.gxp")
+set(LAGI_VDP2_NBG_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_nbg_f_gxp.o")
+set(LAGI_VDP2_RBG0_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_f.gxp")
+set(LAGI_VDP2_RBG0_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_f_gxp.o")
 
 add_custom_command(
  OUTPUT "${LAGI_COLOR_V_GXP}"
@@ -582,6 +586,56 @@ add_custom_command(
 )
 
 add_custom_command(
+ OUTPUT "${LAGI_VDP2_NBG_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_nbg_f.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_VDP2_NBG_F_GXP}"
+ DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_nbg_f.cg"
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_common.cginc"
+ COMMENT "Compiling Neptune VDP2 NBG fragment shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_VDP2_NBG_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_vdp2_nbg_f.gxp" "${LAGI_VDP2_NBG_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_VDP2_NBG_F_GXP}"
+ COMMENT "Embedding Neptune VDP2 NBG fragment GXP"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_VDP2_RBG0_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}"
+  -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
+  -Wperf -fastprecision -O3
+  -o "${LAGI_VDP2_RBG0_F_GXP}"
+ DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_common.cginc"
+ COMMENT "Compiling Neptune VDP2 RBG0 fragment shader"
+ VERBATIM
+)
+
+add_custom_command(
+ OUTPUT "${LAGI_VDP2_RBG0_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}"
+  -I binary -O elf32-littlearm -B arm
+  "lagi_vdp2_rbg0_f.gxp" "${LAGI_VDP2_RBG0_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_VDP2_RBG0_F_GXP}"
+ COMMENT "Embedding Neptune VDP2 RBG0 fragment GXP"
+ VERBATIM
+)
+
+add_custom_command(
  OUTPUT "${LAGI_MESH_F_OBJ}"
  COMMAND "${CMAKE_OBJCOPY}"
   -I binary -O elf32-littlearm -B arm
@@ -635,6 +689,7 @@ set_source_files_properties(
  "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}"
  "${LAGI_MESH_F_OBJ}"
  "${LAGI_CINEPAK_F_OBJ}"
+ "${LAGI_VDP2_NBG_F_OBJ}" "${LAGI_VDP2_RBG0_F_OBJ}"
  PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
 )
 
@@ -680,7 +735,7 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
 
   string(REPLACE
    "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    loadTown,           // 1: town\n    loadTown2,          // 2: town (alt entry)\n    loadField,          // 3: field\n    loadBattle,         // 4: battle\n    loadWorldOverlay,   // 5: worldmap\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    initLoadSavegameScreen, // 9: save/load screen\n    NULL,\n};"
-   "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    NULL,               // 1: town - already running in direct boot\n    NULL,               // 2: town alt - not linked in Ruins bring-up\n    NULL,               // 3: field - not linked yet\n    NULL,               // 4: battle - not linked yet\n    NULL,               // 5: worldmap - not linked yet\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    NULL,               // 9: save/load - not linked yet\n    NULL,\n};"
+   "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    loadTown,           // 1: town - authentic 0.040 boot path\n    loadTown2,          // 2: town alt - authentic 0.040 boot path\n    loadField,          // 3: field - D5 name entry\n    NULL,               // 4: battle - deferred until flight milestone\n    NULL,               // 5: worldmap - deferred\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    NULL,               // 9: save/load - deferred\n    NULL,\n};"
    source_text "${source_text}")
 
   # Trace entry into module-manager state 1 before any transition helper.
@@ -774,6 +829,16 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # timing table, countdown, CPK sequencing, fades, skip logic, subtitle task,
  # and task completion all remain the original upstream code.
  elseif(relative_path STREQUAL "movie/movie.cpp")
+  # MOVIE1 is the attract/title movie (movie timing entry 0x20). The current
+  # reconstruction targets +white (0xFFFF) on exit, but Saturn hardware
+  # reference fades to black before the title appears. Correct only this
+  # reconstructed timing datum in the generated Vita copy; the native movie
+  # task, fadePalette(), countdown, and transition logic remain authoritative.
+  string(REPLACE
+   "    {0x31, 0x01, 0xFFFF}, // 0x20"
+   "    {0x31, 0x01, 0x8000}, // 0x20"
+   source_text "${source_text}")
+
   string(REPLACE
    "#include \"movie.h\""
    "#include \"movie/movie.h\""
@@ -812,6 +877,15 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # fallbacks in generated sources, while the strong Vita adapter supplies the
  # same engine API without changing extern/Azel.
  elseif(relative_path STREQUAL "PDS.cpp")
+  # Upstream labels this battle generic-data initialization as "not in
+  # original". 0.040 now enters through Azel's native azelInit()/resetEngine()
+  # path, so omit only that desktop reconstruction helper rather than making
+  # boot depend on battle integration.
+  string(REPLACE
+   "    BTL_GenericData::staticInit(); // not in original"
+   "    // Lagi Vita: desktop-only, explicitly non-original helper omitted."
+   source_text "${source_text}")
+
   string(REPLACE
    "bool findFileOnDisc(const std::string& filename)"
    "__attribute__((weak)) bool findFileOnDisc(const std::string& filename)"
@@ -836,6 +910,128 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)"
    "__attribute__((weak)) sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  # 0.040 boot-to-Ruins only needs the authentic D5 name-entry field before
+  # town handoff. Do not retain references to later field overlays merely
+  # because this large upstream translation unit contains the generic debug
+  # dispatcher; those overlays are restored with their milestones.
+  string(REPLACE
+   "        createSiblingTaskWithArg<s_flagEditTaskWorkArea, p_workArea>(pThis->m8, pThis->m8);"
+   "        // Lagi Vita 0.040: desktop/debug flag editor sibling omitted."
+   source_text "${source_text}")
+
+  string(REPLACE
+   "        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_A5.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_A5;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_C8.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_C8;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D3.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_D3;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D5.PRG\"))"
+   "        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D5.PRG\"))"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_A7.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_A7;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_B2.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_B2;\n        }"
+   ""
+   source_text "${source_text}")
+
+  # Status/inventory menus are not reachable in the 0.040 boot path. Avoid
+  # retaining inventoryMenu.cpp solely through static function-pointer tables.
+  string(REPLACE
+   "    createInventoryMenuTask,"
+   "    NULL,"
+   source_text "${source_text}")
+
+  # FLD_A3 belongs to the next milestone (first flight), not boot-to-Ruins.
+  string(REPLACE
+   "        if (!strcmp(pFieldDefinition->m_prg, \"FLD_A3.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_A3;\n        }\n        else if"
+   "        if"
+   source_text "${source_text}")
+
+ elseif(relative_path STREQUAL "collision.cpp")
+  # Collision visualization is desktop-only debug tooling. Do not retain
+  # renderer-debug symbols in the shipping Vita build.
+  string(REPLACE
+   "                drawDebugFilledQuad(vector0, vector1, vector2, vector3, quadColor);"
+   "                (void)quadColor;"
+   source_text "${source_text}")
+  string(REPLACE
+   "                drawDebugLine(vector0, vector1, quadColor);\n                drawDebugLine(vector1, vector2, quadColor);\n                drawDebugLine(vector2, vector3, quadColor);\n                drawDebugLine(vector3, vector0, quadColor);"
+   "                (void)quadColor;"
+   source_text "${source_text}")
+
+ elseif(relative_path STREQUAL "field/field_d5/o_fld_d5.cpp")
+  # D5 intentionally reads shared camera/script data from FLD_A3.PRG. For the
+  # 0.040 boot-to-Ruins milestone keep that exact Saturn data source without
+  # instantiating FLD_A3_data, whose virtual gameplay surface pulls in the
+  # entire first-flight overlay.
+  string(REPLACE
+   "    // FLD_A3.PRG contains shared field infrastructure data (camera configs, etc.)\n    if (gFLD_A3 == NULL)\n    {\n        gFLD_A3 = new FLD_A3_data();\n    }\n    gFieldCameraConfigEA = { 0x6092EF0, gFLD_A3 };\n    gFieldDragonAnimTableEA = { 0x06094134, gFLD_A3 };\n    gFieldCameraDrawFunc = &cameraFollowMode_default;\n    gCurrentFieldOverlay = gFLD_A3;"
+   "    // FLD_A3.PRG contains shared field infrastructure data (camera configs, etc.)\n    static sFieldOverlay* lagiSharedA3Data = nullptr;\n    if (lagiSharedA3Data == nullptr)\n    {\n        lagiSharedA3Data = new sFieldOverlay(\"FLD_A3.PRG\");\n    }\n    gFieldCameraConfigEA = { 0x6092EF0, lagiSharedA3Data };\n    gFieldDragonAnimTableEA = { 0x06094134, lagiSharedA3Data };\n    gFieldCameraDrawFunc = &cameraFollowMode_default;\n    gCurrentFieldOverlay = lagiSharedA3Data;"
+   source_text "${source_text}")
+
+ elseif(relative_path STREQUAL "titleScreen.cpp")
+  # Hardware-validated front-end sequencing correction for the generated Vita
+  # copy. The reconstructed title menu currently queues the selected module in
+  # the same frame that it starts the 30-frame fade to black. The root task
+  # then replaces the title before that fade completes, allowing the incoming
+  # movie to start its fade-to-neutral early. Real Saturn capture completes the
+  # black fade first. Keep ownership in Azel: use title-menu state 2 solely to
+  # wait for Azel's own fade control, then queue the already-selected task.
+  string(REPLACE
+   "                clearVdp2TextMemory();\n                initialTaskStatus.m_pendingTask = pWorkArea->m_menu[pWorkArea->m_currentSelection].m_createTask;\n\n                titleScreenDrawSub3(2);\n\n                // fade out to black\n                fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), 0x8000, 30);\n                return;"
+   "                clearVdp2TextMemory();\n\n                titleScreenDrawSub3(2);\n\n                // fade out to black\n                fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), 0x8000, 30);\n                pWorkArea->m_status = 2;\n                return;"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "            break;\n\n        default:\n            assert(0);\n            break;\n        }\n    }\n\n    u16 m_status;"
+   "            break;\n\n        case 2:\n            if (g_fadeControls.m0_fade0.m20_stopped == 0)\n                return;\n            initialTaskStatus.m_pendingTask = pWorkArea->m_menu[pWorkArea->m_currentSelection].m_createTask;\n            return;\n\n        default:\n            assert(0);\n            break;\n        }\n    }\n\n    u16 m_status;"
+   source_text "${source_text}")
+
+  # Upstream still has the Sega/Team Andromeda logo module as an assert-only
+  # reconstruction stub. Until that static logo presentation is restored,
+  # keep Azel's front-end attract loop alive by returning to the native title
+  # movie wrapper instead of aborting after the title timeout.
+  string(REPLACE
+   "p_workArea startSegaLogoModule(p_workArea workArea)\n{\n    assert(false);\n    return NULL;\n}"
+   "p_workArea startSegaLogoModule(p_workArea workArea)\n{\n    return startTitleScreenVideo(workArea);\n}"
+   source_text "${source_text}")
+
+ elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  # Azel/Saturn work areas begin cleared. Make the field-script task's
+  # no-active-script invariant explicit on Vita so New Game cannot enter the
+  # interpreter with stale/poisoned state before a script is queued.
+  string(REPLACE
+   "void s_fieldScriptWorkArea::Init(s_fieldScriptWorkArea* pFieldScriptWorkArea)\n{\n    s_fieldTaskWorkArea* pFieldTaskWorkArea = getFieldTaskPtr();"
+   "void s_fieldScriptWorkArea::Init(s_fieldScriptWorkArea* pFieldScriptWorkArea)\n{\n    pFieldScriptWorkArea->m4_currentScript = sSaturnPtr::getNull();\n    pFieldScriptWorkArea->m30_cinematicBarTask = nullptr;\n    pFieldScriptWorkArea->m34 = 0;\n    pFieldScriptWorkArea->m38_dialogStringTask = nullptr;\n    pFieldScriptWorkArea->m3C_multichoiceTask = nullptr;\n    pFieldScriptWorkArea->m40_receivedItemTask = nullptr;\n    pFieldScriptWorkArea->m44_multiChoiceData = nullptr;\n    pFieldScriptWorkArea->m48_cutsceneTask = nullptr;\n    pFieldScriptWorkArea->m4C_PCMPlaying = 0;\n    pFieldScriptWorkArea->m50_scriptDelay = 0;\n    pFieldScriptWorkArea->m54_currentResult = 0;\n    pFieldScriptWorkArea->m58 = 0;\n    pFieldScriptWorkArea->m5C = 0;\n    pFieldScriptWorkArea->m60_canSkipScript = 0;\n    pFieldScriptWorkArea->m64 = 0;\n    pFieldScriptWorkArea->m80 = nullptr;\n    pFieldScriptWorkArea->m84 = nullptr;\n    s_fieldTaskWorkArea* pFieldTaskWorkArea = getFieldTaskPtr();"
+   source_text "${source_text}")
+
+  # Field scripts own the decision to play PCM; Lagi supplies the platform
+  # service. Avoid the upstream desktop SoLoud backend on Vita.
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\nextern void lagiAzelFieldPlayPCM(const char* filename);"
+   source_text "${source_text}")
+  string(REPLACE
+   "    playPCMFile(pPcmName);"
+   "    lagiAzelFieldPlayPCM(pPcmName);"
+   source_text "${source_text}")
+
+  # Upstream rayDisplay.cpp is BGFX/GLM desktop renderer code. A3 field
+  # laser rendering is not reachable in the 0.040 title/name-entry/Ruins
+  # path, so suppress only those draw branches in this generated Vita copy.
+  string(REPLACE
+   "        if (isGunShotVisible(segment, graphicEngineStatus.m405C))"
+   "        if (false)"
+   source_text "${source_text}")
+  string(REPLACE
+   "            displayRaySegmentFromViewSpace(segment, 0x333, vdp1Base + 0xF8, 0x210, vdp1Base + 0x173C, &gouraud, 8);"
+   "            /* Lagi 0.040: field laser ray draw deferred to native Neptune path */"
+   source_text "${source_text}")
+  string(REPLACE
+   "    if (gDirectRayRendering)"
+   "    if (false)"
+   source_text "${source_text}")
+  string(REPLACE
+   "            displayRaySegmentFromViewSpace(segment, width, characterAddress, characterSize, characterColor, &(*arg0)[i], 8);"
+   "            /* Lagi 0.040: field laser ray draw deferred to native Neptune path */"
+   source_text "${source_text}")
+
  elseif(relative_path STREQUAL "field.cpp")
   string(REPLACE
    "int findMandatoryFileOnDisc(const char* fileName)"
@@ -845,6 +1041,19 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "u32 getFileSizeFromFileId(const char* fileName)"
    "__attribute__((weak)) u32 getFileSizeFromFileId(const char* fileName)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleOverlay.cpp")
+  # Battle manager stays authentic, but no battle is reachable before the
+  # first-flight milestone. Remove only executable battle-overlay references;
+  # keep declarations and surrounding task structure valid.
+  string(REPLACE
+   "        BattleEnd_deleteSub0();"
+   "        /* Lagi 0.040: battle teardown deferred until battle milestone */"
+   source_text "${source_text}")
+  string(REGEX REPLACE
+   "                overlayStart_BTL_[A-Za-z0-9_]+\\(pThis\\);"
+   "                /* Lagi 0.040: battle overlay dispatch deferred */"
+   source_text "${source_text}")
+
  elseif(relative_path STREQUAL "town/ruin/twn_ruin_lock.cpp")
   # Task-owned Ruins lock/switch objects are drawn through Azel's normal
   # addObjectToDrawList() boundary, but pCurrentMatrix already contains the
@@ -857,6 +1066,23 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   string(REPLACE
    "void sLockTask::Draw(sLockTask* pThis)\n{\n    pushCurrentMatrix();\n    translateCurrentMatrix(pThis->m74_translation);\n    rotateCurrentMatrixZYX(pThis->m80_rotation);\n    addObjectToDrawList(pThis->m0_fileBundle->get3DModel(readSaturnU16(pThis->mC + 0x20)));\n    popMatrix();\n}"
    "void sLockTask::Draw(sLockTask* pThis)\n{\n    pushCurrentMatrix();\n    translateCurrentMatrix(pThis->m74_translation);\n    rotateCurrentMatrixZYX(pThis->m80_rotation);\n\n    sMatrix4x3 lagiWorldMatrix;\n    initMatrixToIdentity(&lagiWorldMatrix);\n    translateMatrix(pThis->m74_translation, &lagiWorldMatrix);\n    rotateMatrixZYX(&pThis->m80_rotation, &lagiWorldMatrix);\n\n    lagi::azel_bridge::SubmissionState lagiState{};\n    for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n    {\n        for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n        {\n            lagiState.modelMatrix[lagiRow * 4u + lagiCol] =\n                lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n        }\n    }\n    lagiState.hasModelMatrix = true;\n    lagiState.dynamic = true;\n    lagi::azel_bridge::capture_current_light(lagiState);\n\n    const u16 lagiModelOffset = readSaturnU16(pThis->mC + 0x20);\n    lagi::azel_bridge::set_town_submission_context(\n        -1,\n        static_cast<std::uint32_t>(pThis->mC.m_offset),\n        static_cast<std::uint32_t>(readSaturnU16(pThis->mC + 0x28)),\n        static_cast<std::uint32_t>(lagiModelOffset),\n        lagiState);\n\n    addObjectToDrawList(pThis->m0_fileBundle->get3DModel(lagiModelOffset));\n    popMatrix();\n}"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/townEdge.cpp")
+  # Edge's native hierarchy draw path submits through addObjectToDrawList()
+  # with pCurrentMatrix already containing the town camera. Mark the scope so
+  # Lagi's render bridge strips only that view transform and publishes each
+  # animated hierarchy node in world space. The upstream source is unchanged.
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\""
+   source_text "${source_text}")
+  string(REPLACE
+   "void sEdgeTask::Draw(sEdgeTask* pThis)\n{\n    pushCurrentMatrix();"
+   "void sEdgeTask::Draw(sEdgeTask* pThis)\n{\n    lagi::azel_bridge::begin_view_relative_submission_scope();\n    pushCurrentMatrix();"
+   source_text "${source_text}")
+  string(REPLACE
+   "    popMatrix();\n}\n\nvoid sEdgeTask::Delete"
+   "    popMatrix();\n    lagi::azel_bridge::end_view_relative_submission_scope();\n}\n\nvoid sEdgeTask::Delete"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townMainLogic.cpp")
   # Correct two reconstructed hard-coded town LCS physical-button tests to
@@ -872,6 +1098,14 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/town.cpp")
+  # 0.040 reaches only TWN_RUIN. Keep the authentic lookup and Ruins dispatch,
+  # but do not retain every later town overlay merely through this generic
+  # dispatcher.
+  string(REPLACE
+   "    else if (overlayFileName == \"TWN_EXCA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_EXCA;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E006;\n    }\n    else if (overlayFileName == \"TWN_E011.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E011;\n    }\n    else if (overlayFileName == \"TWN_E014.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E014;\n    }\n    else if (overlayFileName == \"TWN_CAMP.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CAMP;\n    }\n    else if (overlayFileName == \"TWN_ZOAH.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_ZOAH;\n    }\n    else if (overlayFileName == \"TWN_CARA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CARA;\n    }\n    else if (overlayFileName == \"TWN_SEEK.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_SEEK;\n    }"
+   ""
+   source_text "${source_text}")
+
   # Vita bridge for the authentic upstream static world-grid submission path.
   # This modifies only the generated build copy, never extern/Azel.
   string(REPLACE
@@ -886,7 +1120,7 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   # their native runtime capture path.
   string(REPLACE
    "                        if (offset)\n                        {\n                            addObjectToDrawList(pThis->m0_fileBundle->get3DModel(offset));\n                        }"
-   "                        if (offset)\n                        {\n                            sMatrix4x3 lagiWorldMatrix;\n                            initMatrixToIdentity(&lagiWorldMatrix);\n                            translateMatrix(pThis->mC_position, &lagiWorldMatrix);\n                            translateMatrix(readSaturnVec3(r14 + 4), &lagiWorldMatrix);\n\n                            sVec3_S16_12_4 lagiRotation;\n                            lagiRotation[0] = readSaturnS16(r14 + 0x10);\n                            lagiRotation[1] = readSaturnS16(r14 + 0x12);\n                            lagiRotation[2] = readSaturnS16(r14 + 0x14);\n                            rotateMatrixZYX_s16(lagiRotation, &lagiWorldMatrix);\n\n                            lagi::azel_bridge::SubmissionState lagiState{};\n                            for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n                            {\n                                for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n                                {\n                                    lagiState.modelMatrix[lagiRow * 4u + lagiCol] =\n                                        lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n                                }\n                            }\n                            lagiState.hasModelMatrix = true;\n                            lagiState.dynamic = false;\n\n                            lagi::azel_bridge::set_town_submission_context(\n                                -1,\n                                static_cast<std::uint32_t>(pThis->m8_cellPtr.m_offset),\n                                static_cast<std::uint32_t>(r14.m_offset),\n                                static_cast<std::uint32_t>(offset),\n                                lagiState);\n\n                            addObjectToDrawList(pThis->m0_fileBundle->get3DModel(offset));\n                        }"
+   "                        if (offset)\n                        {\n                            sMatrix4x3 lagiWorldMatrix;\n                            initMatrixToIdentity(&lagiWorldMatrix);\n                            translateMatrix(pThis->mC_position, &lagiWorldMatrix);\n                            translateMatrix(readSaturnVec3(r14 + 4), &lagiWorldMatrix);\n\n                            sVec3_S16_12_4 lagiRotation;\n                            lagiRotation[0] = readSaturnS16(r14 + 0x10);\n                            lagiRotation[1] = readSaturnS16(r14 + 0x12);\n                            lagiRotation[2] = readSaturnS16(r14 + 0x14);\n                            rotateMatrixZYX_s16(lagiRotation, &lagiWorldMatrix);\n\n                            lagi::azel_bridge::SubmissionState lagiState{};\n                            for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n                            {\n                                for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n                                {\n                                    lagiState.modelMatrix[lagiRow * 4u + lagiCol] =\n                                        lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n                                }\n                            }\n                            lagiState.hasModelMatrix = true;\n                            lagiState.dynamic = false;\n                            lagi::azel_bridge::capture_current_light(lagiState);\n\n                            lagi::azel_bridge::set_town_submission_context(\n                                -1,\n                                static_cast<std::uint32_t>(pThis->m8_cellPtr.m_offset),\n                                static_cast<std::uint32_t>(r14.m_offset),\n                                static_cast<std::uint32_t>(offset),\n                                lagiState);\n\n                            addObjectToDrawList(pThis->m0_fileBundle->get3DModel(offset));\n                        }"
    source_text "${source_text}")
  endif()
  if(source_text STREQUAL original_text)
@@ -904,6 +1138,9 @@ endfunction()
 
 set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  PDS.cpp
+ rootTask.cpp
+ titleScreen.cpp
+ o_title.cpp
  common.cpp
  common_generated.cpp
  dummy.cpp
@@ -933,7 +1170,34 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  items.cpp
  menu_dragon.cpp
  field.cpp
+ field/fieldEncounterTask.cpp
+ field/fieldCamera.cpp
+ field/fieldDragon.cpp
+ field/fieldVisibilityGrid.cpp
+ field/fieldRadar.cpp
+ field/fieldCutsceneTask.cpp
+ field/fieldDragonMovement.cpp
+ field/fieldDragonInput.cpp
+ field/fieldDialog.cpp
+ field/fieldScriptWaitTask.cpp
+ field/dragonLightWingEvolution.cpp
  field/field_a3/o_fld_a3.cpp
+ field/field_a3/o_fld_a3_1.cpp
+ LCS.cpp
+ field/field_d5/o_fld_d5.cpp
+ field/field_d5/d5_nameEntry.cpp
+ field/field_d5/d5_particles.cpp
+ field/field_d5/d5_starfield.cpp
+ field/field_d5/d5_gameOver.cpp
+ dragonMorphing.cpp
+ dragonRider.cpp
+ battle/battleManager.cpp
+ battle/battleDebugList.cpp
+ battle/battleOverlay.cpp
+ battle/battlePowerGauge.cpp
+ kernel/menuSprite.cpp
+ kernel/menuCursor.cpp
+ kernel/flagEditor.cpp
  shared/vdp2PlaneTask.cpp
  battle/BTL_A3/BTL_A3_map6.cpp
  audio/systemSounds.cpp
@@ -986,6 +1250,8 @@ add_executable(lagi
  ${LAGI_TEXTURE_F_OBJ}
  ${LAGI_MESH_F_OBJ}
  ${LAGI_CINEPAK_F_OBJ}
+ ${LAGI_VDP2_NBG_F_OBJ}
+ ${LAGI_VDP2_RBG0_F_OBJ}
  src/platform/vita/vita_audio.cpp
  src/movie/film_demuxer.cpp
  src/movie/cinepak_decoder.cpp
@@ -993,7 +1259,10 @@ add_executable(lagi
  src/movie/movie_player.cpp
  src/integration/azel_movie_bridge.cpp
  src/integration/lagi_azel_movie_runtime.cpp
- src/integration/lagi_runtime_smoke.cpp
+ src/integration/lagi_runtime.cpp
+ src/integration/lagi_input_bridge.cpp
+ src/integration/lagi_scene_bridge.cpp
+ src/integration/lagi_diagnostics.cpp
  src/integration/lagi_render_bridge.cpp
  src/integration/lagi_live_model_adapter.cpp
  src/integration/lagi_direct_boot.cpp
@@ -1014,6 +1283,7 @@ add_executable(lagi
  src/integration/lagi_hotpoint_vita.cpp
  src/integration/lagi_audio_vita.cpp
  src/integration/lagi_renderer_host_vita.cpp
+ src/integration/lagi_vdp1_animated_quad_vita.cpp
  ${LAGI_AZEL_UPSTREAM_SOURCES}
 )
 target_include_directories(lagi PRIVATE include
@@ -1023,8 +1293,12 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/kernel"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/audio"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/shared"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_a3"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_d5"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/battle"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/battle/BTL_A3"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/menu"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
 )
 target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1)

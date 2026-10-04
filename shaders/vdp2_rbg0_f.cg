@@ -1,0 +1,160 @@
+// Neptune VDP2 RBG0 fragment program.
+//
+// The CPU side supplies compact renderer-ready rotation coefficients derived
+// from Azel's native Saturn rotation state once per frame. SGX still performs
+// all per-pixel coefficient lookup, coordinate generation, tile/palette fetch
+// and final RBG0 rendering.
+#include "vdp2_common.cginc"
+
+float selectRbg0Plane(
+    float index,
+    float4 p0,
+    float4 p1,
+    float4 p2,
+    float4 p3)
+{
+    if (index < 0.5f) return p0.x;
+    if (index < 1.5f) return p0.y;
+    if (index < 2.5f) return p0.z;
+    if (index < 3.5f) return p0.w;
+    if (index < 4.5f) return p1.x;
+    if (index < 5.5f) return p1.y;
+    if (index < 6.5f) return p1.z;
+    if (index < 7.5f) return p1.w;
+    if (index < 8.5f) return p2.x;
+    if (index < 9.5f) return p2.y;
+    if (index < 10.5f) return p2.z;
+    if (index < 11.5f) return p2.w;
+    if (index < 12.5f) return p3.x;
+    if (index < 13.5f) return p3.y;
+    if (index < 14.5f) return p3.z;
+    return p3.w;
+}
+
+float4 sampleRbg0D5Cell(
+    uniform sampler2D raw,
+    float mapX,
+    float mapY,
+    float4 p0,
+    float4 p1,
+    float4 p2,
+    float4 p3)
+{
+    mapX = fmod(floor(mapX), 2048.0f);
+    mapY = fmod(floor(mapY), 2048.0f);
+    if (mapX < 0.0f) mapX += 2048.0f;
+    if (mapY < 0.0f) mapY += 2048.0f;
+
+    const float planeX = floor(mapX / 512.0f);
+    const float planeY = floor(mapY / 512.0f);
+    const float planeIndex = planeY * 4.0f + planeX;
+    const float planeBase = selectRbg0Plane(
+        planeIndex, p0, p1, p2, p3);
+
+    const float inPlaneX = mapX - planeX * 512.0f;
+    const float inPlaneY = mapY - planeY * 512.0f;
+    const float patternX = floor(inPlaneX / 16.0f);
+    const float patternY = floor(inPlaneY / 16.0f);
+    const float patternAddress =
+        planeBase + (patternY * 32.0f + patternX) * 2.0f;
+    const float patternName = readBE16(raw, patternAddress);
+
+    const float characterNumber =
+        fmod(patternName, 1024.0f) * 4.0f + 8192.0f;
+
+    float px = fmod(inPlaneX, 16.0f);
+    float py = fmod(inPlaneY, 16.0f);
+    if (fmod(floor(patternName / 1024.0f), 2.0f) >= 1.0f)
+        px = 15.0f - px;
+    if (fmod(floor(patternName / 2048.0f), 2.0f) >= 1.0f)
+        py = 15.0f - py;
+
+    const float cellX = floor(px / 8.0f);
+    const float cellY = floor(py / 8.0f);
+    const float cellIndex = cellX + cellY * 2.0f;
+    const float dotAddress =
+        characterNumber * 32.0f +
+        cellIndex * 64.0f +
+        fmod(py, 8.0f) * 8.0f +
+        fmod(px, 8.0f);
+    const float dotColor = readByte(raw, dotAddress);
+
+    if (dotColor < 0.5f)
+        return float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    const float paletteBank =
+        fmod(floor(patternName / 4096.0f), 8.0f);
+    const float paletteEntry = paletteBank * 256.0f + dotColor;
+    return rgb555(readBE16(raw, 524288.0f + paletteEntry * 2.0f));
+}
+
+float readRbgCoefficient(
+    uniform sampler2D raw,
+    float byteAddress)
+{
+    byteAddress = fmod(byteAddress, 524288.0f);
+    if (byteAddress < 0.0f)
+        byteAddress += 524288.0f;
+
+    const float b0 = readByte(raw, byteAddress);
+    const float b1 = readByte(raw, byteAddress + 1.0f);
+    const float b2 = readByte(raw, byteAddress + 2.0f);
+
+    float value = b0 + b1 * 256.0f + b2 * 65536.0f;
+    if (b2 >= 128.0f)
+        value -= 16777216.0f;
+    return value / 65536.0f;
+}
+
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    uniform sampler2D raw,
+    uniform float4 rbg0Plane0,
+    uniform float4 rbg0Plane1,
+    uniform float4 rbg0Plane2,
+    uniform float4 rbg0Plane3,
+    // {Xbase, Ybase, dX, dY}
+    uniform float4 rbg0Transform0,
+    // {X-yStep, Y-yStep, Xp, Yp}
+    uniform float4 rbg0Transform1,
+    // {KAst, dKAst, dKAx, unused}
+    uniform float4 rbg0Coefficient,
+    // {coefficient table base, enabled, entry size, unused}
+    uniform float4 rbg0Info)
+{
+    const float x = min(351.0f, floor(vTexcoord.x * 352.0f));
+    const float y = min(223.0f, floor(vTexcoord.y * 224.0f));
+
+    float k = 1.0f;
+    if (rbg0Info.y >= 0.5f) {
+        const float accum =
+            rbg0Coefficient.x +
+            rbg0Coefficient.y * y +
+            rbg0Coefficient.z * x;
+        // Saturn takes the coefficient index from the upper 16 bits of a
+        // wrapping 32-bit accumulator. Keep the index in the 0..65535 domain
+        // before converting it to a VRAM byte address.
+        float coeffIndex = fmod(floor(accum), 65536.0f);
+        if (coeffIndex < 0.0f)
+            coeffIndex += 65536.0f;
+        const float address =
+            rbg0Info.x + coeffIndex * rbg0Info.z;
+        k = readRbgCoefficient(raw, address);
+    }
+
+    const float rotatedX =
+        rbg0Transform0.x +
+        rbg0Transform1.x * y +
+        rbg0Transform0.z * x;
+    const float rotatedY =
+        rbg0Transform0.y +
+        rbg0Transform1.y * y +
+        rbg0Transform0.w * x;
+
+    const float mapX = k * rotatedX + rbg0Transform1.z;
+    const float mapY = k * rotatedY + rbg0Transform1.w;
+
+    return sampleRbg0D5Cell(
+        raw, mapX, mapY,
+        rbg0Plane0, rbg0Plane1, rbg0Plane2, rbg0Plane3);
+}

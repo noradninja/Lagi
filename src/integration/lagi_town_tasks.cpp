@@ -178,9 +178,9 @@ void twn_ruin_sync_platform_state()
         const unsigned int frames =
             static_cast<unsigned int>(remaining > 0 ? remaining : 1);
         if (fadeActive)
-            platform::renderer::town_fade_in(frames);
+            platform::renderer::presentation_fade_in(frames);
         else
-            platform::renderer::town_fade_out(frames);
+            platform::renderer::presentation_fade_out(frames);
         g_fadeActive = fadeActive;
     }
 
@@ -203,7 +203,7 @@ void twn_ruin_sync_platform_state()
         std::max<s32>(0, edge->m2C_currentAnimation.asS32()));
     const unsigned int animationFrame =
         edge->m34_3dModel.m10_currentAnimationFrame;
-    platform::renderer::town_present_edge(
+    platform::renderer::presentation_set_player(
         edgePosition[0], edgePosition[1], edgePosition[2],
         edge->mE8.mC_rotation[1].asS32() * kTurnsToRadians,
         false, 0,
@@ -218,7 +218,7 @@ void twn_ruin_sync_platform_state()
     vec3(twnMainLogicTask->m5C_rawCameraPosition, rawCameraPosition);
     vec3(twnMainLogicTask->m44_cameraTarget, cameraTarget);
     vec3(twnMainLogicTask->m50_upVector, cameraUp);
-    platform::renderer::town_present_camera(
+    platform::renderer::presentation_set_camera(
         cameraPosition,
         rawCameraPosition,
         cameraTarget,

@@ -1,110 +1,233 @@
 # Lagi Runtime Architecture
 
-Lagi is a native PlayStation Vita host for the reconstructed Panzer Dragoon Saga runtime in `extern/Azel`.
+Lagi is a native PlayStation Vita host for the reconstructed *Panzer Dragoon Saga* runtime in `extern/Azel`.
 
-## Runtime ownership rule
+## Overview
 
-Gameplay and runtime behavior belongs to upstream Azel.
-
-Files under `src/integration/lagi_*` may:
-
-- provide Vita platform services to Azel;
-- adapt input, filesystem, audio, rendering, timing, and memory interfaces;
-- expose Vita/GXM data to Azel;
-- schedule or enter Azel task/runtime pipelines;
-- bridge Azel output into Vita-specific presentation.
-
-Direct-boot compatibility belongs at the same boundary. It may restore platform state that the normal Saturn startup path would already have established—for example VDP2 initialization, queued VDP2 transfer servicing, or resident VDP1 UI data—but it must not replace the gameplay task or author new game state.
-
-They must **not** independently reproduce gameplay/runtime behavior that already exists in `extern/Azel`.
-
-In particular, do not create a second implementation of Azel NPC movement, scripts, camera behavior, collision behavior, animation state machines, task state, or scene sequencing merely to make it portable.
-
-When Azel code depends on a desktop-only service, adapt that service at the boundary. Do not translate the gameplay function into a Lagi-owned equivalent.
-
-## Town pipeline
-
-The intended Ruins path is:
+The runtime is divided into three primary layers:
 
 ```text
-TWN_RUIN script
-       ↓
-Azel script/runtime pipeline
-       ↓
-Azel setupNPCWalkInZDirection()
-       ↓
-Azel sEdgeTask::Update()
-       ↓
-Azel updateEdgeSub2()
-       ↓
-Azel stepNPCForward()
-       ↓
-Lagi platform/render/input adapters
+Azel
+    game logic and Saturn-era runtime state
+
+Lagi
+    Vita platform integration and presentation transport
+
+Neptune
+    native SceGxm rendering
 ```
 
-`extern/Azel` is treated as upstream source and is not modified for Vita integration.
+Azel remains authoritative for startup state, game modes, module transitions, title and menu state, New Game flow, movies, field/town/battle task graphs, scripts, camera behavior, collision, animation, visibility, object lifetime, VDP1 command generation, VDP2 state, fades, and transition timing.
 
-Where Azel's desktop umbrella header cannot be used on Vita, the build may redirect that include to a Lagi platform prelude. That adapter may provide declarations/stubs for unavailable host services, but it must not alter or replace Azel gameplay/runtime function bodies.
+Lagi provides the Vita-facing services used by that runtime: input translation, disc/filesystem access, VBlank and timing services, native audio, memory/resource adaptation, frame synchronization, and renderer-facing presentation snapshots.
+
+Neptune consumes those snapshots and presents them through native SceGxm.
+
+`extern/Azel` remains an upstream source tree. Vita-specific adaptation is implemented outside it.
+
+## Native runtime host
+
+The normal Vita host loop is implemented in `src/integration/lagi_runtime.cpp`.
+
+```text
+Vita input
+    ↓
+Lagi input bridge
+    ↓
+Azel input state
+
+VBlank / fade service
+    ↓
+begin Azel presentation capture
+    ↓
+runTasks()
+    ↓
+capture renderer-facing state
+    ↓
+scene bridge
+    ↓
+presentation publish
+    ↓
+Neptune render thread
+```
+
+The earlier `runtime_smoke_*` host has been retired. The Saturn memory-reader check and runtime diagnostics now live in dedicated diagnostic code.
+
+## 0.040 authentic boot path
+
+The 0.040 branch enters the game through Azel's native startup path:
+
+```text
+Disc 1
+  ↓
+azelInit()
+  ↓
+resetEngine()
+  ↓
+native Azel initial task graph
+  ↓
+MOVIE1.CPK
+  ↓
+title / New Game
+  ↓
+EVT000_1.CPK
+  ↓
+FLD_D5 name-entry sequence
+  ↓
+EVT002.CPK
+  ↓
+Azel module manager
+  ↓
+TWN_RUIN.PRG
+  ↓
+native town task graph
+```
+
+`TWN_RUIN` is selected and started by Azel's module flow. The earlier direct-Ruins bootstrap remains in the source tree for development and regression use but is not part of the normal 0.040 boot path.
+
+## Scene presentation bridge
+
+Scene ownership remains on the Azel side. Lagi exposes renderer-facing state through a generic scene bridge:
+
+```text
+Azel active scene
+    ↓
+lagi::scene_bridge::sync_presentation_state()
+    ↓
+mode-specific adapter
+    ↓
+generic presentation state
+    ↓
+Neptune
+```
+
+Mode 1 currently dispatches to the existing town adapter because town scenes are the first native 3D scene class connected to Neptune. The adapter publishes camera, player, VDP1/VDP2, and related presentation state without taking ownership of the scene itself.
+
+The platform-facing renderer interface is mode-agnostic:
+
+```text
+show_game_presentation()
+
+presentation_wait_frame_slot()
+presentation_publish_frame()
+
+presentation_set_player()
+presentation_set_camera()
+presentation_set_vdp2_text()
+
+presentation_fade_in()
+presentation_fade_out()
+```
+
+Some Neptune internals still use historical `g_town*` names. Those names reflect the origin of the first 3D renderer path rather than the current ownership model.
+
+## Frame synchronization
+
+The presentation bridge uses a one-frame producer/consumer boundary between the Azel/game thread and the Neptune render thread.
+
+```text
+runTasks()
+    ↓
+collect staging state
+    ↓
+sync scene presentation
+    ↓
+acquire presentation slot
+    ↓
+publish immutable frame
+    ↓
+Neptune renders the frame
+    ↓
+render thread returns the slot
+```
+
+The presentation slot is acquired at the publish boundary. This allows Azel to change modes during `runTasks()` without holding a renderer slot that may subsequently be needed by movie or front-end presentation.
+
+Movie playback and front-end VDP2 rendering participate in the same renderer ownership protocol.
+
+## VDP1 presentation
+
+Azel generates VDP1 state and commands. Lagi captures the renderer-facing output and Neptune translates the supported command stream to native GXM.
+
+Current hardware-tested coverage includes:
+
+- normal sprites;
+- scaled sprites;
+- polylines;
+- first-Ruins world geometry;
+- task-owned dynamic objects;
+- Edge's animated hierarchy submitted through Azel's normal `addObjectToDrawList()` boundary;
+- per-submission Azel light vector, RGB, and falloff state;
+- Edge's original mesh-shadow path.
+
+Lock-On state, menu behavior, cursor behavior, animation state, and other gameplay decisions remain part of Azel's task graph.
+
+## VDP2 presentation
+
+Neptune's VDP2 path is organized around Saturn VDP2 state rather than individual game screens.
+
+```text
+Azel
+  ↓
+VRAM / CRAM / VDP2 registers
+  ↓
+Neptune VDP2
+  ├─ NBG
+  ├─ RBG
+  ├─ back / line / color state
+  └─ windows and composition
+  ↓
+SGX
+```
+
+The current front-end path consumes live Azel state for:
+
+- title NBG presentation;
+- D5 NBG0 keyboard;
+- NBG3 text;
+- D5 RBG0 rotation-map state;
+- line-window composition;
+- live CRAM;
+- VDP2 color offsets.
+
+D5 uses the same VDP2 facilities as the rest of the runtime; it is not treated as a separate authored background implementation.
+
+The remaining RBG0 work is primarily accuracy work around A/B composition, windows, priority behavior, and color/fade interaction.
 
 ## Movie pipeline
 
-Movie ownership follows the same rule as town/gameplay ownership:
+Movie sequencing remains part of Azel's movie task/state machine.
 
 ```text
-Azel module manager
+Azel movie task/state machine
        ↓
-Azel gameStatusTable
-       ↓
-Azel movie timing table / CPK filename table
-       ↓
-Azel s_movieMainWorkArea state machine
-       ↓
-Lagi generic movie services
+Lagi movie backend
   ├─ disc/filesystem reads
   ├─ Sega FILM demux
   ├─ Cinepak decode
   ├─ PCM/audio timing
-  └─ Neptune frame presentation
+  └─ Neptune presentation
 ```
 
-Azel must own movie selection, multi-part CPK sequencing, countdowns, skip behavior,
-fades, subtitle-task creation, and post-movie status transitions. Lagi must never
-hardcode scene-specific movie filenames or reproduce Azel's movie timing/status
-tables in an integration adapter.
+Azel supplies movie selection, sequencing, skip state, fades, subtitle-task creation, and post-movie status transitions. Lagi supplies the platform services required to execute those decisions on Vita.
 
-For Vita builds, generated upstream source may replace only desktop/Saturn
-platform-facing stream/decode/audio calls with Lagi service hooks. The upstream
-movie task/state machine and its data tables remain authoritative.
+The current Vita path includes native SceAudio and SGX-assisted Cinepak presentation.
 
-## Presentation bridge
+## Direct-boot compatibility
 
-The current town presentation path keeps state ownership on the Azel side:
+The earlier direct-Ruins path remains useful for isolated renderer/runtime tests and regression work.
 
-```text
-Azel tasks / scripts
-       ↓
-processed 3D models + VDP1 commands + VDP2 state
-       ↓
-Lagi frame-boundary snapshots and platform adapters
-       ↓
-Neptune GXM geometry, sprite, line, tile, and text batches
-       ↓
-2x MSAA hardware resolve
-       ↓
-Vita display
-```
+Normal authentic boot does not depend on state established exclusively by the direct-boot bootstrap, including manual Ruins overlay startup or static-room viewer registration. Renderer state needed by the native path is sourced from platform initialization or live Azel presentation data.
 
-Neptune translates the VDP1 normal-sprite, scaled-sprite, and polyline commands needed by the first Ruins sequence. It also translates the live VDP2 NBG1 window map, NBG3 text map, CRAM palettes, and vertical line-scroll state used by the area banner, item messages, interaction subtitles, cinematic matte, and elevator choice.
+## Upstream integration
 
-The bridge preserves the original layer order and command data. It does not own Lock-On selection, dialog text, choice state, cursor animation, or fade sequencing.
+Azel's desktop-facing host interfaces are adapted at the Lagi boundary for Vita builds. The Vita prelude supplies declarations and platform substitutions required for compilation while gameplay and task/state-machine behavior remains in the upstream implementation.
 
-## Direct-boot state restoration
 
-Direct town boot bypasses portions of the original full-game startup path. The Vita adapter therefore restores only the platform state that the upstream town runtime expects:
+## 0.040 native Ruins presentation
 
-- initializes VDP2 and resets its string state before the town overlay starts;
-- services queued VDP2 register/VRAM work at the frame boundary;
-- snapshots completed VDP2 state for Neptune after Azel tasks run;
-- loads `MENU.CGB` at the original resident VDP1 byte address used by menu sprites.
+The completed 0.040 path reaches the first Ruins scene without using the direct-Ruins bootstrap. Azel creates and updates the scene, then Lagi captures renderer-facing output at the existing Azel boundaries.
 
-These steps supply the startup prerequisites that the normal engine path would have established. The source assets, script flow, UI commands, and gameplay decisions still come from Azel and the original disc data.
+Static world submissions preserve world-space transforms before Neptune applies the native town camera. Dynamic Edge hierarchy submissions are converted from Azel's view-relative matrix state back into world space at the render bridge. The hierarchy, pose evaluation, movement, and animation remain owned by `sEdgeTask`.
+
+Lighting is captured with each submission from Azel's active light state. Geometry/material cache identity is independent from lighting state; cached static polygons refresh their current light payload without forcing a room rebuild. Neptune's current Full/Lighting path still evaluates the Saturn-style Gouraud contribution on the CPU before GPU interpolation, leaving GPU-side lighting evaluation as a later renderer optimization rather than part of the 0.040 milestone.

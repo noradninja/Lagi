@@ -23,11 +23,18 @@ struct LagiCurrentLightVector
     u16 color[3];
 };
 
+struct LagiLightSetup
+{
+    fixedPoint direction[4];
+    u32 falloff[3];
+};
+
 // Full Azel builds provide these globals. They are weak here so the current
 // smoke runtime can link before 3dEngine.cpp/menu_dragonMorph.cpp are part of
 // the Vita executable.
 extern LagiMatrix4x3* pCurrentMatrix __attribute__((weak));
 extern LagiCurrentLightVector currentLightVector_M __attribute__((weak));
+extern LagiLightSetup lightSetup __attribute__((weak));
 
 namespace lagi::azel_bridge {
 
@@ -47,6 +54,56 @@ static RenderSubmission g_pendingTownSubmission{};
 static bool g_hasPendingTownSubmission = false;
 static bool g_reportedFirstSubmission = false;
 static bool g_reportedFirstAdaptedModel = false;
+static bool g_viewRelativeScope = false;
+static std::int32_t g_viewScopeMatrix[12]{};
+
+static void copyMatrixRaw(const LagiMatrix4x3& source, std::int32_t out[12])
+{
+    for (unsigned int row = 0; row < 3; ++row)
+        for (unsigned int col = 0; col < 4; ++col)
+            out[row * 4u + col] = source.m[row][col].asS32();
+}
+
+static void removeViewTransform(
+    const std::int32_t view[12],
+    const LagiMatrix4x3& current,
+    std::int32_t out[12])
+{
+    // Azel's town actor draw path builds pCurrentMatrix as view * world.
+    // Town cameras are rigid transforms, so inverse(view) is R^T with
+    // translation -R^T*t. Keep the calculation in 16.16 fixed point.
+    std::int32_t inv[12]{};
+    inv[0] = view[0]; inv[1] = view[4]; inv[2] = view[8];
+    inv[4] = view[1]; inv[5] = view[5]; inv[6] = view[9];
+    inv[8] = view[2]; inv[9] = view[6]; inv[10] = view[10];
+
+    for (unsigned int row = 0; row < 3; ++row) {
+        std::int64_t t = 0;
+        t += static_cast<std::int64_t>(inv[row * 4u + 0]) * view[3];
+        t += static_cast<std::int64_t>(inv[row * 4u + 1]) * view[7];
+        t += static_cast<std::int64_t>(inv[row * 4u + 2]) * view[11];
+        inv[row * 4u + 3] = static_cast<std::int32_t>(-(t >> 16));
+    }
+
+    std::int32_t cur[12]{};
+    copyMatrixRaw(current, cur);
+    for (unsigned int row = 0; row < 3; ++row) {
+        for (unsigned int col = 0; col < 3; ++col) {
+            std::int64_t v = 0;
+            for (unsigned int k = 0; k < 3; ++k)
+                v += static_cast<std::int64_t>(inv[row * 4u + k]) *
+                     cur[k * 4u + col];
+            out[row * 4u + col] = static_cast<std::int32_t>(v >> 16);
+        }
+
+        std::int64_t t = static_cast<std::int64_t>(
+            inv[row * 4u + 3]) << 16;
+        for (unsigned int k = 0; k < 3; ++k)
+            t += static_cast<std::int64_t>(inv[row * 4u + k]) *
+                 cur[k * 4u + 3];
+        out[row * 4u + 3] = static_cast<std::int32_t>(t >> 16);
+    }
+}
 
 void begin_frame()
 {
@@ -140,8 +197,27 @@ void capture_current_light(SubmissionState& state)
             state.lightColor[i] =
                 currentLightVector_M.color[i];
         }
+        if (&lightSetup) {
+            state.lightFalloff[0] = lightSetup.falloff[0];
+            state.lightFalloff[1] = lightSetup.falloff[1];
+            state.lightFalloff[2] = lightSetup.falloff[2];
+        }
         state.hasLight = true;
     }
+}
+
+void begin_view_relative_submission_scope()
+{
+    g_viewRelativeScope = false;
+    if (&pCurrentMatrix && pCurrentMatrix) {
+        copyMatrixRaw(*pCurrentMatrix, g_viewScopeMatrix);
+        g_viewRelativeScope = true;
+    }
+}
+
+void end_view_relative_submission_scope()
+{
+    g_viewRelativeScope = false;
 }
 
 void set_town_submission_context(
@@ -164,17 +240,20 @@ static void capture_runtime_state(bool billboard)
 {
     g_lastState = {};
     g_lastState.billboard = billboard;
+    g_lastState.dynamic = g_viewRelativeScope;
 
     // For normal objects Azel's pCurrentMatrix already contains camera/view
     // and model transforms at submission time. Billboard capture will later
     // substitute cameraProperties2.m88_billboardViewMatrix when that path is
     // linked into the Vita runtime.
     if (&pCurrentMatrix && pCurrentMatrix) {
-        for (unsigned int row = 0; row < 3; ++row) {
-            for (unsigned int col = 0; col < 4; ++col) {
-                g_lastState.modelMatrix[row * 4u + col] =
-                    pCurrentMatrix->m[row][col].asS32();
-            }
+        if (g_viewRelativeScope) {
+            removeViewTransform(
+                g_viewScopeMatrix,
+                *pCurrentMatrix,
+                g_lastState.modelMatrix);
+        } else {
+            copyMatrixRaw(*pCurrentMatrix, g_lastState.modelMatrix);
         }
         g_lastState.hasModelMatrix = true;
     }

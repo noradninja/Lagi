@@ -1,0 +1,196 @@
+// Neptune VDP2 normal-background/text fragment program.
+// This is layer presentation, not a screen-specific state machine.
+// Azel owns maps, text, scrolling, visibility and sequencing.
+#include "vdp2_common.cginc"
+
+float4 sampleTitleNbg0(
+    uniform sampler2D raw,
+    float logicalX,
+    float logicalY)
+{
+    // Title TVMD is 704 horizontal dots and double-density interlace.
+    const float physicalX = floor(logicalX * 2.0f);
+    const float physicalY = floor(logicalY * 2.0f);
+
+    const float planeX = physicalX >= 512.0f ? physicalX - 512.0f
+                                             : physicalX;
+    const float planeBase = physicalX >= 512.0f ? 67584.0f  // 0x10800
+                                                 : 65536.0f; // 0x10000
+
+    const float patternX = floor(planeX / 16.0f);
+    const float patternY = floor(physicalY / 16.0f);
+    const float patternAddress =
+        planeBase + (patternY * 32.0f + patternX) * 2.0f;
+    const float patternName = readBE16(raw, patternAddress);
+
+    // PNB=1, CNSM=1, CHSZ=1, SCN=0.
+    const float characterNumber =
+        fmod(patternName, 4096.0f) * 4.0f;
+    const float characterOffset = characterNumber * 32.0f;
+
+    const float px = fmod(planeX, 16.0f);
+    const float py = fmod(physicalY, 16.0f);
+    const float cellX = floor(px / 8.0f);
+    const float cellY = floor(py / 8.0f);
+    const float cellIndex = cellX + cellY * 2.0f;
+    const float dotAddress =
+        characterOffset + cellIndex * 64.0f +
+        fmod(py, 8.0f) * 8.0f + fmod(px, 8.0f);
+
+    const float dotColor = readByte(raw, dotAddress);
+    if (dotColor < 0.5f)
+        return float4(0.0f, 0.0f, 0.0f, 1.0f);
+
+    // CHCN=1 is one 256-color bank.  Azel uploads TITLEE's complete
+    // 256-entry palette at CRAM 0, so the 8-bit dot is already the final
+    // palette index.  Applying the 4bpp pattern palette field here selected
+    // unrelated CRAM banks and produced the cyan/teal title corruption.
+    const float paletteEntry = dotColor;
+
+    // CRAM begins at packed byte 0x80000.
+    const float cramAddress = 524288.0f + paletteEntry * 2.0f;
+    return rgb555(readBE16(raw, cramAddress));
+}
+
+float4 sampleNameNbg0(
+    uniform sampler2D raw,
+    float logicalX,
+    float logicalY,
+    float scrollX,
+    float scrollY)
+{
+    // Azel renderer_vdp2.cpp semantics for PLSZ=1:
+    //   page width       = 512 dots
+    //   plane width      = 1024 dots (2 pages)
+    //   NBG map width    = 2048 dots (2 horizontal planes)
+    //   page size        = 0x800 bytes for CHSZ=1 / PNB=1
+    //
+    // Do not switch plane at x=512: that is only the second page of the
+    // current plane. Plane B begins at x=1024.
+    float mapX = fmod(logicalX + scrollX, 2048.0f);
+    float mapY = fmod(logicalY + scrollY, 512.0f);
+    if (mapX < 0.0f) mapX += 2048.0f;
+    if (mapY < 0.0f) mapY += 512.0f;
+
+    const float planeIndex = floor(mapX / 1024.0f);
+    const float dotInPlaneX = mapX - planeIndex * 1024.0f;
+    const float pageX = floor(dotInPlaneX / 512.0f);
+    const float dotInPageX = dotInPlaneX - pageX * 512.0f;
+
+    // Exact plane bases produced by Azel's initLayerMap() for the D5
+    // name-entry setup. Page selection is then applied independently.
+    const float planeBase =
+        planeIndex < 0.5f ? 122880.0f : 124928.0f; // 0x1E000 / 0x1E800
+    const float pageBase = planeBase + pageX * 2048.0f; // pageSize=0x800
+
+    const float patternX = floor(dotInPageX / 16.0f);
+    const float patternY = floor(mapY / 16.0f);
+    const float patternAddress =
+        pageBase + (patternY * 32.0f + patternX) * 2.0f;
+    const float patternName = readBE16(raw, patternAddress);
+
+    // PNB=1, CNSM=0: bits 9:0 character, 10 H flip, 11 V flip,
+    // bits 15:12 palette.  CHSZ=1 makes each pattern four 8x8 cells.
+    float px = fmod(dotInPageX, 16.0f);
+    float py = fmod(mapY, 16.0f);
+    if (fmod(floor(patternName / 1024.0f), 2.0f) >= 1.0f)
+        px = 15.0f - px;
+    if (fmod(floor(patternName / 2048.0f), 2.0f) >= 1.0f)
+        py = 15.0f - py;
+
+    const float characterNumber = fmod(patternName, 1024.0f) * 4.0f;
+    const float cellX = floor(px / 8.0f);
+    const float cellY = floor(py / 8.0f);
+    const float cellIndex = cellX + cellY * 2.0f;
+    const float packedByte = readByte(
+        raw,
+        characterNumber * 32.0f + cellIndex * 32.0f +
+        fmod(py, 8.0f) * 4.0f + floor(fmod(px, 8.0f) * 0.5f));
+
+    float dotColor;
+    if (fmod(px, 2.0f) >= 1.0f)
+        dotColor = fmod(packedByte, 16.0f);
+    else
+        dotColor = floor(packedByte / 16.0f);
+    if (dotColor < 0.5f)
+        return float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    const float palNibble = floor(patternName / 4096.0f);
+    const float paletteEntry =
+        1024.0f + palNibble * 16.0f + dotColor; // CAOS=4
+    return rgb555(readBE16(raw, 524288.0f + paletteEntry * 2.0f));
+}
+
+float4 sampleNativeTextLayer(
+    uniform sampler2D raw,
+    float logicalX,
+    float logicalY)
+{
+    const float tileX = floor(logicalX / 8.0f);
+    const float tileY = floor(logicalY / 8.0f);
+    const float patternAddress =
+        24576.0f + (tileY * 64.0f + tileX) * 2.0f; // 0x6000
+    const float patternName = readBE16(raw, patternAddress);
+
+    if (patternName < 0.5f)
+        return float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    const float characterNumber = fmod(patternName, 4096.0f);
+    const float characterOffset = characterNumber * 32.0f;
+    const float px = fmod(logicalX, 8.0f);
+    const float py = fmod(logicalY, 8.0f);
+    const float packedByte = readByte(
+        raw,
+        characterOffset + py * 4.0f + floor(px * 0.5f));
+
+    float dotColor;
+    if (fmod(px, 2.0f) >= 1.0f)
+        dotColor = fmod(packedByte, 16.0f);
+    else
+        dotColor = floor(packedByte / 16.0f);
+
+    if (dotColor < 0.5f)
+        return float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    // CAOS=7.  4bpp palette number is pattern[15:12].
+    const float palNibble = floor(patternName / 4096.0f);
+    const float paletteEntry =
+        1792.0f + palNibble * 16.0f + dotColor; // 7 * 0x100
+    const float cramAddress = 524288.0f + paletteEntry * 2.0f;
+    return rgb555(readBE16(raw, cramAddress));
+}
+
+
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    uniform sampler2D raw,
+    uniform float4 vdp2Info)
+{
+    const float logicalX = min(
+        351.0f, floor(vTexcoord.x * 352.0f));
+    const float logicalY = min(
+        223.0f, floor(vTexcoord.y * 224.0f));
+
+    float4 color = float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    if (vdp2Info.x < 0.5f) {
+        color = sampleTitleNbg0(raw, logicalX, logicalY);
+    } else {
+        // Azel keeps NBG0 disabled while script 0 presents the lead-in text.
+        // flags bit 0 is the live BGON.NBG0 state from nameEntryEnable().
+        if (vdp2Info.w >= 0.5f) {
+            const float4 keyboard = sampleNameNbg0(
+                raw, logicalX, logicalY, vdp2Info.y, vdp2Info.z);
+            if (keyboard.a > 0.5f)
+                color = keyboard;
+        }
+    }
+
+    // The common text map lives at VRAM 0x6000. On the title it is NBG1;
+    // during field operation Azel maps the same memory through NBG3.
+    const float4 text = sampleNativeTextLayer(raw, logicalX, logicalY);
+    if (text.a > 0.5f)
+        color = text;
+
+    return color;
+}

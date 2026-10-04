@@ -95,6 +95,22 @@ void lagiAzelMovieStreamClose()
     clear_backend_marker();
     g_lastMovieUpdateUs = 0;
 
+    // A Saturn Start edge used to skip a movie must be consumed by the movie
+    // task. runTasks() can continue into newly-created gameplay/menu tasks in
+    // the same host frame; leaving the edge live makes the first town frame
+    // interpret the same press as "open pause menu".
+    auto& input =
+        graphicEngineStatus.m4514.m0_inputDevices[0].m0_current;
+    const bool consumedStart =
+        (input.m8_newButtonDown & 0x0008u) != 0u ||
+        (input.mC_newButtonDown2 & 0x0008u) != 0u;
+    input.m8_newButtonDown &= static_cast<u16>(~0x0008u);
+    input.mC_newButtonDown2 &= static_cast<u16>(~0x0008u);
+    if (consumedStart) {
+        lagi::platform::logging::writef(
+            "[AzelMovie] consumed Start skip edge at movie handoff\n");
+    }
+
     if (VDP2Regs_.m4_TVSTAT & 1)
         vblankData.m14_numVsyncPerFrame = 2;
 }
