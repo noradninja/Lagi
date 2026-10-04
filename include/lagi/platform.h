@@ -22,6 +22,17 @@ struct FrontendRbg0State {
     std::uint32_t lineWindow0Address;
     std::uint32_t lineWindow1Address;
     std::uint32_t lineWindowMask;
+
+    // Renderer-ready rotation coefficients for parameter A/B. These are
+    // derived once per Azel frame from Saturn 16.16 rotation state so the
+    // SGX fragment program only performs per-pixel coefficient lookup and
+    // tile sampling.
+    // transform: {Xbase,Ybase,dX,dY, XyStep,YyStep,Xp,Yp}
+    // coefficient: {KAst,dKAst,dKAx,unused}
+    float transformA[8]{};
+    float transformB[8]{};
+    float coefficientA[4]{};
+    float coefficientB[4]{};
 };
 void frontend_set_rbg0_state(const FrontendRbg0State& state);
 void set_azel_color_offset_state(
