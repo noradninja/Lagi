@@ -2036,6 +2036,114 @@ bool movie_present_cinepak_payload(
     return true;
 }
 
+bool title_present_vdp2(
+    const unsigned char* vram,
+    const unsigned char* cram)
+{
+    if (!g_gxmInitialized || !g_probeContext || !vram || !cram)
+        return false;
+
+    MovieRenderSlotGuard renderSlot;
+    if (!renderSlot)
+        return false;
+
+    MovieFrameGuard guard;
+    if (!guard)
+        return false;
+
+    constexpr unsigned int rawWidth = 512u;
+    constexpr unsigned int rawHeight = 258u;
+    constexpr unsigned int rawBytes =
+        rawWidth * rawHeight * sizeof(std::uint32_t);
+    constexpr unsigned int vramBytes = 0x80000u;
+    constexpr unsigned int cramBytes = 0x1000u;
+
+    if (!g_movieTextureData ||
+        !g_movieUsesVdp2Title ||
+        g_moviePayloadWidth != rawWidth ||
+        g_moviePayloadHeight != rawHeight) {
+        freeMovieResources();
+
+        g_movieTextureData = probeGpuAlloc(
+            rawBytes,
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_movieTextureUid);
+        g_movieVertices = static_cast<azel::DebugTextureVertex*>(
+            probeGpuAlloc(
+                4u * sizeof(azel::DebugTextureVertex),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_movieVertexUid));
+        g_movieIndices = static_cast<std::uint16_t*>(
+            probeGpuAlloc(
+                6u * sizeof(std::uint16_t),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_movieIndexUid));
+        if (!g_movieTextureData || !g_movieVertices || !g_movieIndices) {
+            freeMovieResources();
+            return false;
+        }
+
+        if (sceGxmTextureInitLinear(
+                &g_movieTexture,
+                g_movieTextureData,
+                SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+                rawWidth,
+                rawHeight,
+                0) < 0) {
+            freeMovieResources();
+            return false;
+        }
+        sceGxmTextureSetMinFilter(
+            &g_movieTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(
+            &g_movieTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+
+        // Saturn full-screen UI is displayed at 4:3 and fills the Vita
+        // vertically. The movie render target is cleared to opaque black,
+        // providing the pillar bars outside this quad.
+        const float displayAspect =
+            static_cast<float>(viewerRenderWidth()) /
+            static_cast<float>(viewerRenderHeight());
+        const float xExtent =
+            (4.0f / 3.0f) / displayAspect;
+        const float yExtent = 1.0f;
+        g_movieVertices[0] = {-xExtent,  yExtent, 0.5f, 0.0f, 0.0f};
+        g_movieVertices[1] = { xExtent,  yExtent, 0.5f, 1.0f, 0.0f};
+        g_movieVertices[2] = {-xExtent, -yExtent, 0.5f, 0.0f, 1.0f};
+        g_movieVertices[3] = { xExtent, -yExtent, 0.5f, 1.0f, 1.0f};
+        const std::uint16_t indices[6] = {0, 1, 2, 2, 1, 3};
+        std::memcpy(g_movieIndices, indices, sizeof(indices));
+
+        g_movieWidth = 352u;
+        g_movieHeight = 224u;
+        g_movieStridePixels = 0u;
+        g_moviePayloadWidth = rawWidth;
+        g_moviePayloadHeight = rawHeight;
+        g_movieUsesCinepakPayload = false;
+        g_movieUsesVdp2Title = true;
+        g_movieUploadLogged = false;
+        g_movieRenderLogged = false;
+    }
+
+    auto* raw = static_cast<unsigned char*>(g_movieTextureData);
+    std::memcpy(raw, vram, vramBytes);
+    std::memcpy(raw + vramBytes, cram, cramBytes);
+
+    g_movieFrameVisible = true;
+    if (!g_movieUploadLogged) {
+        logging::writef(
+            "[VDP2Title] raw VRAM/CRAM upload %u bytes backend=SGX-VDP2\n",
+            rawBytes);
+        g_movieUploadLogged = true;
+    }
+
+    if (!renderSlot.publish()) {
+        logging::writef("[VDP2Title] FAIL publish render slot\n");
+        return false;
+    }
+    return true;
+}
+
 void movie_clear_frame()
 {
     MovieFrameGuard guard;
