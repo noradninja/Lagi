@@ -163,7 +163,7 @@ Current known mismatch:
 - title colors differ from the Saturn reference;
 - fade/color-offset interaction still needs validation against hardware semantics.
 
-Do not correct title colors with title-specific art or palette hacks. The fix should remain in generic VDP2/CRAM/color-offset handling.
+Title color correction remains a generic VDP2/CRAM/color-offset problem rather than a title-specific art or palette issue.
 
 ### D5 name-entry sequence
 
@@ -192,7 +192,7 @@ Remaining D5 issues:
 - complete VDP2 priority/color-calculation behavior is not yet implemented;
 - D5 sprites/compositing still need continued hardware comparison.
 
-The Saturn reference capture is authoritative for content, timing, color, fades, and layer relationships. Its external HDMI converter stretches the source to 16:9; Lagi should **not** reproduce that stretch. Vita presentation should retain the intended Saturn-authored aspect.
+The Saturn reference capture is authoritative for content, timing, color, fades, and layer relationships. Its external HDMI converter stretches the source to 16:9; The HDMI converter stretch is not representative of the intended aspect; Vita presentation retains the Saturn-authored framing instead.
 
 ## VDP2 direction
 
@@ -221,7 +221,7 @@ Current RBG0 strategy:
 
 - invariant Saturn rotation terms are precomputed once per host frame;
 - SGX performs coefficient lookup, rotated coordinate generation, tile lookup, CRAM lookup, and pixel rendering;
-- line-window visibility is intended to live in the compositor rather than inside the heavy RBG0 fragment shader.
+- line-window visibility is handled at the compositor level rather than inside the heavy RBG0 fragment shader.
 
 A fragment-side line-window implementation caused a real SGX GPU crash and was removed.
 
@@ -233,7 +233,7 @@ Neptune currently bridges Azel color offsets into native presentation. The bridg
 
 Visible fades are still not Saturn-accurate.
 
-Important remaining work includes:
+Remaining work includes:
 
 - honoring the appropriate VDP2 enable/select semantics;
 - validating A/B offset selection by layer;
@@ -298,7 +298,7 @@ The earlier bring-up remains valuable because the underlying systems were hardwa
 - Edge's original textured/stippled VDP1 mesh shadow
 - stable 30 Hz town presentation
 
-The goal is to reconnect those renderer/platform capabilities to the authentic boot path without restoring direct-loader ownership.
+Those renderer/platform capabilities are being reconnected to the authentic boot path without restoring direct-loader ownership.
 
 ## Renderer
 
@@ -327,7 +327,7 @@ Quads
 Wires
 ```
 
-These are renderer diagnostics, not game-mode ownership.
+These modes are renderer diagnostics and are independent of game-mode ownership.
 
 ### Gouraud
 
@@ -353,40 +353,34 @@ The public presentation API is now generic, but internal renderer data still con
 - `g_townCameraPosition`
 - `buildLiveTownFrame()`
 
-These should gradually become generic scene/VDP1 presentation state as additional game modes come online.
+These names are expected to migrate toward generic scene/VDP1 presentation terminology as additional game modes come online.
 
-This is naming/organization debt; it should not reintroduce town ownership into the runtime host.
+This is naming and organization debt rather than a runtime ownership dependency.
 
 ### Direct-boot source files
 
 Earlier direct-boot/bootstrap source remains compiled for development/reference purposes.
 
-Authentic boot must not depend on state established only by:
+Authentic boot currently avoids state established exclusively by:
 
 - `init_town_bootstrap()`
 - `init_town_runtime()`
 - manual `overlayStart_TWN_RUIN()`
 - static-room viewer registration
 
-If the native path needs renderer data, that state must come from generic platform initialization or live Azel output.
+Renderer data for the native path is sourced from generic platform initialization or live Azel output.
 
 ### Material/resource lifetime
 
-The live material cache still needs stronger generation/lifetime invalidation for frequent scene/resource transitions.
+The live material cache still lacks generation-aware lifetime invalidation for frequent scene/resource transitions.
 
 ### Batching/index limits
 
-The current live 3D renderer still flattens active work into shared buffers with 16-bit indices. Larger scenes will require multiple resident batches while preserving Azel draw ordering, visibility, materials, and dynamic updates.
+The current live 3D renderer still flattens active work into shared buffers with 16-bit indices. Larger scenes are expected to require multiple resident batches while preserving Azel draw ordering, visibility, materials, and dynamic updates.
 
-## Near-term priorities
+## Current development focus
 
-1. Complete the authentic first-Ruins presentation handoff so the first scene is visible after `EVT002.CPK`.
-2. Bring D5 RBG0 A/B/window composition into visual agreement with the Saturn capture.
-3. Correct generic VDP2 fade/color-offset behavior.
-4. Correct title color/palette presentation through generic VDP2 handling.
-5. Continue removing direct-boot-only assumptions from Neptune.
-6. Generalize renderer internals from historical `town_*` naming/state to scene/presentation concepts.
-7. Preserve the rule: Azel owns game behavior; Lagi only services and presents it.
+Current work is concentrated on the authentic first-Ruins presentation handoff, D5 RBG0 A/B and window composition, generic VDP2 fade/color-offset accuracy, title color/palette accuracy, removal of direct-boot-only renderer assumptions, and continued generalization of historical `town_*` renderer state into scene/presentation terminology.
 
 ## Historical reference paths
 
