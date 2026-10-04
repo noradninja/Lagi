@@ -174,6 +174,9 @@ static const SceGxmProgramParameter* g_vdp2InfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0PlaneParam[4] = {
     nullptr, nullptr, nullptr, nullptr
 };
+static const SceGxmProgramParameter* g_vdp2Rbg0Transform0Param = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0Transform1Param = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0CoefficientParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0InfoParam = nullptr;
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
@@ -436,6 +439,10 @@ static float g_movieVdp2Info[4] = {};
 static float g_movieRbg0Planes[16] = {};
 static float g_movieRbg0PlanesB[16] = {};
 static float g_movieRbg0Ctrl[16] = {};
+static float g_movieRbg0TransformA[8] = {};
+static float g_movieRbg0TransformB[8] = {};
+static float g_movieRbg0CoefficientA[4] = {};
+static float g_movieRbg0CoefficientB[4] = {};
 static std::atomic<unsigned int> g_azelColorOffsetEnable{0};
 static std::atomic<unsigned int> g_azelColorOffsetSelect{0};
 static std::atomic<int> g_azelColorOffsetARed{0};
@@ -2126,6 +2133,12 @@ void frontend_set_rbg0_state(const FrontendRbg0State& state)
             static_cast<float>(state.window0[i]);
         g_movieRbg0Ctrl[12u + i] =
             static_cast<float>(state.window1[i]);
+        g_movieRbg0CoefficientA[i] = state.coefficientA[i];
+        g_movieRbg0CoefficientB[i] = state.coefficientB[i];
+    }
+    for (unsigned int i = 0; i < 8u; ++i) {
+        g_movieRbg0TransformA[i] = state.transformA[i];
+        g_movieRbg0TransformB[i] = state.transformB[i];
     }
 }
 
@@ -6139,12 +6152,24 @@ void show_town_scene()
             }
         }
         if (g_vdp2Rbg0Available) {
+            g_vdp2Rbg0Transform0Param =
+                sceGxmProgramFindParameterByName(
+                    vdp2Rbg0FragmentGxp, "rbg0Transform0");
+            g_vdp2Rbg0Transform1Param =
+                sceGxmProgramFindParameterByName(
+                    vdp2Rbg0FragmentGxp, "rbg0Transform1");
+            g_vdp2Rbg0CoefficientParam =
+                sceGxmProgramFindParameterByName(
+                    vdp2Rbg0FragmentGxp, "rbg0Coefficient");
             g_vdp2Rbg0InfoParam =
                 sceGxmProgramFindParameterByName(
                     vdp2Rbg0FragmentGxp, "rbg0Info");
-            if (!g_vdp2Rbg0InfoParam) {
+            if (!g_vdp2Rbg0Transform0Param ||
+                !g_vdp2Rbg0Transform1Param ||
+                !g_vdp2Rbg0CoefficientParam ||
+                !g_vdp2Rbg0InfoParam) {
                 logging::writef(
-                    "[NeptuneVDP2] RBG0 info uniform unavailable; "
+                    "[NeptuneVDP2] RBG0 compact uniforms unavailable; "
                     "disabling RBG0\n");
                 g_vdp2Rbg0Available = false;
             }
@@ -8572,12 +8597,24 @@ static bool renderMovieFrame()
                     const float coefficientSize =
                         (ktctl & 0x2u) ? 2.0f : 4.0f;
                     const float rbgInfo[4] = {
-                        249856.0f, // Azel rotation parameter A: VRAM 0x3D000
                         static_cast<float>(ktaof & 0x7u) *
                             coefficientSize * 65536.0f,
                         (ktctl & 0x1u) ? 1.0f : 0.0f,
                         coefficientSize,
+                        0.0f,
                     };
+                    sceGxmSetUniformDataF(
+                        rbgUniforms,
+                        g_vdp2Rbg0Transform0Param,
+                        0, 4, &g_movieRbg0TransformA[0]);
+                    sceGxmSetUniformDataF(
+                        rbgUniforms,
+                        g_vdp2Rbg0Transform1Param,
+                        0, 4, &g_movieRbg0TransformA[4]);
+                    sceGxmSetUniformDataF(
+                        rbgUniforms,
+                        g_vdp2Rbg0CoefficientParam,
+                        0, 4, g_movieRbg0CoefficientA);
                     sceGxmSetUniformDataF(
                         rbgUniforms,
                         g_vdp2Rbg0InfoParam,
