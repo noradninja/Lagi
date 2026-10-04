@@ -1700,6 +1700,10 @@ void shutdown()
     freeProbeMapped(g_probeDepthUid, g_probeDepth);
     freeProbeMapped(g_probeStencilUid, g_probeStencil);
 
+    if (g_frontendHighRenderTarget) {
+        sceGxmDestroyRenderTarget(g_frontendHighRenderTarget);
+        g_frontendHighRenderTarget = nullptr;
+    }
     if (g_movieRenderTarget) {
         sceGxmDestroyRenderTarget(g_movieRenderTarget);
         g_movieRenderTarget = nullptr;
@@ -8884,6 +8888,16 @@ static bool renderMovieFrame()
     const bool highResolutionFrontend =
         g_movieUsesVdp2Title &&
         (g_movieVdp2Tvmd & 0x00C7u) == 0x00C3u;
+    static int lastFrontendDisplayMode = -1;
+    const int frontendDisplayMode = highResolutionFrontend ? 1 : 0;
+    if (g_movieUsesVdp2Title &&
+        frontendDisplayMode != lastFrontendDisplayMode) {
+        logging::writef(
+            "[VDP2Display] TVMD=%04X framebuffer=%s\n",
+            g_movieVdp2Tvmd & 0xFFFFu,
+            highResolutionFrontend ? "720x408" : "480x272");
+        lastFrontendDisplayMode = frontendDisplayMode;
+    }
     const int pitch = highResolutionFrontend ? 1024 : 512;
     const int movieOutputWidth =
         highResolutionFrontend ? 720 : (kWidth / 2);
