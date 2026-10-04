@@ -4799,23 +4799,27 @@ static void appendLiveTownModel(
     for (std::size_t p = 0; p < model.polygons.size(); ++p) {
         auto record = model.polygons[p];
 
-        if (state.dynamic && (record.cmdPmod & 0x0100u)) {
-            static unsigned int liveMeshTraceBudget = 24u;
+        if (record.cmdPmod & 0x0100u) {
+            static unsigned int liveMeshTraceBudget = 48u;
             if (liveMeshTraceBudget != 0u) {
+                const std::uint16_t resolvedIndex =
+                    resolvedTextureIndices &&
+                    p < resolvedTextureIndexCount
+                        ? resolvedTextureIndices[p]
+                        : 0xFFFFu;
                 logging::writef(
-                    "[PresentationTrace][LiveMesh] p=%u CTRL=%04X PMOD=%04X "
-                    "COLR=%04X SRCA=%04X SIZE=%04X resolved=%u\n",
+                    "[PresentationTrace][LiveMesh] p=%u dynamic=%u billboard=%u "
+                    "CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X "
+                    "resolved=%u\n",
                     static_cast<unsigned int>(p),
+                    state.dynamic ? 1u : 0u,
+                    state.billboard ? 1u : 0u,
                     static_cast<unsigned int>(record.cmdCtrl),
                     static_cast<unsigned int>(record.cmdPmod),
                     static_cast<unsigned int>(record.cmdColr),
                     static_cast<unsigned int>(record.cmdSrca),
                     static_cast<unsigned int>(record.cmdSize),
-                    static_cast<unsigned int>(
-                        resolvedTextureIndices &&
-                        p < resolvedTextureIndexCount
-                            ? resolvedTextureIndices[p]
-                            : 0xFFFFu));
+                    static_cast<unsigned int>(resolvedIndex));
                 --liveMeshTraceBudget;
             }
         }
@@ -9784,12 +9788,14 @@ static void renderBasicWingViewer()
     }
 
     if (roomAuthenticCameraMode) {
-        // Saturn UI composition: VDP2 supplies the dialog/window backing and
-        // cinematic matte; VDP1 sprites (including the multi-choice cursor)
-        // are composited above those planes.
+        // Saturn UI composition: NBG1 supplies window/backing tiles, the
+        // line-scroll cinematic matte sits behind the glyph plane, and VDP1
+        // sprites (including Lock-On and choice cursors) remain above VDP2.
+        // Azel still owns the contents/state of every layer; Neptune only
+        // translates their final presentation ordering to GXM.
         drawAzelVdp2Nbg1Gpu();
-        drawAzelVdp2TextLayerGpu();
         drawAzelVdp2CinematicBarsGpu();
+        drawAzelVdp2TextLayerGpu();
         drawPublishedVdp1Ui();
     }
 
