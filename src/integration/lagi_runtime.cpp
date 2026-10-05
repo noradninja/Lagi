@@ -616,6 +616,86 @@ void runtime_frame()
         build_rbg0_gpu_parameter(
             paramB, state.transformB, state.coefficientB);
 
+        static bool loggedD5RbgParameterB = false;
+        if (!loggedD5RbgParameterB) {
+            lagi::platform::logging::writef(
+                "[D5RBGPlanes] A=%05X,%05X,%05X,%05X "
+                "B=%05X,%05X,%05X,%05X\n",
+                state.planeA[0], state.planeA[1],
+                state.planeA[2], state.planeA[3],
+                state.planeB[0], state.planeB[1],
+                state.planeB[2], state.planeB[3]);
+
+            lagi::platform::logging::writef(
+                "[D5RBGXformA] T0=%f,%f,%f,%f T1=%f,%f,%f,%f "
+                "K=%f,%f,%f\n",
+                state.transformA[0], state.transformA[1],
+                state.transformA[2], state.transformA[3],
+                state.transformA[4], state.transformA[5],
+                state.transformA[6], state.transformA[7],
+                state.coefficientA[0], state.coefficientA[1],
+                state.coefficientA[2]);
+            lagi::platform::logging::writef(
+                "[D5RBGXformB] T0=%f,%f,%f,%f T1=%f,%f,%f,%f "
+                "K=%f,%f,%f\n",
+                state.transformB[0], state.transformB[1],
+                state.transformB[2], state.transformB[3],
+                state.transformB[4], state.transformB[5],
+                state.transformB[6], state.transformB[7],
+                state.coefficientB[0], state.coefficientB[1],
+                state.coefficientB[2]);
+
+            const unsigned char* liveVram = getVdp2Vram(0);
+            const unsigned int coefficientSizeB =
+                (state.ktctl & 0x200u) ? 2u : 4u;
+            const unsigned int coefficientBaseB =
+                ((state.ktaof >> 8) & 0x7u) *
+                coefficientSizeB * 0x10000u;
+
+            const unsigned int ys[] = {112u, 128u, 160u, 192u, 223u};
+            const unsigned int xs[] = {0u, 176u, 351u};
+
+            for (unsigned int yi = 0;
+                 yi < sizeof(ys) / sizeof(ys[0]); ++yi) {
+                for (unsigned int xi = 0;
+                     xi < sizeof(xs) / sizeof(xs[0]); ++xi) {
+                    const unsigned int y = ys[yi];
+                    const unsigned int x = xs[xi];
+
+                    const std::uint32_t accum =
+                        static_cast<std::uint32_t>(paramB.m54) +
+                        static_cast<std::uint32_t>(paramB.m58) * y +
+                        static_cast<std::uint32_t>(paramB.m5C) * x;
+                    const unsigned int index = accum >> 16;
+                    const unsigned int addr =
+                        (coefficientBaseB +
+                         index * coefficientSizeB) & 0x7FFFFu;
+
+                    const std::uint32_t raw =
+                        static_cast<std::uint32_t>(liveVram[addr]) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(addr + 1u) & 0x7FFFFu]) << 8) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(addr + 2u) & 0x7FFFFu]) << 16) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(addr + 3u) & 0x7FFFFu]) << 24);
+
+                    std::int32_t k =
+                        static_cast<std::int32_t>(raw & 0x00FFFFFFu);
+                    if ((k & 0x00800000) != 0)
+                        k |= static_cast<std::int32_t>(0xFF000000u);
+
+                    lagi::platform::logging::writef(
+                        "[D5RBGCoeffB] xy=%u,%u accum=%08X "
+                        "idx=%04X addr=%05X raw=%08X k=%f\n",
+                        x, y, accum, index, addr, raw,
+                        static_cast<float>(k) / 65536.0f);
+                }
+            }
+
+            loggedD5RbgParameterB = true;
+        }
+
         lagi::platform::renderer::frontend_set_rbg0_state(state);
     }
 
