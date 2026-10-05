@@ -615,7 +615,9 @@ add_custom_command(
  COMMAND "${PSP2CGC_EXECUTABLE}"
   -profile sce_fp_psp2
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
-  -Wperf -fastprecision -O3
+  # RBG0 uses float values as exact packed-VRAM byte addresses and
+  # coefficient accumulators. Do not allow PSP2CGC to reduce precision here.
+  -Wperf -O3
   -o "${LAGI_VDP2_RBG0_F_GXP}"
  DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
