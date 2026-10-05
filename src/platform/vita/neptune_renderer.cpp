@@ -9311,9 +9311,18 @@ static void drawAzelColorOffsetForLayer(
             : static_cast<int>(raw);
     };
 
-    const int displayRed = hardwareSigned9(red);
-    const int displayGreen = hardwareSigned9(green);
-    const int displayBlue = hardwareSigned9(blue);
+    // Azel's fade reconstruction expands Saturn's signed 5-bit color
+    // endpoints to approximately -128..+135 (see unpackColor(): negative
+    // values * 8, positive values * 9). Neptune blends in an 8-bit display
+    // domain, so expand that contribution once here. With the CLOFEN/CLOFSL
+    // layer mapping now corrected this reaches true black/white without
+    // incorrectly washing unrelated layers.
+    const int displayRed =
+        std::clamp(hardwareSigned9(red) * 2, -255, 255);
+    const int displayGreen =
+        std::clamp(hardwareSigned9(green) * 2, -255, 255);
+    const int displayBlue =
+        std::clamp(hardwareSigned9(blue) * 2, -255, 255);
 
     drawColorOffsetPass(
         g_colorOffsetAddFragmentProgram,
