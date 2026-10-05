@@ -558,6 +558,55 @@ void runtime_frame()
                 ((regs->mDC_LWTA1 & 0x7FFFEu) << 1) & 0x7FFFFu;
         }
 
+        static bool loggedD5RbgBridge = false;
+        if (!loggedD5RbgBridge) {
+            lagi::platform::logging::writef(
+                "[D5RBGBridge] WCTLC=%04X WCTLD=%04X "
+                "LWTA0=%08X LWTA1=%08X mask=%u "
+                "addr0=%05X addr1=%05X "
+                "W0=(%d,%d)-(%d,%d) W1=(%d,%d)-(%d,%d)\n",
+                static_cast<unsigned int>(regs->mD4_WCTLC),
+                static_cast<unsigned int>(regs->mD6_WCTLD),
+                static_cast<unsigned int>(regs->mD8_LWTA0),
+                static_cast<unsigned int>(regs->mDC_LWTA1),
+                state.lineWindowMask,
+                state.lineWindow0Address,
+                state.lineWindow1Address,
+                state.window0[0], state.window0[1],
+                state.window0[2], state.window0[3],
+                state.window1[0], state.window1[1],
+                state.window1[2], state.window1[3]);
+
+            const unsigned char* liveVram = getVdp2Vram(0);
+            const unsigned int sampleY[] = {
+                0u, 32u, 64u, 96u, 112u, 128u, 160u, 192u, 223u
+            };
+            if ((state.lineWindowMask & 2u) != 0u) {
+                for (unsigned int si = 0;
+                     si < sizeof(sampleY) / sizeof(sampleY[0]); ++si) {
+                    const unsigned int y = sampleY[si];
+                    const unsigned int addr =
+                        (state.lineWindow1Address + y * 4u) & 0x7FFFFu;
+                    const unsigned int xs =
+                        static_cast<unsigned int>(liveVram[addr]) |
+                        (static_cast<unsigned int>(
+                            liveVram[(addr + 1u) & 0x7FFFFu]) << 8);
+                    const unsigned int xe =
+                        static_cast<unsigned int>(
+                            liveVram[(addr + 2u) & 0x7FFFFu]) |
+                        (static_cast<unsigned int>(
+                            liveVram[(addr + 3u) & 0x7FFFFu]) << 8);
+                    lagi::platform::logging::writef(
+                        "[D5RBGBridge] LW1 y=%u raw=%04X..%04X "
+                        "x=%u..%u\n",
+                        y, xs, xe,
+                        (xs >> 1) & 0x1FFu,
+                        (xe >> 1) & 0x1FFu);
+                }
+            }
+            loggedD5RbgBridge = true;
+        }
+
         const auto& paramA =
             gCoefficientTables[0][vdp2Controls.m0_doubleBufferIndex];
         const auto& paramB =
