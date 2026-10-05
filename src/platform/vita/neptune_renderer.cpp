@@ -9292,9 +9292,22 @@ static void drawAzelColorOffsetForLayer(
         ? g_azelColorOffsetBBlue.load(std::memory_order_relaxed)
         : g_azelColorOffsetABlue.load(std::memory_order_relaxed);
 
-    const int displayRed = std::clamp(red, -255, 255);
-    const int displayGreen = std::clamp(green, -255, 255);
-    const int displayBlue = std::clamp(blue, -255, 255);
+    // Saturn VDP2 color-offset registers are signed 9-bit values. Azel's
+    // host reconstruction stores them in s16, so intermediate fade math can
+    // legitimately run outside the hardware range (for example -263). Real
+    // VDP2 keeps only the low nine bits on register write; reproduce that
+    // wrap before translating the offset to GXM instead of clamping it.
+    auto hardwareSigned9 = [](int value) -> int {
+        const unsigned int raw =
+            static_cast<unsigned int>(value) & 0x1FFu;
+        return (raw & 0x100u)
+            ? static_cast<int>(raw) - 0x200
+            : static_cast<int>(raw);
+    };
+
+    const int displayRed = hardwareSigned9(red);
+    const int displayGreen = hardwareSigned9(green);
+    const int displayBlue = hardwareSigned9(blue);
 
     drawColorOffsetPass(
         g_colorOffsetAddFragmentProgram,
@@ -9308,8 +9321,14 @@ static void drawAzelColorOffsetForLayer(
         std::max(-displayBlue, 0));
 }
 
-static void drawAzelTitleColorOffset()
+static void drawAzelFrontendFadeOffset()
 {
+    // The native movie/title state machine drives its transition through the
+    // same fade channels even after the reconstructed VDP2 setup has cleared
+    // CLOFEN. The platform movie surface stands in for Saturn's composed
+    // front-end output, so apply the live channel as a fullscreen compatibility
+    // pass. CLOFSL is normally zero in this path; use NBG0's select bit so the
+    // A/B choice remains deterministic if Azel changes it.
     constexpr unsigned int kNbg0Bit = 0x10u;
     drawAzelColorOffsetForLayer(kNbg0Bit, false);
 }
@@ -9769,10 +9788,16 @@ static bool renderMovieFrame()
     if (submitted && g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f)
         drawPublishedVdp1Ui();
 
-    if (submitted &&
-        g_movieUsesVdp2Title &&
-        g_movieVdp2Info[0] < 0.5f) {
-        drawAzelTitleColorOffset();
+    if (submitted) {
+        const bool d5FrontEnd =
+            g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f;
+
+        // D5 already received its hardware-accurate RBG0-only color offset
+        // between the RBG0 and NBG passes above. Title and Cinepak/movie
+        // surfaces instead represent the already-composited Saturn frontend,
+        // so their Azel transition is a fullscreen compatibility pass.
+        if (!d5FrontEnd)
+            drawAzelFrontendFadeOffset();
     }
 
     const std::uint64_t gpuWaitStartUs =
