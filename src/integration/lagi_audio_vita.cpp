@@ -673,63 +673,44 @@ void initSoundDriver()
 
     g_scspInitialized = true;
     reset_active_sounds();
-    ensure_output_stream();
+    g_loadingFinished.store(true, std::memory_order_release);
+
+    if (!start_audio_worker()) {
+        lagi::platform::logging::writef(
+            "[AzelAudio:%llu] SCSP worker unavailable\n",
+            next_audio_trace());
+        return;
+    }
 
     lagi::platform::logging::writef(
-        "[AzelAudio:%llu] SCSP core initialized cyclesPerSample=%d\n",
+        "[AzelAudio:%llu] SCSP core initialized cyclesPerSample=%d worker=CPU2\n",
         next_audio_trace(), kM68kCyclesPerSample);
 }
 
 void updateSoundInterrupt()
 {
-    service_driver_commands();
+    // 68K/SCSP ownership lives entirely on LagiSCSPWorker.
 }
 
 void updateSound()
 {
+    // Preserve Azel's frame-level call surface, but never synthesize audio on
+    // the game thread. The worker continuously services queued commands and
+    // keeps the native PCM ring filled.
     ++g_updateSoundCalls;
-    if (g_updateSoundCalls <= 8) {
-        lagi::platform::logging::writef(
-            "[AzelAudioDiag] updateSound call=%u seq=%d load=%d active=%d queued=%u\n",
-            g_updateSoundCalls,
-            static_cast<int>(g_sequenceNumber),
-            static_cast<int>(g_loadingState),
-            lagi::platform::audio::pcm_stream_active() ? 1 : 0,
-            static_cast<unsigned>(lagi::platform::audio::queued_pcm_frames()));
-    }
-
-    service_driver_commands();
-    service_pending_sounds();
-    service_driver_commands();
-    render_scsp_audio();
 }
 
 void loadSoundBanks(s8 musicNumber, s8 mode)
 {
     trace_sequence_config(musicNumber, mode);
 
-    if (musicNumber < 0) {
-        g_sequence = nullptr;
-        g_sequenceNumber = -1;
-        g_loadingState = -1;
-        g_pendingSounds.clear();
-        reset_active_sounds();
-        for (u8 i = 0; i < 8; ++i)
-            queue_command(0x02, i);
-        service_driver_commands();
-        return;
-    }
-
-    const std::size_t index = static_cast<std::size_t>(musicNumber);
-    if (index >= SoundDataTable.size())
-        return;
-
-    g_sequence = &SoundDataTable[index];
-    g_sequenceNumber = musicNumber;
-    g_loadingState = 0;
-    g_pendingSounds.clear();
-    reset_active_sounds();
-    ensure_output_stream();
+    AudioEvent event{};
+    event.type = musicNumber < 0
+        ? AudioEventType::StopBanks
+        : AudioEventType::LoadBanks;
+    event.a = static_cast<s32>(musicNumber);
+    event.b = static_cast<s32>(mode);
+    push_audio_event(event);
 }
 
 void playPCM(p_workArea, u32 id)
@@ -762,11 +743,13 @@ void enqueuePlaySoundEffect(
     if (soundIndex < 0)
         return;
 
-    if (g_pendingSounds.size() >= 32)
-        g_pendingSounds.erase(g_pendingSounds.begin());
-
-    g_pendingSounds.push_back(
-        PendingSound{soundIndex, bankIndex, volume, arg});
+    AudioEvent event{};
+    event.type = AudioEventType::Sound;
+    event.a = soundIndex;
+    event.b = bankIndex;
+    event.c = volume;
+    event.d = arg;
+    push_audio_event(event);
 }
 
 s32 playBattleSoundEffect(s32 effectIndex)
@@ -781,22 +764,24 @@ s32 fadeOutAllSequences()
         "[AzelAudio:%llu] BGM fadeOutAllSequences\n",
         next_audio_trace());
 
-    for (u8 i = 0; i < 8; ++i) {
-        queue_command(0x02, i);
-        queue_command(0x05, i, 0x7f, 0);
-    }
-    service_driver_commands();
+    AudioEvent event{};
+    event.type = AudioEventType::FadeAll;
+    push_audio_event(event);
     return 0;
 }
 
 s32 findSound(s32 soundIndex)
 {
-    return find_active_sound(soundIndex);
+    for (unsigned i = 0; i < g_activeSoundIds.size(); ++i) {
+        if (g_activeSoundIds[i].load(std::memory_order_acquire) == soundIndex)
+            return static_cast<s32>(i);
+    }
+    return -1;
 }
 
 bool isSoundLoadingFinished()
 {
-    return g_loadingState < 0;
+    return g_loadingFinished.load(std::memory_order_acquire);
 }
 
 void popSoundSequence(s32 param)
