@@ -285,6 +285,7 @@ void advance_loading_state()
         break;
     case 8:
         g_loadingState = -1;
+        g_loadingFinished.store(true, std::memory_order_release);
         lagi::platform::logging::writef(
             "[AzelAudio:%llu] SCSP sequence=%d ready\n",
             next_audio_trace(), static_cast<int>(g_sequenceNumber));
@@ -480,6 +481,142 @@ void render_scsp_audio()
         // The 68K may have acknowledged a command while this block rendered.
         service_driver_commands();
     }
+}
+
+void worker_load_banks(s32 musicNumber, s32 mode)
+{
+    if (musicNumber < 0) {
+        g_sequence = nullptr;
+        g_sequenceNumber = -1;
+        g_loadingState = -1;
+        g_loadingFinished.store(true, std::memory_order_release);
+        g_pendingSounds.clear();
+        reset_active_sounds();
+        g_gameplayRenderEnabled = false;
+        for (u8 i = 0; i < 8; ++i)
+            queue_command(0x02, i);
+        return;
+    }
+
+    const std::size_t index = static_cast<std::size_t>(musicNumber);
+    if (index >= SoundDataTable.size())
+        return;
+
+    g_sequence = &SoundDataTable[index];
+    g_sequenceNumber = musicNumber;
+    g_loadingState = 0;
+    g_loadingFinished.store(false, std::memory_order_release);
+    g_pendingSounds.clear();
+    reset_active_sounds();
+    g_gameplayRenderEnabled = true;
+    ensure_output_stream();
+
+    lagi::platform::logging::writef(
+        "[AzelAudio:%llu] worker accepted sequence=%d mode=%d cpu=%d\n",
+        next_audio_trace(),
+        static_cast<int>(musicNumber),
+        static_cast<int>(mode),
+        sceKernelGetCpuId());
+}
+
+void worker_fade_all()
+{
+    for (u8 i = 0; i < 8; ++i) {
+        queue_command(0x02, i);
+        queue_command(0x05, i, 0x7f, 0);
+    }
+
+    // Module/movie transitions call this immediately before movie ownership.
+    // Stop synthesizing into the shared PCM service until the next bank load.
+    g_gameplayRenderEnabled = false;
+}
+
+void process_audio_events()
+{
+    AudioEvent event{};
+    while (pop_audio_event(event)) {
+        switch (event.type) {
+        case AudioEventType::LoadBanks:
+            worker_load_banks(event.a, event.b);
+            break;
+        case AudioEventType::StopBanks:
+            worker_load_banks(-1, event.b);
+            break;
+        case AudioEventType::Sound:
+            if (g_pendingSounds.size() >= 32)
+                g_pendingSounds.erase(g_pendingSounds.begin());
+            g_pendingSounds.push_back(
+                PendingSound{event.a, event.b, event.c, event.d});
+            break;
+        case AudioEventType::FadeAll:
+            worker_fade_all();
+            break;
+        }
+    }
+}
+
+int audio_worker_thread(SceSize, void*)
+{
+    g_audioWorkerRunning.store(true, std::memory_order_release);
+    lagi::platform::logging::writef(
+        "[AzelAudio:%llu] SCSP worker started cpu=%d targetQueue=%u\n",
+        next_audio_trace(),
+        sceKernelGetCpuId(),
+        kTargetQueuedFrames);
+
+    while (!g_audioWorkerStop.load(std::memory_order_acquire)) {
+        process_audio_events();
+
+        service_driver_commands();
+        service_pending_sounds();
+        service_driver_commands();
+
+        if (g_gameplayRenderEnabled && g_sequence) {
+            render_scsp_audio();
+        } else {
+            sceKernelDelayThread(1000);
+        }
+    }
+
+    g_audioWorkerRunning.store(false, std::memory_order_release);
+    return 0;
+}
+
+bool start_audio_worker()
+{
+    if (g_audioWorkerThread >= 0)
+        return true;
+
+    g_audioWorkerStop.store(false, std::memory_order_release);
+    g_audioWorkerThread = sceKernelCreateThread(
+        "LagiSCSPWorker",
+        audio_worker_thread,
+        0x10000100,
+        128u * 1024u,
+        0,
+        SCE_KERNEL_CPU_MASK_USER_2,
+        nullptr);
+    if (g_audioWorkerThread < 0) {
+        lagi::platform::logging::writef(
+            "[AzelAudio:%llu] SCSP worker create FAILED rc=%d\n",
+            next_audio_trace(),
+            static_cast<int>(g_audioWorkerThread));
+        return false;
+    }
+
+    const int startResult =
+        sceKernelStartThread(g_audioWorkerThread, 0, nullptr);
+    if (startResult < 0) {
+        lagi::platform::logging::writef(
+            "[AzelAudio:%llu] SCSP worker start FAILED rc=%d\n",
+            next_audio_trace(),
+            startResult);
+        sceKernelDeleteThread(g_audioWorkerThread);
+        g_audioWorkerThread = -1;
+        return false;
+    }
+
+    return true;
 }
 
 void trace_sequence_config(s8 musicNumber, s8 mode)
