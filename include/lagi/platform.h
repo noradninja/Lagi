@@ -14,6 +14,9 @@ struct FrontendRbg0State {
     std::uint32_t planeB[16];
     std::uint32_t rpmd;
     std::uint32_t plsz;
+    std::uint32_t chctlb;
+    std::uint32_t pncr;
+    std::uint32_t craofb;
     std::uint32_t ktctl;
     std::uint32_t ktaof;
     std::uint32_t wctlc;
