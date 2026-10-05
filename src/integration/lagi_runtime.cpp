@@ -690,6 +690,29 @@ void runtime_frame()
                         "idx=%04X addr=%05X raw=%08X k=%f\n",
                         x, y, accum, index, addr, raw,
                         static_cast<float>(k) / 65536.0f);
+
+                    const unsigned int noOffsetAddr =
+                        (index * coefficientSizeB) & 0x7FFFFu;
+                    const std::uint32_t rawNoOffset =
+                        static_cast<std::uint32_t>(
+                            liveVram[noOffsetAddr]) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(noOffsetAddr + 1u) & 0x7FFFFu]) << 8) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(noOffsetAddr + 2u) & 0x7FFFFu]) << 16) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(noOffsetAddr + 3u) & 0x7FFFFu]) << 24);
+                    std::int32_t kNoOffset =
+                        static_cast<std::int32_t>(
+                            rawNoOffset & 0x00FFFFFFu);
+                    if ((kNoOffset & 0x00800000) != 0)
+                        kNoOffset |=
+                            static_cast<std::int32_t>(0xFF000000u);
+                    lagi::platform::logging::writef(
+                        "[D5RBGCoeffB0] xy=%u,%u addr=%05X "
+                        "raw=%08X k=%f\n",
+                        x, y, noOffsetAddr, rawNoOffset,
+                        static_cast<float>(kNoOffset) / 65536.0f);
                 }
             }
 
