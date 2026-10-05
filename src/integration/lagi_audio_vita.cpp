@@ -8,9 +8,13 @@
 
 #include <array>
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <vector>
+
+#include <psp2/kernel/cpu.h>
+#include <psp2/kernel/threadmgr.h>
 
 extern "C" {
 #include "ao.h"
@@ -42,7 +46,25 @@ struct ActiveSound {
     s16 volume = 0x80;
 };
 
-unsigned long long g_audioTraceSerial = 0;
+enum class AudioEventType : std::uint8_t {
+    LoadBanks,
+    StopBanks,
+    Sound,
+    FadeAll
+};
+
+struct AudioEvent {
+    AudioEventType type = AudioEventType::Sound;
+    s32 a = 0;
+    s32 b = 0;
+    s32 c = 0;
+    s32 d = 0;
+};
+
+constexpr unsigned kAudioEventCapacity = 256;
+constexpr unsigned kAudioEventMask = kAudioEventCapacity - 1;
+
+std::atomic<unsigned long long> g_audioTraceSerial{0};
 bool g_scspInitialized = false;
 const sSequenceConfig* g_sequence = nullptr;
 s32 g_sequenceNumber = -1;
@@ -53,13 +75,51 @@ std::array<ActiveSound, 8> g_activeSounds{};
 std::vector<ScspCommand> g_commands;
 std::vector<PendingSound> g_pendingSounds;
 std::array<std::int16_t, kRenderChunkFrames * 2> g_mixBuffer{};
+std::array<AudioEvent, kAudioEventCapacity> g_audioEvents{};
+std::atomic<unsigned> g_audioEventWrite{0};
+std::atomic<unsigned> g_audioEventRead{0};
+std::atomic<bool> g_audioWorkerStop{false};
+std::atomic<bool> g_audioWorkerRunning{false};
+std::atomic<bool> g_loadingFinished{true};
+std::array<std::atomic<s32>, 8> g_activeSoundIds{};
+SceUID g_audioWorkerThread = -1;
+bool g_gameplayRenderEnabled = false;
 unsigned g_updateSoundCalls = 0;
 unsigned g_driverServiceCalls = 0;
 unsigned g_audioDiagBudget = 24;
 
 unsigned long long next_audio_trace()
 {
-    return ++g_audioTraceSerial;
+    return g_audioTraceSerial.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+
+bool push_audio_event(const AudioEvent& event)
+{
+    const unsigned write = g_audioEventWrite.load(std::memory_order_relaxed);
+    const unsigned read = g_audioEventRead.load(std::memory_order_acquire);
+    if (write - read >= kAudioEventCapacity) {
+        lagi::platform::logging::writef(
+            "[AzelAudio:%llu] audio event queue overflow type=%u\n",
+            next_audio_trace(),
+            static_cast<unsigned>(event.type));
+        return false;
+    }
+
+    g_audioEvents[write & kAudioEventMask] = event;
+    g_audioEventWrite.store(write + 1, std::memory_order_release);
+    return true;
+}
+
+bool pop_audio_event(AudioEvent& event)
+{
+    const unsigned read = g_audioEventRead.load(std::memory_order_relaxed);
+    const unsigned write = g_audioEventWrite.load(std::memory_order_acquire);
+    if (read == write)
+        return false;
+
+    event = g_audioEvents[read & kAudioEventMask];
+    g_audioEventRead.store(read + 1, std::memory_order_release);
+    return true;
 }
 
 void reset_active_sounds()
@@ -68,6 +128,8 @@ void reset_active_sounds()
         sound.soundIndex = -1;
         sound.volume = 0x80;
     }
+    for (auto& id : g_activeSoundIds)
+        id.store(-1, std::memory_order_release);
 }
 
 void ensure_output_stream()
@@ -325,6 +387,8 @@ void submit_sound_request(const PendingSound& request)
             static_cast<u8>(sequenceDataBank),
             static_cast<u8>(soundNumber));
         active.soundIndex = static_cast<s16>(request.soundIndex);
+        g_activeSoundIds[static_cast<unsigned>(sequenceDataBank)].store(
+            request.soundIndex, std::memory_order_release);
 
         lagi::platform::logging::writef(
             "[AzelAudio:%llu] SCSP start sound=%d control=%d seqBank=%d seqSound=%d vol=%d\n",
