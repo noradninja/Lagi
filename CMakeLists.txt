@@ -1302,7 +1302,7 @@ add_executable(lagi
  extern/Azel/ThirdParty/aosdk/eng_ssf/m68kops.c
  extern/Azel/ThirdParty/aosdk/eng_ssf/sat_hw.c
  extern/Azel/ThirdParty/aosdk/eng_ssf/scsp.c
- extern/Azel/ThirdParty/aosdk/eng_ssf/scspdsp.c
+ src/integration/lagi_scspdsp_predecoded.c
  src/movie/film_demuxer.cpp
  src/movie/cinepak_decoder.cpp
  src/movie/cinepak_sgx_decoder.cpp
