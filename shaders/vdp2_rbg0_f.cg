@@ -157,6 +157,6 @@ float4 main(
     const float mapY = k * rotatedY + rbg0Transform1.w;
 
     return sampleRbg0D5Cell(
-        raw, mapX, mapY,
+        raw, mapX, mapY, rbg0Info.w,
         rbg0Plane0, rbg0Plane1, rbg0Plane2, rbg0Plane3);
 }
