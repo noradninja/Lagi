@@ -130,7 +130,7 @@ sSaturnPtr player_sound_bank_config(const sSequenceConfig* config)
 
 bool load_sound_file_list(sSaturnPtr config)
 {
-    if (!config)
+    if (config.isNull())
         return false;
 
     while (readSaturnU32(config)) {
@@ -281,7 +281,7 @@ void submit_sound_request(const PendingSound& request)
     if (request.bankIndex == 1) {
         const sSaturnPtr config =
             sound_config_for(static_cast<s16>(request.soundIndex));
-        if (!config)
+        if (config.isNull())
             return;
 
         const s8 sequenceDataBank = readSaturnS8(config + 0);
