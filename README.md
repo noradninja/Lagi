@@ -38,7 +38,7 @@ Working systems include:
 - elevator choice flow through the script-driven fade and two-part Cinepak FMV
 - Sega FILM demuxing, Phase 1 CPU Cinepak reconstruction, and native SceAudio PCM output
 - Edge's original textured/stippled VDP1 mesh shadow
-- Azel-driven fade state bridged to Neptune color-offset presentation
+- Saturn-accurate Azel-driven black/white fade direction, timing, and color-offset presentation bridged through Neptune
 - native GXM 2x multisample antialiasing
 - stable 30 Hz presentation
 
@@ -144,7 +144,7 @@ Azel's live VDP2 state supplies front-end and in-game presentation. Neptune tran
 - the animated lower cinematic matte from Azel's vertical line-scroll table
 - live CRAM palette data for the VDP2 layers and bank-color VDP1 UI sprites
 
-Composition preserves Azel's authored layer relationships while allowing decoded presentation assets to use hardware filtering. Front-end/menu text is reconstructed into a 352x224 RGBA text layer and composited by SGX with linear filtering; decoded VDP1 selector/cursor sprites are likewise linearly filtered after palette decode. Azel remains responsible for the strings, window contents, choice state, cursor animation, and scripted timing.
+Composition preserves Azel's authored layer relationships while allowing decoded presentation assets to use hardware filtering. Front-end/menu text is reconstructed into a 352x224 RGBA text layer and composited by SGX with linear filtering; decoded VDP1 selector/cursor sprites are likewise linearly filtered after palette decode. The title NBG0 artwork is decoded once into an RGBA presentation surface and then scaled by SGX with hardware linear filtering, avoiding repeated raw VDP2 decode work per output fragment. Azel remains responsible for the strings, window contents, choice state, cursor animation, fades, and scripted timing.
 
 ## Renderer diagnostic views
 
