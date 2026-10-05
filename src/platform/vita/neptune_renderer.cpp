@@ -2120,12 +2120,11 @@ bool movie_present_frame(
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_movieIndexUid));
 
-        // RPMD=3 can combine two rectangular/line windows with independent
-        // inside/outside selection. Build mutually-exclusive A/B scanline
-        // coverage on the CPU and keep the heavy RBG0 shader focused on the
-        // selected rotation parameter. Eight spans per scanline is comfortably
-        // above the maximum produced by two window intervals.
-        constexpr unsigned int kWindowMaxQuads = 224u * 8u;
+        // A Saturn line window can expose up to two horizontal spans on each
+        // of 224 scanlines (outside-window mode). Build that coverage as
+        // reusable textured geometry instead of branching/reading VRAM inside
+        // the RBG0 fragment shader.
+        constexpr unsigned int kWindowMaxQuads = 224u * 2u;
         g_vdp2WindowVertices = static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(
                 kWindowMaxQuads * 4u * sizeof(azel::DebugTextureVertex),
@@ -9560,278 +9559,209 @@ static bool renderMovieFrame()
                         indexCount) >= 0;
                 };
 
-                unsigned int parameterAIndexOffset = 0u;
-                unsigned int parameterAIndexCount = 6u;
-                unsigned int parameterBIndexOffset = 0u;
-                unsigned int parameterBIndexCount = 6u;
-                const azel::DebugTextureVertex* parameterVertices =
-                    g_movieVertices;
-                const std::uint16_t* parameterIndices =
-                    g_movieIndices;
-
-                if (rpmd == 3u &&
-                    g_vdp2WindowVertices && g_vdp2WindowIndices) {
-                    const auto* rawBytes =
-                        static_cast<const unsigned char*>(
-                            g_movieTextureData);
-                    const float displayAspect =
-                        static_cast<float>(viewerRenderWidth()) /
-                        static_cast<float>(viewerRenderHeight());
-                    const float xExtent =
-                        (4.0f / 3.0f) / displayAspect;
-
-                    struct RpWindow {
-                        bool enabled = false;
-                        bool drawInside = false;
-                        bool lineWindow = false;
-                        unsigned int lineAddress = 0u;
-                        int xStart = 0;
-                        int yStart = 0;
-                        int xEnd = 0;
-                        int yEnd = 0;
-                    };
-
-                    RpWindow windows[2]{};
-                    windows[0].enabled = (wctld & 0x2u) != 0u;
-                    windows[0].drawInside = (wctld & 0x1u) != 0u;
-                    windows[0].lineWindow =
-                        windows[0].enabled && (lineWindowMask & 0x1u) != 0u;
-                    windows[0].lineAddress =
-                        static_cast<unsigned int>(g_movieRbg0Ctrl[5]);
-                    windows[0].xStart =
-                        static_cast<int>(g_movieRbg0Ctrl[8]);
-                    windows[0].yStart =
-                        static_cast<int>(g_movieRbg0Ctrl[9]);
-                    windows[0].xEnd =
-                        static_cast<int>(g_movieRbg0Ctrl[10]);
-                    windows[0].yEnd =
-                        static_cast<int>(g_movieRbg0Ctrl[11]);
-
-                    windows[1].enabled = (wctld & 0x8u) != 0u;
-                    windows[1].drawInside = (wctld & 0x4u) != 0u;
-                    windows[1].lineWindow =
-                        windows[1].enabled && (lineWindowMask & 0x2u) != 0u;
-                    windows[1].lineAddress =
-                        static_cast<unsigned int>(g_movieRbg0Ctrl[6]);
-                    windows[1].xStart =
-                        static_cast<int>(g_movieRbg0Ctrl[12]);
-                    windows[1].yStart =
-                        static_cast<int>(g_movieRbg0Ctrl[13]);
-                    windows[1].xEnd =
-                        static_cast<int>(g_movieRbg0Ctrl[14]);
-                    windows[1].yEnd =
-                        static_cast<int>(g_movieRbg0Ctrl[15]);
-
-                    constexpr unsigned int kMaxWindowQuads = 224u * 8u;
-                    unsigned int quadCount = 0u;
-                    unsigned int aFirstQuad = 0u;
-                    unsigned int aQuadCount = 0u;
-                    unsigned int bFirstQuad = 0u;
-                    unsigned int bQuadCount = 0u;
-
-                    auto emitSpan =
-                        [&](bool useB, int y, int x0, int x1) {
-                        if (quadCount >= kMaxWindowQuads)
-                            return;
-                        x0 = std::clamp(x0, 0, 351);
-                        x1 = std::clamp(x1, 0, 351);
-                        if (x1 < x0)
-                            return;
-
-                        const unsigned int thisQuad = quadCount++;
-                        if (useB) {
-                            if (bQuadCount == 0u)
-                                bFirstQuad = thisQuad;
-                            ++bQuadCount;
-                        } else {
-                            if (aQuadCount == 0u)
-                                aFirstQuad = thisQuad;
-                            ++aQuadCount;
-                        }
-
-                        const float u0 =
-                            static_cast<float>(x0) / 352.0f;
-                        const float u1 =
-                            static_cast<float>(x1 + 1) / 352.0f;
-                        const float v0 =
-                            static_cast<float>(y) / 224.0f;
-                        const float v1 =
-                            static_cast<float>(y + 1) / 224.0f;
-                        const float px0 =
-                            -xExtent + 2.0f * xExtent * u0;
-                        const float px1 =
-                            -xExtent + 2.0f * xExtent * u1;
-                        const float py0 = 1.0f - 2.0f * v0;
-                        const float py1 = 1.0f - 2.0f * v1;
-
-                        const unsigned int base = thisQuad * 4u;
-                        g_vdp2WindowVertices[base + 0u] =
-                            {px0, py0, 0.5f, u0, v0};
-                        g_vdp2WindowVertices[base + 1u] =
-                            {px1, py0, 0.5f, u1, v0};
-                        g_vdp2WindowVertices[base + 2u] =
-                            {px0, py1, 0.5f, u0, v1};
-                        g_vdp2WindowVertices[base + 3u] =
-                            {px1, py1, 0.5f, u1, v1};
-
-                        const unsigned int ii = thisQuad * 6u;
-                        g_vdp2WindowIndices[ii + 0u] =
-                            static_cast<std::uint16_t>(base + 0u);
-                        g_vdp2WindowIndices[ii + 1u] =
-                            static_cast<std::uint16_t>(base + 1u);
-                        g_vdp2WindowIndices[ii + 2u] =
-                            static_cast<std::uint16_t>(base + 2u);
-                        g_vdp2WindowIndices[ii + 3u] =
-                            static_cast<std::uint16_t>(base + 2u);
-                        g_vdp2WindowIndices[ii + 4u] =
-                            static_cast<std::uint16_t>(base + 1u);
-                        g_vdp2WindowIndices[ii + 5u] =
-                            static_cast<std::uint16_t>(base + 3u);
-                    };
-
-                    auto refreshLineWindow =
-                        [&](RpWindow& window, int y) {
-                        if (!window.lineWindow)
-                            return;
-                        const unsigned int addr =
-                            (window.lineAddress +
-                             static_cast<unsigned int>(y) * 4u) &
-                            0x7FFFFu;
-                        const unsigned int xsRaw =
-                            static_cast<unsigned int>(rawBytes[addr]) |
-                            (static_cast<unsigned int>(
-                                rawBytes[(addr + 1u) & 0x7FFFFu]) << 8);
-                        const unsigned int xeRaw =
-                            static_cast<unsigned int>(
-                                rawBytes[(addr + 2u) & 0x7FFFFu]) |
-                            (static_cast<unsigned int>(
-                                rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
-                        if (xeRaw == 0xFFFFu) {
-                            // Match Azel's renderer_vdp2 RPMD=3 behavior.
-                            window.xStart = 0;
-                            window.xEnd = 0;
-                        } else {
-                            window.xStart =
-                                static_cast<int>((xsRaw >> 1) & 0x1FFu);
-                            window.xEnd =
-                                static_cast<int>((xeRaw >> 1) & 0x1FFu);
-                        }
-                    };
-
-                    auto testWindow =
-                        [](const RpWindow& window, int x, int y) -> int {
-                        if (!window.enabled)
-                            return 3; // disabled sentinel used by Azel
-                        const bool inside =
-                            x >= window.xStart && x <= window.xEnd &&
-                            y >= window.yStart && y <= window.yEnd;
-                        if (window.drawInside)
-                            return inside ? 1 : 0;
-                        return inside ? 0 : 1;
-                    };
-
-                    // Emit A spans first and B spans second so each parameter
-                    // can be submitted with one contiguous index range.
-                    for (unsigned int pass = 0u; pass < 2u; ++pass) {
-                        const bool emitB = pass != 0u;
-                        for (int y = 0; y < 224; ++y) {
-                            RpWindow lineWindows[2] = {
-                                windows[0], windows[1]
-                            };
-                            refreshLineWindow(lineWindows[0], y);
-                            refreshLineWindow(lineWindows[1], y);
-
-                            int runStart = -1;
-                            for (int x = 0; x <= 352; ++x) {
-                                bool useB = false;
-                                if (x < 352) {
-                                    const int w0 =
-                                        testWindow(lineWindows[0], x, y);
-                                    const int w1 =
-                                        testWindow(lineWindows[1], x, y);
-                                    int windowResult = 0;
-                                    if (w0 & 2)
-                                        windowResult = w1 & 1;
-                                    else if (w1 & 2)
-                                        windowResult = w0 & 1;
-                                    else if (wctld & 0x80u)
-                                        windowResult = (w0 || w1) ? 1 : 0;
-                                    else
-                                        windowResult = (w0 && w1) ? 1 : 0;
-                                    useB = !windowResult;
-                                }
-
-                                const bool belongs =
-                                    x < 352 && useB == emitB;
-                                if (belongs && runStart < 0) {
-                                    runStart = x;
-                                } else if (!belongs && runStart >= 0) {
-                                    emitSpan(
-                                        emitB, y, runStart, x - 1);
-                                    runStart = -1;
-                                }
-                            }
-                        }
-                    }
-
-                    parameterVertices = g_vdp2WindowVertices;
-                    parameterIndices = g_vdp2WindowIndices;
-                    parameterAIndexOffset = aFirstQuad * 6u;
-                    parameterAIndexCount = aQuadCount * 6u;
-                    parameterBIndexOffset = bFirstQuad * 6u;
-                    parameterBIndexCount = bQuadCount * 6u;
-
-                    static bool loggedRpmd3Coverage = false;
-                    if (!loggedRpmd3Coverage) {
-                        logging::writef(
-                            "[NeptuneVDP2] RPMD3 exact window coverage "
-                            "A=%u spans B=%u spans WCTLD=%04X "
-                            "lineMask=%u\n",
-                            aQuadCount, bQuadCount, wctld,
-                            lineWindowMask);
-                        loggedRpmd3Coverage = true;
-                    }
-                }
-
-                rbgSubmitted = true;
-                if (rpmd == 1u) {
+                if (rpmd == 1u || rpmd == 3u) {
+                    // Parameter B is the base for RPMD=3.
                     rbgSubmitted = submitRbgParameter(
                         g_movieRbg0PlanesB,
                         g_movieRbg0TransformB,
                         g_movieRbg0CoefficientB,
                         0x100u, 0x200u, 8u,
                         g_movieVertices, g_movieIndices, 6u);
-                } else if (rpmd == 3u) {
-                    bool aSubmitted = true;
-                    bool bSubmitted = true;
-                    if (parameterAIndexCount != 0u) {
-                        aSubmitted = submitRbgParameter(
-                            g_movieRbg0Planes,
-                            g_movieRbg0TransformA,
-                            g_movieRbg0CoefficientA,
-                            0x1u, 0x2u, 0u,
-                            parameterVertices,
-                            parameterIndices + parameterAIndexOffset,
-                            parameterAIndexCount);
+                }
+
+                unsigned int parameterAIndexCount = 6u;
+                const azel::DebugTextureVertex* parameterAVertices =
+                    g_movieVertices;
+                const std::uint16_t* parameterAIndices =
+                    g_movieIndices;
+
+                if (rbgSubmitted && rpmd == 3u &&
+                    g_vdp2WindowVertices && g_vdp2WindowIndices) {
+                    unsigned int lineAddress = 0u;
+                    bool drawInside = true;
+                    int yStart = 0;
+                    int yEnd = 223;
+                    bool haveSingleLineWindow = false;
+
+                    if ((wctld & 0x8u) != 0u &&
+                        (lineWindowMask & 0x2u) != 0u) {
+                        lineAddress =
+                            static_cast<unsigned int>(g_movieRbg0Ctrl[6]);
+                        drawInside = (wctld & 0x4u) != 0u;
+                        yStart = static_cast<int>(g_movieRbg0Ctrl[13]);
+                        yEnd = static_cast<int>(g_movieRbg0Ctrl[15]);
+                        haveSingleLineWindow = true;
+                    } else if ((wctld & 0x2u) != 0u &&
+                               (lineWindowMask & 0x1u) != 0u) {
+                        lineAddress =
+                            static_cast<unsigned int>(g_movieRbg0Ctrl[5]);
+                        drawInside = (wctld & 0x1u) != 0u;
+                        yStart = static_cast<int>(g_movieRbg0Ctrl[9]);
+                        yEnd = static_cast<int>(g_movieRbg0Ctrl[11]);
+                        haveSingleLineWindow = true;
                     }
-                    if (parameterBIndexCount != 0u) {
-                        bSubmitted = submitRbgParameter(
-                            g_movieRbg0PlanesB,
-                            g_movieRbg0TransformB,
-                            g_movieRbg0CoefficientB,
-                            0x100u, 0x200u, 8u,
-                            parameterVertices,
-                            parameterIndices + parameterBIndexOffset,
-                            parameterBIndexCount);
+
+                    if (haveSingleLineWindow) {
+                        const auto* rawBytes =
+                            static_cast<const unsigned char*>(
+                                g_movieTextureData);
+
+                        // Hardware bring-up diagnostic: D5 currently uses
+                        // RPMD=3 with line window 1. Preserve the last
+                        // hardware-good B-base/A-overlay compositor while we
+                        // inspect the authored line-window coverage before
+                        // changing parameter ownership semantics.
+                        static bool loggedD5RpWindow = false;
+                        if (!loggedD5RpWindow) {
+                            logging::writef(
+                                "[NeptuneVDP2] RPMD3 window WCTLD=%04X "
+                                "mask=%u addr=%05X y=%d..%d inside=%u\n",
+                                wctld, lineWindowMask, lineAddress,
+                                yStart, yEnd, drawInside ? 1u : 0u);
+                            const int sampleY[] = {
+                                0, 32, 64, 96, 112, 128, 160, 192, 223
+                            };
+                            for (unsigned int si = 0;
+                                 si < sizeof(sampleY) / sizeof(sampleY[0]);
+                                 ++si) {
+                                const int sy = sampleY[si];
+                                const unsigned int addr =
+                                    (lineAddress +
+                                     static_cast<unsigned int>(sy) * 4u) &
+                                    0x7FFFFu;
+                                const unsigned int xsRaw =
+                                    static_cast<unsigned int>(rawBytes[addr]) |
+                                    (static_cast<unsigned int>(
+                                        rawBytes[(addr + 1u) & 0x7FFFFu]) << 8);
+                                const unsigned int xeRaw =
+                                    static_cast<unsigned int>(
+                                        rawBytes[(addr + 2u) & 0x7FFFFu]) |
+                                    (static_cast<unsigned int>(
+                                        rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
+                                logging::writef(
+                                    "[NeptuneVDP2] LW1 y=%d raw=%04X..%04X "
+                                    "x=%u..%u\n",
+                                    sy, xsRaw, xeRaw,
+                                    (xsRaw >> 1) & 0x1FFu,
+                                    (xeRaw >> 1) & 0x1FFu);
+                            }
+                            loggedD5RpWindow = true;
+                        }
+
+                        const float displayAspect =
+                            static_cast<float>(viewerRenderWidth()) /
+                            static_cast<float>(viewerRenderHeight());
+                        const float xExtent =
+                            (4.0f / 3.0f) / displayAspect;
+
+                        unsigned int quadCount = 0u;
+                        auto emitSpan =
+                            [&](int y, int x0, int x1) {
+                            if (quadCount >= 224u * 2u)
+                                return;
+                            x0 = std::clamp(x0, 0, 351);
+                            x1 = std::clamp(x1, 0, 351);
+                            if (x1 < x0)
+                                return;
+
+                            const float u0 =
+                                static_cast<float>(x0) / 352.0f;
+                            const float u1 =
+                                static_cast<float>(x1 + 1) / 352.0f;
+                            const float v0 =
+                                static_cast<float>(y) / 224.0f;
+                            const float v1 =
+                                static_cast<float>(y + 1) / 224.0f;
+                            const float px0 =
+                                -xExtent + 2.0f * xExtent * u0;
+                            const float px1 =
+                                -xExtent + 2.0f * xExtent * u1;
+                            const float py0 = 1.0f - 2.0f * v0;
+                            const float py1 = 1.0f - 2.0f * v1;
+
+                            const unsigned int base = quadCount * 4u;
+                            g_vdp2WindowVertices[base + 0u] =
+                                {px0, py0, 0.5f, u0, v0};
+                            g_vdp2WindowVertices[base + 1u] =
+                                {px1, py0, 0.5f, u1, v0};
+                            g_vdp2WindowVertices[base + 2u] =
+                                {px0, py1, 0.5f, u0, v1};
+                            g_vdp2WindowVertices[base + 3u] =
+                                {px1, py1, 0.5f, u1, v1};
+
+                            const unsigned int ii = quadCount * 6u;
+                            g_vdp2WindowIndices[ii + 0u] =
+                                static_cast<std::uint16_t>(base + 0u);
+                            g_vdp2WindowIndices[ii + 1u] =
+                                static_cast<std::uint16_t>(base + 1u);
+                            g_vdp2WindowIndices[ii + 2u] =
+                                static_cast<std::uint16_t>(base + 2u);
+                            g_vdp2WindowIndices[ii + 3u] =
+                                static_cast<std::uint16_t>(base + 2u);
+                            g_vdp2WindowIndices[ii + 4u] =
+                                static_cast<std::uint16_t>(base + 1u);
+                            g_vdp2WindowIndices[ii + 5u] =
+                                static_cast<std::uint16_t>(base + 3u);
+                            ++quadCount;
+                        };
+
+                        for (int y = 0; y < 224; ++y) {
+                            const unsigned int addr =
+                                (lineAddress +
+                                 static_cast<unsigned int>(y) * 4u) &
+                                0x7FFFFu;
+                            const unsigned int xsRaw =
+                                static_cast<unsigned int>(rawBytes[addr]) |
+                                (static_cast<unsigned int>(
+                                    rawBytes[(addr + 1u) & 0x7FFFFu]) << 8);
+                            const unsigned int xeRaw =
+                                static_cast<unsigned int>(
+                                    rawBytes[(addr + 2u) & 0x7FFFFu]) |
+                                (static_cast<unsigned int>(
+                                    rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
+
+                            int xs = 0;
+                            int xe = 0;
+                            if (xeRaw != 0xFFFFu) {
+                                xs = static_cast<int>((xsRaw >> 1) & 0x1FFu);
+                                xe = static_cast<int>((xeRaw >> 1) & 0x1FFu);
+                            }
+
+                            const bool yInside =
+                                y >= yStart && y <= yEnd;
+                            if (drawInside) {
+                                if (yInside)
+                                    emitSpan(y, xs, xe);
+                            } else {
+                                if (!yInside) {
+                                    emitSpan(y, 0, 351);
+                                } else {
+                                    emitSpan(y, 0, xs - 1);
+                                    emitSpan(y, xe + 1, 351);
+                                }
+                            }
+                        }
+
+                        if (quadCount) {
+                            parameterAVertices = g_vdp2WindowVertices;
+                            parameterAIndices = g_vdp2WindowIndices;
+                            parameterAIndexCount = quadCount * 6u;
+                        } else {
+                            parameterAIndexCount = 0u;
+                        }
                     }
-                    rbgSubmitted = aSubmitted && bSubmitted;
-                } else {
+                }
+
+                if (rbgSubmitted && rpmd != 1u &&
+                    parameterAIndexCount != 0u) {
                     rbgSubmitted = submitRbgParameter(
                         g_movieRbg0Planes,
                         g_movieRbg0TransformA,
                         g_movieRbg0CoefficientA,
                         0x1u, 0x2u, 0u,
-                        g_movieVertices, g_movieIndices, 6u);
+                        parameterAVertices,
+                        parameterAIndices,
+                        parameterAIndexCount);
                 }
 
                 // RBG0 color offset is CLOFEN bit 4 on Saturn. D5 currently
