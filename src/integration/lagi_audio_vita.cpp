@@ -1,5 +1,6 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/platform.h"
+#include "lagi/disc_image.h"
 #include "audio/soundDriver.h"
 #include "audio/soundDataTable.h"
 #include "common.h"
@@ -26,8 +27,8 @@ extern "C" {
 namespace {
 
 constexpr unsigned kScspRate = 44100;
-constexpr unsigned kTargetQueuedFrames = 4096;
-constexpr unsigned kRenderChunkFrames = 1024;
+constexpr unsigned kTargetQueuedFrames = 2048;
+constexpr unsigned kRenderChunkFrames = 256;
 constexpr int kM68kCyclesPerSample = (11300000 / 60) / 735;
 
 struct ScspCommand {
@@ -84,7 +85,7 @@ std::atomic<bool> g_loadingFinished{true};
 std::array<std::atomic<s32>, 8> g_activeSoundIds{};
 SceUID g_audioWorkerThread = -1;
 bool g_gameplayRenderEnabled = false;
-unsigned g_updateSoundCalls = 0;
+std::atomic<unsigned> g_updateSoundCalls{0};
 unsigned g_driverServiceCalls = 0;
 unsigned g_audioDiagBudget = 24;
 
@@ -212,18 +213,24 @@ bool load_sound_file_list(sSaturnPtr config)
         }
 
         const u32 offset = destination - 0x25A00000u;
-        if (loadFile(filename.c_str(), sat_ram + offset, 0) < 0) {
+        std::vector<std::uint8_t> data;
+        if (!lagi::disc::read_file(filename.c_str(), data) ||
+            data.empty() ||
+            static_cast<std::size_t>(offset) + data.size() > sizeof(sat_ram)) {
             lagi::platform::logging::writef(
-                "[AzelAudio:%llu] SCSP missing bank file=%s dest=%05X\n",
+                "[AzelAudio:%llu] SCSP missing/oversize bank file=%s dest=%05X size=%u\n",
                 next_audio_trace(), filename.c_str(),
-                static_cast<unsigned>(offset));
+                static_cast<unsigned>(offset),
+                static_cast<unsigned>(data.size()));
             return false;
         }
 
+        std::memcpy(sat_ram + offset, data.data(), data.size());
         lagi::platform::logging::writef(
-            "[AzelAudio:%llu] SCSP loaded %s -> %05X\n",
+            "[AzelAudio:%llu] SCSP loaded %s -> %05X bytes=%u\n",
             next_audio_trace(), filename.c_str(),
-            static_cast<unsigned>(offset));
+            static_cast<unsigned>(offset),
+            static_cast<unsigned>(data.size()));
         config += 0xC;
     }
     return true;
@@ -310,7 +317,7 @@ void service_driver_commands()
         lagi::platform::logging::writef(
             "[AzelAudioDiag] service=%u update=%u load=%d pc=%06X flag4E0=%02X flag4E1=%02X cmds=%u pending=%u queued=%u\n",
             g_driverServiceCalls,
-            g_updateSoundCalls,
+            g_updateSoundCalls.load(std::memory_order_relaxed),
             static_cast<int>(g_loadingState),
             static_cast<unsigned>(m68k_get_reg(nullptr, M68K_REG_PC)),
             static_cast<unsigned>(timing),
@@ -573,6 +580,10 @@ int audio_worker_thread(SceSize, void*)
 
         if (g_gameplayRenderEnabled && g_sequence) {
             render_scsp_audio();
+            if (lagi::platform::audio::queued_pcm_frames() >=
+                kTargetQueuedFrames) {
+                sceKernelDelayThread(1000);
+            }
         } else {
             sceKernelDelayThread(1000);
         }
@@ -697,7 +708,7 @@ void updateSound()
     // Preserve Azel's frame-level call surface, but never synthesize audio on
     // the game thread. The worker continuously services queued commands and
     // keeps the native PCM ring filled.
-    ++g_updateSoundCalls;
+    g_updateSoundCalls.fetch_add(1, std::memory_order_relaxed);
 }
 
 void loadSoundBanks(s8 musicNumber, s8 mode)
@@ -710,6 +721,8 @@ void loadSoundBanks(s8 musicNumber, s8 mode)
         : AudioEventType::LoadBanks;
     event.a = static_cast<s32>(musicNumber);
     event.b = static_cast<s32>(mode);
+    g_loadingFinished.store(
+        musicNumber < 0, std::memory_order_release);
     push_audio_event(event);
 }
 
