@@ -53,6 +53,9 @@ std::array<ActiveSound, 8> g_activeSounds{};
 std::vector<ScspCommand> g_commands;
 std::vector<PendingSound> g_pendingSounds;
 std::array<std::int16_t, kRenderChunkFrames * 2> g_mixBuffer{};
+unsigned g_updateSoundCalls = 0;
+unsigned g_driverServiceCalls = 0;
+unsigned g_audioDiagBudget = 24;
 
 unsigned long long next_audio_trace()
 {
@@ -235,9 +238,24 @@ void service_driver_commands()
     if (!g_scspInitialized)
         return;
 
+    ++g_driverServiceCalls;
     advance_loading_state();
 
     const u8 timing = static_cast<u8>(m68k_read_memory_8(0x4E0));
+    if (g_audioDiagBudget != 0 && (g_driverServiceCalls <= 12 || g_loadingState >= 0)) {
+        --g_audioDiagBudget;
+        lagi::platform::logging::writef(
+            "[AzelAudioDiag] service=%u update=%u load=%d pc=%06X flag4E0=%02X flag4E1=%02X cmds=%u pending=%u queued=%u\n",
+            g_driverServiceCalls,
+            g_updateSoundCalls,
+            static_cast<int>(g_loadingState),
+            static_cast<unsigned>(m68k_get_reg(nullptr, M68K_REG_PC)),
+            static_cast<unsigned>(timing),
+            static_cast<unsigned>(m68k_read_memory_8(0x4E1)),
+            static_cast<unsigned>(g_commands.size()),
+            static_cast<unsigned>(g_pendingSounds.size()),
+            static_cast<unsigned>(lagi::platform::audio::queued_pcm_frames()));
+    }
     if ((timing & 0x80u) != 0u || g_commands.empty())
         return;
 
@@ -366,12 +384,27 @@ void render_scsp_audio()
 
     while (lagi::platform::audio::queued_pcm_frames() <
            kTargetQueuedFrames) {
+        int peak = 0;
         for (unsigned i = 0; i < kRenderChunkFrames; ++i) {
             m68k_execute(kM68kCyclesPerSample);
             stereo_sample_t sample{};
             SCSP_Update(nullptr, nullptr, &sample);
             g_mixBuffer[i * 2 + 0] = sample.l;
             g_mixBuffer[i * 2 + 1] = sample.r;
+            const int al = sample.l < 0 ? -static_cast<int>(sample.l) : static_cast<int>(sample.l);
+            const int ar = sample.r < 0 ? -static_cast<int>(sample.r) : static_cast<int>(sample.r);
+            peak = std::max(peak, std::max(al, ar));
+        }
+
+        if (g_audioDiagBudget != 0) {
+            --g_audioDiagBudget;
+            lagi::platform::logging::writef(
+                "[AzelAudioDiag] render pc=%06X flag4E0=%02X peak=%d queuedBefore=%u load=%d\n",
+                static_cast<unsigned>(m68k_get_reg(nullptr, M68K_REG_PC)),
+                static_cast<unsigned>(m68k_read_memory_8(0x4E0)),
+                peak,
+                static_cast<unsigned>(lagi::platform::audio::queued_pcm_frames()),
+                static_cast<int>(g_loadingState));
         }
 
         const std::size_t written =
@@ -453,6 +486,17 @@ void updateSoundInterrupt()
 
 void updateSound()
 {
+    ++g_updateSoundCalls;
+    if (g_updateSoundCalls <= 8) {
+        lagi::platform::logging::writef(
+            "[AzelAudioDiag] updateSound call=%u seq=%d load=%d active=%d queued=%u\n",
+            g_updateSoundCalls,
+            static_cast<int>(g_sequenceNumber),
+            static_cast<int>(g_loadingState),
+            lagi::platform::audio::pcm_stream_active() ? 1 : 0,
+            static_cast<unsigned>(lagi::platform::audio::queued_pcm_frames()));
+    }
+
     service_driver_commands();
     service_pending_sounds();
     service_driver_commands();
