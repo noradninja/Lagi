@@ -181,6 +181,7 @@ static const SceGxmProgramParameter* g_vdp2Rbg0Transform0Param = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0Transform1Param = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0CoefficientParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0InfoParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0FormatParam = nullptr;
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
 static SceGxmFragmentProgram* g_meshTextureFragmentProgram = nullptr;
@@ -487,6 +488,7 @@ static float g_movieRbg0Planes[16] = {};
 static float g_movieRbg0PlanesB[16] = {};
 static float g_movieRbg0Ctrl[16] = {};
 static float g_movieRbg0Plsz = 0.0f;
+static float g_movieRbg0Format[4] = {};
 static float g_movieRbg0TransformA[8] = {};
 static float g_movieRbg0TransformB[8] = {};
 static float g_movieRbg0CoefficientA[4] = {};
@@ -2352,6 +2354,10 @@ void frontend_set_rbg0_state(const FrontendRbg0State& state)
     // coefficient/window data from the raw VRAM snapshot.
     g_movieRbg0Ctrl[0] = static_cast<float>(state.rpmd);
     g_movieRbg0Plsz = static_cast<float>(state.plsz);
+    g_movieRbg0Format[0] = static_cast<float>(state.chctlb);
+    g_movieRbg0Format[1] = static_cast<float>(state.pncr);
+    g_movieRbg0Format[2] = static_cast<float>(state.craofb);
+    g_movieRbg0Format[3] = static_cast<float>(state.plsz);
     g_movieRbg0Ctrl[1] = static_cast<float>(state.ktctl);
     g_movieRbg0Ctrl[2] = static_cast<float>(state.ktaof);
     g_movieRbg0Ctrl[3] = static_cast<float>(state.wctlc);
@@ -6914,10 +6920,14 @@ void show_game_presentation()
             g_vdp2Rbg0InfoParam =
                 sceGxmProgramFindParameterByName(
                     vdp2Rbg0FragmentGxp, "rbg0Info");
+            g_vdp2Rbg0FormatParam =
+                sceGxmProgramFindParameterByName(
+                    vdp2Rbg0FragmentGxp, "rbg0Format");
             if (!g_vdp2Rbg0Transform0Param ||
                 !g_vdp2Rbg0Transform1Param ||
                 !g_vdp2Rbg0CoefficientParam ||
-                !g_vdp2Rbg0InfoParam) {
+                !g_vdp2Rbg0InfoParam ||
+                !g_vdp2Rbg0FormatParam) {
                 logging::writef(
                     "[NeptuneVDP2] RBG0 compact uniforms unavailable; "
                     "disabling RBG0\n");
@@ -9548,6 +9558,10 @@ static bool renderMovieFrame()
                         rbgUniforms,
                         g_vdp2Rbg0InfoParam,
                         0, 4, rbgInfo);
+                    sceGxmSetUniformDataF(
+                        rbgUniforms,
+                        g_vdp2Rbg0FormatParam,
+                        0, 4, g_movieRbg0Format);
 
                     if (sceGxmSetVertexStream(
                             g_probeContext, 0, vertices) < 0)
