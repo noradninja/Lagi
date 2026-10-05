@@ -152,16 +152,18 @@ float4 main(
             rbg0Coefficient.x +
             rbg0Coefficient.y * y +
             rbg0Coefficient.z * x;
-        // KAst and its increments form a signed coefficient-table offset.
-        // Do not wrap the 16-bit integer index before applying KTAOF: negative
-        // DKAst/DKAx values are allowed to borrow across the KTAOF bank
-        // boundary. D5 parameter B relies on this to walk its coefficient
-        // image backwards from 0x46800 into lower VRAM addresses.
-        //
-        // readRbgCoefficient() performs the final 19-bit VRAM wrap.
-        const float coeffIndex = floor(accum);
+        // Match Azel's CPU RBG0 renderer exactly:
+        // when DKAx is non-zero, the coefficient accumulator directly
+        // addresses the per-pixel coefficient image and KTAOF is not added.
+        // KTAOF is only used by the scanline-constant coefficient path.
+        float coeffIndex = fmod(floor(accum), 65536.0f);
+        if (coeffIndex < 0.0f)
+            coeffIndex += 65536.0f;
+        const bool perPixelCoefficient =
+            abs(rbg0Coefficient.z) > 0.000001f;
         const float address =
-            rbg0Info.x + coeffIndex * rbg0Info.z;
+            (perPixelCoefficient ? 0.0f : rbg0Info.x) +
+            coeffIndex * rbg0Info.z;
         k = readRbgCoefficient(raw, address);
     }
 
