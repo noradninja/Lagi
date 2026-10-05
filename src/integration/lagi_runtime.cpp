@@ -259,6 +259,51 @@ bool runtime_init()
         "[AzelBoot] native azelInit/resetEngine complete; initial task active\n");
     return true;
 }
+namespace {
+
+void correct_reconstructed_fade_step(sFadeControlsChannel& channel)
+{
+    if (channel.m20_stopped != 0)
+        return;
+
+    bool corrected = false;
+    for (unsigned int i = 0; i < 3u; ++i) {
+        const std::int32_t current = channel.m0_color[i].asS32();
+        const std::int32_t target =
+            static_cast<std::int32_t>(channel.m18_targetColor[i]) << 16;
+        const std::int32_t step = channel.mC_colorStep[i].asS32();
+        const std::int64_t delta =
+            static_cast<std::int64_t>(target) -
+            static_cast<std::int64_t>(current);
+
+        // Upstream Azel currently reconstructs fadePalette() as
+        //     step = (current - target) / frames
+        // while updateFadeInterrupt() advances with
+        //     current += step.
+        // That walks away from the requested Saturn target until the final
+        // frame snaps to it. Preserve Azel's target and timing, but correct
+        // the reconstructed step direction at the platform boundary.
+        if ((delta > 0 && step < 0) || (delta < 0 && step > 0)) {
+            channel.mC_colorStep[i] =
+                fixedPoint::fromS32(-step);
+            corrected = true;
+        }
+    }
+
+    if (corrected) {
+        platform::logging::writef(
+            "[FadeCompat] corrected reconstructed fade step direction\n");
+    }
+}
+
+void correct_reconstructed_fade_steps()
+{
+    correct_reconstructed_fade_step(g_fadeControls.m0_fade0);
+    correct_reconstructed_fade_step(g_fadeControls.m24_fade1);
+}
+
+} // namespace
+
 void runtime_frame()
 {
     static unsigned int startupFrame = 0;
@@ -267,6 +312,9 @@ void runtime_frame()
     lagi::input_bridge::sync_to_azel();
 
     // Azel's Saturn VBlank normally advances fade state before the task pass.
+    // Correct the sign error in the current host reconstruction before the
+    // channel is advanced; Azel still owns the target color and frame count.
+    correct_reconstructed_fade_steps();
     updateFadeInterrupt();
 
     lagi::diagnostics::trace_fade_state();
