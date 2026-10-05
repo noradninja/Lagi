@@ -9265,9 +9265,9 @@ static void drawAzelColorOffsetForLayer(
     unsigned int layerBit,
     bool requireEnable)
 {
-    // CLOFEN/CLOFSL use the same per-layer bit assignment:
-    //   bit 6 SPRITE, bit 5 RBG0, bit 4 NBG0,
-    //   bit 3 NBG1, bit 2 NBG2, bit 1 NBG3, bit 0 BACK.
+    // Saturn VDP2 CLOFEN/CLOFSL bit assignment:
+    //   bit 6 SPRITE, bit 5 BACK, bit 4 RBG0,
+    //   bit 3 NBG3, bit 2 NBG2, bit 1 NBG1, bit 0 NBG0.
     //
     // Some front-end fade paths in the reconstructed Azel runtime clear
     // CLOFEN while their live fade channel still carries the intended
@@ -9329,8 +9329,8 @@ static void drawAzelFrontendFadeOffset()
     // front-end output, so apply the live channel as a fullscreen compatibility
     // pass. CLOFSL is normally zero in this path; use NBG0's select bit so the
     // A/B choice remains deterministic if Azel changes it.
-    constexpr unsigned int kNbg0Bit = 0x10u;
-    drawAzelColorOffsetForLayer(kNbg0Bit, false);
+    constexpr unsigned int kNbg0Bit = 0x01u;
+    drawAzelColorOffsetForLayer(kNbg0Bit, true);
 }
 
 static bool renderMovieFrame()
@@ -9706,11 +9706,11 @@ static bool renderMovieFrame()
                         parameterAIndexCount);
                 }
 
-                // D5 enables color offset on RBG0 (CLOFEN bit 5).
-                // Apply it now, while only RBG0 is in the target, so NBG/text
-                // and VDP1 UI remain unaffected just as on Saturn.
+                // RBG0 color offset is CLOFEN bit 4 on Saturn. D5 currently
+                // reports CLOFEN=0x20, which is BACK, so do not incorrectly
+                // tint the rotation plane when only the back screen is selected.
                 if (rbgSubmitted) {
-                    constexpr unsigned int kRbg0Bit = 0x20u;
+                    constexpr unsigned int kRbg0Bit = 0x10u;
                     drawAzelColorOffsetForLayer(kRbg0Bit, true);
                 }
 
