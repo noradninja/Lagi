@@ -137,8 +137,16 @@ float4 main(
         float coeffIndex = fmod(floor(accum), 65536.0f);
         if (coeffIndex < 0.0f)
             coeffIndex += 65536.0f;
+        // Azel's reconstructed CPU RBG0 path uses KTAOF only for
+        // scanline-constant coefficient fetches. When DKAx is non-zero
+        // (per-pixel coefficients), the Saturn coefficient index directly
+        // addresses VRAM without adding the KTAOF base. This matters for
+        // D5 parameter B: adding the base lands in unrelated/zero VRAM.
+        const bool perPixelCoefficient =
+            abs(rbg0Coefficient.z) > 0.000001f;
         const float address =
-            rbg0Info.x + coeffIndex * rbg0Info.z;
+            (perPixelCoefficient ? 0.0f : rbg0Info.x) +
+            coeffIndex * rbg0Info.z;
         k = readRbgCoefficient(raw, address);
     }
 
