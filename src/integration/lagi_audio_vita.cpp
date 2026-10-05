@@ -89,6 +89,13 @@ std::atomic<unsigned> g_updateSoundCalls{0};
 unsigned g_driverServiceCalls = 0;
 unsigned g_audioDiagBudget = 24;
 
+// Profiling only: these counters/timers never participate in emulation,
+// scheduling, queue sizing, or command delivery.
+unsigned g_audioPerfBudget = 16;
+unsigned long long g_audioRenderChunks = 0;
+unsigned long long g_audioQueueEmptyChunks = 0;
+unsigned long long g_audioShortWrites = 0;
+
 unsigned long long next_audio_trace()
 {
     return g_audioTraceSerial.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -498,16 +505,89 @@ void render_scsp_audio()
 
     while (lagi::platform::audio::queued_pcm_frames() <
            kTargetQueuedFrames) {
+        ++g_audioRenderChunks;
+
+        // Profile only a small, bounded set of chunks after each bank load,
+        // plus one sparse steady-state sample. Sampling 1/8 of frames keeps
+        // timer overhead low while preserving the exact emulation order.
+        const bool profileChunk =
+            g_audioPerfBudget != 0 ||
+            ((g_audioRenderChunks & 0xFFu) == 0u);
+        std::uint64_t renderStartUs = 0;
+        std::uint64_t sampledM68kUs = 0;
+        std::uint64_t sampledScspUs = 0;
+        unsigned sampledFrames = 0;
+        if (profileChunk)
+            renderStartUs = sceKernelGetSystemTimeWide();
+
+        const unsigned queuedBefore =
+            static_cast<unsigned>(
+                lagi::platform::audio::queued_pcm_frames());
+        if (queuedBefore == 0)
+            ++g_audioQueueEmptyChunks;
+
         int peak = 0;
         for (unsigned i = 0; i < kRenderChunkFrames; ++i) {
+            const bool profileSample =
+                profileChunk && ((i & 7u) == 0u);
+            std::uint64_t t = 0;
+            if (profileSample)
+                t = sceKernelGetSystemTimeWide();
+
             m68k_execute(kM68kCyclesPerSample);
+
+            if (profileSample) {
+                sampledM68kUs += sceKernelGetSystemTimeWide() - t;
+                t = sceKernelGetSystemTimeWide();
+            }
+
             stereo_sample_t sample{};
             SCSP_Update(nullptr, nullptr, &sample);
+
+            if (profileSample) {
+                sampledScspUs += sceKernelGetSystemTimeWide() - t;
+                ++sampledFrames;
+            }
+
             g_mixBuffer[i * 2 + 0] = sample.l;
             g_mixBuffer[i * 2 + 1] = sample.r;
             const int al = sample.l < 0 ? -static_cast<int>(sample.l) : static_cast<int>(sample.l);
             const int ar = sample.r < 0 ? -static_cast<int>(sample.r) : static_cast<int>(sample.r);
             peak = std::max(peak, std::max(al, ar));
+        }
+
+        if (profileChunk) {
+            const std::uint64_t renderUs =
+                sceKernelGetSystemTimeWide() - renderStartUs;
+            const std::uint64_t scale =
+                sampledFrames != 0 ? (kRenderChunkFrames / sampledFrames) : 0;
+            const std::uint64_t estimatedM68kUs =
+                sampledM68kUs * scale;
+            const std::uint64_t estimatedScspUs =
+                sampledScspUs * scale;
+
+            if (g_audioPerfBudget != 0)
+                --g_audioPerfBudget;
+
+            lagi::platform::logging::writef(
+                "[AzelAudioPerf] seq=%d chunk=%llu frames=%u "
+                "queued=%u peak=%d total=%lluus budget=%lluus "
+                "m68k=%lluus scsp=%lluus dspSteps=%d samples=%u "
+                "emptyChunks=%llu shortWrites=%llu\n",
+                static_cast<int>(g_sequenceNumber),
+                g_audioRenderChunks,
+                kRenderChunkFrames,
+                queuedBefore,
+                peak,
+                static_cast<unsigned long long>(renderUs),
+                static_cast<unsigned long long>(
+                    (1000000ull * kRenderChunkFrames) / kScspRate),
+                static_cast<unsigned long long>(estimatedM68kUs),
+                static_cast<unsigned long long>(estimatedScspUs),
+                static_cast<int>(SCSP.DSP.LastStep),
+                sampledFrames,
+                g_audioQueueEmptyChunks,
+                g_audioShortWrites);
         }
 
         if (g_audioDiagBudget != 0) {
@@ -517,15 +597,25 @@ void render_scsp_audio()
                 static_cast<unsigned>(m68k_get_reg(nullptr, M68K_REG_PC)),
                 static_cast<unsigned>(m68k_read_memory_8(0x4E0)),
                 peak,
-                static_cast<unsigned>(lagi::platform::audio::queued_pcm_frames()),
+                queuedBefore,
                 static_cast<int>(g_loadingState));
         }
 
         const std::size_t written =
             lagi::platform::audio::write_pcm_frames(
                 g_mixBuffer.data(), kRenderChunkFrames);
-        if (written != kRenderChunkFrames)
+        if (written != kRenderChunkFrames) {
+            ++g_audioShortWrites;
+            lagi::platform::logging::writef(
+                "[AzelAudioPerf] PCM short write requested=%u written=%u "
+                "queued=%u shortWrites=%llu\n",
+                kRenderChunkFrames,
+                static_cast<unsigned>(written),
+                static_cast<unsigned>(
+                    lagi::platform::audio::queued_pcm_frames()),
+                g_audioShortWrites);
             break;
+        }
 
         // The 68K may have acknowledged a command while this block rendered.
         service_driver_commands();
@@ -574,6 +664,7 @@ void worker_load_banks(s32 musicNumber, s32 mode)
     g_sequenceNumber = musicNumber;
     g_loadingState = 0;
     g_audioDiagBudget = 24;
+    g_audioPerfBudget = 16;
     g_loadingFinished.store(false, std::memory_order_release);
     g_pendingSounds.clear();
     reset_active_sounds();
@@ -761,6 +852,9 @@ void initSoundDriver()
     lagi::platform::logging::writef(
         "[AzelAudio:%llu] SCSP core initialized cyclesPerSample=%d worker=CPU2\n",
         next_audio_trace(), kM68kCyclesPerSample);
+    lagi::platform::logging::writef(
+        "[AzelAudioPerf] profiler=outer-sampled sampleStride=8 "
+        "steadyInterval=256 no-emulation-changes\n");
 }
 
 void updateSoundInterrupt()
