@@ -35,35 +35,56 @@ float4 sampleRbg0D5Cell(
     uniform sampler2D raw,
     float mapX,
     float mapY,
+    float plsz,
     float4 p0,
     float4 p1,
     float4 p2,
     float4 p3)
 {
-    mapX = fmod(floor(mapX), 2048.0f);
-    mapY = fmod(floor(mapY), 2048.0f);
-    if (mapX < 0.0f) mapX += 2048.0f;
-    if (mapY < 0.0f) mapY += 2048.0f;
+    // PLSZ bit 0 doubles plane width; bit 1 doubles plane height.
+    const float planeWidth =
+        (fmod(floor(plsz), 2.0f) >= 1.0f) ? 1024.0f : 512.0f;
+    const float planeHeight =
+        (floor(plsz / 2.0f) >= 1.0f) ? 1024.0f : 512.0f;
+    const float mapWidth = planeWidth * 4.0f;
+    const float mapHeight = planeHeight * 4.0f;
 
-    const float planeX = floor(mapX / 512.0f);
-    const float planeY = floor(mapY / 512.0f);
+    mapX = fmod(floor(mapX), mapWidth);
+    mapY = fmod(floor(mapY), mapHeight);
+    if (mapX < 0.0f) mapX += mapWidth;
+    if (mapY < 0.0f) mapY += mapHeight;
+
+    const float planeX = floor(mapX / planeWidth);
+    const float planeY = floor(mapY / planeHeight);
     const float planeIndex = planeY * 4.0f + planeX;
     const float planeBase = selectRbg0Plane(
         planeIndex, p0, p1, p2, p3);
 
-    const float inPlaneX = mapX - planeX * 512.0f;
-    const float inPlaneY = mapY - planeY * 512.0f;
-    const float patternX = floor(inPlaneX / 16.0f);
-    const float patternY = floor(inPlaneY / 16.0f);
+    const float inPlaneX = mapX - planeX * planeWidth;
+    const float inPlaneY = mapY - planeY * planeHeight;
+
+    // A page is always 512x512 dots. PLSZ enlarges the plane by adding
+    // pages, while CHSZ=1 keeps each character pattern 16x16.
+    const float pageX = floor(inPlaneX / 512.0f);
+    const float pageY = floor(inPlaneY / 512.0f);
+    const float inPageX = inPlaneX - pageX * 512.0f;
+    const float inPageY = inPlaneY - pageY * 512.0f;
+
+    // CHSZ=1 -> 32x32 patterns per 512x512 page, 2 bytes per pattern.
+    const float pageIndex =
+        pageY * (planeWidth / 512.0f) + pageX;
+    const float pageBase = planeBase + pageIndex * 2048.0f;
+    const float patternX = floor(inPageX / 16.0f);
+    const float patternY = floor(inPageY / 16.0f);
     const float patternAddress =
-        planeBase + (patternY * 32.0f + patternX) * 2.0f;
+        pageBase + (patternY * 32.0f + patternX) * 2.0f;
     const float patternName = readBE16(raw, patternAddress);
 
     const float characterNumber =
         fmod(patternName, 1024.0f) * 4.0f + 8192.0f;
 
-    float px = fmod(inPlaneX, 16.0f);
-    float py = fmod(inPlaneY, 16.0f);
+    float px = fmod(inPageX, 16.0f);
+    float py = fmod(inPageY, 16.0f);
     if (fmod(floor(patternName / 1024.0f), 2.0f) >= 1.0f)
         px = 15.0f - px;
     if (fmod(floor(patternName / 2048.0f), 2.0f) >= 1.0f)
