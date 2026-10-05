@@ -533,6 +533,7 @@ void runtime_frame()
         }
 
         state.rpmd = regs->mB0_RPMD & 3u;
+        state.plsz = regs->m3A_PLSZ & 3u;
         state.ktctl = regs->mB4_KTCTL;
         state.ktaof = regs->mB6_KTAOF;
         state.wctlc = regs->mD4_WCTLC;
