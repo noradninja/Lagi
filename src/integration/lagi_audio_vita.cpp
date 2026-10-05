@@ -532,6 +532,25 @@ void render_scsp_audio()
     }
 }
 
+void clock_scsp_discard()
+{
+    // Movies own SceAudioOut, but the Saturn sound CPU must continue running.
+    // Advance one small audio-time slice and discard the generated PCM so the
+    // 68K can acknowledge mailbox commands and complete fades/stops.
+    constexpr unsigned kDiscardFrames = 256;
+    for (unsigned i = 0; i < kDiscardFrames; ++i) {
+        m68k_execute(kM68kCyclesPerSample);
+        stereo_sample_t sample{};
+        SCSP_Update(nullptr, nullptr, &sample);
+    }
+
+    service_driver_commands();
+
+    // 256 frames at 44.1 kHz is ~5.8 ms. Account approximately for the work
+    // above while avoiding a busy-spin on CPU2 during FMV playback.
+    sceKernelDelayThread(5000);
+}
+
 void worker_load_banks(s32 musicNumber, s32 mode)
 {
     if (musicNumber < 0) {
@@ -562,11 +581,12 @@ void worker_load_banks(s32 musicNumber, s32 mode)
     ensure_output_stream();
 
     lagi::platform::logging::writef(
-        "[AzelAudio:%llu] worker accepted sequence=%d mode=%d cpu=%d\n",
+        "[AzelAudio:%llu] worker accepted sequence=%d mode=%d cpu=%d staleCmds=%u\n",
         next_audio_trace(),
         static_cast<int>(musicNumber),
         static_cast<int>(mode),
-        sceKernelGetCpuId());
+        sceKernelGetCpuId(),
+        static_cast<unsigned>(g_commands.size()));
 }
 
 void worker_fade_all()
@@ -627,6 +647,8 @@ int audio_worker_thread(SceSize, void*)
                 kTargetQueuedFrames) {
                 sceKernelDelayThread(1000);
             }
+        } else if (g_sequence) {
+            clock_scsp_discard();
         } else {
             sceKernelDelayThread(1000);
         }
