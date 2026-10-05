@@ -188,11 +188,11 @@ The current front-end path consumes live Azel state for:
 - D5 RBG0 rotation-map state;
 - line-window composition;
 - live CRAM;
-- VDP2 color offsets.
+- VDP2 color offsets and fade selection.
 
 D5 uses the same VDP2 facilities as the rest of the runtime; it is not treated as a separate authored background implementation.
 
-The remaining RBG0 work is primarily accuracy work around A/B composition, windows, priority behavior, and color/fade interaction.
+The remaining RBG0 work is primarily the D5 name-entry accuracy pass around A/B composition, windows, priority behavior, and color calculation. Shared fade direction/timing/color is now handled by the generic Azel-to-Neptune VDP2 path.
 
 ## Movie pipeline
 
@@ -239,7 +239,7 @@ Front-end presentation follows Azel's live VDP2 TVMD state. The normal gameplay 
 
 Neptune renders directly into the active framebuffer size and passes that same width, height, pitch, and buffer to `sceDisplaySetFrameBuf()`.
 
-The title NBG0 shader addresses the 704x448 VDP2 source raster directly. Raw VRAM and CRAM reads remain point-exact. When source pixels must be reduced into the 720x408 framebuffer, filtering is applied after CRAM lookup to decoded RGB colors rather than to Saturn memory bytes or palette indices.
+The title path addresses the 704x448 VDP2 source raster, decodes the Saturn tile/palette data into an RGBA presentation surface, then uses SGX hardware-linear filtering into the 720x408 framebuffer. Raw VRAM and CRAM interpretation remains point-exact; filtering occurs only after palette lookup on decoded RGB pixels.
 
 
 ## 2D presentation filtering
@@ -252,4 +252,4 @@ The text layer is reconstructed at Saturn logical resolution and composited by S
 
 Trilinear filtering is not currently used. These UI textures have a single mip level, so mip filtering would not improve presentation until a real mip chain exists.
 
-Raw VDP2 image planes such as title and field/name-entry backgrounds remain a separate presentation class. Hardware linear filtering for those planes requires a decoded layer surface before final composition, preserving exact VRAM/CRAM reads while allowing SGX to filter decoded RGB pixels.
+Raw VDP2 image planes remain a separate presentation class from text/UI. The title already uses a decoded layer surface before final composition, preserving exact VRAM/CRAM reads while allowing SGX to filter decoded RGB pixels. The upcoming D5/name-entry work will extend the generic Neptune VDP2 architecture rather than introduce a screen-specific image path.
