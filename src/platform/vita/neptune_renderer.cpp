@@ -486,6 +486,7 @@ static unsigned int g_movieVdp2Tvmd = 0u;
 static float g_movieRbg0Planes[16] = {};
 static float g_movieRbg0PlanesB[16] = {};
 static float g_movieRbg0Ctrl[16] = {};
+static float g_movieRbg0Plsz = 0.0f;
 static float g_movieRbg0TransformA[8] = {};
 static float g_movieRbg0TransformB[8] = {};
 static float g_movieRbg0CoefficientA[4] = {};
@@ -2350,6 +2351,7 @@ void frontend_set_rbg0_state(const FrontendRbg0State& state)
     // as floats on SGX. The shader continues to fetch tile/parameter/
     // coefficient/window data from the raw VRAM snapshot.
     g_movieRbg0Ctrl[0] = static_cast<float>(state.rpmd);
+    g_movieRbg0Plsz = static_cast<float>(state.plsz);
     g_movieRbg0Ctrl[1] = static_cast<float>(state.ktctl);
     g_movieRbg0Ctrl[2] = static_cast<float>(state.ktaof);
     g_movieRbg0Ctrl[3] = static_cast<float>(state.wctlc);
@@ -9527,7 +9529,7 @@ static bool renderMovieFrame()
                             coefficientSize * 65536.0f,
                         (ktctl & coefficientEnableBit) ? 1.0f : 0.0f,
                         coefficientSize,
-                        0.0f,
+                        g_movieRbg0Plsz,
                     };
 
                     sceGxmSetUniformDataF(
