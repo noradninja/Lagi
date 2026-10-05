@@ -396,6 +396,24 @@ void runtime_frame()
     interruptVDP2Update();
     lastUpdateFunction();
 
+    // Tasks above can start a new fade and change CLOFEN/CLOFSL as part of
+    // the same VDP2 update that makes new front-end artwork visible. Refresh
+    // Neptune from the completed Saturn register state here as well as at the
+    // start of the frame, so a newly enabled layer cannot appear for one
+    // frame without its color offset (notably the title NBG1 handoff).
+    {
+        const auto& regs = vdp2Controls.m20_registers[0];
+        lagi::platform::renderer::set_azel_color_offset_state(
+            regs.m110_CLOFEN,
+            regs.m112_CLOFSL,
+            regs.m114_COAR,
+            regs.m116_COAG,
+            regs.m118_COAB,
+            regs.m11A_COBR,
+            regs.m11C_COBG,
+            regs.m11E_COBB);
+    }
+
     // Front-end VDP2 presentation is a platform service. Azel owns all title
     // graphics, text, palettes, blinking, input and state transitions; Lagi
     // simply presents the VDP2 memory that Azel has already produced.
