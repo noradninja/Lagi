@@ -251,55 +251,82 @@ void load_current_banks()
         sequenceOk ? 1 : 0, playerOk ? 1 : 0);
 }
 
-void advance_loading_state()
+bool advance_loading_state(unsigned& commandSlot)
 {
     if (!g_sequence || g_loadingState < 0)
-        return;
+        return false;
 
     switch (g_loadingState) {
-    case 0:
-        // Saturn sound-init: stop sequences/PCM/CD-DA and reset DSP/mixer.
-        queue_command(0x10, 1, 1, 1, 1, 1);
+    case 0: {
+        // Match Azel updateSoundLoadingState(): loader commands are written
+        // directly into the current 8-entry mailbox before queued SFX/fades.
+        ScspCommand command{};
+        command.bytes[0] = 0x10;
+        command.bytes[2] = 1; // stop sequences
+        command.bytes[3] = 1; // stop PCM
+        command.bytes[4] = 1; // stop CD-DA
+        command.bytes[5] = 1; // init DSP
+        command.bytes[6] = 1; // init mixer
+        write_driver_command(command, commandSlot++);
         g_loadingState = 1;
-        break;
-    case 1:
-        // Area map change.
-        queue_command(
-            0x08,
-            static_cast<u8>(g_sequence->m8_areaMapIndex));
+        return true;
+    }
+    case 1: {
+        ScspCommand command{};
+        command.bytes[0] = 0x08; // area-map change
+        command.bytes[2] =
+            static_cast<s8>(g_sequence->m8_areaMapIndex);
+        write_driver_command(command, commandSlot++);
         g_loadingState = 2;
-        break;
+        return true;
+    }
     case 2:
-        // Upstream's stop/wait helpers are currently reconstructed as no-ops.
+        // Upstream checkDataAndStopAllSequences() is currently reconstructed
+        // as a no-op.
+        g_loadingState = 3;
+        return false;
+    case 3:
+        // Upstream waitForStopSoundCompletion() currently returns true.
         g_loadingState = 4;
-        break;
+        return false;
     case 4:
+        // Upstream performs the disc-to-sound-RAM transfer from updateSound()
+        // while the interrupt side waits in state 4.
         load_current_banks();
         g_loadingState = 5;
-        break;
-    case 5:
-        queue_command(0x83, 0);
+        return false;
+    case 5: {
+        ScspCommand command{};
+        command.bytes[0] = static_cast<s8>(0x83); // effect change
+        command.bytes[2] = 0;
+        write_driver_command(command, commandSlot++);
         g_loadingState = 6;
-        break;
-    case 6:
-        queue_command(0x87, 0);
+        return true;
+    }
+    case 6: {
+        ScspCommand command{};
+        command.bytes[0] = static_cast<s8>(0x87); // mixer change
+        command.bytes[2] = 0;
+        write_driver_command(command, commandSlot++);
         g_loadingState = 7;
-        break;
+        return true;
+    }
     case 7:
         for (unsigned i = 0; i < g_sequence->mC_numMapEntries; ++i)
             m68k_write_memory_8(0x504u + 8u * i, 0x80);
         g_loadingState = 8;
-        break;
+        return false;
     case 8:
         g_loadingState = -1;
         g_loadingFinished.store(true, std::memory_order_release);
         lagi::platform::logging::writef(
             "[AzelAudio:%llu] SCSP sequence=%d ready\n",
             next_audio_trace(), static_cast<int>(g_sequenceNumber));
-        break;
+        return false;
     default:
         g_loadingState = -1;
-        break;
+        g_loadingFinished.store(true, std::memory_order_release);
+        return false;
     }
 }
 
@@ -309,13 +336,14 @@ void service_driver_commands()
         return;
 
     ++g_driverServiceCalls;
-    advance_loading_state();
 
     const u8 timing = static_cast<u8>(m68k_read_memory_8(0x4E0));
-    if (g_audioDiagBudget != 0 && (g_driverServiceCalls <= 12 || g_loadingState >= 0)) {
+    if (g_audioDiagBudget != 0 &&
+        (g_driverServiceCalls <= 12 || g_loadingState >= 0)) {
         --g_audioDiagBudget;
         lagi::platform::logging::writef(
-            "[AzelAudioDiag] service=%u update=%u load=%d pc=%06X flag4E0=%02X flag4E1=%02X cmds=%u pending=%u queued=%u\n",
+            "[AzelAudioDiag] service=%u update=%u load=%d pc=%06X "
+            "flag4E0=%02X flag4E1=%02X cmds=%u pending=%u queued=%u\n",
             g_driverServiceCalls,
             g_updateSoundCalls.load(std::memory_order_relaxed),
             static_cast<int>(g_loadingState),
@@ -324,18 +352,32 @@ void service_driver_commands()
             static_cast<unsigned>(m68k_read_memory_8(0x4E1)),
             static_cast<unsigned>(g_commands.size()),
             static_cast<unsigned>(g_pendingSounds.size()),
-            static_cast<unsigned>(lagi::platform::audio::queued_pcm_frames()));
+            static_cast<unsigned>(
+                lagi::platform::audio::queued_pcm_frames()));
     }
-    if ((timing & 0x80u) != 0u || g_commands.empty())
+
+    // Upstream Azel only advances the loading state or writes a new mailbox
+    // after the 68K clears bit 7 of the timing flag.
+    if ((timing & 0x80u) != 0u)
         return;
 
-    const unsigned count =
-        static_cast<unsigned>(std::min<std::size_t>(8, g_commands.size()));
-    for (unsigned i = 0; i < count; ++i)
-        write_driver_command(g_commands[i], i);
+    unsigned commandSlot = 0;
+    const bool loaderWroteCommand =
+        advance_loading_state(commandSlot);
 
-    g_commands.erase(g_commands.begin(), g_commands.begin() + count);
-    m68k_write_memory_8(0x4E0, timing | 0x80u);
+    // Exactly like updateSoundInterrupt(), loader traffic gets first use of
+    // the mailbox and normal queued commands fill the remaining slots.
+    const unsigned available = 8u - commandSlot;
+    const unsigned count = static_cast<unsigned>(
+        std::min<std::size_t>(available, g_commands.size()));
+    for (unsigned i = 0; i < count; ++i)
+        write_driver_command(g_commands[i], commandSlot + i);
+
+    if (count != 0u)
+        g_commands.erase(g_commands.begin(), g_commands.begin() + count);
+
+    if (loaderWroteCommand || count != 0u)
+        m68k_write_memory_8(0x4E0, timing | 0x80u);
 }
 
 sSaturnPtr sound_config_for(s16 soundIndex)
