@@ -533,7 +533,9 @@ void runtime_frame()
         }
 
         state.rpmd = regs->mB0_RPMD & 3u;
-        state.plsz = regs->m3A_PLSZ & 3u;
+        // PLSZ packs NBG0/1/2/3/RBG0 plane sizes in successive 2-bit
+        // fields. RBG0 is bits 9:8; the low bits belong to NBG0.
+        state.plsz = (regs->m3A_PLSZ >> 8) & 3u;
         state.ktctl = regs->mB4_KTCTL;
         state.ktaof = regs->mB6_KTAOF;
         state.wctlc = regs->mD4_WCTLC;
