@@ -171,11 +171,11 @@ float4 sampleRbg0D5Cell(
     if (chcn < 0.5f) {
         const float packedAddress =
             characterOffset + floor((py * 8.0f + px) * 0.5f);
-        const float packed = readByte(raw, packedAddress);
+        const float packedByte = readByte(raw, packedAddress);
         if (fmod(px, 2.0f) < 0.5f)
-            dotColor = floor(packed / 16.0f);
+            dotColor = floor(packedByte / 16.0f);
         else
-            dotColor = fmod(packed, 16.0f);
+            dotColor = fmod(packedByte, 16.0f);
     } else {
         const float dotAddress =
             characterOffset + py * 8.0f + px;
