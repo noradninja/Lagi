@@ -554,6 +554,7 @@ void worker_load_banks(s32 musicNumber, s32 mode)
     g_sequence = &SoundDataTable[index];
     g_sequenceNumber = musicNumber;
     g_loadingState = 0;
+    g_audioDiagBudget = 24;
     g_loadingFinished.store(false, std::memory_order_release);
     g_pendingSounds.clear();
     reset_active_sounds();
