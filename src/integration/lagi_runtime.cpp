@@ -874,6 +874,97 @@ void runtime_frame()
                         approxX, approxY,
                         approxX - exactX,
                         approxY - exactY);
+
+                    // Mirror sampleTileAtCoordinate() for this D5 format:
+                    // CHSZ=1, CHCN=1, PNB=1, CNSM=0, SCN=8,
+                    // PLSZ=0, mapwh=4, plane base 0x60000.
+                    const unsigned int sampleX =
+                        static_cast<unsigned int>(exactX) & 0x7FFu;
+                    const unsigned int sampleY =
+                        static_cast<unsigned int>(exactY) & 0x7FFu;
+                    const unsigned int planeX = sampleX / 512u;
+                    const unsigned int planeY = sampleY / 512u;
+                    const unsigned int inPlaneX = sampleX % 512u;
+                    const unsigned int inPlaneY = sampleY % 512u;
+                    const unsigned int patternX = inPlaneX / 16u;
+                    const unsigned int patternY = inPlaneY / 16u;
+                    const unsigned int dotX = inPlaneX % 16u;
+                    const unsigned int dotY = inPlaneY % 16u;
+                    const unsigned int planeNumber =
+                        planeY * 4u + planeX;
+                    const unsigned int planeBase =
+                        state.planeB[planeNumber & 15u];
+                    const unsigned int patternAddr =
+                        (planeBase +
+                         (patternY * 32u + patternX) * 2u) & 0x7FFFFu;
+                    const unsigned int patternName =
+                        (static_cast<unsigned int>(liveVram[patternAddr]) << 8) |
+                        static_cast<unsigned int>(
+                            liveVram[(patternAddr + 1u) & 0x7FFFFu]);
+                    const unsigned int flip =
+                        (patternName >> 10) & 3u;
+                    const unsigned int charNumber =
+                        ((patternName & 0x3FFu) << 2) |
+                        (8u & 3u) |
+                        ((8u & 0x1Cu) << 10);
+                    unsigned int sx = dotX;
+                    unsigned int sy = dotY;
+                    if (flip != 0u) {
+                        sy &= 15u;
+                        if (flip & 2u) {
+                            if ((sy & 8u) == 0u)
+                                sy = 7u - sy + 16u;
+                            else
+                                sy = 15u - sy;
+                        } else if (sy & 8u) {
+                            sy += 8u;
+                        }
+
+                        if (flip & 1u) {
+                            if ((sx & 8u) == 0u)
+                                sy += 8u;
+                            sx &= 7u;
+                            sx = 7u - sx;
+                        } else if (sx & 8u) {
+                            sy += 8u;
+                            sx &= 7u;
+                        } else {
+                            sx &= 7u;
+                        }
+                    } else {
+                        sy &= 15u;
+                        if (sy & 8u)
+                            sy += 8u;
+                        if (sx & 8u)
+                            sy += 8u;
+                        sx &= 7u;
+                    }
+                    const unsigned int charAddr =
+                        (charNumber * 0x20u + sy * 8u + sx) & 0x7FFFFu;
+                    const unsigned int dotColor = liveVram[charAddr];
+                    const unsigned int paladdr =
+                        (patternName & 0x7000u) >> 4;
+                    const unsigned int paletteEntry =
+                        paladdr | dotColor;
+                    const unsigned int cramAddr =
+                        0x80000u + (paletteEntry * 2u);
+                    const unsigned int cramOffset =
+                        cramAddr - 0x80000u;
+                    const unsigned char* liveCram =
+                        getVdp2Cram(0);
+                    const unsigned int color =
+                        (static_cast<unsigned int>(
+                            liveCram[cramOffset & 0xFFFu]) << 8) |
+                        static_cast<unsigned int>(
+                            liveCram[(cramOffset + 1u) & 0xFFFu]);
+
+                    lagi::platform::logging::writef(
+                        "[D5RBGSampleB] xy=%u,%u map=%u,%u plane=%u "
+                        "paddr=%05X pname=%04X flip=%u char=%u "
+                        "caddr=%05X dot=%02X pal=%03X color=%04X\n",
+                        x, y, sampleX, sampleY, planeNumber,
+                        patternAddr, patternName, flip, charNumber,
+                        charAddr, dotColor, paletteEntry, color);
                 }
             }
 
