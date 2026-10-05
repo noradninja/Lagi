@@ -131,22 +131,16 @@ float4 main(
             rbg0Coefficient.x +
             rbg0Coefficient.y * y +
             rbg0Coefficient.z * x;
-        // Saturn takes the coefficient index from the upper 16 bits of a
-        // wrapping 32-bit accumulator. Keep the index in the 0..65535 domain
-        // before converting it to a VRAM byte address.
-        float coeffIndex = fmod(floor(accum), 65536.0f);
-        if (coeffIndex < 0.0f)
-            coeffIndex += 65536.0f;
-        // Azel's reconstructed CPU RBG0 path uses KTAOF only for
-        // scanline-constant coefficient fetches. When DKAx is non-zero
-        // (per-pixel coefficients), the Saturn coefficient index directly
-        // addresses VRAM without adding the KTAOF base. This matters for
-        // D5 parameter B: adding the base lands in unrelated/zero VRAM.
-        const bool perPixelCoefficient =
-            abs(rbg0Coefficient.z) > 0.000001f;
+        // KAst and its increments form a signed coefficient-table offset.
+        // Do not wrap the 16-bit integer index before applying KTAOF: negative
+        // DKAst/DKAx values are allowed to borrow across the KTAOF bank
+        // boundary. D5 parameter B relies on this to walk its coefficient
+        // image backwards from 0x46800 into lower VRAM addresses.
+        //
+        // readRbgCoefficient() performs the final 19-bit VRAM wrap.
+        const float coeffIndex = floor(accum);
         const float address =
-            (perPixelCoefficient ? 0.0f : rbg0Info.x) +
-            coeffIndex * rbg0Info.z;
+            rbg0Info.x + coeffIndex * rbg0Info.z;
         k = readRbgCoefficient(raw, address);
     }
 
