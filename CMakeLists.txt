@@ -1295,6 +1295,14 @@ add_executable(lagi
  ${LAGI_VDP2_NBG_F_OBJ}
  ${LAGI_VDP2_RBG0_F_OBJ}
  src/platform/vita/vita_audio.cpp
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kcpu.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopac.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopdm.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopnz.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kops.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/sat_hw.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/scsp.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/scspdsp.c
  src/movie/film_demuxer.cpp
  src/movie/cinepak_decoder.cpp
  src/movie/cinepak_sgx_decoder.cpp
@@ -1334,6 +1342,8 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/ruin"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/kernel"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/audio"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/ThirdParty/aosdk"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/ThirdParty/aosdk/eng_ssf"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/shared"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_a3"
