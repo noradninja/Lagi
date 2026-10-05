@@ -536,6 +536,9 @@ void runtime_frame()
         // PLSZ packs NBG0/1/2/3/RBG0 plane sizes in successive 2-bit
         // fields. RBG0 is bits 9:8; the low bits belong to NBG0.
         state.plsz = (regs->m3A_PLSZ >> 8) & 3u;
+        state.chctlb = regs->m2A_CHCTLB;
+        state.pncr = regs->m38_PNCR;
+        state.craofb = regs->mE6_CRAOFB;
         state.ktctl = regs->mB4_KTCTL;
         state.ktaof = regs->mB6_KTAOF;
         state.wctlc = regs->mD4_WCTLC;
@@ -567,7 +570,8 @@ void runtime_frame()
                 "[D5RBGBridge] WCTLC=%04X WCTLD=%04X "
                 "LWTA0=%08X LWTA1=%08X mask=%u "
                 "addr0=%05X addr1=%05X "
-                "W0=(%d,%d)-(%d,%d) W1=(%d,%d)-(%d,%d)\n",
+                "W0=(%d,%d)-(%d,%d) W1=(%d,%d)-(%d,%d) "
+                "RBGfmt CHCTLB=%04X PNCR=%04X CRAOFB=%04X PLSZ=%u\n",
                 static_cast<unsigned int>(regs->mD4_WCTLC),
                 static_cast<unsigned int>(regs->mD6_WCTLD),
                 static_cast<unsigned int>(regs->mD8_LWTA0),
@@ -578,7 +582,8 @@ void runtime_frame()
                 state.window0[0], state.window0[1],
                 state.window0[2], state.window0[3],
                 state.window1[0], state.window1[1],
-                state.window1[2], state.window1[3]);
+                state.window1[2], state.window1[3],
+                state.chctlb, state.pncr, state.craofb, state.plsz);
 
             const unsigned char* liveVram = getVdp2Vram(0);
             const unsigned int sampleY[] = {
