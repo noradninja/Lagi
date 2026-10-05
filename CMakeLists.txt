@@ -823,12 +823,42 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "if (false)"
    source_text "${source_text}")
 
+ # Correct two incomplete VDP2 color-offset reconstructions in the generated
+ # Vita copy. Saturn CLOFEN bit 0 is NBG0; m45_COEN must control that bit,
+ # not the unrelated CCRNA ratio register.
+ elseif(relative_path STREQUAL "VDP2.cpp")
+  string(REPLACE
+   "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA = (vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA & 0xFFE0) | (arg << 0);\n            break;"
+   "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN = (vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN & ~0x1) | (arg << 0);\n            break;"
+   source_text "${source_text}")
+
+ # The title artwork is NBG0 and the title text is NBG1. Both participate in
+ # the Saturn palette/color-offset fade, so make that intent explicit in the
+ # reconstructed layer setup rather than faking a fullscreen renderer fade.
+ elseif(relative_path STREQUAL "o_title.cpp")
+  string(REPLACE
+   "    m7_CNSM,  1,\n    m0_END, // Character Number Supplementary mode 1 (12bits)"
+   "    m7_CNSM,  1,\n    m45_COEN, 1,\n    m0_END, // Character Number Supplementary mode 1 (12bits)"
+   source_text "${source_text}")
+  string(REPLACE
+   "    m40_CAOS, 7, // palette offset is 7 * 0x200 = 0xE00 (where the palette for the text is stored)\n    m0_END,"
+   "    m40_CAOS, 7, // palette offset is 7 * 0x200 = 0xE00 (where the palette for the text is stored)\n    m45_COEN, 1,\n    m0_END,"
+   source_text "${source_text}")
+
  # The upstream Azel movie task/state machine remains authoritative. For the
  # Vita build copy only, remove the desktop Cinepak/SoLoud stream backend and
  # route those platform-facing calls through Lagi services. The filename table,
  # timing table, countdown, CPK sequencing, fades, skip logic, subtitle task,
  # and task completion all remain the original upstream code.
  elseif(relative_path STREQUAL "movie/movie.cpp")
+  # The movie video is Saturn NBG0 and fadePalette() drives VDP2 color offset
+  # A for that plane. Upstream's reconstructed config omitted COEN, leaving
+  # CLOFEN at zero and forcing the Vita renderer to guess at the fade.
+  string(REPLACE
+   "    {m37_W0A,             1},\n    {m0_END,              0},"
+   "    {m37_W0A,             1},\n    {m45_COEN,            1},\n    {m0_END,              0},"
+   source_text "${source_text}")
+
   # MOVIE1 is the attract/title movie (movie timing entry 0x20). The current
   # reconstruction targets +white (0xFFFF) on exit, but Saturn hardware
   # reference fades to black before the title appears. Correct only this
