@@ -2278,8 +2278,14 @@ bool movie_present_cinepak_payload(
         const float sourceAspect =
             static_cast<float>(sourceWidth) /
             static_cast<float>(sourceHeight);
-        const float xExtent = sourceAspect / displayAspect;
-        const float yExtent = 1.0f;
+
+        // Cinepak movies use the same horizontal presentation width as the
+        // normal Saturn 4:3 image on Vita. Preserve the movie's own aspect
+        // ratio inside that width, leaving black above/below for widescreen
+        // sources instead of filling vertically and cropping the sides.
+        const float xExtent = (4.0f / 3.0f) / displayAspect;
+        const float yExtent =
+            xExtent * displayAspect / sourceAspect;
         g_movieVertices[0] = {-xExtent,  yExtent, 0.5f, 0.0f, 0.0f};
         g_movieVertices[1] = { xExtent,  yExtent, 0.5f, 1.0f, 0.0f};
         g_movieVertices[2] = {-xExtent, -yExtent, 0.5f, 0.0f, 1.0f};
