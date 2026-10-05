@@ -724,6 +724,159 @@ void runtime_frame()
                 }
             }
 
+            // Compare Azel's exact signed 16.16 coordinate pipeline
+            // against the float form sent to Neptune at representative B
+            // pixels. This isolates transform precision/order from tile
+            // decoding and window selection.
+            auto truncFPDiag = [](s32 v) -> s32 {
+                return v & static_cast<s32>(0xFFFFFFC0u);
+            };
+            auto signExt14fpDiag = [](s16 v) -> s32 {
+                s32 x = static_cast<s32>(v) & 0x3FFF;
+                if (x & 0x2000)
+                    x |= static_cast<s32>(0xFFFFC000u);
+                return x << 16;
+            };
+            auto truncMxDiag = [](s32 v) -> s32 {
+                return (v & 0x3FFFFFC0) |
+                    ((v & 0x20000000) ?
+                        static_cast<s32>(0xE0000000u) : 0);
+            };
+            auto fpMulDiag = [](s32 a, s32 b) -> s32 {
+                return static_cast<s32>(
+                    (static_cast<long long>(a) *
+                     static_cast<long long>(b)) >> 16);
+            };
+
+            const s32 A_Bd = truncFPDiag(paramB.m1C);
+            const s32 B_Bd = truncFPDiag(paramB.m20);
+            const s32 C_Bd = truncFPDiag(paramB.m24);
+            const s32 D_Bd = truncFPDiag(paramB.m28);
+            const s32 E_Bd = truncFPDiag(paramB.m2C);
+            const s32 F_Bd = truncFPDiag(paramB.m30);
+            const s32 Px_Bd = signExt14fpDiag(paramB.m34);
+            const s32 Py_Bd = signExt14fpDiag(paramB.m36);
+            const s32 Pz_Bd = signExt14fpDiag(paramB.m38);
+            const s32 Cx_Bd = signExt14fpDiag(paramB.m3C);
+            const s32 Cy_Bd = signExt14fpDiag(paramB.m3E);
+            const s32 Cz_Bd = signExt14fpDiag(paramB.m40);
+            const s32 Xp_Bd =
+                fpMulDiag(A_Bd, Px_Bd - Cx_Bd) +
+                fpMulDiag(B_Bd, Py_Bd - Cy_Bd) +
+                fpMulDiag(C_Bd, Pz_Bd - Cz_Bd) +
+                Cx_Bd + truncMxDiag(paramB.m44);
+            const s32 Yp_Bd =
+                fpMulDiag(D_Bd, Px_Bd - Cx_Bd) +
+                fpMulDiag(E_Bd, Py_Bd - Cy_Bd) +
+                fpMulDiag(F_Bd, Pz_Bd - Cz_Bd) +
+                Cy_Bd + truncMxDiag(paramB.m48);
+            const s32 baseXmul_Bd =
+                truncFPDiag(paramB.m0) - Px_Bd;
+            const s32 baseYmul_Bd =
+                truncFPDiag(paramB.m4) - Py_Bd;
+            const s32 zrel_Bd =
+                truncFPDiag(paramB.m8_Zst) - Pz_Bd;
+            const s32 Cval_Bd = fpMulDiag(C_Bd, zrel_Bd);
+            const s32 Fval_Bd = fpMulDiag(F_Bd, zrel_Bd);
+            const s32 dX_Bd =
+                fpMulDiag(A_Bd, truncFPDiag(paramB.m14)) +
+                fpMulDiag(B_Bd, truncFPDiag(paramB.m18));
+            const s32 dY_Bd =
+                fpMulDiag(D_Bd, truncFPDiag(paramB.m14)) +
+                fpMulDiag(E_Bd, truncFPDiag(paramB.m18));
+            const s32 dXst_Bd = truncFPDiag(paramB.mC);
+            const s32 dYst_Bd = truncFPDiag(paramB.m10);
+            const s32 dKAst_Bd = truncFPDiag(paramB.m58);
+            const s32 dKAx_Bd = truncFPDiag(paramB.m5C);
+            const s32 KAst_Bd = truncFPDiag(paramB.m54);
+
+            const unsigned int testYs[] = {112u, 128u, 160u, 192u, 223u};
+            const unsigned int testXs[] = {0u, 176u, 351u};
+            for (unsigned int yi = 0;
+                 yi < sizeof(testYs) / sizeof(testYs[0]); ++yi) {
+                const unsigned int y = testYs[yi];
+                const s32 xmulLine =
+                    baseXmul_Bd + static_cast<s32>(
+                        static_cast<std::int64_t>(dXst_Bd) * y);
+                const s32 ymulLine =
+                    baseYmul_Bd + static_cast<s32>(
+                        static_cast<std::int64_t>(dYst_Bd) * y);
+                const s32 Xsp =
+                    fpMulDiag(A_Bd, xmulLine) +
+                    fpMulDiag(B_Bd, ymulLine) + Cval_Bd;
+                const s32 Ysp =
+                    fpMulDiag(D_Bd, xmulLine) +
+                    fpMulDiag(E_Bd, ymulLine) + Fval_Bd;
+
+                for (unsigned int xi = 0;
+                     xi < sizeof(testXs) / sizeof(testXs[0]); ++xi) {
+                    const unsigned int x = testXs[xi];
+
+                    const std::uint32_t accum =
+                        static_cast<std::uint32_t>(KAst_Bd) +
+                        static_cast<std::uint32_t>(dKAst_Bd) * y +
+                        static_cast<std::uint32_t>(dKAx_Bd) * x;
+                    const unsigned int coeffIndex = accum >> 16;
+                    const unsigned int coeffAddr =
+                        (coeffIndex * 4u) & 0x7FFFFu;
+                    const std::uint32_t rawCoeff =
+                        static_cast<std::uint32_t>(
+                            liveVram[coeffAddr]) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(coeffAddr + 1u) & 0x7FFFFu]) << 8) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(coeffAddr + 2u) & 0x7FFFFu]) << 16) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(coeffAddr + 3u) & 0x7FFFFu]) << 24);
+                    s32 kx =
+                        static_cast<s32>(rawCoeff & 0x00FFFFFFu);
+                    if (kx & 0x00800000)
+                        kx |= static_cast<s32>(0xFF000000u);
+
+                    const s32 XspPixel =
+                        Xsp + fpMulDiag(
+                            dX_Bd, static_cast<s32>(x << 16));
+                    const s32 YspPixel =
+                        Ysp + fpMulDiag(
+                            dY_Bd, static_cast<s32>(x << 16));
+                    const s32 rawX =
+                        fpMulDiag(kx, XspPixel) + Xp_Bd;
+                    const s32 rawY =
+                        fpMulDiag(kx, YspPixel) + Yp_Bd;
+                    const int exactX = (rawX >> 16) & 0x7FF;
+                    const int exactY = (rawY >> 16) & 0x7FF;
+
+                    const float kf =
+                        static_cast<float>(kx) / 65536.0f;
+                    const float floatRotX =
+                        state.transformB[0] +
+                        state.transformB[4] * static_cast<float>(y) +
+                        state.transformB[2] * static_cast<float>(x);
+                    const float floatRotY =
+                        state.transformB[1] +
+                        state.transformB[5] * static_cast<float>(y) +
+                        state.transformB[3] * static_cast<float>(x);
+                    const float floatMapX =
+                        kf * floatRotX + state.transformB[6];
+                    const float floatMapY =
+                        kf * floatRotY + state.transformB[7];
+                    int approxX =
+                        static_cast<int>(std::floor(floatMapX)) & 0x7FF;
+                    int approxY =
+                        static_cast<int>(std::floor(floatMapY)) & 0x7FF;
+
+                    lagi::platform::logging::writef(
+                        "[D5RBGCoordB] xy=%u,%u idx=%04X k=%f "
+                        "exact=%d,%d float=%d,%d delta=%d,%d\n",
+                        x, y, coeffIndex,
+                        static_cast<float>(kx) / 65536.0f,
+                        exactX, exactY,
+                        approxX, approxY,
+                        approxX - exactX,
+                        approxY - exactY);
+                }
+            }
+
             loggedD5RbgParameterB = true;
         }
 
