@@ -18,6 +18,7 @@
 #include "titleScreen.h"
 #include "kernel/moduleManager.h"
 #include "battle/BTL_A3/BTL_A3_map6.h"
+#include "audio/soundDriver.h"
 
 extern int numActiveTask;
 void azelInit();
@@ -389,6 +390,11 @@ void runtime_frame()
             ++d5Vdp1DiagFrames;
         }
     }
+
+    // Preserve the upstream PDS frame ordering for audio. The Vita runtime
+    // owns the host loop, so service Azel's sound driver here at the same
+    // post-task boundary where upstream PDS.cpp calls updateSound().
+    updateSound();
 
     // Service the Saturn-side VDP2 deferred register/DMA work and the platform
     // movie backend at the same host-frame boundary used by the existing
@@ -1023,6 +1029,11 @@ void runtime_frame()
         // Other native gameplay modes are not yet presented by Neptune.
         lagi::platform::renderer::movie_clear_frame();
     }
+
+    // Upstream PDS.cpp services the sound interrupt side after the host frame
+    // is presented. Keep that split here so the emulated 68000/SCSP command
+    // handshake advances with the same frame lifecycle.
+    updateSoundInterrupt();
 
     ++startupFrame;
 }
