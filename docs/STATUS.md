@@ -187,12 +187,13 @@ The upper portion of the RBG0 scene has shown recognizable/correct-looking porti
 
 Remaining D5 issues:
 
-- RBG0 composition still does not visually match Saturn;
+- the name-entry RBG0 composition still does not visually match Saturn;
 - parameter A/B and window behavior require more accuracy work;
 - lower-half composition has been a primary mismatch;
-- fade/flash presentation remains visibly incorrect;
 - complete VDP2 priority/color-calculation behavior is not yet implemented;
-- D5 sprites/compositing still need continued hardware comparison.
+- D5 sprites/text/background compositing still need continued hardware comparison.
+
+The shared fade/color-offset path is now hardware-matched closely enough to the Saturn reference for title, cinematic, and first-Ruins transitions. The remaining name-entry mismatch is therefore being treated as VDP2 composition work rather than a generic fade defect.
 
 The Saturn reference capture is authoritative for content, timing, color, fades, and layer relationships. Its external HDMI converter stretches the source to 16:9; The HDMI converter stretch is not representative of the intended aspect; Vita presentation retains the Saturn-authored framing instead.
 
@@ -229,18 +230,18 @@ A fragment-side line-window implementation caused a real SGX GPU crash and was r
 
 ## Fade / color-offset status
 
-Azel's fade state is running and hardware logs show the expected changing VDP2 offset values.
+The generic Azel-to-Neptune fade path is now hardware-proven against direct Saturn capture for the current boot sequence.
 
-Neptune currently bridges Azel color offsets into native presentation. The bridge now applies signed 9-bit VDP2 wrapping semantics instead of naïve clamping.
+The integration corrects a reconstruction error in the host-side fade step direction while leaving Azel authoritative for target color and duration. Neptune consumes Azel's VDP2 color-offset state with signed 9-bit wrapping semantics, and VDP2 reinitialization republishes the live fade-channel values so newly constructed front-end layers cannot flash full-bright during preload.
 
-Visible fades are still not Saturn-accurate.
+Verified current behavior includes:
 
-Remaining work includes:
+- title fade-in;
+- title fade-out;
+- Cinepak/cinematic fade-in and fade-out;
+- first-Ruins transition fade.
 
-- honoring the appropriate VDP2 enable/select semantics;
-- validating A/B offset selection by layer;
-- matching Saturn white/black flashes;
-- ensuring movie, title, field, and scene transitions use the same generic VDP2 color path.
+No screen-specific Vita fade constructor is required for these paths.
 
 ## Movie pipeline
 
@@ -384,7 +385,7 @@ The current live 3D renderer still flattens active work into shared buffers with
 
 ## Current development focus
 
-With the authentic first-Ruins handoff now hardware-proven, current work is concentrated on D5 RBG0 A/B and window composition, generic VDP2 fade/color-offset accuracy, migration of remaining historical `town_*` renderer state into scene/presentation terminology, broader scene/resource lifetime handling, and moving more of the active Saturn lighting work from CPU preparation into SGX where practical.
+With authentic boot, title presentation, shared fades, movies, and the first-Ruins handoff now hardware-proven, the immediate next milestone is the D5 name-entry sequence. That work will continue the Neptune VDP2 refactor around generic RBG0 A/B selection, windows, priority/color calculation, and final layer composition rather than adding screen-specific reconstruction. Longer-term work still includes migration of historical `town_*` renderer naming, broader scene/resource lifetime handling, and moving more active Saturn lighting work from CPU preparation into SGX where practical.
 
 ## Historical reference paths
 
@@ -412,4 +413,4 @@ Decoded 2D presentation resources now use SGX linear filtering when scaled:
 
 Raw Saturn memory fetches remain point-exact. VDP2 image-plane filtering is tracked separately because those backgrounds are still decoded directly from VRAM/CRAM during composition.
 
-Frontend timing now reports `[VDP2Perf]` with framebuffer dimensions, total front-end render time, and GPU wait time. The current high-resolution title shader performs multiple VDP2 decodes per output pixel during filtered sampling; a decode-once layer surface is the planned optimization for that path.
+Frontend timing reports `[VDP2Perf]` with framebuffer dimensions, total front-end render time, and GPU wait time. The high-resolution title background now uses a decode-once RGBA layer surface followed by SGX hardware-linear presentation, removing the earlier repeated raw VDP2 decode cost from every output fragment.
