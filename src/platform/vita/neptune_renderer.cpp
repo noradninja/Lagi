@@ -277,6 +277,15 @@ static std::size_t g_liveTownShadowFirstPolygon = 0;
 static std::size_t g_liveTownShadowPolygonCount = 0;
 static std::size_t g_liveTownEdgeFirstPolygon = 0;
 static std::size_t g_liveTownEdgePolygonCount = 0;
+
+// Authentic Azel mesh-mode primitives (CMDPMOD bit 8) need Saturn-style
+// ordered overdraw rather than ordinary z-buffer ownership. Track their
+// source polygon ranges generically; do not attach object identity here.
+struct LiveTownMeshRange {
+    std::size_t first = 0;
+    std::size_t count = 0;
+};
+static std::vector<LiveTownMeshRange> g_liveTownMeshRanges;
 static bool g_liveTownPrepared = false;
 static std::size_t g_edgeFirstVertex = 0;
 static std::size_t g_edgeFirstPolygon = 0;
@@ -453,6 +462,17 @@ static SceUID g_vdp2WindowIndexUid = -1;
 static azel::DebugTextureVertex* g_vdp2WindowVertices = nullptr;
 static std::uint16_t* g_vdp2WindowIndices = nullptr;
 static SceGxmTexture g_movieTexture{};
+
+// Title NBG0 is decoded once from Azel's exact VRAM/CRAM representation into
+// a conventional RGBA surface. Raw Saturn memory remains point-exact during
+// decode; SGX performs only the final presentation-scale bilinear sample.
+static constexpr unsigned int kTitleDecodedWidth = 704u;
+static constexpr unsigned int kTitleDecodedHeight = 448u;
+static SceUID g_titleDecodedUid = -1;
+static std::uint32_t* g_titleDecodedPixels = nullptr;
+static SceGxmTexture g_titleDecodedTexture{};
+static bool g_titleDecodedValid = false;
+
 static unsigned int g_movieWidth = 0;
 static unsigned int g_movieHeight = 0;
 static unsigned int g_movieStridePixels = 0;
@@ -618,7 +638,9 @@ static std::uint8_t g_pendingVdp2LineScroll[kVdp2LineScrollBytes]{};
 static std::uint8_t g_vdp2LineScroll[kVdp2LineScrollBytes]{};
 
 // Script-owned town fade command. The game thread stages commands here; the
-// completed-frame publish copies them across the existing render handoff.
+// completed-frame publish copies them across the render handoff. This remains
+// separate from VDP2 color offset because Azel's town camera fade is a
+// full-presentation effect, not CLOFEN layer selection.
 static unsigned int g_pendingTownFadeSerial = 0u;
 static bool g_pendingTownFadeIn = false;
 static unsigned int g_pendingTownFadeFrames = 1u;
@@ -628,7 +650,6 @@ static unsigned int g_townFadeAppliedSerial = 0u;
 static bool g_townFadeIn = false;
 static unsigned int g_townFadeFrames = 1u;
 static unsigned int g_townFadeElapsed = 0u;
-// Town boot begins black. Azel's TwnFadeIn script call releases presentation.
 static float g_townFadeBlack = 1.0f;
 
 static int g_viewMode = 7;
@@ -933,6 +954,14 @@ static void drawViewerModeOverlay(
         label, 0xFFFFFFFFu);
 }
 
+// Forward declarations used by the decoded title cache helpers below.
+static void* probeGpuAlloc(
+    unsigned int size,
+    unsigned int attribs,
+    SceUID* uid);
+static void freeMovieMappedBlock(SceUID& uid, void*& memory);
+static std::uint32_t vdp2Rgb555ToAbgr(std::uint16_t color);
+
 static std::uint16_t readVdp2Be16(
     const std::uint8_t* bytes,
     std::size_t offset)
@@ -940,6 +969,109 @@ static std::uint16_t readVdp2Be16(
     return static_cast<std::uint16_t>(
         (static_cast<std::uint16_t>(bytes[offset]) << 8) |
         static_cast<std::uint16_t>(bytes[offset + 1]));
+}
+
+
+static bool ensureTitleDecodedTexture()
+{
+    if (g_titleDecodedPixels)
+        return true;
+
+    const unsigned int bytes =
+        kTitleDecodedWidth * kTitleDecodedHeight *
+        sizeof(std::uint32_t);
+    g_titleDecodedPixels = static_cast<std::uint32_t*>(
+        probeGpuAlloc(
+            bytes,
+            SCE_GXM_MEMORY_ATTRIB_READ,
+            &g_titleDecodedUid));
+    if (!g_titleDecodedPixels)
+        return false;
+
+    if (sceGxmTextureInitLinear(
+            &g_titleDecodedTexture,
+            g_titleDecodedPixels,
+            SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+            kTitleDecodedWidth,
+            kTitleDecodedHeight,
+            0) < 0) {
+        void* pixels = g_titleDecodedPixels;
+        freeMovieMappedBlock(g_titleDecodedUid, pixels);
+        g_titleDecodedPixels = nullptr;
+        return false;
+    }
+
+    sceGxmTextureSetMinFilter(
+        &g_titleDecodedTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+    sceGxmTextureSetMagFilter(
+        &g_titleDecodedTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+    return true;
+}
+
+static bool updateTitleDecodedTexture(
+    const unsigned char* vram,
+    const unsigned char* cram)
+{
+    if (!vram || !cram || !ensureTitleDecodedTexture())
+        return false;
+
+    // The title NBG0 artwork is static for the lifetime of this front-end
+    // resource set. Dynamic PRESS START/menu text and selectors are separate
+    // VDP2/VDP1 layers, so unrelated VRAM changes must not rebuild 704x448.
+    if (g_titleDecodedValid)
+        return true;
+
+    for (unsigned int y = 0; y < kTitleDecodedHeight; ++y) {
+        const unsigned int patternY = y >> 4;
+        const unsigned int py = y & 15u;
+        const unsigned int cellY = py >> 3;
+        const unsigned int inCellY = py & 7u;
+
+        for (unsigned int x = 0; x < kTitleDecodedWidth; ++x) {
+            const unsigned int planeX =
+                x >= 512u ? x - 512u : x;
+            const unsigned int planeBase =
+                x >= 512u ? 0x10800u : 0x10000u;
+            const unsigned int patternX = planeX >> 4;
+            const unsigned int patternAddress =
+                planeBase + (patternY * 32u + patternX) * 2u;
+            const std::uint16_t patternName =
+                readVdp2Be16(vram, patternAddress);
+
+            // Title: PNB=1, CNSM=1, CHSZ=1. Each 16x16 pattern is four
+            // consecutive 8x8 cells, 8bpp, with the dot value selecting
+            // Azel's 256-entry TITLEE palette at CRAM 0.
+            const unsigned int characterNumber =
+                static_cast<unsigned int>(patternName & 0x0FFFu) * 4u;
+            const unsigned int px = planeX & 15u;
+            const unsigned int cellX = px >> 3;
+            const unsigned int cellIndex = cellX + cellY * 2u;
+            const unsigned int dotAddress =
+                characterNumber * 32u +
+                cellIndex * 64u +
+                inCellY * 8u +
+                (px & 7u);
+            const unsigned int paletteEntry =
+                static_cast<unsigned int>(vram[dotAddress & 0x7FFFFu]);
+            const std::uint16_t color =
+                readVdp2Be16(cram, paletteEntry * 2u);
+            g_titleDecodedPixels[
+                y * kTitleDecodedWidth + x] =
+                vdp2Rgb555ToAbgr(color);
+        }
+    }
+
+    g_titleDecodedValid = true;
+
+    static bool logged = false;
+    if (!logged) {
+        logging::writef(
+            "[VDP2Title] decoded %ux%u RGBA cache; SGX LINEAR presentation\n",
+            kTitleDecodedWidth,
+            kTitleDecodedHeight);
+        logged = true;
+    }
+    return true;
 }
 
 static std::uint32_t vdp2Rgb555ToAbgr(std::uint16_t color)
@@ -1908,6 +2040,12 @@ static void freeMovieResources()
 {
     freeMovieMappedBlock(g_movieTextureUid, g_movieTextureData);
 
+    void* titlePixels = g_titleDecodedPixels;
+    freeMovieMappedBlock(g_titleDecodedUid, titlePixels);
+    g_titleDecodedPixels = nullptr;
+    g_titleDecodedTexture = {};
+    g_titleDecodedValid = false;
+
     void* vertices = g_movieVertices;
     freeMovieMappedBlock(g_movieVertexUid, vertices);
     g_movieVertices = nullptr;
@@ -2140,8 +2278,14 @@ bool movie_present_cinepak_payload(
         const float sourceAspect =
             static_cast<float>(sourceWidth) /
             static_cast<float>(sourceHeight);
-        const float xExtent = sourceAspect / displayAspect;
-        const float yExtent = 1.0f;
+
+        // Cinepak movies use the same horizontal presentation width as the
+        // normal Saturn 4:3 image on Vita. Preserve the movie's own aspect
+        // ratio inside that width, leaving black above/below for widescreen
+        // sources instead of filling vertically and cropping the sides.
+        const float xExtent = (4.0f / 3.0f) / displayAspect;
+        const float yExtent =
+            xExtent * displayAspect / sourceAspect;
         g_movieVertices[0] = {-xExtent,  yExtent, 0.5f, 0.0f, 0.0f};
         g_movieVertices[1] = { xExtent,  yExtent, 0.5f, 1.0f, 0.0f};
         g_movieVertices[2] = {-xExtent, -yExtent, 0.5f, 0.0f, 1.0f};
@@ -2355,6 +2499,19 @@ bool frontend_present_vdp2(
     g_movieVdp2Info[2] = static_cast<float>(scrollY);
     g_movieVdp2Info[3] = static_cast<float>(flags);
     g_movieVdp2Tvmd = tvmd;
+
+    // The title task begins publishing VDP2 state while TVMD is still in the
+    // low-resolution setup mode. Do not freeze the decoded artwork at that
+    // transient point: wait until Azel switches to the real HRESO=3,
+    // double-density title mode, then decode the static 704x448 NBG0 once.
+    const bool titleHighResReady =
+        layout == 0u && (tvmd & 0x00C7u) == 0x00C3u;
+    if (titleHighResReady &&
+        !updateTitleDecodedTexture(vram, cram)) {
+        logging::writef(
+            "[VDP2Title] FAIL decoded title cache\n");
+        return false;
+    }
 
     g_movieFrameVisible = true;
     if (!g_movieUploadLogged) {
@@ -3069,11 +3226,12 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
     const unsigned int colorMode =
         (static_cast<unsigned int>(command.cmdPmod) >> 3) & 7u;
 
-    // Multi-choice cursors are normal VDP1 sprites backed by live VDP1 VRAM
-    // and a live CRAM bank (PMOD=0x0080, CMDCOLR=0x47F0). They do not belong
-    // to a town CGB bundle, so decode that command exactly from Saturn memory
-    // instead of forcing it through the town-material decoder.
-    if (commandType == 0u && colorMode == 0u) {
+    // Screen-space UI commands are backed by live VDP1 VRAM rather than a
+    // town CGB bundle. Decode 4bpp color-bank and color-LUT sprites directly
+    // from Saturn memory for normal, scaled and distorted sprite commands.
+    // Geometry type does not change the texture encoding.
+    if ((commandType == 0u || commandType == 1u || commandType == 2u) &&
+        (colorMode == 0u || colorMode == 1u)) {
         const unsigned int width =
             ((static_cast<unsigned int>(command.cmdSize) >> 8) & 0x3Fu) * 8u;
         const unsigned int height =
@@ -3122,14 +3280,43 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                     continue;
                 }
 
-                const unsigned int paletteIndex =
-                    (static_cast<unsigned int>(command.cmdColr) & 0x07F0u) |
-                    dot;
-                const unsigned int cramByte = paletteIndex * 2u;
-                if (cramByte + 1u >= sizeof(g_vdp2Cram))
-                    continue;
-                const std::uint16_t color =
-                    readVdp2Be16(g_vdp2Cram, cramByte);
+                std::uint16_t color = 0u;
+                if (colorMode == 0u) {
+                    const unsigned int paletteIndex =
+                        (static_cast<unsigned int>(command.cmdColr) & 0x07F0u) |
+                        dot;
+                    const unsigned int cramByte = paletteIndex * 2u;
+                    if (cramByte + 1u >= sizeof(g_vdp2Cram))
+                        continue;
+                    color = readVdp2Be16(g_vdp2Cram, cramByte);
+                } else {
+                    // VDP1 color-LUT mode: CMDCOLR is the LUT address in
+                    // 8-byte units, and each 4bpp source dot selects one BE16
+                    // LUT entry. Direct RGB555 entries carry bit 15; indirect
+                    // entries address CRAM.
+                    const unsigned int lutAddress =
+                        (static_cast<unsigned int>(command.cmdColr) << 3) +
+                        dot * 2u;
+                    if (lutAddress + 1u >= 0x80000u)
+                        continue;
+                    const unsigned char* const lut =
+                        getVdp1Pointer(0x25C00000u + lutAddress);
+                    if (!lut)
+                        continue;
+                    const std::uint16_t lutValue =
+                        static_cast<std::uint16_t>(
+                            (static_cast<unsigned int>(lut[0]) << 8) |
+                            static_cast<unsigned int>(lut[1]));
+                    if (lutValue & 0x8000u) {
+                        color = lutValue;
+                    } else {
+                        const unsigned int cramByte =
+                            (static_cast<unsigned int>(lutValue) & 0x07FFu) * 2u;
+                        if (cramByte + 1u >= sizeof(g_vdp2Cram))
+                            continue;
+                        color = readVdp2Be16(g_vdp2Cram, cramByte);
+                    }
+                }
                 if (color)
                     decoded.rgba[pixel] = vdp2Rgb555ToAbgr(color);
             }
@@ -3176,8 +3363,8 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         sceGxmTextureSetMagFilter(
             &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
 
-        static bool reportedNormalSprite = false;
-        if (!reportedNormalSprite) {
+        static bool reportedLiveUiSprite = false;
+        if (!reportedLiveUiSprite) {
             unsigned int sourceNonZero = 0u;
             unsigned int visiblePixels = 0u;
             std::uint32_t sourceHash = 2166136261u;
@@ -3197,9 +3384,11 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
             const unsigned int base =
                 static_cast<unsigned int>(command.cmdColr) & 0x07F0u;
             logging::writef(
-                "[VDP1Normal] SRCA=%04X SIZE=%04X COLR=%04X %ux%u "
+                "[VDP1LiveUI] type=%u mode=%u SRCA=%04X SIZE=%04X COLR=%04X %ux%u "
                 "srcNZ=%u/%u vis=%u/%u srcHash=%08X rgbaHash=%08X "
                 "pal=%04X:%04X,%04X,%04X,%04X\n",
+                commandType,
+                colorMode,
                 static_cast<unsigned int>(command.cmdSrca),
                 static_cast<unsigned int>(command.cmdSize),
                 static_cast<unsigned int>(command.cmdColr),
@@ -3216,7 +3405,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                     readVdp2Be16(g_vdp2Cram, ((base | 3u) * 2u) & 0x0FFFu)),
                 static_cast<unsigned int>(
                     readVdp2Be16(g_vdp2Cram, ((base | 4u) * 2u) & 0x0FFFu)));
-            reportedNormalSprite = true;
+            reportedLiveUiSprite = true;
         }
 
         g_vdp1UiTextureCache.push_back(std::move(entry));
@@ -3319,6 +3508,15 @@ static void drawPublishedVdp1Ui()
     sceGxmSetUniformDataF(
         uniforms, g_textureWvpParam, 0, 16, identity);
 
+    static unsigned int uiTraceBudget = 48u;
+    if (uiTraceBudget != 0u) {
+        logging::writef(
+            "[PresentationTrace][NeptuneUI] commands=%u render=%dx%d\n",
+            static_cast<unsigned int>(commands.size()),
+            viewerRenderWidth(),
+            viewerRenderHeight());
+    }
+
     unsigned int spriteSlot = 0u;
     for (const auto& command : commands) {
         const unsigned int commandType = command.cmdCtrl & 0x000Fu;
@@ -3420,8 +3618,37 @@ static void drawPublishedVdp1Ui()
 
         GpuMode1Texture* texture =
             findOrUploadVdp1UiTexture(command);
-        if (!texture)
+        if (!texture) {
+            if (uiTraceBudget != 0u) {
+                logging::writef(
+                    "[PresentationTrace][NeptuneUI] DROP type=%u CTRL=%04X "
+                    "PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X reason=texture\n",
+                    commandType,
+                    command.cmdCtrl,
+                    command.cmdPmod,
+                    command.cmdColr,
+                    command.cmdSrca,
+                    command.cmdSize);
+                --uiTraceBudget;
+            }
             continue;
+        }
+
+        if (uiTraceBudget != 0u) {
+            logging::writef(
+                "[PresentationTrace][NeptuneUI] DRAW type=%u CTRL=%04X "
+                "PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X "
+                "A=(%d,%d) B=(%d,%d)\n",
+                commandType,
+                command.cmdCtrl,
+                command.cmdPmod,
+                command.cmdColr,
+                command.cmdSrca,
+                command.cmdSize,
+                command.xa, command.ya,
+                command.xb, command.yb);
+            --uiTraceBudget;
+        }
 
         // Match the horizontal presentation transform used by
         // buildAzelProjection(). Azel emits centered 352x224 VDP1
@@ -4728,6 +4955,31 @@ static void appendLiveTownModel(
 
     for (std::size_t p = 0; p < model.polygons.size(); ++p) {
         auto record = model.polygons[p];
+
+        if (record.cmdPmod & 0x0100u) {
+            static unsigned int liveMeshTraceBudget = 48u;
+            if (liveMeshTraceBudget != 0u) {
+                const std::uint16_t resolvedIndex =
+                    resolvedTextureIndices &&
+                    p < resolvedTextureIndexCount
+                        ? resolvedTextureIndices[p]
+                        : 0xFFFFu;
+                logging::writef(
+                    "[PresentationTrace][LiveMesh] p=%u dynamic=%u billboard=%u "
+                    "CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X "
+                    "resolved=%u\n",
+                    static_cast<unsigned int>(p),
+                    state.dynamic ? 1u : 0u,
+                    state.billboard ? 1u : 0u,
+                    static_cast<unsigned int>(record.cmdCtrl),
+                    static_cast<unsigned int>(record.cmdPmod),
+                    static_cast<unsigned int>(record.cmdColr),
+                    static_cast<unsigned int>(record.cmdSrca),
+                    static_cast<unsigned int>(record.cmdSize),
+                    static_cast<unsigned int>(resolvedIndex));
+                --liveMeshTraceBudget;
+            }
+        }
         for (unsigned n = 0; n < record.lightingCount; ++n) {
             const float x = record.lighting[n].normal[0] / 4096.0f;
             const float y = record.lighting[n].normal[1] / 4096.0f;
@@ -4769,6 +5021,27 @@ static void appendLiveTownModel(
         }
         g_liveTownPolygonLights.push_back(polygonLight);
     }
+
+    // Preserve the exact positions of Azel-authored VDP1 mesh commands in the
+    // flattened live-town stream. Adjacent mesh polygons from the same model
+    // are coalesced into ranges, but no scene/object identity is inferred.
+    std::size_t runStart = 0u;
+    std::size_t runCount = 0u;
+    for (std::size_t p = 0; p < model.polygons.size(); ++p) {
+        const bool mesh = (model.polygons[p].cmdPmod & 0x0100u) != 0u;
+        if (mesh) {
+            if (runCount == 0u)
+                runStart = p;
+            ++runCount;
+        } else if (runCount != 0u) {
+            g_liveTownMeshRanges.push_back(
+                {polygonBase + runStart, runCount});
+            runCount = 0u;
+        }
+    }
+    if (runCount != 0u)
+        g_liveTownMeshRanges.push_back(
+            {polygonBase + runStart, runCount});
 }
 
 static void appendLiveTownEdge()
@@ -4964,6 +5237,7 @@ static bool buildLiveTownFrame()
     std::uint64_t staticSignature = 1469598103934665603ull;
     bool hasBillboards = false;
     g_liveTownSubmissionCount = 0u;
+    g_liveTownMeshRanges.clear();
     g_liveTownStaticSubmissionCount = 0u;
     g_liveTownBillboardSubmissionCount = 0u;
     g_liveTownStaticSubmittedPolygons = 0u;
@@ -8014,11 +8288,20 @@ bool submit_vdp1_model(
                 const bool mesh =
                     orderedShadow || g_vdp1GpuTextures[t].mesh;
                 if (orderedShadow) {
-                    // Azel submits Edge's VDP1 mesh shadow after the town
-                    // environment and immediately before the actor. Preserve
-                    // that ordered phase explicitly rather than relying on
-                    // texture-batch order or the depth buffer to reconstruct
-                    // Saturn VDP1 semantics.
+                    static unsigned int orderedShadowTraceBudget = 8u;
+                    if (orderedShadowTraceBudget != 0u) {
+                        logging::writef(
+                            "[PresentationTrace][MeshDraw] tex=%u indices=%u "
+                            "mesh=%u\n",
+                            t,
+                            batch.indexCount,
+                            mesh ? 1u : 0u);
+                        --orderedShadowTraceBudget;
+                    }
+                    // Saturn VDP1 mesh mode is ordered overdraw, not a z-buffered
+                    // material. Preserve this Azel-authored command phase
+                    // explicitly rather than allowing texture batching/depth
+                    // testing to reorder or reject it.
                     sceGxmSetFrontPolygonMode(
                         g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
                     sceGxmSetBackPolygonMode(
@@ -8096,6 +8379,34 @@ bool submit_vdp1_model(
                 !submitRange(
                     tailFirst,
                     model.polygonCount - tailFirst,
+                    false))
+                return false;
+            return true;
+        }
+
+        if (g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+            !g_liveTownMeshRanges.empty()) {
+            std::size_t cursor = 0u;
+            for (const auto& meshRange : g_liveTownMeshRanges) {
+                if (meshRange.first > cursor &&
+                    !submitRange(
+                        cursor,
+                        meshRange.first - cursor,
+                        false))
+                    return false;
+
+                if (!submitRange(
+                        meshRange.first,
+                        meshRange.count,
+                        true))
+                    return false;
+
+                cursor = meshRange.first + meshRange.count;
+            }
+            if (cursor < model.polygonCount &&
+                !submitRange(
+                    cursor,
+                    model.polygonCount - cursor,
                     false))
                 return false;
             return true;
@@ -8367,6 +8678,33 @@ bool submit_vdp1_model(
                     tailFirst,
                     model.polygonCount - tailFirst,
                     false);
+        } else if (
+            subdividedTexturedLit &&
+            g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+            !g_liveTownMeshRanges.empty()) {
+            std::size_t cursor = 0u;
+            for (const auto& meshRange : g_liveTownMeshRanges) {
+                if (phaseResult &&
+                    meshRange.first > cursor) {
+                    phaseResult = submitSubdivRange(
+                        cursor,
+                        meshRange.first - cursor,
+                        false);
+                }
+                if (phaseResult) {
+                    phaseResult = submitSubdivRange(
+                        meshRange.first,
+                        meshRange.count,
+                        true);
+                }
+                cursor = meshRange.first + meshRange.count;
+            }
+            if (phaseResult && cursor < model.polygonCount) {
+                phaseResult = submitSubdivRange(
+                    cursor,
+                    model.polygonCount - cursor,
+                    false);
+            }
         } else {
             phaseResult =
                 submitSubdivRange(0u, model.polygonCount, false);
@@ -8929,17 +9267,26 @@ static void drawColorOffsetPass(
         6u);
 }
 
-static void drawAzelColorOffset()
+static void drawAzelColorOffsetForLayer(
+    unsigned int layerBit,
+    bool requireEnable)
 {
-    // Azel's reconstructed reinitVdp2() clears CLOFEN while its fade
-    // channels continue to drive the signed VDP2 color offsets. The desktop
-    // runtime therefore treats those live offsets as authoritative even when
-    // CLOFEN has been reset. Match that behavior here; retain CLOFSL only for
-    // A/B bank selection.
-    constexpr unsigned int kNbg0Bit = 0x1u;
+    // Saturn VDP2 CLOFEN/CLOFSL bit assignment:
+    //   bit 6 SPRITE, bit 5 BACK, bit 4 RBG0,
+    //   bit 3 NBG3, bit 2 NBG2, bit 1 NBG1, bit 0 NBG0.
+    //
+    // Some front-end fade paths in the reconstructed Azel runtime clear
+    // CLOFEN while their live fade channel still carries the intended
+    // fullscreen transition. Those compatibility paths can opt out of the
+    // enable test, but real layer composition (D5 RBG0) must honor CLOFEN.
+    const unsigned int enable =
+        g_azelColorOffsetEnable.load(std::memory_order_relaxed);
+    if (requireEnable && (enable & layerBit) == 0u)
+        return;
+
     const unsigned int select =
         g_azelColorOffsetSelect.load(std::memory_order_relaxed);
-    const bool useB = (select & kNbg0Bit) != 0;
+    const bool useB = (select & layerBit) != 0u;
 
     const int red = useB
         ? g_azelColorOffsetBRed.load(std::memory_order_relaxed)
@@ -8951,19 +9298,54 @@ static void drawAzelColorOffset()
         ? g_azelColorOffsetBBlue.load(std::memory_order_relaxed)
         : g_azelColorOffsetABlue.load(std::memory_order_relaxed);
 
-    // Split mixed-sign RGB values into two hardware blend passes. This is
-    // equivalent to Saturn's per-channel signed additive color offset and
-    // applies after VDP2 + VDP1 front-end composition.
+    // Saturn VDP2 color-offset registers are signed 9-bit values. Azel's
+    // host reconstruction stores them in s16, so intermediate fade math can
+    // legitimately run outside the hardware range (for example -263). Real
+    // VDP2 keeps only the low nine bits on register write; reproduce that
+    // wrap before translating the offset to GXM instead of clamping it.
+    auto hardwareSigned9 = [](int value) -> int {
+        const unsigned int raw =
+            static_cast<unsigned int>(value) & 0x1FFu;
+        return (raw & 0x100u)
+            ? static_cast<int>(raw) - 0x200
+            : static_cast<int>(raw);
+    };
+
+    // Azel's fade reconstruction expands Saturn's signed 5-bit color
+    // endpoints to approximately -128..+135 (see unpackColor(): negative
+    // values * 8, positive values * 9). Neptune blends in an 8-bit display
+    // domain, so expand that contribution once here. With the CLOFEN/CLOFSL
+    // layer mapping now corrected this reaches true black/white without
+    // incorrectly washing unrelated layers.
+    const int displayRed =
+        std::clamp(hardwareSigned9(red) * 2, -255, 255);
+    const int displayGreen =
+        std::clamp(hardwareSigned9(green) * 2, -255, 255);
+    const int displayBlue =
+        std::clamp(hardwareSigned9(blue) * 2, -255, 255);
+
     drawColorOffsetPass(
         g_colorOffsetAddFragmentProgram,
-        std::max(red, 0),
-        std::max(green, 0),
-        std::max(blue, 0));
+        std::max(displayRed, 0),
+        std::max(displayGreen, 0),
+        std::max(displayBlue, 0));
     drawColorOffsetPass(
         g_colorOffsetSubtractFragmentProgram,
-        std::max(-red, 0),
-        std::max(-green, 0),
-        std::max(-blue, 0));
+        std::max(-displayRed, 0),
+        std::max(-displayGreen, 0),
+        std::max(-displayBlue, 0));
+}
+
+static void drawAzelFrontendFadeOffset()
+{
+    // The native movie/title state machine drives its transition through the
+    // same fade channels even after the reconstructed VDP2 setup has cleared
+    // CLOFEN. The platform movie surface stands in for Saturn's composed
+    // front-end output, so apply the live channel as a fullscreen compatibility
+    // pass. CLOFSL is normally zero in this path; use NBG0's select bit so the
+    // A/B choice remains deterministic if Azel changes it.
+    constexpr unsigned int kNbg0Bit = 0x01u;
+    drawAzelColorOffsetForLayer(kNbg0Bit, true);
 }
 
 static bool renderMovieFrame()
@@ -9081,9 +9463,20 @@ static bool renderMovieFrame()
             sceGxmSetVertexStream(
                 g_probeContext, 0, g_movieVertices) >= 0;
 
-        if (streamReady && g_movieUsesVdp2Title) {
-            // VDP2 is now composed from reusable layer programs rather than
-            // one screen-specific shader. D5 is the first RBG0 client.
+        if (streamReady && g_movieUsesVdp2Title &&
+            g_movieVdp2Info[0] < 0.5f && g_titleDecodedValid) {
+            sceGxmSetFragmentTexture(
+                g_probeContext, 0, &g_titleDecodedTexture);
+            sceGxmSetFragmentProgram(
+                g_probeContext, g_movieTextureFragmentProgram);
+            submitted = sceGxmDraw(
+                g_probeContext,
+                SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16,
+                g_movieIndices,
+                6) >= 0;
+        } else if (streamReady && g_movieUsesVdp2Title) {
+            // D5 still consumes live raw VDP2 state for RBG0/NBG0 composition.
             bool rbgSubmitted = true;
             if (g_movieVdp2Info[0] >= 0.5f && g_vdp2Rbg0Available &&
                 g_vdp2Rbg0FragmentProgram && g_vdp2Rbg0InfoParam) {
@@ -9328,6 +9721,14 @@ static bool renderMovieFrame()
                         parameterAIndexCount);
                 }
 
+                // RBG0 color offset is CLOFEN bit 4 on Saturn. D5 currently
+                // reports CLOFEN=0x20, which is BACK, so do not incorrectly
+                // tint the rotation plane when only the back screen is selected.
+                if (rbgSubmitted) {
+                    constexpr unsigned int kRbg0Bit = 0x10u;
+                    drawAzelColorOffsetForLayer(kRbg0Bit, true);
+                }
+
                 // NBG uses the normal fullscreen front-end quad.
                 sceGxmSetVertexStream(
                     g_probeContext, 0, g_movieVertices);
@@ -9402,8 +9803,17 @@ static bool renderMovieFrame()
     if (submitted && g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f)
         drawPublishedVdp1Ui();
 
-    if (submitted)
-        drawAzelColorOffset();
+    if (submitted) {
+        const bool d5FrontEnd =
+            g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f;
+
+        // D5 already received its hardware-accurate RBG0-only color offset
+        // between the RBG0 and NBG passes above. Title and Cinepak/movie
+        // surfaces instead represent the already-composited Saturn frontend,
+        // so their Azel transition is a fullscreen compatibility pass.
+        if (!d5FrontEnd)
+            drawAzelFrontendFadeOffset();
+    }
 
     const std::uint64_t gpuWaitStartUs =
         sceKernelGetProcessTimeWide();
@@ -9439,8 +9849,10 @@ static bool renderMovieFrame()
             g_movieWidth, g_movieHeight,
             movieOutputWidth, movieOutputHeight,
             g_movieUsesVdp2Title
-                ? (highResolutionFrontend
-                    ? "SGX-VDP2-DISPLAY-720X408"
+                ? (g_movieVdp2Info[0] < 0.5f && g_titleDecodedValid
+                    ? (highResolutionFrontend
+                        ? "SGX-RGBA-TITLE-720X408"
+                        : "SGX-RGBA-TITLE")
                     : "SGX-VDP2")
                 : (g_movieUsesCinepakPayload ? "SGX-Cinepak" : "RGBA"));
         g_movieRenderLogged = true;
@@ -9454,10 +9866,27 @@ static bool renderMovieFrame()
     frameBuffer.width = movieOutputWidth;
     frameBuffer.height = movieOutputHeight;
 
-    waitFor30HzPresentSlot();
-    sceDisplaySetFrameBuf(&frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
-    sceDisplayWaitVblankStart();
-    mark30HzPresented();
+    if (!highResolutionFrontend) {
+        waitFor30HzPresentSlot();
+        sceDisplaySetFrameBuf(
+            &frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
+        sceDisplayWaitVblankStart();
+        mark30HzPresented();
+    } else {
+        // Saturn's high-resolution title advances its animation state at the
+        // lower cadence even though the display is scanned more frequently.
+        // Keep Neptune's cheap 720x408 render, but hold each published Azel
+        // title state for two scanouts before returning the render slot.
+        // Re-queueing the same completed buffer gives two display presents
+        // without advancing the game/task graph twice.
+        sceDisplaySetFrameBuf(
+            &frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
+        sceDisplayWaitVblankStart();
+        sceDisplaySetFrameBuf(
+            &frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
+        sceDisplayWaitVblankStart();
+        mark30HzPresented();
+    }
     g_gxmDrawBuffer ^= 1;
     return true;
 }
@@ -9655,6 +10084,23 @@ static void renderBasicWingViewer()
             ? staticRoomVdp1Source(false)
             : basicWingVdp1Source());
 
+    static unsigned int shadowTraceHeartbeat = 0u;
+    if (roomAuthenticCameraMode &&
+        ((shadowTraceHeartbeat++ % 60u) == 0u)) {
+        logging::writef(
+            "[PresentationTrace][NeptuneScene] modelPolys=%u "
+            "shadowReady=%u shadowTex=%u shadowFirst=%u shadowPolys=%u "
+            "edgeFirst=%u edgePolys=%u resident=%u\n",
+            static_cast<unsigned int>(model.polygonCount),
+            g_edgeShadowCpuReady ? 1u : 0u,
+            static_cast<unsigned int>(g_edgeShadowTownTextureIndices.size()),
+            static_cast<unsigned int>(g_liveTownShadowFirstPolygon),
+            static_cast<unsigned int>(g_liveTownShadowPolygonCount),
+            static_cast<unsigned int>(g_liveTownEdgeFirstPolygon),
+            static_cast<unsigned int>(g_liveTownEdgePolygonCount),
+            static_cast<unsigned int>(g_residentVdp1Model));
+    }
+
     const std::uint64_t submitStartUs = sceKernelGetProcessTimeWide();
     const bool submitted = submit_vdp1_model(model, drawState);
     g_profileSubmitUs = static_cast<unsigned int>(
@@ -9666,12 +10112,14 @@ static void renderBasicWingViewer()
     }
 
     if (roomAuthenticCameraMode) {
-        // Saturn UI composition: VDP2 supplies the dialog/window backing and
-        // cinematic matte; VDP1 sprites (including the multi-choice cursor)
-        // are composited above those planes.
+        // Saturn UI composition: NBG1 supplies window/backing tiles, the
+        // line-scroll cinematic matte sits behind the glyph plane, and VDP1
+        // sprites (including Lock-On and choice cursors) remain above VDP2.
+        // Azel still owns the contents/state of every layer; Neptune only
+        // translates their final presentation ordering to GXM.
         drawAzelVdp2Nbg1Gpu();
-        drawAzelVdp2TextLayerGpu();
         drawAzelVdp2CinematicBarsGpu();
+        drawAzelVdp2TextLayerGpu();
         drawPublishedVdp1Ui();
     }
 
@@ -10239,7 +10687,6 @@ void presentation_publish_frame()
     g_townFadeSerial = g_pendingTownFadeSerial;
     g_townFadeIn = g_pendingTownFadeIn;
     g_townFadeFrames = g_pendingTownFadeFrames;
-
     if (g_pendingVdp2TextValid) {
         std::memcpy(
             g_vdp2TextVram,
@@ -10254,6 +10701,42 @@ void presentation_publish_frame()
             g_pendingVdp2LineScroll,
             sizeof(g_vdp2LineScroll));
         g_vdp2TextValid = true;
+    }
+
+    static unsigned int presentationTraceHeartbeat = 0u;
+    if ((presentationTraceHeartbeat++ % 60u) == 0u) {
+        unsigned int publishedNbg1Cells = 0u;
+        unsigned int publishedTextCells = 0u;
+        if (g_vdp2TextValid) {
+            constexpr unsigned int kNbg1MapOffset = 0x5800u;
+            constexpr unsigned int kNbg1Cells = 32u * 14u;
+            constexpr unsigned int kTextMapOffset = 0x6000u;
+            constexpr unsigned int kTextCells = 64u * 28u;
+            for (unsigned int i = 0; i < kNbg1Cells; ++i) {
+                if (readVdp2Be16(
+                        g_vdp2TextVram,
+                        kNbg1MapOffset + i * 2u) != 0u)
+                    ++publishedNbg1Cells;
+            }
+            for (unsigned int i = 0; i < kTextCells; ++i) {
+                if (readVdp2Be16(
+                        g_vdp2TextVram,
+                        kTextMapOffset + i * 2u) != 0u)
+                    ++publishedTextCells;
+            }
+        }
+
+        logging::writef(
+            "[PresentationTrace][Publish] pendingVDP2=%u publishedVDP2=%u "
+            "nbg1Cells=%u textCells=%u uiCmds=%u shadowPolys=%u edgePolys=%u\n",
+            g_pendingVdp2TextValid ? 1u : 0u,
+            g_vdp2TextValid ? 1u : 0u,
+            publishedNbg1Cells,
+            publishedTextCells,
+            static_cast<unsigned int>(
+                azel_bridge::published_vdp1_ui_commands().size()),
+            static_cast<unsigned int>(g_liveTownShadowPolygonCount),
+            static_cast<unsigned int>(g_liveTownEdgePolygonCount));
     }
 
     if (g_renderThreadStarted && g_renderFrameReadySema >= 0)
@@ -10409,6 +10892,15 @@ void presentation_set_vdp2_text(
         lineScroll,
         sizeof(g_pendingVdp2LineScroll));
     g_pendingVdp2TextValid = true;
+
+    static unsigned int setVdp2TraceHeartbeat = 0u;
+    if ((setVdp2TraceHeartbeat++ % 60u) == 0u) {
+        logging::writef(
+            "[PresentationTrace][SetVDP2] snapshot staged vram=%u cram=%u lineScroll=%u\n",
+            static_cast<unsigned int>(sizeof(g_pendingVdp2TextVram)),
+            static_cast<unsigned int>(sizeof(g_pendingVdp2Cram)),
+            static_cast<unsigned int>(sizeof(g_pendingVdp2LineScroll)));
+    }
 }
 
 } // namespace lagi::platform::renderer

@@ -52,6 +52,14 @@ static void capture_azel_vdp1_frontend_commands()
 
     const auto begin = mainContextVdp1[0].begin() + 6;
     const auto end = ctx.m0_currentVdp1WriteEA;
+    unsigned int commandCount = 0u;
+    unsigned int normalSprites = 0u;
+    unsigned int scaledSprites = 0u;
+    unsigned int distortedSprites = 0u;
+    unsigned int polylines = 0u;
+    unsigned int otherCommands = 0u;
+    std::uint32_t signature = 2166136261u;
+
     for (auto cmd = begin; cmd != end; ++cmd) {
         lagi::azel_bridge::Vdp1UiCommand ui{};
         ui.cmdCtrl = cmd->m0_CMDCTRL;
@@ -64,6 +72,72 @@ static void capture_azel_vdp1_frontend_commands()
         ui.xc = cmd->m14_CMDXC;  ui.yc = cmd->m16_CMDYC;
         ui.xd = cmd->m18_CMDXD;  ui.yd = cmd->m1A_CMDYD;
         lagi::azel_bridge::record_vdp1_ui_command(ui);
+
+        ++commandCount;
+        switch (ui.cmdCtrl & 0x000Fu) {
+        case 0x0u: ++normalSprites; break;
+        case 0x1u: ++scaledSprites; break;
+        case 0x2u: ++distortedSprites; break;
+        case 0x5u: ++polylines; break;
+        default: ++otherCommands; break;
+        }
+
+        const std::uint16_t words[] = {
+            ui.cmdCtrl, ui.cmdPmod, ui.cmdColr, ui.cmdSrca, ui.cmdSize,
+            static_cast<std::uint16_t>(ui.xa),
+            static_cast<std::uint16_t>(ui.ya),
+            static_cast<std::uint16_t>(ui.xb),
+            static_cast<std::uint16_t>(ui.yb)
+        };
+        for (const std::uint16_t word : words) {
+            signature ^= static_cast<std::uint8_t>(word & 0xFFu);
+            signature *= 16777619u;
+            signature ^= static_cast<std::uint8_t>(word >> 8);
+            signature *= 16777619u;
+        }
+    }
+
+    static std::uint32_t lastSignature = 0u;
+    static unsigned int heartbeat = 0u;
+    if (signature != lastSignature || ((heartbeat++ % 120u) == 0u)) {
+        lagi::platform::logging::writef(
+            "[PresentationTrace][AzelVDP1] mode=%d status=%d cmds=%u "
+            "normal=%u scaled=%u distorted=%u polyline=%u other=%u hash=%08X\n",
+            static_cast<int>(gGameStatus.m0_gameMode),
+            static_cast<int>(gGameStatus.m4_gameStatus),
+            commandCount,
+            normalSprites,
+            scaledSprites,
+            distortedSprites,
+            polylines,
+            otherCommands,
+            static_cast<unsigned int>(signature));
+        lastSignature = signature;
+    }
+
+    if (gGameStatus.m0_gameMode == 1 && commandCount != 0u) {
+        static unsigned int detailBudget = 48u;
+        if (detailBudget != 0u) {
+            unsigned int index = 0u;
+            for (auto cmd = begin;
+                 cmd != end && index < 8u && detailBudget != 0u;
+                 ++cmd, ++index, --detailBudget) {
+                lagi::platform::logging::writef(
+                    "[PresentationTrace][AzelVDP1Cmd] i=%u CTRL=%04X PMOD=%04X "
+                    "COLR=%04X SRCA=%04X SIZE=%04X "
+                    "A=(%d,%d) B=(%d,%d) C=(%d,%d) D=(%d,%d)\n",
+                    index,
+                    cmd->m0_CMDCTRL,
+                    cmd->m4_CMDPMOD,
+                    cmd->m6_CMDCOLR,
+                    cmd->m8_CMDSRCA,
+                    cmd->mA_CMDSIZE,
+                    cmd->mC_CMDXA, cmd->mE_CMDYA,
+                    cmd->m10_CMDXB, cmd->m12_CMDYB,
+                    cmd->m14_CMDXC, cmd->m16_CMDYC,
+                    cmd->m18_CMDXD, cmd->m1A_CMDYD);
+            }
+        }
     }
 }
 
@@ -185,6 +259,51 @@ bool runtime_init()
         "[AzelBoot] native azelInit/resetEngine complete; initial task active\n");
     return true;
 }
+namespace {
+
+void correct_reconstructed_fade_step(sFadeControlsChannel& channel)
+{
+    if (channel.m20_stopped != 0)
+        return;
+
+    bool corrected = false;
+    for (unsigned int i = 0; i < 3u; ++i) {
+        const std::int32_t current = channel.m0_color[i].asS32();
+        const std::int32_t target =
+            static_cast<std::int32_t>(channel.m18_targetColor[i]) << 16;
+        const std::int32_t step = channel.mC_colorStep[i].asS32();
+        const std::int64_t delta =
+            static_cast<std::int64_t>(target) -
+            static_cast<std::int64_t>(current);
+
+        // Upstream Azel currently reconstructs fadePalette() as
+        //     step = (current - target) / frames
+        // while updateFadeInterrupt() advances with
+        //     current += step.
+        // That walks away from the requested Saturn target until the final
+        // frame snaps to it. Preserve Azel's target and timing, but correct
+        // the reconstructed step direction at the platform boundary.
+        if ((delta > 0 && step < 0) || (delta < 0 && step > 0)) {
+            channel.mC_colorStep[i] =
+                fixedPoint::fromS32(-step);
+            corrected = true;
+        }
+    }
+
+    if (corrected) {
+        platform::logging::writef(
+            "[FadeCompat] corrected reconstructed fade step direction\n");
+    }
+}
+
+void correct_reconstructed_fade_steps()
+{
+    correct_reconstructed_fade_step(g_fadeControls.m0_fade0);
+    correct_reconstructed_fade_step(g_fadeControls.m24_fade1);
+}
+
+} // namespace
+
 void runtime_frame()
 {
     static unsigned int startupFrame = 0;
@@ -193,6 +312,9 @@ void runtime_frame()
     lagi::input_bridge::sync_to_azel();
 
     // Azel's Saturn VBlank normally advances fade state before the task pass.
+    // Correct the sign error in the current host reconstruction before the
+    // channel is advanced; Azel still owns the target color and frame count.
+    correct_reconstructed_fade_steps();
     updateFadeInterrupt();
 
     lagi::diagnostics::trace_fade_state();
@@ -273,6 +395,24 @@ void runtime_frame()
     // native runtime integration.
     interruptVDP2Update();
     lastUpdateFunction();
+
+    // Tasks above can start a new fade and change CLOFEN/CLOFSL as part of
+    // the same VDP2 update that makes new front-end artwork visible. Refresh
+    // Neptune from the completed Saturn register state here as well as at the
+    // start of the frame, so a newly enabled layer cannot appear for one
+    // frame without its color offset (notably the title NBG1 handoff).
+    {
+        const auto& regs = vdp2Controls.m20_registers[0];
+        lagi::platform::renderer::set_azel_color_offset_state(
+            regs.m110_CLOFEN,
+            regs.m112_CLOFSL,
+            regs.m114_COAR,
+            regs.m116_COAG,
+            regs.m118_COAB,
+            regs.m11A_COBR,
+            regs.m11C_COBG,
+            regs.m11E_COBB);
+    }
 
     // Front-end VDP2 presentation is a platform service. Azel owns all title
     // graphics, text, palettes, blinking, input and state transitions; Lagi

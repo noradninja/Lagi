@@ -823,12 +823,52 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "if (false)"
    source_text "${source_text}")
 
+ # Correct two incomplete VDP2 color-offset reconstructions in the generated
+ # Vita copy. Saturn CLOFEN bit 0 is NBG0; m45_COEN must control that bit,
+ # not the unrelated CCRNA ratio register.
+ elseif(relative_path STREQUAL "VDP2.cpp")
+  string(REPLACE
+   "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA = (vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA & 0xFFE0) | (arg << 0);\n            break;"
+   "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN = (vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN & ~0x1) | (arg << 0);\n            break;"
+   source_text "${source_text}")
+
+  # reinitVdp2() resets the register copies to zero, but the fade controller
+  # intentionally survives across module/front-end setup. Republish the live
+  # fade-channel colors immediately so newly constructed layers remain at the
+  # current black/white offset during preload instead of flashing full-bright
+  # until the next fade interrupt updates the registers.
+  string(REPLACE
+   "void reinitVdp2()\n{\n    vdp2Controls.m0_doubleBufferIndex = 0;\n    vdp2Controls.m4_pendingVdp2Regs = &vdp2Controls.m20_registers[0];\n\n    resetVdp2RegsCopies();"
+   "void reinitVdp2()\n{\n    vdp2Controls.m0_doubleBufferIndex = 0;\n    vdp2Controls.m4_pendingVdp2Regs = &vdp2Controls.m20_registers[0];\n\n    resetVdp2RegsCopies();\n\n    const int fadeAR = g_fadeControls.m0_fade0.m0_color[0].getInteger();\n    const int fadeAG = g_fadeControls.m0_fade0.m0_color[1].getInteger();\n    const int fadeAB = g_fadeControls.m0_fade0.m0_color[2].getInteger();\n    const int fadeBR = g_fadeControls.m24_fade1.m0_color[0].getInteger();\n    const int fadeBG = g_fadeControls.m24_fade1.m0_color[1].getInteger();\n    const int fadeBB = g_fadeControls.m24_fade1.m0_color[2].getInteger();\n\n    for (int i = 0; i < 2; ++i) {\n        vdp2Controls.m20_registers[i].m114_COAR = fadeAR;\n        vdp2Controls.m20_registers[i].m116_COAG = fadeAG;\n        vdp2Controls.m20_registers[i].m118_COAB = fadeAB;\n        vdp2Controls.m20_registers[i].m11A_COBR = fadeBR;\n        vdp2Controls.m20_registers[i].m11C_COBG = fadeBG;\n        vdp2Controls.m20_registers[i].m11E_COBB = fadeBB;\n    }\n    vdp2Controls.m4_pendingVdp2Regs->m114_COAR = fadeAR;\n    vdp2Controls.m4_pendingVdp2Regs->m116_COAG = fadeAG;\n    vdp2Controls.m4_pendingVdp2Regs->m118_COAB = fadeAB;\n    vdp2Controls.m4_pendingVdp2Regs->m11A_COBR = fadeBR;\n    vdp2Controls.m4_pendingVdp2Regs->m11C_COBG = fadeBG;\n    vdp2Controls.m4_pendingVdp2Regs->m11E_COBB = fadeBB;\n    VDP2Regs_.m114_COAR = fadeAR;\n    VDP2Regs_.m116_COAG = fadeAG;\n    VDP2Regs_.m118_COAB = fadeAB;\n    VDP2Regs_.m11A_COBR = fadeBR;\n    VDP2Regs_.m11C_COBG = fadeBG;\n    VDP2Regs_.m11E_COBB = fadeBB;"
+   source_text "${source_text}")
+
+ # The title artwork is NBG0 and the title text is NBG1. Both participate in
+ # the Saturn palette/color-offset fade, so make that intent explicit in the
+ # reconstructed layer setup rather than faking a fullscreen renderer fade.
+ elseif(relative_path STREQUAL "o_title.cpp")
+  string(REPLACE
+   "    m7_CNSM,  1,\n    m0_END, // Character Number Supplementary mode 1 (12bits)"
+   "    m7_CNSM,  1,\n    m45_COEN, 1,\n    m0_END, // Character Number Supplementary mode 1 (12bits)"
+   source_text "${source_text}")
+  string(REPLACE
+   "    m40_CAOS, 7, // palette offset is 7 * 0x200 = 0xE00 (where the palette for the text is stored)\n    m0_END,"
+   "    m40_CAOS, 7, // palette offset is 7 * 0x200 = 0xE00 (where the palette for the text is stored)\n    m45_COEN, 1,\n    m0_END,"
+   source_text "${source_text}")
+
  # The upstream Azel movie task/state machine remains authoritative. For the
  # Vita build copy only, remove the desktop Cinepak/SoLoud stream backend and
  # route those platform-facing calls through Lagi services. The filename table,
  # timing table, countdown, CPK sequencing, fades, skip logic, subtitle task,
  # and task completion all remain the original upstream code.
  elseif(relative_path STREQUAL "movie/movie.cpp")
+  # The movie video is Saturn NBG0 and fadePalette() drives VDP2 color offset
+  # A for that plane. Upstream's reconstructed config omitted COEN, leaving
+  # CLOFEN at zero and forcing the Vita renderer to guess at the fade.
+  string(REPLACE
+   "    {m37_W0A,             1},\n    {m0_END,              0},"
+   "    {m37_W0A,             1},\n    {m45_COEN,            1},\n    {m0_END,              0},"
+   source_text "${source_text}")
+
   # MOVIE1 is the attract/title movie (movie timing entry 0x20). The current
   # reconstruction targets +white (0xFFFF) on exit, but Saturn hardware
   # reference fades to black before the title appears. Correct only this
