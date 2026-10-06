@@ -55,6 +55,91 @@ constexpr unsigned kTargetQueuedFrames = 2048;
 constexpr unsigned kRenderChunkFrames = 256;
 constexpr int kM68kCyclesPerSample = (11300000 / 60) / 735;
 
+struct ScspSlotProfile {
+    std::uint64_t active = 0;
+    std::uint64_t pcm8 = 0;
+    std::uint64_t pcm16 = 0;
+    std::uint64_t nonPcm = 0;
+    std::uint64_t plfo = 0;
+    std::uint64_t alfo = 0;
+    std::uint64_t modulation = 0;
+    std::uint64_t ringWrites = 0;
+    std::uint64_t dspSends = 0;
+    std::uint64_t directSends = 0;
+    std::uint64_t effectReturns = 0;
+    unsigned activeMax = 0;
+    unsigned samples = 0;
+};
+
+void sample_scsp_slot_profile(ScspSlotProfile& profile)
+{
+    unsigned active = 0;
+    unsigned pcm8 = 0;
+    unsigned pcm16 = 0;
+    unsigned nonPcm = 0;
+    unsigned plfo = 0;
+    unsigned alfo = 0;
+    unsigned modulation = 0;
+    unsigned ringWrites = 0;
+    unsigned dspSends = 0;
+    unsigned directSends = 0;
+    unsigned effectReturns = 0;
+
+    for (unsigned i = 0; i < 32; ++i) {
+        struct _SLOT* slot = &SCSP.Slots[i];
+        if (!slot->active)
+            continue;
+
+        ++active;
+        if (SSCTL(slot) != 0)
+            ++nonPcm;
+        else if (PCM8B(slot) != 0)
+            ++pcm8;
+        else
+            ++pcm16;
+
+        if (PLFOS(slot) != 0)
+            ++plfo;
+        if (ALFOS(slot) != 0)
+            ++alfo;
+        if (MDL(slot) != 0 || MDXSL(slot) != 0 || MDYSL(slot) != 0)
+            ++modulation;
+        if (!STWINH(slot))
+            ++ringWrites;
+        if (IMXL(slot) != 0)
+            ++dspSends;
+        if (DISDL(slot) != 0)
+            ++directSends;
+    }
+
+    for (unsigned i = 0; i < 16; ++i) {
+        struct _SLOT* slot = &SCSP.Slots[i];
+        if (EFSDL(slot) != 0)
+            ++effectReturns;
+    }
+
+    profile.active += active;
+    profile.pcm8 += pcm8;
+    profile.pcm16 += pcm16;
+    profile.nonPcm += nonPcm;
+    profile.plfo += plfo;
+    profile.alfo += alfo;
+    profile.modulation += modulation;
+    profile.ringWrites += ringWrites;
+    profile.dspSends += dspSends;
+    profile.directSends += directSends;
+    profile.effectReturns += effectReturns;
+    profile.activeMax = std::max(profile.activeMax, active);
+    ++profile.samples;
+}
+
+unsigned sampled_average(std::uint64_t total, unsigned samples)
+{
+    return samples != 0
+        ? static_cast<unsigned>((total + (samples / 2)) / samples)
+        : 0;
+}
+
 struct ScspCommand {
     s8 bytes[16]{};
 };
@@ -592,6 +677,7 @@ void render_scsp_audio()
         std::uint64_t sampledM68kUs = 0;
         std::uint64_t sampledScspUs = 0;
         std::uint64_t sampledDspUs = 0;
+        ScspSlotProfile slotProfile{};
         unsigned sampledFrames = 0;
         if (profileChunk)
             renderStartUs = sceKernelGetSystemTimeWide();
@@ -619,6 +705,7 @@ void render_scsp_audio()
 
             stereo_sample_t sample{};
             if (profileSample) {
+                sample_scsp_slot_profile(slotProfile);
                 lagi_dsp_profile_last_us = 0;
                 lagi_dsp_profile_sample = 1;
             }
@@ -664,7 +751,9 @@ void render_scsp_audio()
                 "[AzelAudioPerf] seq=%d chunk=%llu frames=%u "
                 "queued=%u peak=%d total=%lluus budget=%lluus "
                 "m68k=%lluus scsp=%lluus slots=%lluus dsp=%lluus "
-                "dspSteps=%d samples=%u "
+                "dspSteps=%d samples=%u activeAvg=%u activeMax=%u "
+                "pcm8=%u pcm16=%u nonPcm=%u plfo=%u alfo=%u mod=%u "
+                "ring=%u dspSend=%u direct=%u efReturn=%u "
                 "emptyChunks=%llu shortWrites=%llu\n",
                 static_cast<int>(g_sequenceNumber),
                 g_audioRenderChunks,
@@ -680,6 +769,18 @@ void render_scsp_audio()
                 static_cast<unsigned long long>(estimatedDspUs),
                 static_cast<int>(SCSP.DSP.LastStep),
                 sampledFrames,
+                sampled_average(slotProfile.active, slotProfile.samples),
+                slotProfile.activeMax,
+                sampled_average(slotProfile.pcm8, slotProfile.samples),
+                sampled_average(slotProfile.pcm16, slotProfile.samples),
+                sampled_average(slotProfile.nonPcm, slotProfile.samples),
+                sampled_average(slotProfile.plfo, slotProfile.samples),
+                sampled_average(slotProfile.alfo, slotProfile.samples),
+                sampled_average(slotProfile.modulation, slotProfile.samples),
+                sampled_average(slotProfile.ringWrites, slotProfile.samples),
+                sampled_average(slotProfile.dspSends, slotProfile.samples),
+                sampled_average(slotProfile.directSends, slotProfile.samples),
+                sampled_average(slotProfile.effectReturns, slotProfile.samples),
                 g_audioQueueEmptyChunks,
                 g_audioShortWrites);
         }
@@ -949,7 +1050,8 @@ void initSoundDriver()
         next_audio_trace(), kM68kCyclesPerSample);
     lagi::platform::logging::writef(
         "[AzelAudioPerf] profiler=outer-sampled sampleStride=8 "
-        "steadyInterval=256 dspSplit=inner-sampled no-emulation-changes\n");
+        "steadyInterval=256 dspSplit=inner-sampled "
+        "slotProfile=sampled no-emulation-changes\n");
 }
 
 void updateSoundInterrupt()
