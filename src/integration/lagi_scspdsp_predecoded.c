@@ -77,6 +77,9 @@ volatile unsigned lagi_dsp_mix_pack = 0;
 volatile unsigned lagi_dsp_mix_noflr = 0;
 volatile unsigned lagi_dsp_mix_noflw = 0;
 
+static INT32 g_lagiUnpackTable[65536];
+static int g_lagiUnpackTableReady = 0;
+
 static UINT16 PACK(INT32 val)
 {
     UINT32 temp;
@@ -118,7 +121,7 @@ static INT32 lagi_sign_extend24_u32(UINT32 v)
     return (INT32)v;
 }
 
-static INT32 UNPACK(UINT16 val)
+static INT32 lagi_unpack_scalar(UINT16 val)
 {
     const UINT32 sign = ((UINT32)val >> 15) & 0x1u;
     UINT32 exponent = ((UINT32)val >> 11) & 0xFu;
@@ -146,6 +149,23 @@ static INT32 UNPACK(UINT16 val)
         const INT32 signed24 = lagi_sign_extend24_u32(uval);
         return signed24 >> exponent;
     }
+}
+
+static void lagi_init_unpack_table(void)
+{
+    unsigned i;
+    if (g_lagiUnpackTableReady)
+        return;
+
+    for (i = 0; i < 65536u; ++i)
+        g_lagiUnpackTable[i] = lagi_unpack_scalar((UINT16)i);
+
+    g_lagiUnpackTableReady = 1;
+}
+
+static inline INT32 UNPACK(UINT16 val)
+{
+    return g_lagiUnpackTable[val];
 }
 
 static void lagi_scspdsp_decode(struct _SCSPDSP* DSP)
@@ -213,6 +233,7 @@ static void lagi_scspdsp_decode(struct _SCSPDSP* DSP)
 
 void SCSPDSP_Init(struct _SCSPDSP* DSP)
 {
+    lagi_init_unpack_table();
     memset(DSP, 0, sizeof(struct _SCSPDSP));
     DSP->RBL = 0x8000;
     DSP->Stopped = 1;
