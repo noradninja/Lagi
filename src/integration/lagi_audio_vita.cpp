@@ -700,22 +700,25 @@ void render_scsp_audio()
 
             if (profileSample) {
                 sampledM68kUs += sceKernelGetSystemTimeWide() - t;
-                t = sceKernelGetSystemTimeWide();
             }
 
             stereo_sample_t sample{};
+            std::uint64_t scspElapsedUs = 0;
             if (profileSample) {
                 sample_scsp_slot_profile(slotProfile);
                 lagi_dsp_profile_last_us = 0;
                 lagi_dsp_profile_sample = 1;
+                t = sceKernelGetSystemTimeWide();
             }
             SCSP_Update(nullptr, nullptr, &sample);
-            if (profileSample)
+            if (profileSample) {
+                scspElapsedUs = sceKernelGetSystemTimeWide() - t;
                 lagi_dsp_profile_sample = 0;
+            }
             log_dsp_program_profile_if_changed();
 
             if (profileSample) {
-                sampledScspUs += sceKernelGetSystemTimeWide() - t;
+                sampledScspUs += scspElapsedUs;
                 sampledDspUs +=
                     static_cast<std::uint64_t>(lagi_dsp_profile_last_us);
                 ++sampledFrames;
