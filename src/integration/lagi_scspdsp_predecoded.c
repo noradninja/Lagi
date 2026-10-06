@@ -110,28 +110,42 @@ static UINT16 PACK(INT32 val)
     return (UINT16)val;
 }
 
+static INT32 lagi_sign_extend24_u32(UINT32 v)
+{
+    v &= 0x00FFFFFFu;
+    if (v & 0x00800000u)
+        v |= 0xFF000000u;
+    return (INT32)v;
+}
+
 static INT32 UNPACK(UINT16 val)
 {
-    int sign, exponent, mantissa;
-    INT32 uval;
+    const UINT32 sign = ((UINT32)val >> 15) & 0x1u;
+    UINT32 exponent = ((UINT32)val >> 11) & 0xFu;
+    const UINT32 mantissa = (UINT32)val & 0x7FFu;
+    UINT32 uval = mantissa << 11;
 
-    sign = (val >> 15) & 0x1;
-    exponent = (val >> 11) & 0xF;
-    mantissa = val & 0x7FF;
-    uval = mantissa << 11;
-    if (exponent > 11)
+    if (exponent > 11u)
     {
-        exponent = 11;
+        exponent = 11u;
         uval |= sign << 22;
     }
     else
-        uval |= (sign ^ 1) << 22;
-    uval |= sign << 23;
-    uval <<= 8;
-    uval >>= 8;
-    uval >>= exponent;
+    {
+        uval |= (sign ^ 1u) << 22;
+    }
 
-    return uval;
+    uval |= sign << 23;
+
+    /*
+     * The original AOSDK code sign-extends bit 23 via signed << / >>.
+     * Do that explicitly in defined unsigned arithmetic, then perform the
+     * arithmetic right shift required by the SCSP packed format.
+     */
+    {
+        const INT32 signed24 = lagi_sign_extend24_u32(uval);
+        return signed24 >> exponent;
+    }
 }
 
 static void lagi_scspdsp_decode(struct _SCSPDSP* DSP)
