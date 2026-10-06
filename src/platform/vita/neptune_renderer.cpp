@@ -9517,12 +9517,8 @@ static bool renderCinepakResolvePass()
         };
         sceGxmSetUniformDataF(
             vertexUniforms, g_textureWvpParam, 0, 16, identity);
-        sceGxmSetFragmentTexture(
-            g_probeContext,
-            0,
-            g_movieUsesCinepakPayload
-                ? &g_cinepakResolveTexture
-                : &g_movieTexture);
+        // First pass reads the compact point-sampled Cinepak payload.
+        sceGxmSetFragmentTexture(g_probeContext, 0, &g_movieTexture);
 
         if (sceGxmSetVertexStream(
                 g_probeContext, 0, g_cinepakResolveVertices) >= 0) {
@@ -9668,7 +9664,14 @@ static bool renderMovieFrame()
         };
         sceGxmSetUniformDataF(
             uniformBuffer, g_textureWvpParam, 0, 16, identity);
-        sceGxmSetFragmentTexture(g_probeContext, 0, &g_movieTexture);
+        // Cinepak's second pass samples the reconstructed RGBA frame;
+        // other movie/front-end paths continue sampling their normal texture.
+        sceGxmSetFragmentTexture(
+            g_probeContext,
+            0,
+            g_movieUsesCinepakPayload
+                ? &g_cinepakResolveTexture
+                : &g_movieTexture);
 
         const bool streamReady =
             sceGxmSetVertexStream(
