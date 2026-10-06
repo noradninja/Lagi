@@ -1336,6 +1336,14 @@ add_executable(lagi
  src/integration/lagi_vdp1_animated_quad_vita.cpp
  ${LAGI_AZEL_UPSTREAM_SOURCES}
 )
+
+# The SCSP DSP interpreter is the measured native-audio hotspot. Optimize only
+# the Lagi-owned replacement; keep the rest of the bring-up build unchanged.
+set_source_files_properties(
+ src/integration/lagi_scspdsp_predecoded.c
+ PROPERTIES COMPILE_OPTIONS "-O2"
+)
+
 target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town"
