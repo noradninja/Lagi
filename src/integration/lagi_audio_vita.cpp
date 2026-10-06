@@ -2,6 +2,7 @@
 #include "lagi/platform.h"
 #include "lagi/disc_image.h"
 #include "audio/soundDriver.h"
+#include "lagi_dsp_platform.h"
 #include "audio/soundDataTable.h"
 #include "common.h"
 #include "commonOverlay.h"
@@ -25,6 +26,8 @@ extern "C" {
 
 extern volatile unsigned lagi_dsp_mix_serial;
 extern volatile unsigned lagi_dsp_fast_path;
+extern volatile unsigned lagi_dsp_selected_backend;
+extern volatile unsigned lagi_dsp_selected_hash;
 extern volatile unsigned lagi_dsp_mix_steps;
 extern volatile unsigned lagi_dsp_mix_iwt;
 extern volatile unsigned lagi_dsp_mix_twt;
@@ -754,7 +757,7 @@ void render_scsp_audio()
                 "[AzelAudioPerf] seq=%d chunk=%llu frames=%u "
                 "queued=%u peak=%d total=%lluus budget=%lluus "
                 "m68k=%lluus scsp=%lluus slots=%lluus dsp=%lluus "
-                "dspSteps=%d samples=%u activeAvg=%u activeMax=%u "
+                "dspSteps=%d dspHash=%08X dspBackend=%u samples=%u activeAvg=%u activeMax=%u "
                 "pcm8=%u pcm16=%u nonPcm=%u plfo=%u alfo=%u mod=%u "
                 "ring=%u dspSend=%u direct=%u efReturn=%u "
                 "emptyChunks=%llu shortWrites=%llu\n",
@@ -771,6 +774,8 @@ void render_scsp_audio()
                 static_cast<unsigned long long>(estimatedSlotUs),
                 static_cast<unsigned long long>(estimatedDspUs),
                 static_cast<int>(SCSP.DSP.LastStep),
+                static_cast<unsigned>(lagi_dsp_selected_hash),
+                static_cast<unsigned>(lagi_dsp_selected_backend),
                 sampledFrames,
                 sampled_average(slotProfile.active, slotProfile.samples),
                 slotProfile.activeMax,
@@ -931,6 +936,8 @@ int audio_worker_thread(SceSize, void*)
         service_pending_sounds();
         service_driver_commands();
 
+        lagi_dsp_service_pending(&SCSP.DSP);
+
         if (g_gameplayRenderEnabled && g_sequence) {
             render_scsp_audio();
             if (lagi::platform::audio::queued_pcm_frames() >=
@@ -1010,6 +1017,16 @@ void trace_sequence_config(s8 musicNumber, s8 mode)
 }
 
 } // namespace
+
+extern "C" void lagi_audio_stop_worker_for_shutdown() {
+    if (g_audioWorkerThread >= 0) {
+        g_audioWorkerStop.store(true, std::memory_order_release);
+        sceKernelWaitThreadEnd(g_audioWorkerThread, nullptr, nullptr);
+        sceKernelDeleteThread(g_audioWorkerThread);
+        g_audioWorkerThread=-1;
+    }
+}
+
 
 extern "C" int m68k_instructionCallback()
 {

@@ -3,6 +3,8 @@
 
 #include <cstdio>
 
+extern "C" void lagi_audio_stop_worker_for_shutdown();
+
 namespace lagi::platform {
 
 static bool g_running = false;
@@ -35,6 +37,7 @@ bool init()
 
 void shutdown()
 {
+    lagi_audio_stop_worker_for_shutdown();
     audio::shutdown();
     lagi_dsp_platform_shutdown();
     renderer::shutdown();

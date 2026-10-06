@@ -66,6 +66,13 @@ extern "C" int lagi_dsp_platform_init() {
     else if (config[0] && std::strcmp(config, "predecoded"))
         lagi_dsp_log("[LagiDSP] invalid backend setting; using predecoded\n");
     vmReady = probe();
+    if(vmReady && (mode==LAGI_DSP_AUTO || mode==LAGI_DSP_ARM)) {
+        pool=result("pool-alloc",sceKernelAllocMemBlockForVM("LagiDSPCode",slotBytes*slots));
+        if(pool<0) vmReady=false;
+        else if(result("pool-base",sceKernelGetMemBlockBase(pool,&poolBase))<0 || !poolBase) {
+            result("pool-free",sceKernelFreeMemBlock(pool)); pool=-1; vmReady=false;
+        }
+    }
     lagi_dsp_log("[LagiDSP] configured=%d vmReady=%d capture=on\n", mode, vmReady);
     return mode;
 }
@@ -75,7 +82,8 @@ extern "C" void lagi_dsp_capture(const uint16_t *words, unsigned steps, uint32_t
     for (unsigned i=0; i<captureCount; ++i)
         if (captured[i].hash == hash && captured[i].steps == steps &&
             !std::memcmp(captured[i].words, words, steps*8)) return;
-    if (captureCount == 64) { lagi_dsp_log("[LagiDSPCapture] reason=session-capacity\n"); return; }
+    /* When the RAM dedup cache fills, persistent full-file comparison still
+     * captures new programs. Coverage is not limited to 64 programs. */
     if (sceIoMkdir("ux0:data/lagi/dsp_programs", 0777) < 0) {
         /* Existing directory is expected; individual open results are checked. */
     }
@@ -103,20 +111,14 @@ extern "C" void lagi_dsp_capture(const uint16_t *words, unsigned steps, uint32_t
             lagi_dsp_log("[LagiDSPCapture] hash=%08X steps=%u bytes=%u path=%s\n", hash, steps, bytes, path);
         }
     }
-    if (saved) {
+    if(!saved) lagi_dsp_log("[LagiDSPCapture] hash=%08X steps=%u reason=not-saved\n",hash,steps);
+    if (saved && captureCount < 64) {
         CaptureKey &key = captured[captureCount++]; key.steps=steps; key.hash=hash;
         std::memcpy(key.words, words, steps*8);
     }
 }
 extern "C" void *lagi_dsp_vm_publish(unsigned slot, const uint32_t *code, unsigned bytes) {
-    if (!vmReady || slot >= slots || !bytes || bytes > slotBytes) return nullptr;
-    if (pool < 0) {
-        pool = result("pool-alloc", sceKernelAllocMemBlockForVM("LagiDSPCode", slotBytes*slots));
-        if (pool < 0) { vmReady=false; return nullptr; }
-        if (result("pool-base", sceKernelGetMemBlockBase(pool, &poolBase)) < 0 || !poolBase) {
-            result("pool-free", sceKernelFreeMemBlock(pool)); pool=-1; vmReady=false; return nullptr;
-        }
-    }
+    if (!vmReady || pool<0 || !code || slot >= slots || !bytes || (bytes&3) || bytes > slotBytes) return nullptr;
     auto *base = static_cast<unsigned char *>(poolBase) + slot*slotBytes;
     if (result("publish-open", sceKernelOpenVMDomain()) < 0) { vmReady=false; return nullptr; }
     std::memcpy(base, code, bytes);
@@ -126,6 +128,7 @@ extern "C" void *lagi_dsp_vm_publish(unsigned slot, const uint32_t *code, unsign
     return base;
 }
 extern "C" void lagi_dsp_platform_shutdown() {
+    lagi_dsp_release_native();
     if (pool >= 0) { result("pool-free", sceKernelFreeMemBlock(pool)); pool=-1; poolBase=nullptr; }
-    vmReady=false;
+    vmReady=false; initialized=false; captureCount=0;
 }

@@ -21,37 +21,7 @@
  * control fields when SCSPDSP_Start() is called.
  */
 
-typedef struct LagiScspDspOp {
-    UINT8 TRA;
-    UINT8 TWT;
-    UINT8 TWA;
-
-    UINT8 XSEL;
-    UINT8 YSEL;
-    UINT8 IRA;
-    UINT8 IWT;
-    UINT8 IWA;
-
-    UINT8 TABLE;
-    UINT8 MWT;
-    UINT8 MRD;
-    UINT8 EWT;
-    UINT8 EWA;
-    UINT8 ADRL;
-    UINT8 FRCL;
-    UINT8 SHIFT;
-    UINT8 YRL;
-    UINT8 NEGB;
-    UINT8 ZERO;
-    UINT8 BSEL;
-
-    UINT8 NOFL;
-    UINT8 COEF;
-    UINT8 MASA;
-    UINT8 ADREB;
-    UINT8 NXADR;
-    UINT8 odd;
-} LagiScspDspOp;
+#include "lagi_dsp_ir.h"
 
 typedef struct LagiPdsFastOp {
     const INT32* input;
@@ -218,40 +188,14 @@ static void lagi_scspdsp_decode(struct _SCSPDSP* DSP)
     g_lagiDecodedDsp = DSP;
     g_lagiDecodedSteps = DSP->LastStep;
 
-    for (step = 0; step < DSP->LastStep; ++step)
-    {
-        UINT16* IPtr = DSP->MPRO + step * 4;
-        LagiScspDspOp* op = &g_lagiDspOps[step];
-
-        op->TRA   = (UINT8)((IPtr[0] >> 8) & 0x7F);
-        op->TWT   = (UINT8)((IPtr[0] >> 7) & 0x01);
-        op->TWA   = (UINT8)((IPtr[0] >> 0) & 0x7F);
-
-        op->XSEL  = (UINT8)((IPtr[1] >> 15) & 0x01);
-        op->YSEL  = (UINT8)((IPtr[1] >> 13) & 0x03);
-        op->IRA   = (UINT8)((IPtr[1] >> 6) & 0x3F);
-        op->IWT   = (UINT8)((IPtr[1] >> 5) & 0x01);
-        op->IWA   = (UINT8)((IPtr[1] >> 0) & 0x1F);
-
-        op->TABLE = (UINT8)((IPtr[2] >> 15) & 0x01);
-        op->MWT   = (UINT8)((IPtr[2] >> 14) & 0x01);
-        op->MRD   = (UINT8)((IPtr[2] >> 13) & 0x01);
-        op->EWT   = (UINT8)((IPtr[2] >> 12) & 0x01);
-        op->EWA   = (UINT8)((IPtr[2] >> 8) & 0x0F);
-        op->ADRL  = (UINT8)((IPtr[2] >> 7) & 0x01);
-        op->FRCL  = (UINT8)((IPtr[2] >> 6) & 0x01);
-        op->SHIFT = (UINT8)((IPtr[2] >> 4) & 0x03);
-        op->YRL   = (UINT8)((IPtr[2] >> 3) & 0x01);
-        op->NEGB  = (UINT8)((IPtr[2] >> 2) & 0x01);
-        op->ZERO  = (UINT8)((IPtr[2] >> 1) & 0x01);
-        op->BSEL  = (UINT8)((IPtr[2] >> 0) & 0x01);
-
-        op->NOFL  = (UINT8)((IPtr[3] >> 15) & 0x01);
-        op->COEF  = (UINT8)((IPtr[3] >> 9) & 0x3F);
-        op->MASA  = (UINT8)((IPtr[3] >> 2) & 0x1F);
-        op->ADREB = (UINT8)((IPtr[3] >> 1) & 0x01);
-        op->NXADR = (UINT8)((IPtr[3] >> 0) & 0x01);
-        op->odd   = (UINT8)(step & 1);
+    /* Both native backends and the reference share one field schema. */
+    for (step = 0; step < DSP->LastStep; ++step) {
+        const UINT16 *p = DSP->MPRO + step*4;
+        LagiScspDspOp *op = &g_lagiDspOps[step];
+#define LAGI_DSP_FIELD(name, word, shift, mask) op->name=(p[word] >> shift)&mask;
+#include "lagi_dsp_fields.def"
+#undef LAGI_DSP_FIELD
+        op->odd=step&1;
     }
 
     /*
@@ -332,14 +276,192 @@ static void lagi_scspdsp_decode(struct _SCSPDSP* DSP)
     lagi_dsp_fast_path = (unsigned)g_lagiPdsFastPath;
 }
 
+typedef void (*LagiDspNativeFn)(struct _SCSPDSP *);
+typedef struct LagiDspAotEntry {
+    unsigned steps;
+    UINT32 hash;
+    UINT16 words[512];
+    LagiDspNativeFn function;
+    const char *codeBegin, *codeEnd;
+} LagiDspAotEntry;
+static INT32 lagi_sign_extend13_u32(UINT32 v);
+static INT32 lagi_sat24(INT64 v);
+static inline INT32 lagi_dsp_native_sat(INT32 acc,unsigned twice);
+#include "lagi_dsp_aot.inc"
+#include "lagi_dsp_arm.inc"
+
+typedef struct LagiDspCacheEntry {
+    unsigned steps, bytes;
+    UINT32 hash;
+    UINT16 words[512];
+    LagiDspNativeFn function;
+} LagiDspCacheEntry;
+static LagiDspCacheEntry g_lagiNativeCache[4];
+static LagiDspProgram g_lagiTranslation;
+static UINT32 g_lagiArmScratch[16384];
+static unsigned g_lagiCacheNext, g_lagiCacheHits, g_lagiCacheMisses;
+static struct _SCSPDSP *g_lagiPendingDsp;
+static struct { UINT16 words[512]; unsigned steps; UINT32 hash; } g_lagiCaptureQueue[32];
+static unsigned g_lagiCaptureRead, g_lagiCaptureWrite, g_lagiCaptureDrops;
+static void lagi_dsp_queue_capture(struct _SCSPDSP *DSP,UINT32 hash) {
+    unsigned i;
+    const unsigned steps=(unsigned)DSP->LastStep;
+    for(i=g_lagiCaptureRead;i<g_lagiCaptureWrite;++i) {
+        const unsigned slot=i%32;
+        if(g_lagiCaptureQueue[slot].hash==hash && g_lagiCaptureQueue[slot].steps==steps &&
+            !memcmp(g_lagiCaptureQueue[slot].words,DSP->MPRO,steps*8)) return;
+    }
+    if(g_lagiCaptureWrite-g_lagiCaptureRead==32) {
+        ++g_lagiCaptureDrops;
+        lagi_dsp_log("[LagiDSPCapture] reason=queue-full drops=%u\n",g_lagiCaptureDrops);
+        return;
+    }
+    i=g_lagiCaptureWrite++%32;
+    g_lagiCaptureQueue[i].steps=steps; g_lagiCaptureQueue[i].hash=hash;
+    memcpy(g_lagiCaptureQueue[i].words,DSP->MPRO,steps*8);
+}
+static void lagi_dsp_capture_one(void) {
+    if(g_lagiCaptureRead!=g_lagiCaptureWrite) {
+        const unsigned slot=g_lagiCaptureRead++%32;
+        lagi_dsp_capture(g_lagiCaptureQueue[slot].words,g_lagiCaptureQueue[slot].steps,g_lagiCaptureQueue[slot].hash);
+    }
+}
+static LagiDspNativeFn g_lagiNativeFunction;
+static struct _SCSPDSP *g_lagiNativeDsp;
+static int g_lagiBackendMode=LAGI_DSP_PREDECODED;
+static struct { struct _SCSPDSP *dsp; int dirty; } g_lagiDirtyInstances[8];
+static int g_lagiDirtyOverflow;
+static unsigned g_lagiNativeBackend;
+volatile unsigned lagi_dsp_selected_backend=1;
+volatile unsigned lagi_dsp_selected_hash;
+static int lagi_dsp_is_dirty(struct _SCSPDSP *DSP) {
+    unsigned i;
+    if (g_lagiDirtyOverflow) return 1;
+    for(i=0;i<8;++i) if(g_lagiDirtyInstances[i].dsp==DSP) return g_lagiDirtyInstances[i].dirty;
+    return 0;
+}
+static void lagi_dsp_clear_dirty(struct _SCSPDSP *DSP, int release) {
+    unsigned i;
+    for(i=0;i<8;++i) if(g_lagiDirtyInstances[i].dsp==DSP) {
+        g_lagiDirtyInstances[i].dirty=0;
+        if(release) g_lagiDirtyInstances[i].dsp=0;
+    }
+}
+
+/* All MPRO writes from the generated SCSP service arrive on the audio worker.
+ * Dirty programs use the generic reference until Start selects a replacement. */
+void lagi_dsp_program_written(struct _SCSPDSP *DSP) {
+    unsigned i, empty=8;
+    for(i=0;i<8;++i) {
+        if(g_lagiDirtyInstances[i].dsp==DSP) { g_lagiDirtyInstances[i].dirty=1; break; }
+        if(!g_lagiDirtyInstances[i].dsp) empty=i;
+    }
+    if(i==8) {
+        if(empty<8) { g_lagiDirtyInstances[empty].dsp=DSP; g_lagiDirtyInstances[empty].dirty=1; }
+        else { g_lagiDirtyOverflow=1; lagi_dsp_log("[LagiDSP] reason=instance-capacity backend=reference\n"); }
+    }
+    if(g_lagiPendingDsp==DSP) g_lagiPendingDsp=0;
+    if(g_lagiDecodedDsp==DSP) g_lagiDecodedSteps=-1;
+    if(g_lagiNativeDsp==DSP || g_lagiDirtyOverflow) g_lagiNativeFunction=0;
+    lagi_dsp_selected_backend=0;
+}
+static void lagi_dsp_select_native(struct _SCSPDSP *DSP,int allowCompile) {
+    const unsigned long long started=sceKernelGetSystemTimeWide();
+    const unsigned steps=(unsigned)DSP->LastStep;
+    const UINT32 hash=lagi_dsp_program_hash(DSP->MPRO,steps);
+    const char *backend=g_lagiPdsFastPath?"predecoded":"reference";
+    const char *reason="configured-predecoded";
+    unsigned bytes=0, i;
+    if(g_lagiPendingDsp==DSP) g_lagiPendingDsp=0;
+    g_lagiNativeDsp=DSP; g_lagiNativeFunction=0; lagi_dsp_clear_dirty(DSP,0);
+    if (g_lagiDirtyOverflow) { backend="reference"; reason="instance-capacity"; }
+    else if (g_lagiBackendMode==LAGI_DSP_REFERENCE) { backend="reference"; reason="configured-reference"; }
+    else if (g_lagiBackendMode!=LAGI_DSP_PREDECODED) {
+        reason="aot-miss";
+        if (g_lagiBackendMode!=LAGI_DSP_ARM) {
+            for (i=0;i<g_lagiDspAotCount;++i) {
+                const LagiDspAotEntry *entry=&g_lagiDspAotEntries[i];
+                if (entry->hash==hash && entry->steps==steps && !memcmp(entry->words,DSP->MPRO,steps*8)) {
+                    g_lagiNativeFunction=entry->function; backend="aot"; reason="aot-hit"; bytes=(unsigned)((uintptr_t)entry->codeEnd-(uintptr_t)entry->codeBegin); ++g_lagiCacheHits; break;
+                }
+            }
+        }
+        if (!g_lagiNativeFunction && g_lagiBackendMode!=LAGI_DSP_AOT) {
+            if (!lagi_dsp_vm_available()) reason="vm-unavailable";
+            else {
+                for (i=0;i<4;++i) {
+                    LagiDspCacheEntry *entry=&g_lagiNativeCache[i];
+                    if (entry->function && entry->hash==hash && entry->steps==steps && !memcmp(entry->words,DSP->MPRO,steps*8)) {
+                        g_lagiNativeFunction=entry->function; bytes=entry->bytes; ++g_lagiCacheHits; reason="arm-hit"; break;
+                    }
+                }
+                if (!g_lagiNativeFunction && !allowCompile) {
+                    g_lagiPendingDsp=DSP; reason="arm-pending";
+                }
+                if (!g_lagiNativeFunction && allowCompile) {
+                    const unsigned slot=g_lagiCacheNext++%4;
+                    LagiDspCacheEntry *entry=&g_lagiNativeCache[slot];
+                    ++g_lagiCacheMisses; entry->function=0;
+                    if (!lagi_dsp_decode_ir(&g_lagiTranslation,DSP->MPRO,steps)) reason="invalid-program";
+                    else {
+                        bytes=lagi_dsp_emit_arm(&g_lagiTranslation,g_lagiArmScratch,16384);
+                        if (!bytes) reason="code-capacity";
+                        else {
+                            void *code=lagi_dsp_vm_publish(slot,g_lagiArmScratch,bytes);
+                            if (!code) {
+                                reason="publish-failed";
+                                for (i=0;i<4;++i) g_lagiNativeCache[i].function=0;
+                            } else {
+                                entry->steps=steps; entry->hash=hash; entry->bytes=bytes;
+                                memcpy(entry->words,DSP->MPRO,steps*8);
+                                entry->function=(LagiDspNativeFn)code;
+                                g_lagiNativeFunction=entry->function; reason="arm-compiled";
+                            }
+                        }
+                    }
+                }
+                if (g_lagiNativeFunction) backend="arm";
+            }
+        } else if (!g_lagiNativeFunction) ++g_lagiCacheMisses;
+    }
+    g_lagiNativeBackend=!strcmp(backend,"arm")?3:(!strcmp(backend,"aot")?2:(!strcmp(backend,"predecoded")?1:0));
+    lagi_dsp_selected_backend=g_lagiNativeBackend;
+    lagi_dsp_selected_hash=hash;
+    lagi_dsp_log("[LagiDSPProgram] hash=%08X steps=%u backend=%s translateUs=%llu codeBytes=%u sizeKind=%s hits=%u misses=%u reason=%s\n",
+        hash,steps,backend,sceKernelGetSystemTimeWide()-started,bytes,
+        !strcmp(backend,"aot")?"section":"runtime",g_lagiCacheHits,g_lagiCacheMisses,reason);
+    if(!allowCompile) lagi_dsp_queue_capture(DSP,hash);
+}
+
+/* Called once per audio-worker iteration, outside the 256-frame sample loop. */
+void lagi_dsp_service_pending(struct _SCSPDSP *DSP) {
+    lagi_dsp_capture_one();
+    if(g_lagiPendingDsp==DSP) {
+        g_lagiPendingDsp=0;
+        if(!DSP->Stopped && !lagi_dsp_is_dirty(DSP)) {
+            if(g_lagiDecodedDsp!=DSP || g_lagiDecodedSteps!=DSP->LastStep) lagi_scspdsp_decode(DSP);
+            lagi_dsp_select_native(DSP,1);
+        }
+    }
+}
+void lagi_dsp_release_native(void) {
+    unsigned i;
+    g_lagiNativeFunction=0; g_lagiNativeDsp=0; g_lagiPendingDsp=0;
+    for(i=0;i<4;++i) g_lagiNativeCache[i].function=0;
+    while(g_lagiCaptureRead!=g_lagiCaptureWrite) lagi_dsp_capture_one();
+    lagi_dsp_selected_backend=0;
+}
 void SCSPDSP_Init(struct _SCSPDSP* DSP)
 {
-    lagi_dsp_platform_init();
+    if(g_lagiPendingDsp==DSP) g_lagiPendingDsp=0;
+    lagi_dsp_clear_dirty(DSP,1);
+    g_lagiBackendMode=lagi_dsp_platform_init();
     lagi_init_unpack_table();
     memset(DSP, 0, sizeof(struct _SCSPDSP));
     DSP->RBL = 0x8000;
     DSP->Stopped = 1;
 
+    if (g_lagiNativeDsp == DSP) { g_lagiNativeFunction=0; g_lagiNativeDsp=0; }
     if (g_lagiDecodedDsp == DSP)
     {
         g_lagiDecodedDsp = 0;
@@ -421,7 +543,7 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
             B = tempValue;
 
         if (f1 & LAGI_PDS_NEGB)
-            B = -B;
+            B = (INT32)(0u - (UINT32)B);
 
         X = (f0 & LAGI_PDS_XSEL) ? INPUTS : tempValue;
 
@@ -436,7 +558,7 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
         if (f1 & LAGI_PDS_YCOEF)
         {
             const INT32 Y = ((INT32)*op->coef >> 3);
-            ACC = (INT32)(((INT64)X * (INT64)Y) >> 12) + B;
+            ACC = (INT32)((UINT32)(INT32)(((INT64)X * (INT64)Y) >> 12) + (UINT32)B);
         }
         else
         {
@@ -509,8 +631,15 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
     if (g_lagiDecodedDsp != DSP || g_lagiDecodedSteps != DSP->LastStep)
         lagi_scspdsp_decode(DSP);
 
-    if (g_lagiPdsFastPath)
+    if (g_lagiNativeFunction && g_lagiNativeDsp==DSP && !lagi_dsp_is_dirty(DSP) && g_lagiBackendMode!=LAGI_DSP_REFERENCE) {
+        lagi_dsp_selected_backend=g_lagiNativeBackend;
+        g_lagiNativeFunction(DSP);
+        if (profileSample) lagi_dsp_profile_last_us=sceKernelGetSystemTimeWide()-profileStartUs;
+        return;
+    }
+    if (g_lagiPdsFastPath && !lagi_dsp_is_dirty(DSP) && g_lagiBackendMode!=LAGI_DSP_REFERENCE)
     {
+        lagi_dsp_selected_backend=1;
         lagi_scspdsp_step_pds(DSP);
         if (profileSample)
             lagi_dsp_profile_last_us =
@@ -518,6 +647,7 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
         return;
     }
 
+    lagi_dsp_selected_backend=0;
     memset(DSP->EFREG, 0, 2 * 16);
 
     for (step = 0; step < DSP->LastStep; ++step)
@@ -552,7 +682,7 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
                     (UINT32)DSP->TEMP[(op->TRA + DSP->DEC) & 0x7F]);
             }
             if (op->NEGB)
-                B = 0 - B;
+                B = (INT32)(0u - (UINT32)B);
         }
         else
             B = 0;
@@ -597,7 +727,7 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
         Y = lagi_sign_extend13_u32((UINT32)Y);
 
         v = (((INT64)X * (INT64)Y) >> 12);
-        ACC = (int)v + B;
+        ACC = (INT32)((UINT32)(INT32)v + (UINT32)B);
 
         if (op->TWT)
             DSP->TEMP[(op->TWA + DSP->DEC) & 0x7F] = SHIFTED;
@@ -683,11 +813,7 @@ void SCSPDSP_Start(struct _SCSPDSP* DSP)
 
     DSP->LastStep = i + 1;
     lagi_scspdsp_decode(DSP);
-    {
-        const unsigned hash = lagi_dsp_program_hash(DSP->MPRO, DSP->LastStep);
-        lagi_dsp_capture(DSP->MPRO, DSP->LastStep, hash);
-        lagi_dsp_log("[LagiDSPProgram] hash=%08X steps=%d backend=predecoded translateUs=0 codeBytes=0 reason=diagnostic\n", hash, DSP->LastStep);
-    }
+    lagi_dsp_select_native(DSP,0);
 
     {
         unsigned nIWT = 0, nTWT = 0, nMRD = 0, nMWT = 0, nEWT = 0;

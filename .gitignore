@@ -1,4 +1,7 @@
 build/
+dsp_programs/
+__pycache__/
+*.pyc
 cmake-build-*/
 *.vpk
 *.self
