@@ -1277,6 +1277,16 @@ add_custom_command(OUTPUT "${LAGI_DSP_AOT}"
   "${CMAKE_SOURCE_DIR}/src/integration/lagi_dsp_fields.def" ${LAGI_DSP_CAPTURES}
  VERBATIM)
 file(READ "${CMAKE_SOURCE_DIR}/extern/Azel/ThirdParty/aosdk/eng_ssf/scsp.c" lagi_scsp_source)
+set(lagi_dsp_init_anchor "memset(SCSP,0,sizeof(*SCSP));")
+string(FIND "${lagi_scsp_source}" "${lagi_dsp_init_anchor}" lagi_dsp_init_match)
+string(FIND "${lagi_scsp_source}" "${lagi_dsp_init_anchor}" lagi_dsp_init_last REVERSE)
+if(lagi_dsp_init_match LESS 0 OR NOT lagi_dsp_init_match EQUAL lagi_dsp_init_last)
+ message(FATAL_ERROR "SCSP DSP initialization anchor changed")
+endif()
+string(REPLACE
+ "${lagi_dsp_init_anchor}"
+ "${lagi_dsp_init_anchor}\n\t\tSCSPDSP_Init(&SCSP->DSP);"
+ lagi_scsp_source "${lagi_scsp_source}")
 set(lagi_mpro_anchor "*((unsigned short *) (SCSP->DSP.MPRO+(addr-0x800)/2))=val;")
 string(FIND "${lagi_scsp_source}" "${lagi_mpro_anchor}" lagi_mpro_match)
 string(FIND "${lagi_scsp_source}" "${lagi_mpro_anchor}" lagi_mpro_last REVERSE)
