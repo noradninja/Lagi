@@ -1301,7 +1301,7 @@ add_executable(lagi
  extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopnz.c
  extern/Azel/ThirdParty/aosdk/eng_ssf/m68kops.c
  extern/Azel/ThirdParty/aosdk/eng_ssf/sat_hw.c
- extern/Azel/ThirdParty/aosdk/eng_ssf/scsp.c
+ src/integration/lagi_scsp_mixer.c
  src/integration/lagi_scspdsp_predecoded.c
  src/movie/film_demuxer.cpp
  src/movie/cinepak_decoder.cpp
@@ -1348,7 +1348,7 @@ set_source_files_properties(
 # the DSP interpreter so each audio-stage gain remains hardware-testable.
 set_source_files_properties(
  extern/Azel/ThirdParty/aosdk/eng_ssf/sat_hw.c
- extern/Azel/ThirdParty/aosdk/eng_ssf/scsp.c
+ src/integration/lagi_scsp_mixer.c
  PROPERTIES COMPILE_OPTIONS "-O2"
 )
 
