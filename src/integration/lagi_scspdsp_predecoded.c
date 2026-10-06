@@ -82,35 +82,36 @@ static int g_lagiUnpackTableReady = 0;
 
 static UINT16 PACK(INT32 val)
 {
-    UINT32 temp;
-    int sign, exponent;
-
-    sign = (val >> 23) & 0x1;
-    temp = (val ^ (val << 1)) & 0xFFFFFFu;
+    const UINT32 raw = (UINT32)val;
+    const UINT32 sign = (raw >> 23) & 0x1u;
+    const UINT32 temp = (raw ^ (raw << 1)) & 0x00FFFFFFu;
+    UINT32 exponent;
+    UINT32 mantissa;
 
     /*
      * Original AOSDK scans bit 23 leftward for at most 12 iterations.
-     * CLZ gives the identical exponent in one ARM instruction.
+     * CLZ gives the identical exponent in one ARM instruction. Keep the CLZ
+     * path, but perform all shifts in unsigned arithmetic so negative 24-bit
+     * DSP values cannot invoke signed-left-shift undefined behavior.
      */
-    if (temp == 0)
-        exponent = 12;
+    if (temp == 0u)
+        exponent = 12u;
     else
     {
-        exponent = __builtin_clz(temp) - 8;
-        if (exponent > 12)
-            exponent = 12;
+        exponent = (UINT32)__builtin_clz(temp) - 8u;
+        if (exponent > 12u)
+            exponent = 12u;
     }
 
-    if (exponent < 12)
-        val = (val << exponent) & 0x3FFFFF;
+    if (exponent < 12u)
+        mantissa = ((raw << exponent) & 0x003FFFFFu) >> 11;
     else
-        val <<= 11;
-    val >>= 11;
-    val &= 0x7FF;
-    val |= sign << 15;
-    val |= exponent << 11;
+        mantissa = raw & 0x7FFu;
 
-    return (UINT16)val;
+    return (UINT16)(
+        mantissa |
+        (sign << 15) |
+        (exponent << 11));
 }
 
 static INT32 lagi_sign_extend24_u32(UINT32 v)
