@@ -31,7 +31,7 @@ int printf(const char *s,...) { return 0; }
 void exit(int status) { for(;;) {} }
 void __assert_func(const char *f,int n,const char *fn,const char *e) { exit(99); }
 ''')
-subprocess.run([str(Path(os.environ.get('VITASDK', r'C:\Dev\VitaSDK')) / 'bin/arm-vita-eabi-gcc.exe'), '-O2', '-marm', '-march=armv7-a', '-ffreestanding', '-fno-builtin', '-nostdlib', '-I'+str(out), '-I'+str(repo / 'src/integration'), str(out/'test.c'), str(out/'lib.c'), '-Wl,-Ttext=0x10000', '-Wl,-e,main', '-lgcc', '-o', str(out/'test.elf')], check=True)
+subprocess.run([str(Path(os.environ.get('VITASDK', r'C:\Dev\VitaSDK')) / 'bin/arm-vita-eabi-gcc.exe'), '-DLAGI_DSP_TEST', '-O2', '-marm', '-march=armv7-a', '-ffreestanding', '-fno-builtin', '-nostdlib', '-I'+str(out), '-I'+str(repo / 'src/integration'), str(out/'test.c'), str(out/'lib.c'), '-Wl,-Ttext=0x10000', '-Wl,-e,main', '-lgcc', '-o', str(out/'test.elf')], check=True)
 uc = Uc(UC_ARCH_ARM, UC_MODE_ARM)
 uc.mem_map(0x10000, 0x1000000)
 with (out/'test.elf').open('rb') as f:

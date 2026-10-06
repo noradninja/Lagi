@@ -6,6 +6,7 @@
 #include "ao.h"
 #include "cpuintrf.h"
 #include "scsp.h"
+#include "lagi_dsp_platform.h"
 
 /*
  * Lagi-owned drop-in replacement for AOSDK scspdsp.c.
@@ -333,6 +334,7 @@ static void lagi_scspdsp_decode(struct _SCSPDSP* DSP)
 
 void SCSPDSP_Init(struct _SCSPDSP* DSP)
 {
+    lagi_dsp_platform_init();
     lagi_init_unpack_table();
     memset(DSP, 0, sizeof(struct _SCSPDSP));
     DSP->RBL = 0x8000;
@@ -681,6 +683,11 @@ void SCSPDSP_Start(struct _SCSPDSP* DSP)
 
     DSP->LastStep = i + 1;
     lagi_scspdsp_decode(DSP);
+    {
+        const unsigned hash = lagi_dsp_program_hash(DSP->MPRO, DSP->LastStep);
+        lagi_dsp_capture(DSP->MPRO, DSP->LastStep, hash);
+        lagi_dsp_log("[LagiDSPProgram] hash=%08X steps=%d backend=predecoded translateUs=0 codeBytes=0 reason=diagnostic\n", hash, DSP->LastStep);
+    }
 
     {
         unsigned nIWT = 0, nTWT = 0, nMRD = 0, nMWT = 0, nEWT = 0;

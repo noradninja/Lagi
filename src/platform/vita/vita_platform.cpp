@@ -1,4 +1,5 @@
 #include "lagi/platform.h"
+#include "../../integration/lagi_dsp_platform.h"
 
 #include <cstdio>
 
@@ -35,6 +36,7 @@ bool init()
 void shutdown()
 {
     audio::shutdown();
+    lagi_dsp_platform_shutdown();
     renderer::shutdown();
     logging::shutdown();
     g_running = false;
