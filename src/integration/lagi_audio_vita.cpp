@@ -46,8 +46,6 @@ extern volatile unsigned lagi_dsp_mix_noflr;
 extern volatile unsigned lagi_dsp_mix_noflw;
 extern volatile unsigned lagi_dsp_profile_sample;
 extern volatile unsigned long long lagi_dsp_profile_last_us;
-extern volatile unsigned lagi_scsp_profile_fast_slots_last;
-extern volatile unsigned lagi_scsp_profile_generic_slots_last;
 }
 
 namespace {
@@ -69,8 +67,6 @@ struct ScspSlotProfile {
     std::uint64_t dspSends = 0;
     std::uint64_t directSends = 0;
     std::uint64_t effectReturns = 0;
-    std::uint64_t fastSlots = 0;
-    std::uint64_t genericSlots = 0;
     unsigned activeMax = 0;
     unsigned samples = 0;
 };
@@ -717,10 +713,6 @@ void render_scsp_audio()
             SCSP_Update(nullptr, nullptr, &sample);
             if (profileSample) {
                 scspElapsedUs = sceKernelGetSystemTimeWide() - t;
-                slotProfile.fastSlots +=
-                    lagi_scsp_profile_fast_slots_last;
-                slotProfile.genericSlots +=
-                    lagi_scsp_profile_generic_slots_last;
                 lagi_dsp_profile_sample = 0;
             }
             log_dsp_program_profile_if_changed();
@@ -765,7 +757,6 @@ void render_scsp_audio()
                 "dspSteps=%d samples=%u activeAvg=%u activeMax=%u "
                 "pcm8=%u pcm16=%u nonPcm=%u plfo=%u alfo=%u mod=%u "
                 "ring=%u dspSend=%u direct=%u efReturn=%u "
-                "slotFast=%u slotFallback=%u "
                 "emptyChunks=%llu shortWrites=%llu\n",
                 static_cast<int>(g_sequenceNumber),
                 g_audioRenderChunks,
@@ -793,8 +784,6 @@ void render_scsp_audio()
                 sampled_average(slotProfile.dspSends, slotProfile.samples),
                 sampled_average(slotProfile.directSends, slotProfile.samples),
                 sampled_average(slotProfile.effectReturns, slotProfile.samples),
-                sampled_average(slotProfile.fastSlots, slotProfile.samples),
-                sampled_average(slotProfile.genericSlots, slotProfile.samples),
                 g_audioQueueEmptyChunks,
                 g_audioShortWrites);
         }
@@ -1065,7 +1054,7 @@ void initSoundDriver()
     lagi::platform::logging::writef(
         "[AzelAudioPerf] profiler=outer-sampled sampleStride=8 "
         "steadyInterval=256 dspSplit=inner-sampled "
-        "slotProfile=sampled slotFastPath=guarded-pcm no-emulation-changes\n");
+        "slotProfile=sampled no-emulation-changes\n");
 }
 
 void updateSoundInterrupt()
