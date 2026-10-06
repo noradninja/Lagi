@@ -98,7 +98,7 @@ Neptune renders.
 
 ## Rendering
 
-Lagi uses multiple Vita display framebuffer modes according to Azel's presentation state. Native 3D gameplay currently renders and scans out at 480x272 with 2x MSAA. When Azel switches the title screen into its 704-dot high-resolution VDP2 mode through TVMD, Neptune renders and scans out a 720x408 framebuffer directly. The title path therefore preserves substantially more of the source VDP2 raster instead of reducing it through the gameplay framebuffer mode.
+Lagi uses multiple Vita display framebuffer modes according to Azel's presentation state. Native 3D gameplay currently renders and scans out at 480x272 with MSAA disabled. When Azel switches the title screen into its 704-dot high-resolution VDP2 mode through TVMD, Neptune renders and scans out a 720x408 framebuffer directly. The title path therefore preserves substantially more of the source VDP2 raster instead of reducing it through the gameplay framebuffer mode.
 
 ### Gouraud lighting
 
