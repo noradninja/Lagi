@@ -50,7 +50,41 @@ typedef struct LagiScspDspOp {
     UINT8 odd;
 } LagiScspDspOp;
 
+typedef struct LagiPdsFastOp {
+    UINT8 TRA;
+    UINT8 TWA;
+    UINT8 IRA;
+    UINT8 IWA;
+    UINT8 EWA;
+    UINT8 COEF;
+    UINT8 MASA;
+    UINT8 flags0;
+    UINT8 flags1;
+} LagiPdsFastOp;
+
+enum {
+    LAGI_PDS_TWT   = 1u << 0,
+    LAGI_PDS_XSEL  = 1u << 1,
+    LAGI_PDS_IWT   = 1u << 2,
+    LAGI_PDS_MWT   = 1u << 3,
+    LAGI_PDS_MRD   = 1u << 4,
+    LAGI_PDS_EWT   = 1u << 5,
+    LAGI_PDS_TABLE = 1u << 6,
+    LAGI_PDS_NXADR = 1u << 7
+};
+
+enum {
+    LAGI_PDS_SHIFT1   = 1u << 0,
+    LAGI_PDS_YCOEF    = 1u << 1,
+    LAGI_PDS_NEGB     = 1u << 2,
+    LAGI_PDS_ZERO     = 1u << 3,
+    LAGI_PDS_BSEL     = 1u << 4,
+    LAGI_PDS_IRA_MIX  = 1u << 5,
+    LAGI_PDS_IRA_ZERO = 1u << 6
+};
+
 static LagiScspDspOp g_lagiDspOps[128];
+static LagiPdsFastOp g_lagiPdsFastOps[128];
 static struct _SCSPDSP* g_lagiDecodedDsp = 0;
 static int g_lagiDecodedSteps = 0;
 static int g_lagiPdsFastPath = 0;
@@ -219,17 +253,55 @@ static void lagi_scspdsp_decode(struct _SCSPDSP* DSP)
      * - SHIFT is only saturating mode 0 or 1
      * - SCSP RAM traffic always uses PACK/UNPACK (NOFL=0)
      *
-     * Use a specialized loop only when the entire loaded program satisfies
-     * those invariants. Unknown banks retain the full interpreter below.
+     * Build a compact second micro-op stream only when the entire program
+     * satisfies those invariants. Unknown banks retain the generic interpreter.
      */
-    /*
-     * First optimization pass: generic predecode only.
-     * Do not enable the specialized PDS instruction-subset fast path yet;
-     * this keeps arithmetic and memory behavior on the full interpreter path
-     * while removing repeated MPRO bitfield extraction.
-     */
-    g_lagiPdsFastPath = 0;
-    lagi_dsp_fast_path = 0;
+    g_lagiPdsFastPath = 1;
+    for (step = 0; step < DSP->LastStep; ++step)
+    {
+        const LagiScspDspOp* op = &g_lagiDspOps[step];
+        LagiPdsFastOp* fast = &g_lagiPdsFastOps[step];
+        UINT8 f0 = 0;
+        UINT8 f1 = 0;
+
+        if (op->YSEL > 1 || op->FRCL || op->YRL || op->ADRL ||
+            op->SHIFT > 1 || op->NOFL)
+        {
+            g_lagiPdsFastPath = 0;
+            break;
+        }
+
+        fast->TRA = op->TRA;
+        fast->TWA = op->TWA;
+        fast->IRA = op->IRA;
+        fast->IWA = op->IWA;
+        fast->EWA = op->EWA;
+        fast->COEF = op->COEF;
+        fast->MASA = op->MASA;
+
+        if (op->TWT)   f0 |= LAGI_PDS_TWT;
+        if (op->XSEL)  f0 |= LAGI_PDS_XSEL;
+        if (op->IWT)   f0 |= LAGI_PDS_IWT;
+        if (op->odd && op->MWT) f0 |= LAGI_PDS_MWT;
+        if (op->odd && op->MRD) f0 |= LAGI_PDS_MRD;
+        if (op->EWT)   f0 |= LAGI_PDS_EWT;
+        if (op->TABLE) f0 |= LAGI_PDS_TABLE;
+        if (op->NXADR) f0 |= LAGI_PDS_NXADR;
+
+        if (op->SHIFT)    f1 |= LAGI_PDS_SHIFT1;
+        if (op->YSEL)     f1 |= LAGI_PDS_YCOEF;
+        if (op->NEGB)     f1 |= LAGI_PDS_NEGB;
+        if (op->ZERO)     f1 |= LAGI_PDS_ZERO;
+        if (op->BSEL)     f1 |= LAGI_PDS_BSEL;
+        if (op->IRA > 0x1F && op->IRA <= 0x2F)
+            f1 |= LAGI_PDS_IRA_MIX;
+        else if (op->IRA > 0x2F)
+            f1 |= LAGI_PDS_IRA_ZERO;
+
+        fast->flags0 = f0;
+        fast->flags1 = f1;
+    }
+    lagi_dsp_fast_path = (unsigned)g_lagiPdsFastPath;
 }
 
 void SCSPDSP_Init(struct _SCSPDSP* DSP)
@@ -263,109 +335,117 @@ static inline INT32 lagi_sat24(INT32 v)
     return v;
 }
 
+static inline INT32 lagi_sign_extend24_fast(UINT32 v)
+{
+    return ((INT32)(v << 8)) >> 8;
+}
+
 static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
 {
     INT32 ACC = 0;
     INT32 SHIFTED = 0;
     INT32 INPUTS = 0;
     INT32 MEMVAL = 0;
+    const UINT32 dec = DSP->DEC;
+    const UINT32 rbp = DSP->RBP << 12;
+    const UINT32 rblMask = DSP->RBL - 1;
     int step;
 
     memset(DSP->EFREG, 0, 2 * 16);
 
     for (step = 0; step < DSP->LastStep; ++step)
     {
-        const LagiScspDspOp* op = &g_lagiDspOps[step];
+        const LagiPdsFastOp* op = &g_lagiPdsFastOps[step];
+        const UINT8 f0 = op->flags0;
+        const UINT8 f1 = op->flags1;
         INT32 B;
         INT32 X;
+        INT32 tempValue = 0;
 
-        if (op->IRA <= 0x1F)
-            INPUTS = DSP->MEMS[op->IRA];
-        else if (op->IRA <= 0x2F)
+        if (f1 & LAGI_PDS_IRA_ZERO)
+            INPUTS = 0;
+        else if (f1 & LAGI_PDS_IRA_MIX)
             INPUTS = DSP->MIXS[op->IRA - 0x20] << 4;
         else
-            INPUTS = 0;
-        INPUTS = lagi_sign_extend24(INPUTS);
+            INPUTS = DSP->MEMS[op->IRA];
+        INPUTS = lagi_sign_extend24_fast((UINT32)INPUTS);
 
-        if (op->IWT)
+        if (f0 & LAGI_PDS_IWT)
         {
             DSP->MEMS[op->IWA] = MEMVAL;
             if (op->IRA == op->IWA)
                 INPUTS = MEMVAL;
         }
 
-        if (op->ZERO)
+        /*
+         * TEMP is needed by both B and X on many microinstructions. Read and
+         * sign-extend it at most once per step when either source selects it.
+         */
+        if (!(f1 & LAGI_PDS_ZERO) &&
+            !(f1 & LAGI_PDS_BSEL))
+            tempValue = lagi_sign_extend24_fast(
+                (UINT32)DSP->TEMP[(op->TRA + dec) & 0x7F]);
+        else if (!(f0 & LAGI_PDS_XSEL))
+            tempValue = lagi_sign_extend24_fast(
+                (UINT32)DSP->TEMP[(op->TRA + dec) & 0x7F]);
+
+        if (f1 & LAGI_PDS_ZERO)
             B = 0;
-        else if (op->BSEL)
+        else if (f1 & LAGI_PDS_BSEL)
             B = ACC;
         else
-            B = lagi_sign_extend24(
-                DSP->TEMP[(op->TRA + DSP->DEC) & 0x7F]);
+            B = tempValue;
 
-        if (op->NEGB)
+        if (f1 & LAGI_PDS_NEGB)
             B = -B;
 
-        if (op->XSEL)
-            X = INPUTS;
-        else
-            X = lagi_sign_extend24(
-                DSP->TEMP[(op->TRA + DSP->DEC) & 0x7F]);
+        X = (f0 & LAGI_PDS_XSEL) ? INPUTS : tempValue;
 
         /*
-         * SCSP DSP pipeline ordering is significant: SHIFTED is derived from
-         * the accumulator value produced by the PREVIOUS microinstruction.
-         * Only after SHIFTED is latched does this instruction calculate the
-         * next ACC value. Do not reorder these operations.
+         * Pipeline ordering is intentional: SHIFTED comes from the accumulator
+         * produced by the PREVIOUS microinstruction.
          */
-        SHIFTED = lagi_sat24(op->SHIFT ? ACC * 2 : ACC);
+        SHIFTED = lagi_sat24(
+            (f1 & LAGI_PDS_SHIFT1) ? ACC * 2 : ACC);
 
-        /*
-         * FRCL is absent in this program class, so FRC_REG remains zero.
-         * YSEL=0 therefore contributes a guaranteed zero product.
-         */
-        if (op->YSEL == 0)
-        {
-            ACC = B;
-        }
-        else
+        if (f1 & LAGI_PDS_YCOEF)
         {
             INT32 Y = DSP->COEF[op->COEF] >> 3;
             Y = (Y << 19) >> 19;
             ACC = (INT32)(((INT64)X * (INT64)Y) >> 12) + B;
         }
+        else
+        {
+            /* FRC_REG is invariant zero for this guarded program class. */
+            ACC = B;
+        }
 
-        if (op->TWT)
-            DSP->TEMP[(op->TWA + DSP->DEC) & 0x7F] = SHIFTED;
+        if (f0 & LAGI_PDS_TWT)
+            DSP->TEMP[(op->TWA + dec) & 0x7F] = SHIFTED;
 
-        if ((op->MRD || op->MWT) && op->odd)
+        if (f0 & (LAGI_PDS_MRD | LAGI_PDS_MWT))
         {
             UINT32 addr = DSP->MADRS[op->MASA];
 
-            if (!op->TABLE)
-                addr += DSP->DEC;
-
-            /*
-             * ADRL is absent, so ADRS_REG remains zero. ADREB therefore adds
-             * nothing even when encoded.
-             */
-            if (op->NXADR)
+            if (!(f0 & LAGI_PDS_TABLE))
+                addr += dec;
+            if (f0 & LAGI_PDS_NXADR)
                 ++addr;
 
-            if (!op->TABLE)
-                addr &= DSP->RBL - 1;
+            if (!(f0 & LAGI_PDS_TABLE))
+                addr &= rblMask;
             else
-                addr &= 0xFFFF;
+                addr &= 0xFFFFu;
 
-            addr += DSP->RBP << 12;
+            addr += rbp;
 
-            if (op->MRD)
+            if (f0 & LAGI_PDS_MRD)
                 MEMVAL = UNPACK(DSP->SCSPRAM[addr]);
-
-            if (op->MWT)
+            if (f0 & LAGI_PDS_MWT)
                 DSP->SCSPRAM[addr] = PACK(SHIFTED);
         }
 
-        if (op->EWT)
+        if (f0 & LAGI_PDS_EWT)
             DSP->EFREG[op->EWA] += SHIFTED >> 8;
     }
 
