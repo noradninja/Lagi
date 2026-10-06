@@ -18,6 +18,7 @@
 #include "titleScreen.h"
 #include "kernel/moduleManager.h"
 #include "battle/BTL_A3/BTL_A3_map6.h"
+#include "audio/soundDriver.h"
 
 extern int numActiveTask;
 void azelInit();
@@ -390,6 +391,11 @@ void runtime_frame()
         }
     }
 
+    // Preserve the upstream PDS frame ordering for audio. The Vita runtime
+    // owns the host loop, so service Azel's sound driver here at the same
+    // post-task boundary where upstream PDS.cpp calls updateSound().
+    updateSound();
+
     // Service the Saturn-side VDP2 deferred register/DMA work and the platform
     // movie backend at the same host-frame boundary used by the existing
     // native runtime integration.
@@ -533,6 +539,12 @@ void runtime_frame()
         }
 
         state.rpmd = regs->mB0_RPMD & 3u;
+        // PLSZ packs NBG0/1/2/3/RBG0 plane sizes in successive 2-bit
+        // fields. RBG0 is bits 9:8; the low bits belong to NBG0.
+        state.plsz = (regs->m3A_PLSZ >> 8) & 3u;
+        state.chctlb = regs->m2A_CHCTLB;
+        state.pncr = regs->m38_PNCR;
+        state.craofb = regs->mE6_CRAOFB;
         state.ktctl = regs->mB4_KTCTL;
         state.ktaof = regs->mB6_KTAOF;
         state.wctlc = regs->mD4_WCTLC;
@@ -558,6 +570,57 @@ void runtime_frame()
                 ((regs->mDC_LWTA1 & 0x7FFFEu) << 1) & 0x7FFFFu;
         }
 
+        static bool loggedD5RbgBridge = false;
+        if (!loggedD5RbgBridge) {
+            lagi::platform::logging::writef(
+                "[D5RBGBridge] WCTLC=%04X WCTLD=%04X "
+                "LWTA0=%08X LWTA1=%08X mask=%u "
+                "addr0=%05X addr1=%05X "
+                "W0=(%d,%d)-(%d,%d) W1=(%d,%d)-(%d,%d) "
+                "RBGfmt CHCTLB=%04X PNCR=%04X CRAOFB=%04X PLSZ=%u\n",
+                static_cast<unsigned int>(regs->mD4_WCTLC),
+                static_cast<unsigned int>(regs->mD6_WCTLD),
+                static_cast<unsigned int>(regs->mD8_LWTA0),
+                static_cast<unsigned int>(regs->mDC_LWTA1),
+                state.lineWindowMask,
+                state.lineWindow0Address,
+                state.lineWindow1Address,
+                state.window0[0], state.window0[1],
+                state.window0[2], state.window0[3],
+                state.window1[0], state.window1[1],
+                state.window1[2], state.window1[3],
+                state.chctlb, state.pncr, state.craofb, state.plsz);
+
+            const unsigned char* liveVram = getVdp2Vram(0);
+            const unsigned int sampleY[] = {
+                0u, 32u, 64u, 96u, 112u, 128u, 160u, 192u, 223u
+            };
+            if ((state.lineWindowMask & 2u) != 0u) {
+                for (unsigned int si = 0;
+                     si < sizeof(sampleY) / sizeof(sampleY[0]); ++si) {
+                    const unsigned int y = sampleY[si];
+                    const unsigned int addr =
+                        (state.lineWindow1Address + y * 4u) & 0x7FFFFu;
+                    const unsigned int xs =
+                        static_cast<unsigned int>(liveVram[addr]) |
+                        (static_cast<unsigned int>(
+                            liveVram[(addr + 1u) & 0x7FFFFu]) << 8);
+                    const unsigned int xe =
+                        static_cast<unsigned int>(
+                            liveVram[(addr + 2u) & 0x7FFFFu]) |
+                        (static_cast<unsigned int>(
+                            liveVram[(addr + 3u) & 0x7FFFFu]) << 8);
+                    lagi::platform::logging::writef(
+                        "[D5RBGBridge] LW1 y=%u raw=%04X..%04X "
+                        "x=%u..%u\n",
+                        y, xs, xe,
+                        (xs >> 1) & 0x1FFu,
+                        (xe >> 1) & 0x1FFu);
+                }
+            }
+            loggedD5RbgBridge = true;
+        }
+
         const auto& paramA =
             gCoefficientTables[0][vdp2Controls.m0_doubleBufferIndex];
         const auto& paramB =
@@ -566,6 +629,353 @@ void runtime_frame()
             paramA, state.transformA, state.coefficientA);
         build_rbg0_gpu_parameter(
             paramB, state.transformB, state.coefficientB);
+
+        static bool loggedD5RbgParameterB = false;
+        if (!loggedD5RbgParameterB) {
+            lagi::platform::logging::writef(
+                "[D5RBGPlanes] A=%05X,%05X,%05X,%05X "
+                "B=%05X,%05X,%05X,%05X\n",
+                state.planeA[0], state.planeA[1],
+                state.planeA[2], state.planeA[3],
+                state.planeB[0], state.planeB[1],
+                state.planeB[2], state.planeB[3]);
+
+            lagi::platform::logging::writef(
+                "[D5RBGXformA] T0=%f,%f,%f,%f T1=%f,%f,%f,%f "
+                "K=%f,%f,%f\n",
+                state.transformA[0], state.transformA[1],
+                state.transformA[2], state.transformA[3],
+                state.transformA[4], state.transformA[5],
+                state.transformA[6], state.transformA[7],
+                state.coefficientA[0], state.coefficientA[1],
+                state.coefficientA[2]);
+            lagi::platform::logging::writef(
+                "[D5RBGXformB] T0=%f,%f,%f,%f T1=%f,%f,%f,%f "
+                "K=%f,%f,%f\n",
+                state.transformB[0], state.transformB[1],
+                state.transformB[2], state.transformB[3],
+                state.transformB[4], state.transformB[5],
+                state.transformB[6], state.transformB[7],
+                state.coefficientB[0], state.coefficientB[1],
+                state.coefficientB[2]);
+
+            const unsigned char* liveVram = getVdp2Vram(0);
+            const unsigned int coefficientSizeB =
+                (state.ktctl & 0x200u) ? 2u : 4u;
+            const unsigned int coefficientBaseB =
+                ((state.ktaof >> 8) & 0x7u) *
+                coefficientSizeB * 0x10000u;
+
+            const unsigned int ys[] = {112u, 128u, 160u, 192u, 223u};
+            const unsigned int xs[] = {0u, 176u, 351u};
+
+            for (unsigned int yi = 0;
+                 yi < sizeof(ys) / sizeof(ys[0]); ++yi) {
+                for (unsigned int xi = 0;
+                     xi < sizeof(xs) / sizeof(xs[0]); ++xi) {
+                    const unsigned int y = ys[yi];
+                    const unsigned int x = xs[xi];
+
+                    const std::uint32_t accum =
+                        static_cast<std::uint32_t>(paramB.m54) +
+                        static_cast<std::uint32_t>(paramB.m58) * y +
+                        static_cast<std::uint32_t>(paramB.m5C) * x;
+                    const unsigned int index = accum >> 16;
+                    const unsigned int addr =
+                        (coefficientBaseB +
+                         index * coefficientSizeB) & 0x7FFFFu;
+
+                    const std::uint32_t raw =
+                        static_cast<std::uint32_t>(liveVram[addr]) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(addr + 1u) & 0x7FFFFu]) << 8) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(addr + 2u) & 0x7FFFFu]) << 16) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(addr + 3u) & 0x7FFFFu]) << 24);
+
+                    std::int32_t k =
+                        static_cast<std::int32_t>(raw & 0x00FFFFFFu);
+                    if ((k & 0x00800000) != 0)
+                        k |= static_cast<std::int32_t>(0xFF000000u);
+
+                    lagi::platform::logging::writef(
+                        "[D5RBGCoeffB] xy=%u,%u accum=%08X "
+                        "idx=%04X addr=%05X raw=%08X k=%f\n",
+                        x, y, accum, index, addr, raw,
+                        static_cast<float>(k) / 65536.0f);
+
+                    const unsigned int noOffsetAddr =
+                        (index * coefficientSizeB) & 0x7FFFFu;
+                    const std::uint32_t rawNoOffset =
+                        static_cast<std::uint32_t>(
+                            liveVram[noOffsetAddr]) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(noOffsetAddr + 1u) & 0x7FFFFu]) << 8) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(noOffsetAddr + 2u) & 0x7FFFFu]) << 16) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(noOffsetAddr + 3u) & 0x7FFFFu]) << 24);
+                    std::int32_t kNoOffset =
+                        static_cast<std::int32_t>(
+                            rawNoOffset & 0x00FFFFFFu);
+                    if ((kNoOffset & 0x00800000) != 0)
+                        kNoOffset |=
+                            static_cast<std::int32_t>(0xFF000000u);
+                    lagi::platform::logging::writef(
+                        "[D5RBGCoeffB0] xy=%u,%u addr=%05X "
+                        "raw=%08X k=%f\n",
+                        x, y, noOffsetAddr, rawNoOffset,
+                        static_cast<float>(kNoOffset) / 65536.0f);
+                }
+            }
+
+            // Compare Azel's exact signed 16.16 coordinate pipeline
+            // against the float form sent to Neptune at representative B
+            // pixels. This isolates transform precision/order from tile
+            // decoding and window selection.
+            auto truncFPDiag = [](s32 v) -> s32 {
+                return v & static_cast<s32>(0xFFFFFFC0u);
+            };
+            auto signExt14fpDiag = [](s16 v) -> s32 {
+                s32 x = static_cast<s32>(v) & 0x3FFF;
+                if (x & 0x2000)
+                    x |= static_cast<s32>(0xFFFFC000u);
+                return x << 16;
+            };
+            auto truncMxDiag = [](s32 v) -> s32 {
+                return (v & 0x3FFFFFC0) |
+                    ((v & 0x20000000) ?
+                        static_cast<s32>(0xE0000000u) : 0);
+            };
+            auto fpMulDiag = [](s32 a, s32 b) -> s32 {
+                return static_cast<s32>(
+                    (static_cast<long long>(a) *
+                     static_cast<long long>(b)) >> 16);
+            };
+
+            const s32 A_Bd = truncFPDiag(paramB.m1C);
+            const s32 B_Bd = truncFPDiag(paramB.m20);
+            const s32 C_Bd = truncFPDiag(paramB.m24);
+            const s32 D_Bd = truncFPDiag(paramB.m28);
+            const s32 E_Bd = truncFPDiag(paramB.m2C);
+            const s32 F_Bd = truncFPDiag(paramB.m30);
+            const s32 Px_Bd = signExt14fpDiag(paramB.m34);
+            const s32 Py_Bd = signExt14fpDiag(paramB.m36);
+            const s32 Pz_Bd = signExt14fpDiag(paramB.m38);
+            const s32 Cx_Bd = signExt14fpDiag(paramB.m3C);
+            const s32 Cy_Bd = signExt14fpDiag(paramB.m3E);
+            const s32 Cz_Bd = signExt14fpDiag(paramB.m40);
+            const s32 Xp_Bd =
+                fpMulDiag(A_Bd, Px_Bd - Cx_Bd) +
+                fpMulDiag(B_Bd, Py_Bd - Cy_Bd) +
+                fpMulDiag(C_Bd, Pz_Bd - Cz_Bd) +
+                Cx_Bd + truncMxDiag(paramB.m44);
+            const s32 Yp_Bd =
+                fpMulDiag(D_Bd, Px_Bd - Cx_Bd) +
+                fpMulDiag(E_Bd, Py_Bd - Cy_Bd) +
+                fpMulDiag(F_Bd, Pz_Bd - Cz_Bd) +
+                Cy_Bd + truncMxDiag(paramB.m48);
+            const s32 baseXmul_Bd =
+                truncFPDiag(paramB.m0) - Px_Bd;
+            const s32 baseYmul_Bd =
+                truncFPDiag(paramB.m4) - Py_Bd;
+            const s32 zrel_Bd =
+                truncFPDiag(paramB.m8_Zst) - Pz_Bd;
+            const s32 Cval_Bd = fpMulDiag(C_Bd, zrel_Bd);
+            const s32 Fval_Bd = fpMulDiag(F_Bd, zrel_Bd);
+            const s32 dX_Bd =
+                fpMulDiag(A_Bd, truncFPDiag(paramB.m14)) +
+                fpMulDiag(B_Bd, truncFPDiag(paramB.m18));
+            const s32 dY_Bd =
+                fpMulDiag(D_Bd, truncFPDiag(paramB.m14)) +
+                fpMulDiag(E_Bd, truncFPDiag(paramB.m18));
+            const s32 dXst_Bd = truncFPDiag(paramB.mC);
+            const s32 dYst_Bd = truncFPDiag(paramB.m10);
+            const s32 dKAst_Bd = truncFPDiag(paramB.m58);
+            const s32 dKAx_Bd = truncFPDiag(paramB.m5C);
+            const s32 KAst_Bd = truncFPDiag(paramB.m54);
+
+            const unsigned int testYs[] = {112u, 128u, 160u, 192u, 223u};
+            const unsigned int testXs[] = {0u, 176u, 351u};
+            for (unsigned int yi = 0;
+                 yi < sizeof(testYs) / sizeof(testYs[0]); ++yi) {
+                const unsigned int y = testYs[yi];
+                const s32 xmulLine =
+                    baseXmul_Bd + static_cast<s32>(
+                        static_cast<std::int64_t>(dXst_Bd) * y);
+                const s32 ymulLine =
+                    baseYmul_Bd + static_cast<s32>(
+                        static_cast<std::int64_t>(dYst_Bd) * y);
+                const s32 Xsp =
+                    fpMulDiag(A_Bd, xmulLine) +
+                    fpMulDiag(B_Bd, ymulLine) + Cval_Bd;
+                const s32 Ysp =
+                    fpMulDiag(D_Bd, xmulLine) +
+                    fpMulDiag(E_Bd, ymulLine) + Fval_Bd;
+
+                for (unsigned int xi = 0;
+                     xi < sizeof(testXs) / sizeof(testXs[0]); ++xi) {
+                    const unsigned int x = testXs[xi];
+
+                    const std::uint32_t accum =
+                        static_cast<std::uint32_t>(KAst_Bd) +
+                        static_cast<std::uint32_t>(dKAst_Bd) * y +
+                        static_cast<std::uint32_t>(dKAx_Bd) * x;
+                    const unsigned int coeffIndex = accum >> 16;
+                    const unsigned int coeffAddr =
+                        (coeffIndex * 4u) & 0x7FFFFu;
+                    const std::uint32_t rawCoeff =
+                        static_cast<std::uint32_t>(
+                            liveVram[coeffAddr]) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(coeffAddr + 1u) & 0x7FFFFu]) << 8) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(coeffAddr + 2u) & 0x7FFFFu]) << 16) |
+                        (static_cast<std::uint32_t>(
+                            liveVram[(coeffAddr + 3u) & 0x7FFFFu]) << 24);
+                    s32 kx =
+                        static_cast<s32>(rawCoeff & 0x00FFFFFFu);
+                    if (kx & 0x00800000)
+                        kx |= static_cast<s32>(0xFF000000u);
+
+                    const s32 XspPixel =
+                        Xsp + fpMulDiag(
+                            dX_Bd, static_cast<s32>(x << 16));
+                    const s32 YspPixel =
+                        Ysp + fpMulDiag(
+                            dY_Bd, static_cast<s32>(x << 16));
+                    const s32 rawX =
+                        fpMulDiag(kx, XspPixel) + Xp_Bd;
+                    const s32 rawY =
+                        fpMulDiag(kx, YspPixel) + Yp_Bd;
+                    const int exactX = (rawX >> 16) & 0x7FF;
+                    const int exactY = (rawY >> 16) & 0x7FF;
+
+                    const float kf =
+                        static_cast<float>(kx) / 65536.0f;
+                    const float floatRotX =
+                        state.transformB[0] +
+                        state.transformB[4] * static_cast<float>(y) +
+                        state.transformB[2] * static_cast<float>(x);
+                    const float floatRotY =
+                        state.transformB[1] +
+                        state.transformB[5] * static_cast<float>(y) +
+                        state.transformB[3] * static_cast<float>(x);
+                    const float floatMapX =
+                        kf * floatRotX + state.transformB[6];
+                    const float floatMapY =
+                        kf * floatRotY + state.transformB[7];
+                    int approxX =
+                        static_cast<int>(std::floor(floatMapX)) & 0x7FF;
+                    int approxY =
+                        static_cast<int>(std::floor(floatMapY)) & 0x7FF;
+
+                    lagi::platform::logging::writef(
+                        "[D5RBGCoordB] xy=%u,%u idx=%04X k=%f "
+                        "exact=%d,%d float=%d,%d delta=%d,%d\n",
+                        x, y, coeffIndex,
+                        static_cast<float>(kx) / 65536.0f,
+                        exactX, exactY,
+                        approxX, approxY,
+                        approxX - exactX,
+                        approxY - exactY);
+
+                    // Mirror sampleTileAtCoordinate() for this D5 format:
+                    // CHSZ=1, CHCN=1, PNB=1, CNSM=0, SCN=8,
+                    // PLSZ=0, mapwh=4, plane base 0x60000.
+                    const unsigned int sampleX =
+                        static_cast<unsigned int>(exactX) & 0x7FFu;
+                    const unsigned int sampleY =
+                        static_cast<unsigned int>(exactY) & 0x7FFu;
+                    const unsigned int planeX = sampleX / 512u;
+                    const unsigned int planeY = sampleY / 512u;
+                    const unsigned int inPlaneX = sampleX % 512u;
+                    const unsigned int inPlaneY = sampleY % 512u;
+                    const unsigned int patternX = inPlaneX / 16u;
+                    const unsigned int patternY = inPlaneY / 16u;
+                    const unsigned int dotX = inPlaneX % 16u;
+                    const unsigned int dotY = inPlaneY % 16u;
+                    const unsigned int planeNumber =
+                        planeY * 4u + planeX;
+                    const unsigned int planeBase =
+                        state.planeB[planeNumber & 15u];
+                    const unsigned int patternAddr =
+                        (planeBase +
+                         (patternY * 32u + patternX) * 2u) & 0x7FFFFu;
+                    const unsigned int patternName =
+                        (static_cast<unsigned int>(liveVram[patternAddr]) << 8) |
+                        static_cast<unsigned int>(
+                            liveVram[(patternAddr + 1u) & 0x7FFFFu]);
+                    const unsigned int flip =
+                        (patternName >> 10) & 3u;
+                    const unsigned int charNumber =
+                        ((patternName & 0x3FFu) << 2) |
+                        (8u & 3u) |
+                        ((8u & 0x1Cu) << 10);
+                    unsigned int sx = dotX;
+                    unsigned int sy = dotY;
+                    if (flip != 0u) {
+                        sy &= 15u;
+                        if (flip & 2u) {
+                            if ((sy & 8u) == 0u)
+                                sy = 7u - sy + 16u;
+                            else
+                                sy = 15u - sy;
+                        } else if (sy & 8u) {
+                            sy += 8u;
+                        }
+
+                        if (flip & 1u) {
+                            if ((sx & 8u) == 0u)
+                                sy += 8u;
+                            sx &= 7u;
+                            sx = 7u - sx;
+                        } else if (sx & 8u) {
+                            sy += 8u;
+                            sx &= 7u;
+                        } else {
+                            sx &= 7u;
+                        }
+                    } else {
+                        sy &= 15u;
+                        if (sy & 8u)
+                            sy += 8u;
+                        if (sx & 8u)
+                            sy += 8u;
+                        sx &= 7u;
+                    }
+                    const unsigned int charAddr =
+                        (charNumber * 0x20u + sy * 8u + sx) & 0x7FFFFu;
+                    const unsigned int dotColor = liveVram[charAddr];
+                    const unsigned int paladdr =
+                        (patternName & 0x7000u) >> 4;
+                    const unsigned int paletteEntry =
+                        paladdr | dotColor;
+                    const unsigned int cramAddr =
+                        0x80000u + (paletteEntry * 2u);
+                    const unsigned int cramOffset =
+                        cramAddr - 0x80000u;
+                    const unsigned char* liveCram =
+                        getVdp2Cram(0);
+                    const unsigned int color =
+                        (static_cast<unsigned int>(
+                            liveCram[cramOffset & 0xFFFu]) << 8) |
+                        static_cast<unsigned int>(
+                            liveCram[(cramOffset + 1u) & 0xFFFu]);
+
+                    lagi::platform::logging::writef(
+                        "[D5RBGSampleB] xy=%u,%u map=%u,%u plane=%u "
+                        "paddr=%05X pname=%04X flip=%u char=%u "
+                        "caddr=%05X dot=%02X pal=%03X color=%04X\n",
+                        x, y, sampleX, sampleY, planeNumber,
+                        patternAddr, patternName, flip, charNumber,
+                        charAddr, dotColor, paletteEntry, color);
+                }
+            }
+
+            loggedD5RbgParameterB = true;
+        }
 
         lagi::platform::renderer::frontend_set_rbg0_state(state);
     }
@@ -619,6 +1029,11 @@ void runtime_frame()
         // Other native gameplay modes are not yet presented by Neptune.
         lagi::platform::renderer::movie_clear_frame();
     }
+
+    // Upstream PDS.cpp services the sound interrupt side after the host frame
+    // is presented. Keep that split here so the emulated 68000/SCSP command
+    // handshake advances with the same frame lifecycle.
+    updateSoundInterrupt();
 
     ++startupFrame;
 }

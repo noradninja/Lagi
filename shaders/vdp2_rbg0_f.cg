@@ -35,57 +35,160 @@ float4 sampleRbg0D5Cell(
     uniform sampler2D raw,
     float mapX,
     float mapY,
+    float4 format,
     float4 p0,
     float4 p1,
     float4 p2,
     float4 p3)
 {
-    mapX = fmod(floor(mapX), 2048.0f);
-    mapY = fmod(floor(mapY), 2048.0f);
-    if (mapX < 0.0f) mapX += 2048.0f;
-    if (mapY < 0.0f) mapY += 2048.0f;
+    const float chctlb = format.x;
+    const float pncr = format.y;
+    const float craofb = format.z;
+    const float plsz = format.w;
 
-    const float planeX = floor(mapX / 512.0f);
-    const float planeY = floor(mapY / 512.0f);
+    const float chsz = fmod(floor(chctlb / 256.0f), 2.0f);
+    const float chcn = fmod(floor(chctlb / 4096.0f), 8.0f);
+    const float pnb = fmod(floor(pncr / 32768.0f), 2.0f);
+    const float cnsm = fmod(floor(pncr / 16384.0f), 2.0f);
+    const float scn = fmod(pncr, 1024.0f);
+    const float caos = fmod(craofb, 8.0f);
+
+    const float planeWidth =
+        (fmod(floor(plsz), 2.0f) >= 1.0f) ? 1024.0f : 512.0f;
+    const float planeHeight =
+        (floor(plsz / 2.0f) >= 1.0f) ? 1024.0f : 512.0f;
+    const float mapWidth = planeWidth * 4.0f;
+    const float mapHeight = planeHeight * 4.0f;
+
+    mapX = fmod(floor(mapX), mapWidth);
+    mapY = fmod(floor(mapY), mapHeight);
+    if (mapX < 0.0f) mapX += mapWidth;
+    if (mapY < 0.0f) mapY += mapHeight;
+
+    const float planeX = floor(mapX / planeWidth);
+    const float planeY = floor(mapY / planeHeight);
     const float planeIndex = planeY * 4.0f + planeX;
     const float planeBase = selectRbg0Plane(
         planeIndex, p0, p1, p2, p3);
 
-    const float inPlaneX = mapX - planeX * 512.0f;
-    const float inPlaneY = mapY - planeY * 512.0f;
-    const float patternX = floor(inPlaneX / 16.0f);
-    const float patternY = floor(inPlaneY / 16.0f);
+    const float inPlaneX = mapX - planeX * planeWidth;
+    const float inPlaneY = mapY - planeY * planeHeight;
+    const float pageX = floor(inPlaneX / 512.0f);
+    const float pageY = floor(inPlaneY / 512.0f);
+    const float inPageX = inPlaneX - pageX * 512.0f;
+    const float inPageY = inPlaneY - pageY * 512.0f;
+
+    const float patternDim = (chsz >= 0.5f) ? 16.0f : 8.0f;
+    const float pageDimension = (chsz >= 0.5f) ? 32.0f : 64.0f;
+    const float patternSize = (pnb >= 0.5f) ? 2.0f : 4.0f;
+    const float pageSize = pageDimension * pageDimension * patternSize;
+
+    const float pageNumber = pageY * pageDimension + pageX;
+    const float pageBase = planeBase + pageNumber * pageSize;
+    const float patternX = floor(inPageX / patternDim);
+    const float patternY = floor(inPageY / patternDim);
     const float patternAddress =
-        planeBase + (patternY * 32.0f + patternX) * 2.0f;
+        pageBase + (patternY * pageDimension + patternX) * patternSize;
+
+    // D5 uses one-word pattern names. Keep the generic state live, but avoid
+    // inventing a two-word decode until a scene actually requires it.
     const float patternName = readBE16(raw, patternAddress);
 
-    const float characterNumber =
-        fmod(patternName, 1024.0f) * 4.0f + 8192.0f;
+    float characterNumber = 0.0f;
+    float flipFunction = 0.0f;
+    float paladdr = 0.0f;
 
-    float px = fmod(inPlaneX, 16.0f);
-    float py = fmod(inPlaneY, 16.0f);
-    if (fmod(floor(patternName / 1024.0f), 2.0f) >= 1.0f)
-        px = 15.0f - px;
-    if (fmod(floor(patternName / 2048.0f), 2.0f) >= 1.0f)
-        py = 15.0f - py;
+    if (chcn < 0.5f) {
+        paladdr =
+            fmod(floor(patternName / 4096.0f), 16.0f) * 16.0f +
+            fmod(floor(scn / 32.0f), 8.0f) * 256.0f;
+    } else {
+        paladdr =
+            fmod(floor(patternName / 4096.0f), 8.0f) * 256.0f;
+    }
 
-    const float cellX = floor(px / 8.0f);
-    const float cellY = floor(py / 8.0f);
-    const float cellIndex = cellX + cellY * 2.0f;
-    const float dotAddress =
-        characterNumber * 32.0f +
-        cellIndex * 64.0f +
-        fmod(py, 8.0f) * 8.0f +
-        fmod(px, 8.0f);
-    const float dotColor = readByte(raw, dotAddress);
+    if (cnsm < 0.5f) {
+        flipFunction = fmod(floor(patternName / 1024.0f), 4.0f);
+        if (chsz < 0.5f) {
+            characterNumber =
+                fmod(patternName, 1024.0f) +
+                fmod(scn, 32.0f) * 1024.0f;
+        } else {
+            characterNumber =
+                fmod(patternName, 1024.0f) * 4.0f +
+                fmod(scn, 4.0f) +
+                fmod(floor(scn / 4.0f), 8.0f) * 4096.0f;
+        }
+    } else {
+        flipFunction = 0.0f;
+        if (chsz < 0.5f) {
+            characterNumber =
+                fmod(patternName, 4096.0f) +
+                fmod(floor(scn / 4.0f), 8.0f) * 4096.0f;
+        } else {
+            characterNumber =
+                fmod(patternName, 4096.0f) * 4.0f +
+                fmod(scn, 4.0f) +
+                fmod(floor(scn / 16.0f), 2.0f) * 16384.0f;
+        }
+    }
+
+    const float characterOffset = characterNumber * 32.0f;
+    float px = fmod(inPageX, patternDim);
+    float py = fmod(inPageY, patternDim);
+
+    if (chsz < 0.5f) {
+        if (flipFunction == 1.0f || flipFunction == 3.0f)
+            px = 7.0f - px;
+        if (flipFunction == 2.0f || flipFunction == 3.0f)
+            py = 7.0f - py;
+    } else {
+        // Match Azel's Saturn 16x16 character-cell addressing exactly.
+        py = fmod(py, 16.0f);
+        if (flipFunction >= 2.0f) {
+            if (py < 8.0f)
+                py = 7.0f - py + 16.0f;
+            else
+                py = 15.0f - py;
+        } else if (py >= 8.0f) {
+            py += 8.0f;
+        }
+
+        if (flipFunction == 1.0f || flipFunction == 3.0f) {
+            if (px < 8.0f)
+                py += 8.0f;
+            px = fmod(px, 8.0f);
+            px = 7.0f - px;
+        } else if (px >= 8.0f) {
+            py += 8.0f;
+            px = fmod(px, 8.0f);
+        } else {
+            px = fmod(px, 8.0f);
+        }
+    }
+
+    float dotColor = 0.0f;
+    if (chcn < 0.5f) {
+        const float packedAddress =
+            characterOffset + floor((py * 8.0f + px) * 0.5f);
+        const float packedByte = readByte(raw, packedAddress);
+        if (fmod(px, 2.0f) < 0.5f)
+            dotColor = floor(packedByte / 16.0f);
+        else
+            dotColor = fmod(packedByte, 16.0f);
+    } else {
+        const float dotAddress =
+            characterOffset + py * 8.0f + px;
+        dotColor = readByte(raw, dotAddress);
+    }
 
     if (dotColor < 0.5f)
         return float4(0.0f, 0.0f, 0.0f, 0.0f);
 
-    const float paletteBank =
-        fmod(floor(patternName / 4096.0f), 8.0f);
-    const float paletteEntry = paletteBank * 256.0f + dotColor;
-    return rgb555(readBE16(raw, 524288.0f + paletteEntry * 2.0f));
+    const float paletteEntry =
+        caos * 256.0f + paladdr + dotColor;
+    return rgb555(readBE16(
+        raw, 524288.0f + paletteEntry * 2.0f));
 }
 
 float readRbgCoefficient(
@@ -120,7 +223,9 @@ float4 main(
     // {KAst, dKAst, dKAx, unused}
     uniform float4 rbg0Coefficient,
     // {coefficient table base, enabled, entry size, unused}
-    uniform float4 rbg0Info)
+    uniform float4 rbg0Info,
+    // {CHCTLB, PNCR, CRAOFB, RBG0 PLSZ}
+    uniform float4 rbg0Format)
 {
     const float x = min(351.0f, floor(vTexcoord.x * 352.0f));
     const float y = min(223.0f, floor(vTexcoord.y * 224.0f));
@@ -131,14 +236,18 @@ float4 main(
             rbg0Coefficient.x +
             rbg0Coefficient.y * y +
             rbg0Coefficient.z * x;
-        // Saturn takes the coefficient index from the upper 16 bits of a
-        // wrapping 32-bit accumulator. Keep the index in the 0..65535 domain
-        // before converting it to a VRAM byte address.
+        // Match Azel's CPU RBG0 renderer exactly:
+        // when DKAx is non-zero, the coefficient accumulator directly
+        // addresses the per-pixel coefficient image and KTAOF is not added.
+        // KTAOF is only used by the scanline-constant coefficient path.
         float coeffIndex = fmod(floor(accum), 65536.0f);
         if (coeffIndex < 0.0f)
             coeffIndex += 65536.0f;
+        const bool perPixelCoefficient =
+            abs(rbg0Coefficient.z) > 0.000001f;
         const float address =
-            rbg0Info.x + coeffIndex * rbg0Info.z;
+            (perPixelCoefficient ? 0.0f : rbg0Info.x) +
+            coeffIndex * rbg0Info.z;
         k = readRbgCoefficient(raw, address);
     }
 
@@ -155,6 +264,6 @@ float4 main(
     const float mapY = k * rotatedY + rbg0Transform1.w;
 
     return sampleRbg0D5Cell(
-        raw, mapX, mapY,
+        raw, mapX, mapY, rbg0Format,
         rbg0Plane0, rbg0Plane1, rbg0Plane2, rbg0Plane3);
 }

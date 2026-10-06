@@ -615,7 +615,9 @@ add_custom_command(
  COMMAND "${PSP2CGC_EXECUTABLE}"
   -profile sce_fp_psp2
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
-  -Wperf -fastprecision -O3
+  # RBG0 uses float values as exact packed-VRAM byte addresses and
+  # coefficient accumulators. Do not allow PSP2CGC to reduce precision here.
+  -Wperf -O3
   -o "${LAGI_VDP2_RBG0_F_GXP}"
  DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
@@ -1260,6 +1262,42 @@ foreach(relative_source IN LISTS LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES)
  list(APPEND LAGI_AZEL_UPSTREAM_SOURCES "${generated_source}")
 endforeach()
 
+# DSP native corpus is optional. Empty corpus keeps the interpreter available.
+set(LAGI_DSP_CORPUS "${CMAKE_SOURCE_DIR}/dsp_programs" CACHE PATH "Local LDSP capture directory")
+find_program(LAGI_DSP_PYTHON NAMES python python3 HINTS "$ENV{USERPROFILE}/.cache/codex-runtimes/codex-primary-runtime/dependencies/python")
+if(NOT LAGI_DSP_PYTHON)
+ message(FATAL_ERROR "DSP generation needs Python 3; set LAGI_DSP_PYTHON to its executable")
+endif()
+file(GLOB_RECURSE LAGI_DSP_CAPTURES CONFIGURE_DEPENDS "${LAGI_DSP_CORPUS}/*.ldsp")
+set(LAGI_DSP_AOT "${CMAKE_BINARY_DIR}/lagi_dsp_aot.inc")
+add_custom_command(OUTPUT "${LAGI_DSP_AOT}"
+ COMMAND "${LAGI_DSP_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/generate_scspdsp_aot.py"
+  --corpus "${LAGI_DSP_CORPUS}" --output "${LAGI_DSP_AOT}"
+ DEPENDS "${CMAKE_SOURCE_DIR}/tools/generate_scspdsp_aot.py"
+  "${CMAKE_SOURCE_DIR}/src/integration/lagi_dsp_fields.def" ${LAGI_DSP_CAPTURES}
+ VERBATIM)
+file(READ "${CMAKE_SOURCE_DIR}/extern/Azel/ThirdParty/aosdk/eng_ssf/scsp.c" lagi_scsp_source)
+set(lagi_dsp_init_anchor "memset(SCSP,0,sizeof(*SCSP));")
+string(FIND "${lagi_scsp_source}" "${lagi_dsp_init_anchor}" lagi_dsp_init_match)
+string(FIND "${lagi_scsp_source}" "${lagi_dsp_init_anchor}" lagi_dsp_init_last REVERSE)
+if(lagi_dsp_init_match LESS 0 OR NOT lagi_dsp_init_match EQUAL lagi_dsp_init_last)
+ message(FATAL_ERROR "SCSP DSP initialization anchor changed")
+endif()
+string(REPLACE
+ "${lagi_dsp_init_anchor}"
+ "${lagi_dsp_init_anchor}\n\t\tSCSPDSP_Init(&SCSP->DSP);"
+ lagi_scsp_source "${lagi_scsp_source}")
+set(lagi_mpro_anchor "*((unsigned short *) (SCSP->DSP.MPRO+(addr-0x800)/2))=val;")
+string(FIND "${lagi_scsp_source}" "${lagi_mpro_anchor}" lagi_mpro_match)
+string(FIND "${lagi_scsp_source}" "${lagi_mpro_anchor}" lagi_mpro_last REVERSE)
+if(lagi_mpro_match LESS 0 OR NOT lagi_mpro_match EQUAL lagi_mpro_last)
+ message(FATAL_ERROR "SCSP MPRO write hook anchor changed")
+endif()
+string(REPLACE "${lagi_mpro_anchor}" "{ lagi_dsp_program_written(&SCSP->DSP); ${lagi_mpro_anchor} }" lagi_scsp_source "${lagi_scsp_source}")
+set(LAGI_SCSP_SERVICE "${CMAKE_BINARY_DIR}/lagi_scsp_service.c")
+file(WRITE "${LAGI_SCSP_SERVICE}" "#include \"lagi_dsp_platform.h\"\n${lagi_scsp_source}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/extern/Azel/ThirdParty/aosdk/eng_ssf/scsp.c")
+
 add_executable(lagi
  src/main.cpp
  src/platform/vita/vita_platform.cpp
@@ -1293,6 +1331,16 @@ add_executable(lagi
  ${LAGI_VDP2_NBG_F_OBJ}
  ${LAGI_VDP2_RBG0_F_OBJ}
  src/platform/vita/vita_audio.cpp
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kcpu.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopac.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopdm.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopnz.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kops.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/sat_hw.c
+ ${LAGI_SCSP_SERVICE}
+ ${LAGI_DSP_AOT}
+ src/integration/lagi_scspdsp_predecoded.c
+ src/integration/lagi_dsp_platform_vita.cpp
  src/movie/film_demuxer.cpp
  src/movie/cinepak_decoder.cpp
  src/movie/cinepak_sgx_decoder.cpp
@@ -1326,12 +1374,41 @@ add_executable(lagi
  src/integration/lagi_vdp1_animated_quad_vita.cpp
  ${LAGI_AZEL_UPSTREAM_SOURCES}
 )
+
+# The SCSP DSP interpreter is the measured native-audio hotspot. Optimize only
+# the Lagi-owned replacement; keep the rest of the bring-up build unchanged.
+set_source_files_properties(
+ src/integration/lagi_scspdsp_predecoded.c
+ PROPERTIES COMPILE_OPTIONS "-O2"
+)
+
+# Optimize the native SCSP slot mixer and hardware service independently from
+# the DSP interpreter so each audio-stage gain remains hardware-testable.
+set_source_files_properties(
+ extern/Azel/ThirdParty/aosdk/eng_ssf/sat_hw.c
+ ${LAGI_SCSP_SERVICE}
+ PROPERTIES COMPILE_OPTIONS "-O2"
+)
+
+# The 68K service consumes most of the remaining per-quantum budget. Keep its
+# optimization isolated from both the SCSP checkpoint and the rest of Lagi.
+set_source_files_properties(
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kcpu.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopac.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopdm.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopnz.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kops.c
+ PROPERTIES COMPILE_OPTIONS "-O2"
+)
+
 target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/ruin"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/kernel"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/audio"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/ThirdParty/aosdk"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/ThirdParty/aosdk/eng_ssf"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/shared"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_a3"
@@ -1351,6 +1428,11 @@ if(LAGI_AZEL_RUINS_LINK_TRIM)
  target_link_options(lagi PRIVATE -Wl,--gc-sections)
 endif()
 
+# The converter appends SCE metadata to the executable segment. Default page
+# alignment can leave too little space before data for some DSP corpus sizes.
+target_link_options(lagi PRIVATE "-Wl,-T,${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
+set_property(TARGET lagi APPEND PROPERTY LINK_DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
+target_include_directories(lagi PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}/src/integration")
 target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceSysmem_stub SceSysmodule_stub)
 
 if(LAGI_AZEL_PROBE)
