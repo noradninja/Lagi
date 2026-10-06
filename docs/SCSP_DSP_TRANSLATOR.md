@@ -16,9 +16,9 @@ Create an ASCII file (without a BOM) at ux0:data/lagi/dsp_backend.txt containing
 | aot | Linked generated C only; unknown programs interpret and are captured |
 | arm | Gated runtime ARM only; unavailable or failed translation interprets |
 
-The isolated probe allocates VM memory, obtains its base, opens it for writing, writes a function returning 42, closes and synchronizes it, executes it, verifies the result and frees it. Every API result is logged. Runtime ARM is available only after the entire probe succeeds. No additional Vita plugin is required. Successful emulation does not prove executable memory works on hardware.
+The isolated probe allocates one 1 MiB VM block, obtains its base, opens it for writing, writes a function returning 42, closes and synchronizes it, executes it and verifies the result. Every API result is logged. Predecoded, reference and AOT modes free the block after the probe. Auto and ARM modes retain and reuse that same allocation for generated code, avoiding a second Vita VM allocation. Runtime ARM is available only after the entire probe succeeds. No additional Vita plugin is required. Successful emulation does not prove executable memory works on hardware.
 
-Runtime mode preallocates 256 KiB: four 64 KiB code slots. Start resolves existing routines or queues a translation. Compilation and publication occur at a worker boundary, outside per-sample processing; the interpreter runs until selection succeeds. No allocation or compilation occurs per sample. Code overflow or API failure falls back. Shutdown joins the audio worker before releasing routines and VM memory.
+Runtime mode uses four 64 KiB code slots within the retained 1 MiB VM block. Start resolves existing routines or queues a translation. Compilation and publication occur at a worker boundary, outside per-sample processing; the interpreter runs until selection succeeds. No allocation or compilation occurs per sample. Code overflow or API failure falls back. Shutdown joins the audio worker before releasing routines and VM memory.
 
 ## Translation semantics
 

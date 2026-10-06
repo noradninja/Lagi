@@ -36,4 +36,4 @@ size_t strcspn(const char *s,const char *reject) { size_t n=0; while(s[n]) { for
     gcc=Path(os.environ.get('VITASDK',r'C:\Dev\VitaSDK'))/'bin/arm-vita-eabi-g++.exe'
     subprocess.run([str(gcc),'-O2','-marm','-march=armv7-a','-fno-exceptions','-fno-rtti','-ffreestanding','-fno-builtin','-nostdlib','-I'+str(out),'-I'+str(repo/'src/integration'),str(repo/'tests/scspdsp_vm_tests.cpp'),str(out/'lib.cpp'),'-Wl,-Ttext=0x10000','-Wl,-e,main','-lgcc','-o',str(out/'test.elf')],check=True)
     run_arm_elf(out/'test.elf')
-print('PASS: VM probe, publication, cleanup failure paths; real ARM return values; backend settings')
+print('PASS: 1 MiB single-allocation VM probe/reuse, publication and cleanup failures; real ARM return values; backend settings')

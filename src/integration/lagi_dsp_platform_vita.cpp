@@ -13,6 +13,7 @@ int mode = LAGI_DSP_PREDECODED;
 SceUID pool = -1;
 void *poolBase = nullptr;
 constexpr unsigned slotBytes = 65536, slots = 4;
+constexpr unsigned vmBytes = 1024u * 1024u;
 struct CaptureKey { unsigned steps; uint32_t hash; uint16_t words[512]; };
 CaptureKey captured[64]{};
 unsigned captureCount = 0;
@@ -21,28 +22,31 @@ int result(const char *operation, int status) {
     return status;
 }
 bool probe() {
-    SceUID uid = result("alloc", sceKernelAllocMemBlockForVM("LagiDSPProbe", 4096));
-    if (uid < 0) return false;
-    void *base = nullptr;
+    pool = result("alloc", sceKernelAllocMemBlockForVM("LagiDSPCode", vmBytes));
+    if (pool < 0) return false;
+    poolBase = nullptr;
     bool opened = false, ok = false;
-    if (result("base", sceKernelGetMemBlockBase(uid, &base)) >= 0 && base &&
+    if (result("base", sceKernelGetMemBlockBase(pool, &poolBase)) >= 0 && poolBase &&
         result("open", sceKernelOpenVMDomain()) >= 0) {
         opened = true;
         /* ARM AAPCS leaf: mov r0,#42; bx lr. Domain open permits writing;
          * close then sync before calling, following the Vita dynarec example. */
         const uint32_t code[] = { 0xe3a0002au, 0xe12fff1eu };
-        std::memcpy(base, code, sizeof(code));
+        std::memcpy(poolBase, code, sizeof(code));
         if (result("close", sceKernelCloseVMDomain()) >= 0) {
             opened = false;
-            if (result("sync", sceKernelSyncVMDomain(uid, base, 4096)) >= 0) {
-                const int value = reinterpret_cast<int (*)(void)>(base)();
+            if (result("sync", sceKernelSyncVMDomain(pool, poolBase, 4096)) >= 0) {
+                const int value = reinterpret_cast<int (*)(void)>(poolBase)();
                 result("execute", value);
                 ok = value == 42;
             }
         }
     }
     if (opened && result("cleanup-close", sceKernelCloseVMDomain()) < 0) ok = false;
-    if (result("free", sceKernelFreeMemBlock(uid)) < 0) ok = false;
+    if (!ok || (mode != LAGI_DSP_AUTO && mode != LAGI_DSP_ARM)) {
+        if (result("free", sceKernelFreeMemBlock(pool)) < 0) ok = false;
+        else { pool = -1; poolBase = nullptr; }
+    }
     return ok;
 }
 }
@@ -66,13 +70,6 @@ extern "C" int lagi_dsp_platform_init() {
     else if (config[0] && std::strcmp(config, "predecoded"))
         lagi_dsp_log("[LagiDSP] invalid backend setting; using predecoded\n");
     vmReady = probe();
-    if(vmReady && (mode==LAGI_DSP_AUTO || mode==LAGI_DSP_ARM)) {
-        pool=result("pool-alloc",sceKernelAllocMemBlockForVM("LagiDSPCode",slotBytes*slots));
-        if(pool<0) vmReady=false;
-        else if(result("pool-base",sceKernelGetMemBlockBase(pool,&poolBase))<0 || !poolBase) {
-            result("pool-free",sceKernelFreeMemBlock(pool)); pool=-1; vmReady=false;
-        }
-    }
     lagi_dsp_log("[LagiDSP] configured=%d vmReady=%d capture=on\n", mode, vmReady);
     return mode;
 }
