@@ -101,18 +101,25 @@ static void native_tests(void) {
     /* Selection uses full words, including when a hash/length match is forced. */
     SCSPDSP_Init(&a); a.SCSPRAM=ramA;
     memcpy(a.MPRO,g_lagiDspAotEntries[0].words,sizeof(a.MPRO)); SCSPDSP_Start(&a); lagi_dsp_service_pending(&a);
+    lagi_dsp_profile_sample=1; SCSPDSP_Step(&a); lagi_dsp_profile_sample=0;
+    if(lagi_dsp_profile_backend_last!=1) exit(45);
     g_lagiBackendMode=LAGI_DSP_AOT; lagi_dsp_select_native(&a,1);
     if(g_lagiNativeFunction!=g_lagiDspAotEntries[0].function) exit(20);
+    lagi_dsp_profile_sample=1; SCSPDSP_Step(&a); lagi_dsp_profile_sample=0;
+    if(lagi_dsp_profile_backend_last!=2) exit(43);
     a.Stopped=1; b=a; SCSPDSP_Step(&a); if(memcmp(&a,&b,sizeof(a))) exit(21); a.Stopped=0;
     lagi_dsp_program_written(&a); a.MPRO[0]^=0x80;
     if(g_lagiNativeFunction || !lagi_dsp_is_dirty(&a)) exit(22);
     /* Dirty execution refreshes decode but never reinstalls native code. */
-    SCSPDSP_Step(&a); if(g_lagiNativeFunction) exit(23);
+    lagi_dsp_profile_sample=1; SCSPDSP_Step(&a); lagi_dsp_profile_sample=0;
+    if(g_lagiNativeFunction || lagi_dsp_profile_backend_last!=0) exit(46);
     SCSPDSP_Start(&a); lagi_dsp_service_pending(&a); if(lagi_dsp_is_dirty(&a) || g_lagiNativeFunction) exit(24);
     g_lagiBackendMode=LAGI_DSP_ARM; g_lagiDspTestVm=0; lagi_dsp_select_native(&a,1);
     if(g_lagiNativeFunction) exit(25);
     g_lagiDspTestVm=1; lagi_dsp_select_native(&a,1);
     if(!g_lagiNativeFunction) exit(26);
+    lagi_dsp_profile_sample=1; SCSPDSP_Step(&a); lagi_dsp_profile_sample=0;
+    if(lagi_dsp_profile_backend_last!=3) exit(44);
     i=g_lagiCacheHits; lagi_dsp_select_native(&a,1);
     if(g_lagiCacheHits!=i+1) exit(27);
     /* Collision: mutate content while keeping the cache key equal. */

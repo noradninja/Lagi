@@ -49,6 +49,7 @@ extern volatile unsigned lagi_dsp_mix_noflr;
 extern volatile unsigned lagi_dsp_mix_noflw;
 extern volatile unsigned lagi_dsp_profile_sample;
 extern volatile unsigned long long lagi_dsp_profile_last_us;
+extern volatile unsigned lagi_dsp_profile_backend_last;
 }
 
 namespace {
@@ -682,6 +683,7 @@ void render_scsp_audio()
         std::uint64_t sampledDspUs = 0;
         ScspSlotProfile slotProfile{};
         unsigned sampledFrames = 0;
+        unsigned sampledDspBackends[4]{};
         if (profileChunk)
             renderStartUs = sceKernelGetSystemTimeWide();
 
@@ -724,6 +726,8 @@ void render_scsp_audio()
                 sampledScspUs += scspElapsedUs;
                 sampledDspUs +=
                     static_cast<std::uint64_t>(lagi_dsp_profile_last_us);
+                if (lagi_dsp_profile_backend_last < 4)
+                    ++sampledDspBackends[lagi_dsp_profile_backend_last];
                 ++sampledFrames;
             }
 
@@ -757,7 +761,8 @@ void render_scsp_audio()
                 "[AzelAudioPerf] seq=%d chunk=%llu frames=%u "
                 "queued=%u peak=%d total=%lluus budget=%lluus "
                 "m68k=%lluus scsp=%lluus slots=%lluus dsp=%lluus "
-                "dspSteps=%d dspHash=%08X dspBackend=%u samples=%u activeAvg=%u activeMax=%u "
+                "dspSteps=%d dspHash=%08X dspBackend=%u dspBackendSamples=%u,%u,%u,%u "
+                "samples=%u activeAvg=%u activeMax=%u "
                 "pcm8=%u pcm16=%u nonPcm=%u plfo=%u alfo=%u mod=%u "
                 "ring=%u dspSend=%u direct=%u efReturn=%u "
                 "emptyChunks=%llu shortWrites=%llu\n",
@@ -775,7 +780,11 @@ void render_scsp_audio()
                 static_cast<unsigned long long>(estimatedDspUs),
                 static_cast<int>(SCSP.DSP.LastStep),
                 static_cast<unsigned>(lagi_dsp_selected_hash),
-                static_cast<unsigned>(lagi_dsp_selected_backend),
+                static_cast<unsigned>(lagi_dsp_profile_backend_last),
+                sampledDspBackends[0],
+                sampledDspBackends[1],
+                sampledDspBackends[2],
+                sampledDspBackends[3],
                 sampledFrames,
                 sampled_average(slotProfile.active, slotProfile.samples),
                 slotProfile.activeMax,

@@ -88,6 +88,7 @@ volatile unsigned lagi_dsp_mix_noflr = 0;
 volatile unsigned lagi_dsp_mix_noflw = 0;
 volatile unsigned lagi_dsp_profile_sample = 0;
 volatile unsigned long long lagi_dsp_profile_last_us = 0;
+volatile unsigned lagi_dsp_profile_backend_last = 0;
 
 static INT32 g_lagiUnpackTable[65536];
 static int g_lagiUnpackTableReady = 0;
@@ -613,6 +614,7 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
     if (profileSample)
     {
         lagi_dsp_profile_last_us = 0;
+        lagi_dsp_profile_backend_last = 0;
         profileStartUs = sceKernelGetSystemTimeWide();
     }
 
@@ -634,7 +636,10 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
     if (g_lagiNativeFunction && g_lagiNativeDsp==DSP && !lagi_dsp_is_dirty(DSP) && g_lagiBackendMode!=LAGI_DSP_REFERENCE) {
         lagi_dsp_selected_backend=g_lagiNativeBackend;
         g_lagiNativeFunction(DSP);
-        if (profileSample) lagi_dsp_profile_last_us=sceKernelGetSystemTimeWide()-profileStartUs;
+        if (profileSample) {
+            lagi_dsp_profile_backend_last=g_lagiNativeBackend;
+            lagi_dsp_profile_last_us=sceKernelGetSystemTimeWide()-profileStartUs;
+        }
         return;
     }
     if (g_lagiPdsFastPath && !lagi_dsp_is_dirty(DSP) && g_lagiBackendMode!=LAGI_DSP_REFERENCE)
@@ -642,8 +647,11 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
         lagi_dsp_selected_backend=1;
         lagi_scspdsp_step_pds(DSP);
         if (profileSample)
+        {
+            lagi_dsp_profile_backend_last = 1;
             lagi_dsp_profile_last_us =
                 sceKernelGetSystemTimeWide() - profileStartUs;
+        }
         return;
     }
 
