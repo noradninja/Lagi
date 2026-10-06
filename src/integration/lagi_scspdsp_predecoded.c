@@ -83,7 +83,8 @@ enum {
     LAGI_PDS_ZERO     = 1u << 3,
     LAGI_PDS_BSEL     = 1u << 4,
     LAGI_PDS_IWT_ALIAS = 1u << 5,
-    LAGI_PDS_TEMP_USED = 1u << 6
+    LAGI_PDS_TEMP_USED = 1u << 6,
+    LAGI_PDS_SHIFT_USED = 1u << 7
 };
 
 static const INT32 g_lagiPdsZeroInput = 0;
@@ -319,6 +320,11 @@ static void lagi_scspdsp_decode(struct _SCSPDSP* DSP)
         if ((!op->ZERO && !op->BSEL) || !op->XSEL)
             f1 |= LAGI_PDS_TEMP_USED;
 
+        /* Only these side effects consume the previous ACC's SHIFTED value.
+         * FRCL/ADRL are excluded by the guard above; even-step MWT is inert. */
+        if (f0 & (LAGI_PDS_TWT | LAGI_PDS_MWT | LAGI_PDS_EWT))
+            f1 |= LAGI_PDS_SHIFT_USED;
+
         fast->flags0 = f0;
         fast->flags1 = f1;
     }
@@ -370,7 +376,10 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
     INT32 MEMVAL = 0;
     const UINT32 dec = DSP->DEC;
     const UINT32 rbp = DSP->RBP << 12;
-    const UINT32 rblMask = DSP->RBL - 1;
+    /* Index 0 is ring addressing, index 1 is table addressing. Select using
+     * predecoded TABLE; values remain live for each sample, never at Start(). */
+    const UINT32 addressOffset[2] = { dec, 0 };
+    const UINT32 addressMask[2] = { DSP->RBL - 1, 0xFFFFu };
     int step;
 
     memset(DSP->EFREG, 0, 2 * 16);
@@ -418,8 +427,9 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
          * Pipeline ordering is intentional: SHIFTED comes from the accumulator
          * produced by the PREVIOUS microinstruction.
          */
-        SHIFTED = lagi_sat24(
-            (f1 & LAGI_PDS_SHIFT1) ? (INT64)ACC * 2 : (INT64)ACC);
+        if (f1 & LAGI_PDS_SHIFT_USED)
+            SHIFTED = lagi_sat24(
+                (f1 & LAGI_PDS_SHIFT1) ? (INT64)ACC * 2 : (INT64)ACC);
 
         if (f1 & LAGI_PDS_YCOEF)
         {
@@ -437,17 +447,12 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
 
         if (f0 & (LAGI_PDS_MRD | LAGI_PDS_MWT))
         {
-            UINT32 addr = *op->masa;
-
-            if (!(f0 & LAGI_PDS_TABLE))
-                addr += dec;
+            const unsigned addressMode = (f0 >> 6) & 1u;
+            /* Resolve the register location at decode, not its live value.
+             * Addition and masking retain UINT32 wrap before adding RBP. */
+            UINT32 addr = *op->masa + addressOffset[addressMode];
             addr += op->addrIncrement;
-
-            if (!(f0 & LAGI_PDS_TABLE))
-                addr &= rblMask;
-            else
-                addr &= 0xFFFFu;
-
+            addr &= addressMask[addressMode];
             addr += rbp;
 
             if (f0 & LAGI_PDS_MRD)
