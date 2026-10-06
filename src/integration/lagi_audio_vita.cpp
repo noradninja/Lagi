@@ -22,6 +22,27 @@ extern "C" {
 #include "eng_ssf/m68k.h"
 #include "eng_ssf/scsp.h"
 #include "eng_ssf/sat_hw.h"
+
+extern volatile unsigned lagi_dsp_mix_serial;
+extern volatile unsigned lagi_dsp_mix_steps;
+extern volatile unsigned lagi_dsp_mix_iwt;
+extern volatile unsigned lagi_dsp_mix_twt;
+extern volatile unsigned lagi_dsp_mix_mrd;
+extern volatile unsigned lagi_dsp_mix_mwt;
+extern volatile unsigned lagi_dsp_mix_ewt;
+extern volatile unsigned lagi_dsp_mix_adrl;
+extern volatile unsigned lagi_dsp_mix_frcl;
+extern volatile unsigned lagi_dsp_mix_yrl;
+extern volatile unsigned lagi_dsp_mix_xinput;
+extern volatile unsigned lagi_dsp_mix_yfrc;
+extern volatile unsigned lagi_dsp_mix_ycoef;
+extern volatile unsigned lagi_dsp_mix_yreg;
+extern volatile unsigned lagi_dsp_mix_satshift;
+extern volatile unsigned lagi_dsp_mix_wrapshift;
+extern volatile unsigned lagi_dsp_mix_unpack;
+extern volatile unsigned lagi_dsp_mix_pack;
+extern volatile unsigned lagi_dsp_mix_noflr;
+extern volatile unsigned lagi_dsp_mix_noflw;
 }
 
 namespace {
@@ -95,10 +116,48 @@ unsigned g_audioPerfBudget = 16;
 unsigned long long g_audioRenderChunks = 0;
 unsigned long long g_audioQueueEmptyChunks = 0;
 unsigned long long g_audioShortWrites = 0;
+unsigned g_lastDspMixSerial = 0;
 
 unsigned long long next_audio_trace()
 {
     return g_audioTraceSerial.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+
+void log_dsp_program_profile_if_changed()
+{
+    const unsigned serial = static_cast<unsigned>(lagi_dsp_mix_serial);
+    if (serial == 0 || serial == g_lastDspMixSerial)
+        return;
+
+    g_lastDspMixSerial = serial;
+    lagi::platform::logging::writef(
+        "[AzelAudioDSP] serial=%u seq=%d steps=%u "
+        "IWT=%u TWT=%u MRD=%u MWT=%u EWT=%u "
+        "ADRL=%u FRCL=%u YRL=%u XINPUT=%u "
+        "YFRC=%u YCOEF=%u YREG=%u "
+        "shiftSat=%u shiftWrap=%u "
+        "unpack=%u pack=%u noflR=%u noflW=%u\n",
+        serial,
+        static_cast<int>(g_sequenceNumber),
+        static_cast<unsigned>(lagi_dsp_mix_steps),
+        static_cast<unsigned>(lagi_dsp_mix_iwt),
+        static_cast<unsigned>(lagi_dsp_mix_twt),
+        static_cast<unsigned>(lagi_dsp_mix_mrd),
+        static_cast<unsigned>(lagi_dsp_mix_mwt),
+        static_cast<unsigned>(lagi_dsp_mix_ewt),
+        static_cast<unsigned>(lagi_dsp_mix_adrl),
+        static_cast<unsigned>(lagi_dsp_mix_frcl),
+        static_cast<unsigned>(lagi_dsp_mix_yrl),
+        static_cast<unsigned>(lagi_dsp_mix_xinput),
+        static_cast<unsigned>(lagi_dsp_mix_yfrc),
+        static_cast<unsigned>(lagi_dsp_mix_ycoef),
+        static_cast<unsigned>(lagi_dsp_mix_yreg),
+        static_cast<unsigned>(lagi_dsp_mix_satshift),
+        static_cast<unsigned>(lagi_dsp_mix_wrapshift),
+        static_cast<unsigned>(lagi_dsp_mix_unpack),
+        static_cast<unsigned>(lagi_dsp_mix_pack),
+        static_cast<unsigned>(lagi_dsp_mix_noflr),
+        static_cast<unsigned>(lagi_dsp_mix_noflw));
 }
 
 bool push_audio_event(const AudioEvent& event)
@@ -543,6 +602,7 @@ void render_scsp_audio()
 
             stereo_sample_t sample{};
             SCSP_Update(nullptr, nullptr, &sample);
+            log_dsp_program_profile_if_changed();
 
             if (profileSample) {
                 sampledScspUs += sceKernelGetSystemTimeWide() - t;
@@ -632,6 +692,7 @@ void clock_scsp_discard()
         m68k_execute(kM68kCyclesPerSample);
         stereo_sample_t sample{};
         SCSP_Update(nullptr, nullptr, &sample);
+        log_dsp_program_profile_if_changed();
     }
 
     service_driver_commands();
