@@ -51,15 +51,17 @@ typedef struct LagiScspDspOp {
 } LagiScspDspOp;
 
 typedef struct LagiPdsFastOp {
+    const INT32* input;
+    const INT16* coef;
+    const UINT16* masa;
     UINT8 TRA;
     UINT8 TWA;
-    UINT8 IRA;
     UINT8 IWA;
     UINT8 EWA;
-    UINT8 COEF;
-    UINT8 MASA;
     UINT8 flags0;
     UINT8 flags1;
+    UINT8 inputShift;
+    UINT8 addrIncrement;
 } LagiPdsFastOp;
 
 enum {
@@ -69,8 +71,7 @@ enum {
     LAGI_PDS_MWT   = 1u << 3,
     LAGI_PDS_MRD   = 1u << 4,
     LAGI_PDS_EWT   = 1u << 5,
-    LAGI_PDS_TABLE = 1u << 6,
-    LAGI_PDS_NXADR = 1u << 7
+    LAGI_PDS_TABLE = 1u << 6
 };
 
 enum {
@@ -79,10 +80,11 @@ enum {
     LAGI_PDS_NEGB     = 1u << 2,
     LAGI_PDS_ZERO     = 1u << 3,
     LAGI_PDS_BSEL     = 1u << 4,
-    LAGI_PDS_IRA_MIX  = 1u << 5,
-    LAGI_PDS_IRA_ZERO = 1u << 6
+    LAGI_PDS_IWT_ALIAS = 1u << 5,
+    LAGI_PDS_TEMP_USED = 1u << 6
 };
 
+static const INT32 g_lagiPdsZeroInput = 0;
 static LagiScspDspOp g_lagiDspOps[128];
 static LagiPdsFastOp g_lagiPdsFastOps[128];
 static struct _SCSPDSP* g_lagiDecodedDsp = 0;
@@ -271,13 +273,29 @@ static void lagi_scspdsp_decode(struct _SCSPDSP* DSP)
             break;
         }
 
+        if (op->IRA <= 0x1F)
+        {
+            fast->input = &DSP->MEMS[op->IRA];
+            fast->inputShift = 0;
+        }
+        else if (op->IRA <= 0x2F)
+        {
+            fast->input = &DSP->MIXS[op->IRA - 0x20];
+            fast->inputShift = 4;
+        }
+        else
+        {
+            fast->input = &g_lagiPdsZeroInput;
+            fast->inputShift = 0;
+        }
+
+        fast->coef = &DSP->COEF[op->COEF];
+        fast->masa = &DSP->MADRS[op->MASA];
         fast->TRA = op->TRA;
         fast->TWA = op->TWA;
-        fast->IRA = op->IRA;
         fast->IWA = op->IWA;
         fast->EWA = op->EWA;
-        fast->COEF = op->COEF;
-        fast->MASA = op->MASA;
+        fast->addrIncrement = op->NXADR;
 
         if (op->TWT)   f0 |= LAGI_PDS_TWT;
         if (op->XSEL)  f0 |= LAGI_PDS_XSEL;
@@ -286,17 +304,16 @@ static void lagi_scspdsp_decode(struct _SCSPDSP* DSP)
         if (op->odd && op->MRD) f0 |= LAGI_PDS_MRD;
         if (op->EWT)   f0 |= LAGI_PDS_EWT;
         if (op->TABLE) f0 |= LAGI_PDS_TABLE;
-        if (op->NXADR) f0 |= LAGI_PDS_NXADR;
 
         if (op->SHIFT)    f1 |= LAGI_PDS_SHIFT1;
         if (op->YSEL)     f1 |= LAGI_PDS_YCOEF;
         if (op->NEGB)     f1 |= LAGI_PDS_NEGB;
         if (op->ZERO)     f1 |= LAGI_PDS_ZERO;
         if (op->BSEL)     f1 |= LAGI_PDS_BSEL;
-        if (op->IRA > 0x1F && op->IRA <= 0x2F)
-            f1 |= LAGI_PDS_IRA_MIX;
-        else if (op->IRA > 0x2F)
-            f1 |= LAGI_PDS_IRA_ZERO;
+        if (op->IWT && op->IRA == op->IWA)
+            f1 |= LAGI_PDS_IWT_ALIAS;
+        if ((!op->ZERO && !op->BSEL) || !op->XSEL)
+            f1 |= LAGI_PDS_TEMP_USED;
 
         fast->flags0 = f0;
         fast->flags1 = f1;
@@ -362,18 +379,13 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
         INT32 X;
         INT32 tempValue = 0;
 
-        if (f1 & LAGI_PDS_IRA_ZERO)
-            INPUTS = 0;
-        else if (f1 & LAGI_PDS_IRA_MIX)
-            INPUTS = DSP->MIXS[op->IRA - 0x20] << 4;
-        else
-            INPUTS = DSP->MEMS[op->IRA];
-        INPUTS = lagi_sign_extend24_fast((UINT32)INPUTS);
+        INPUTS = lagi_sign_extend24_fast(
+            (UINT32)*op->input << op->inputShift);
 
         if (f0 & LAGI_PDS_IWT)
         {
             DSP->MEMS[op->IWA] = MEMVAL;
-            if (op->IRA == op->IWA)
+            if (f1 & LAGI_PDS_IWT_ALIAS)
                 INPUTS = MEMVAL;
         }
 
@@ -381,11 +393,7 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
          * TEMP is needed by both B and X on many microinstructions. Read and
          * sign-extend it at most once per step when either source selects it.
          */
-        if (!(f1 & LAGI_PDS_ZERO) &&
-            !(f1 & LAGI_PDS_BSEL))
-            tempValue = lagi_sign_extend24_fast(
-                (UINT32)DSP->TEMP[(op->TRA + dec) & 0x7F]);
-        else if (!(f0 & LAGI_PDS_XSEL))
+        if (f1 & LAGI_PDS_TEMP_USED)
             tempValue = lagi_sign_extend24_fast(
                 (UINT32)DSP->TEMP[(op->TRA + dec) & 0x7F]);
 
@@ -410,8 +418,7 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
 
         if (f1 & LAGI_PDS_YCOEF)
         {
-            INT32 Y = DSP->COEF[op->COEF] >> 3;
-            Y = (Y << 19) >> 19;
+            const INT32 Y = ((INT32)*op->coef >> 3);
             ACC = (INT32)(((INT64)X * (INT64)Y) >> 12) + B;
         }
         else
@@ -425,12 +432,11 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
 
         if (f0 & (LAGI_PDS_MRD | LAGI_PDS_MWT))
         {
-            UINT32 addr = DSP->MADRS[op->MASA];
+            UINT32 addr = *op->masa;
 
             if (!(f0 & LAGI_PDS_TABLE))
                 addr += dec;
-            if (f0 & LAGI_PDS_NXADR)
-                ++addr;
+            addr += op->addrIncrement;
 
             if (!(f0 & LAGI_PDS_TABLE))
                 addr &= rblMask;
