@@ -361,7 +361,6 @@ void lagi_dsp_program_written(struct _SCSPDSP *DSP) {
         if(empty<8) { g_lagiDirtyInstances[empty].dsp=DSP; g_lagiDirtyInstances[empty].dirty=1; }
         else { g_lagiDirtyOverflow=1; lagi_dsp_log("[LagiDSP] reason=instance-capacity backend=reference\n"); }
     }
-    if(g_lagiPendingDsp==DSP) g_lagiPendingDsp=0;
     if(g_lagiDecodedDsp==DSP) g_lagiDecodedSteps=-1;
     if(g_lagiNativeDsp==DSP || g_lagiDirtyOverflow) g_lagiNativeFunction=0;
     lagi_dsp_selected_backend=0;
@@ -439,7 +438,7 @@ void lagi_dsp_service_pending(struct _SCSPDSP *DSP) {
     lagi_dsp_capture_one();
     if(g_lagiPendingDsp==DSP) {
         g_lagiPendingDsp=0;
-        if(!DSP->Stopped && !lagi_dsp_is_dirty(DSP)) {
+        if(!DSP->Stopped) {
             if(g_lagiDecodedDsp!=DSP || g_lagiDecodedSteps!=DSP->LastStep) lagi_scspdsp_decode(DSP);
             lagi_dsp_select_native(DSP,1);
         }

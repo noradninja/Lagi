@@ -26,7 +26,7 @@ A shared field schema and decoded representation expose input, TEMP, previous AC
 
 Both backends preserve previous-ACC SHIFTED ordering, every shift mode, signed arithmetic, PACK/UNPACK formats, wrapped additions and addresses, odd-step memory access, read/write aliasing and effect accumulation. Explicit unsigned wrapping also removes signed-overflow undefined behavior in the reference and predecoded arithmetic.
 
-Build-time generation emits straight-line C compiled by the existing Vita compiler. Runtime generation emits ARMv7 instructions with AAPCS register preservation and synchronized code publication. Full program contents are checked after hash matches. MPRO writes invalidate that instance; reference processing remains active until Start selects a replacement. Cache eviction, translation failure and unavailable VM preserve fallback behavior.
+Build-time generation emits straight-line C compiled by the existing Vita compiler. Runtime generation emits ARMv7 instructions with AAPCS register preservation and synchronized code publication. Full program contents are checked after hash matches. MPRO writes invalidate that instance; reference processing remains active until Start selects a replacement. If the SCSP writes additional MPRO words after its start-trigger write, the deferred compilation remains pending and consumes the final program image at the next worker boundary. Cache eviction, translation failure and unavailable VM preserve fallback behavior.
 
 ## Capture and local build
 

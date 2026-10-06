@@ -155,7 +155,7 @@ static void native_tests(void) {
     if(g_lagiNativeFunction || g_lagiPendingDsp!=&a) exit(41);
     lagi_dsp_program_written(&a); a.MPRO[1]^=0x20;
     i=g_lagiCacheMisses; lagi_dsp_service_pending(&a);
-    if(g_lagiNativeFunction || g_lagiPendingDsp || g_lagiCacheMisses!=i) exit(42);
+    if(!g_lagiNativeFunction || g_lagiPendingDsp || lagi_dsp_is_dirty(&a) || g_lagiCacheMisses!=i+1) exit(42);
     SCSPDSP_Init(&a); a.SCSPRAM=ramA; a.MPRO[1]=63u << 6;
     SCSPDSP_Start(&a); lagi_dsp_service_pending(&a); g_lagiBackendMode=LAGI_DSP_ARM; lagi_dsp_select_native(&a,1);
     if(g_lagiNativeFunction) exit(33);
