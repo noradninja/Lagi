@@ -60,7 +60,19 @@ typedef struct LagiPdsFastOp {
     UINT8 MASA;
     UINT8 flags0;
     UINT8 flags1;
+    UINT8 kind;
 } LagiPdsFastOp;
+
+enum {
+    LAGI_PDS_KIND_BASE = 0,
+    LAGI_PDS_KIND_COEF,
+    LAGI_PDS_KIND_MEM_R,
+    LAGI_PDS_KIND_MEM_W,
+    LAGI_PDS_KIND_MEM_RW,
+    LAGI_PDS_KIND_COEF_MEM_R,
+    LAGI_PDS_KIND_COEF_MEM_W,
+    LAGI_PDS_KIND_COEF_MEM_RW
+};
 
 enum {
     LAGI_PDS_TWT   = 1u << 0,
@@ -300,6 +312,28 @@ static void lagi_scspdsp_decode(struct _SCSPDSP* DSP)
 
         fast->flags0 = f0;
         fast->flags1 = f1;
+
+        {
+            const UINT8 mem =
+                (UINT8)(((f0 & LAGI_PDS_MRD) ? 1u : 0u) |
+                        ((f0 & LAGI_PDS_MWT) ? 2u : 0u));
+            const UINT8 coef = (UINT8)((f1 & LAGI_PDS_YCOEF) ? 1u : 0u);
+            static const UINT8 kindTable[2][4] = {
+                {
+                    LAGI_PDS_KIND_BASE,
+                    LAGI_PDS_KIND_MEM_R,
+                    LAGI_PDS_KIND_MEM_W,
+                    LAGI_PDS_KIND_MEM_RW
+                },
+                {
+                    LAGI_PDS_KIND_COEF,
+                    LAGI_PDS_KIND_COEF_MEM_R,
+                    LAGI_PDS_KIND_COEF_MEM_W,
+                    LAGI_PDS_KIND_COEF_MEM_RW
+                }
+            };
+            fast->kind = kindTable[coef][mem];
+        }
     }
     lagi_dsp_fast_path = (unsigned)g_lagiPdsFastPath;
 }
@@ -408,42 +442,71 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
         SHIFTED = lagi_sat24(
             (f1 & LAGI_PDS_SHIFT1) ? ACC * 2 : ACC);
 
-        if (f1 & LAGI_PDS_YCOEF)
         {
-            INT32 Y = DSP->COEF[op->COEF] >> 3;
-            Y = (Y << 19) >> 19;
-            ACC = (INT32)(((INT64)X * (INT64)Y) >> 12) + B;
-        }
-        else
-        {
-            /* FRC_REG is invariant zero for this guarded program class. */
-            ACC = B;
+            UINT32 addr;
+            INT32 Y;
+
+            switch (op->kind)
+            {
+            case LAGI_PDS_KIND_BASE:
+                ACC = B;
+                break;
+
+            case LAGI_PDS_KIND_COEF:
+                Y = DSP->COEF[op->COEF] >> 3;
+                Y = (Y << 19) >> 19;
+                ACC = (INT32)(((INT64)X * (INT64)Y) >> 12) + B;
+                break;
+
+            case LAGI_PDS_KIND_MEM_R:
+            case LAGI_PDS_KIND_MEM_W:
+            case LAGI_PDS_KIND_MEM_RW:
+            case LAGI_PDS_KIND_COEF_MEM_R:
+            case LAGI_PDS_KIND_COEF_MEM_W:
+            case LAGI_PDS_KIND_COEF_MEM_RW:
+                if (op->kind >= LAGI_PDS_KIND_COEF_MEM_R)
+                {
+                    Y = DSP->COEF[op->COEF] >> 3;
+                    Y = (Y << 19) >> 19;
+                    ACC = (INT32)(((INT64)X * (INT64)Y) >> 12) + B;
+                }
+                else
+                {
+                    ACC = B;
+                }
+
+                addr = DSP->MADRS[op->MASA];
+                if (!(f0 & LAGI_PDS_TABLE))
+                    addr += dec;
+                if (f0 & LAGI_PDS_NXADR)
+                    ++addr;
+                if (!(f0 & LAGI_PDS_TABLE))
+                    addr &= rblMask;
+                else
+                    addr &= 0xFFFFu;
+                addr += rbp;
+
+                if (op->kind == LAGI_PDS_KIND_MEM_R ||
+                    op->kind == LAGI_PDS_KIND_MEM_RW ||
+                    op->kind == LAGI_PDS_KIND_COEF_MEM_R ||
+                    op->kind == LAGI_PDS_KIND_COEF_MEM_RW)
+                    MEMVAL = UNPACK(DSP->SCSPRAM[addr]);
+
+                if (op->kind == LAGI_PDS_KIND_MEM_W ||
+                    op->kind == LAGI_PDS_KIND_MEM_RW ||
+                    op->kind == LAGI_PDS_KIND_COEF_MEM_W ||
+                    op->kind == LAGI_PDS_KIND_COEF_MEM_RW)
+                    DSP->SCSPRAM[addr] = PACK(SHIFTED);
+                break;
+
+            default:
+                ACC = B;
+                break;
+            }
         }
 
         if (f0 & LAGI_PDS_TWT)
             DSP->TEMP[(op->TWA + dec) & 0x7F] = SHIFTED;
-
-        if (f0 & (LAGI_PDS_MRD | LAGI_PDS_MWT))
-        {
-            UINT32 addr = DSP->MADRS[op->MASA];
-
-            if (!(f0 & LAGI_PDS_TABLE))
-                addr += dec;
-            if (f0 & LAGI_PDS_NXADR)
-                ++addr;
-
-            if (!(f0 & LAGI_PDS_TABLE))
-                addr &= rblMask;
-            else
-                addr &= 0xFFFFu;
-
-            addr += rbp;
-
-            if (f0 & LAGI_PDS_MRD)
-                MEMVAL = UNPACK(DSP->SCSPRAM[addr]);
-            if (f0 & LAGI_PDS_MWT)
-                DSP->SCSPRAM[addr] = PACK(SHIFTED);
-        }
 
         if (f0 & LAGI_PDS_EWT)
             DSP->EFREG[op->EWA] += SHIFTED >> 8;
