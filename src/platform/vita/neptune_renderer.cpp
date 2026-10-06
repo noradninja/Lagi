@@ -56,8 +56,10 @@ extern const unsigned char _binary_lagi_gouraud_scanline_gray_f_gxp_start[];
 static constexpr int kWidth = 960;
 static constexpr int kHeight = 544;
 static constexpr int kPitch = 960;
+// Lagi presents Saturn-era content directly; MSAA only adds bandwidth and
+// fragment cost here, so keep every Neptune render path single-sampled.
 static constexpr SceGxmMultisampleMode kMultisampleMode =
-    SCE_GXM_MULTISAMPLE_2X;
+    SCE_GXM_MULTISAMPLE_NONE;
 static constexpr std::size_t kFrameBytes =
     static_cast<std::size_t>(kPitch) * kHeight * sizeof(std::uint32_t);
 static constexpr int kMaxStatus = 64;
@@ -104,10 +106,9 @@ static SceGxmContext* g_probeContext = nullptr;
 static void* g_probeContextHost = nullptr;
 static SceGxmRenderTarget* g_probeRenderTarget = nullptr;
 static SceGxmRenderTarget* g_probeRenderTargetHalf = nullptr;
-// Cinepak/movie presentation is a single textured quad at the final
-// 480x272 output resolution. Keep it on a separate non-MSAA target so the
-// decoder fragment shader runs once per output pixel while town rendering
-// retains Neptune's validated 2x MSAA path.
+// Movie/front-end presentation uses a dedicated 480x272 single-sample target.
+// Cinepak is reconstructed at source resolution first, then sampled from an
+// ordinary RGBA texture for the final bilinear presentation pass.
 static SceGxmRenderTarget* g_movieRenderTarget = nullptr;
 static SceGxmRenderTarget* g_frontendHighRenderTarget = nullptr;
 static SceUID g_probeColorUid = -1;
@@ -166,8 +167,8 @@ static bool g_vdp2Rbg0FragmentRegistered = false;
 static bool g_vdp2Rbg0Available = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
-// Movie variants are patched for SCE_GXM_MULTISAMPLE_NONE.  The normal
-// texture fragment program remains 2x MSAA for town/UI rendering.
+// Movie/front-end variants are explicitly single-sample. The normal texture
+// program uses kMultisampleMode, which is also single-sample globally.
 static SceGxmFragmentProgram* g_movieTextureFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_cinepakFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_vdp2NbgFragmentProgram = nullptr;
@@ -463,6 +464,19 @@ static SceUID g_vdp2WindowIndexUid = -1;
 static azel::DebugTextureVertex* g_vdp2WindowVertices = nullptr;
 static std::uint16_t* g_vdp2WindowIndices = nullptr;
 static SceGxmTexture g_movieTexture{};
+
+// Cinepak's compact payload cannot be filtered directly because its texels
+// contain codebook/mode data rather than display pixels. Reconstruct it into
+// this 480x272-capable RGBA surface at the movie's native source dimensions,
+// then bilinear-filter that conventional image during final presentation.
+static SceUID g_cinepakResolveColorUid = -1;
+static std::uint32_t* g_cinepakResolveColorBuffer = nullptr;
+static SceGxmColorSurface g_cinepakResolveColorSurface{};
+static SceGxmTexture g_cinepakResolveTexture{};
+static SceUID g_cinepakResolveVertexUid = -1;
+static SceUID g_cinepakResolveIndexUid = -1;
+static azel::DebugTextureVertex* g_cinepakResolveVertices = nullptr;
+static std::uint16_t* g_cinepakResolveIndices = nullptr;
 
 // Title NBG0 is decoded once from Azel's exact VRAM/CRAM representation into
 // a conventional RGBA surface. Raw Saturn memory remains point-exact during
@@ -1867,6 +1881,12 @@ void shutdown()
         }
     };
 
+    void* cinepakResolvePtr = g_cinepakResolveColorBuffer;
+    freeProbeMapped(g_cinepakResolveColorUid, cinepakResolvePtr);
+    g_cinepakResolveColorBuffer = nullptr;
+    g_cinepakResolveColorSurface = {};
+    g_cinepakResolveTexture = {};
+
     void* colorPtr2 = g_probeColorBuffer2;
     freeProbeMapped(g_probeColorUid2, colorPtr2);
     g_probeColorBuffer2 = nullptr;
@@ -2065,6 +2085,14 @@ static void freeMovieResources()
     freeMovieMappedBlock(g_vdp2WindowIndexUid, windowIndices);
     g_vdp2WindowIndices = nullptr;
 
+    void* resolveVertices = g_cinepakResolveVertices;
+    freeMovieMappedBlock(g_cinepakResolveVertexUid, resolveVertices);
+    g_cinepakResolveVertices = nullptr;
+
+    void* resolveIndices = g_cinepakResolveIndices;
+    freeMovieMappedBlock(g_cinepakResolveIndexUid, resolveIndices);
+    g_cinepakResolveIndices = nullptr;
+
     g_movieTexture = {};
     g_movieWidth = 0;
     g_movieHeight = 0;
@@ -2255,7 +2283,18 @@ bool movie_present_cinepak_payload(
                 6u * sizeof(std::uint16_t),
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_movieIndexUid));
-        if (!g_movieTextureData || !g_movieVertices || !g_movieIndices) {
+        g_cinepakResolveVertices = static_cast<azel::DebugTextureVertex*>(
+            probeGpuAlloc(
+                4u * sizeof(azel::DebugTextureVertex),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_cinepakResolveVertexUid));
+        g_cinepakResolveIndices = static_cast<std::uint16_t*>(
+            probeGpuAlloc(
+                6u * sizeof(std::uint16_t),
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_cinepakResolveIndexUid));
+        if (!g_movieTextureData || !g_movieVertices || !g_movieIndices ||
+            !g_cinepakResolveVertices || !g_cinepakResolveIndices) {
             freeMovieResources();
             return false;
         }
@@ -2274,6 +2313,37 @@ bool movie_present_cinepak_payload(
             &g_movieTexture, SCE_GXM_TEXTURE_FILTER_POINT);
         sceGxmTextureSetMagFilter(
             &g_movieTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+
+        if (sourceWidth > static_cast<unsigned int>(kWidth / 2) ||
+            sourceHeight > static_cast<unsigned int>(kHeight / 2)) {
+            logging::writef(
+                "[MovieRender] Cinepak source %ux%u exceeds resolve surface\n",
+                sourceWidth, sourceHeight);
+            freeMovieResources();
+            return false;
+        }
+        if (sceGxmTextureInitLinearStrided(
+                &g_cinepakResolveTexture,
+                g_cinepakResolveColorBuffer,
+                SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+                sourceWidth,
+                sourceHeight,
+                512u * sizeof(std::uint32_t)) < 0) {
+            freeMovieResources();
+            return false;
+        }
+        sceGxmTextureSetMinFilter(
+            &g_cinepakResolveTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+        sceGxmTextureSetMagFilter(
+            &g_cinepakResolveTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+
+        g_cinepakResolveVertices[0] = {-1.0f,  1.0f, 0.5f, 0.0f, 0.0f};
+        g_cinepakResolveVertices[1] = { 1.0f,  1.0f, 0.5f, 1.0f, 0.0f};
+        g_cinepakResolveVertices[2] = {-1.0f, -1.0f, 0.5f, 0.0f, 1.0f};
+        g_cinepakResolveVertices[3] = { 1.0f, -1.0f, 0.5f, 1.0f, 1.0f};
+        const std::uint16_t resolveIndices[6] = {0, 1, 2, 2, 1, 3};
+        std::memcpy(
+            g_cinepakResolveIndices, resolveIndices, sizeof(resolveIndices));
 
         const float displayAspect =
             static_cast<float>(viewerRenderWidth()) /
@@ -6342,7 +6412,7 @@ void show_game_presentation()
         &g_probeColorSurface,
         SCE_GXM_COLOR_FORMAT_A8B8G8R8,
         SCE_GXM_COLOR_SURFACE_LINEAR,
-        SCE_GXM_COLOR_SURFACE_SCALE_MSAA_DOWNSCALE,
+        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
         kWidth, kHeight, gxmPitch, g_probeColorBuffer);
     if (colorResult < 0) {
@@ -6357,7 +6427,7 @@ void show_game_presentation()
         &g_probeColorSurfaceHalf,
         SCE_GXM_COLOR_FORMAT_A8B8G8R8,
         SCE_GXM_COLOR_SURFACE_LINEAR,
-        SCE_GXM_COLOR_SURFACE_SCALE_MSAA_DOWNSCALE,
+        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
         kWidth / 2, kHeight / 2, 512, g_probeColorBuffer);
     if (halfColorResult < 0) {
@@ -6422,7 +6492,7 @@ void show_game_presentation()
         &g_probeColorSurface2,
         SCE_GXM_COLOR_FORMAT_A8B8G8R8,
         SCE_GXM_COLOR_SURFACE_LINEAR,
-        SCE_GXM_COLOR_SURFACE_SCALE_MSAA_DOWNSCALE,
+        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
         kWidth, kHeight, gxmPitch, g_probeColorBuffer2);
     if (colorResult2 < 0) {
@@ -6437,7 +6507,7 @@ void show_game_presentation()
         &g_probeColorSurfaceHalf2,
         SCE_GXM_COLOR_FORMAT_A8B8G8R8,
         SCE_GXM_COLOR_SURFACE_LINEAR,
-        SCE_GXM_COLOR_SURFACE_SCALE_MSAA_DOWNSCALE,
+        SCE_GXM_COLOR_SURFACE_SCALE_NONE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
         kWidth / 2, kHeight / 2, 512, g_probeColorBuffer2);
     if (halfColorResult2 < 0) {
@@ -6486,13 +6556,44 @@ void show_game_presentation()
 
     status("[PASS] GXM COLOR SURFACES X2", 0xFF80E0FFu);
 
+    constexpr unsigned int cinepakResolvePitch = 512u;
+    constexpr unsigned int cinepakResolveWidth = kWidth / 2;
+    constexpr unsigned int cinepakResolveHeight = kHeight / 2;
+    constexpr unsigned int cinepakResolveBytes =
+        cinepakResolvePitch * cinepakResolveHeight * sizeof(std::uint32_t);
+    g_cinepakResolveColorBuffer = static_cast<std::uint32_t*>(
+        probeCdramAlloc(
+            cinepakResolveBytes,
+            SCE_GXM_MEMORY_ATTRIB_READ | SCE_GXM_MEMORY_ATTRIB_WRITE,
+            &g_cinepakResolveColorUid));
+    if (!g_cinepakResolveColorBuffer) {
+        failure("[FAIL] CINEPAK RESOLVE MEMORY");
+        return;
+    }
+    std::memset(g_cinepakResolveColorBuffer, 0, cinepakResolveBytes);
+
+    if (sceGxmColorSurfaceInit(
+            &g_cinepakResolveColorSurface,
+            SCE_GXM_COLOR_FORMAT_A8B8G8R8,
+            SCE_GXM_COLOR_SURFACE_LINEAR,
+            SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+            SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+            cinepakResolveWidth,
+            cinepakResolveHeight,
+            cinepakResolvePitch,
+            g_cinepakResolveColorBuffer) < 0) {
+        failure("[FAIL] CINEPAK RESOLVE SURFACE");
+        return;
+    }
+    status("[PASS] CINEPAK RESOLVE SURFACE", 0xFF80E0FFu);
+
     const unsigned int alignedW =
         (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
     const unsigned int alignedH =
         (kHeight + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1);
-    // In GXM's 2x mode the extra depth/stencil samples are laid out in Y,
-    // while the color surface resolves directly into the scanout buffer.
-    const unsigned int samples = alignedW * alignedH * 2u;
+    // Single-sample depth/stencil storage matches the globally disabled MSAA
+    // configuration.
+    const unsigned int samples = alignedW * alignedH;
 
     g_probeDepth = probeGpuAlloc(
         4u * samples,
@@ -9360,6 +9461,101 @@ static void drawAzelFrontendFadeOffset()
     drawAzelColorOffsetForLayer(kNbg0Bit, true);
 }
 
+
+static bool renderCinepakResolvePass()
+{
+    if (!g_movieUsesCinepakPayload ||
+        !g_cinepakResolveColorBuffer ||
+        !g_cinepakResolveVertices ||
+        !g_cinepakResolveIndices)
+        return false;
+
+    const int beginResult = sceGxmBeginScene(
+        g_probeContext,
+        0,
+        g_movieRenderTarget,
+        nullptr,
+        nullptr,
+        nullptr,
+        &g_cinepakResolveColorSurface,
+        nullptr);
+    if (beginResult < 0) {
+        logging::writef(
+            "[MovieRender] FAIL Cinepak resolve begin=0x%08X\n",
+            static_cast<unsigned int>(beginResult));
+        return false;
+    }
+
+    sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext, g_cinepakFragmentProgram);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetDefaultRegionClipAndViewport(
+        g_probeContext,
+        static_cast<int>(g_movieWidth) - 1,
+        static_cast<int>(g_movieHeight) - 1);
+    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetFrontPolygonMode(
+        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetBackPolygonMode(
+        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+
+    bool submitted = false;
+    void* vertexUniforms = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &vertexUniforms) >= 0 &&
+        vertexUniforms) {
+        const float identity[16] = {
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f,
+        };
+        sceGxmSetUniformDataF(
+            vertexUniforms, g_textureWvpParam, 0, 16, identity);
+        sceGxmSetFragmentTexture(
+            g_probeContext,
+            0,
+            g_movieUsesCinepakPayload
+                ? &g_cinepakResolveTexture
+                : &g_movieTexture);
+
+        if (sceGxmSetVertexStream(
+                g_probeContext, 0, g_cinepakResolveVertices) >= 0) {
+            void* fragmentUniforms = nullptr;
+            if (sceGxmReserveFragmentDefaultUniformBuffer(
+                    g_probeContext, &fragmentUniforms) >= 0 &&
+                fragmentUniforms) {
+                const float movieInfo[4] = {
+                    static_cast<float>(g_movieWidth),
+                    static_cast<float>(g_movieHeight),
+                    static_cast<float>(g_moviePayloadWidth),
+                    static_cast<float>(g_moviePayloadHeight),
+                };
+                sceGxmSetUniformDataF(
+                    fragmentUniforms,
+                    g_cinepakMovieInfoParam,
+                    0, 4, movieInfo);
+                submitted = sceGxmDraw(
+                    g_probeContext,
+                    SCE_GXM_PRIMITIVE_TRIANGLES,
+                    SCE_GXM_INDEX_FORMAT_U16,
+                    g_cinepakResolveIndices,
+                    6) >= 0;
+            }
+        }
+    }
+
+    sceGxmEndScene(g_probeContext, nullptr, nullptr);
+    if (!submitted)
+        logging::writef("[MovieRender] FAIL Cinepak resolve draw\n");
+    return submitted;
+}
+
 static bool renderMovieFrame()
 {
     const std::uint64_t frameStartUs =
@@ -9419,6 +9615,9 @@ static bool renderMovieFrame()
             : g_movieRenderTarget;
     SceGxmSyncObject* const syncObject =
         g_gxmDrawBuffer == 0 ? g_probeSync : g_probeSync2;
+
+    if (g_movieUsesCinepakPayload && !renderCinepakResolvePass())
+        return true;
 
     std::memset(
         colorBuffer,
@@ -9813,42 +10012,17 @@ static bool renderMovieFrame()
             }
             submitted = rbgSubmitted && nbgSubmitted;
         } else if (streamReady) {
+            // Cinepak has already been reconstructed to a conventional RGBA
+            // source-resolution texture above. Final presentation is now the
+            // same cheap bilinear texture path as an ordinary decoded frame.
             sceGxmSetFragmentProgram(
+                g_probeContext, g_movieTextureFragmentProgram);
+            submitted = sceGxmDraw(
                 g_probeContext,
-                g_movieUsesCinepakPayload
-                    ? g_cinepakFragmentProgram
-                    : g_movieTextureFragmentProgram);
-
-            if (g_movieUsesCinepakPayload) {
-                void* fragmentUniforms = nullptr;
-                if (sceGxmReserveFragmentDefaultUniformBuffer(
-                        g_probeContext, &fragmentUniforms) >= 0 &&
-                    fragmentUniforms) {
-                    const float movieInfo[4] = {
-                        static_cast<float>(g_movieWidth),
-                        static_cast<float>(g_movieHeight),
-                        static_cast<float>(g_moviePayloadWidth),
-                        static_cast<float>(g_moviePayloadHeight),
-                    };
-                    sceGxmSetUniformDataF(
-                        fragmentUniforms,
-                        g_cinepakMovieInfoParam,
-                        0, 4, movieInfo);
-                    submitted = sceGxmDraw(
-                        g_probeContext,
-                        SCE_GXM_PRIMITIVE_TRIANGLES,
-                        SCE_GXM_INDEX_FORMAT_U16,
-                        g_movieIndices,
-                        6) >= 0;
-                }
-            } else {
-                submitted = sceGxmDraw(
-                    g_probeContext,
-                    SCE_GXM_PRIMITIVE_TRIANGLES,
-                    SCE_GXM_INDEX_FORMAT_U16,
-                    g_movieIndices,
-                    6) >= 0;
-            }
+                SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16,
+                g_movieIndices,
+                6) >= 0;
         }
     }
 
@@ -9913,7 +10087,7 @@ static bool renderMovieFrame()
                         ? "SGX-RGBA-TITLE-720X408"
                         : "SGX-RGBA-TITLE")
                     : "SGX-VDP2")
-                : (g_movieUsesCinepakPayload ? "SGX-Cinepak" : "RGBA"));
+                : (g_movieUsesCinepakPayload ? "SGX-Cinepak-Linear" : "RGBA"));
         g_movieRenderLogged = true;
     }
 
