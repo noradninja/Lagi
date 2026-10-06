@@ -1344,6 +1344,14 @@ set_source_files_properties(
  PROPERTIES COMPILE_OPTIONS "-O2"
 )
 
+# Optimize the native SCSP slot mixer and hardware service independently from
+# the DSP interpreter so each audio-stage gain remains hardware-testable.
+set_source_files_properties(
+ extern/Azel/ThirdParty/aosdk/eng_ssf/sat_hw.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/scsp.c
+ PROPERTIES COMPILE_OPTIONS "-O2"
+)
+
 target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town"
