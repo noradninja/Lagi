@@ -336,14 +336,15 @@ void SCSPDSP_Init(struct _SCSPDSP* DSP)
     }
 }
 
-static inline INT32 lagi_sign_extend24(INT32 v)
+static inline INT32 lagi_sign_extend13_u32(UINT32 v)
 {
-    v <<= 8;
-    v >>= 8;
-    return v;
+    v &= 0x00001FFFu;
+    if (v & 0x00001000u)
+        v |= 0xFFFFE000u;
+    return (INT32)v;
 }
 
-static inline INT32 lagi_sat24(INT32 v)
+static inline INT32 lagi_sat24(INT64 v)
 {
     if (v > 0x007FFFFF)
         return 0x007FFFFF;
@@ -414,7 +415,7 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
          * produced by the PREVIOUS microinstruction.
          */
         SHIFTED = lagi_sat24(
-            (f1 & LAGI_PDS_SHIFT1) ? ACC * 2 : ACC);
+            (f1 & LAGI_PDS_SHIFT1) ? (INT64)ACC * 2 : (INT64)ACC);
 
         if (f1 & LAGI_PDS_YCOEF)
         {
@@ -501,12 +502,11 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
         if (op->IRA <= 0x1F)
             INPUTS = DSP->MEMS[op->IRA];
         else if (op->IRA <= 0x2F)
-            INPUTS = DSP->MIXS[op->IRA - 0x20] << 4;
+            INPUTS = (INT32)((UINT32)DSP->MIXS[op->IRA - 0x20] << 4);
         else
             INPUTS = 0;
 
-        INPUTS <<= 8;
-        INPUTS >>= 8;
+        INPUTS = lagi_sign_extend24_u32((UINT32)INPUTS);
 
         if (op->IWT)
         {
@@ -521,9 +521,8 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
                 B = ACC;
             else
             {
-                B = DSP->TEMP[(op->TRA + DSP->DEC) & 0x7F];
-                B <<= 8;
-                B >>= 8;
+                B = lagi_sign_extend24_u32(
+                    (UINT32)DSP->TEMP[(op->TRA + DSP->DEC) & 0x7F]);
             }
             if (op->NEGB)
                 B = 0 - B;
@@ -535,9 +534,8 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
             X = INPUTS;
         else
         {
-            X = DSP->TEMP[(op->TRA + DSP->DEC) & 0x7F];
-            X <<= 8;
-            X >>= 8;
+            X = lagi_sign_extend24_u32(
+                (UINT32)DSP->TEMP[(op->TRA + DSP->DEC) & 0x7F]);
         }
 
         if (op->YSEL == 0)
@@ -554,35 +552,22 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
 
         if (op->SHIFT == 0)
         {
-            SHIFTED = ACC;
-            if (SHIFTED > 0x007FFFFF)
-                SHIFTED = 0x007FFFFF;
-            if (SHIFTED < (-0x00800000))
-                SHIFTED = -0x00800000;
+            SHIFTED = lagi_sat24((INT64)ACC);
         }
         else if (op->SHIFT == 1)
         {
-            SHIFTED = ACC * 2;
-            if (SHIFTED > 0x007FFFFF)
-                SHIFTED = 0x007FFFFF;
-            if (SHIFTED < (-0x00800000))
-                SHIFTED = -0x00800000;
+            SHIFTED = lagi_sat24((INT64)ACC * 2);
         }
         else if (op->SHIFT == 2)
         {
-            SHIFTED = ACC * 2;
-            SHIFTED <<= 8;
-            SHIFTED >>= 8;
+            SHIFTED = lagi_sign_extend24_u32((UINT32)ACC << 1);
         }
         else
         {
-            SHIFTED = ACC;
-            SHIFTED <<= 8;
-            SHIFTED >>= 8;
+            SHIFTED = lagi_sign_extend24_u32((UINT32)ACC);
         }
 
-        Y <<= 19;
-        Y >>= 19;
+        Y = lagi_sign_extend13_u32((UINT32)Y);
 
         v = (((INT64)X * (INT64)Y) >> 12);
         ACC = (int)v + B;

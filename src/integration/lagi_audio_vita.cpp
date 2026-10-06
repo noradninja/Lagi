@@ -24,6 +24,7 @@ extern "C" {
 #include "eng_ssf/sat_hw.h"
 
 extern volatile unsigned lagi_dsp_mix_serial;
+extern volatile unsigned lagi_dsp_fast_path;
 extern volatile unsigned lagi_dsp_mix_steps;
 extern volatile unsigned lagi_dsp_mix_iwt;
 extern volatile unsigned lagi_dsp_mix_twt;
@@ -131,7 +132,7 @@ void log_dsp_program_profile_if_changed()
 
     g_lastDspMixSerial = serial;
     lagi::platform::logging::writef(
-        "[AzelAudioDSP] serial=%u seq=%d steps=%u "
+        "[AzelAudioDSP] serial=%u seq=%d steps=%u fastPath=%u "
         "IWT=%u TWT=%u MRD=%u MWT=%u EWT=%u "
         "ADRL=%u FRCL=%u YRL=%u XINPUT=%u "
         "YFRC=%u YCOEF=%u YREG=%u "
@@ -140,6 +141,7 @@ void log_dsp_program_profile_if_changed()
         serial,
         static_cast<int>(g_sequenceNumber),
         static_cast<unsigned>(lagi_dsp_mix_steps),
+        static_cast<unsigned>(lagi_dsp_fast_path),
         static_cast<unsigned>(lagi_dsp_mix_iwt),
         static_cast<unsigned>(lagi_dsp_mix_twt),
         static_cast<unsigned>(lagi_dsp_mix_mrd),
