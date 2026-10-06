@@ -1352,6 +1352,17 @@ set_source_files_properties(
  PROPERTIES COMPILE_OPTIONS "-O2"
 )
 
+# The 68K service consumes most of the remaining per-quantum budget. Keep its
+# optimization isolated from both the SCSP checkpoint and the rest of Lagi.
+set_source_files_properties(
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kcpu.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopac.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopdm.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopnz.c
+ extern/Azel/ThirdParty/aosdk/eng_ssf/m68kops.c
+ PROPERTIES COMPILE_OPTIONS "-O2"
+)
+
 target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town"
