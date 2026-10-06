@@ -44,6 +44,8 @@ extern volatile unsigned lagi_dsp_mix_unpack;
 extern volatile unsigned lagi_dsp_mix_pack;
 extern volatile unsigned lagi_dsp_mix_noflr;
 extern volatile unsigned lagi_dsp_mix_noflw;
+extern volatile unsigned lagi_dsp_profile_sample;
+extern volatile unsigned long long lagi_dsp_profile_last_us;
 }
 
 namespace {
@@ -589,6 +591,7 @@ void render_scsp_audio()
         std::uint64_t renderStartUs = 0;
         std::uint64_t sampledM68kUs = 0;
         std::uint64_t sampledScspUs = 0;
+        std::uint64_t sampledDspUs = 0;
         unsigned sampledFrames = 0;
         if (profileChunk)
             renderStartUs = sceKernelGetSystemTimeWide();
@@ -615,11 +618,19 @@ void render_scsp_audio()
             }
 
             stereo_sample_t sample{};
+            if (profileSample) {
+                lagi_dsp_profile_last_us = 0;
+                lagi_dsp_profile_sample = 1;
+            }
             SCSP_Update(nullptr, nullptr, &sample);
+            if (profileSample)
+                lagi_dsp_profile_sample = 0;
             log_dsp_program_profile_if_changed();
 
             if (profileSample) {
                 sampledScspUs += sceKernelGetSystemTimeWide() - t;
+                sampledDspUs +=
+                    static_cast<std::uint64_t>(lagi_dsp_profile_last_us);
                 ++sampledFrames;
             }
 
@@ -639,6 +650,12 @@ void render_scsp_audio()
                 sampledM68kUs * scale;
             const std::uint64_t estimatedScspUs =
                 sampledScspUs * scale;
+            const std::uint64_t estimatedDspUs =
+                sampledDspUs * scale;
+            const std::uint64_t estimatedSlotUs =
+                estimatedScspUs > estimatedDspUs
+                    ? estimatedScspUs - estimatedDspUs
+                    : 0;
 
             if (g_audioPerfBudget != 0)
                 --g_audioPerfBudget;
@@ -646,7 +663,8 @@ void render_scsp_audio()
             lagi::platform::logging::writef(
                 "[AzelAudioPerf] seq=%d chunk=%llu frames=%u "
                 "queued=%u peak=%d total=%lluus budget=%lluus "
-                "m68k=%lluus scsp=%lluus dspSteps=%d samples=%u "
+                "m68k=%lluus scsp=%lluus slots=%lluus dsp=%lluus "
+                "dspSteps=%d samples=%u "
                 "emptyChunks=%llu shortWrites=%llu\n",
                 static_cast<int>(g_sequenceNumber),
                 g_audioRenderChunks,
@@ -658,6 +676,8 @@ void render_scsp_audio()
                     (1000000ull * kRenderChunkFrames) / kScspRate),
                 static_cast<unsigned long long>(estimatedM68kUs),
                 static_cast<unsigned long long>(estimatedScspUs),
+                static_cast<unsigned long long>(estimatedSlotUs),
+                static_cast<unsigned long long>(estimatedDspUs),
                 static_cast<int>(SCSP.DSP.LastStep),
                 sampledFrames,
                 g_audioQueueEmptyChunks,
@@ -929,7 +949,7 @@ void initSoundDriver()
         next_audio_trace(), kM68kCyclesPerSample);
     lagi::platform::logging::writef(
         "[AzelAudioPerf] profiler=outer-sampled sampleStride=8 "
-        "steadyInterval=256 no-emulation-changes\n");
+        "steadyInterval=256 dspSplit=inner-sampled no-emulation-changes\n");
 }
 
 void updateSoundInterrupt()

@@ -1,6 +1,8 @@
 #include <assert.h>
 #include <string.h>
 
+#include <psp2/kernel/threadmgr.h>
+
 #include "ao.h"
 #include "cpuintrf.h"
 #include "scsp.h"
@@ -112,6 +114,8 @@ volatile unsigned lagi_dsp_mix_unpack = 0;
 volatile unsigned lagi_dsp_mix_pack = 0;
 volatile unsigned lagi_dsp_mix_noflr = 0;
 volatile unsigned lagi_dsp_mix_noflw = 0;
+volatile unsigned lagi_dsp_profile_sample = 0;
+volatile unsigned long long lagi_dsp_profile_last_us = 0;
 
 static INT32 g_lagiUnpackTable[65536];
 static int g_lagiUnpackTableReady = 0;
@@ -462,6 +466,8 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
 
 void SCSPDSP_Step(struct _SCSPDSP* DSP)
 {
+    const int profileSample = lagi_dsp_profile_sample != 0;
+    unsigned long long profileStartUs = 0;
     INT32 ACC = 0;
     INT32 SHIFTED = 0;
     INT32 X = 0;
@@ -475,8 +481,19 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
     UINT32 ADRS_REG = 0;
     int step;
 
+    if (profileSample)
+    {
+        lagi_dsp_profile_last_us = 0;
+        profileStartUs = sceKernelGetSystemTimeWide();
+    }
+
     if (DSP->Stopped)
+    {
+        if (profileSample)
+            lagi_dsp_profile_last_us =
+                sceKernelGetSystemTimeWide() - profileStartUs;
         return;
+    }
 
     /*
      * Defensive fallback: normally Start() owns decoding. If an unusual path
@@ -488,6 +505,9 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
     if (g_lagiPdsFastPath)
     {
         lagi_scspdsp_step_pds(DSP);
+        if (profileSample)
+            lagi_dsp_profile_last_us =
+                sceKernelGetSystemTimeWide() - profileStartUs;
         return;
     }
 
@@ -630,6 +650,10 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
 
     --DSP->DEC;
     memset(DSP->MIXS, 0, 4 * 16);
+
+    if (profileSample)
+        lagi_dsp_profile_last_us =
+            sceKernelGetSystemTimeWide() - profileStartUs;
 }
 
 void SCSPDSP_SetSample(struct _SCSPDSP* DSP, INT32 sample, int SEL, int MXL)
