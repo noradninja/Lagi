@@ -562,8 +562,20 @@ void render_scsp_audio()
     if (!lagi::platform::audio::pcm_stream_active())
         return;
 
-    while (lagi::platform::audio::queued_pcm_frames() <
-           kTargetQueuedFrames) {
+    /*
+     * Render at most one 256-frame quantum per worker iteration.
+     *
+     * When SCSP synthesis is slower than real time, an unbounded "fill to
+     * target" loop can monopolize CPU2 forever: queued audio drains faster
+     * than we can replenish it, so control never returns to
+     * process_audio_events(). That makes newly enqueued SFX wait seconds.
+     *
+     * The outer worker loop immediately comes back here while the queue is
+     * below target, so this does not add a sleep or alter emulation timing; it
+     * only guarantees event/command service between render quanta.
+     */
+    if (lagi::platform::audio::queued_pcm_frames() <
+        kTargetQueuedFrames) {
         ++g_audioRenderChunks;
 
         // Profile only a small, bounded set of chunks after each bank load,
