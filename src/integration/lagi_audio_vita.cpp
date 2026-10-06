@@ -686,7 +686,7 @@ void render_scsp_audio()
                 static_cast<unsigned>(
                     lagi::platform::audio::queued_pcm_frames()),
                 g_audioShortWrites);
-            break;
+            return;
         }
 
         // The 68K may have acknowledged a command while this block rendered.
