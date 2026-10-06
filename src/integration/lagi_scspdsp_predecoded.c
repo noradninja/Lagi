@@ -188,13 +188,23 @@ static void lagi_scspdsp_decode(struct _SCSPDSP* DSP)
      * those invariants. Unknown banks retain the full interpreter below.
      */
     /*
-     * First optimization pass: generic predecode only.
-     * Do not enable the specialized PDS instruction-subset fast path yet;
-     * this keeps arithmetic and memory behavior on the full interpreter path
-     * while removing repeated MPRO bitfield extraction.
+     * PDS DSP banks observed so far share a narrower instruction subset.
+     * Enable the specialized loop only when every decoded operation satisfies
+     * those invariants; unknown or future banks fall back to the generic
+     * predecoded interpreter below.
      */
-    g_lagiPdsFastPath = 0;
-    lagi_dsp_fast_path = 0;
+    g_lagiPdsFastPath = 1;
+    for (step = 0; step < DSP->LastStep; ++step)
+    {
+        const LagiScspDspOp* op = &g_lagiDspOps[step];
+        if (op->YSEL > 1 || op->FRCL || op->YRL || op->ADRL ||
+            op->SHIFT > 1 || op->NOFL)
+        {
+            g_lagiPdsFastPath = 0;
+            break;
+        }
+    }
+    lagi_dsp_fast_path = (unsigned)g_lagiPdsFastPath;
 }
 
 void SCSPDSP_Init(struct _SCSPDSP* DSP)
