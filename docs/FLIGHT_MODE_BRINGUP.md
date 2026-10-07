@@ -148,6 +148,8 @@ The recurring `texBuild` cost came primarily from an avoidable quadratic loop: f
 
 The run also emitted 2,438 `[FieldStream]` lines because the diagnostic's `build >= 10 ms` condition matched nearly every ordinary full-mode frame. Internal `[FieldStream] build` had a 14.993 ms no-prepare median, while the enclosing `[ScenePerf] build` median for ordinary sampled frames was 24.982 ms. The roughly 10 ms gap includes the synchronous log write performed after the internal timer, so per-frame diagnostics were materially perturbing the render thread. The instrumentation now records every prepare, model/material miss, and texture-growth event, but samples otherwise ordinary frames only once per 120 field frames. This preserves transition evidence without continuously taxing the measured path.
 
+The next profiling checkpoint expands the once-per-60-frame `[ScenePerf]` sample without changing presentation. `gourPrep` records the conservative quad projection/visibility pass; `gourPayload`, `gourBucket`, `gourIndex`, and `gourDraw` expose the existing full-mode subdivided Gouraud work; `clear` covers the CPU color/depth/stencil buffer clears; `compose` covers Azel-owned VDP2, text, VDP1 UI, and fade submission; and `cpuprep` retains the enclosing pre-wait CPU total with main scene submission removed. These buckets are intended to resolve the roughly 14.8 ms median that remained outside build, lighting, main submission, and GXM wait in the full-mode hardware log. Hardware results for this checkpoint are pending.
+
 ## Runtime path
 
 ```text

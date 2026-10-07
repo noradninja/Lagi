@@ -352,6 +352,8 @@ static unsigned int g_profileGouraudDrawUs = 0;
 static unsigned int g_profileGouraudVisibleQuads = 0;
 static unsigned int g_profileGouraudTotalQuads = 0;
 static unsigned int g_profileGouraudPrepUs = 0;
+static unsigned int g_profileClearUs = 0;
+static unsigned int g_profileComposeUs = 0;
 static unsigned int g_profileGxmWaitUs = 0;
 static unsigned int g_profileRenderUs = 0;
 static unsigned int g_profilePresentUs = 0;
@@ -10532,12 +10534,15 @@ static void renderBasicWingViewer()
         (viewerRenderHeight() + SCE_GXM_TILE_SIZEY - 1) &
         ~(SCE_GXM_TILE_SIZEY - 1);
 
+    const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
     std::memset(colorBuffer, 0,
                 static_cast<std::size_t>(gxmPitch) *
                 viewerRenderHeight() *
                 sizeof(std::uint32_t));
     std::memset(g_probeDepth, 0xFF, alignedW * alignedH * 4u);
     std::memset(g_probeStencil, 0, alignedW * alignedH * 4u);
+    g_profileClearUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - clearStartUs);
 
     if (sceGxmBeginScene(
             g_probeContext, 0, renderTarget,
@@ -10618,6 +10623,7 @@ static void renderBasicWingViewer()
         return;
     }
 
+    const std::uint64_t composeStartUs = sceKernelGetProcessTimeWide();
     if (roomAuthenticCameraMode) {
         // Saturn UI composition: NBG1 supplies window/backing tiles, the
         // line-scroll cinematic matte sits behind the glyph plane, and VDP1
@@ -10636,6 +10642,8 @@ static void renderBasicWingViewer()
     // own VDP2/CLOFEN fade state instead.
     if (roomAuthenticCameraMode && g_sceneGameMode == 1u)
         drawFadeOverlay(updateTownFadeAlpha(), 0u, 0u, 0u);
+    g_profileComposeUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - composeStartUs);
 
     const std::uint64_t gxmWaitStartUs = sceKernelGetProcessTimeWide();
     const unsigned int renderCpuBeforeWaitUs =
@@ -10656,7 +10664,9 @@ static void renderBasicWingViewer()
     if (nativeSceneMode && ((scenePerfHeartbeat++ % 60u) == 0u)) {
         logging::writef(
             "[ScenePerf] build=%uus scan=%u cache=%u obj=%u edge=%u upload=%u "
-            "light=%u submit=%u gxmwait=%u render=%u polys=%u verts=%u "
+            "light=%u gourPrep=%u gourPayload=%u gourBucket=%u "
+            "gourIndex=%u gourDraw=%u clear=%u submit=%u compose=%u "
+            "cpuprep=%u gxmwait=%u render=%u polys=%u verts=%u "
             "staticRebuilt=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
@@ -10665,7 +10675,15 @@ static void renderBasicWingViewer()
             g_profileBuildEdgeUs,
             g_profileBuildUploadUs,
             g_profileLightingUs,
+            g_profileGouraudPrepUs,
+            g_profileGouraudPayloadUs,
+            g_profileGouraudBucketUs,
+            g_profileGouraudIndexUs,
+            g_profileGouraudDrawUs,
+            g_profileClearUs,
             g_profileSubmitUs,
+            g_profileComposeUs,
+            g_profileRenderCpuPrepUs,
             g_profileGxmWaitUs,
             g_profileRenderUs,
             static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
