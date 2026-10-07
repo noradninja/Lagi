@@ -78,6 +78,10 @@ const std::vector<RenderSubmission>& published_submissions();
 const LiveVdp1Model* published_adapted_model(std::uint32_t index);
 std::uint64_t published_frame_number();
 
+// Number of previously unseen native model identities adapted while building
+// the published Azel frame. Used only for field-streaming diagnostics.
+std::uint32_t published_model_cache_misses();
+
 // Copy Azel's current lighting payload into an explicitly constructed
 // submission state without also inheriting pCurrentMatrix (which may already
 // contain the camera/view transform).
