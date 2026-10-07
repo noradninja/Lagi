@@ -292,17 +292,17 @@ static void capture_runtime_state(bool billboard)
 {
     g_lastState = {};
     g_lastState.billboard = billboard;
-    // Field bring-up currently captures Azel's camera-space matrices. Until
-    // Phase 4 converts field submissions back to stable world space, every
-    // field model must be rebuilt from its current frame matrix. Billboards
-    // are likewise camera-dependent and must never enter the static cache.
+    // Field mode still defaults task-owned submissions to dynamic, but the
+    // native field view is now removed below so every submission presented by
+    // Neptune uses world-space geometry. Explicit environment-grid contexts
+    // can therefore opt into the static cache without affecting actors,
+    // effects, moving machinery, or billboards.
     g_lastState.dynamic =
         g_forceDynamicSubmissions || g_viewRelativeScope || billboard;
 
-    // For normal objects Azel's pCurrentMatrix already contains camera/view
-    // and model transforms at submission time. Billboard capture will later
-    // substitute cameraProperties2.m88_billboardViewMatrix when that path is
-    // linked into the Vita runtime.
+    // Azel's pCurrentMatrix contains camera/view and model transforms at the
+    // normal submission boundary. Mode 3 strips the captured native view;
+    // town view-relative scopes use their existing scoped view snapshot.
     if (&pCurrentMatrix && pCurrentMatrix) {
         if (g_viewRelativeScope) {
             removeViewTransform(
