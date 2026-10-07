@@ -9,6 +9,7 @@
 #include "field.h"
 #include "field/fieldCamera.h"
 #include "field/fieldDragon.h"
+#include "field/fieldVisibilityGrid.h"
 
 namespace lagi::scene_bridge {
 
@@ -46,9 +47,32 @@ void sync_field_presentation_state()
     static unsigned int heartbeat = 0u;
     if ((heartbeat++ % 60u) == 0u) {
         const s_dragonTaskWorkArea* const dragon = field->m338_pDragonTask;
+        const s_visibilityGridWorkArea* const grid =
+            field->m348_pFieldCameraTask1;
+
+        unsigned int activeCells = 0u;
+        int gridWidth = 0;
+        int gridHeight = 0;
+        if (grid && grid->m30) {
+            gridWidth = grid->m30->m10_gridSize[0];
+            gridHeight = grid->m30->m10_gridSize[1];
+            const int cellCount = gridWidth * gridHeight;
+            if (grid->m3C_cellRenderingTasks) {
+                for (int i = 0; i < cellCount; ++i) {
+                    const s_visdibilityCellTask* const cell =
+                        grid->m3C_cellRenderingTasks[i];
+                    if (cell && cell->getTask() &&
+                        !cell->getTask()->isPaused())
+                        ++activeCells;
+                }
+            }
+        }
+
         lagi::platform::logging::writef(
             "[LagiFieldAdapter] field=%d sub=%d submissions=%u "
-            "dragon=(%08X,%08X,%08X) angle=(%08X,%08X,%08X)\n",
+            "dragon=(%08X,%08X,%08X) angle=(%08X,%08X,%08X) "
+            "grid=%dx%d cameraCell=(%d,%d) activeCells=%u "
+            "gridSeen=%u gridVisible=%u renderMode=%u\n",
             static_cast<int>(fieldTaskPtr->m2C_currentFieldIndex),
             static_cast<int>(fieldTaskPtr->m2E_currentSubFieldIndex),
             static_cast<unsigned int>(
@@ -58,7 +82,15 @@ void sync_field_presentation_state()
             static_cast<unsigned int>(dragon->m8_pos[2].asS32()),
             static_cast<unsigned int>(dragon->m20_angle[0].asS32()),
             static_cast<unsigned int>(dragon->m20_angle[1].asS32()),
-            static_cast<unsigned int>(dragon->m20_angle[2].asS32()));
+            static_cast<unsigned int>(dragon->m20_angle[2].asS32()),
+            gridWidth,
+            gridHeight,
+            grid ? grid->m18_cameraGridLocation[0] : -999,
+            grid ? grid->m18_cameraGridLocation[1] : -999,
+            activeCells,
+            grid ? static_cast<unsigned int>(grid->m12E0) : 0u,
+            grid ? static_cast<unsigned int>(grid->m12E2) : 0u,
+            grid ? static_cast<unsigned int>(grid->m12F2_renderMode) : 0u);
     }
 }
 
