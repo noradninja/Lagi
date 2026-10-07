@@ -59,7 +59,7 @@ void sync_field_presentation_state()
             const int cellCount = gridWidth * gridHeight;
             if (grid->m3C_cellRenderingTasks) {
                 for (int i = 0; i < cellCount; ++i) {
-                    const s_visdibilityCellTask* const cell =
+                    s_visdibilityCellTask* const cell =
                         grid->m3C_cellRenderingTasks[i];
                     if (cell && cell->getTask() &&
                         !cell->getTask()->isPaused())
