@@ -24,12 +24,11 @@ void sync_field_presentation_state()
     if (!field->m338_pDragonTask || !field->m334)
         return;
 
-    // Phase 2 presentation boundary:
-    // Azel's field renderer submits VDP1 geometry with the field camera
-    // already folded into pCurrentMatrix. Publish those native submissions
-    // through Neptune with an identity host camera for the first visible
-    // frame. Phase 4 will classify individual field submission spaces and
-    // move world-space paths onto an explicit camera adapter where needed.
+    // Phase 4 presentation boundary:
+    // the render bridge removes Azel's native field view from mode-3 model
+    // submissions, and Neptune reapplies that exact view matrix once. Static
+    // environment-grid submissions can now remain in stable world space while
+    // task-owned actors/effects continue to be classified dynamic.
     static const float cameraPosition[3] = {0.0f, 0.0f, 0.0f};
     static const float cameraTarget[3] = {0.0f, 0.0f, 1.0f};
     static const float cameraUp[3] = {0.0f, 1.0f, 0.0f};
