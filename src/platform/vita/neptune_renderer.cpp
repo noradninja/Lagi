@@ -10371,7 +10371,11 @@ static void renderBasicWingViewer()
         drawPublishedVdp1Ui();
     }
 
-    if (roomAuthenticCameraMode)
+    // The scripted full-screen fade tracked here belongs to the native
+    // town camera adapter. Do not carry its terminal black state across a
+    // module transition into field mode; field presentation follows Azel's
+    // own VDP2/CLOFEN fade state instead.
+    if (roomAuthenticCameraMode && g_sceneGameMode == 1u)
         drawFadeOverlay(updateTownFadeAlpha(), 0u, 0u, 0u);
 
     const std::uint64_t gxmWaitStartUs = sceKernelGetProcessTimeWide();
