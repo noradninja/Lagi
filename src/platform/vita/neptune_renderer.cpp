@@ -21,6 +21,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include <cstring>
 #include <cctype>
 #include <cmath>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -318,6 +319,61 @@ struct LiveTownResolvedMaterialCache {
     std::vector<std::uint16_t> textureIndices;
 };
 static std::vector<LiveTownResolvedMaterialCache> g_liveTownMaterialCache;
+
+// Stable static-instance identity discovery for the paged-residency work.
+// This is diagnostic only: Azel still selects the submissions and the current
+// renderer still builds the same flattened visible mesh. The key mirrors the
+// immutable state a future Neptune geometry page must own.
+struct LiveTownStaticIdentity {
+    sProcessed3dModel* model = nullptr;
+    std::uint32_t sceneMode = 0;
+    std::int8_t bundleIndex = -1;
+    std::uint32_t cellIndex = 0;
+    std::uint32_t objectIndex = 0;
+    std::uint32_t modelTableOffset = 0;
+    std::int32_t modelMatrix[12]{};
+
+    bool operator==(const LiveTownStaticIdentity& rhs) const
+    {
+        return model == rhs.model &&
+            sceneMode == rhs.sceneMode &&
+            bundleIndex == rhs.bundleIndex &&
+            cellIndex == rhs.cellIndex &&
+            objectIndex == rhs.objectIndex &&
+            modelTableOffset == rhs.modelTableOffset &&
+            std::memcmp(
+                modelMatrix,
+                rhs.modelMatrix,
+                sizeof(modelMatrix)) == 0;
+    }
+};
+
+struct LiveTownStaticIdentityHash {
+    std::size_t operator()(const LiveTownStaticIdentity& key) const
+    {
+        std::uint64_t hash = 1469598103934665603ull;
+        const auto add = [&hash](std::uint64_t value) {
+            hash ^= value;
+            hash *= 1099511628211ull;
+        };
+        add(static_cast<std::uint64_t>(
+            reinterpret_cast<std::uintptr_t>(key.model)));
+        add(key.sceneMode);
+        add(static_cast<std::uint8_t>(key.bundleIndex));
+        add(key.cellIndex);
+        add(key.objectIndex);
+        add(key.modelTableOffset);
+        for (const std::int32_t component : key.modelMatrix)
+            add(static_cast<std::uint32_t>(component));
+        return static_cast<std::size_t>(hash);
+    }
+};
+
+static std::unordered_set<
+    LiveTownStaticIdentity,
+    LiveTownStaticIdentityHash> g_liveTownKnownStaticIdentities;
+static unsigned int g_liveTownStaticIdentityHits = 0u;
+static unsigned int g_liveTownStaticIdentityMisses = 0u;
 
 // Frame profiler samples are microseconds. TASK is written after runTasks(),
 // so the HUD naturally shows the previous task frame while the render samples
@@ -1400,6 +1456,7 @@ void invalidate_cram_range(unsigned int, unsigned int)
     // resources. Force the live-town material/model caches to be rebuilt on
     // the next published frame when Azel writes CRAM.
     g_liveTownMaterialCache.clear();
+    g_liveTownKnownStaticIdentities.clear();
     g_liveTownSignature = 0;
     g_liveTownStaticSignature = 0;
     g_liveTownStaticMeshRanges.clear();
@@ -1413,6 +1470,7 @@ void invalidate_vdp1_texture_range(unsigned int, unsigned int)
     // owns the Vita texture cache, so invalidate the resident live-town model
     // and material bindings and rebuild them from the updated VDP1 data.
     g_liveTownMaterialCache.clear();
+    g_liveTownKnownStaticIdentities.clear();
     g_liveTownSignature = 0;
     g_liveTownStaticSignature = 0;
     g_liveTownStaticMeshRanges.clear();
@@ -5589,6 +5647,10 @@ static bool buildLiveTownFrame()
     g_profileObjectAppendUs = 0u;
     g_profileObjectMaterialResolveUs = 0u;
     g_profileObjectMaterialCacheMisses = 0u;
+    g_liveTownStaticIdentityHits = 0u;
+    g_liveTownStaticIdentityMisses = 0u;
+    if (g_liveTownKnownStaticIdentities.bucket_count() < 512u)
+        g_liveTownKnownStaticIdentities.reserve(512u);
     const std::uint64_t tScan = sceKernelGetProcessTimeWide();
     std::uint64_t staticSignature = 1469598103934665603ull;
     bool hasBillboards = false;
@@ -5620,6 +5682,16 @@ static bool buildLiveTownFrame()
         if (!submission.state.dynamic) {
             // Geometry/material identity only. Lighting is renderer state and
             // must not invalidate/rebuild the static world mesh.
+            staticSignature ^= static_cast<std::uint64_t>(
+                reinterpret_cast<std::uintptr_t>(submission.model));
+            staticSignature *= 1099511628211ull;
+            staticSignature ^= static_cast<std::uint8_t>(
+                submission.bundleIndex);
+            staticSignature *= 1099511628211ull;
+            staticSignature ^= submission.cellIndex;
+            staticSignature *= 1099511628211ull;
+            staticSignature ^= submission.objectIndex;
+            staticSignature *= 1099511628211ull;
             staticSignature ^= submission.modelTableOffset;
             staticSignature *= 1099511628211ull;
             staticSignature ^= model->polygons.size();
@@ -5630,6 +5702,26 @@ static bool buildLiveTownFrame()
                         submission.state.modelMatrix[component]);
                     staticSignature *= 1099511628211ull;
                 }
+            }
+
+            LiveTownStaticIdentity identity{};
+            identity.model = submission.model;
+            identity.sceneMode = g_sceneGameMode;
+            identity.bundleIndex = submission.bundleIndex;
+            identity.cellIndex = submission.cellIndex;
+            identity.objectIndex = submission.objectIndex;
+            identity.modelTableOffset = submission.modelTableOffset;
+            std::memcpy(
+                identity.modelMatrix,
+                submission.state.modelMatrix,
+                sizeof(identity.modelMatrix));
+            const auto known =
+                g_liveTownKnownStaticIdentities.find(identity);
+            if (known == g_liveTownKnownStaticIdentities.end()) {
+                g_liveTownKnownStaticIdentities.emplace(identity);
+                ++g_liveTownStaticIdentityMisses;
+            } else {
+                ++g_liveTownStaticIdentityHits;
             }
         }
         hasBillboards = hasBillboards || submission.state.billboard;
@@ -5835,13 +5927,14 @@ static bool buildLiveTownFrame()
         if (changed ||
             modelCacheMisses != 0u ||
             g_profileObjectMaterialCacheMisses != 0u ||
+            g_liveTownStaticIdentityMisses != 0u ||
             decodedTexturesAfter != decodedTexturesBefore ||
             periodicSample) {
             logging::writef(
                 "[FieldStream] frame=%llu submissions=%u polys=%u verts=%u "
                 "modelMiss=%u matMiss=%u textures=%u->%u prepare=%u "
                 "gpuTex=%u dirty=%u staticCtx=%u/%u staticSubs=%u billboards=%u "
-                "meshRanges=%u/%u "
+                "meshRanges=%u/%u staticId=%u/%u/%u "
                 "staticRebuilt=%u append=%uus material=%uus "
                 "upload=%uus build=%uus reuseTex=%u reuseGeom=%u release=%uus "
                 "baseAlloc=%uus wire=%uus texUpload=%uus texAlloc=%uus "
@@ -5867,6 +5960,10 @@ static bool buildLiveTownFrame()
                 static_cast<unsigned int>(g_liveTownMeshRanges.size()),
                 static_cast<unsigned int>(
                     g_liveTownStaticMeshRanges.size()),
+                g_liveTownStaticIdentityHits,
+                g_liveTownStaticIdentityMisses,
+                static_cast<unsigned int>(
+                    g_liveTownKnownStaticIdentities.size()),
                 g_liveTownStaticRebuilt ? 1u : 0u,
                 g_profileObjectAppendUs,
                 g_profileObjectMaterialResolveUs,
