@@ -35,6 +35,16 @@ void sync_field_presentation_state()
     static const float cameraUp[3] = {0.0f, 1.0f, 0.0f};
 
     lagi::platform::renderer::presentation_set_scene_mode(3u);
+    const float nearPlane =
+        static_cast<float>(
+            static_cast<s32>(graphicEngineStatus.m405C.m10_nearClipDistance)) /
+        65536.0f;
+    const float farPlane =
+        static_cast<float>(
+            static_cast<s32>(graphicEngineStatus.m405C.m14_farClipDistance)) /
+        65536.0f;
+    lagi::platform::renderer::presentation_set_clip_planes(
+        nearPlane, farPlane);
     lagi::platform::renderer::presentation_set_camera(
         cameraPosition,
         cameraPosition,
@@ -72,7 +82,8 @@ void sync_field_presentation_state()
             "[LagiFieldAdapter] field=%d sub=%d submissions=%u "
             "dragon=(%08X,%08X,%08X) angle=(%08X,%08X,%08X) "
             "grid=%dx%d cameraCell=(%d,%d) activeCells=%u "
-            "gridSeen=%u gridVisible=%u renderMode=%u\n",
+            "gridSeen=%u gridVisible=%u renderMode=%u "
+            "clip=(%.4f,%.4f)\n",
             static_cast<int>(fieldTaskPtr->m2C_currentFieldIndex),
             static_cast<int>(fieldTaskPtr->m2E_currentSubFieldIndex),
             static_cast<unsigned int>(
@@ -90,7 +101,9 @@ void sync_field_presentation_state()
             activeCells,
             grid ? static_cast<unsigned int>(grid->m12E0) : 0u,
             grid ? static_cast<unsigned int>(grid->m12E2) : 0u,
-            grid ? static_cast<unsigned int>(grid->m12F2_renderMode) : 0u);
+            grid ? static_cast<unsigned int>(grid->m12F2_renderMode) : 0u,
+            nearPlane,
+            farPlane);
     }
 }
 
