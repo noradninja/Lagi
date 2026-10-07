@@ -177,6 +177,8 @@ The same capture contained 2,066 `[PresentationTrace][AzelVDP1]` records in 3,86
 
 The linear texture-batch construction is hardware-validated by this capture. Across 275 logged prepare events, prepare/build median fell from the earlier ~76.1 ms to 33.383 ms. `texBuild` fell from ~46.5 ms to 4.936 ms median, while total prepare upload was 19.857 ms median. The dominant recurring prepare substage is now subdivision-buffer construction at 14.204 ms median (16.544 ms p90). Geometry-set changes still occurred frequently, so this improvement reduces but does not eliminate traversal hitches; persistent per-model/per-cell geometry remains required.
 
+The next subdivision checkpoint removes duplicated work specifically from mapped-capacity reuse. A reused field buffer previously rebuilt all 3x3 subdivided positions, zero shades, UVs, and generic 24-index quad topology during prepare; Full mode then rewrote all dynamic positions and visible shades again during submission in the same frame. Reuse prepares now refresh only material-dependent UVs and initialize topology entries beyond the previous polygon count. Fresh allocations retain complete position/shade/topology initialization, and the Full-mode submission path is unchanged. Hardware validation is pending.
+
 ## Runtime path
 
 ```text

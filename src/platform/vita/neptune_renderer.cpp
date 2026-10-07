@@ -4411,9 +4411,11 @@ bool prepare_vdp1_model(
                 g_vdp1SubdivVertexCapacity = 0u;
                 g_vdp1SubdivIndexCapacity = 0u;
             } else {
-                // Cache immutable subdivision topology, UVs and initial
-                // positions once. Per frame, static town quads only need
-                // shade updates; dynamic objects update position + shade.
+                // Cache subdivision UVs, topology and initial positions. On
+                // the field capacity-reuse path, Full mode rewrites every
+                // dynamic position during submission in this same frame, so
+                // prepare only needs to refresh material-dependent UVs and
+                // initialize a newly grown topology suffix.
                 const std::uint64_t subdivBuildStartUs =
                     sceKernelGetProcessTimeWide();
                 static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
@@ -4423,6 +4425,8 @@ bool prepare_vdp1_model(
                     3,4,7, 3,7,6,
                     4,5,8, 4,8,7
                 };
+                const std::size_t previousSubdivIndexCount =
+                    g_vdp1SubdivQuadIndices.size();
                 g_vdp1SubdivQuadIndices.resize(subdivIndexCount);
 
                 auto bilerp = [](
@@ -4499,9 +4503,14 @@ bool prepare_vdp1_model(
                             auto& dst =
                                 g_vdp1SubdivVertices[
                                     baseVertex + gy * 3u + gx];
-                            dst.x = bilerp(a.x,b.x,c.x,d.x,u,v);
-                            dst.y = bilerp(a.y,b.y,c.y,d.y,u,v);
-                            dst.z = bilerp(a.z,b.z,c.z,d.z,u,v);
+                            if (!reuseGeometry) {
+                                dst.x = bilerp(a.x,b.x,c.x,d.x,u,v);
+                                dst.y = bilerp(a.y,b.y,c.y,d.y,u,v);
+                                dst.z = bilerp(a.z,b.z,c.z,d.z,u,v);
+                                dst.shadeR = 0.0f;
+                                dst.shadeG = 0.0f;
+                                dst.shadeB = 0.0f;
+                            }
                             dst.u = bilerp(
                                 cornerUv[0][0], cornerUv[1][0],
                                 cornerUv[2][0], cornerUv[3][0],
@@ -4510,17 +4519,16 @@ bool prepare_vdp1_model(
                                 cornerUv[0][1], cornerUv[1][1],
                                 cornerUv[2][1], cornerUv[3][1],
                                 u, v);
-                            dst.shadeR = 0.0f;
-                            dst.shadeG = 0.0f;
-                            dst.shadeB = 0.0f;
                         }
                     }
 
                     const unsigned int quadIndexBase = p * 24u;
-                    for (unsigned k = 0; k < 24u; ++k) {
-                        g_vdp1SubdivQuadIndices[quadIndexBase + k] =
-                            static_cast<std::uint16_t>(
-                                baseVertex + gridTris[k]);
+                    if (quadIndexBase >= previousSubdivIndexCount) {
+                        for (unsigned k = 0; k < 24u; ++k) {
+                            g_vdp1SubdivQuadIndices[quadIndexBase + k] =
+                                static_cast<std::uint16_t>(
+                                    baseVertex + gridTris[k]);
+                        }
                     }
                 }
                 g_profilePrepareSubdivBuildUs = static_cast<unsigned int>(
