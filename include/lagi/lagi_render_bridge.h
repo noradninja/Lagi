@@ -46,7 +46,7 @@ struct RenderSubmission {
 };
 
 // Reset per-frame submission diagnostics before Azel task draw execution.
-void begin_frame();
+void begin_frame(bool forceDynamicSubmissions = false);
 
 // Number of model submissions observed through Azel's native render boundary
 // during the current frame.
