@@ -1255,6 +1255,12 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  field/exitField.cpp
  field/fieldItemBoxDefinition.cpp
  field/fieldItemBox.cpp
+ field/fieldItemBox_type0.cpp
+ field/fieldItemBox_type1.cpp
+ field/fieldItemBox_type2.cpp
+ field/fieldSavePoint.cpp
+ field/fieldParticlePool.cpp
+ field/fieldDebrisScatter.cpp
  field/battleStart.cpp
  field/fieldDragonMovement.cpp
  field/fieldDragonInput.cpp
