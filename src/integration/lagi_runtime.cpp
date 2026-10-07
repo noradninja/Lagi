@@ -98,14 +98,18 @@ static void capture_azel_vdp1_frontend_commands()
         }
     }
 
-    static std::uint32_t lastSignature = 0u;
+    static int lastMode = -1;
+    static int lastStatus = -1;
     static unsigned int heartbeat = 0u;
-    if (signature != lastSignature || ((heartbeat++ % 120u) == 0u)) {
+    const int mode = static_cast<int>(gGameStatus.m0_gameMode);
+    const int status = static_cast<int>(gGameStatus.m4_gameStatus);
+    const bool periodicSample = (heartbeat++ % 120u) == 0u;
+    if (mode != lastMode || status != lastStatus || periodicSample) {
         lagi::platform::logging::writef(
             "[PresentationTrace][AzelVDP1] mode=%d status=%d cmds=%u "
             "normal=%u scaled=%u distorted=%u polyline=%u other=%u hash=%08X\n",
-            static_cast<int>(gGameStatus.m0_gameMode),
-            static_cast<int>(gGameStatus.m4_gameStatus),
+            mode,
+            status,
             commandCount,
             normalSprites,
             scaledSprites,
@@ -113,7 +117,8 @@ static void capture_azel_vdp1_frontend_commands()
             polylines,
             otherCommands,
             static_cast<unsigned int>(signature));
-        lastSignature = signature;
+        lastMode = mode;
+        lastStatus = status;
     }
 
     if (gGameStatus.m0_gameMode == 1 && commandCount != 0u) {

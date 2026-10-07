@@ -171,7 +171,9 @@ Lighting transform ownership now follows Azel's native formulation more closely.
 | VDP2/UI composition | 0.731 ms | 0.765 ms |
 | Final `sceGxmEndScene`/`sceGxmFinish` wait | 1.813 ms | 1.927 ms |
 
-The outer render total still contains a per-sample median residual of 8.782 ms after subtracting build, lighting, Gouraud visibility, clears, main submission, composition, and the final GXM wait. The dominant unmeasured boundary in that interval is `sceGxmBeginScene()`, so the next checkpoint records it as `begin` in `[ScenePerf]`. The later pre-sized append and per-submission model-space-light changes were not yet validated by this capture and require a new hardware run.
+The outer render total contains a per-sample median residual of 8.782 ms after subtracting build, lighting, Gouraud visibility, clears, main submission, composition, and the final GXM wait, but this is not yet evidence of an 8.8 ms GXM cost. Every one of the 36 field `[ScenePerf]` samples was phase-aligned with and immediately preceded by a synchronous `[PresentationTrace][NeptuneScene]` write inside the measured interval. That trace now emits only on an Azel scene-mode transition and does so after the render timer closes. The next checkpoint also records `sceGxmBeginScene()` explicitly as `begin`, so any true residual can be separated from logging overhead.
+
+The same capture contained 2,066 `[PresentationTrace][AzelVDP1]` records in 3,864 total log lines. Its animated command hash changed nearly every frame, defeating the intended 120-frame heartbeat. Hash changes no longer trigger a write by themselves: the trace now records mode/status transitions plus a periodic 120-frame structural sample. Azel's VDP1 command publication is unchanged. The later pre-sized append and per-submission model-space-light changes were also not yet validated by this capture and require a new hardware run.
 
 ## Runtime path
 

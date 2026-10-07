@@ -10628,23 +10628,6 @@ static void renderBasicWingViewer()
             ? staticRoomVdp1Source(false)
             : basicWingVdp1Source());
 
-    static unsigned int shadowTraceHeartbeat = 0u;
-    if (roomAuthenticCameraMode &&
-        ((shadowTraceHeartbeat++ % 60u) == 0u)) {
-        logging::writef(
-            "[PresentationTrace][NeptuneScene] modelPolys=%u "
-            "shadowReady=%u shadowTex=%u shadowFirst=%u shadowPolys=%u "
-            "edgeFirst=%u edgePolys=%u resident=%u\n",
-            static_cast<unsigned int>(model.polygonCount),
-            g_edgeShadowCpuReady ? 1u : 0u,
-            static_cast<unsigned int>(g_edgeShadowTownTextureIndices.size()),
-            static_cast<unsigned int>(g_liveTownShadowFirstPolygon),
-            static_cast<unsigned int>(g_liveTownShadowPolygonCount),
-            static_cast<unsigned int>(g_liveTownEdgeFirstPolygon),
-            static_cast<unsigned int>(g_liveTownEdgePolygonCount),
-            static_cast<unsigned int>(g_residentVdp1Model));
-    }
-
     const std::uint64_t submitStartUs = sceKernelGetProcessTimeWide();
     const bool submitted = submit_vdp1_model(model, drawState);
     g_profileSubmitUs = static_cast<unsigned int>(
@@ -10691,6 +10674,28 @@ static void renderBasicWingViewer()
 
     g_profileRenderUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - renderStartUs);
+
+    // This trace used to share the 60-frame heartbeat with ScenePerf and was
+    // synchronously written inside the measured render interval. Emit it only
+    // when Azel changes scene mode, after the render timer has closed.
+    static unsigned int lastTracedSceneMode = 0xFFFFFFFFu;
+    if (roomAuthenticCameraMode &&
+        g_sceneGameMode != lastTracedSceneMode) {
+        logging::writef(
+            "[PresentationTrace][NeptuneScene] mode=%u modelPolys=%u "
+            "shadowReady=%u shadowTex=%u shadowFirst=%u shadowPolys=%u "
+            "edgeFirst=%u edgePolys=%u resident=%u\n",
+            g_sceneGameMode,
+            static_cast<unsigned int>(model.polygonCount),
+            g_edgeShadowCpuReady ? 1u : 0u,
+            static_cast<unsigned int>(g_edgeShadowTownTextureIndices.size()),
+            static_cast<unsigned int>(g_liveTownShadowFirstPolygon),
+            static_cast<unsigned int>(g_liveTownShadowPolygonCount),
+            static_cast<unsigned int>(g_liveTownEdgeFirstPolygon),
+            static_cast<unsigned int>(g_liveTownEdgePolygonCount),
+            static_cast<unsigned int>(g_residentVdp1Model));
+        lastTracedSceneMode = g_sceneGameMode;
+    }
 
     static unsigned int scenePerfHeartbeat = 0u;
     if (nativeSceneMode && ((scenePerfHeartbeat++ % 60u) == 0u)) {
