@@ -93,6 +93,12 @@ void capture_current_light(SubmissionState& state);
 void begin_view_relative_submission_scope();
 void end_view_relative_submission_scope();
 
+// Field mode publishes Azel's native view matrix explicitly. The camera task
+// captures it after applyCameraStatusToEngine(), then normal mode-3 model
+// submissions can remove that view transform before reaching Neptune.
+void capture_native_scene_view_matrix();
+bool native_scene_view_matrix(std::int32_t out[12]);
+
 void set_town_submission_context(
     std::int8_t bundleIndex,
     std::uint32_t cellIndex,
