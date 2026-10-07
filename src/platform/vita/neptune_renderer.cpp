@@ -5189,8 +5189,21 @@ static void appendLiveTownModel(
         billboardY[2] = billboardZ[0]*billboardX[1] - billboardZ[1]*billboardX[0];
     }
 
+    const std::size_t vertexBase = g_liveTownCpuMesh.vertices.size();
     const std::size_t polygonBase = g_liveTownCpuMesh.polygonRecords.size();
-    for (const auto& source : model.vertices) {
+    g_liveTownCpuMesh.vertices.resize(vertexBase + model.vertices.size());
+    g_liveTownCpuMesh.lightingVertices.resize(
+        vertexBase + model.vertices.size());
+    g_liveTownCpuMesh.polygonRecords.resize(
+        polygonBase + model.polygons.size());
+    g_liveTownCpuMesh.polygonTextureIndices.resize(
+        polygonBase + model.polygons.size());
+    g_liveTownCpuMesh.gouraud555.resize(
+        polygonBase + model.polygons.size());
+    g_liveTownPolygonLights.resize(polygonBase + model.polygons.size());
+
+    for (std::size_t i = 0; i < model.vertices.size(); ++i) {
+        const auto& source = model.vertices[i];
         azel::DebugColorVertex v = source;
         if (state.billboard) {
             v.x = m[3] + source.x*billboardX[0] + source.y*billboardY[0] +
@@ -5204,14 +5217,29 @@ static void appendLiveTownModel(
             v.y = source.x*m[4] + source.y*m[5] + source.z*m[6] + m[7];
             v.z = source.x*m[8] + source.y*m[9] + source.z*m[10] + m[11];
         }
-        g_liveTownCpuMesh.vertices.push_back(v);
-        g_liveTownCpuMesh.lightingVertices.push_back(v);
+        g_liveTownCpuMesh.vertices[vertexBase + i] = v;
+        g_liveTownCpuMesh.lightingVertices[vertexBase + i] = v;
     }
 
+    LivePolygonLightState polygonLight{};
+    if (state.hasLight) {
+        for (unsigned axis = 0; axis < 3; ++axis) {
+            polygonLight.vector[axis] = state.lightVector[axis];
+            polygonLight.color[axis] = state.lightColor[axis];
+            polygonLight.falloff[axis] = state.lightFalloff[axis];
+        }
+        polygonLight.valid = true;
+    }
+
+    std::size_t runStart = 0u;
+    std::size_t runCount = 0u;
     for (std::size_t p = 0; p < model.polygons.size(); ++p) {
         auto record = model.polygons[p];
 
         if (record.cmdPmod & 0x0100u) {
+            if (runCount == 0u)
+                runStart = p;
+            ++runCount;
             static unsigned int liveMeshTraceBudget = 48u;
             if (liveMeshTraceBudget != 0u) {
                 const std::uint16_t resolvedIndex =
@@ -5234,6 +5262,10 @@ static void appendLiveTownModel(
                     static_cast<unsigned int>(resolvedIndex));
                 --liveMeshTraceBudget;
             }
+        } else if (runCount != 0u) {
+            g_liveTownMeshRanges.push_back(
+                {polygonBase + runStart, runCount});
+            runCount = 0u;
         }
         for (unsigned n = 0; n < record.lightingCount; ++n) {
             const float x = record.lighting[n].normal[0] / 4096.0f;
@@ -5257,43 +5289,21 @@ static void appendLiveTownModel(
                 std::lround(std::clamp(nz, -1.0f, 1.0f) * 4096.0f));
         }
         record.model = static_cast<unsigned int>(polygonBase);
-        g_liveTownCpuMesh.polygonRecords.push_back(record);
+        g_liveTownCpuMesh.polygonRecords[polygonBase + p] = record;
         const std::uint16_t textureIndex =
             resolvedTextureIndices && p < resolvedTextureIndexCount
                 ? resolvedTextureIndices[p]
                 : liveTownTextureIndex(record);
-        g_liveTownCpuMesh.polygonTextureIndices.push_back(textureIndex);
-        g_liveTownCpuMesh.gouraud555.push_back({});
-
-        LivePolygonLightState polygonLight{};
-        if (state.hasLight) {
-            for (unsigned axis = 0; axis < 3; ++axis) {
-                polygonLight.vector[axis] = state.lightVector[axis];
-                polygonLight.color[axis] = state.lightColor[axis];
-                polygonLight.falloff[axis] = state.lightFalloff[axis];
-            }
-            polygonLight.valid = true;
-        }
-        g_liveTownPolygonLights.push_back(polygonLight);
+        g_liveTownCpuMesh.polygonTextureIndices[polygonBase + p] =
+            textureIndex;
+        g_liveTownCpuMesh.gouraud555[polygonBase + p] = {};
+        g_liveTownPolygonLights[polygonBase + p] = polygonLight;
     }
 
     // Preserve the exact positions of Azel-authored VDP1 mesh commands in the
     // flattened live-town stream. Adjacent mesh polygons from the same model
-    // are coalesced into ranges, but no scene/object identity is inferred.
-    std::size_t runStart = 0u;
-    std::size_t runCount = 0u;
-    for (std::size_t p = 0; p < model.polygons.size(); ++p) {
-        const bool mesh = (model.polygons[p].cmdPmod & 0x0100u) != 0u;
-        if (mesh) {
-            if (runCount == 0u)
-                runStart = p;
-            ++runCount;
-        } else if (runCount != 0u) {
-            g_liveTownMeshRanges.push_back(
-                {polygonBase + runStart, runCount});
-            runCount = 0u;
-        }
-    }
+    // are coalesced into ranges during the polygon copy, but no scene/object
+    // identity is inferred.
     if (runCount != 0u)
         g_liveTownMeshRanges.push_back(
             {polygonBase + runStart, runCount});

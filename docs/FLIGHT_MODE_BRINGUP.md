@@ -152,6 +152,8 @@ The next profiling checkpoint expands the once-per-60-frame `[ScenePerf]` sample
 
 Full-mode subdivided Gouraud submission also repeated a resident-texture-sized scan for every ordered world/mesh phase, even when a small Saturn mesh range referenced only one or two textures. The submission path now records only the texture buckets touched by each phase, sorts that sparse set to preserve the previous ascending texture draw order, and builds/draws only those buckets. It also removes an earlier whole-frame bucket count that was immediately discarded by the per-phase pass. Azel's polygon visibility, mesh range boundaries, ordered-overdraw phases, and within-texture polygon order are unchanged. Hardware validation is pending.
 
+The per-frame flattened append path now pre-sizes its six parallel geometry/material/light arrays and writes them by index instead of growing each vector per vertex or polygon. It constructs the submission-wide light payload once and identifies contiguous Saturn mesh ranges during the existing polygon copy rather than rescanning the model afterward. Vertex/normal transform arithmetic, flattened ordering, material resolution, and mesh phase boundaries are unchanged. This remains an interim reduction to the measured ~12.2 ms ordinary append cost; persistent world-space resources are still the architectural destination. Hardware validation is pending.
+
 ## Runtime path
 
 ```text
