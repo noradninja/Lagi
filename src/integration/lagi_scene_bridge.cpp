@@ -54,30 +54,55 @@ void sync_field_presentation_state()
         0.0f,
         0.0f);
 
-    static unsigned int heartbeat = 0u;
-    if ((heartbeat++ % 60u) == 0u) {
-        const s_dragonTaskWorkArea* const dragon = field->m338_pDragonTask;
-        const s_visibilityGridWorkArea* const grid =
-            field->m348_pFieldCameraTask1;
+    const s_dragonTaskWorkArea* const dragon = field->m338_pDragonTask;
+    const s_visibilityGridWorkArea* const grid =
+        field->m348_pFieldCameraTask1;
 
-        unsigned int activeCells = 0u;
-        int gridWidth = 0;
-        int gridHeight = 0;
-        if (grid && grid->m30) {
-            gridWidth = grid->m30->m10_gridSize[0];
-            gridHeight = grid->m30->m10_gridSize[1];
-            const int cellCount = gridWidth * gridHeight;
-            if (grid->m3C_cellRenderingTasks) {
-                for (int i = 0; i < cellCount; ++i) {
-                    s_visdibilityCellTask* const cell =
-                        grid->m3C_cellRenderingTasks[i];
-                    if (cell && cell->getTask() &&
-                        !cell->getTask()->isPaused())
-                        ++activeCells;
-                }
+    unsigned int activeCells = 0u;
+    int gridWidth = 0;
+    int gridHeight = 0;
+    if (grid && grid->m30) {
+        gridWidth = grid->m30->m10_gridSize[0];
+        gridHeight = grid->m30->m10_gridSize[1];
+        const int cellCount = gridWidth * gridHeight;
+        if (grid->m3C_cellRenderingTasks) {
+            for (int i = 0; i < cellCount; ++i) {
+                s_visdibilityCellTask* const cell =
+                    grid->m3C_cellRenderingTasks[i];
+                if (cell && cell->getTask() &&
+                    !cell->getTask()->isPaused())
+                    ++activeCells;
             }
         }
+    }
 
+    const int cameraCellX =
+        grid ? grid->m18_cameraGridLocation[0] : -999;
+    const int cameraCellY =
+        grid ? grid->m18_cameraGridLocation[1] : -999;
+    static int previousCameraCellX = -1000;
+    static int previousCameraCellY = -1000;
+    static unsigned int previousActiveCells = 0xFFFFFFFFu;
+    if (cameraCellX != previousCameraCellX ||
+        cameraCellY != previousCameraCellY ||
+        activeCells != previousActiveCells) {
+        lagi::platform::logging::writef(
+            "[FieldCellTransition] cameraCell=(%d,%d) activeCells=%u "
+            "gridSeen=%u gridVisible=%u submissions=%u\n",
+            cameraCellX,
+            cameraCellY,
+            activeCells,
+            grid ? static_cast<unsigned int>(grid->m12E0) : 0u,
+            grid ? static_cast<unsigned int>(grid->m12E2) : 0u,
+            static_cast<unsigned int>(
+                lagi::azel_bridge::submission_count()));
+        previousCameraCellX = cameraCellX;
+        previousCameraCellY = cameraCellY;
+        previousActiveCells = activeCells;
+    }
+
+    static unsigned int heartbeat = 0u;
+    if ((heartbeat++ % 60u) == 0u) {
         lagi::platform::logging::writef(
             "[LagiFieldAdapter] field=%d sub=%d submissions=%u "
             "dragon=(%08X,%08X,%08X) angle=(%08X,%08X,%08X) "
@@ -96,8 +121,8 @@ void sync_field_presentation_state()
             static_cast<unsigned int>(dragon->m20_angle[2].asS32()),
             gridWidth,
             gridHeight,
-            grid ? grid->m18_cameraGridLocation[0] : -999,
-            grid ? grid->m18_cameraGridLocation[1] : -999,
+            cameraCellX,
+            cameraCellY,
             activeCells,
             grid ? static_cast<unsigned int>(grid->m12E0) : 0u,
             grid ? static_cast<unsigned int>(grid->m12E2) : 0u,
