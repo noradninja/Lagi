@@ -5575,10 +5575,12 @@ static ViewerMat4 buildAuthenticRoomWvp()
             nearPlane,
             farPlane);
 
-    // Saturn/Azel 3D screen handedness is opposite Neptune/GXM clip space.
-    // Convert presentation once at the projection boundary; world geometry,
-    // camera state, visibility and LOD remain in Azel's native coordinates.
-    projection.m[0] = -projection.m[0];
+    // Town/room presentation needs the Saturn->GXM horizontal mirror.
+    // Native field submissions already arrive in the correct horizontal
+    // orientation through Azel's field camera-space path, so do not mirror
+    // mode 3 a second time.
+    if (g_sceneGameMode != 3u)
+        projection.m[0] = -projection.m[0];
 
     return viewerMul(view, projection);
 }
@@ -8280,15 +8282,13 @@ bool submit_vdp1_model(
                     ? g_textureFragmentProgram
                     : g_probeFragmentProgram))));
 
-    // Town/room paths retain their established winding compensation.
-    // Hardware validation shows native field mode reaches Neptune with the
-    // opposite effective winding, so invert only mode 3 here.
-    const bool reverseCullWinding =
-        drawState.reverseCullWinding ^ (g_sceneGameMode == 3u);
+    // Winding compensation follows the projection actually used by the
+    // current draw state. Field mode no longer receives the town X mirror,
+    // so it does not need an extra rasterizer-side inversion.
     const SceGxmCullMode cullMode =
         wireframe
             ? SCE_GXM_CULL_NONE
-            : (reverseCullWinding
+            : (drawState.reverseCullWinding
                 ? SCE_GXM_CULL_CCW
                 : SCE_GXM_CULL_CW);
     sceGxmSetCullMode(g_probeContext, cullMode);
