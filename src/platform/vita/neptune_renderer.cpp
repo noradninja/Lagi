@@ -353,6 +353,7 @@ static unsigned int g_profileGouraudVisibleQuads = 0;
 static unsigned int g_profileGouraudTotalQuads = 0;
 static unsigned int g_profileGouraudPrepUs = 0;
 static unsigned int g_profileClearUs = 0;
+static unsigned int g_profileBeginSceneUs = 0;
 static unsigned int g_profileComposeUs = 0;
 static unsigned int g_profileGxmWaitUs = 0;
 static unsigned int g_profileRenderUs = 0;
@@ -10571,10 +10572,14 @@ static void renderBasicWingViewer()
     g_profileClearUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - clearStartUs);
 
-    if (sceGxmBeginScene(
+    const std::uint64_t beginSceneStartUs = sceKernelGetProcessTimeWide();
+    const int beginSceneResult = sceGxmBeginScene(
             g_probeContext, 0, renderTarget,
             nullptr, nullptr, syncObject,
-            colorSurface, depthSurface) < 0)
+            colorSurface, depthSurface);
+    g_profileBeginSceneUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - beginSceneStartUs);
+    if (beginSceneResult < 0)
         return;
 
     Vdp1RenderMode renderMode = Vdp1RenderMode::PolygonColor;
@@ -10692,7 +10697,7 @@ static void renderBasicWingViewer()
         logging::writef(
             "[ScenePerf] build=%uus scan=%u cache=%u obj=%u edge=%u upload=%u "
             "light=%u gourPrep=%u gourPayload=%u gourBucket=%u "
-            "gourIndex=%u gourDraw=%u clear=%u submit=%u compose=%u "
+            "gourIndex=%u gourDraw=%u clear=%u begin=%u submit=%u compose=%u "
             "cpuprep=%u gxmwait=%u render=%u polys=%u verts=%u "
             "staticRebuilt=%u\n",
             g_profileBuildUs,
@@ -10708,6 +10713,7 @@ static void renderBasicWingViewer()
             g_profileGouraudIndexUs,
             g_profileGouraudDrawUs,
             g_profileClearUs,
+            g_profileBeginSceneUs,
             g_profileSubmitUs,
             g_profileComposeUs,
             g_profileRenderCpuPrepUs,

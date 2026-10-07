@@ -156,6 +156,23 @@ The per-frame flattened append path now pre-sizes its six parallel geometry/mate
 
 Lighting transform ownership now follows Azel's native formulation more closely. Instead of rotating every polygon normal into camera space while flattening, Neptune transpose-multiplies the captured light vector by the submission rotation once and leaves model normals in their adapted model space. For the rigid transforms used by the field path this produces the same dot product, removes the per-corner matrix/clamp/round loop, and matches upstream `3dEngine_flush.cpp`'s model-space light calculation. Billboard submissions use their renderer-resolved billboard basis for the same inverse-rotation step. Visual and performance validation on Vita hardware are pending.
 
+**Expanded Full-mode hardware profile (2026-10-07): target still not met.** In 36 field `[ScenePerf]` samples, render median was 45.423 ms, p90 66.423 ms, and the maximum was 424.819 ms. Restricting the ordinary-frame comparison to the 30 samples with upload below 10 ms gives render median 44.604 ms, p90 48.979 ms, and maximum 53.413 ms. This confirms the per-frame `[FieldStream]` logging throttle removed roughly 10 ms from the earlier 54.565 ms ordinary median, but render remains well above both the 25 ms median goal and 33.3 ms frame deadline.
+
+| Ordinary Full-mode bucket | Median | p90 |
+|---|---:|---:|
+| Flatten/build | 15.371 ms | 18.576 ms |
+| Object append within build | 12.546 ms | 15.027 ms |
+| Lighting | 3.923 ms | 4.618 ms |
+| Gouraud visibility preparation | 3.554 ms | 4.038 ms |
+| Main submission | 8.777 ms | 10.017 ms |
+| └ Gouraud payload | 6.728 ms | 7.970 ms |
+| └ Gouraud index/draw phase | 1.847 ms | 1.995 ms |
+| CPU color/depth/stencil clear | 2.011 ms | 2.138 ms |
+| VDP2/UI composition | 0.731 ms | 0.765 ms |
+| Final `sceGxmEndScene`/`sceGxmFinish` wait | 1.813 ms | 1.927 ms |
+
+The outer render total still contains a per-sample median residual of 8.782 ms after subtracting build, lighting, Gouraud visibility, clears, main submission, composition, and the final GXM wait. The dominant unmeasured boundary in that interval is `sceGxmBeginScene()`, so the next checkpoint records it as `begin` in `[ScenePerf]`. The later pre-sized append and per-submission model-space-light changes were not yet validated by this capture and require a new hardware run.
+
 ## Runtime path
 
 ```text
