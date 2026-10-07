@@ -5222,8 +5222,7 @@ static void appendLiveTownModel(
         polygonBase + model.polygons.size());
     g_liveTownPolygonLights.resize(polygonBase + model.polygons.size());
 
-    for (std::size_t i = 0; i < model.vertices.size(); ++i) {
-        const auto& source = model.vertices[i];
+    const auto transformVertex = [&](const azel::DebugColorVertex& source) {
         azel::DebugColorVertex v = source;
         if (state.billboard) {
             v.x = m[3] + source.x*billboardX[0] + source.y*billboardY[0] +
@@ -5237,8 +5236,44 @@ static void appendLiveTownModel(
             v.y = source.x*m[4] + source.y*m[5] + source.z*m[6] + m[7];
             v.z = source.x*m[8] + source.y*m[9] + source.z*m[10] + m[11];
         }
-        g_liveTownCpuMesh.vertices[vertexBase + i] = v;
-        g_liveTownCpuMesh.lightingVertices[vertexBase + i] = v;
+        return v;
+    };
+
+    // LiveVdp1Model expands each Saturn quad as A,B,C / A,C,D. Transform
+    // only the four unique source corners, then duplicate A and C into the
+    // triangulated slots. This preserves the exact flattened layout consumed
+    // by every existing Neptune path while avoiding two redundant matrix
+    // transforms per quad. Keep a defensive generic fallback for any future
+    // adapter that does not use the canonical six-vertices-per-quad layout.
+    if (model.vertices.size() == model.polygons.size() * 6u) {
+        for (std::size_t p = 0; p < model.polygons.size(); ++p) {
+            const std::size_t srcBase = p * 6u;
+            const std::size_t dstBase = vertexBase + srcBase;
+            const auto a = transformVertex(model.vertices[srcBase + 0u]);
+            const auto b = transformVertex(model.vertices[srcBase + 1u]);
+            const auto c = transformVertex(model.vertices[srcBase + 2u]);
+            const auto d = transformVertex(model.vertices[srcBase + 5u]);
+
+            g_liveTownCpuMesh.vertices[dstBase + 0u] = a;
+            g_liveTownCpuMesh.vertices[dstBase + 1u] = b;
+            g_liveTownCpuMesh.vertices[dstBase + 2u] = c;
+            g_liveTownCpuMesh.vertices[dstBase + 3u] = a;
+            g_liveTownCpuMesh.vertices[dstBase + 4u] = c;
+            g_liveTownCpuMesh.vertices[dstBase + 5u] = d;
+
+            g_liveTownCpuMesh.lightingVertices[dstBase + 0u] = a;
+            g_liveTownCpuMesh.lightingVertices[dstBase + 1u] = b;
+            g_liveTownCpuMesh.lightingVertices[dstBase + 2u] = c;
+            g_liveTownCpuMesh.lightingVertices[dstBase + 3u] = a;
+            g_liveTownCpuMesh.lightingVertices[dstBase + 4u] = c;
+            g_liveTownCpuMesh.lightingVertices[dstBase + 5u] = d;
+        }
+    } else {
+        for (std::size_t i = 0; i < model.vertices.size(); ++i) {
+            const auto v = transformVertex(model.vertices[i]);
+            g_liveTownCpuMesh.vertices[vertexBase + i] = v;
+            g_liveTownCpuMesh.lightingVertices[vertexBase + i] = v;
+        }
     }
 
     LivePolygonLightState polygonLight{};
