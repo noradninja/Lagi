@@ -82,6 +82,12 @@ std::uint64_t published_frame_number();
 // the published Azel frame. Used only for field-streaming diagnostics.
 std::uint32_t published_model_cache_misses();
 
+// Diagnostic counts for explicitly supplied non-dynamic submission contexts.
+// "Set" proves the generated draw hook ran; "consumed" proves the following
+// native model submission received that context at the bridge boundary.
+std::uint32_t published_explicit_static_contexts_set();
+std::uint32_t published_explicit_static_contexts_consumed();
+
 // Copy Azel's current lighting payload into an explicitly constructed
 // submission state without also inheriting pCurrentMatrix (which may already
 // contain the camera/view transform).

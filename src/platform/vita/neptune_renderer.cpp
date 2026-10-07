@@ -5557,6 +5557,10 @@ static bool buildLiveTownFrame()
             g_staticRoomCpuMesh.decodedTextureData.size());
     const unsigned int modelCacheMisses =
         azel_bridge::published_model_cache_misses();
+    const unsigned int explicitStaticContextsSet =
+        azel_bridge::published_explicit_static_contexts_set();
+    const unsigned int explicitStaticContextsConsumed =
+        azel_bridge::published_explicit_static_contexts_consumed();
 
     g_profileBuildScanUs = 0u;
     g_profileBuildCacheUs = 0u;
@@ -5811,7 +5815,7 @@ static bool buildLiveTownFrame()
             logging::writef(
                 "[FieldStream] frame=%llu submissions=%u polys=%u verts=%u "
                 "modelMiss=%u matMiss=%u textures=%u->%u prepare=%u "
-                "gpuTex=%u dirty=%u staticSubs=%u billboards=%u "
+                "gpuTex=%u dirty=%u staticCtx=%u/%u staticSubs=%u billboards=%u "
                 "staticRebuilt=%u append=%uus material=%uus "
                 "upload=%uus build=%uus reuseTex=%u reuseGeom=%u release=%uus "
                 "baseAlloc=%uus wire=%uus texUpload=%uus texAlloc=%uus "
@@ -5830,6 +5834,8 @@ static bool buildLiveTownFrame()
                 changed ? 1u : 0u,
                 static_cast<unsigned int>(g_vdp1GpuTextures.size()),
                 g_vdp1TextureDataDirty ? 1u : 0u,
+                explicitStaticContextsSet,
+                explicitStaticContextsConsumed,
                 g_liveTownStaticSubmissionCount,
                 g_liveTownBillboardSubmissionCount,
                 g_liveTownStaticRebuilt ? 1u : 0u,

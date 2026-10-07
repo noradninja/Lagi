@@ -70,14 +70,17 @@ Do this before further dynamic-flatten micro-optimization or persistent-resource
 2. Inspect `${CMAKE_BINARY_DIR}/azel_upstream/field_field_a3_o_fld_a3.cpp` and confirm the guarded static context remains immediately before `addObjectToDrawList(pModel)`.
 3. Build the package so the newer generated source recompiles; do not reuse a package built before the configure step.
 4. Hardware-test the existing `[FieldStream]` acceptance gate below.
-5. If `staticSubs` is still zero, add a narrowly scoped bridge-side context-hit counter and verify `gridCellDraw_normal()` dispatch/context consumption before changing renderer architecture. Do not edit `extern/Azel` directly.
+5. `[FieldStream] staticCtx=set/consumed` now distinguishes generated-hook execution from bridge consumption. If `staticSubs` is still zero, use those counts to localize the failure before changing renderer architecture. Do not edit `extern/Azel` directly.
 
 The next hardware acceptance gate is:
 
 - `[FieldStream] staticSubs > 0` during FLD_A3;
+- `staticCtx` reports matching, nonzero set/consumed counts;
 - billboards remain nonzero and steady frames keep `staticRebuilt=0`;
 - camera, field orientation/winding, dragon/world relationship, corrected lighting, and 48x48 point-filtered radar remain visually unchanged;
 - dense-frame `obj` time falls materially below the current roughly 9-10 ms range.
+
+Interpret `staticCtx=set/consumed` as follows: `0/0` means the generated hook did not run; nonzero set with zero or lower consumed means the pending context was not paired with the intended model submission; matching nonzero counts with `staticSubs=0` moves the fault downstream into adaptation/classification. Matching nonzero counts with `staticSubs>0` proves the full bridge path activated.
 
 Once this classification works, the remaining architectural milestone is still a generic Neptune resident model/resource cache shared by fields and towns, including Zoah: first encounter adapts/decodes/uploads a stable Azel model or cell resource once, and later Azel visibility/LOD decisions select resident resources without rebuilding a monolithic visible-world mesh. Do not create an FLD_A3-only renderer architecture.
 

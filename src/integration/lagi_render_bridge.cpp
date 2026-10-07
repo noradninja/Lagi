@@ -41,6 +41,10 @@ namespace lagi::azel_bridge {
 static std::uint32_t g_submissionCount = 0;
 static std::uint32_t g_modelCacheMisses = 0;
 static std::uint32_t g_publishedModelCacheMisses = 0;
+static std::uint32_t g_explicitStaticContextsSet = 0;
+static std::uint32_t g_explicitStaticContextsConsumed = 0;
+static std::uint32_t g_publishedExplicitStaticContextsSet = 0;
+static std::uint32_t g_publishedExplicitStaticContextsConsumed = 0;
 static sProcessed3dModel* g_lastModel = nullptr;
 static const LiveVdp1Model* g_lastAdaptedModel = nullptr;
 static SubmissionState g_lastState{};
@@ -115,6 +119,8 @@ void begin_frame(bool forceDynamicSubmissions)
     g_forceDynamicSubmissions = forceDynamicSubmissions;
     g_submissionCount = 0;
     g_modelCacheMisses = 0;
+    g_explicitStaticContextsSet = 0;
+    g_explicitStaticContextsConsumed = 0;
     g_lastModel = nullptr;
     g_lastAdaptedModel = nullptr;
     g_lastState = {};
@@ -166,6 +172,9 @@ void publish_frame()
     g_publishedVdp1UiCommands = g_vdp1UiCommands;
     g_publishedAdaptedModels = g_adaptedModels;
     g_publishedModelCacheMisses = g_modelCacheMisses;
+    g_publishedExplicitStaticContextsSet = g_explicitStaticContextsSet;
+    g_publishedExplicitStaticContextsConsumed =
+        g_explicitStaticContextsConsumed;
     ++g_publishedFrameNumber;
 }
 
@@ -199,6 +208,16 @@ std::uint64_t published_frame_number()
 std::uint32_t published_model_cache_misses()
 {
     return g_publishedModelCacheMisses;
+}
+
+std::uint32_t published_explicit_static_contexts_set()
+{
+    return g_publishedExplicitStaticContextsSet;
+}
+
+std::uint32_t published_explicit_static_contexts_consumed()
+{
+    return g_publishedExplicitStaticContextsConsumed;
 }
 
 void capture_current_light(SubmissionState& state)
@@ -286,6 +305,8 @@ void set_town_submission_context(
     g_pendingTownSubmission.modelTableOffset = modelTableOffset;
     g_pendingTownSubmission.state = state;
     g_hasPendingTownSubmission = true;
+    if (!state.dynamic)
+        ++g_explicitStaticContextsSet;
 }
 
 static void capture_runtime_state(bool billboard)
@@ -334,6 +355,10 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
 
     ++g_submissionCount;
     g_lastModel = model;
+    if (g_hasPendingTownSubmission &&
+        !g_pendingTownSubmission.state.dynamic &&
+        !billboard)
+        ++g_explicitStaticContextsConsumed;
     if (g_hasPendingTownSubmission) {
         g_lastState = g_pendingTownSubmission.state;
         g_lastState.billboard = billboard;
