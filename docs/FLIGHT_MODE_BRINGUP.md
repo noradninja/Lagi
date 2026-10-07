@@ -175,6 +175,8 @@ The outer render total contains a per-sample median residual of 8.782 ms after s
 
 The same capture contained 2,066 `[PresentationTrace][AzelVDP1]` records in 3,864 total log lines. Its animated command hash changed nearly every frame, defeating the intended 120-frame heartbeat. Hash changes no longer trigger a write by themselves: the trace now records mode/status transitions plus a periodic 120-frame structural sample. Azel's VDP1 command publication is unchanged. The later pre-sized append and per-submission model-space-light changes were also not yet validated by this capture and require a new hardware run.
 
+The linear texture-batch construction is hardware-validated by this capture. Across 275 logged prepare events, prepare/build median fell from the earlier ~76.1 ms to 33.383 ms. `texBuild` fell from ~46.5 ms to 4.936 ms median, while total prepare upload was 19.857 ms median. The dominant recurring prepare substage is now subdivision-buffer construction at 14.204 ms median (16.544 ms p90). Geometry-set changes still occurred frequently, so this improvement reduces but does not eliminate traversal hitches; persistent per-model/per-cell geometry remains required.
+
 ## Runtime path
 
 ```text
