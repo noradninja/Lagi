@@ -5710,17 +5710,20 @@ static bool buildLiveTownFrame()
         sceKernelGetProcessTimeWide() - tUpload);
 
     if (g_sceneGameMode == 3u) {
+        static unsigned int fieldStreamHeartbeat = 0u;
         const unsigned int decodedTexturesAfter =
             static_cast<unsigned int>(
                 g_staticRoomCpuMesh.decodedTextureData.size());
         const unsigned int buildElapsedUs =
             static_cast<unsigned int>(
                 sceKernelGetProcessTimeWide() - buildStartUs);
+        const bool periodicSample =
+            (fieldStreamHeartbeat++ % 120u) == 0u;
         if (changed ||
             modelCacheMisses != 0u ||
             g_profileObjectMaterialCacheMisses != 0u ||
             decodedTexturesAfter != decodedTexturesBefore ||
-            buildElapsedUs >= 10000u) {
+            periodicSample) {
             logging::writef(
                 "[FieldStream] frame=%llu submissions=%u polys=%u verts=%u "
                 "modelMiss=%u matMiss=%u textures=%u->%u prepare=%u "
