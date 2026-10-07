@@ -85,6 +85,10 @@ Azel module manager
     |
 TWN_RUIN.PRG + native town task graph
     |
+playable Ruins sequence -> elevator choice
+    |
+EVT004_1.CPK / EVT004_2.CPK
+    |
 generic Lagi scene/presentation bridge
     |
 Neptune
