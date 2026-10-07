@@ -8280,12 +8280,15 @@ bool submit_vdp1_model(
                     ? g_textureFragmentProgram
                     : g_probeFragmentProgram))));
 
-    // drawState records whether the WVP includes the Saturn->GXM X mirror.
-    // A mirror reverses triangle winding, so compensate exactly once here.
+    // Town/room paths retain their established winding compensation.
+    // Hardware validation shows native field mode reaches Neptune with the
+    // opposite effective winding, so invert only mode 3 here.
+    const bool reverseCullWinding =
+        drawState.reverseCullWinding ^ (g_sceneGameMode == 3u);
     const SceGxmCullMode cullMode =
         wireframe
             ? SCE_GXM_CULL_NONE
-            : (drawState.reverseCullWinding
+            : (reverseCullWinding
                 ? SCE_GXM_CULL_CCW
                 : SCE_GXM_CULL_CW);
     sceGxmSetCullMode(g_probeContext, cullMode);
@@ -10333,9 +10336,10 @@ static void renderBasicWingViewer()
     Vdp1DrawState drawState{};
     std::memcpy(drawState.wvp, wvp.m, sizeof(drawState.wvp));
     drawState.mode = renderMode;
-    // The Saturn->GXM clip-space X mirror above reverses triangle winding for
-    // every 3D view, so compensate exactly once at the rasterizer boundary.
-    drawState.reverseCullWinding = true;
+    // Town/room presentation uses the historical winding compensation for its
+    // mirrored projection. Native field submissions arrive with the opposite
+    // effective winding and are corrected separately at the rasterizer.
+    drawState.reverseCullWinding = roomMode;
 
     const Vdp1ModelSource model =
         roomAuthenticCameraMode
