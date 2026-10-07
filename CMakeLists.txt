@@ -1250,13 +1250,41 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  field/fieldVisibilityGrid.cpp
  field/fieldRadar.cpp
  field/fieldCutsceneTask.cpp
+ field/fieldCutsceneTask2.cpp
+ field/fieldCutsceneTask3.cpp
+ field/exitField.cpp
+ field/fieldItemBoxDefinition.cpp
+ field/fieldItemBox.cpp
+ field/battleStart.cpp
  field/fieldDragonMovement.cpp
  field/fieldDragonInput.cpp
  field/fieldDialog.cpp
  field/fieldScriptWaitTask.cpp
  field/dragonLightWingEvolution.cpp
+ field/field_a3/a3_0_task4.cpp
+ field/field_a3/a3_2_crashedImperialShip.cpp
+ field/field_a3/a3_background_layer.cpp
+ field/field_a3/a3_birds.cpp
+ field/field_a3/a3_crane_lower.cpp
+ field/field_a3/a3_crane_upper.cpp
+ field/field_a3/a3_dynamic_mine_cart.cpp
+ field/field_a3/a3_fan.cpp
+ field/field_a3/a3_static_mine_cart.cpp
+ field/field_a3/a3_waterfall.cpp
  field/field_a3/o_fld_a3.cpp
+ field/field_a3/o_fld_a3_0.cpp
  field/field_a3/o_fld_a3_1.cpp
+ field/field_a3/o_fld_a3_2.cpp
+ field/field_a3/o_fld_a3_3.cpp
+ field/field_a3/o_fld_a3_4.cpp
+ field/field_a3/o_fld_a3_5.cpp
+ field/field_a3/o_fld_a3_6.cpp
+ field/field_a3/o_fld_a3_7.cpp
+ field/field_a3/o_fld_a3_8.cpp
+ field/field_a3/o_fld_a3_9.cpp
+ field/field_a3/o_fld_a3_A.cpp
+ field/field_a3/o_fld_a3_B.cpp
+ field/field_a3/o_fld_a3_C.cpp
  LCS.cpp
  field/field_d5/o_fld_d5.cpp
  field/field_d5/d5_nameEntry.cpp
