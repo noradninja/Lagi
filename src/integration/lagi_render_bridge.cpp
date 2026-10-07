@@ -39,6 +39,8 @@ extern LagiLightSetup lightSetup __attribute__((weak));
 namespace lagi::azel_bridge {
 
 static std::uint32_t g_submissionCount = 0;
+static std::uint32_t g_modelCacheMisses = 0;
+static std::uint32_t g_publishedModelCacheMisses = 0;
 static sProcessed3dModel* g_lastModel = nullptr;
 static const LiveVdp1Model* g_lastAdaptedModel = nullptr;
 static SubmissionState g_lastState{};
@@ -110,6 +112,7 @@ void begin_frame(bool forceDynamicSubmissions)
 {
     g_forceDynamicSubmissions = forceDynamicSubmissions;
     g_submissionCount = 0;
+    g_modelCacheMisses = 0;
     g_lastModel = nullptr;
     g_lastAdaptedModel = nullptr;
     g_lastState = {};
@@ -160,6 +163,7 @@ void publish_frame()
     g_publishedSubmissions = g_submissions;
     g_publishedVdp1UiCommands = g_vdp1UiCommands;
     g_publishedAdaptedModels = g_adaptedModels;
+    g_publishedModelCacheMisses = g_modelCacheMisses;
     ++g_publishedFrameNumber;
 }
 
@@ -188,6 +192,11 @@ const LiveVdp1Model* published_adapted_model(std::uint32_t index)
 std::uint64_t published_frame_number()
 {
     return g_publishedFrameNumber;
+}
+
+std::uint32_t published_model_cache_misses()
+{
+    return g_publishedModelCacheMisses;
 }
 
 void capture_current_light(SubmissionState& state)
@@ -285,6 +294,7 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
     std::int32_t adaptedIndex = -1;
     auto cached = g_modelCache.find(model);
     if (cached == g_modelCache.end()) {
+        ++g_modelCacheMisses;
         LiveVdp1Model adapted{};
         if (adapt_processed_model(model, adapted))
             cached = g_modelCache.emplace(model, std::move(adapted)).first;
