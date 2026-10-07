@@ -350,6 +350,35 @@ void runtime_frame()
 
     runTasks();
 
+    // Flight Phase 1: record only the transition into and activity around
+    // game status 0x50 / game mode 3. This is diagnostic only; field
+    // presentation remains disabled until the next milestone.
+    {
+        static int lastFlightStatus = -1;
+        static int lastFlightMode = -1;
+        static int lastFlightNext = -1;
+        const int status = gGameStatus.m4_gameStatus;
+        const int mode = gGameStatus.m0_gameMode;
+        const int next = gGameStatus.m8_nextGameStatus;
+        const bool flightRelevant =
+            status == 5 || status == 0x50 || next == 0x50 || mode == 3;
+        if (flightRelevant &&
+            (status != lastFlightStatus ||
+             mode != lastFlightMode ||
+             next != lastFlightNext)) {
+            lagi::platform::logging::writef(
+                "[LagiFlight] status=%02X mode=%d next=%02X prev=%02X tasks=%d\n",
+                static_cast<unsigned>(status),
+                mode,
+                static_cast<unsigned>(next),
+                static_cast<unsigned>(gGameStatus.m6_previousGameStatus),
+                numActiveTask);
+            lastFlightStatus = status;
+            lastFlightMode = mode;
+            lastFlightNext = next;
+        }
+    }
+
     // Capture the VDP1 commands Azel emitted this frame before the transient
     // command tail is rewound on the next host frame. Neptune publishes this
     // snapshot only after it owns the front-end render slot.
