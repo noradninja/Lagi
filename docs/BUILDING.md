@@ -187,6 +187,29 @@ Cinepak payload data remains point-sampled while it is decoded by the SGX recons
 
 The title framebuffer mode follows Azel's live VDP2 TVMD state. Neptune changes the GXM render target and the dimensions supplied to `sceDisplaySetFrameBuf()` when Azel enters or leaves the high-resolution title mode.
 
+## SCSP worker affinity profiling
+
+The SCSP/68K audio worker remains a single serialized emulation owner in this phase. Its CPU affinity can be changed without rebuilding by creating:
+
+```text
+ux0:data/lagi/audio_worker_cpu.txt
+```
+
+Accepted values are:
+
+| Value | Worker affinity |
+|---|---|
+| `0` | user CPU 0 |
+| `1` | user CPU 1 |
+| `2` | user CPU 2 |
+| `all` | any user CPU |
+
+With no file present, the existing CPU 2 affinity remains the default. The Vita reserves the fourth physical core for the system; VitaSDK exposes user affinity only for CPUs 0-2.
+
+Startup logs report the requested affinity as `[AzelAudioAffinity]`. Profiled `[AzelAudioPerf]` records also include `cpuStart`, `cpuEnd`, `cpuChanges`, and `affinity`. These fields are diagnostic only and do not change SCSP timing, queue sizing, command delivery, or DSP semantics.
+
+The purpose of this pass is to establish whether moving or allowing migration of the complete SCSP worker produces a measurable hardware benefit before separating the ARM DSP into its own worker.
+
 ## Controls
 
 The current public 0.3.0-alpha build uses:
