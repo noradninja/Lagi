@@ -334,7 +334,7 @@ void runtime_frame()
     }
 
     begin_azel_vdp1_frame();
-    lagi::azel_bridge::begin_frame();
+    lagi::azel_bridge::begin_frame(gGameStatus.m0_gameMode == 3);
 
     // Native 3D scene capability check. Town (1) and field (3) both
     // remain Azel-owned; Lagi only opens their generic presentation boundary.
