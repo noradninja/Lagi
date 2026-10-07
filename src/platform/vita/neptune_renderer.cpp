@@ -4098,32 +4098,44 @@ static bool buildVdp1TexturedBuffers(
         }
     }
 
-    unsigned int outIndex = 0;
+    // Build identical per-texture batches in O(polygons + textures). The old
+    // implementation rescanned every polygon once for every resident texture,
+    // which made a field visibility change roughly 900 x 1,000 comparisons
+    // before writing the same indices. Counting and prefixing retain original
+    // polygon order within each texture batch without the quadratic scan.
     g_vdp1TextureBatches.assign(
         g_vdp1GpuTextures.size(), TextureBatch{});
+    for (unsigned int p = 0; p < model.polygonCount; ++p) {
+        const std::uint16_t textureIndex = model.polygonTextureIndices[p];
+        if (textureIndex >= g_vdp1TextureBatches.size())
+            return false;
+        g_vdp1TextureBatches[textureIndex].indexCount += 6u;
+    }
 
-    for (unsigned int t = 0;
-         t < g_vdp1GpuTextures.size(); ++t) {
+    unsigned int outIndex = 0u;
+    std::vector<unsigned int> writeOffsets(g_vdp1TextureBatches.size());
+    for (unsigned int t = 0; t < g_vdp1TextureBatches.size(); ++t) {
         TextureBatch& batch = g_vdp1TextureBatches[t];
         batch.firstIndex = outIndex;
+        writeOffsets[t] = outIndex;
+        outIndex += batch.indexCount;
+    }
 
-        for (unsigned int p = 0;
-             p < model.polygonCount; ++p) {
-            if (model.polygonTextureIndices[p] != t)
-                continue;
+    if (outIndex != vertexCount)
+        return false;
 
-            for (unsigned int k = 0; k < 6; ++k)
-                g_vdp1TextureIndices[outIndex++] =
-                    static_cast<std::uint16_t>(p * 6u + k);
-        }
-
-        batch.indexCount = outIndex - batch.firstIndex;
+    for (unsigned int p = 0; p < model.polygonCount; ++p) {
+        const std::uint16_t textureIndex = model.polygonTextureIndices[p];
+        unsigned int& write = writeOffsets[textureIndex];
+        for (unsigned int k = 0; k < 6; ++k)
+            g_vdp1TextureIndices[write++] =
+                static_cast<std::uint16_t>(p * 6u + k);
     }
 
 
     g_profilePrepareTexturedBuildUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - buildStartUs);
-    return outIndex == vertexCount;
+    return true;
 }
 
 static void releaseResidentVdp1Model(bool preserveTextures = false)

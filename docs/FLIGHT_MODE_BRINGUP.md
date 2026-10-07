@@ -128,6 +128,24 @@ The first capacity-reuse optimization now keeps the flattened field geometry buf
 
 **Build validation (2026-10-07): PASS at `ee67463c0c390abd916a9bad155d5e18a11af2ef`.** A clean Vita CMake/Ninja build compiled all 327 steps, linked `lagi.velf`/`lagi.self`, and produced `Lagi.vpk`. No warning originated in the capacity-reuse code. This proves compile/link/package integration only; rendering correctness and performance remain pending Vita/Vita TV validation.
 
+**Full-mode hardware result (2026-10-07): capacity reuse works, overall target not met.** Across 2,438 `[FieldStream]` frames, 269 rebuilt geometry and 2,169 did not. Of the prepare events, 262 reused mapped geometry and only seven exceeded the existing capacity. For `reuseGeom=1`, release and all geometry allocation buckets were effectively zero. This confirms the mapped-capacity change removed the intended allocation churn.
+
+The same run localized the next bottleneck:
+
+| Full-mode field workload | Median | P90 | Maximum |
+|---|---:|---:|---:|
+| Render (`[ScenePerf]`, field samples) | 54.882 ms | 68.067 ms | 125.924 ms |
+| Build, all `[FieldStream]` frames | 15.396 ms | 60.536 ms | 606.704 ms |
+| Build, no prepare | 14.993 ms | 18.125 ms | 22.067 ms |
+| Build, prepare | 76.055 ms | 89.698 ms | 606.704 ms |
+| Upload/prepare interval, `reuseGeom=1` | 61.683 ms | 71.964 ms | 444.443 ms |
+| Base textured UV + texture-batch rebuild | 46.522 ms | 54.085 ms | 60.441 ms |
+| Filled subdivision rebuild | 14.393 ms | 16.496 ms | 19.006 ms |
+
+Ten prepare events also uploaded newly decoded textures; the largest first-growth event decoded 227 textures and spent about 305 ms in texture upload. Those first-use uploads require persistent model/material residency in the final design, but they are distinct from the recurring prepare cost.
+
+The recurring `texBuild` cost came primarily from an avoidable quadratic loop: for every resident texture, `buildVdp1TexturedBuffers()` rescanned every polygon to collect matching indices. With roughly 900 textures and 1,000 polygons in the hardware run, visibility changes performed around 900,000 comparisons before writing the batches. The next checkpoint replaces that loop with three linear passes: count indices per texture, prefix batch offsets, then emit polygons in original order. Draw grouping and within-texture polygon order remain identical. Hardware validation of that change is pending.
+
 ## Runtime path
 
 ```text
