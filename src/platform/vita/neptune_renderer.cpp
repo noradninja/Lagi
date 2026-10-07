@@ -22,6 +22,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include <cctype>
 #include <cmath>
 #include <unordered_set>
+#include <atomic>
 #include <utility>
 #include <vector>
 
@@ -372,6 +373,14 @@ struct LiveTownStaticIdentityHash {
 static std::unordered_set<
     LiveTownStaticIdentity,
     LiveTownStaticIdentityHash> g_liveTownKnownStaticIdentities;
+
+// The identity set is owned exclusively by LagiRender. CRAM/VDP1 invalidation
+// can arrive from the game/Azel side while the renderer is hashing/reserving,
+// so producers only bump this epoch; buildLiveTownFrame() performs the actual
+// container clear on the render thread at the next safe frame boundary.
+static std::atomic<std::uint32_t> g_liveTownStaticIdentityResetEpoch{0u};
+static std::uint32_t g_liveTownStaticIdentityAppliedEpoch = 0u;
+
 static unsigned int g_liveTownStaticIdentityHits = 0u;
 static unsigned int g_liveTownStaticIdentityMisses = 0u;
 
@@ -1458,7 +1467,8 @@ void invalidate_cram_range(unsigned int, unsigned int)
     // resources. Force the live-town material/model caches to be rebuilt on
     // the next published frame when Azel writes CRAM.
     g_liveTownMaterialCache.clear();
-    g_liveTownKnownStaticIdentities.clear();
+    g_liveTownStaticIdentityResetEpoch.fetch_add(
+        1u, std::memory_order_relaxed);
     g_liveTownSignature = 0;
     g_liveTownStaticSignature = 0;
     g_liveTownStaticMeshRanges.clear();
@@ -1472,7 +1482,8 @@ void invalidate_vdp1_texture_range(unsigned int, unsigned int)
     // owns the Vita texture cache, so invalidate the resident live-town model
     // and material bindings and rebuild them from the updated VDP1 data.
     g_liveTownMaterialCache.clear();
-    g_liveTownKnownStaticIdentities.clear();
+    g_liveTownStaticIdentityResetEpoch.fetch_add(
+        1u, std::memory_order_relaxed);
     g_liveTownSignature = 0;
     g_liveTownStaticSignature = 0;
     g_liveTownStaticMeshRanges.clear();
@@ -5672,6 +5683,14 @@ static bool buildLiveTownFrame()
     g_profileObjectMaterialCacheMisses = 0u;
     g_liveTownStaticIdentityHits = 0u;
     g_liveTownStaticIdentityMisses = 0u;
+
+    const std::uint32_t identityResetEpoch =
+        g_liveTownStaticIdentityResetEpoch.load(std::memory_order_relaxed);
+    if (identityResetEpoch != g_liveTownStaticIdentityAppliedEpoch) {
+        g_liveTownKnownStaticIdentities.clear();
+        g_liveTownStaticIdentityAppliedEpoch = identityResetEpoch;
+    }
+
     if (g_liveTownKnownStaticIdentities.bucket_count() < 512u)
         g_liveTownKnownStaticIdentities.reserve(512u);
     const std::uint64_t tScan = sceKernelGetProcessTimeWide();
