@@ -184,7 +184,7 @@ A normal development launch:
 Current display framebuffer configuration:
 
 ```text
-3D gameplay:            480x272, native 2x MSAA
+3D gameplay:            480x272, no MSAA
 high-resolution title:  720x408, no MSAA
 presentation cadence:   30 Hz
 ```
