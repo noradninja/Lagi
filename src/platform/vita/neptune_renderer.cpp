@@ -3734,6 +3734,15 @@ static void drawPublishedVdp1Ui()
             --uiTraceBudget;
         }
 
+        // FLD_A3's 48x48 radar sphere deliberately uses alternating
+        // transparent texels (Saturn mesh-style translucency). Preserve that
+        // pattern at one source texel per output pixel with point sampling.
+        const bool fieldRadarMap =
+            g_sceneGameMode == 3u &&
+            commandType == 0x0000u &&
+            command.cmdPmod == 0x0088u &&
+            command.cmdSize == 0x0630u;
+
         // Match the horizontal presentation transform used by
         // buildAzelProjection(). Azel emits centered 352x224 VDP1
         // coordinates, while Neptune presents that Saturn-authored image in
@@ -3765,17 +3774,26 @@ static void drawPublishedVdp1Ui()
             if (!spriteWidth || !spriteHeight)
                 continue;
 
-            x1 =
-                (static_cast<float>(
-                    command.xa +
-                    static_cast<std::int16_t>(spriteWidth)) /
-                 176.0f) *
-                saturnAspectCorrection;
-            y1 =
-                -static_cast<float>(
-                    command.ya +
-                    static_cast<std::int16_t>(spriteHeight)) /
-                112.0f;
+            if (fieldRadarMap) {
+                x1 = x0 +
+                    (2.0f * static_cast<float>(spriteWidth)) /
+                    static_cast<float>(viewerRenderWidth());
+                y1 = y0 -
+                    (2.0f * static_cast<float>(spriteHeight)) /
+                    static_cast<float>(viewerRenderHeight());
+            } else {
+                x1 =
+                    (static_cast<float>(
+                        command.xa +
+                        static_cast<std::int16_t>(spriteWidth)) /
+                     176.0f) *
+                    saturnAspectCorrection;
+                y1 =
+                    -static_cast<float>(
+                        command.ya +
+                        static_cast<std::int16_t>(spriteHeight)) /
+                    112.0f;
+            }
         }
 
         const float u0 = 0.5f / static_cast<float>(texture->width);
@@ -3854,6 +3872,12 @@ static void drawPublishedVdp1Ui()
         // vertex slice after issuing its draw within the same scene; the next
         // VDP1 sprite gets a separate 4-vertex region.
         sceGxmSetVertexStream(g_probeContext, 0, spriteVertices);
+        if (fieldRadarMap) {
+            sceGxmTextureSetMinFilter(
+                &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
+            sceGxmTextureSetMagFilter(
+                &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        }
         sceGxmSetFragmentTexture(
             g_probeContext, 0, &texture->texture);
         sceGxmDraw(
@@ -3862,6 +3886,12 @@ static void drawPublishedVdp1Ui()
             SCE_GXM_INDEX_FORMAT_U16,
             g_vdp1UiIndices,
             6);
+        if (fieldRadarMap) {
+            sceGxmTextureSetMinFilter(
+                &texture->texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+            sceGxmTextureSetMagFilter(
+                &texture->texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+        }
     }
 
 }
@@ -5309,6 +5339,13 @@ static void refreshLiveTownStaticLighting()
 
 static bool buildLiveTownFrame()
 {
+    const std::uint64_t buildStartUs = sceKernelGetProcessTimeWide();
+    const unsigned int decodedTexturesBefore =
+        static_cast<unsigned int>(
+            g_staticRoomCpuMesh.decodedTextureData.size());
+    const unsigned int modelCacheMisses =
+        azel_bridge::published_model_cache_misses();
+
     g_profileBuildScanUs = 0u;
     g_profileBuildCacheUs = 0u;
     g_profileBuildEdgeUs = 0u;
@@ -5519,6 +5556,41 @@ static bool buildLiveTownFrame()
     }
     g_profileBuildUploadUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tUpload);
+
+    if (g_sceneGameMode == 3u) {
+        const unsigned int decodedTexturesAfter =
+            static_cast<unsigned int>(
+                g_staticRoomCpuMesh.decodedTextureData.size());
+        const unsigned int buildElapsedUs =
+            static_cast<unsigned int>(
+                sceKernelGetProcessTimeWide() - buildStartUs);
+        if (changed ||
+            modelCacheMisses != 0u ||
+            g_profileObjectMaterialCacheMisses != 0u ||
+            decodedTexturesAfter != decodedTexturesBefore ||
+            buildElapsedUs >= 10000u) {
+            logging::writef(
+                "[FieldStream] frame=%llu submissions=%u polys=%u verts=%u "
+                "modelMiss=%u matMiss=%u textures=%u->%u prepare=%u "
+                "append=%uus material=%uus upload=%uus build=%uus\n",
+                static_cast<unsigned long long>(
+                    azel_bridge::published_frame_number()),
+                g_liveTownSubmissionCount,
+                static_cast<unsigned int>(
+                    g_liveTownCpuMesh.polygonRecords.size()),
+                static_cast<unsigned int>(
+                    g_liveTownCpuMesh.vertices.size()),
+                modelCacheMisses,
+                g_profileObjectMaterialCacheMisses,
+                decodedTexturesBefore,
+                decodedTexturesAfter,
+                changed ? 1u : 0u,
+                g_profileObjectAppendUs,
+                g_profileObjectMaterialResolveUs,
+                g_profileBuildUploadUs,
+                buildElapsedUs);
+        }
+    }
 
     static bool loggedFirstLiveFrame = false;
     if (!loggedFirstLiveFrame) {
