@@ -979,10 +979,11 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "    NULL,"
    source_text "${source_text}")
 
-  # FLD_A3 belongs to the next milestone (first flight), not boot-to-Ruins.
+  # First-flight milestone: keep Azel's native FLD_A3 dispatcher entry.
+  # Phase 1 only restores reachability; rendering remains unchanged.
   string(REPLACE
-   "        if (!strcmp(pFieldDefinition->m_prg, \"FLD_A3.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_A3;\n        }\n        else if"
-   "        if"
+   "            gFieldOverlayFunction = overlayStart_FLD_A3;"
+   "            gFieldOverlayFunction = overlayStart_FLD_A3;\n            PDS_Log(\"[LagiFlight] selected FLD_A3 field=%d sub=%d entry=%d prevSub=%d\\n\", fieldTaskPtr->m2C_currentFieldIndex, fieldTaskPtr->m2E_currentSubFieldIndex, fieldTaskPtr->m30_fieldEntryPoint, fieldTaskPtr->m32_previousSubField);"
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "collision.cpp")
@@ -1035,6 +1036,37 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  # Flight Phase 1 diagnostics: prove Azel reaches and initializes FLD_A3
+  # before any field-specific Neptune presentation is enabled.
+  string(REPLACE
+   "bool initField(p_workArea workArea, const s_MCB_CGB* fieldFileList, u32 arg)\n{\n    reset3dEngine();"
+   "bool initField(p_workArea workArea, const s_MCB_CGB* fieldFileList, u32 arg)\n{\n    PDS_Log(\"[LagiFlight] initField begin field=%d sub=%d arg=%u\\n\", getFieldTaskPtr()->m2C_currentFieldIndex, getFieldTaskPtr()->m2E_currentSubFieldIndex, (unsigned)arg);\n    reset3dEngine();"
+   source_text "${source_text}")
+  string(REPLACE
+   "    loadCommonFieldResources();\n\n    setupFileList(fieldFileList);"
+   "    loadCommonFieldResources();\n    PDS_Log(\"[LagiFlight] initField common-resources ready\\n\");\n\n    setupFileList(fieldFileList);\n    PDS_Log(\"[LagiFlight] initField file-list ready\\n\");"
+   source_text "${source_text}")
+  string(REPLACE
+   "    loadFileFromFileList(0);\n    createFieldScriptTask(workArea);\n    createFieldOverlaySubTask(workArea);\n    initFieldDragon(workArea, arg);\n    createFieldOverlaySubTask2(workArea);\n    createFieldCameraTask(workArea);\n    createRandomBattleTask(workArea);\n    resetProjectVector();"
+   "    loadFileFromFileList(0);\n    PDS_Log(\"[LagiFlight] initField file0 loaded\\n\");\n    createFieldScriptTask(workArea);\n    PDS_Log(\"[LagiFlight] initField script-task created\\n\");\n    createFieldOverlaySubTask(workArea);\n    PDS_Log(\"[LagiFlight] initField overlay-task created\\n\");\n    initFieldDragon(workArea, arg);\n    PDS_Log(\"[LagiFlight] initField dragon-task created\\n\");\n    createFieldOverlaySubTask2(workArea);\n    PDS_Log(\"[LagiFlight] initField overlay-task2 created\\n\");\n    createFieldCameraTask(workArea);\n    PDS_Log(\"[LagiFlight] initField camera-task created\\n\");\n    createRandomBattleTask(workArea);\n    PDS_Log(\"[LagiFlight] initField encounter-task created\\n\");\n    resetProjectVector();"
+   source_text "${source_text}")
+  string(REPLACE
+   "    pauseEngine[2] = 1;\n\n    return true;"
+   "    pauseEngine[2] = 1;\n    PDS_Log(\"[LagiFlight] initField complete\\n\");\n\n    return true;"
+   source_text "${source_text}")
+  string(REPLACE
+   "p_workArea overlayStart_FLD_A3(p_workArea workArea, u32 arg)\n{\n    // Custom loader thing"
+   "p_workArea overlayStart_FLD_A3(p_workArea workArea, u32 arg)\n{\n    PDS_Log(\"[LagiFlight] overlayStart_FLD_A3 enter field=%d sub=%d entry=%d prevSub=%d arg=%u\\n\", getFieldTaskPtr()->m2C_currentFieldIndex, getFieldTaskPtr()->m2E_currentSubFieldIndex, getFieldTaskPtr()->m30_fieldEntryPoint, getFieldTaskPtr()->m32_previousSubField, (unsigned)arg);\n    // Custom loader thing"
+   source_text "${source_text}")
+  string(REPLACE
+   "    if (!initField(workArea, fieldFileList, arg))\n    {\n        return NULL;\n    }"
+   "    if (!initField(workArea, fieldFileList, arg))\n    {\n        PDS_Log(\"[LagiFlight] overlayStart_FLD_A3 initField FAILED\\n\");\n        return NULL;\n    }\n    PDS_Log(\"[LagiFlight] overlayStart_FLD_A3 initField ok\\n\");"
+   source_text "${source_text}")
+  string(REPLACE
+   "    //0605404C\n    loadFileFromFileList(1);"
+   "    //0605404C\n    loadFileFromFileList(1);\n    PDS_Log(\"[LagiFlight] overlayStart_FLD_A3 secondary field file loaded\\n\");"
+   source_text "${source_text}")
+
   # Azel/Saturn work areas begin cleared. Make the field-script task's
   # no-active-script invariant explicit on Vita so New Game cannot enter the
   # interpreter with stale/poisoned state before a script is queued.
