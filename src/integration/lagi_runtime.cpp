@@ -336,10 +336,11 @@ void runtime_frame()
     begin_azel_vdp1_frame();
     lagi::azel_bridge::begin_frame();
 
-    // Mode 1 is currently the first native 3D scene class Neptune can
-    // present. This is a capability check, not Lagi ownership of "town".
+    // Native 3D scene capability check. Town (1) and field (3) both
+    // remain Azel-owned; Lagi only opens their generic presentation boundary.
     const bool nativeSceneFrame =
-        gGameStatus.m0_gameMode == 1;
+        gGameStatus.m0_gameMode == 1 ||
+        gGameStatus.m0_gameMode == 3;
     if (traceStartup)
         lagi::platform::logging::writef(
             "[AzelBoot] frame=%u tasks=%d currentInitial=%p pendingInitial=%p\n",
@@ -1031,11 +1032,12 @@ void runtime_frame()
         // fade. Re-submit the retained final frame only while the movie-mode
         // state machine still owns presentation.
         lagi::platform::renderer::movie_republish_frame();
-    } else if (gGameStatus.m0_gameMode == 1) {
-        // The frame that *enters* native scene mode began as a movie/module-manager
+    } else if (gGameStatus.m0_gameMode == 1 ||
+               gGameStatus.m0_gameMode == 3) {
+        // The frame that *enters* a native scene began as a movie/module-manager
         // frame and therefore did not acquire the scene producer slot. Release
         // the retained movie immediately, but publish only on a frame that
-        // began in native scene mode and acquired that slot before runTasks().
+        // began in a supported native scene mode.
         lagi::platform::renderer::movie_clear_frame();
         if (nativeSceneFrame) {
             // All scene adapters write staging state. Acquire the render slot
@@ -1048,7 +1050,8 @@ void runtime_frame()
             static unsigned int sceneHeartbeat = 0;
             if ((sceneHeartbeat++ % 60u) == 0u) {
                 lagi::platform::logging::writef(
-                    "[AzelScene] frame heartbeat tasks=%d submissions=%u\n",
+                    "[AzelScene] mode=%d heartbeat tasks=%d submissions=%u\n",
+                    static_cast<int>(gGameStatus.m0_gameMode),
                     numActiveTask,
                     static_cast<unsigned int>(
                         lagi::azel_bridge::published_submissions().size()));
