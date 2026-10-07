@@ -404,6 +404,7 @@ struct GpuMode1Texture {
 static std::vector<TextureBatch> g_vdp1TextureBatches;
 static std::vector<GpuMode1Texture> g_vdp1GpuTextures;
 static bool g_vdp1TexturedReady = false;
+static bool g_vdp1TextureDataDirty = false;
 
 // Lightweight VDP1 2D/UI translator. These resources are separate from the
 // resident 3D town mesh so UI commands never invalidate or rebuild it.
@@ -1357,6 +1358,7 @@ void invalidate_cram_range(unsigned int, unsigned int)
     g_liveTownSignature = 0;
     g_liveTownStaticSignature = 0;
     g_liveTownPrepared = false;
+    g_vdp1TextureDataDirty = true;
 }
 
 void invalidate_vdp1_texture_range(unsigned int, unsigned int)
@@ -1369,6 +1371,7 @@ void invalidate_vdp1_texture_range(unsigned int, unsigned int)
     g_liveTownStaticSignature = 0;
     g_liveTownPrepared = false;
     freeVdp1Textures();
+    g_vdp1TextureDataDirty = true;
 }
 
 bool init()
@@ -4096,7 +4099,7 @@ static bool buildVdp1TexturedBuffers(const Vdp1ModelSource& model)
     return outIndex == vertexCount;
 }
 
-static void releaseResidentVdp1Model()
+static void releaseResidentVdp1Model(bool preserveTextures = false)
 {
     auto freeMapped = [](SceUID& uid, void*& ptr) {
         if (uid >= 0) {
@@ -4154,26 +4157,38 @@ static void releaseResidentVdp1Model()
     g_vdp1SubdivWireVertexCapacity = 0u;
     g_vdp1SubdivWireIndexCapacity = 0u;
 
-    freeVdp1Textures();
+    if (!preserveTextures)
+        freeVdp1Textures();
     g_vdp1TextureBatches.clear();
     g_vdp1TexturedReady = false;
     g_residentVdp1Model = ResidentVdp1Model::None;
 }
 
-bool prepare_vdp1_model(const Vdp1ModelSource& model)
+bool prepare_vdp1_model(
+    const Vdp1ModelSource& model,
+    bool preserveResidentTextures)
 {
     if (!g_gxmInitialized || !g_probeContext || !model.valid())
         return false;
 
-    // The viewer still keeps one VDP1 model resident at a time, but M3 can
-    // now swap between the Basic Wing regression mesh and the reconstructed
-    // first-room diagnostic mesh.
+    // Field visibility changes alter the flattened geometry frequently.
+    // Reuse the already-uploaded texture set when it is still byte-for-byte
+    // valid; only geometry buffers/topology need to be rebuilt in that case.
+    const bool reuseTextures =
+        preserveResidentTextures &&
+        !g_vdp1TextureDataDirty &&
+        model.texturesValid() &&
+        !g_vdp1GpuTextures.empty() &&
+        g_vdp1GpuTextures.size() == model.textureCount;
+
+    // The viewer still keeps one resident geometry set at a time. Geometry
+    // can be released independently from textures for the field streaming path.
     if (g_vdp1Vertices || g_vdp1LightingVertices || g_vdp1Indices ||
         g_vdp1TextureVertices || g_vdp1GouraudVertices ||
         g_vdp1TextureIndices || g_vdp1SubdivVertices ||
         g_vdp1SubdivIndices || g_vdp1SubdivWireVertices ||
-        g_vdp1SubdivWireIndices || !g_vdp1GpuTextures.empty())
-        releaseResidentVdp1Model();
+        g_vdp1SubdivWireIndices || (!reuseTextures && !g_vdp1GpuTextures.empty()))
+        releaseResidentVdp1Model(reuseTextures);
 
     if (model.vertexCount > 65535u)
         return false;
@@ -4248,9 +4263,11 @@ bool prepare_vdp1_model(const Vdp1ModelSource& model)
     }
 
     if (model.texturesValid()) {
-        if (!uploadVdp1Textures(model) ||
+        if ((!reuseTextures && !uploadVdp1Textures(model)) ||
             !buildVdp1TexturedBuffers(model))
             return false;
+        if (!reuseTextures)
+            g_vdp1TextureDataDirty = false;
         g_vdp1TexturedReady = true;
 
         const std::size_t subdivVertexCount = model.polygonCount * 9u;
@@ -5534,7 +5551,9 @@ static bool buildLiveTownFrame()
         signature != g_liveTownSignature;
     g_liveTownSignature = signature;
     if (changed) {
-        if (!prepare_vdp1_model(liveTownVdp1Source()))
+        if (!prepare_vdp1_model(
+                liveTownVdp1Source(),
+                g_sceneGameMode == 3u))
             return false;
         g_residentVdp1Model = ResidentVdp1Model::LiveTown;
         g_liveTownPrepared = true;
@@ -5572,7 +5591,8 @@ static bool buildLiveTownFrame()
             logging::writef(
                 "[FieldStream] frame=%llu submissions=%u polys=%u verts=%u "
                 "modelMiss=%u matMiss=%u textures=%u->%u prepare=%u "
-                "append=%uus material=%uus upload=%uus build=%uus\n",
+                "gpuTex=%u dirty=%u append=%uus material=%uus "
+                "upload=%uus build=%uus\n",
                 static_cast<unsigned long long>(
                     azel_bridge::published_frame_number()),
                 g_liveTownSubmissionCount,
@@ -5585,6 +5605,8 @@ static bool buildLiveTownFrame()
                 decodedTexturesBefore,
                 decodedTexturesAfter,
                 changed ? 1u : 0u,
+                static_cast<unsigned int>(g_vdp1GpuTextures.size()),
+                g_vdp1TextureDataDirty ? 1u : 0u,
                 g_profileObjectAppendUs,
                 g_profileObjectMaterialResolveUs,
                 g_profileBuildUploadUs,
