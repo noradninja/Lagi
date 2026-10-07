@@ -84,6 +84,8 @@ game status 5 completes
 
 Acceptance gate: Azel reaches a stable FLD_A3 field task graph, even if the screen remains black. No field-specific Neptune rendering is added in this phase.
 
+**Hardware validation (2026-10-06): PASS.** The normal title → Ruins → elevator → post-elevator movie route reaches game status `0x50` / mode 3, loads `FLD_A3.PRG`, initializes the native field task graph, continues running with roughly 200 active tasks, and native BGM is audible. Presentation remains unchanged as expected because mode 3 had not yet been published through Neptune.
+
 ## Phase 2 — Mode 3 presentation ownership
 
 Extend Lagi's generic scene capability check from town-only mode 1 to field mode 3, and add a field presentation adapter to `lagi_scene_bridge`.
@@ -91,6 +93,8 @@ Extend Lagi's generic scene capability check from town-only mode 1 to field mode
 The adapter is a presentation boundary, not a second field runtime. Azel remains authoritative.
 
 Acceptance gate: mode 3 participates in the existing producer/consumer presentation boundary without regressing towns or movies.
+
+**Implementation in progress:** mode 3 now uses the same generic publish boundary as town mode 1. Neptune tracks the active Azel game mode separately from the town actor, so field frames do not inject Edge. The initial field adapter deliberately treats Azel's submitted matrices as camera-space and publishes them against an identity host camera; this is a diagnostic first-visible-frame step, not the final field/world transform model.
 
 ## Phase 3 — Field presentation adapter
 
