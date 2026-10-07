@@ -8283,11 +8283,15 @@ bool submit_vdp1_model(
                     ? g_textureFragmentProgram
                     : g_probeFragmentProgram))));
 
-    // Mirroring room projection X reverses triangle winding.
+    // Mirroring room projection X reverses triangle winding. Native
+    // field mode currently reaches Neptune with the opposite handedness from
+    // town mode, so invert the filled-geometry cull sense for mode 3 only.
+    const bool reverseCullWinding =
+        drawState.reverseCullWinding ^ (g_sceneGameMode == 3u);
     const SceGxmCullMode cullMode =
         wireframe
             ? SCE_GXM_CULL_NONE
-            : (drawState.reverseCullWinding
+            : (reverseCullWinding
                 ? SCE_GXM_CULL_CCW
                 : SCE_GXM_CULL_CW);
     sceGxmSetCullMode(g_probeContext, cullMode);
