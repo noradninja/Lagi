@@ -26,7 +26,7 @@ int snprintf(char *buffer,size_t size,const char *,...) { if(size) buffer[0]=0; 
 }
 namespace lagi { namespace platform { namespace logging { void writef(const char *,...) {} } } }
 static void reset(int fail=-1,int nth=1) {
-    initialized=false; vmReady=false; mode=LAGI_DSP_PREDECODED; pool=-1; poolBase=0;
+    initialized=false; vmReady=false; mode=LAGI_DSP_ARM; pool=-1; poolBase=0;
     for(unsigned i=0;i<6;++i) calls[i]=0;
     failOperation=fail; failCall=nth; wrongReturn=0; setting="";
     allocatedSize=0; synchronizedSize=0;
@@ -55,7 +55,9 @@ int main() {
         lagi_dsp_platform_shutdown(); if(calls[5]!=1u) return 50+op;
     }
     const char *settings[]={"reference\n","auto\r\n","aot","arm","predecoded","invalid"};
-    const int modes[]={LAGI_DSP_REFERENCE,LAGI_DSP_AUTO,LAGI_DSP_AOT,LAGI_DSP_ARM,LAGI_DSP_PREDECODED,LAGI_DSP_PREDECODED};
+    const int modes[]={LAGI_DSP_REFERENCE,LAGI_DSP_AUTO,LAGI_DSP_AOT,LAGI_DSP_ARM,LAGI_DSP_PREDECODED,LAGI_DSP_ARM};
     for(unsigned i=0;i<6;++i) { reset(); setting=settings[i]; if(lagi_dsp_platform_init()!=modes[i]) return 60+i; }
+    reset(); if(lagi_dsp_platform_init()!=LAGI_DSP_ARM) return 70;
+    if(!lagi_dsp_vm_available() || calls[5]!=0u) return 71;
     return 0;
 }

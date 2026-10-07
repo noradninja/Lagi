@@ -9,7 +9,7 @@
 
 namespace {
 bool initialized = false, vmReady = false;
-int mode = LAGI_DSP_PREDECODED;
+int mode = LAGI_DSP_ARM;
 SceUID pool = -1;
 void *poolBase = nullptr;
 constexpr unsigned slotBytes = 65536, slots = 4;
@@ -59,6 +59,9 @@ extern "C" void lagi_dsp_log(const char *format, ...) {
 extern "C" int lagi_dsp_platform_init() {
     if (initialized) return mode;
     initialized = true;
+    // Normal runtime uses the hardware-validated ARM translator. The optional
+    // config file only overrides this for diagnostics or fallback testing.
+    mode = LAGI_DSP_ARM;
     char config[32]{};
     const SceUID fd = sceIoOpen("ux0:data/lagi/dsp_backend.txt", SCE_O_RDONLY, 0);
     if (fd >= 0) { sceIoRead(fd, config, sizeof(config)-1); sceIoClose(fd); }
@@ -67,8 +70,9 @@ extern "C" int lagi_dsp_platform_init() {
     else if (!std::strcmp(config, "auto")) mode = LAGI_DSP_AUTO;
     else if (!std::strcmp(config, "aot")) mode = LAGI_DSP_AOT;
     else if (!std::strcmp(config, "arm")) mode = LAGI_DSP_ARM;
-    else if (config[0] && std::strcmp(config, "predecoded"))
-        lagi_dsp_log("[LagiDSP] invalid backend setting; using predecoded\n");
+    else if (!std::strcmp(config, "predecoded")) mode = LAGI_DSP_PREDECODED;
+    else if (config[0])
+        lagi_dsp_log("[LagiDSP] invalid backend setting; using arm\n");
     vmReady = probe();
     lagi_dsp_log("[LagiDSP] configured=%d vmReady=%d capture=on\n", mode, vmReady);
     return mode;
