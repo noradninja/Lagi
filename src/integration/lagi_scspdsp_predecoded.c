@@ -329,7 +329,7 @@ static void lagi_dsp_capture_one(void) {
 }
 static LagiDspNativeFn g_lagiNativeFunction;
 static struct _SCSPDSP *g_lagiNativeDsp;
-static int g_lagiBackendMode=LAGI_DSP_PREDECODED;
+static int g_lagiBackendMode=LAGI_DSP_ARM;
 static struct { struct _SCSPDSP *dsp; int dirty; } g_lagiDirtyInstances[8];
 static int g_lagiDirtyOverflow;
 static unsigned g_lagiNativeBackend;
@@ -641,7 +641,8 @@ void SCSPDSP_Step(struct _SCSPDSP* DSP)
         }
         return;
     }
-    if (g_lagiPdsFastPath && !lagi_dsp_is_dirty(DSP) && g_lagiBackendMode!=LAGI_DSP_REFERENCE)
+    if (g_lagiPdsFastPath && !lagi_dsp_is_dirty(DSP) &&
+        g_lagiBackendMode==LAGI_DSP_PREDECODED)
     {
         lagi_dsp_selected_backend=1;
         lagi_scspdsp_step_pds(DSP);
