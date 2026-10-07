@@ -33,6 +33,55 @@ Hardware has also established two presentation rules that must not regress:
 
 Vita/Vita TV results supplied by the user are authoritative. Host builds, static checks, or log review do not constitute hardware validation.
 
+## Current handoff - resume here
+
+- **Date:** 2026-10-07
+- **Branch:** `feature/flight-mode-bringup`
+- **Current head:** `879f0977a9f0e23a655c60608dfda28ddefaccaf` (`Record failed FLD_A3 static-grid activation`)
+- **Draft pull request:** #12 (`Bring up native FLD_A3 flight entry`)
+
+This is the active rendering checkpoint. Neptune is the native SceGxm renderer, not VitaGL. The gameplay panel is 480x272 and the immediate target is reliable 30 Hz within a 33.3 ms frame budget. Do not merge PR #12 until the user explicitly approves it after Vita/Vita TV testing.
+
+The normal route from the Ruins elevator through status `0x50`, mode 3, `FLD_A3.PRG`, `overlayStart_FLD_A3()`, and `initField()` is hardware-validated. The authentic Azel field task graph, player-controlled flight, BGM/SFX, dragon/rider, geometry, visibility/grid/LOD, radar, LCS, and UI are live. Preserve these hardware-confirmed results:
+
+- Field orientation and winding are correct: mode 3 does not use the town Saturn-to-GXM X mirror or an extra winding XOR.
+- The FLD_A3 radar map remains point-filtered at its original 48x48 output-pixel size.
+- Field lighting uses the native 32.0 (`0x200000` raw) far clip, the upstream reversed light-color storage (`R=[2]`, `G=[1]`, `B=[0]`), and model-space normals with the light rotated back once per submission. Do not add brightness or gamma compensation.
+- The exact midpoint-grid Full Gouraud optimization and duplicate `A,B,C / A,C,D` vertex-transform reuse are hardware-valid checkpoints and must remain intact.
+- The billboard invalidation correction is working: billboards remain dynamic and no longer force the static prefix to rebuild.
+
+After the midpoint optimization, all 37 sampled mode-3 frames had a render median of about 28.207 ms and p90 of 40.787 ms. Dense 900+ polygon samples had medians of about 30.624 ms render, 13.031 ms build, 9.922 ms object append/transform, 4.366 ms lighting, 3.594 ms Gouraud visibility preparation, 2.581 ms Gouraud payload, 4.215 ms main submission, and 1.857 ms final GXM wait. Many ordinary frames are therefore inside the 33.3 ms budget, but the high tail and first-use stalls still prevent a reliable 30 Hz result. First-use model/material/texture growth is a separate residency problem and can still produce approximately 344.7 ms of texture upload and 375.5 ms of build time.
+
+### Current blocker: FLD_A3 static-grid classification did not activate
+
+Commits `6c82eb4` through `4352550` added the Phase 4 native-camera boundary: capture Azel's active field view, remove that view from field submissions, publish world-space transforms, and apply the same native view exactly once in Neptune. Commit `29965d1` also intended to mark the rigid environment submission in `s_visdibilityCellTask::gridCellDraw_normal()` as `dynamic=false` while leaving visibility, clipping, depth/LOD selection, and model choice entirely with Azel.
+
+The latest full hardware traversal showed that the camera/lighting presentation remained viable, but the static hook did not execute successfully. Every sampled `[FieldStream]` record reported `staticSubs=0`, with roughly 22 billboards and `staticRebuilt=0`. A representative 1,010-polygon frame still reported `obj=10.152 ms`, `build=13.121 ms`, and `render=29.696 ms`. This proves the billboard fix is working, but no normal FLD_A3 environment submission is reaching Neptune with `dynamic=false`.
+
+The leading hypothesis is a silent generated-source patch miss. `CMakeLists.txt` uses `string(REPLACE ...)` for the FLD_A3 `o_fld_a3.cpp` hook, but that file receives several unrelated replacements. The final generic `source_text != original_text` guard proves only that something in the file changed; it does not prove that this particular replacement matched. This is not yet proven, and the alternate draw boundary/context-consumption possibilities remain open.
+
+### Immediate next task
+
+Do this before further dynamic-flatten micro-optimization or persistent-resource work:
+
+1. Configure the Vita build and inspect the generated `${CMAKE_BINARY_DIR}/azel_upstream/field/field_a3/o_fld_a3.cpp` copy, specifically `s_visdibilityCellTask::gridCellDraw_normal()` and its actual `addObjectToDrawList(pModel)` boundary.
+2. Confirm whether the generated function physically contains the stable identity -> translate -> ZYX world transform, `hasModelMatrix=true`, `dynamic=false`, `set_town_submission_context(...)`, and then `addObjectToDrawList(pModel)`.
+3. If the injection is absent, adjust the replacement to a short, unique section matching the current upstream source. Do not edit `extern/Azel` directly.
+4. Add a dedicated configure-time sentinel/count assertion for this exact injection. CMake configuration must fail if the FLD_A3 static-grid patch does not apply; the existing whole-file changed check is insufficient.
+5. Reconfigure and inspect the generated source again before building.
+6. Build a narrow hardware-testable checkpoint. Do not claim Vita validation until the user supplies the hardware result.
+
+The next hardware acceptance gate is:
+
+- `[FieldStream] staticSubs > 0` during FLD_A3;
+- billboards remain nonzero and steady frames keep `staticRebuilt=0`;
+- camera, field orientation/winding, dragon/world relationship, corrected lighting, and 48x48 point-filtered radar remain visually unchanged;
+- dense-frame `obj` time falls materially below the current roughly 9-10 ms range.
+
+Once this classification works, the remaining architectural milestone is still a generic Neptune resident model/resource cache shared by fields and towns, including Zoah: first encounter adapts/decodes/uploads a stable Azel model or cell resource once, and later Azel visibility/LOD decisions select resident resources without rebuilding a monolithic visible-world mesh. Do not create an FLD_A3-only renderer architecture.
+
+Keep audio work on PR #11, the end-of-area crash, and native ray/laser rendering out of this checkpoint. The usual home build environment is `E:\dev\Lagi`, VitaSDK at `E:\dev\VitaSDK`, PSP2CGC commonly at `E:\PSVITA\sdk\host_tools\bin\psp2cgc.exe`, with `cmake --build build --parallel 32` producing `build\Lagi.vpk`.
+
 ## Rendering performance and streaming investigation
 
 Traversal hitches correlate with changes in the visible field geometry set. The branch currently records:
@@ -43,7 +92,7 @@ Traversal hitches correlate with changes in the visible field geometry set. The 
 
 The first diagnostic run showed that Neptune represented the live field as one changing flattened mesh. When its visible geometry size changed, Neptune called `prepare_vdp1_model()` again. Before texture preservation, that function released and re-uploaded the entire resident texture set, producing roughly 400-470 ms uploads even when the frame introduced no new model or texture.
 
-The current branch head, `8a531f88a8d59381c2d0daa8fad1e5c1f7ae6a19` (`Reuse field textures across geometry changes`), adds texture-preserving geometry rebuilds through:
+The earlier texture-reuse checkpoint, `8a531f88a8d59381c2d0daa8fad1e5c1f7ae6a19` (`Reuse field textures across geometry changes`), added texture-preserving geometry rebuilds through:
 
 ```cpp
 prepare_vdp1_model(const Vdp1ModelSource&, bool preserveResidentTextures = false)
@@ -54,7 +103,7 @@ The field path requests preservation when rebuilding live geometry. CRAM and VDP
 
 It is not the final streaming design. The latest hardware log still contained about 279 geometry reprepares. Ordinary non-prepare field builds had a median around 15.8-15.9 ms; prepare-event builds had a median around 95.5 ms, including roughly 81.7 ms of upload work. Those events remain visible hitches.
 
-Latest measured workload timings:
+Earlier pre-optimization workload timings, retained as a baseline:
 
 | Workload | Median | 90th percentile | Relevant budget / interpretation |
 |---|---:|---:|---|
