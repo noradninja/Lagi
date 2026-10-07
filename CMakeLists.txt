@@ -1035,6 +1035,19 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "p_workArea startSegaLogoModule(p_workArea workArea)\n{\n    return startTitleScreenVideo(workArea);\n}"
    source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "field/fieldCamera.cpp")
+  # Field Phase 4: capture Azel's exact active view matrix after it has been
+  # applied to pCurrentMatrix. The bridge removes it from field submissions
+  # and Neptune reapplies it once at presentation.
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\""
+   source_text "${source_text}")
+  string(REPLACE
+   "    copyMatrix(pCurrentMatrix, &pTypedWorkArea->m384_viewMatrix);"
+   "    copyMatrix(pCurrentMatrix, &pTypedWorkArea->m384_viewMatrix);\n    lagi::azel_bridge::capture_native_scene_view_matrix();"
+   source_text "${source_text}")
+
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
   # Flight Phase 1 diagnostics: prove Azel reaches and initializes FLD_A3
   # before any field-specific Neptune presentation is enabled.
@@ -1079,11 +1092,18 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   # service. Avoid the upstream desktop SoLoud backend on Vita.
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
-   "#include \"lagi/lagi_azel_upstream_prelude.h\"\nextern void lagiAzelFieldPlayPCM(const char* filename);"
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\"\nextern void lagiAzelFieldPlayPCM(const char* filename);"
    source_text "${source_text}")
   string(REPLACE
    "    playPCMFile(pPcmName);"
    "    lagiAzelFieldPlayPCM(pPcmName);"
+   source_text "${source_text}")
+  # Phase 4 static field-grid bridge. Azel still performs clipping and LOD
+  # selection; Lagi only publishes the selected rigid environment object with
+  # its stable pre-view world transform.
+  string(REPLACE
+   "                if (r14->m0_modelsOffets[depthRangeIndex])\n                {\n                    sProcessed3dModel* pModel = pTypedWorkAread->m0_memoryLayout.m0_mainMemoryBundle->get3DModel(r14->m0_modelsOffets[depthRangeIndex]);\n                    addObjectToDrawList(pModel);\n                }"
+   "                if (r14->m0_modelsOffets[depthRangeIndex])\n                {\n                    const u32 lagiModelOffset = r14->m0_modelsOffets[depthRangeIndex];\n                    sProcessed3dModel* pModel = pTypedWorkAread->m0_memoryLayout.m0_mainMemoryBundle->get3DModel(lagiModelOffset);\n\n                    sMatrix4x3 lagiWorldMatrix;\n                    initMatrixToIdentity(&lagiWorldMatrix);\n                    translateMatrix(&r14->m4, &lagiWorldMatrix);\n                    rotateMatrixZYX_s16(r14->m10, &lagiWorldMatrix);\n\n                    lagi::azel_bridge::SubmissionState lagiState{};\n                    for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n                    {\n                        for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n                        {\n                            lagiState.modelMatrix[lagiRow * 4u + lagiCol] = lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n                        }\n                    }\n                    lagiState.hasModelMatrix = true;\n                    lagiState.dynamic = false;\n                    lagi::azel_bridge::capture_current_light(lagiState);\n                    lagi::azel_bridge::set_town_submission_context(-1, 0u, 0u, static_cast<std::uint32_t>(lagiModelOffset), lagiState);\n\n                    addObjectToDrawList(pModel);\n                }"
    source_text "${source_text}")
 
   # Upstream rayDisplay.cpp is BGFX/GLM desktop renderer code. FLD_A3 is now
