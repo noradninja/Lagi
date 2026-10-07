@@ -1,23 +1,21 @@
 # Lagi Development Status
 
-Current milestone: **0.040-alpha — authentic boot flow**
+Current milestone: **0.3.0-alpha — native audio and Cinepak presentation**
 
-Last updated: 2026-10-04
+Last updated: 2026-10-06
 
 Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed game logic executes directly on ARMv7; Saturn rendering and platform-facing behavior are translated to VitaSDK and native SceGxm.
 
 ## Current development stage
 
-The 0.040 milestone replaces the first Ruins room's special direct-boot path with Azel's own startup, movie, title, New Game, field, module-manager, and native town presentation flow. The milestone is hardware-proven through a playable first Ruins scene.
+The v0.3.0alpha hardware milestone carries the authentic Azel boot path through the first playable Ruins sequence and its post-elevator cinematic. The runtime now combines that native game flow with Vita BGM/SFX output, runtime ARM translation of SCSP DSP programs, and the two-stage SGX Cinepak presentation path.
 
 The current hardware path reaches:
 
 ```text
 Lagi startup
   ↓
-azelInit()
-  ↓
-resetEngine()
+azelInit() / resetEngine()
   ↓
 MOVIE1.CPK
   ↓
@@ -38,11 +36,17 @@ Azel module manager
 TWN_RUIN.PRG
   ↓
 native town task graph
+  ↓
+playable Ruins sequence
+  ↓
+elevator choice
+  ↓
+EVT004_1.CPK / EVT004_2.CPK
+  ↓
+next Azel game mode (flight mode not yet connected)
 ```
 
-The normal 0.040 path does **not** use the old direct-Ruins loader to choose or start `TWN_RUIN`.
-
-Azel remains responsible for game status, module transitions, scripts, task creation, movies, fades, camera/gameplay state, and scene ownership.
+The normal path does **not** use the old direct-Ruins loader to choose or start `TWN_RUIN`. Azel remains responsible for game status, module transitions, scripts, task creation, movies, fades, camera/gameplay state, and scene ownership.
 
 ## Runtime architecture
 
@@ -111,7 +115,7 @@ The platform API now uses generic names such as:
 
 Some Neptune internal variables still use historical `g_town*` names. Those are implementation cleanup items, not ownership semantics.
 
-## Hardware-proven 0.040 boot systems
+## Hardware-proven v0.3.0alpha systems
 
 Verified on real Vita/Vita TV hardware:
 
@@ -141,9 +145,11 @@ Verified on real Vita/Vita TV hardware:
 - Full, Texture, Lighting, Quads, and Wires renderer views
 - Vita-to-Saturn physical controller bridge
 - Sega FILM demux
-- Cinepak playback
-- SGX Cinepak presentation
+- Cinepak playback through the post-elevator movie pair
+- source-resolution SGX Cinepak reconstruction with hardware-linear final presentation
 - native SceAudio output
+- native BGM and sound-effect playback
+- runtime ARM SCSP DSP translation
 - Azel VDP1 command capture
 - native GXM VDP1 normal/scaled sprite translation
 - native GXM VDP1 polyline translation
@@ -264,21 +270,15 @@ A Start edge used to skip a movie is consumed at the movie handoff so the same p
 
 A previous retained-frame bug that allowed the last Cinepak frame to cover a scene after Azel had already advanced has also been corrected.
 
-## First Ruins transition status
+## Native audio and SCSP DSP
 
-Azel is confirmed to:
+The current release carries BGM and sound effects through the native Vita audio service. Azel's SCSP-facing code remains authoritative for sequencing and DSP program state; Lagi supplies the Vita output path and the translator used to execute SCSP DSP programs efficiently on ARM.
 
-- finish/skip `EVT002.CPK`;
-- load `TWN_RUIN.PRG`;
-- enter status `0x04`, mode `1`;
-- create native town state;
-- run the first town fade sequence.
+Runtime ARM translation is now the normal backend. A standard install does not require `ux0:data/lagi/dsp_backend.txt`. Explicit backend files remain supported for diagnostic comparison.
 
-This proves the game transition itself is no longer dependent on the old loader bypass.
+Hardware validation of the 84-step program measured a 2,268 us median and 2,392 us P95 across the matched test window, compared with a corrected 5,264 us predecoded median. The corresponding whole audio quantum measured 5,297 us median against a 5,804 us budget, with zero short writes. Disc-entry crackle is nearly eliminated on the ARM path.
 
-The remaining black-screen/first-scene work is in the native scene-to-Neptune presentation path.
-
-Historically, Neptune's live-town rendering depended on readiness flags initialized by `load_static_room_viewer()`, which belongs to the earlier direct-boot reconstruction path. The 0.040 work is removing those hidden dependencies so authentic boot can source all required presentation state from live Azel output.
+The runtime keeps the generic interpreter as the safe fallback while an ARM translation is pending or unavailable. The legacy predecoded fast path is used only when explicitly selected.
 
 ## First Ruins systems already proven in earlier direct-boot work
 
@@ -385,7 +385,9 @@ The current live 3D renderer still flattens active work into shared buffers with
 
 ## Current development focus
 
-With authentic boot, title presentation, shared fades, movies, and the first-Ruins handoff now hardware-proven, the immediate next milestone is the D5 name-entry sequence. That work will continue the Neptune VDP2 refactor around generic RBG0 A/B selection, windows, priority/color calculation, and final layer composition rather than adding screen-specific reconstruction. Longer-term work still includes migration of historical `town_*` renderer naming, broader scene/resource lifetime handling, and moving more active Saturn lighting work from CPU preparation into SGX where practical.
+With the v0.3.0alpha boot, Ruins, movie, and native-audio paths established, the next major runtime boundary is flight mode. D5 name-entry presentation also remains active VDP2 accuracy work: RBG0 A/B selection, windows, priority/color calculation, and final layer composition still need to converge on Saturn hardware output.
+
+Longer-term work includes additional game modes, broader scene/resource lifetime handling, migration of historical `town_*` renderer naming, and continued movement of presentation work toward SGX where it improves the Vita path without taking ownership away from Azel.
 
 ## Historical reference paths
 

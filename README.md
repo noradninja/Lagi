@@ -1,6 +1,6 @@
 # Lagi
 
-**Current development milestone: 0.040-alpha — authentic boot flow**
+**Current development milestone: 0.3.0-alpha — native audio and Cinepak presentation**
 
 **Lagi** is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed game logic runs directly on the Vita's ARM CPU, while Saturn-era rendering and platform behavior are translated to VitaSDK and native SceGxm.
 
@@ -8,7 +8,7 @@ Lagi is not a Sega Saturn emulator and does not use VitaGL.
 
 ## Current status
 
-The 0.040-alpha milestone completes the transition from the old direct-Ruins development path to Azel's authentic boot and module flow. The Vita build enters through `azelInit()` / `resetEngine()`, follows Azel's native startup task graph through movies, title, New Game, the D5 name-entry sequence, and the pre-Ruins cinematic, then lets Azel's module manager load `TWN_RUIN.PRG`, create the native town task graph, and present the playable first Ruins scene through Neptune.
+Lagi 0.3.0 extends the authentic Azel boot path into a substantially more complete Disc 1 runtime slice. The Vita build starts through `azelInit()` / `resetEngine()`, follows Azel's native task and module flow through the opening movies, title, New Game, D5 name entry, the pre-Ruins cinematic, the playable Ruins sequence, the elevator choice, and the post-elevator Cinepak handoff. Flight mode is not implemented yet, so the current public build ends after that movie when Azel advances into the next unsupported mode.
 
 Working systems include:
 
@@ -30,19 +30,23 @@ Working systems include:
 - Ruins lock/switch objects
 - Saturn-style physical pad input translated from Vita controls
 - town LCS / lock-on state and target selection
-- native Neptune translation of VDP1 scaled-sprite and polyline UI commands
-- native Neptune translation of VDP1 normal-sprite UI commands
+- native Neptune translation of VDP1 normal/scaled sprites and polyline UI commands
 - original LCS cursor, target marker, and selection-box behavior
 - Azel-authored VDP2 text, framed windows, and cinematic matte presentation
 - area-name, item-pickup, interaction, subtitle, and multi-choice text
-- elevator choice flow through the script-driven fade and two-part Cinepak FMV
-- Sega FILM demuxing, Phase 1 CPU Cinepak reconstruction, and native SceAudio PCM output
+- native Vita BGM and sound-effect playback
+- runtime ARM translation of Sega Saturn SCSP DSP programs
+- hardware-validated SCSP DSP execution, with ARM now the normal default backend
+- Sega FILM demuxing and Cinepak playback with native SceAudio
+- SGX-assisted Cinepak reconstruction at source resolution
+- hardware-linear filtering for final Cinepak presentation
 - Edge's original textured/stippled VDP1 mesh shadow
 - Saturn-accurate Azel-driven black/white fade direction, timing, and color-offset presentation bridged through Neptune
-- native GXM 2x multisample antialiasing
-- stable 30 Hz presentation
+- 480x272 gameplay presentation with MSAA disabled
+- native 720x408 high-resolution title presentation
+- stable 30 Hz presentation through the supported 3D sequence
 
-Version **0.040-alpha** is the authentic-boot-to-Ruins milestone. It is published as **v0.3.0-alpha**. The current branch keeps game-mode, scene, movie, title, script, task, and transition ownership in Azel while Lagi supplies Vita platform services and a generic presentation bridge. The Cinepak work introduced in 0.030 remains in place, including Sega FILM demuxing, SGX-assisted Cinepak presentation, and native SceAudio PCM output.
+The public **v0.3.0alpha** release is the current hardware milestone. Its main additions are native audio, the runtime ARM SCSP DSP translator, and the cleaned-up Cinepak presentation path. The renderer and platform layers continue to follow the same ownership rule: Azel decides game state and timing, Lagi provides Vita services, and Neptune renders the published Saturn-era presentation state.
 
 ## Architecture
 
@@ -62,7 +66,7 @@ PlayStation Vita
 
 The game-side runtime owns tasks, scripts, game modes, scene selection, collision, camera state, animation, visibility, object lifetimes, and transition timing. Lagi owns the boundary between that runtime and the Vita: input, filesystem/disc access, timing/VBlank services, audio, memory/resource adaptation, frame synchronization, and presentation snapshots. Neptune renders those snapshots.
 
-The current 0.040 boot path is:
+The current native boot path is:
 
 ```text
 Disc 1 BIN/CUE
@@ -80,6 +84,10 @@ EVT002.CPK
 Azel module manager
     |
 TWN_RUIN.PRG + native town task graph
+    |
+playable Ruins sequence -> elevator choice
+    |
+EVT004_1.CPK / EVT004_2.CPK
     |
 generic Lagi scene/presentation bridge
     |
@@ -166,23 +174,15 @@ Normal startup enters **Full** with the diagnostic console hidden.
 
 ## Controls
 
-Lagi exposes the Vita controls to Azel as a Saturn-style physical pad so Azel's own walk/flight/battle action maps remain authoritative.
+The public 0.3.0-alpha build exposes the controls currently needed for the supported boot/Ruins/movie path:
 
-Current town mapping:
+- **Right analog stick** — walk
+- **Square** — run / action
+- **Cross** — lock on / cancel
+- **Select** — cycle Neptune rendering debug views
+- **Start** — start the game / skip FMV
 
-- **Square** -> Saturn A
-- **Cross** -> Saturn B
-- **Circle** -> Saturn C
-- **Triangle** -> Saturn Y
-- **L / R** -> Saturn L / R
-- **Start** -> Saturn Start
-- **Left analog stick** -> Saturn analog X/Y
-- **D-pad Left / Right** -> Neptune renderer-mode cycle during current development builds
-- **D-pad Up / Down** -> Saturn D-pad Up / Down
-- **SELECT** -> performance timing OSD toggle
-- **START + SELECT** -> full retained debug/status screen
-
-In walk mode, the current controls match the original manual behavior: A/C enter or select in Lock-On mode, B runs while moving and cancels Lock-On.
+The underlying Vita input bridge still presents Saturn-style input state to Azel. As additional game modes come online, the public mapping will continue to follow the actions Azel expects rather than duplicating gameplay decisions in Vita-specific code.
 
 ## Performance
 

@@ -1,8 +1,8 @@
 # Building Lagi
 
-Current development milestone: **0.030-alpha**
+Current development milestone: **0.3.0-alpha**
 
-Last updated: 2026-10-03
+Last updated: 2026-10-06
 
 ## Requirements
 
@@ -157,7 +157,7 @@ Useful sections currently include:
 - platform startup
 - disc/ISO9660 mounting
 - COMMON/town table parsing
-- direct-boot target resolution
+- Azel startup, module, and game-status transitions
 - town/grid/cell setup
 - task-owned object creation
 - Edge state and animation
@@ -166,20 +166,14 @@ Useful sections currently include:
 - VDP1 UI command diagnostics
 - VDP2 text/window and line-scroll presentation
 - movie sequencing, FILM/Cinepak decode, and SceAudio PCM output
+- SCSP DSP backend selection, VM probe, translation, and audio timing
 - GXM initialization and failures
 
 ## Current startup behavior
 
-A normal development launch:
+A normal development launch follows Azel's native startup path rather than the old direct-Ruins bootstrap. It enters through the opening movie and title, continues through New Game and the D5 name-entry sequence, plays the pre-Ruins cinematic, loads `TWN_RUIN.PRG` through Azel's module manager, and reaches the playable Ruins sequence. The current supported slice continues through the elevator choice and post-elevator Cinepak playback; flight mode is not yet connected, so execution fades to black when Azel advances beyond that point.
 
-1. initializes the runtime and GXM,
-2. resolves the first Ruins town from Disc 1,
-3. restores the resident VDP1 menu data and VDP2 startup state expected by the town runtime,
-4. starts the town task/script pipeline,
-5. enters the scene in **Full** view,
-6. leaves the diagnostic console hidden,
-7. after the elevator sequence, plays `EVT004_1.CPK` and `EVT004_2.CPK`
-   from Disc 1 before Azel requests the next game status.
+The native audio path is active during this sequence. Runtime ARM translation is the default SCSP DSP backend and requires no `ux0:data/lagi/dsp_backend.txt` file. That file remains available only as a diagnostic override for `predecoded`, `reference`, `auto`, `aot`, or explicit `arm` selection.
 
 Current display framebuffer configuration:
 
@@ -189,25 +183,21 @@ high-resolution title:  720x408, no MSAA
 presentation cadence:   30 Hz
 ```
 
+Cinepak payload data remains point-sampled while it is decoded by the SGX reconstruction pass. The reconstructed source-resolution RGBA image is then presented through the normal hardware-linear texture path into the active Vita framebuffer.
+
 The title framebuffer mode follows Azel's live VDP2 TVMD state. Neptune changes the GXM render target and the dimensions supplied to `sceDisplaySetFrameBuf()` when Azel enters or leaves the high-resolution title mode.
 
 ## Controls
 
-Current Vita-to-Saturn town mapping:
+The current public 0.3.0-alpha build uses:
 
-- **Square** -> Saturn A
-- **Cross** -> Saturn B
-- **Circle** -> Saturn C
-- **Triangle** -> Saturn Y
-- **L / R** -> Saturn L / R
-- **Start** -> Saturn Start
-- **Left analog stick** -> Saturn analog X/Y
-- **D-pad Left / Right** -> cycle `Full -> Texture -> Lighting -> Quads -> Wires`
-- **D-pad Up / Down** -> Saturn D-pad Up / Down
-- **SELECT** -> performance timing OSD
-- **START + SELECT** -> full retained debug/status screen
+- **Right analog stick** — walk
+- **Square** — run / action
+- **Cross** — lock on / cancel
+- **Select** — cycle Neptune rendering debug views
+- **Start** — start the game / skip FMV
 
-For the current walk-mode input table, A/C enter or select Lock-On targets and B runs while moving or cancels Lock-On.
+The platform bridge continues to translate Vita input into Saturn-style state for Azel; these bindings describe the currently exposed release controls rather than a separate Vita gameplay layer.
 
 ## Renderer reference behavior
 
@@ -232,15 +222,9 @@ The hidden profiling overlay remains available for performance work.
 
 ## Performance reference
 
-First-Ruins captures taken before 2x MSAA was enabled showed approximately:
+The supported 3D path is hardware-proven at a consistent 30 FPS in the current Ruins sequence, with sub-22 ms render work reported for the release route. MSAA is disabled across Neptune's active presentation paths.
 
-```text
-20-23 ms render work
-```
-
-before the deliberate 30 Hz presentation wait.
-
-Updated on-device timing should be captured with 2x MSAA enabled before using that figure as the current renderer cost.
+The native SCSP DSP path is also hardware-proven. The 84-step program measured approximately 2.3 ms median with runtime ARM translation, down from approximately 5.3 ms on the predecoded path, keeping the tested audio quantum within budget.
 
 ## Vita application assets
 

@@ -6,7 +6,7 @@ Translation is keyed by complete DSP instruction contents and length, never scen
 
 ## Backends and rollout
 
-Runtime ARM is now the default backend. No dsp_backend.txt file is required for normal use.
+Runtime ARM is the default backend in both the Vita platform bridge and the SCSP runtime core. No dsp_backend.txt file is required for normal use. The predecoded fast path is entered only when it is explicitly selected; ARM, auto and AOT modes use the generic interpreter while native code is pending or unavailable.
 
 For diagnostics or fallback testing, create an ASCII file (without a BOM) at ux0:data/lagi/dsp_backend.txt containing one word, then restart Lagi:
 
