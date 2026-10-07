@@ -5575,9 +5575,9 @@ static ViewerMat4 buildAuthenticRoomWvp()
             nearPlane,
             farPlane);
 
-    // Saturn reference captures show our reconstructed town presentation is
-    // horizontally reversed. Mirror only clip-space X here so camera-space
-    // depth, Azel town visibility and LOD remain unchanged.
+    // Saturn/Azel 3D screen handedness is opposite Neptune/GXM clip space.
+    // Convert presentation once at the projection boundary; world geometry,
+    // camera state, visibility and LOD remain in Azel's native coordinates.
     projection.m[0] = -projection.m[0];
 
     return viewerMul(view, projection);
@@ -5617,12 +5617,9 @@ static ViewerMat4 buildViewerWvp(bool roomMode)
             kDefaultNear,
             kDefaultFar);
 
-    // The room data is authored in Saturn/Azel screen handedness, which is
-    // horizontally opposite to the GXM clip-space presentation used here.
-    // Apply the same X presentation mirror as the authentic room camera so
-    // both room viewers agree without changing the recovered world geometry.
-    if (roomMode)
-        projection.m[0] = -projection.m[0];
+    // All Saturn/Azel-authored 3D uses the same presentation conversion.
+    // This includes diagnostic model views as well as room/scene views.
+    projection.m[0] = -projection.m[0];
 
     // Geometry remains in native Azel game space. Debug framing is purely a
     // view transform: translate the model/scene center to the origin, orbit
@@ -8283,15 +8280,12 @@ bool submit_vdp1_model(
                     ? g_textureFragmentProgram
                     : g_probeFragmentProgram))));
 
-    // Mirroring room projection X reverses triangle winding. Native
-    // field mode currently reaches Neptune with the opposite handedness from
-    // town mode, so invert the filled-geometry cull sense for mode 3 only.
-    const bool reverseCullWinding =
-        drawState.reverseCullWinding ^ (g_sceneGameMode == 3u);
+    // drawState records whether the WVP includes the Saturn->GXM X mirror.
+    // A mirror reverses triangle winding, so compensate exactly once here.
     const SceGxmCullMode cullMode =
         wireframe
             ? SCE_GXM_CULL_NONE
-            : (reverseCullWinding
+            : (drawState.reverseCullWinding
                 ? SCE_GXM_CULL_CCW
                 : SCE_GXM_CULL_CW);
     sceGxmSetCullMode(g_probeContext, cullMode);
@@ -10339,7 +10333,9 @@ static void renderBasicWingViewer()
     Vdp1DrawState drawState{};
     std::memcpy(drawState.wvp, wvp.m, sizeof(drawState.wvp));
     drawState.mode = renderMode;
-    drawState.reverseCullWinding = roomMode;
+    // The Saturn->GXM clip-space X mirror above reverses triangle winding for
+    // every 3D view, so compensate exactly once at the rasterizer boundary.
+    drawState.reverseCullWinding = true;
 
     const Vdp1ModelSource model =
         roomAuthenticCameraMode
