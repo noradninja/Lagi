@@ -45,6 +45,12 @@ void sync_field_presentation_state()
         65536.0f;
     lagi::platform::renderer::presentation_set_clip_planes(
         nearPlane, farPlane);
+
+    std::int32_t nativeView[12]{};
+    if (lagi::azel_bridge::native_scene_view_matrix(nativeView))
+        lagi::platform::renderer::presentation_set_native_view_matrix(
+            nativeView);
+
     lagi::platform::renderer::presentation_set_camera(
         cameraPosition,
         cameraPosition,
