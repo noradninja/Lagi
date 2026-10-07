@@ -133,7 +133,7 @@ no full-scene rebuild or re-upload
 
 The cache should be generic enough for town and field presentation. Static environment geometry should be adapted, decoded, and uploaded once, then selected for drawing according to Azel's visibility/cell decisions. Dynamic actors—dragon, rider, enemies, particles, projectiles, and other changing geometry—remain dynamic. Azel continues to own scene identity, visibility, clipping, and gameplay decisions; Lagi only bridges stable identities and data; Neptune owns native SceGxm resources and rendering.
 
-Field submissions are temporarily forced dynamic through `begin_frame(forceDynamicSubmissions=true)` because they currently arrive with camera-space matrices. This avoided catastrophic static-cache churn when those matrices changed, but it cannot be the final resource model. Phase 4 must classify submission transform spaces and apply Azel's field camera exactly once.
+Mode 3 still begins with `begin_frame(forceDynamicSubmissions=true)` for ordinary task-owned submissions, but the Phase 4 bridge now captures Azel's native field view, removes it from submitted transforms, and reapplies it exactly once in Neptune. The generated FLD_A3 environment-grid hook explicitly publishes rigid cells with `dynamic=false`; dragon/rider, billboards, effects, and other task-owned objects remain dynamic. Hardware logs at `a476878` prove the static hook is active through matching `staticCtx` counts and nonzero `staticSubs`.
 
 The existing field camera path is:
 
@@ -145,9 +145,23 @@ field camera task
     → cameraProperties2 / pCurrentMatrix / m384_viewMatrix
 ```
 
-Upstream helpers include `getFieldCameraStatus()` and `getFieldCameraMatrix()`. Town already uses `begin_view_relative_submission_scope()` and `removeViewTransform()` to convert scoped `view * world` submissions back to world space. Investigate a generic equivalent for static field cells, but do not blanket-convert field submissions until terrain, dynamic objects, dragon/rider, and effects have each been classified.
+Upstream helpers include `getFieldCameraStatus()` and `getFieldCameraMatrix()`. Town's `begin_view_relative_submission_scope()` and `removeViewTransform()` remain the equivalent scoped mechanism for town submissions. Do not blanket-classify task-owned actors or effects as static merely because their matrices can now be expressed in world space.
 
-The immediate profiling task is to split the remaining ~80-100 ms reprepare events into buffer free/allocate/map/unmap, topology and UV rebuild, subdivision-buffer rebuild, CPU flatten/transform, and other `prepare_vdp1_model()` work. Instrumentation should remain narrowly scoped and preserve current rendering behavior.
+### Paged resident geometry design
+
+Do not replace the current monolithic visible mesh with one ever-growing whole-map mesh. The existing Full path uses 16-bit GXM indices: base geometry reaches the limit at 65,535 vertices, and the 3x3 subdivision path reaches it at 7,281 source quads. A single FLD_A3/Zoah superset buffer would therefore exchange recurring rebuilds for a hard capacity ceiling.
+
+The next resource layer should use bounded geometry pages shared by fields and towns:
+
+1. A stable Azel static-instance key selects a Neptune resource record. For FLD_A3 the generated adapter can publish the existing `s_visdibilityCellTask::m14_index` as the cell identity and the `s_grid1::EA` Saturn address (or an explicit ordinal derived in the same draw loop) as the object identity, together with the chosen model offset and world matrix. This requires only generated-source/bridge integration; do not edit `extern/Azel`.
+2. On first encounter, Lagi adapts the model and Neptune appends its immutable world-space positions, material indices, subdivision UVs, and topology into a mapped page whose vertex/index counts remain within 16-bit limits. Texture resources remain globally shared by decoded material identity.
+3. Each published Azel frame marks exactly which resident instance records are active. Neptune performs its conservative per-quad hardware clip and current-light update only for those active ranges, then rebuilds small per-page/per-texture index streams. Visibility-set changes must not call `prepare_vdp1_model()` or rewrite resident positions/UV/topology.
+4. Pages, not individual models, are the texture-batching unit. This retains the existing ascending-texture draw order and avoids multiplying draw calls by every small field object. Saturn mesh-mode ranges remain explicit ordered-overdraw phases inside their owning page.
+5. Dynamic submissions keep the current frame-owned path until separately classified. They must not invalidate resident static pages.
+
+The first hardware-testable residency checkpoint should cover only rigid environment submissions and report resident hits, misses, page growth, active resources/polygons, and bytes written. Its acceptance gate is zero geometry reprepares on visibility-only changes after first encounter, unchanged presentation, and rebuild-frame render time below 33.3 ms. First-use page growth and texture decoding should remain separately visible in the log; prewarming is a later checkpoint rather than being hidden in the visibility path.
+
+The detailed prepare instrumentation below was used to split the former ~80-100 ms reprepare events into allocation, topology/UV, subdivision, copy, texture, and CPU flatten/transform work. At `a476878`, recurring material lookup is no longer the dominant rebuild cost: rebuild build median is 26.786 ms and geometry upload median is 7.928 ms. The instrumentation remains useful for first-use growth and for proving that the paged-residency path removes rather than merely shortens visibility-driven reprepares.
 
 The current instrumentation checkpoint extends prepare-event `[FieldStream]` records with the following microsecond buckets. It does not change rendering or resource lifetime:
 
