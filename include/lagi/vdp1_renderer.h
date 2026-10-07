@@ -80,10 +80,13 @@ struct Vdp1DrawState {
 // Upload one model into the current native Vita VDP1 resource slot. M1 keeps
 // a single resident model because the regression viewer only needs one; the
 // interface is deliberately model-agnostic so the next integration step can
-// feed live Azel model data without inheriting Basic Wing viewer state.
+// feed live Azel model data without inheriting Basic Wing viewer state. A
+// caller that exclusively uses resident Full-mode subdivision buffers may
+// defer rebuilding the unused base textured payload on capacity reuse.
 bool prepare_vdp1_model(
     const Vdp1ModelSource& model,
-    bool preserveResidentTextures = false);
+    bool preserveResidentTextures = false,
+    bool deferBaseTexturedPayload = false);
 
 // Submit the prepared model into the currently active GXM scene using the
 // supplied transform and render mode.

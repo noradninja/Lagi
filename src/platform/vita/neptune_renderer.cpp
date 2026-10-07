@@ -398,6 +398,7 @@ static unsigned int g_profilePrepareSubdivBuildUs = 0;
 static unsigned int g_profilePrepareCopyUs = 0;
 static bool g_profilePrepareReusedTextures = false;
 static bool g_profilePrepareReusedGeometry = false;
+static bool g_profilePrepareSkippedBasePayload = false;
 static unsigned int g_profileEdgeCopyUs = 0;
 static unsigned int g_profileEdgeAnimUs = 0;
 static unsigned int g_profileEdgeAppendUs = 0;
@@ -502,6 +503,7 @@ static std::vector<TextureBatch> g_vdp1TextureBatches;
 static std::vector<GpuMode1Texture> g_vdp1GpuTextures;
 static bool g_vdp1TexturedReady = false;
 static bool g_vdp1TextureDataDirty = false;
+static bool g_vdp1BaseTexturedPayloadValid = false;
 
 // Lightweight VDP1 2D/UI translator. These resources are separate from the
 // resident 3D town mesh so UI commands never invalidate or rebuild it.
@@ -4075,7 +4077,8 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model)
 
 static bool buildVdp1TexturedBuffers(
     const Vdp1ModelSource& model,
-    bool reuseMappedBuffers)
+    bool reuseMappedBuffers,
+    bool buildPayload)
 {
     if (!model.valid() || model.vertexCount > 65535u ||
         g_vdp1GpuTextures.empty())
@@ -4121,6 +4124,15 @@ static bool buildVdp1TexturedBuffers(
         !g_vdp1GouraudVertices ||
         !g_vdp1TextureIndices)
         return false;
+
+    // Full mode consumes only the 3x3 subdivision vertex/index buffers. When
+    // all mapped buffers are already resident, a visibility-set change does
+    // not need to regenerate this separate six-vertex UV/index payload. Keep
+    // the allocations so another mode can rebuild lazily without reallocating.
+    if (!buildPayload) {
+        g_vdp1BaseTexturedPayloadValid = false;
+        return true;
+    }
 
     static const int triCorners[6] = {0, 1, 2, 0, 2, 3};
     const std::uint64_t buildStartUs = sceKernelGetProcessTimeWide();
@@ -4225,6 +4237,7 @@ static bool buildVdp1TexturedBuffers(
 
     g_profilePrepareTexturedBuildUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - buildStartUs);
+    g_vdp1BaseTexturedPayloadValid = true;
     return true;
 }
 
@@ -4294,12 +4307,14 @@ static void releaseResidentVdp1Model(bool preserveTextures = false)
         freeVdp1Textures();
     g_vdp1TextureBatches.clear();
     g_vdp1TexturedReady = false;
+    g_vdp1BaseTexturedPayloadValid = false;
     g_residentVdp1Model = ResidentVdp1Model::None;
 }
 
 bool prepare_vdp1_model(
     const Vdp1ModelSource& model,
-    bool preserveResidentTextures)
+    bool preserveResidentTextures,
+    bool deferBaseTexturedPayload)
 {
     if (!g_gxmInitialized || !g_probeContext || !model.valid())
         return false;
@@ -4374,6 +4389,9 @@ bool prepare_vdp1_model(
     g_profilePrepareCopyUs = 0u;
     g_profilePrepareReusedTextures = reuseTextures;
     g_profilePrepareReusedGeometry = reuseGeometry;
+    const bool skipBaseTexturedPayload =
+        deferBaseTexturedPayload && reuseGeometry && subdivBuffersRequired;
+    g_profilePrepareSkippedBasePayload = skipBaseTexturedPayload;
 
     // The viewer still keeps one resident geometry set at a time. Geometry
     // and textures can be retained independently for the field streaming path.
@@ -4462,7 +4480,10 @@ bool prepare_vdp1_model(
             if (!uploaded)
                 return false;
         }
-        if (!buildVdp1TexturedBuffers(model, reuseGeometry))
+        if (!buildVdp1TexturedBuffers(
+                model,
+                reuseGeometry,
+                !skipBaseTexturedPayload))
             return false;
         if (!reuseTextures)
             g_vdp1TextureDataDirty = false;
@@ -4618,6 +4639,7 @@ bool prepare_vdp1_model(
         }
     } else {
         g_vdp1TexturedReady = false;
+        g_vdp1BaseTexturedPayloadValid = false;
     }
 
     const std::uint64_t copyStartUs = sceKernelGetProcessTimeWide();
@@ -5644,6 +5666,7 @@ static bool buildLiveTownFrame()
     g_profilePrepareCopyUs = 0u;
     g_profilePrepareReusedTextures = false;
     g_profilePrepareReusedGeometry = false;
+    g_profilePrepareSkippedBasePayload = false;
     g_profileObjectAppendUs = 0u;
     g_profileObjectMaterialResolveUs = 0u;
     g_profileObjectMaterialCacheMisses = 0u;
@@ -5884,14 +5907,17 @@ static bool buildLiveTownFrame()
         sceKernelGetProcessTimeWide() - tValidate);
 
     const std::uint64_t tUpload = sceKernelGetProcessTimeWide();
+    const bool fullSubdivMode = g_viewMode == 7;
     const bool changed = !g_liveTownPrepared ||
         g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
-        signature != g_liveTownSignature;
+        signature != g_liveTownSignature ||
+        (!fullSubdivMode && !g_vdp1BaseTexturedPayloadValid);
     g_liveTownSignature = signature;
     if (changed) {
         if (!prepare_vdp1_model(
                 liveTownVdp1Source(),
-                g_sceneGameMode == 3u))
+                g_sceneGameMode == 3u,
+                fullSubdivMode))
             return false;
         g_residentVdp1Model = ResidentVdp1Model::LiveTown;
         g_liveTownPrepared = true;
@@ -5936,7 +5962,7 @@ static bool buildLiveTownFrame()
                 "gpuTex=%u dirty=%u staticCtx=%u/%u staticSubs=%u billboards=%u "
                 "meshRanges=%u/%u staticId=%u/%u/%u "
                 "staticRebuilt=%u append=%uus material=%uus "
-                "upload=%uus build=%uus reuseTex=%u reuseGeom=%u release=%uus "
+                "upload=%uus build=%uus reuseTex=%u reuseGeom=%u skipBase=%u release=%uus "
                 "baseAlloc=%uus wire=%uus texUpload=%uus texAlloc=%uus "
                 "texBuild=%uus subAlloc=%uus subBuild=%uus copy=%uus\n",
                 static_cast<unsigned long long>(
@@ -5971,6 +5997,7 @@ static bool buildLiveTownFrame()
                 buildElapsedUs,
                 g_profilePrepareReusedTextures ? 1u : 0u,
                 g_profilePrepareReusedGeometry ? 1u : 0u,
+                g_profilePrepareSkippedBasePayload ? 1u : 0u,
                 g_profilePrepareReleaseUs,
                 g_profilePrepareBaseAllocUs,
                 g_profilePrepareWireUs,
