@@ -5650,7 +5650,22 @@ static bool buildLiveTownFrame()
                 continue;
             const auto* model = azel_bridge::published_adapted_model(
                 static_cast<std::uint32_t>(submission.adaptedModelIndex));
-            if (model) appendLiveTownModel(*model, submission.state);
+            if (!model)
+                continue;
+
+            // Static visible-set changes must not redo the resident
+            // model-to-texture search. With roughly 1,000 decoded textures,
+            // resolving every polygon on every static-prefix rebuild was the
+            // dominant ~110 ms cache cost in FLD_A3. The binding is a stable
+            // property of the adapted Azel model and uses the same generic
+            // cache as task-owned/dynamic submissions.
+            const auto* resolved = resolvedLiveTownMaterialIndices(
+                submission.model, *model);
+            appendLiveTownModel(
+                *model,
+                submission.state,
+                resolved && !resolved->empty() ? resolved->data() : nullptr,
+                resolved ? resolved->size() : 0u);
         }
         g_liveTownStaticSignature = staticSignature;
         g_liveTownStaticVertexCount = g_liveTownCpuMesh.vertices.size();
