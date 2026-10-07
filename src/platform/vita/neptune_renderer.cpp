@@ -5616,7 +5616,11 @@ static bool buildLiveTownFrame()
         sceKernelGetProcessTimeWide() - tScan);
 
     const std::uint64_t tCache = sceKernelGetProcessTimeWide();
-    g_liveTownStaticRebuilt = hasBillboards ||
+    // Billboards are always dynamic submissions and are appended after the
+    // cached static prefix. Their presence must not invalidate otherwise stable
+    // environment geometry. Only a change in the actual static submission set
+    // rebuilds the static cache.
+    g_liveTownStaticRebuilt =
         staticSignature != g_liveTownStaticSignature;
     if (g_liveTownStaticRebuilt) {
         g_liveTownCpuMesh.vertices.clear();
@@ -5796,7 +5800,8 @@ static bool buildLiveTownFrame()
             logging::writef(
                 "[FieldStream] frame=%llu submissions=%u polys=%u verts=%u "
                 "modelMiss=%u matMiss=%u textures=%u->%u prepare=%u "
-                "gpuTex=%u dirty=%u append=%uus material=%uus "
+                "gpuTex=%u dirty=%u staticSubs=%u billboards=%u "
+                "staticRebuilt=%u append=%uus material=%uus "
                 "upload=%uus build=%uus reuseTex=%u reuseGeom=%u release=%uus "
                 "baseAlloc=%uus wire=%uus texUpload=%uus texAlloc=%uus "
                 "texBuild=%uus subAlloc=%uus subBuild=%uus copy=%uus\n",
@@ -5814,6 +5819,9 @@ static bool buildLiveTownFrame()
                 changed ? 1u : 0u,
                 static_cast<unsigned int>(g_vdp1GpuTextures.size()),
                 g_vdp1TextureDataDirty ? 1u : 0u,
+                g_liveTownStaticSubmissionCount,
+                g_liveTownBillboardSubmissionCount,
+                g_liveTownStaticRebuilt ? 1u : 0u,
                 g_profileObjectAppendUs,
                 g_profileObjectMaterialResolveUs,
                 g_profileBuildUploadUs,
@@ -11115,10 +11123,26 @@ static void updateLiveTownAzelLighting()
     if (length > 0.000001f)
         for (float& v : cameraForward) v /= length;
 
-    constexpr std::int64_t farRaw = 0xF000;
-    constexpr std::int64_t oneOverFar =
+    // Match Azel GetDistanceFalloff(): m34_oneOverFarClip256 is derived
+    // from the active scene's far clip. The old live path retained the Ruins
+    // bring-up constant 0xF000, which is drastically too short for FLD_A3
+    // (32.0 / 0x200000 raw) and pushed field polygons prematurely into the
+    // darkest end of the falloff table.
+    const float activeFar =
+        g_sceneGameMode == 3u &&
+        g_nativeSceneFarPlane > 0.0f
+            ? g_nativeSceneFarPlane
+            : (g_staticRoomCpuReady &&
+               g_staticRoomCpuMesh.cameraFar > 0.0f
+                ? g_staticRoomCpuMesh.cameraFar
+                : static_cast<float>(0xF000) / 65536.0f);
+    const std::int64_t farRaw = std::max<std::int64_t>(
+        1,
+        static_cast<std::int64_t>(
+            std::llround(activeFar * 65536.0f)));
+    const std::int64_t oneOverFar =
         (static_cast<std::int64_t>(0x8000) << 16) / farRaw;
-    constexpr std::int64_t oneOverFar256 = oneOverFar << 8;
+    const std::int64_t oneOverFar256 = oneOverFar << 8;
     auto falloffIndex = [&](std::size_t polygon) {
         const auto& v = g_liveTownCpuMesh.vertices[polygon * 6u];
         const float depth = std::fabs(
@@ -11208,8 +11232,14 @@ static void updateLiveTownAzelLighting()
             if (dotProduct > 0) {
                 const int dotHi = static_cast<int>(
                     static_cast<std::uint32_t>(dotProduct) >> 16);
-                for (unsigned channel = 0; channel < 3; ++channel)
-                    accum[channel] += light.color[channel] * dotHi;
+
+                // setLightVector_M stores packed RGB in reversed array order:
+                // m_color[2]=R, m_color[1]=G, m_color[0]=B. Match
+                // ComputeColorFromNormal exactly rather than treating the
+                // captured array as natural RGB.
+                accum[0] += light.color[2] * dotHi;
+                accum[1] += light.color[1] * dotHi;
+                accum[2] += light.color[0] * dotHi;
             }
 
             for (unsigned channel = 0; channel < 3; ++channel) {
