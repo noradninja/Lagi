@@ -111,6 +111,7 @@ The current instrumentation checkpoint extends prepare-event `[FieldStream]` rec
 | Field | Work measured |
 |---|---|
 | `reuseTex` | Whether the existing resident texture set was reused |
+| `reuseGeom` | Whether all mapped geometry buffers had sufficient capacity and were retained |
 | `release` | Geometry-buffer unmap/free work in `releaseResidentVdp1Model()` |
 | `baseAlloc` | Base color/lighting/index buffer allocation and GXM mapping |
 | `wire` | Wire-subdivision buffer allocation/mapping and linear-index initialization |
@@ -122,6 +123,8 @@ The current instrumentation checkpoint extends prepare-event `[FieldStream]` rec
 | `copy` | Base color/lighting vertex copies and linear base-index initialization |
 
 The existing `append` field continues to cover per-frame CPU flatten/transform work. `upload` remains the enclosing prepare/update interval so the sum of the detailed buckets can be compared with unclassified overhead. These measurements require a new Vita/Vita TV traversal log before choosing the next optimization.
+
+The first capacity-reuse optimization now keeps the flattened field geometry buffers mapped when the next Azel-visible set fits their existing capacities. In that case `reuseGeom=1`, `release=0`, `baseAlloc=0`, `wire=0`, `texAlloc=0`, and `subAlloc=0` (apart from timer noise), while topology/UV data and current vertices are still rebuilt exactly as before. Texture invalidation remains independent: CRAM or VDP1 changes may produce `reuseGeom=1` with `reuseTex=0` and a nonzero `texUpload`. This is a bounded hitch reduction and measurement step, not a replacement for persistent per-model/per-cell resources. Hardware validation is pending.
 
 ## Runtime path
 

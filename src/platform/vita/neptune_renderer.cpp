@@ -335,6 +335,7 @@ static unsigned int g_profilePrepareSubdivAllocUs = 0;
 static unsigned int g_profilePrepareSubdivBuildUs = 0;
 static unsigned int g_profilePrepareCopyUs = 0;
 static bool g_profilePrepareReusedTextures = false;
+static bool g_profilePrepareReusedGeometry = false;
 static unsigned int g_profileEdgeCopyUs = 0;
 static unsigned int g_profileEdgeAnimUs = 0;
 static unsigned int g_profileEdgeAppendUs = 0;
@@ -368,6 +369,8 @@ static SceUID g_vdp1IndexUid = -1;
 static azel::DebugColorVertex* g_vdp1Vertices = nullptr;
 static azel::DebugColorVertex* g_vdp1LightingVertices = nullptr;
 static std::uint16_t* g_vdp1Indices = nullptr;
+static unsigned int g_vdp1VertexCapacity = 0u;
+static unsigned int g_vdp1IndexCapacity = 0u;
 
 static SceUID g_vdp1TextureVertexUid = -1;
 static SceUID g_vdp1GouraudVertexUid = -1;
@@ -375,6 +378,8 @@ static SceUID g_vdp1TextureIndexUid = -1;
 static azel::DebugTextureVertex* g_vdp1TextureVertices = nullptr;
 static azel::DebugGouraudPayloadVertex* g_vdp1GouraudVertices = nullptr;
 static std::uint16_t* g_vdp1TextureIndices = nullptr;
+static unsigned int g_vdp1TextureVertexCapacity = 0u;
+static unsigned int g_vdp1TextureIndexCapacity = 0u;
 
 struct SubdivGouraudVertex {
     float x, y, z;
@@ -3978,7 +3983,9 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model)
     return g_vdp1GpuTextures.size() == model.textureCount;
 }
 
-static bool buildVdp1TexturedBuffers(const Vdp1ModelSource& model)
+static bool buildVdp1TexturedBuffers(
+    const Vdp1ModelSource& model,
+    bool reuseMappedBuffers)
 {
     if (!model.valid() || model.vertexCount > 65535u ||
         g_vdp1GpuTextures.empty())
@@ -3994,27 +4001,31 @@ static bool buildVdp1TexturedBuffers(const Vdp1ModelSource& model)
     const unsigned int indexBytes =
         vertexCount * sizeof(std::uint16_t);
 
-    const std::uint64_t allocStartUs = sceKernelGetProcessTimeWide();
-    g_vdp1TextureVertices =
-        static_cast<azel::DebugTextureVertex*>(
-            probeGpuAlloc(
-                textureVertexBytes,
-                SCE_GXM_MEMORY_ATTRIB_READ,
-                &g_vdp1TextureVertexUid));
-    g_vdp1GouraudVertices =
-        static_cast<azel::DebugGouraudPayloadVertex*>(
-            probeGpuAlloc(
-                gouraudVertexBytes,
-                SCE_GXM_MEMORY_ATTRIB_READ,
-                &g_vdp1GouraudVertexUid));
-    g_vdp1TextureIndices =
-        static_cast<std::uint16_t*>(
-            probeGpuAlloc(
-                indexBytes,
-                SCE_GXM_MEMORY_ATTRIB_READ,
-                &g_vdp1TextureIndexUid));
-    g_profilePrepareTexturedAllocUs = static_cast<unsigned int>(
-        sceKernelGetProcessTimeWide() - allocStartUs);
+    if (!reuseMappedBuffers) {
+        const std::uint64_t allocStartUs = sceKernelGetProcessTimeWide();
+        g_vdp1TextureVertices =
+            static_cast<azel::DebugTextureVertex*>(
+                probeGpuAlloc(
+                    textureVertexBytes,
+                    SCE_GXM_MEMORY_ATTRIB_READ,
+                    &g_vdp1TextureVertexUid));
+        g_vdp1GouraudVertices =
+            static_cast<azel::DebugGouraudPayloadVertex*>(
+                probeGpuAlloc(
+                    gouraudVertexBytes,
+                    SCE_GXM_MEMORY_ATTRIB_READ,
+                    &g_vdp1GouraudVertexUid));
+        g_vdp1TextureIndices =
+            static_cast<std::uint16_t*>(
+                probeGpuAlloc(
+                    indexBytes,
+                    SCE_GXM_MEMORY_ATTRIB_READ,
+                    &g_vdp1TextureIndexUid));
+        g_profilePrepareTexturedAllocUs = static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - allocStartUs);
+        g_vdp1TextureVertexCapacity = vertexCount;
+        g_vdp1TextureIndexCapacity = vertexCount;
+    }
 
     if (!g_vdp1TextureVertices ||
         !g_vdp1GouraudVertices ||
@@ -4139,6 +4150,8 @@ static void releaseResidentVdp1Model(bool preserveTextures = false)
     p = g_vdp1Indices;
     freeMapped(g_vdp1IndexUid, p);
     g_vdp1Indices = nullptr;
+    g_vdp1VertexCapacity = 0u;
+    g_vdp1IndexCapacity = 0u;
 
     p = g_vdp1TextureVertices;
     freeMapped(g_vdp1TextureVertexUid, p);
@@ -4151,6 +4164,8 @@ static void releaseResidentVdp1Model(bool preserveTextures = false)
     p = g_vdp1TextureIndices;
     freeMapped(g_vdp1TextureIndexUid, p);
     g_vdp1TextureIndices = nullptr;
+    g_vdp1TextureVertexCapacity = 0u;
+    g_vdp1TextureIndexCapacity = 0u;
 
     p = g_vdp1SubdivVertices;
     freeMapped(g_vdp1SubdivVertexUid, p);
@@ -4197,29 +4212,6 @@ bool prepare_vdp1_model(
         !g_vdp1GpuTextures.empty() &&
         g_vdp1GpuTextures.size() == model.textureCount;
 
-    g_profilePrepareReleaseUs = 0u;
-    g_profilePrepareBaseAllocUs = 0u;
-    g_profilePrepareWireUs = 0u;
-    g_profilePrepareTextureUploadUs = 0u;
-    g_profilePrepareTexturedAllocUs = 0u;
-    g_profilePrepareTexturedBuildUs = 0u;
-    g_profilePrepareSubdivAllocUs = 0u;
-    g_profilePrepareSubdivBuildUs = 0u;
-    g_profilePrepareCopyUs = 0u;
-    g_profilePrepareReusedTextures = reuseTextures;
-
-    // The viewer still keeps one resident geometry set at a time. Geometry
-    // can be released independently from textures for the field streaming path.
-    const std::uint64_t releaseStartUs = sceKernelGetProcessTimeWide();
-    if (g_vdp1Vertices || g_vdp1LightingVertices || g_vdp1Indices ||
-        g_vdp1TextureVertices || g_vdp1GouraudVertices ||
-        g_vdp1TextureIndices || g_vdp1SubdivVertices ||
-        g_vdp1SubdivIndices || g_vdp1SubdivWireVertices ||
-        g_vdp1SubdivWireIndices || (!reuseTextures && !g_vdp1GpuTextures.empty()))
-        releaseResidentVdp1Model(reuseTextures);
-    g_profilePrepareReleaseUs = static_cast<unsigned int>(
-        sceKernelGetProcessTimeWide() - releaseStartUs);
-
     if (model.vertexCount > 65535u)
         return false;
 
@@ -4236,25 +4228,86 @@ bool prepare_vdp1_model(
     const unsigned int indexBytes =
         static_cast<unsigned int>(
             genericIndexCount * sizeof(std::uint16_t));
+    const std::size_t subdivWireVertexCount = model.polygonCount * 4u;
+    const std::size_t subdivVertexCount = model.polygonCount * 9u;
+    const std::size_t subdivIndexCount = model.polygonCount * 24u;
+    const bool wireBuffersRequired =
+        subdivWireVertexCount && subdivWireVertexCount <= 65535u;
+    const bool subdivBuffersRequired =
+        model.texturesValid() && subdivVertexCount &&
+        subdivVertexCount <= 65535u && subdivIndexCount <= 65535u;
 
-    const std::uint64_t baseAllocStartUs = sceKernelGetProcessTimeWide();
-    g_vdp1Vertices = static_cast<azel::DebugColorVertex*>(
-        probeGpuAlloc(
-            vertexBytes,
-            SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_vdp1VertexUid));
-    g_vdp1LightingVertices = static_cast<azel::DebugColorVertex*>(
-        probeGpuAlloc(
-            vertexBytes,
-            SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_vdp1LightingVertexUid));
-    g_vdp1Indices = static_cast<std::uint16_t*>(
-        probeGpuAlloc(
-            indexBytes,
-            SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_vdp1IndexUid));
-    g_profilePrepareBaseAllocUs = static_cast<unsigned int>(
-        sceKernelGetProcessTimeWide() - baseAllocStartUs);
+    // The live field mesh remains a temporary flattened resource, but a
+    // visibility change should not churn mapped GXM buffers when the new set
+    // fits the capacity already resident. This is independent of texture
+    // residency: a CRAM/VDP1 texture invalidation can refresh textures while
+    // retaining compatible geometry allocations.
+    const bool reuseGeometry =
+        preserveResidentTextures &&
+        g_vdp1Vertices && g_vdp1LightingVertices && g_vdp1Indices &&
+        g_vdp1VertexCapacity >= vertexCount &&
+        g_vdp1IndexCapacity >= genericIndexCount &&
+        (!model.texturesValid() ||
+            (g_vdp1TextureVertices && g_vdp1GouraudVertices &&
+             g_vdp1TextureIndices &&
+             g_vdp1TextureVertexCapacity >= vertexCount &&
+             g_vdp1TextureIndexCapacity >= vertexCount)) &&
+        (!wireBuffersRequired ||
+            (g_vdp1SubdivWireVertices && g_vdp1SubdivWireIndices &&
+             g_vdp1SubdivWireVertexCapacity >= subdivWireVertexCount &&
+             g_vdp1SubdivWireIndexCapacity >= subdivWireVertexCount)) &&
+        (!subdivBuffersRequired ||
+            (g_vdp1SubdivVertices && g_vdp1SubdivIndices &&
+             g_vdp1SubdivVertexCapacity >= subdivVertexCount &&
+             g_vdp1SubdivIndexCapacity >= subdivIndexCount));
+
+    g_profilePrepareReleaseUs = 0u;
+    g_profilePrepareBaseAllocUs = 0u;
+    g_profilePrepareWireUs = 0u;
+    g_profilePrepareTextureUploadUs = 0u;
+    g_profilePrepareTexturedAllocUs = 0u;
+    g_profilePrepareTexturedBuildUs = 0u;
+    g_profilePrepareSubdivAllocUs = 0u;
+    g_profilePrepareSubdivBuildUs = 0u;
+    g_profilePrepareCopyUs = 0u;
+    g_profilePrepareReusedTextures = reuseTextures;
+    g_profilePrepareReusedGeometry = reuseGeometry;
+
+    // The viewer still keeps one resident geometry set at a time. Geometry
+    // and textures can be retained independently for the field streaming path.
+    const std::uint64_t releaseStartUs = sceKernelGetProcessTimeWide();
+    if (!reuseGeometry &&
+        (g_vdp1Vertices || g_vdp1LightingVertices || g_vdp1Indices ||
+        g_vdp1TextureVertices || g_vdp1GouraudVertices ||
+        g_vdp1TextureIndices || g_vdp1SubdivVertices ||
+        g_vdp1SubdivIndices || g_vdp1SubdivWireVertices ||
+        g_vdp1SubdivWireIndices || (!reuseTextures && !g_vdp1GpuTextures.empty())))
+        releaseResidentVdp1Model(reuseTextures);
+    g_profilePrepareReleaseUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - releaseStartUs);
+
+    if (!reuseGeometry) {
+        const std::uint64_t baseAllocStartUs = sceKernelGetProcessTimeWide();
+        g_vdp1Vertices = static_cast<azel::DebugColorVertex*>(
+            probeGpuAlloc(
+                vertexBytes,
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp1VertexUid));
+        g_vdp1LightingVertices = static_cast<azel::DebugColorVertex*>(
+            probeGpuAlloc(
+                vertexBytes,
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp1LightingVertexUid));
+        g_vdp1Indices = static_cast<std::uint16_t*>(
+            probeGpuAlloc(
+                indexBytes,
+                SCE_GXM_MEMORY_ATTRIB_READ,
+                &g_vdp1IndexUid));
+        g_profilePrepareBaseAllocUs = static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - baseAllocStartUs);
+        g_vdp1VertexCapacity = vertexCount;
+        g_vdp1IndexCapacity = static_cast<unsigned int>(genericIndexCount);
+    }
 
     if (!g_vdp1Vertices ||
         !g_vdp1LightingVertices ||
@@ -4265,8 +4318,7 @@ bool prepare_vdp1_model(
     // Keep this geometry in separate mapped buffers: the perimeter draw may
     // still be in flight when the subdivision overlay is submitted.
     const std::uint64_t wireStartUs = sceKernelGetProcessTimeWide();
-    const std::size_t subdivWireVertexCount = model.polygonCount * 4u;
-    if (subdivWireVertexCount && subdivWireVertexCount <= 65535u) {
+    if (wireBuffersRequired && !reuseGeometry) {
         g_vdp1SubdivWireVertexCapacity =
             static_cast<unsigned int>(subdivWireVertexCount);
         g_vdp1SubdivWireIndexCapacity =
@@ -4308,34 +4360,37 @@ bool prepare_vdp1_model(
             if (!uploaded)
                 return false;
         }
-        if (!buildVdp1TexturedBuffers(model))
+        if (!buildVdp1TexturedBuffers(model, reuseGeometry))
             return false;
         if (!reuseTextures)
             g_vdp1TextureDataDirty = false;
         g_vdp1TexturedReady = true;
 
-        const std::size_t subdivVertexCount = model.polygonCount * 9u;
-        const std::size_t subdivIndexCount = model.polygonCount * 24u;
-        if (subdivVertexCount && subdivVertexCount <= 65535u &&
-            subdivIndexCount <= 65535u) {
-            g_vdp1SubdivVertexCapacity =
-                static_cast<unsigned int>(subdivVertexCount);
-            g_vdp1SubdivIndexCapacity =
-                static_cast<unsigned int>(subdivIndexCount);
-            const std::uint64_t subdivAllocStartUs =
-                sceKernelGetProcessTimeWide();
-            g_vdp1SubdivVertices = static_cast<SubdivGouraudVertex*>(
-                probeGpuAlloc(
-                    g_vdp1SubdivVertexCapacity * sizeof(SubdivGouraudVertex),
-                    SCE_GXM_MEMORY_ATTRIB_READ,
-                    &g_vdp1SubdivVertexUid));
-            g_vdp1SubdivIndices = static_cast<std::uint16_t*>(
-                probeGpuAlloc(
-                    g_vdp1SubdivIndexCapacity * sizeof(std::uint16_t),
-                    SCE_GXM_MEMORY_ATTRIB_READ,
-                    &g_vdp1SubdivIndexUid));
-            g_profilePrepareSubdivAllocUs = static_cast<unsigned int>(
-                sceKernelGetProcessTimeWide() - subdivAllocStartUs);
+        if (subdivBuffersRequired) {
+            if (reuseGeometry) {
+                // Positions, UVs, and topology are rewritten below into the
+                // already-mapped capacity. No allocation is required.
+            } else {
+                g_vdp1SubdivVertexCapacity =
+                    static_cast<unsigned int>(subdivVertexCount);
+                g_vdp1SubdivIndexCapacity =
+                    static_cast<unsigned int>(subdivIndexCount);
+                const std::uint64_t subdivAllocStartUs =
+                    sceKernelGetProcessTimeWide();
+                g_vdp1SubdivVertices = static_cast<SubdivGouraudVertex*>(
+                    probeGpuAlloc(
+                        g_vdp1SubdivVertexCapacity *
+                            sizeof(SubdivGouraudVertex),
+                        SCE_GXM_MEMORY_ATTRIB_READ,
+                        &g_vdp1SubdivVertexUid));
+                g_vdp1SubdivIndices = static_cast<std::uint16_t*>(
+                    probeGpuAlloc(
+                        g_vdp1SubdivIndexCapacity * sizeof(std::uint16_t),
+                        SCE_GXM_MEMORY_ATTRIB_READ,
+                        &g_vdp1SubdivIndexUid));
+                g_profilePrepareSubdivAllocUs = static_cast<unsigned int>(
+                    sceKernelGetProcessTimeWide() - subdivAllocStartUs);
+            }
 
             if (!g_vdp1SubdivVertices || !g_vdp1SubdivIndices) {
                 g_vdp1SubdivVertexCapacity = 0u;
@@ -5433,6 +5488,7 @@ static bool buildLiveTownFrame()
     g_profilePrepareSubdivBuildUs = 0u;
     g_profilePrepareCopyUs = 0u;
     g_profilePrepareReusedTextures = false;
+    g_profilePrepareReusedGeometry = false;
     g_profileObjectAppendUs = 0u;
     g_profileObjectMaterialResolveUs = 0u;
     g_profileObjectMaterialCacheMisses = 0u;
@@ -5657,7 +5713,7 @@ static bool buildLiveTownFrame()
                 "[FieldStream] frame=%llu submissions=%u polys=%u verts=%u "
                 "modelMiss=%u matMiss=%u textures=%u->%u prepare=%u "
                 "gpuTex=%u dirty=%u append=%uus material=%uus "
-                "upload=%uus build=%uus reuseTex=%u release=%uus "
+                "upload=%uus build=%uus reuseTex=%u reuseGeom=%u release=%uus "
                 "baseAlloc=%uus wire=%uus texUpload=%uus texAlloc=%uus "
                 "texBuild=%uus subAlloc=%uus subBuild=%uus copy=%uus\n",
                 static_cast<unsigned long long>(
@@ -5679,6 +5735,7 @@ static bool buildLiveTownFrame()
                 g_profileBuildUploadUs,
                 buildElapsedUs,
                 g_profilePrepareReusedTextures ? 1u : 0u,
+                g_profilePrepareReusedGeometry ? 1u : 0u,
                 g_profilePrepareReleaseUs,
                 g_profilePrepareBaseAllocUs,
                 g_profilePrepareWireUs,
