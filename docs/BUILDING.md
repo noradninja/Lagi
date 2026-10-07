@@ -157,7 +157,7 @@ Useful sections currently include:
 - platform startup
 - disc/ISO9660 mounting
 - COMMON/town table parsing
-- direct-boot target resolution
+- Azel startup, module, and game-status transitions
 - town/grid/cell setup
 - task-owned object creation
 - Edge state and animation
@@ -166,6 +166,7 @@ Useful sections currently include:
 - VDP1 UI command diagnostics
 - VDP2 text/window and line-scroll presentation
 - movie sequencing, FILM/Cinepak decode, and SceAudio PCM output
+- SCSP DSP backend selection, VM probe, translation, and audio timing
 - GXM initialization and failures
 
 ## Current startup behavior
