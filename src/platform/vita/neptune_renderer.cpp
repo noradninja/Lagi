@@ -389,6 +389,23 @@ struct SubdivGouraudVertex {
     float u, v;
     float shadeR, shadeG, shadeB;
 };
+
+// Full mode always samples a source quad at u/v = 0, 1/2, 1. Build those
+// exact nine bilinear points with midpoint arithmetic instead of evaluating
+// the general bilinear formula for every scalar at every vertex.
+static inline void fillMidpointGrid3x3(
+    float a, float b, float c, float d, float out[9])
+{
+    out[0] = a;
+    out[1] = (a + b) * 0.5f;
+    out[2] = b;
+    out[3] = (a + d) * 0.5f;
+    out[5] = (b + c) * 0.5f;
+    out[6] = d;
+    out[7] = (d + c) * 0.5f;
+    out[8] = c;
+    out[4] = (out[1] + out[7]) * 0.5f;
+}
 static SceUID g_vdp1SubdivVertexUid = -1;
 static SceUID g_vdp1SubdivIndexUid = -1;
 static SubdivGouraudVertex* g_vdp1SubdivVertices = nullptr;
@@ -4429,14 +4446,6 @@ bool prepare_vdp1_model(
                     g_vdp1SubdivQuadIndices.size();
                 g_vdp1SubdivQuadIndices.resize(subdivIndexCount);
 
-                auto bilerp = [](
-                    float a, float b, float c, float d,
-                    float u, float v) {
-                    const float top = a + (b - a) * u;
-                    const float bottom = d + (c - d) * u;
-                    return top + (bottom - top) * v;
-                };
-
                 for (unsigned int p = 0;
                      p < static_cast<unsigned int>(model.polygonCount); ++p) {
                     const auto& record = model.polygons[p];
@@ -4494,32 +4503,34 @@ bool prepare_vdp1_model(
                     const auto& d =
                         model.vertices[p * 6u + cornerVertex[3]];
 
+                    float gridU[9], gridV[9];
+                    fillMidpointGrid3x3(
+                        cornerUv[0][0], cornerUv[1][0],
+                        cornerUv[2][0], cornerUv[3][0], gridU);
+                    fillMidpointGrid3x3(
+                        cornerUv[0][1], cornerUv[1][1],
+                        cornerUv[2][1], cornerUv[3][1], gridV);
+
+                    float gridX[9], gridY[9], gridZ[9];
+                    if (!reuseGeometry) {
+                        fillMidpointGrid3x3(a.x, b.x, c.x, d.x, gridX);
+                        fillMidpointGrid3x3(a.y, b.y, c.y, d.y, gridY);
+                        fillMidpointGrid3x3(a.z, b.z, c.z, d.z, gridZ);
+                    }
+
                     const unsigned int baseVertex = p * 9u;
-                    for (unsigned gy = 0; gy < 3u; ++gy) {
-                        const float v = static_cast<float>(gy) * 0.5f;
-                        for (unsigned gx = 0; gx < 3u; ++gx) {
-                            const float u =
-                                static_cast<float>(gx) * 0.5f;
-                            auto& dst =
-                                g_vdp1SubdivVertices[
-                                    baseVertex + gy * 3u + gx];
-                            if (!reuseGeometry) {
-                                dst.x = bilerp(a.x,b.x,c.x,d.x,u,v);
-                                dst.y = bilerp(a.y,b.y,c.y,d.y,u,v);
-                                dst.z = bilerp(a.z,b.z,c.z,d.z,u,v);
-                                dst.shadeR = 0.0f;
-                                dst.shadeG = 0.0f;
-                                dst.shadeB = 0.0f;
-                            }
-                            dst.u = bilerp(
-                                cornerUv[0][0], cornerUv[1][0],
-                                cornerUv[2][0], cornerUv[3][0],
-                                u, v);
-                            dst.v = bilerp(
-                                cornerUv[0][1], cornerUv[1][1],
-                                cornerUv[2][1], cornerUv[3][1],
-                                u, v);
+                    for (unsigned int i = 0; i < 9u; ++i) {
+                        auto& dst = g_vdp1SubdivVertices[baseVertex + i];
+                        if (!reuseGeometry) {
+                            dst.x = gridX[i];
+                            dst.y = gridY[i];
+                            dst.z = gridZ[i];
+                            dst.shadeR = 0.0f;
+                            dst.shadeG = 0.0f;
+                            dst.shadeB = 0.0f;
                         }
+                        dst.u = gridU[i];
+                        dst.v = gridV[i];
                     }
 
                     const unsigned int quadIndexBase = p * 24u;
@@ -8866,14 +8877,6 @@ bool submit_vdp1_model(
             if (textureIndex >= bucketCount)
                 continue;
 
-            const auto bilerp = [](
-                float a, float b, float c, float d,
-                float u, float v) {
-                const float top = a + (b - a) * u;
-                const float bottom = d + (c - d) * u;
-                return top + (bottom - top) * v;
-            };
-
             const auto& a =
                 model.vertices[p * 6u + cornerVertex[0]];
             const auto& b =
@@ -8888,35 +8891,36 @@ bool submit_vdp1_model(
                 g_liveTownStaticRebuilt ||
                 p >= static_cast<unsigned int>(
                     g_liveTownStaticPolygonCount);
+
+            float gridR[9], gridG[9], gridB[9];
+            fillMidpointGrid3x3(
+                shade.corner[0][0], shade.corner[1][0],
+                shade.corner[2][0], shade.corner[3][0], gridR);
+            fillMidpointGrid3x3(
+                shade.corner[0][1], shade.corner[1][1],
+                shade.corner[2][1], shade.corner[3][1], gridG);
+            fillMidpointGrid3x3(
+                shade.corner[0][2], shade.corner[1][2],
+                shade.corner[2][2], shade.corner[3][2], gridB);
+
+            float gridX[9], gridY[9], gridZ[9];
+            if (updatePosition) {
+                fillMidpointGrid3x3(a.x, b.x, c.x, d.x, gridX);
+                fillMidpointGrid3x3(a.y, b.y, c.y, d.y, gridY);
+                fillMidpointGrid3x3(a.z, b.z, c.z, d.z, gridZ);
+            }
+
             const unsigned int baseVertex = p * 9u;
-            for (unsigned gy = 0; gy < 3u; ++gy) {
-                const float v = static_cast<float>(gy) * 0.5f;
-                for (unsigned gx = 0; gx < 3u; ++gx) {
-                    const float u =
-                        static_cast<float>(gx) * 0.5f;
-                    auto& dst =
-                        g_vdp1SubdivVertices[
-                            baseVertex + gy * 3u + gx];
-
-                    if (updatePosition) {
-                        dst.x = bilerp(a.x,b.x,c.x,d.x,u,v);
-                        dst.y = bilerp(a.y,b.y,c.y,d.y,u,v);
-                        dst.z = bilerp(a.z,b.z,c.z,d.z,u,v);
-                    }
-
-                    dst.shadeR = bilerp(
-                        shade.corner[0][0], shade.corner[1][0],
-                        shade.corner[2][0], shade.corner[3][0],
-                        u, v);
-                    dst.shadeG = bilerp(
-                        shade.corner[0][1], shade.corner[1][1],
-                        shade.corner[2][1], shade.corner[3][1],
-                        u, v);
-                    dst.shadeB = bilerp(
-                        shade.corner[0][2], shade.corner[1][2],
-                        shade.corner[2][2], shade.corner[3][2],
-                        u, v);
+            for (unsigned int i = 0; i < 9u; ++i) {
+                auto& dst = g_vdp1SubdivVertices[baseVertex + i];
+                if (updatePosition) {
+                    dst.x = gridX[i];
+                    dst.y = gridY[i];
+                    dst.z = gridZ[i];
                 }
+                dst.shadeR = gridR[i];
+                dst.shadeG = gridG[i];
+                dst.shadeB = gridB[i];
             }
 
             visibleQuads[p] = 1u;
