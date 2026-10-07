@@ -59,6 +59,9 @@ extern "C" void lagi_dsp_log(const char *format, ...) {
 extern "C" int lagi_dsp_platform_init() {
     if (initialized) return mode;
     initialized = true;
+    // Normal runtime uses the hardware-validated ARM translator. The optional
+    // config file only overrides this for diagnostics or fallback testing.
+    mode = LAGI_DSP_ARM;
     char config[32]{};
     const SceUID fd = sceIoOpen("ux0:data/lagi/dsp_backend.txt", SCE_O_RDONLY, 0);
     if (fd >= 0) { sceIoRead(fd, config, sizeof(config)-1); sceIoClose(fd); }
