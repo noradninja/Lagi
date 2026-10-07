@@ -288,6 +288,12 @@ struct LiveTownMeshRange {
     std::size_t count = 0;
 };
 static std::vector<LiveTownMeshRange> g_liveTownMeshRanges;
+// Static geometry survives across frames, so its Saturn mesh-command ranges
+// must survive with it.  These ranges select ordered-overdraw submission for
+// CMDPMOD mesh primitives; rebuilding only the vertex/polygon prefix and then
+// clearing this metadata can make cached environment meshes disappear until
+// the next Azel visible-set change forces a static rebuild.
+static std::vector<LiveTownMeshRange> g_liveTownStaticMeshRanges;
 static bool g_liveTownPrepared = false;
 static std::size_t g_edgeFirstVertex = 0;
 static std::size_t g_edgeFirstPolygon = 0;
@@ -1396,6 +1402,7 @@ void invalidate_cram_range(unsigned int, unsigned int)
     g_liveTownMaterialCache.clear();
     g_liveTownSignature = 0;
     g_liveTownStaticSignature = 0;
+    g_liveTownStaticMeshRanges.clear();
     g_liveTownPrepared = false;
     g_vdp1TextureDataDirty = true;
 }
@@ -1408,6 +1415,7 @@ void invalidate_vdp1_texture_range(unsigned int, unsigned int)
     g_liveTownMaterialCache.clear();
     g_liveTownSignature = 0;
     g_liveTownStaticSignature = 0;
+    g_liveTownStaticMeshRanges.clear();
     g_liveTownPrepared = false;
     freeVdp1Textures();
     g_vdp1TextureDataDirty = true;
@@ -5670,6 +5678,7 @@ static bool buildLiveTownFrame()
         g_liveTownStaticSignature = staticSignature;
         g_liveTownStaticVertexCount = g_liveTownCpuMesh.vertices.size();
         g_liveTownStaticPolygonCount = g_liveTownCpuMesh.polygonRecords.size();
+        g_liveTownStaticMeshRanges = g_liveTownMeshRanges;
     } else {
         g_liveTownCpuMesh.vertices.resize(g_liveTownStaticVertexCount);
         g_liveTownCpuMesh.lightingVertices.resize(g_liveTownStaticVertexCount);
@@ -5678,6 +5687,7 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.polygonTextureIndices.resize(
             g_liveTownStaticPolygonCount);
         g_liveTownPolygonLights.resize(g_liveTownStaticPolygonCount);
+        g_liveTownMeshRanges = g_liveTownStaticMeshRanges;
     }
     g_profileBuildCacheUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tCache);
@@ -5831,6 +5841,7 @@ static bool buildLiveTownFrame()
                 "[FieldStream] frame=%llu submissions=%u polys=%u verts=%u "
                 "modelMiss=%u matMiss=%u textures=%u->%u prepare=%u "
                 "gpuTex=%u dirty=%u staticCtx=%u/%u staticSubs=%u billboards=%u "
+                "meshRanges=%u/%u "
                 "staticRebuilt=%u append=%uus material=%uus "
                 "upload=%uus build=%uus reuseTex=%u reuseGeom=%u release=%uus "
                 "baseAlloc=%uus wire=%uus texUpload=%uus texAlloc=%uus "
@@ -5853,6 +5864,9 @@ static bool buildLiveTownFrame()
                 explicitStaticContextsConsumed,
                 g_liveTownStaticSubmissionCount,
                 g_liveTownBillboardSubmissionCount,
+                static_cast<unsigned int>(g_liveTownMeshRanges.size()),
+                static_cast<unsigned int>(
+                    g_liveTownStaticMeshRanges.size()),
                 g_liveTownStaticRebuilt ? 1u : 0u,
                 g_profileObjectAppendUs,
                 g_profileObjectMaterialResolveUs,

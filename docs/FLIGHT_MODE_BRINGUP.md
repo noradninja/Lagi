@@ -37,7 +37,7 @@ Vita/Vita TV results supplied by the user are authoritative. Host builds, static
 
 - **Date:** 2026-10-07
 - **Branch:** `feature/flight-mode-bringup`
-- **Rendering checkpoint before this docs-only handoff:** `879f0977a9f0e23a655c60608dfda28ddefaccaf` (`Record failed FLD_A3 static-grid activation`)
+- **Latest hardware-tested rendering checkpoint:** `a476878a9d0c44b30c4e3a6508273d70c86c2482` (`Reuse static model material bindings`)
 - **Draft pull request:** #12 (`Bring up native FLD_A3 flight entry`)
 
 This is the active rendering checkpoint. Neptune is the native SceGxm renderer, not VitaGL. The gameplay panel is 480x272 and the immediate target is reliable 30 Hz within a 33.3 ms frame budget. Do not merge PR #12 until the user explicitly approves it after Vita/Vita TV testing.
@@ -50,45 +50,29 @@ The normal route from the Ruins elevator through status `0x50`, mode 3, `FLD_A3.
 - The exact midpoint-grid Full Gouraud optimization and duplicate `A,B,C / A,C,D` vertex-transform reuse are hardware-valid checkpoints and must remain intact.
 - The billboard invalidation correction is working: billboards remain dynamic and no longer force the static prefix to rebuild.
 
-After the midpoint optimization, all 37 sampled mode-3 frames had a render median of about 28.207 ms and p90 of 40.787 ms. Dense 900+ polygon samples had medians of about 30.624 ms render, 13.031 ms build, 9.922 ms object append/transform, 4.366 ms lighting, 3.594 ms Gouraud visibility preparation, 2.581 ms Gouraud payload, 4.215 ms main submission, and 1.857 ms final GXM wait. Many ordinary frames are therefore inside the 33.3 ms budget, but the high tail and first-use stalls still prevent a reliable 30 Hz result. First-use model/material/texture growth is a separate residency problem and can still produce approximately 344.7 ms of texture upload and 375.5 ms of build time.
+At the latest hardware-tested checkpoint, the static-grid hook is active and the material-binding reuse change has removed the previous ~110-128 ms recurring material-resolution penalty. Across 39 sampled active-field `[ScenePerf]` records, render median is 22.855 ms. The 34 non-rebuild samples have a 21.259 ms median, 25.605 ms p90, and 26.206 ms maximum. Dense 900+ polygon non-rebuild samples have a 23.576 ms median. All five sampled frames over 33.3 ms are static-prefix rebuild frames; their render median is 44.244 ms and maximum is 46.924 ms. First-use texture growth remains a separate hundreds-of-milliseconds residency stall.
 
-### Current blocker: FLD_A3 static-grid classification did not activate
+### Current correction: preserve cached Saturn mesh-command metadata
 
-Commits `6c82eb4` through `4352550` added the Phase 4 native-camera boundary: capture Azel's active field view, remove that view from field submissions, publish world-space transforms, and apply the same native view exactly once in Neptune. Commit `29965d1` also intended to mark the rigid environment submission in `s_visdibilityCellTask::gridCellDraw_normal()` as `dynamic=false` while leaving visibility, clipping, depth/LOD selection, and model choice entirely with Azel.
+The latest full-mode hardware run passed the complete static-grid bridge gate: every sampled active `[FieldStream]` record had matching nonzero `staticCtx=set/consumed`, `staticSubs > 0`, and no context mismatch. The generated FLD_A3 hook, bridge consumption, world-space classification, and Neptune static path are therefore all active. Do not return to the earlier generated-source activation diagnosis unless a later log actually reports `staticCtx=0/0` or `staticSubs=0`.
 
-The latest full hardware traversal showed that the camera/lighting presentation remained viable, but the static hook did not execute successfully. Every sampled `[FieldStream]` record reported `staticSubs=0`, with roughly 22 billboards and `staticRebuilt=0`. A representative 1,010-polygon frame still reported `obj=10.152 ms`, `build=13.121 ms`, and `render=29.696 ms`. This proves the billboard fix is working, but no normal FLD_A3 environment submission is reaching Neptune with `dynamic=false`.
+Hardware exposed one visual regression at map entry: while the scripted camera starts above the dragon and travels behind it, a section of field mesh that begins offscreen does not appear as the camera reveals it; the section appears only after player movement. Source inspection rules out a stale camera visibility-preparation cache: `prepareLiveTownGouraudVisibility()` is rebuilt from the current WVP every authentic-camera frame.
 
-The initial leading hypothesis was a silent generated-source patch miss. `CMakeLists.txt` uses `string(REPLACE ...)` for the FLD_A3 `o_fld_a3.cpp` hook, but that file receives several unrelated replacements. The final generic `source_text != original_text` guard proves only that something in the file changed; it does not prove that this particular replacement matched.
+The concrete renderer bug is in the metadata paired with the cached static prefix. `g_liveTownMeshRanges` records source polygons carrying Saturn VDP1 mesh mode (`CMDPMOD` bit 8), which Neptune submits with ordered-overdraw behavior. The frame builder cleared those ranges every frame. A static-cache rebuild recreated them, but a cache hit restored only the cached vertices, polygon records, materials, and lighting arrays. It did not restore the static mesh-command ranges. A later Azel visible-set change—commonly triggered when the player starts moving—rebuilt the prefix and recreated the missing metadata, matching the observed delayed appearance.
 
-**Generated-source verification (2026-10-07): the current branch emits the intended hook after a real CMake configure.** A stale local generated copy initially contained only the bare `addObjectToDrawList(pModel)`, matching the hardware symptom. After reconfiguration, `${CMAKE_BINARY_DIR}/azel_upstream/field_field_a3_o_fld_a3.cpp` contains the world transform, `hasModelMatrix=true`, `dynamic=false`, `set_town_submission_context(...)`, and immediate draw call. The bridge preserves that pending state through `record_submission()`, `publish_frame()`, and Neptune's static-submission scan. CMake now also counts the unique injected call and fails configuration unless it appears exactly once. This proves generation in the current checkout, not that the previously tested Vita package contained or executed the hook.
+The next checkpoint preserves a separate copy of the static mesh-command ranges when the static prefix is rebuilt and restores it on cache hits before dynamic submissions append their ranges. CRAM and VDP1 texture invalidation clear the paired metadata. `[FieldStream]` now reports `meshRanges=total/static`, allowing the next hardware run to prove that static ranges remain present on `staticRebuilt=0` frames. This is renderer-owned presentation metadata; Azel's visibility, clipping, LOD, model choice, and scripted camera remain untouched.
 
 ### Immediate next task
 
-Do this before further dynamic-flatten micro-optimization or persistent-resource work:
+1. Build the new checkpoint and test the complete opening scripted camera without moving the player.
+2. Confirm the previously absent mesh section appears as soon as the camera reveals it.
+3. In `[FieldStream]`, confirm `meshRanges=total/static` retains a nonzero static count on `staticRebuilt=0` frames. Continue to require matching `staticCtx`, `staticSubs > 0`, and nonzero billboards.
+4. Confirm field orientation/winding, corrected lighting, dragon/world relationship, and the point-filtered 48x48 radar remain unchanged.
+5. If the visual gate passes, resume the generic persistent-geometry/resource work. The remaining sampled deadline misses are all rebuild events; do not optimize audio or the dynamic actor path for this milestone.
 
-1. Pull this checkpoint and run a real CMake configure before building; the dedicated exact-count guard must pass.
-2. Inspect `${CMAKE_BINARY_DIR}/azel_upstream/field_field_a3_o_fld_a3.cpp` and confirm the guarded static context remains immediately before `addObjectToDrawList(pModel)`.
-3. Build the package so the newer generated source recompiles; do not reuse a package built before the configure step.
-4. Hardware-test the existing `[FieldStream]` acceptance gate below.
-5. `[FieldStream] staticCtx=set/consumed` now distinguishes generated-hook execution from bridge consumption. If `staticSubs` is still zero, use those counts to localize the failure before changing renderer architecture. Do not edit `extern/Azel` directly.
+At `a476878`, 247 of 296 logged field records still rebuilt the monolithic static prefix. Ordinary build median is 6.680 ms and object append median is 5.062 ms. Rebuild build median has fallen to 26.786 ms because recurring material resolution is now cached; geometry upload remains about 7.928 ms median. That is a major improvement over the prior ~128 ms rebuild median, but rebuild frames still render around 44-47 ms and miss 30 Hz.
 
-The next hardware acceptance gate is:
-
-- `[FieldStream] staticSubs > 0` during FLD_A3;
-- `staticCtx` reports matching, nonzero set/consumed counts;
-- billboards remain nonzero and steady frames keep `staticRebuilt=0`;
-- camera, field orientation/winding, dragon/world relationship, corrected lighting, and 48x48 point-filtered radar remain visually unchanged;
-- dense-frame `obj` time falls materially below the current roughly 9-10 ms range.
-
-Interpret `staticCtx=set/consumed` as follows: `0/0` means the generated hook did not run; nonzero set with zero or lower consumed means the pending context was not paired with the intended model submission; matching nonzero counts with `staticSubs=0` moves the fault downstream into adaptation/classification. Matching nonzero counts with `staticSubs>0` proves the full bridge path activated.
-
-**Static-grid hardware result (2026-10-07): activation passed and ordinary frames improved, but monolithic static-prefix churn now dominates the misses.** In the full traversal log, all 304 sampled `[FieldStream]` records had matching nonzero `staticCtx` counts and `staticSubs > 0`. Across 41 active-field `[ScenePerf]` samples, render median was 22.401 ms. The 37 non-rebuild samples had a 21.668 ms median and 24.454 ms p90; dense 900+ polygon non-rebuild samples had a 22.921 ms median. Ordinary build fell to 6.860 ms median and object append/transform to 5.127 ms median. This clears the 25 ms median goal for ordinary rendering.
-
-The run still misses reliable 30 Hz because the visible static prefix changed frequently: 254 of 304 logged field events reported `staticRebuilt=1`. Those rebuild events had a 128.119 ms median build, while their geometry upload median was only 8.144 ms. Sampled rebuild frames reached 153-542 ms render. `[FieldCellTransition]` changed far less often, so Azel's per-frame visibility/LOD result is legitimately changing within cells; Neptune must reuse stable resources rather than reconstructing material/geometry state for the whole visible set.
-
-The first rebuild optimization after this result routes static submissions through Neptune's existing persistent per-model material binding cache. Previously, static `appendLiveTownModel()` calls omitted cached texture indices and repeated `liveTownTextureIndex()` for every polygon against roughly 900-1,000 resident textures whenever the static signature changed. Dynamic submissions already used the cache. Static and dynamic paths now share the same model-to-texture binding resource; hardware validation is pending. Geometry transform/copy and monolithic upload remain separate work after this measurement.
-
-Once this classification works, the remaining architectural milestone is still a generic Neptune resident model/resource cache shared by fields and towns, including Zoah: first encounter adapts/decodes/uploads a stable Azel model or cell resource once, and later Azel visibility/LOD decisions select resident resources without rebuilding a monolithic visible-world mesh. Do not create an FLD_A3-only renderer architecture.
+With classification now working, the remaining architectural milestone is still a generic Neptune resident model/resource cache shared by fields and towns, including Zoah: first encounter adapts/decodes/uploads a stable Azel model or cell resource once, and later Azel visibility/LOD decisions select resident resources without rebuilding a monolithic visible-world mesh. Do not create an FLD_A3-only renderer architecture.
 
 Keep audio work on PR #11, the end-of-area crash, and native ray/laser rendering out of this checkpoint. The usual home build environment is `E:\dev\Lagi`, VitaSDK at `E:\dev\VitaSDK`, PSP2CGC commonly at `E:\PSVITA\sdk\host_tools\bin\psp2cgc.exe`, with `cmake --build build --parallel 32` producing `build\Lagi.vpk`.
 
