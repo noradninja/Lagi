@@ -598,6 +598,7 @@ static float g_staticRoomFitDistance = 3.0f;
 // mutable here instead of baking movement into the reconstructed room mesh.
 static bool g_townPlayerReady = false;
 static bool g_townCameraReady = false;
+static unsigned int g_sceneGameMode = 0u;
 static float g_townPlayerPosition[3]{};
 static float g_townPlayerYaw = 0.0f;
 static float g_townCameraPosition[3]{};
@@ -637,6 +638,7 @@ static unsigned int g_pendingTownEdgePreviousAnimation = 0;
 static unsigned int g_pendingTownEdgePreviousFrame = 0;
 static float g_pendingTownEdgeTransition = 1.0f;
 static bool g_pendingTownPresentationValid = false;
+static unsigned int g_pendingSceneGameMode = 0u;
 static int g_pendingViewMode = 7;
 static unsigned int g_pendingProfileTasksUs = 0u;
 static unsigned int g_pendingProfileGameWaitUs = 0u;
@@ -5418,7 +5420,17 @@ static bool buildLiveTownFrame()
         sceKernelGetProcessTimeWide() - tObjects);
 
     const std::uint64_t tEdge = sceKernelGetProcessTimeWide();
-    appendLiveTownEdge();
+    // Town mode owns Edge. Field mode publishes its dragon/rider hierarchy
+    // through Azel's normal addObjectToDrawList() path, so never inject the
+    // town actor into a field frame.
+    if (g_sceneGameMode == 1u)
+        appendLiveTownEdge();
+    else {
+        g_liveTownShadowFirstPolygon = 0u;
+        g_liveTownShadowPolygonCount = 0u;
+        g_liveTownEdgeFirstPolygon = 0u;
+        g_liveTownEdgePolygonCount = 0u;
+    }
     g_profileBuildEdgeUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tEdge);
 
@@ -10162,13 +10174,13 @@ static void renderBasicWingViewer()
     // g_viewMode is part of the published game->render frame. The render
     // thread never reads mutable controller state directly.
 
-    const bool nativeTownMode =
-        g_townPlayerReady && g_townCameraReady &&
+    const bool nativeSceneMode =
+        g_sceneGameMode != 0u && g_townCameraReady &&
         !azel_bridge::published_submissions().empty();
     const bool roomMode =
-        g_staticRoomCpuReady || nativeTownMode;
+        g_staticRoomCpuReady || nativeSceneMode;
     const bool roomAuthenticCameraMode =
-        nativeTownMode ||
+        nativeSceneMode ||
         (g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraValid);
 
     // Legacy Basic Wing regression camera state is renderer-owned. Interactive
@@ -10179,7 +10191,7 @@ static void renderBasicWingViewer()
         g_staticRoomCpuMesh.lightingValid &&
         g_viewMode == 6;
     const bool liveSceneLighting =
-        nativeTownMode &&
+        nativeSceneMode &&
         std::any_of(
             g_liveTownPolygonLights.begin(),
             g_liveTownPolygonLights.end(),
@@ -10378,7 +10390,7 @@ static void renderBasicWingViewer()
         sceKernelGetProcessTimeWide() - renderStartUs);
 
     static unsigned int scenePerfHeartbeat = 0u;
-    if (nativeTownMode && ((scenePerfHeartbeat++ % 60u) == 0u)) {
+    if (nativeSceneMode && ((scenePerfHeartbeat++ % 60u) == 0u)) {
         logging::writef(
             "[ScenePerf] build=%uus scan=%u cache=%u obj=%u edge=%u upload=%u "
             "light=%u submit=%u gxmwait=%u render=%u polys=%u verts=%u "
@@ -10850,12 +10862,12 @@ bool presentation_active()
         g_pendingViewMode == 7 || g_pendingViewMode == 8 ||
         g_pendingViewMode == 10 || g_pendingViewMode == 9 ||
         g_pendingViewMode == 11;
-    const bool nativeTownReady =
-        g_townPlayerReady && g_townCameraReady;
+    const bool nativeSceneReady =
+        g_sceneGameMode != 0u && g_townCameraReady;
     const bool legacyRoomReady =
         g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraValid;
     return !g_debugVisible && sceneMode &&
-           (nativeTownReady || legacyRoomReady);
+           (nativeSceneReady || legacyRoomReady);
 }
 
 void presentation_profile_tasks_us(unsigned int microseconds)
@@ -10889,6 +10901,7 @@ void presentation_publish_frame()
         g_townPlayerPosition,
         g_pendingTownPlayerPosition,
         sizeof(g_townPlayerPosition));
+    g_sceneGameMode = g_pendingSceneGameMode;
     g_townPlayerYaw = g_pendingTownPlayerYaw;
     g_townPlayerGrounded = g_pendingTownPlayerGrounded;
     g_townCollisionContacts = g_pendingTownCollisionContacts;
@@ -11001,8 +11014,13 @@ void presentation_fade_out(unsigned int frames)
 
 void presentation_camera_update()
 {
-    // Edge's current task-owned pose is consumed when the native town
-    // submission batch is assembled. No renderer-owned room mesh is updated.
+    // Native scene pose/camera state is consumed at the publish boundary.
+}
+
+void presentation_set_scene_mode(unsigned int gameMode)
+{
+    g_pendingSceneGameMode = gameMode;
+    g_pendingTownPresentationValid = true;
 }
 
 unsigned presentation_player_animation_frames(unsigned animation)
