@@ -12,6 +12,100 @@ Neptune renders.
 
 Flight behavior, field scripts, dragon movement, camera state, visibility, animation, encounters, VDP1/VDP2 state, and progression remain Azel-owned. Lagi restores the Vita-facing services and presentation paths required to let that runtime execute natively.
 
+## Current hardware-validated state (2026-10-07)
+
+The native FLD_A3 route is live on Vita hardware:
+
+```text
+Ruins elevator
+    → Azel status 0x50
+    → mode 3
+    → FLD_A3.PRG
+    → native field task graph
+```
+
+BGM, dragon/rider, radar, LCS, and field geometry are active. Field visibility remains Azel-driven: earlier diagnostics identified a 4x14 FLD_A3 visibility grid, changing camera cells, roughly four active cells at a time, and many grid objects passing Azel's visibility and clipping tests.
+
+Hardware has also established two presentation rules that must not regress:
+
+- Town/Ruins retains the historical Saturn-to-GXM X mirror. Native field mode 3 does **not** receive that extra X mirror and does **not** apply an extra winding XOR. Commit `1e3ec6464394a75b50f10a6185d555aeac20afae` (`Use native field horizontal orientation`) is the known-correct field orientation baseline.
+- The upper-right field radar map is a 48x48 point-filtered sprite drawn at its original 48x48 output-pixel size. Its alternating mesh/checker pattern provides Saturn-style pseudo-transparency over polygons. Bilinear filtering destroys that effect. Keep the map sprite rule separate from the radar frame and other UI behavior. This behavior was established in `e467858e48b97ddccb94d40270822e9c4cbf33f6`.
+
+Vita/Vita TV results supplied by the user are authoritative. Host builds, static checks, or log review do not constitute hardware validation.
+
+## Rendering performance and streaming investigation
+
+Traversal hitches correlate with changes in the visible field geometry set. The branch currently records:
+
+- `[FieldCellTransition]`: camera-cell and active-cell-count changes.
+- `[FieldStream]`: frame, submissions, polygon/vertex counts, model-cache misses, material misses, texture-count growth, whether `prepare_vdp1_model()` ran, GPU texture count/dirty state, and append/material/upload/build timings.
+- Per-published-frame model-cache misses exposed through the render bridge.
+
+The first diagnostic run showed that Neptune represented the live field as one changing flattened mesh. When its visible geometry size changed, Neptune called `prepare_vdp1_model()` again. Before texture preservation, that function released and re-uploaded the entire resident texture set, producing roughly 400-470 ms uploads even when the frame introduced no new model or texture.
+
+The current branch head, `8a531f88a8d59381c2d0daa8fad1e5c1f7ae6a19` (`Reuse field textures across geometry changes`), adds texture-preserving geometry rebuilds through:
+
+```cpp
+prepare_vdp1_model(const Vdp1ModelSource&, bool preserveResidentTextures = false)
+releaseResidentVdp1Model(bool preserveTextures = false)
+```
+
+The field path requests preservation when rebuilding live geometry. CRAM and VDP1 texture invalidation still mark texture data dirty or free textures when required. Hardware traversal is noticeably smoother after this change, so the texture-residency optimization is qualitatively validated.
+
+It is not the final streaming design. The latest hardware log still contained about 279 geometry reprepares. Ordinary non-prepare field builds had a median around 15.8-15.9 ms; prepare-event builds had a median around 95.5 ms, including roughly 81.7 ms of upload work. Those events remain visible hitches.
+
+Latest measured workload timings:
+
+| Workload | Median | 90th percentile | Relevant budget / interpretation |
+|---|---:|---:|---|
+| Neptune render | ~44.5 ms/frame | ~123.5 ms | Above the 33.3 ms 30 Hz budget; current primary FPS limiter |
+| Field geometry build | ~15.9 ms/frame | ~81.5 ms | High tail tracks reprepare/resource work |
+| Audio worker, field BGM | ~6.92 ms/256 samples | ~8.01 ms | 5.804 ms deadline; ~83.5% of sampled chunks exceeded it |
+| SCSP processing | ~6.41 ms | — | Main audio cost |
+| Slot processing | ~3.09 ms | — | Part of SCSP work |
+| DSP | ~3.15 ms | — | Part of SCSP work |
+| 68K | ~1.87 ms | — | Relatively stable |
+
+Audio runs on CPU2, so its chunk cost must not be added arithmetically to render frame time. It is under real-time pressure, but render work independently exceeds the 30 Hz frame budget. Rendering and geometry-chunk hitching are the priority for this milestone; audio optimization stays on its separate branch/PR.
+
+## Neptune residency direction
+
+The remaining hitch is a generic Neptune resource-residency problem, not a field-only special case. A monolithic flattened scene will reproduce the same failure mode in large towns such as Zoah and potentially in other scene types.
+
+The intended architecture is:
+
+```text
+Azel stable model / cell identity
+        ↓ first encounter
+Lagi adapts and decodes presentation data
+        ↓
+Neptune creates persistent GPU geometry/material/texture resource
+        ↓
+Azel visibility changes
+        ↓
+submit a different set of resident resources
+        ↓
+no full-scene rebuild or re-upload
+```
+
+The cache should be generic enough for town and field presentation. Static environment geometry should be adapted, decoded, and uploaded once, then selected for drawing according to Azel's visibility/cell decisions. Dynamic actors—dragon, rider, enemies, particles, projectiles, and other changing geometry—remain dynamic. Azel continues to own scene identity, visibility, clipping, and gameplay decisions; Lagi only bridges stable identities and data; Neptune owns native SceGxm resources and rendering.
+
+Field submissions are temporarily forced dynamic through `begin_frame(forceDynamicSubmissions=true)` because they currently arrive with camera-space matrices. This avoided catastrophic static-cache churn when those matrices changed, but it cannot be the final resource model. Phase 4 must classify submission transform spaces and apply Azel's field camera exactly once.
+
+The existing field camera path is:
+
+```text
+field camera task
+    → camera slot
+    → applyCameraStatusToEngine()
+    → updateEngineCamera(...)
+    → cameraProperties2 / pCurrentMatrix / m384_viewMatrix
+```
+
+Upstream helpers include `getFieldCameraStatus()` and `getFieldCameraMatrix()`. Town already uses `begin_view_relative_submission_scope()` and `removeViewTransform()` to convert scoped `view * world` submissions back to world space. Investigate a generic equivalent for static field cells, but do not blanket-convert field submissions until terrain, dynamic objects, dragon/rider, and effects have each been classified.
+
+The immediate profiling task is to split the remaining ~80-100 ms reprepare events into buffer free/allocate/map/unmap, topology and UV rebuild, subdivision-buffer rebuild, CPU flatten/transform, and other `prepare_vdp1_model()` work. Instrumentation should remain narrowly scoped and preserve current rendering behavior.
+
 ## Runtime path
 
 ```text
