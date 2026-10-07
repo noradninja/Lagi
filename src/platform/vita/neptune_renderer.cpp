@@ -646,6 +646,8 @@ static float g_townCameraPitch = 0.0f;
 static float g_townCameraDistance = 0.0f;
 static float g_nativeSceneNearPlane = 0.0f;
 static float g_nativeSceneFarPlane = 0.0f;
+static bool g_nativeSceneViewValid = false;
+static float g_nativeSceneViewMatrix[12]{};
 static float g_azelProjectionFovDegrees = 80.0f;
 static bool g_townPlayerGrounded = false;
 static unsigned int g_townCollisionContacts = 0;
@@ -670,6 +672,8 @@ static float g_pendingTownCameraPitch = 0.0f;
 static float g_pendingTownCameraDistance = 0.0f;
 static float g_pendingNativeSceneNearPlane = 0.0f;
 static float g_pendingNativeSceneFarPlane = 0.0f;
+static bool g_pendingNativeSceneViewValid = false;
+static float g_pendingNativeSceneViewMatrix[12]{};
 static bool g_pendingTownPlayerGrounded = false;
 static unsigned int g_pendingTownCollisionContacts = 0;
 static unsigned int g_pendingTownEdgeAnimation = 0;
@@ -5608,6 +5612,13 @@ static bool buildLiveTownFrame()
             staticSignature *= 1099511628211ull;
             staticSignature ^= model->polygons.size();
             staticSignature *= 1099511628211ull;
+            if (submission.state.hasModelMatrix) {
+                for (unsigned int component = 0; component < 12u; ++component) {
+                    staticSignature ^= static_cast<std::uint32_t>(
+                        submission.state.modelMatrix[component]);
+                    staticSignature *= 1099511628211ull;
+                }
+            }
         }
         hasBillboards = hasBillboards || submission.state.billboard;
     }
@@ -5859,17 +5870,37 @@ static ViewerMat4 buildAuthenticRoomWvp()
 {
     const bool nativeCamera =
         g_townPlayerReady && g_townCameraReady;
-    const ViewerMat4 view =
-        viewerLookAtLH(
-            nativeCamera
-                ? g_townCameraPosition
-                : g_staticRoomCpuMesh.cameraPosition,
-            nativeCamera
-                ? g_townCameraTarget
-                : g_staticRoomCpuMesh.cameraTarget,
-            nativeCamera
-                ? g_townCameraUp
-                : g_staticRoomCpuMesh.cameraUp);
+
+    ViewerMat4 view{};
+    if (g_sceneGameMode == 3u && g_nativeSceneViewValid) {
+        // Azel stores a row-major 3x4 matrix used as M * column-vector.
+        // Neptune shaders consume row-vectors, so transpose it here.
+        view = viewerIdentity();
+        view.m[0]  = g_nativeSceneViewMatrix[0];
+        view.m[4]  = g_nativeSceneViewMatrix[1];
+        view.m[8]  = g_nativeSceneViewMatrix[2];
+        view.m[12] = g_nativeSceneViewMatrix[3];
+        view.m[1]  = g_nativeSceneViewMatrix[4];
+        view.m[5]  = g_nativeSceneViewMatrix[5];
+        view.m[9]  = g_nativeSceneViewMatrix[6];
+        view.m[13] = g_nativeSceneViewMatrix[7];
+        view.m[2]  = g_nativeSceneViewMatrix[8];
+        view.m[6]  = g_nativeSceneViewMatrix[9];
+        view.m[10] = g_nativeSceneViewMatrix[10];
+        view.m[14] = g_nativeSceneViewMatrix[11];
+    } else {
+        view =
+            viewerLookAtLH(
+                nativeCamera
+                    ? g_townCameraPosition
+                    : g_staticRoomCpuMesh.cameraPosition,
+                nativeCamera
+                    ? g_townCameraTarget
+                    : g_staticRoomCpuMesh.cameraTarget,
+                nativeCamera
+                    ? g_townCameraUp
+                    : g_staticRoomCpuMesh.cameraUp);
+    }
 
     const bool nativeFieldClip =
         g_sceneGameMode == 3u &&
@@ -11145,10 +11176,20 @@ static void updateLiveTownAzelLighting()
     const std::int64_t oneOverFar256 = oneOverFar << 8;
     auto falloffIndex = [&](std::size_t polygon) {
         const auto& v = g_liveTownCpuMesh.vertices[polygon * 6u];
-        const float depth = std::fabs(
-            (v.x - g_townCameraPosition[0]) * cameraForward[0] +
-            (v.y - g_townCameraPosition[1]) * cameraForward[1] +
-            (v.z - g_townCameraPosition[2]) * cameraForward[2]);
+        float depth = 0.0f;
+        if (g_sceneGameMode == 3u && g_nativeSceneViewValid) {
+            depth =
+                v.x * g_nativeSceneViewMatrix[8] +
+                v.y * g_nativeSceneViewMatrix[9] +
+                v.z * g_nativeSceneViewMatrix[10] +
+                g_nativeSceneViewMatrix[11];
+            depth = std::fabs(depth);
+        } else {
+            depth = std::fabs(
+                (v.x - g_townCameraPosition[0]) * cameraForward[0] +
+                (v.y - g_townCameraPosition[1]) * cameraForward[1] +
+                (v.z - g_townCameraPosition[2]) * cameraForward[2]);
+        }
         const std::int64_t viewDepth =
             static_cast<std::int64_t>(std::llround(depth * 65536.0f)) << 8;
         const std::int64_t scaled = std::max<std::int64_t>(
@@ -11328,6 +11369,13 @@ void presentation_publish_frame()
     g_townCameraDistance = g_pendingTownCameraDistance;
     g_nativeSceneNearPlane = g_pendingNativeSceneNearPlane;
     g_nativeSceneFarPlane = g_pendingNativeSceneFarPlane;
+    g_nativeSceneViewValid = g_pendingNativeSceneViewValid;
+    if (g_nativeSceneViewValid) {
+        std::memcpy(
+            g_nativeSceneViewMatrix,
+            g_pendingNativeSceneViewMatrix,
+            sizeof(g_nativeSceneViewMatrix));
+    }
     g_viewMode = g_pendingViewMode;
     g_profileTasksUs = g_pendingProfileTasksUs;
     g_profileGameWaitUs = g_pendingProfileGameWaitUs;
@@ -11418,6 +11466,8 @@ void presentation_camera_update()
 void presentation_set_scene_mode(unsigned int gameMode)
 {
     g_pendingSceneGameMode = gameMode;
+    if (gameMode != 3u)
+        g_pendingNativeSceneViewValid = false;
     g_pendingTownPresentationValid = true;
 }
 
@@ -11428,6 +11478,17 @@ void presentation_set_clip_planes(float nearPlane, float farPlane)
         g_pendingNativeSceneFarPlane = farPlane;
         g_pendingTownPresentationValid = true;
     }
+}
+
+void presentation_set_native_view_matrix(const std::int32_t matrix[12])
+{
+    if (!matrix)
+        return;
+    for (unsigned int i = 0; i < 12u; ++i)
+        g_pendingNativeSceneViewMatrix[i] =
+            static_cast<float>(matrix[i]) / 65536.0f;
+    g_pendingNativeSceneViewValid = true;
+    g_pendingTownPresentationValid = true;
 }
 
 unsigned presentation_player_animation_frames(unsigned animation)
