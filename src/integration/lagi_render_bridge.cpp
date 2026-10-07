@@ -59,6 +59,8 @@ static bool g_reportedFirstAdaptedModel = false;
 static bool g_viewRelativeScope = false;
 static bool g_forceDynamicSubmissions = false;
 static std::int32_t g_viewScopeMatrix[12]{};
+static bool g_nativeSceneViewValid = false;
+static std::int32_t g_nativeSceneViewMatrix[12]{};
 
 static void copyMatrixRaw(const LagiMatrix4x3& source, std::int32_t out[12])
 {
@@ -208,6 +210,29 @@ void capture_current_light(SubmissionState& state)
             state.lightColor[i] =
                 currentLightVector_M.color[i];
         }
+
+        // In field mode currentLightVector_M is paired with view-relative
+        // model matrices. When the bridge publishes world-space geometry,
+        // rotate the light back through inverse(view) too. Later Neptune's
+        // model-space transpose multiply then reproduces the same dot product.
+        if (g_forceDynamicSubmissions && g_nativeSceneViewValid) {
+            const std::int32_t in[3] = {
+                state.lightVector[0],
+                state.lightVector[1],
+                state.lightVector[2]};
+            for (unsigned int axis = 0; axis < 3; ++axis) {
+                std::int64_t value = 0;
+                value += static_cast<std::int64_t>(
+                    g_nativeSceneViewMatrix[axis]) * in[0];
+                value += static_cast<std::int64_t>(
+                    g_nativeSceneViewMatrix[4u + axis]) * in[1];
+                value += static_cast<std::int64_t>(
+                    g_nativeSceneViewMatrix[8u + axis]) * in[2];
+                state.lightVector[axis] =
+                    static_cast<std::int32_t>(value >> 16);
+            }
+        }
+
         if (&lightSetup) {
             state.lightFalloff[0] = lightSetup.falloff[0];
             state.lightFalloff[1] = lightSetup.falloff[1];
@@ -229,6 +254,22 @@ void begin_view_relative_submission_scope()
 void end_view_relative_submission_scope()
 {
     g_viewRelativeScope = false;
+}
+
+void capture_native_scene_view_matrix()
+{
+    if (&pCurrentMatrix && pCurrentMatrix) {
+        copyMatrixRaw(*pCurrentMatrix, g_nativeSceneViewMatrix);
+        g_nativeSceneViewValid = true;
+    }
+}
+
+bool native_scene_view_matrix(std::int32_t out[12])
+{
+    if (!out || !g_nativeSceneViewValid)
+        return false;
+    std::memcpy(out, g_nativeSceneViewMatrix, sizeof(g_nativeSceneViewMatrix));
+    return true;
 }
 
 void set_town_submission_context(
@@ -266,6 +307,15 @@ static void capture_runtime_state(bool billboard)
         if (g_viewRelativeScope) {
             removeViewTransform(
                 g_viewScopeMatrix,
+                *pCurrentMatrix,
+                g_lastState.modelMatrix);
+        } else if (g_forceDynamicSubmissions && g_nativeSceneViewValid) {
+            // Field submissions are authored under Azel's current view matrix.
+            // Remove only that native camera transform so Neptune receives a
+            // stable world-space model transform and can apply the field
+            // camera exactly once at presentation.
+            removeViewTransform(
+                g_nativeSceneViewMatrix,
                 *pCurrentMatrix,
                 g_lastState.modelMatrix);
         } else {
