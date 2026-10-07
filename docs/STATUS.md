@@ -383,6 +383,16 @@ The live material cache still lacks generation-aware lifetime invalidation for f
 
 The current live 3D renderer still flattens active work into shared buffers with 16-bit indices. Larger scenes are expected to require multiple resident batches while preserving Azel draw ordering, visibility, materials, and dynamic updates.
 
+## Audio affinity profiling
+
+The first post-0.3.0 audio optimization pass keeps emulation semantics unchanged and measures CPU placement before attempting a parallel DSP pipeline.
+
+`LagiSCSPWorker` still owns the 68K, SCSP slots, DSP state, and final sample generation in one serialized worker. The worker defaults to user CPU 2, matching the established hardware path, but a diagnostic affinity file can place it on user CPU 0, user CPU 1, or allow scheduling across all three user cores.
+
+Sparse `[AzelAudioPerf]` samples now record the CPU at the start and end of each profiled 256-frame quantum and count observed CPU changes. This provides a controlled baseline for deciding whether a dedicated ARM DSP worker is worth the synchronization cost.
+
+No DSP work is split across threads in this phase.
+
 ## Current development focus
 
 With the v0.3.0alpha boot, Ruins, movie, and native-audio paths established, the next major runtime boundary is flight mode. D5 name-entry presentation also remains active VDP2 accuracy work: RBG0 A/B selection, windows, priority/color calculation, and final layer composition still need to converge on Saturn hardware output.
