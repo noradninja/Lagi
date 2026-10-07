@@ -164,6 +164,8 @@ void twn_ruin_frame_begin()
 
 void twn_ruin_sync_platform_state()
 {
+    platform::renderer::presentation_set_scene_mode(1u);
+
     if (!cameraTaskPtr)
         return;
 
