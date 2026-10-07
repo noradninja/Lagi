@@ -58,18 +58,19 @@ Commits `6c82eb4` through `4352550` added the Phase 4 native-camera boundary: ca
 
 The latest full hardware traversal showed that the camera/lighting presentation remained viable, but the static hook did not execute successfully. Every sampled `[FieldStream]` record reported `staticSubs=0`, with roughly 22 billboards and `staticRebuilt=0`. A representative 1,010-polygon frame still reported `obj=10.152 ms`, `build=13.121 ms`, and `render=29.696 ms`. This proves the billboard fix is working, but no normal FLD_A3 environment submission is reaching Neptune with `dynamic=false`.
 
-The leading hypothesis is a silent generated-source patch miss. `CMakeLists.txt` uses `string(REPLACE ...)` for the FLD_A3 `o_fld_a3.cpp` hook, but that file receives several unrelated replacements. The final generic `source_text != original_text` guard proves only that something in the file changed; it does not prove that this particular replacement matched. This is not yet proven, and the alternate draw boundary/context-consumption possibilities remain open.
+The initial leading hypothesis was a silent generated-source patch miss. `CMakeLists.txt` uses `string(REPLACE ...)` for the FLD_A3 `o_fld_a3.cpp` hook, but that file receives several unrelated replacements. The final generic `source_text != original_text` guard proves only that something in the file changed; it does not prove that this particular replacement matched.
+
+**Generated-source verification (2026-10-07): the current branch emits the intended hook after a real CMake configure.** A stale local generated copy initially contained only the bare `addObjectToDrawList(pModel)`, matching the hardware symptom. After reconfiguration, `${CMAKE_BINARY_DIR}/azel_upstream/field_field_a3_o_fld_a3.cpp` contains the world transform, `hasModelMatrix=true`, `dynamic=false`, `set_town_submission_context(...)`, and immediate draw call. The bridge preserves that pending state through `record_submission()`, `publish_frame()`, and Neptune's static-submission scan. CMake now also counts the unique injected call and fails configuration unless it appears exactly once. This proves generation in the current checkout, not that the previously tested Vita package contained or executed the hook.
 
 ### Immediate next task
 
 Do this before further dynamic-flatten micro-optimization or persistent-resource work:
 
-1. Configure the Vita build and inspect the generated `${CMAKE_BINARY_DIR}/azel_upstream/field/field_a3/o_fld_a3.cpp` copy, specifically `s_visdibilityCellTask::gridCellDraw_normal()` and its actual `addObjectToDrawList(pModel)` boundary.
-2. Confirm whether the generated function physically contains the stable identity -> translate -> ZYX world transform, `hasModelMatrix=true`, `dynamic=false`, `set_town_submission_context(...)`, and then `addObjectToDrawList(pModel)`.
-3. If the injection is absent, adjust the replacement to a short, unique section matching the current upstream source. Do not edit `extern/Azel` directly.
-4. Add a dedicated configure-time sentinel/count assertion for this exact injection. CMake configuration must fail if the FLD_A3 static-grid patch does not apply; the existing whole-file changed check is insufficient.
-5. Reconfigure and inspect the generated source again before building.
-6. Build a narrow hardware-testable checkpoint. Do not claim Vita validation until the user supplies the hardware result.
+1. Pull this checkpoint and run a real CMake configure before building; the dedicated exact-count guard must pass.
+2. Inspect `${CMAKE_BINARY_DIR}/azel_upstream/field_field_a3_o_fld_a3.cpp` and confirm the guarded static context remains immediately before `addObjectToDrawList(pModel)`.
+3. Build the package so the newer generated source recompiles; do not reuse a package built before the configure step.
+4. Hardware-test the existing `[FieldStream]` acceptance gate below.
+5. If `staticSubs` is still zero, add a narrowly scoped bridge-side context-hit counter and verify `gridCellDraw_normal()` dispatch/context consumption before changing renderer architecture. Do not edit `extern/Azel` directly.
 
 The next hardware acceptance gate is:
 

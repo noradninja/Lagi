@@ -1106,6 +1106,23 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "                if (r14->m0_modelsOffets[depthRangeIndex])\n                {\n                    const u32 lagiModelOffset = r14->m0_modelsOffets[depthRangeIndex];\n                    sProcessed3dModel* pModel = pTypedWorkAread->m0_memoryLayout.m0_mainMemoryBundle->get3DModel(lagiModelOffset);\n\n                    sMatrix4x3 lagiWorldMatrix;\n                    initMatrixToIdentity(&lagiWorldMatrix);\n                    translateMatrix(&r14->m4, &lagiWorldMatrix);\n                    rotateMatrixZYX_s16(r14->m10, &lagiWorldMatrix);\n\n                    lagi::azel_bridge::SubmissionState lagiState{};\n                    for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n                    {\n                        for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n                        {\n                            lagiState.modelMatrix[lagiRow * 4u + lagiCol] = lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n                        }\n                    }\n                    lagiState.hasModelMatrix = true;\n                    lagiState.dynamic = false;\n                    lagi::azel_bridge::capture_current_light(lagiState);\n                    lagi::azel_bridge::set_town_submission_context(-1, 0u, 0u, static_cast<std::uint32_t>(lagiModelOffset), lagiState);\n\n                    addObjectToDrawList(pModel);\n                }"
    source_text "${source_text}")
 
+  # o_fld_a3.cpp receives several independent generated-source patches. The
+  # whole-file changed check below cannot prove that this performance-critical
+  # draw-boundary replacement matched, so require its unique injected call
+  # exactly once before allowing configuration to continue.
+  string(REGEX MATCHALL
+   "set_town_submission_context\\(-1, 0u, 0u, static_cast<std::uint32_t>\\(lagiModelOffset\\), lagiState\\)"
+   lagi_field_grid_static_matches
+   "${source_text}")
+  list(LENGTH
+   lagi_field_grid_static_matches
+   lagi_field_grid_static_match_count)
+  if(NOT lagi_field_grid_static_match_count EQUAL 1)
+   message(FATAL_ERROR
+    "FLD_A3 static grid submission patch did not apply exactly once: "
+    "found ${lagi_field_grid_static_match_count} matches")
+  endif()
+
   # Upstream rayDisplay.cpp is BGFX/GLM desktop renderer code. FLD_A3 is now
   # reachable for flight bring-up, but native ray/laser presentation belongs
   # to a later Neptune phase. Keep only those desktop draw branches suppressed.
