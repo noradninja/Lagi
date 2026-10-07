@@ -608,6 +608,8 @@ static float g_townCameraUp[3]{};
 static float g_townCameraYaw = 0.0f;
 static float g_townCameraPitch = 0.0f;
 static float g_townCameraDistance = 0.0f;
+static float g_nativeSceneNearPlane = 0.0f;
+static float g_nativeSceneFarPlane = 0.0f;
 static float g_azelProjectionFovDegrees = 80.0f;
 static bool g_townPlayerGrounded = false;
 static unsigned int g_townCollisionContacts = 0;
@@ -630,6 +632,8 @@ static float g_pendingTownCameraUp[3]{};
 static float g_pendingTownCameraYaw = 0.0f;
 static float g_pendingTownCameraPitch = 0.0f;
 static float g_pendingTownCameraDistance = 0.0f;
+static float g_pendingNativeSceneNearPlane = 0.0f;
+static float g_pendingNativeSceneFarPlane = 0.0f;
 static bool g_pendingTownPlayerGrounded = false;
 static unsigned int g_pendingTownCollisionContacts = 0;
 static unsigned int g_pendingTownEdgeAnimation = 0;
@@ -5547,14 +5551,22 @@ static ViewerMat4 buildAuthenticRoomWvp()
                 ? g_townCameraUp
                 : g_staticRoomCpuMesh.cameraUp);
 
+    const bool nativeFieldClip =
+        g_sceneGameMode == 3u &&
+        g_nativeSceneNearPlane > 0.0f &&
+        g_nativeSceneFarPlane > g_nativeSceneNearPlane;
     const float nearPlane =
-        g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraNear > 0.0f
-            ? g_staticRoomCpuMesh.cameraNear
-            : static_cast<float>(0x999) / 65536.0f;
+        nativeFieldClip
+            ? g_nativeSceneNearPlane
+            : (g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraNear > 0.0f
+                ? g_staticRoomCpuMesh.cameraNear
+                : static_cast<float>(0x999) / 65536.0f);
     const float farPlane =
-        g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraFar > nearPlane
-            ? g_staticRoomCpuMesh.cameraFar
-            : static_cast<float>(0xF000) / 65536.0f;
+        nativeFieldClip
+            ? g_nativeSceneFarPlane
+            : (g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraFar > nearPlane
+                ? g_staticRoomCpuMesh.cameraFar
+                : static_cast<float>(0xF000) / 65536.0f);
 
     ViewerMat4 projection =
         buildAzelProjection(
@@ -10934,6 +10946,8 @@ void presentation_publish_frame()
     g_townCameraYaw = g_pendingTownCameraYaw;
     g_townCameraPitch = g_pendingTownCameraPitch;
     g_townCameraDistance = g_pendingTownCameraDistance;
+    g_nativeSceneNearPlane = g_pendingNativeSceneNearPlane;
+    g_nativeSceneFarPlane = g_pendingNativeSceneFarPlane;
     g_viewMode = g_pendingViewMode;
     g_profileTasksUs = g_pendingProfileTasksUs;
     g_profileGameWaitUs = g_pendingProfileGameWaitUs;
@@ -11025,6 +11039,15 @@ void presentation_set_scene_mode(unsigned int gameMode)
 {
     g_pendingSceneGameMode = gameMode;
     g_pendingTownPresentationValid = true;
+}
+
+void presentation_set_clip_planes(float nearPlane, float farPlane)
+{
+    if (nearPlane > 0.0f && farPlane > nearPlane) {
+        g_pendingNativeSceneNearPlane = nearPlane;
+        g_pendingNativeSceneFarPlane = farPlane;
+        g_pendingTownPresentationValid = true;
+    }
 }
 
 unsigned presentation_player_animation_frames(unsigned animation)
