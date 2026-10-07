@@ -6,15 +6,17 @@ Translation is keyed by complete DSP instruction contents and length, never scen
 
 ## Backends and rollout
 
-Create an ASCII file (without a BOM) at ux0:data/lagi/dsp_backend.txt containing one word, then restart Lagi:
+Runtime ARM is now the default backend. No dsp_backend.txt file is required for normal use.
+
+For diagnostics or fallback testing, create an ASCII file (without a BOM) at ux0:data/lagi/dsp_backend.txt containing one word, then restart Lagi:
 
 | Value | Behavior |
 | --- | --- |
-| predecoded | Default diagnostic mode; current fast path, VM probe and program capture |
+| arm | Default; gated runtime ARM, with interpreter fallback if VM or translation is unavailable |
+| predecoded | Legacy diagnostic fast path, VM probe and program capture |
 | reference | Generic correctness reference |
 | auto | Prefer linked generated C, then gated runtime ARM; otherwise interpret |
 | aot | Linked generated C only; unknown programs interpret and are captured |
-| arm | Gated runtime ARM only; unavailable or failed translation interprets |
 
 The isolated probe allocates one 1 MiB VM block, obtains its base, opens it for writing, writes a function returning 42, closes and synchronizes it, executes it and verifies the result. Every API result is logged. Predecoded, reference and AOT modes free the block after the probe. Auto and ARM modes retain and reuse that same allocation for generated code, avoiding a second Vita VM allocation. Runtime ARM is available only after the entire probe succeeds. No additional Vita plugin is required. Successful emulation does not prove executable memory works on hardware.
 
@@ -63,8 +65,8 @@ python -m unittest discover -s tests -p test_dsp_corpus.py
 
 ## Hardware comparison
 
-1. Install the diagnostic/default build and run the same Ruins route. Save lagi.log before restarting, and copy the complete dsp_programs folder. Check VM probe return 42 and successful cleanup, capture errors and queue drops.
-2. Run auto or arm with the same build after confirming probe success; the code still gates execution internally. If VM fails, rebuild with captured programs and select aot. Compare against predecoded using the same build and matched route, clocks and warm-up.
+1. Install the default build and run the same Ruins route with no dsp_backend.txt file. Save lagi.log before restarting, and copy the complete dsp_programs folder. Confirm the VM probe returns 42, ARM becomes active, and there are no capture errors or queue drops.
+2. For diagnostic comparison only, select predecoded, auto, aot, or reference explicitly with dsp_backend.txt. If VM fails, rebuild with captured programs and select aot. Compare against predecoded using the same build and matched route, clocks and warm-up.
 3. Use multiple steady-state windows with matching program hash, 84 steps, 256 frames and profiling sample count. The 2026-10-06 Vita run at commit `f7879c3` demonstrated an 84-step ARM median of 2,268 us and P95 of 2,392 us across 42 records (10,752 frames), compared with a corrected predecoded median of 5,264 us. Every timed ARM frame reported `dspBackendSamples=0,0,0,32`. This passes the <=3,000 us target. The corresponding whole-quantum median was 5,297 us, 507 us below the 5,804 us budget, with an empty-chunk delta of +1 and zero short writes.
 4. Check sound and responsiveness across transitions, movies, flight and battle. Measure whole-quantum time separately against 5,804 us, and compare queue depletion counter deltas; faster DSP alone does not guarantee the audio budget.
 
