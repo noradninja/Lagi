@@ -213,6 +213,26 @@ Azel supplies movie selection, sequencing, skip state, fades, subtitle-task crea
 
 The current Vita path includes native SceAudio and SGX-assisted Cinepak presentation.
 
+## Native audio and SCSP DSP
+
+Azel remains authoritative for SCSP-facing state, sequence changes, and DSP program contents. Lagi provides the native Vita audio service and the execution backend used to run SCSP DSP programs efficiently on ARMv7.
+
+```text
+Azel SCSP state / MPRO
+    ↓
+Lagi SCSP service boundary
+    ↓
+runtime ARM translation + native-code cache
+    ↓
+256-frame audio worker quantum
+    ↓
+SceAudioOut
+```
+
+Runtime ARM is the normal backend. No backend-selection file is required for standard operation. `ux0:data/lagi/dsp_backend.txt` exists as a diagnostic override only.
+
+The translator is keyed by complete DSP instruction contents and length rather than scene identity. New or changed MPRO contents invalidate the active native routine; the generic interpreter remains available while translation is pending or if runtime executable memory is unavailable. The legacy predecoded fast path is reserved for explicit diagnostic selection.
+
 ## Direct-boot compatibility
 
 The earlier direct-Ruins path remains useful for isolated renderer/runtime tests and regression work.
