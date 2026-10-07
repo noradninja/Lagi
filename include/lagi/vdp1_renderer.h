@@ -81,7 +81,9 @@ struct Vdp1DrawState {
 // a single resident model because the regression viewer only needs one; the
 // interface is deliberately model-agnostic so the next integration step can
 // feed live Azel model data without inheriting Basic Wing viewer state.
-bool prepare_vdp1_model(const Vdp1ModelSource& model);
+bool prepare_vdp1_model(
+    const Vdp1ModelSource& model,
+    bool preserveResidentTextures = false);
 
 // Submit the prepared model into the currently active GXM scene using the
 // supplied transform and render mode.
