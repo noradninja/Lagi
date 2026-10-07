@@ -37,7 +37,7 @@ Vita/Vita TV results supplied by the user are authoritative. Host builds, static
 
 - **Date:** 2026-10-07
 - **Branch:** `feature/flight-mode-bringup`
-- **Current head:** `879f0977a9f0e23a655c60608dfda28ddefaccaf` (`Record failed FLD_A3 static-grid activation`)
+- **Rendering checkpoint before this docs-only handoff:** `879f0977a9f0e23a655c60608dfda28ddefaccaf` (`Record failed FLD_A3 static-grid activation`)
 - **Draft pull request:** #12 (`Bring up native FLD_A3 flight entry`)
 
 This is the active rendering checkpoint. Neptune is the native SceGxm renderer, not VitaGL. The gameplay panel is 480x272 and the immediate target is reliable 30 Hz within a 33.3 ms frame budget. Do not merge PR #12 until the user explicitly approves it after Vita/Vita TV testing.
