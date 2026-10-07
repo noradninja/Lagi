@@ -55,6 +55,7 @@ static bool g_hasPendingTownSubmission = false;
 static bool g_reportedFirstSubmission = false;
 static bool g_reportedFirstAdaptedModel = false;
 static bool g_viewRelativeScope = false;
+static bool g_forceDynamicSubmissions = false;
 static std::int32_t g_viewScopeMatrix[12]{};
 
 static void copyMatrixRaw(const LagiMatrix4x3& source, std::int32_t out[12])
@@ -105,8 +106,9 @@ static void removeViewTransform(
     }
 }
 
-void begin_frame()
+void begin_frame(bool forceDynamicSubmissions)
 {
+    g_forceDynamicSubmissions = forceDynamicSubmissions;
     g_submissionCount = 0;
     g_lastModel = nullptr;
     g_lastAdaptedModel = nullptr;
@@ -240,7 +242,12 @@ static void capture_runtime_state(bool billboard)
 {
     g_lastState = {};
     g_lastState.billboard = billboard;
-    g_lastState.dynamic = g_viewRelativeScope;
+    // Field bring-up currently captures Azel's camera-space matrices. Until
+    // Phase 4 converts field submissions back to stable world space, every
+    // field model must be rebuilt from its current frame matrix. Billboards
+    // are likewise camera-dependent and must never enter the static cache.
+    g_lastState.dynamic =
+        g_forceDynamicSubmissions || g_viewRelativeScope || billboard;
 
     // For normal objects Azel's pCurrentMatrix already contains camera/view
     // and model transforms at submission time. Billboard capture will later
