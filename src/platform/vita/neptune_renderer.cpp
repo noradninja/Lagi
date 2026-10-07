@@ -8824,9 +8824,11 @@ bool submit_vdp1_model(
 
         static std::vector<unsigned int> batchCounts;
         static std::vector<unsigned int> batchWrite;
+        static std::vector<unsigned int> activeBuckets;
         static std::vector<std::uint8_t> visibleQuads;
         batchCounts.assign(bucketCount, 0u);
         batchWrite.assign(bucketCount, 0u);
+        activeBuckets.reserve(bucketCount);
         visibleQuads.assign(model.polygonCount, 0u);
 
         const std::uint64_t tPayload = sceKernelGetProcessTimeWide();
@@ -8897,7 +8899,6 @@ bool submit_vdp1_model(
             }
 
             visibleQuads[p] = 1u;
-            batchCounts[textureIndex] += 24u;
         }
         g_profileGouraudPayloadUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - tPayload);
@@ -8919,8 +8920,7 @@ bool submit_vdp1_model(
             if (first >= end)
                 return true;
 
-            std::fill(batchCounts.begin(), batchCounts.end(), 0u);
-            std::fill(batchWrite.begin(), batchWrite.end(), 0u);
+            activeBuckets.clear();
 
             for (std::size_t p = first; p < end; ++p) {
                 if (!visibleQuads[p])
@@ -8928,9 +8928,18 @@ bool submit_vdp1_model(
                 const unsigned int bucket =
                     subdividedTexturedLit
                         ? model.polygonTextureIndices[p] : 0u;
-                if (bucket < bucketCount)
+                if (bucket < bucketCount) {
+                    if (batchCounts[bucket] == 0u)
+                        activeBuckets.push_back(bucket);
                     batchCounts[bucket] += 24u;
+                }
             }
+
+            // Draw order was historically ascending texture index. Keep that
+            // exact ordering while avoiding a full resident-texture scan for
+            // every world/mesh phase; most small ordered mesh ranges touch
+            // only one or two buckets.
+            std::sort(activeBuckets.begin(), activeBuckets.end());
 
             // As above, preserve every phase's submitted indices until
             // sceGxmEndScene/Finish. Full mode uses 24 generated indices per
@@ -8941,7 +8950,7 @@ bool submit_vdp1_model(
             const unsigned int phaseCapacity =
                 static_cast<unsigned int>((end - first) * 24u);
             unsigned int totalVisibleIndices = 0u;
-            for (unsigned int t = 0; t < bucketCount; ++t) {
+            for (const unsigned int t : activeBuckets) {
                 g_vdp1TextureBatches[t].firstIndex =
                     phaseBase + totalVisibleIndices;
                 g_vdp1TextureBatches[t].indexCount = batchCounts[t];
@@ -8951,8 +8960,11 @@ bool submit_vdp1_model(
             }
             if (totalVisibleIndices > phaseCapacity ||
                 phaseBase + totalVisibleIndices >
-                    g_vdp1SubdivIndexCapacity)
+                    g_vdp1SubdivIndexCapacity) {
+                for (const unsigned int t : activeBuckets)
+                    batchCounts[t] = 0u;
                 return false;
+            }
 
             for (std::size_t p = first; p < end; ++p) {
                 if (!visibleQuads[p])
@@ -8972,10 +8984,8 @@ bool submit_vdp1_model(
                 write += 24u;
             }
 
-            for (unsigned int t = 0; t < bucketCount; ++t) {
+            for (const unsigned int t : activeBuckets) {
                 const TextureBatch& batch = g_vdp1TextureBatches[t];
-                if (!batch.indexCount)
-                    continue;
 
                 bool mesh = false;
                 if (subdividedTexturedLit) {
@@ -9027,6 +9037,11 @@ bool submit_vdp1_model(
                     sceGxmSetFrontPolygonMode(g_probeContext, polygonMode);
                     sceGxmSetBackPolygonMode(g_probeContext, polygonMode);
                 }
+            }
+
+            for (const unsigned int t : activeBuckets) {
+                batchCounts[t] = 0u;
+                batchWrite[t] = 0u;
             }
             return true;
         };

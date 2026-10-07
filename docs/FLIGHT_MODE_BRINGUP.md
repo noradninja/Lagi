@@ -150,6 +150,8 @@ The run also emitted 2,438 `[FieldStream]` lines because the diagnostic's `build
 
 The next profiling checkpoint expands the once-per-60-frame `[ScenePerf]` sample without changing presentation. `gourPrep` records the conservative quad projection/visibility pass; `gourPayload`, `gourBucket`, `gourIndex`, and `gourDraw` expose the existing full-mode subdivided Gouraud work; `clear` covers the CPU color/depth/stencil buffer clears; `compose` covers Azel-owned VDP2, text, VDP1 UI, and fade submission; and `cpuprep` retains the enclosing pre-wait CPU total with main scene submission removed. These buckets are intended to resolve the roughly 14.8 ms median that remained outside build, lighting, main submission, and GXM wait in the full-mode hardware log. Hardware results for this checkpoint are pending.
 
+Full-mode subdivided Gouraud submission also repeated a resident-texture-sized scan for every ordered world/mesh phase, even when a small Saturn mesh range referenced only one or two textures. The submission path now records only the texture buckets touched by each phase, sorts that sparse set to preserve the previous ascending texture draw order, and builds/draws only those buckets. It also removes an earlier whole-frame bucket count that was immediately discarded by the per-phase pass. Azel's polygon visibility, mesh range boundaries, ordered-overdraw phases, and within-texture polygon order are unchanged. Hardware validation is pending.
+
 ## Runtime path
 
 ```text
