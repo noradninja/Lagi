@@ -106,6 +106,23 @@ Upstream helpers include `getFieldCameraStatus()` and `getFieldCameraMatrix()`. 
 
 The immediate profiling task is to split the remaining ~80-100 ms reprepare events into buffer free/allocate/map/unmap, topology and UV rebuild, subdivision-buffer rebuild, CPU flatten/transform, and other `prepare_vdp1_model()` work. Instrumentation should remain narrowly scoped and preserve current rendering behavior.
 
+The current instrumentation checkpoint extends prepare-event `[FieldStream]` records with the following microsecond buckets. It does not change rendering or resource lifetime:
+
+| Field | Work measured |
+|---|---|
+| `reuseTex` | Whether the existing resident texture set was reused |
+| `release` | Geometry-buffer unmap/free work in `releaseResidentVdp1Model()` |
+| `baseAlloc` | Base color/lighting/index buffer allocation and GXM mapping |
+| `wire` | Wire-subdivision buffer allocation/mapping and linear-index initialization |
+| `texUpload` | Texture allocation, copy, GXM texture initialization, and filtering; expected to remain zero when `reuseTex=1` |
+| `texAlloc` | Textured/gouraud vertex and texture-index buffer allocation/mapping |
+| `texBuild` | Base textured UV generation and per-texture index-batch rebuild |
+| `subAlloc` | Filled subdivision vertex/index buffer allocation and mapping |
+| `subBuild` | Filled subdivision positions, UVs, and immutable topology rebuild |
+| `copy` | Base color/lighting vertex copies and linear base-index initialization |
+
+The existing `append` field continues to cover per-frame CPU flatten/transform work. `upload` remains the enclosing prepare/update interval so the sum of the detailed buckets can be compared with unclassified overhead. These measurements require a new Vita/Vita TV traversal log before choosing the next optimization.
+
 ## Runtime path
 
 ```text
