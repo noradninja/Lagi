@@ -115,7 +115,7 @@ The platform API now uses generic names such as:
 
 Some Neptune internal variables still use historical `g_town*` names. Those are implementation cleanup items, not ownership semantics.
 
-## Hardware-proven 0.040 boot systems
+## Hardware-proven v0.3.0alpha systems
 
 Verified on real Vita/Vita TV hardware:
 
@@ -145,9 +145,11 @@ Verified on real Vita/Vita TV hardware:
 - Full, Texture, Lighting, Quads, and Wires renderer views
 - Vita-to-Saturn physical controller bridge
 - Sega FILM demux
-- Cinepak playback
-- SGX Cinepak presentation
+- Cinepak playback through the post-elevator movie pair
+- source-resolution SGX Cinepak reconstruction with hardware-linear final presentation
 - native SceAudio output
+- native BGM and sound-effect playback
+- runtime ARM SCSP DSP translation
 - Azel VDP1 command capture
 - native GXM VDP1 normal/scaled sprite translation
 - native GXM VDP1 polyline translation
