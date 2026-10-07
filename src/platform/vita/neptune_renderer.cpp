@@ -5223,8 +5223,31 @@ static void appendLiveTownModel(
 
     LivePolygonLightState polygonLight{};
     if (state.hasLight) {
+        // Match Azel's renderer: rotate the captured camera/world-space light
+        // into model space once per submission. This is algebraically the
+        // same dot product as rotating every model normal forward, but avoids
+        // repeating a matrix transform for every lit polygon corner.
         for (unsigned axis = 0; axis < 3; ++axis) {
-            polygonLight.vector[axis] = state.lightVector[axis];
+            if (state.billboard) {
+                const float* basis =
+                    axis == 0u ? billboardX :
+                    (axis == 1u ? billboardY : billboardZ);
+                polygonLight.vector[axis] = static_cast<std::int32_t>(
+                    std::lround(
+                        basis[0] * state.lightVector[0] +
+                        basis[1] * state.lightVector[1] +
+                        basis[2] * state.lightVector[2]));
+            } else {
+                std::int64_t light = 0;
+                light += static_cast<std::int64_t>(
+                    state.modelMatrix[axis]) * state.lightVector[0];
+                light += static_cast<std::int64_t>(
+                    state.modelMatrix[4u + axis]) * state.lightVector[1];
+                light += static_cast<std::int64_t>(
+                    state.modelMatrix[8u + axis]) * state.lightVector[2];
+                polygonLight.vector[axis] =
+                    static_cast<std::int32_t>(light >> 16);
+            }
             polygonLight.color[axis] = state.lightColor[axis];
             polygonLight.falloff[axis] = state.lightFalloff[axis];
         }
@@ -5266,27 +5289,6 @@ static void appendLiveTownModel(
             g_liveTownMeshRanges.push_back(
                 {polygonBase + runStart, runCount});
             runCount = 0u;
-        }
-        for (unsigned n = 0; n < record.lightingCount; ++n) {
-            const float x = record.lighting[n].normal[0] / 4096.0f;
-            const float y = record.lighting[n].normal[1] / 4096.0f;
-            const float z = record.lighting[n].normal[2] / 4096.0f;
-            float nx, ny, nz;
-            if (state.billboard) {
-                nx = x*billboardX[0] + y*billboardY[0] + z*billboardZ[0];
-                ny = x*billboardX[1] + y*billboardY[1] + z*billboardZ[1];
-                nz = x*billboardX[2] + y*billboardY[2] + z*billboardZ[2];
-            } else {
-                nx = x*m[0] + y*m[1] + z*m[2];
-                ny = x*m[4] + y*m[5] + z*m[6];
-                nz = x*m[8] + y*m[9] + z*m[10];
-            }
-            record.lighting[n].normal[0] = static_cast<std::int16_t>(
-                std::lround(std::clamp(nx, -1.0f, 1.0f) * 4096.0f));
-            record.lighting[n].normal[1] = static_cast<std::int16_t>(
-                std::lround(std::clamp(ny, -1.0f, 1.0f) * 4096.0f));
-            record.lighting[n].normal[2] = static_cast<std::int16_t>(
-                std::lround(std::clamp(nz, -1.0f, 1.0f) * 4096.0f));
         }
         record.model = static_cast<unsigned int>(polygonBase);
         g_liveTownCpuMesh.polygonRecords[polygonBase + p] = record;
