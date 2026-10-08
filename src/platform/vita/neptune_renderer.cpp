@@ -1390,6 +1390,12 @@ static std::uint32_t vdp2Rgb555ToAbgr(std::uint16_t color)
 }
 
 
+static std::uint32_t decodeVdp2Chsz1Pixel(
+    std::uint16_t patternName,
+    int px,
+    int py,
+    unsigned int caos);
+
 static std::uint32_t decodeStatusMenuNbgPixel(
     std::size_t mapBase,
     int logicalX,
