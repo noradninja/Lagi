@@ -5292,6 +5292,26 @@ static const std::vector<std::uint16_t>* resolvedLiveTownMaterialIndices(
     return &g_liveTownMaterialCache.back().textureIndices;
 }
 
+static void transformLiveLightVectorToModelSpace(
+    const azel_bridge::SubmissionState& state,
+    std::int32_t outVector[3])
+{
+    // Azel publishes the light vector in camera/world space while each
+    // model's stored lighting normals remain in model space. Rotate the light
+    // back through the model basis once per submission so cached and freshly
+    // rebuilt static geometry use the same dot-product coordinate space.
+    for (unsigned axis = 0; axis < 3; ++axis) {
+        std::int64_t light = 0;
+        light += static_cast<std::int64_t>(
+            state.modelMatrix[axis]) * state.lightVector[0];
+        light += static_cast<std::int64_t>(
+            state.modelMatrix[4u + axis]) * state.lightVector[1];
+        light += static_cast<std::int64_t>(
+            state.modelMatrix[8u + axis]) * state.lightVector[2];
+        outVector[axis] = static_cast<std::int32_t>(light >> 16);
+    }
+}
+
 static void appendLiveTownModel(
     const azel_bridge::LiveVdp1Model& model,
     const azel_bridge::SubmissionState& state,
@@ -5409,6 +5429,10 @@ static void appendLiveTownModel(
         // into model space once per submission. This is algebraically the
         // same dot product as rotating every model normal forward, but avoids
         // repeating a matrix transform for every lit polygon corner.
+        std::int32_t modelSpaceLight[3]{};
+        if (!state.billboard)
+            transformLiveLightVectorToModelSpace(state, modelSpaceLight);
+
         for (unsigned axis = 0; axis < 3; ++axis) {
             if (state.billboard) {
                 const float* basis =
@@ -5420,15 +5444,7 @@ static void appendLiveTownModel(
                         basis[1] * state.lightVector[1] +
                         basis[2] * state.lightVector[2]));
             } else {
-                std::int64_t light = 0;
-                light += static_cast<std::int64_t>(
-                    state.modelMatrix[axis]) * state.lightVector[0];
-                light += static_cast<std::int64_t>(
-                    state.modelMatrix[4u + axis]) * state.lightVector[1];
-                light += static_cast<std::int64_t>(
-                    state.modelMatrix[8u + axis]) * state.lightVector[2];
-                polygonLight.vector[axis] =
-                    static_cast<std::int32_t>(light >> 16);
+                polygonLight.vector[axis] = modelSpaceLight[axis];
             }
             polygonLight.color[axis] = state.lightColor[axis];
             polygonLight.falloff[axis] = state.lightFalloff[axis];
@@ -5657,8 +5673,12 @@ static void refreshLiveTownStaticLighting()
 
         LivePolygonLightState light{};
         if (submission.state.hasLight) {
+            // Static geometry keeps model-space normals across cache hits.
+            // Refresh the current Azel light in that same model space instead
+            // of copying the raw camera/world-space vector onto cached quads.
+            transformLiveLightVectorToModelSpace(
+                submission.state, light.vector);
             for (unsigned axis = 0; axis < 3; ++axis) {
-                light.vector[axis] = submission.state.lightVector[axis];
                 light.color[axis] = submission.state.lightColor[axis];
                 light.falloff[axis] = submission.state.lightFalloff[axis];
             }
