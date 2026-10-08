@@ -1415,44 +1415,13 @@ static std::uint32_t decodeStatusMenuNbgPixel(
     if (!patternName)
         return 0u;
 
-    int px = mapX & 15;
-    int py = mapY & 15;
-    if (patternName & 0x0400u) px = 15 - px;
-    if (patternName & 0x0800u) py = 15 - py;
-
-    const unsigned int characterNumber =
-        static_cast<unsigned int>(patternName & 0x03FFu) * 4u;
-    const unsigned int cellX = static_cast<unsigned int>(px >> 3);
-    const unsigned int cellY = static_cast<unsigned int>(py >> 3);
-    const unsigned int cellIndex = cellX + cellY * 2u;
-    const std::size_t dotAddress =
-        static_cast<std::size_t>(characterNumber) * 32u +
-        static_cast<std::size_t>(cellIndex) * 32u +
-        static_cast<std::size_t>(py & 7) * 4u +
-        static_cast<std::size_t>((px & 7) >> 1);
-    if (dotAddress >= kVdp2TextSnapshotBytes)
-        return 0u;
-
-    const std::uint8_t packed = g_vdp2TextVram[dotAddress];
-    const unsigned int colorIndex =
-        (px & 1)
-            ? static_cast<unsigned int>(packed & 0x0Fu)
-            : static_cast<unsigned int>(packed >> 4);
-    if (!colorIndex)
-        return 0u;
-
     // setupVdp2ForMenu(): CHCN=0, CHSZ=1, PNB=1, CNSM=0, CAOS=6.
-    const unsigned int paletteNumber =
-        static_cast<unsigned int>((patternName >> 12) & 0x0Fu);
-    const unsigned int paletteEntry =
-        6u * 0x100u + paletteNumber * 16u + colorIndex;
-    const std::size_t cramOffset =
-        static_cast<std::size_t>(paletteEntry) * 2u;
-    if (cramOffset + 1u >= kVdp2CramSnapshotBytes)
-        return 0u;
-
-    return vdp2Rgb555ToAbgr(
-        readVdp2Be16(g_vdp2Cram, cramOffset));
+    // Use the same proven 16x16 character/flip decoder as Town NBG1.
+    return decodeVdp2Chsz1Pixel(
+        patternName,
+        mapX & 15,
+        mapY & 15,
+        6u);
 }
 
 static void drawAzelStatusMenuVdp2Gpu()
@@ -3396,17 +3365,20 @@ static bool ensureVdp2UiGpuBuffers()
     return true;
 }
 
-static std::uint32_t decodeVdp2Nbg1Pixel(
+static std::uint32_t decodeVdp2Chsz1Pixel(
     std::uint16_t patternName,
     int px,
-    int py)
+    int py,
+    unsigned int caos)
 {
     const unsigned int flip =
         (patternName >> 10) & 3u;
     int x = px;
     int y = py;
 
-    // Match Azel's renderer_vdp2.cpp 16x16 CHSZ=1 path exactly.
+    // Shared Azel renderer_vdp2.cpp 16x16 CHSZ=1 path.
+    // Town and the native status menu both use this exact Saturn character
+    // addressing; only their layer/map configuration and CAOS differ.
     if (flip) {
         y &= 15;
         if (flip & 2u) {
@@ -3460,11 +3432,10 @@ static std::uint32_t decodeVdp2Nbg1Pixel(
     if (!colorIndex)
         return 0u;
 
-    // NBG1: 4bpp, CAOS=7, SCN=0.
     const unsigned int paladdr =
         (patternName & 0xF000u) >> 8;
     const unsigned int paletteEntry =
-        7u * 0x100u |
+        caos * 0x100u |
         (paladdr | colorIndex);
     const std::size_t cramOffset =
         static_cast<std::size_t>(paletteEntry) * 2u;
@@ -3473,6 +3444,15 @@ static std::uint32_t decodeVdp2Nbg1Pixel(
 
     return vdp2Rgb555ToAbgr(
         readVdp2Be16(g_vdp2Cram, cramOffset));
+}
+
+static std::uint32_t decodeVdp2Nbg1Pixel(
+    std::uint16_t patternName,
+    int px,
+    int py)
+{
+    // Town NBG1: 4bpp, CHSZ=1, PNB=1, CNSM=0, CAOS=7.
+    return decodeVdp2Chsz1Pixel(patternName, px, py, 7u);
 }
 
 static void drawAzelVdp2Nbg1Gpu()
