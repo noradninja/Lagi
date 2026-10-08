@@ -12003,9 +12003,12 @@ static void renderBasicWingViewer()
         // Azel still owns the contents/state of every layer; Neptune only
         // translates their final presentation ordering to GXM.
         if (g_vdp2MenuId != 0u) {
+            // setupVdp2ForMenu() replaces the town VDP2 layout. Do not run
+            // the legacy 0x6000 town text compositor here: it shares the same
+            // RGBA backing texture as the status-menu decode and clears that
+            // memory before GXM consumes the queued menu draw.
             drawAzelStatusMenuVdp2Gpu();
             drawPublishedVdp1Ui();
-            drawAzelVdp2TextLayerGpu();
         } else {
             drawAzelVdp2Nbg1Gpu();
             drawAzelVdp2CinematicBarsGpu();
@@ -12016,9 +12019,12 @@ static void renderBasicWingViewer()
 
     // Scene entry restarts this fade, so a town fade-out cannot leave the
     // next field black. BACK-only color offsets do not darken VDP1/RBG0.
-    if (roomAuthenticCameraMode && g_sceneGameMode == 1u)
+    // The native status menu owns its own VDP2/fade state. Applying the
+    // gameplay-scene fade after menu composition can cover the entire menu.
+    if (!nativeMenuFrame && roomAuthenticCameraMode && g_sceneGameMode == 1u)
         drawFadeOverlay(updateTownFadeAlpha(), 0u, 0u, 0u);
-    else if (roomAuthenticCameraMode && g_sceneGameMode == 3u) {
+    else if (!nativeMenuFrame &&
+             roomAuthenticCameraMode && g_sceneGameMode == 3u) {
         drawAzelColorOffsetForLayer(0x40u, true);
         drawFadeOverlay(updateTownFadeAlpha(), 0u, 0u, 0u);
     }
