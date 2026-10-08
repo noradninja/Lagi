@@ -5944,6 +5944,20 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.lightingVertices.resize(g_liveTownStaticVertexCount);
         g_liveTownCpuMesh.polygonRecords.resize(g_liveTownStaticPolygonCount);
         g_liveTownCpuMesh.gouraud555.resize(g_liveTownStaticPolygonCount);
+
+        // The old all-dynamic path rebuilt every static model through
+        // appendLiveTownModel() each frame, which zeroed every polygon's
+        // Gouraud payload before current-frame lighting was evaluated.
+        // Reusing the static prefix must preserve that lifecycle: resize()
+        // alone retains the previous frame's shade values and can leave stale
+        // lighting on polygons that are skipped by the current visibility
+        // pass. Clear only the cached static shade prefix; geometry, materials,
+        // polygon records, and resident GPU resources remain untouched.
+        std::fill(
+            g_liveTownCpuMesh.gouraud555.begin(),
+            g_liveTownCpuMesh.gouraud555.end(),
+            azel::SaturnGouraud555Quad{});
+
         g_liveTownCpuMesh.polygonTextureIndices.resize(
             g_liveTownStaticPolygonCount);
         g_liveTownPolygonLights.resize(g_liveTownStaticPolygonCount);
