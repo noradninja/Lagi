@@ -985,11 +985,12 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    ""
    source_text "${source_text}")
 
-  # Status/inventory menus are not reachable in the 0.040 boot path. Avoid
-  # retaining inventoryMenu.cpp solely through static function-pointer tables.
+  # Inventory and System are the currently backed native status-menu entries.
+  # Keep Azel's real inventory task, but do not advertise the two constructors
+  # that are still assert-only stubs in the pinned upstream revision.
   string(REPLACE
-   "    createInventoryMenuTask,"
-   "    NULL,"
+   "    if (mainGameState.gameStats.m20_XP) // defeated monsters menu\n    {\n        pWorkArea->m3_menuButtonStates[2] = 1;\n    }\n    else\n    {\n        pWorkArea->m3_menuButtonStates[2] = -1;\n    }\n    pWorkArea->m3_menuButtonStates[3] = 1; // map"
+   "    pWorkArea->m3_menuButtonStates[2] = -1; // enemy list is an upstream stub\n    pWorkArea->m3_menuButtonStates[3] = -1; // map is an upstream stub"
    source_text "${source_text}")
 
   # First-flight milestone: keep Azel's native FLD_A3 dispatcher entry.
@@ -1402,6 +1403,7 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  menu_dragonMorph.cpp
  dragonData.cpp
  mainMenuDebugTasks.cpp
+ menu/inventoryMenu.cpp
  collision.cpp
  kernel/grid.cpp
  kernel/fileBundle.cpp
@@ -1478,6 +1480,7 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  battle/battleDebugList.cpp
  battle/battleOverlay.cpp
  battle/battlePowerGauge.cpp
+ battle/gunShotRootTask.cpp
  kernel/menuSprite.cpp
  kernel/menuCursor.cpp
  kernel/flagEditor.cpp
