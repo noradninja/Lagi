@@ -128,10 +128,18 @@ half4 main(
         fragCoord.xy, a, b, c, d,
         shadeA, shadeB, shadeC, shadeD, edgeInverseDy);
 
-    half3 shade5 = shade * (half)31.0;
+    // Use the same signed RGB555 decode as the subdivided Full path and
+    // Lighting diagnostic: 0x10 is neutral, lower values darken, higher
+    // values brighten.
+    half3 light5 = clamp(
+        shade * (half)31.0 + (half)16.0,
+        (half)0.0, (half)31.0);
+    light5 = floor(light5 + (half)0.5);
+    half3 correction5 = light5 - (half)16.0;
+
     half3 base5 = floor(color.rgb * (half)31.0 + (half)0.5);
-    half3 result5 = clamp(base5 + shade5, (half)0.0, (half)31.0);
-    result5 = floor(result5 + (half)0.5);
+    half3 result5 = clamp(
+        base5 + correction5, (half)0.0, (half)31.0);
 
     return half4(result5 / (half)31.0, color.a);
 }

@@ -10,8 +10,15 @@ float4 main(
     if (color.a < 0.5f)
         discard;
 
+    // Decode the interpolated signed Gouraud payload through the same
+    // RGB555 representation used by Lighting mode before applying it to the
+    // texture. 0x10 is Saturn's neutral correction; values below/above it
+    // subtract/add from the base color.
+    float3 light5 = clamp(vShade * 31.0f + 16.0f, 0.0f, 31.0f);
+    light5 = floor(light5 + 0.5f);
+    float3 correction5 = light5 - 16.0f;
+
     float3 base5 = floor(color.rgb * 31.0f + 0.5f);
-    float3 result5 = clamp(base5 + vShade * 31.0f, 0.0f, 31.0f);
-    result5 = floor(result5 + 0.5f);
+    float3 result5 = clamp(base5 + correction5, 0.0f, 31.0f);
     return float4(result5 / 31.0f, color.a);
 }

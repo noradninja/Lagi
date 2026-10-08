@@ -11589,15 +11589,7 @@ static void updateLiveTownAzelLighting()
             reportedLiveLighting = true;
         }
 
-        // FLD_A3's rigid static-grid draw path computes distance falloff
-        // from the object origin. Preserve that scope for every polygon in
-        // the submission instead of deriving a different bucket from each
-        // polygon's first vertex. Dynamic/billboard objects retain the
-        // established per-polygon fallback when no native origin depth exists.
-        const int depthIndex =
-            light.hasNativeViewDepth
-                ? falloffIndexFromRaw(light.nativeViewDepthRaw)
-                : falloffIndex(p);
+        const int depthIndex = falloffIndex(p);
         for (unsigned corner = 0; corner < 4u; ++corner) {
             const unsigned normalIndex = mode == 1u ? 0u : corner;
             if (normalIndex >= record.lightingCount)
