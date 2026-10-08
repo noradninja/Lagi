@@ -11842,7 +11842,8 @@ static void renderBasicWingViewer()
             return;
         g_residentVdp1Model = ResidentVdp1Model::BasicWing;
         applyBasicWingAnimationFrame(g_basicWingAnimationFrame);
-    } else if (roomAuthenticCameraMode) {
+    } else if (roomAuthenticCameraMode &&
+               (!nativeMenuFrame || nativeSceneMode)) {
         const std::uint64_t buildStartUs = sceKernelGetProcessTimeWide();
         const bool liveTownBuilt = buildLiveTownFrame();
         g_profileBuildUs = static_cast<unsigned int>(
