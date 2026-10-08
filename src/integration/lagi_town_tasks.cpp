@@ -236,7 +236,12 @@ void twn_ruin_sync_platform_state()
     platform::renderer::presentation_set_vdp2_text(
         getVdp2Vram(0),
         getVdp2Cram(0),
-        getVdp2Vram(0x3E000));
+        getVdp2Vram(0x3E000),
+        static_cast<unsigned int>(graphicEngineStatus.m40AC.m0_menuId),
+        graphicEngineStatus.m40BC_layersConfig[0].scrollX,
+        graphicEngineStatus.m40BC_layersConfig[0].scrollY,
+        graphicEngineStatus.m40BC_layersConfig[1].scrollX,
+        graphicEngineStatus.m40BC_layersConfig[1].scrollY);
 
     if (!g_reportedPresentation) {
         platform::logging::writef(
