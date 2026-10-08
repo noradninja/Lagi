@@ -1394,7 +1394,8 @@ static std::uint32_t decodeVdp2Chsz1Pixel(
     std::uint16_t patternName,
     int px,
     int py,
-    unsigned int caos);
+    unsigned int caos,
+    unsigned int supplementalCharacterName);
 
 static std::uint32_t decodeStatusMenuNbgPixel(
     std::size_t mapBase,
@@ -1421,13 +1422,15 @@ static std::uint32_t decodeStatusMenuNbgPixel(
     if (!patternName)
         return 0u;
 
-    // setupVdp2ForMenu(): CHCN=0, CHSZ=1, PNB=1, CNSM=0, CAOS=6.
+    // setupVdp2ForMenu(): CHCN=0, CHSZ=1, PNB=1, CNSM=0,
+    // SCN=12, CAOS=6.
     // Use the same proven 16x16 character/flip decoder as Town NBG1.
     return decodeVdp2Chsz1Pixel(
         patternName,
         mapX & 15,
         mapY & 15,
-        6u);
+        6u,
+        12u);
 }
 
 static void drawAzelStatusMenuVdp2Gpu()
@@ -3375,7 +3378,8 @@ static std::uint32_t decodeVdp2Chsz1Pixel(
     std::uint16_t patternName,
     int px,
     int py,
-    unsigned int caos)
+    unsigned int caos,
+    unsigned int supplementalCharacterName)
 {
     const unsigned int flip =
         (patternName >> 10) & 3u;
@@ -3416,9 +3420,15 @@ static std::uint32_t decodeVdp2Chsz1Pixel(
         x &= 7;
     }
 
-    const unsigned int characterNumber =
-        static_cast<unsigned int>(
-            patternName & 0x03FFu) << 2;
+    // renderer_vdp2.cpp::sampleTileAtCoordinate(), PNB=1/CNSM=0/CHSZ=1.
+    // The two low SCN bits select the 8x8 member inside the 16x16 pattern;
+    // SCN bits 2-4 extend the character address. Omitting these bits makes
+    // the native status menu read unrelated low-VRAM town characters.
+    unsigned int characterNumber =
+        static_cast<unsigned int>(patternName & 0x03FFu) << 2;
+    characterNumber |= supplementalCharacterName & 3u;
+    characterNumber |=
+        (supplementalCharacterName & 0x1Cu) << 10;
     const std::size_t characterOffset =
         static_cast<std::size_t>(
             characterNumber) * 0x20u;
@@ -3439,7 +3449,8 @@ static std::uint32_t decodeVdp2Chsz1Pixel(
         return 0u;
 
     const unsigned int paladdr =
-        (patternName & 0xF000u) >> 8;
+        ((patternName & 0xF000u) >> 8) |
+        ((supplementalCharacterName & 0xE0u) << 3);
     const unsigned int paletteEntry =
         caos * 0x100u |
         (paladdr | colorIndex);
@@ -3457,8 +3468,8 @@ static std::uint32_t decodeVdp2Nbg1Pixel(
     int px,
     int py)
 {
-    // Town NBG1: 4bpp, CHSZ=1, PNB=1, CNSM=0, CAOS=7.
-    return decodeVdp2Chsz1Pixel(patternName, px, py, 7u);
+    // Town NBG1: 4bpp, CHSZ=1, PNB=1, CNSM=0, SCN=0, CAOS=7.
+    return decodeVdp2Chsz1Pixel(patternName, px, py, 7u, 0u);
 }
 
 static void drawAzelVdp2Nbg1Gpu()

@@ -1298,6 +1298,20 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
     "#include \"3dEngine_textureCache.h\""
     "#include \"3dEngine_textureCache.h\"\n#include \"lagi/azel_save_platform.h\""
     source_text "${source_text}")
+   # Saturn work areas are cleared before Init. The C++ task host uses plain
+   # `new T`, so establish the load-overlay dispatch state explicitly before
+   # its first Draw. Otherwise Continue may branch on an indeterminate status.
+   string(REPLACE
+    "    static void Init(sLoadSavegameScreen* pThis, p_workArea pParent)\n    {\n        pThis->m4 = pParent;"
+    "    static void Init(sLoadSavegameScreen* pThis, p_workArea pParent)\n    {\n        // LAGI_LOAD_SCREEN_ZERO_INIT\n        pThis->m0_status = 0;\n        pThis->m4 = pParent;"
+    source_text "${source_text}")
+   # The native save/load task likewise expects its state and optional child
+   # pointer to begin cleared. Preserve Azel's Init sequence after restoring
+   # that original allocator contract at the Vita integration boundary.
+   string(REPLACE
+    "    static void Init(sSaveTask* pThis)\n    {\n        pThis->mCC = backupMemoryForSaveScreen();"
+    "    static void Init(sSaveTask* pThis)\n    {\n        // LAGI_SAVE_TASK_ZERO_INIT\n        pThis->m4_status = 0;\n        pThis->m34_pSaveProgressTask = nullptr;\n        pThis->m38_operationResult = 0;\n        pThis->mCC = backupMemoryForSaveScreen();"
+    source_text "${source_text}")
    string(REPLACE
     [=[s32 writeSaveData(s32 deviceId, const std::string* filename, char* description, void* buffer, int size)
 {
@@ -1393,6 +1407,16 @@ s32 getBupStatus(s32 slotIndex)
     "        Unimplemented();\n    }\n\n    // 06019bd4"
     "    }\n\n    // 06019bd4"
     source_text "${source_text}")
+   string(REGEX MATCHALL
+    "LAGI_(LOAD_SCREEN|SAVE_TASK)_ZERO_INIT"
+    lagi_save_zero_init_matches
+    "${source_text}")
+   list(LENGTH lagi_save_zero_init_matches lagi_save_zero_init_match_count)
+   if(NOT lagi_save_zero_init_match_count EQUAL 2)
+    message(FATAL_ERROR
+     "Save/load zero-init patches did not apply exactly twice: found "
+     "${lagi_save_zero_init_match_count} matches")
+   endif()
   endif()
 
   if(source_text STREQUAL original_text)
