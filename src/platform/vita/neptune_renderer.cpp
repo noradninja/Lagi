@@ -267,6 +267,13 @@ struct LivePolygonLightState {
     std::int32_t vector[3]{};
     std::uint16_t color[3]{};
     std::uint32_t falloff[3]{};
+
+    // Rigid FLD_A3 grid objects use Azel's native object-origin view depth
+    // for distance falloff. Dynamic/billboard submissions keep the existing
+    // per-polygon fallback because they do not publish this native depth.
+    std::int32_t nativeViewDepthRaw = 0;
+    bool hasNativeViewDepth = false;
+
     bool valid = false;
 };
 static std::vector<LivePolygonLightState> g_liveTownPolygonLights;
@@ -5449,6 +5456,8 @@ static void appendLiveTownModel(
             polygonLight.color[axis] = state.lightColor[axis];
             polygonLight.falloff[axis] = state.lightFalloff[axis];
         }
+        polygonLight.nativeViewDepthRaw = state.nativeViewDepthRaw;
+        polygonLight.hasNativeViewDepth = state.hasNativeViewDepth;
         polygonLight.valid = true;
     }
 
@@ -5710,6 +5719,10 @@ static void refreshLiveTownStaticLighting()
                 light.color[axis] = submission.state.lightColor[axis];
                 light.falloff[axis] = submission.state.lightFalloff[axis];
             }
+            light.nativeViewDepthRaw =
+                submission.state.nativeViewDepthRaw;
+            light.hasNativeViewDepth =
+                submission.state.hasNativeViewDepth;
             light.valid = true;
         }
 
@@ -11498,6 +11511,15 @@ static void updateLiveTownAzelLighting()
     const std::int64_t oneOverFar =
         (static_cast<std::int64_t>(0x8000) << 16) / farRaw;
     const std::int64_t oneOverFar256 = oneOverFar << 8;
+    const auto falloffIndexFromRaw = [&](std::int64_t rawDepth) {
+        const std::int64_t viewDepth =
+            std::max<std::int64_t>(0, rawDepth) << 8;
+        const std::int64_t scaled = std::max<std::int64_t>(
+            0, (viewDepth * oneOverFar256) >> 32);
+        const int byteOffset =
+            (static_cast<int>((scaled << 1) >> 8)) & ~7;
+        return std::clamp(byteOffset >> 3, 0, 31);
+    };
     auto falloffIndex = [&](std::size_t polygon) {
         const auto& v = g_liveTownCpuMesh.vertices[polygon * 6u];
         float depth = 0.0f;
@@ -11514,13 +11536,9 @@ static void updateLiveTownAzelLighting()
                 (v.y - g_townCameraPosition[1]) * cameraForward[1] +
                 (v.z - g_townCameraPosition[2]) * cameraForward[2]);
         }
-        const std::int64_t viewDepth =
-            static_cast<std::int64_t>(std::llround(depth * 65536.0f)) << 8;
-        const std::int64_t scaled = std::max<std::int64_t>(
-            0, (viewDepth * oneOverFar256) >> 32);
-        const int byteOffset =
-            (static_cast<int>((scaled << 1) >> 8)) & ~7;
-        return std::clamp(byteOffset >> 3, 0, 31);
+        return falloffIndexFromRaw(
+            static_cast<std::int64_t>(
+                std::llround(depth * 65536.0f)));
     };
 
     std::uint32_t cachedFalloff[3]{0xFFFFFFFFu,0xFFFFFFFFu,0xFFFFFFFFu};
@@ -11571,7 +11589,15 @@ static void updateLiveTownAzelLighting()
             reportedLiveLighting = true;
         }
 
-        const int depthIndex = falloffIndex(p);
+        // FLD_A3's rigid static-grid draw path computes distance falloff
+        // from the object origin. Preserve that scope for every polygon in
+        // the submission instead of deriving a different bucket from each
+        // polygon's first vertex. Dynamic/billboard objects retain the
+        // established per-polygon fallback when no native origin depth exists.
+        const int depthIndex =
+            light.hasNativeViewDepth
+                ? falloffIndexFromRaw(light.nativeViewDepthRaw)
+                : falloffIndex(p);
         for (unsigned corner = 0; corner < 4u; ++corner) {
             const unsigned normalIndex = mode == 1u ? 0u : corner;
             if (normalIndex >= record.lightingCount)
