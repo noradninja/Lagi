@@ -22,9 +22,14 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include <cctype>
 #include <cmath>
 #include <unordered_set>
+#include <unordered_map>
 #include <atomic>
 #include <utility>
 #include <vector>
+
+#ifndef LAGI_NEPTUNE_OPTIMIZED
+#define LAGI_NEPTUNE_OPTIMIZED 0
+#endif
 
 namespace lagi::platform::renderer {
 
@@ -390,6 +395,10 @@ struct LiveTownResolvedMaterialCache {
     std::vector<std::uint16_t> textureIndices;
 };
 static std::vector<LiveTownResolvedMaterialCache> g_liveTownMaterialCache;
+// Render-thread owned descriptor index. The decoded texture vector remains
+// authoritative; values are its stable indices, never pointers into storage.
+static std::unordered_map<std::uint64_t, std::uint16_t> g_fieldTextureIndices;
+static std::size_t g_fieldTextureIndexedCount = 0u;
 
 // Stable static-instance identity discovery for the paged-residency work.
 // This is diagnostic only: Azel still selects the submissions and the current
@@ -968,6 +977,49 @@ static void mark30HzPresented()
     g_lastPresentVcount =
         static_cast<unsigned int>(sceDisplayGetVcount());
     g_presentClockInitialized = true;
+}
+
+static void recordFlightPresentation(bool nativeField, std::uint64_t nowUs)
+{
+    struct Window {
+        std::uint64_t lastUs = 0u, totalUs = 0u, maxUs = 0u;
+        unsigned int lastVcount = 0u, intervals = 0u;
+        unsigned int over2Vblanks = 0u, maxVblanks = 0u;
+        int mode = -1;
+    };
+    static Window window;
+    if (!nativeField || window.mode != g_viewMode) {
+        window = {};
+        window.mode = g_viewMode;
+    }
+    if (!nativeField)
+        return;
+    if (window.lastUs != 0u) {
+        const std::uint64_t intervalUs = nowUs - window.lastUs;
+        const unsigned int vblanks = g_lastPresentVcount - window.lastVcount;
+        ++window.intervals;
+        window.totalUs += intervalUs;
+        window.maxUs = std::max(window.maxUs, intervalUs);
+        window.maxVblanks = std::max(window.maxVblanks, vblanks);
+        window.over2Vblanks += vblanks > 2u;
+    }
+    window.lastUs = nowUs;
+    window.lastVcount = g_lastPresentVcount;
+    if (window.intervals == 120u) {
+        logging::writef(
+            "[FlightPresentWindow] mode=%u intervals=%u mean=%lluus max=%lluus "
+            "fpsMilli=%llu over2Vblanks=%u maxVblanks=%u\n",
+            static_cast<unsigned int>(window.mode), window.intervals,
+            static_cast<unsigned long long>(window.totalUs / window.intervals),
+            static_cast<unsigned long long>(window.maxUs),
+            static_cast<unsigned long long>(
+                window.totalUs ? 1000000000ull * window.intervals / window.totalUs : 0u),
+            window.over2Vblanks, window.maxVblanks);
+        // Retain the endpoint so the next window includes the following
+        // interval, including any work or logging between these presents.
+        window.intervals = window.over2Vblanks = window.maxVblanks = 0u;
+        window.totalUs = window.maxUs = 0u;
+    }
 }
 
 static void fill(std::uint32_t color)
@@ -1575,6 +1627,8 @@ static void applyPendingRendererInvalidation()
     // cleared guarantees buildLiveTownFrame() reconstructs a coherent static
     // prefix before it can be reused.
     g_liveTownMaterialCache.clear();
+    g_fieldTextureIndices.clear();
+    g_fieldTextureIndexedCount = 0u;
     g_liveTownStaticIdentityResetEpoch.fetch_add(
         1u, std::memory_order_relaxed);
     g_liveTownSignature = 0;
@@ -1593,6 +1647,9 @@ static void applyPendingRendererInvalidation()
 
 bool init()
 {
+    logging::writef(
+        "[NeptuneBuild] optimized=%u fieldDescriptorIndex=1\n",
+        static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED));
     const std::size_t allocSize = (kFrameBytes + 0x3FFFFu) & ~0x3FFFFu;
 
     for (int i = 0; i < 2; ++i) {
@@ -5370,7 +5427,37 @@ static bool decodeLiveVdp1Texture(
 static std::uint16_t liveTownTextureIndex(
     const azel::SaturnPolygonRecord& record)
 {
-    for (std::size_t i = 0;
+    const auto descriptorKey = [](unsigned pmod, unsigned colr,
+                                  unsigned srca, unsigned size) {
+        return (static_cast<std::uint64_t>(pmod & 0xFFFFu) << 48) |
+               (static_cast<std::uint64_t>(colr & 0xFFFFu) << 32) |
+               (static_cast<std::uint64_t>(srca & 0xFFFFu) << 16) |
+               static_cast<std::uint64_t>(size & 0xFFFFu);
+    };
+    const std::uint64_t key = descriptorKey(
+        record.cmdPmod, record.cmdColr, record.cmdSrca, record.cmdSize);
+    const bool indexedField = g_sceneGameMode == 3u;
+    if (indexedField) {
+        // Index only appended descriptors. emplace preserves the original
+        // linear search's first match if the source contains duplicates.
+        if (g_fieldTextureIndices.bucket_count() < 2048u)
+            g_fieldTextureIndices.reserve(2048u);
+        while (g_fieldTextureIndexedCount <
+               g_staticRoomCpuMesh.decodedTextureData.size()) {
+            const auto& texture = g_staticRoomCpuMesh.decodedTextureData[
+                g_fieldTextureIndexedCount];
+            if (g_fieldTextureIndexedCount < 0xFFFFu)
+                g_fieldTextureIndices.emplace(
+                    descriptorKey(texture.cmdPmod, texture.cmdColr,
+                                  texture.cmdSrca, texture.cmdSize),
+                    static_cast<std::uint16_t>(g_fieldTextureIndexedCount));
+            ++g_fieldTextureIndexedCount;
+        }
+        const auto found = g_fieldTextureIndices.find(key);
+        if (found != g_fieldTextureIndices.end())
+            return found->second;
+    }
+    for (std::size_t i = 0; !indexedField &&
          i < g_staticRoomCpuMesh.decodedTextureData.size(); ++i) {
         const auto& texture = g_staticRoomCpuMesh.decodedTextureData[i];
         if (record.cmdPmod == texture.cmdPmod &&
@@ -5390,6 +5477,11 @@ static std::uint16_t liveTownTextureIndex(
         if (next < 0xFFFFu) {
             g_staticRoomCpuMesh.decodedTextureData.push_back(
                 std::move(decoded));
+            if (indexedField) {
+                g_fieldTextureIndices.emplace(
+                    key, static_cast<std::uint16_t>(next));
+                g_fieldTextureIndexedCount = next + 1u;
+            }
             return static_cast<std::uint16_t>(next);
         }
     }
@@ -8815,6 +8907,8 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
         return false;
 
     g_staticRoomCpuMesh = mesh;
+    g_fieldTextureIndices.clear();
+    g_fieldTextureIndexedCount = 0u;
     g_staticRoomCpuReady = true;
     g_viewMode = 7; // Full
     g_pendingViewMode = 7;
@@ -11116,6 +11210,7 @@ static bool renderMovieFrame()
         sceDisplayWaitVblankStart();
         mark30HzPresented();
     }
+    recordFlightPresentation(false, 0u);
     g_gxmDrawBuffer ^= 1;
     return true;
 }
@@ -11669,6 +11764,9 @@ static void renderBasicWingViewer()
     mark30HzPresented();
     g_profilePresentUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - presentStartUs);
+    recordFlightPresentation(
+        nativeSceneMode && g_sceneGameMode == 3u,
+        presentStartUs + g_profilePresentUs);
 
     // The buffer just queued is now front; draw the next frame into the
     // opposite GXM surface so scanout and rendering never touch the same

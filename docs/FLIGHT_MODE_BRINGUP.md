@@ -596,3 +596,82 @@ still needs hardware validation. Vita package build and diff checks pass.
 The shared GXM VDP2 sky request remains unfinished and is not included in this
 checkpoint. Use the branch commit ID to identify builds; do not infer sky support
 from the performance package filename.
+## Flight descriptor lookup checkpoint (2026-10-08)
+
+The 11:23:30 capture still has 16-26 ms first-model material resolution buckets
+outside field entry. liveTownTextureIndex previously scanned every resident
+texture for every polygon on each model's first encounter. Field mode now uses
+an exact packed 64-bit PMOD/COLR/SRCA/SIZE key to find the same resident index.
+Indexing processes only appended descriptors; duplicate keys retain the first
+index, matching the previous search. The index is cleared with renderer
+invalidation and replacement of the authoritative room texture source. Town
+lookup behavior is unchanged. Texture decode, upload, visibility, lighting and
+material semantics remain the existing paths.
+
+Vita syntax/Wall, full package build and whitespace checks pass. Hardware timing
+and visual validation are pending. This is a local change after f914c24; no push
+has been performed. f914c24's push was rejected by automatic approval review and
+an explicit user authorization request is pending. The shared VDP2 sky remains
+unfinished. The performance goal remains unproven: the prior Full-mode capture
+has 265 of 3960 measured renderer frames over 33.333 ms and 903 over 25 ms.
+## Neptune compiler optimization checkpoint (2026-10-08)
+
+An audit of the authoritative local build.ninja found Neptune compiled with
+-ffunction-sections/-fdata-sections but no optimization flag. The CMake cache
+has an empty CMAKE_BUILD_TYPE, so Release defaults were not active. The renderer
+therefore performed the measured CPU transforms, lighting and material decode
+without optimization, even though selected audio sources already used -O2.
+
+LAGI_OPTIMIZE_NEPTUNE now defaults ON and adds -O2 only to
+src/platform/vita/neptune_renderer.cpp. -fno-fast-math and -ffp-contract=off
+preserve normal floating-point semantics and prevent fused operation contraction.
+Azel gameplay and other sources retain their existing compiler settings. The
+startup log reports [NeptuneBuild] optimized=1 fieldDescriptorIndex=1, allowing
+the next capture to distinguish this build from prior unoptimized captures.
+The generated Ninja rule confirms these flags apply to the renderer source.
+Hardware performance and visual equivalence remain unverified.
+
+For the existing local checkout, build the optimized renderer with:
+
+```powershell
+Set-Location C:\Dev\Lagi
+$env:VITASDK = 'C:\Dev\VitaSDK'
+$env:PSP2CGC = 'C:\Dev\sdk\host_tools\bin\psp2cgc.exe'
+$env:PATH = "$env:VITASDK\bin;$env:PATH"
+cmake -S . -B build -DLAGI_OPTIMIZE_NEPTUNE=ON
+if ($LASTEXITCODE -ne 0) { throw 'Configure failed' }
+cmake --build build --parallel 8
+if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+```
+
+LAGI_OPTIMIZE_NEPTUNE=OFF removes the source-specific optimization for an A/B
+capture; keep CMAKE_BUILD_TYPE and global compiler flags unchanged. In the
+currently verified empty-build-type configuration this restores the previous
+unoptimized renderer build. Package output remains build\Lagi.vpk. No remote
+push has been performed; the explicit publishing approval remains pending.
+The optimized checkpoint also adds FlightPresentWindow after display presentation.
+Each 120-interval window reports mean/max elapsed presentation interval, fpsMilli
+(actual interval-rate estimate multiplied by 1000), and display-vblank gaps.
+over2Vblanks counts intervals that missed the normal two-vblank / nominal 30 Hz
+cadence. Interval timestamps include game-thread waits, render work, GPU waits,
+pacing, and intervening logging. This is separate from the renderer-only 25 ms
+budget window and does not change scheduling. The movie path resets this counter;
+view changes and leaving native field reset it too. The first field present
+establishes the baseline, and a final incomplete window is not emitted.
+
+Use a complete Full-mode end-and-back hardware traversal to assess this build.
+Confirm NeptuneBuild optimized=1 fieldDescriptorIndex=1, inspect every
+FlightTimingWindow and FlightPresentWindow, and verify returning offscreen
+geometry still renders and lights correctly. Build success alone does not
+establish 30 FPS or 25 ms. The log currently on D: remains the 11:23:30 capture
+from before these changes, so no hardware improvement is claimed yet.
+
+## Pullable checkpoint - 2026-10-08
+
+The user explicitly authorized publishing the current flight checkpoint.
+This combines the corrected static positions and cell-load improvements in
+f914c24 with the exact field descriptor index, Neptune -O2 configuration, and
+FlightPresentWindow instrumentation. Earlier references to pending publishing
+approval describe the historical local checkpoints. The latest local Vita
+package build passed; the optimized checkpoint still needs a fresh hardware
+capture. Shared GXM VDP2 sky support remains unfinished and is not included.

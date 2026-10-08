@@ -1478,6 +1478,24 @@ add_executable(lagi
  ${LAGI_AZEL_UPSTREAM_SOURCES}
 )
 
+# Neptune performs the measured field transforms, lighting, material decoding
+# and submission preparation. Bring-up configurations often have no build type,
+# so make its optimization explicit rather than depending on Release flags.
+# Keep floating-point operation order; hardware A/B can disable this separately.
+option(LAGI_OPTIMIZE_NEPTUNE "Optimize Neptune CPU renderer" ON)
+if(LAGI_OPTIMIZE_NEPTUNE)
+ set_source_files_properties(
+  src/platform/vita/neptune_renderer.cpp
+  PROPERTIES COMPILE_OPTIONS "-O2;-fno-fast-math;-ffp-contract=off"
+             COMPILE_DEFINITIONS "LAGI_NEPTUNE_OPTIMIZED=1"
+ )
+else()
+ set_source_files_properties(
+  src/platform/vita/neptune_renderer.cpp
+  PROPERTIES COMPILE_DEFINITIONS "LAGI_NEPTUNE_OPTIMIZED=0"
+ )
+endif()
+
 # The SCSP DSP interpreter is the measured native-audio hotspot. Optimize only
 # the Lagi-owned replacement; keep the rest of the bring-up build unchanged.
 set_source_files_properties(
