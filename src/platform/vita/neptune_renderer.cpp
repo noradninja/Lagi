@@ -159,6 +159,8 @@ static const SceGxmProgramParameter* g_probeWvpParam = nullptr;
 static SceUID g_fadeVertexUid = -1;
 static SceUID g_fadeIndexUid = -1;
 static azel::DebugColorVertex* g_fadeVertices = nullptr;
+static unsigned g_overlayVertexSlot = 0;
+static constexpr unsigned kOverlayVertexSlots = 8;
 static std::uint16_t* g_fadeIndices = nullptr;
 
 static SceGxmShaderPatcherId g_textureVertexProgramId{};
@@ -188,6 +190,8 @@ static const SceGxmProgramParameter* g_vdp2Rbg0PlaneParam[4] = {
 static const SceGxmProgramParameter* g_vdp2Rbg0Transform0Param = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0Transform1Param = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0CoefficientParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0SwitchCoefficientParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0SwitchInfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0InfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0FormatParam = nullptr;
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
@@ -604,6 +608,12 @@ struct GpuMode1Texture {
 
 static std::vector<TextureBatch> g_vdp1TextureBatches;
 static std::vector<GpuMode1Texture> g_vdp1GpuTextures;
+struct FieldTextureSlab {
+    SceUID uid = -1;
+    void* data = nullptr;
+    std::size_t bytes = 0u, used = 0u;
+};
+static std::vector<FieldTextureSlab> g_fieldTextureSlabs;
 static bool g_vdp1TexturedReady = false;
 static bool g_vdp1TextureDataDirty = false;
 static bool g_vdp1BaseTexturedPayloadValid = false;
@@ -701,15 +711,24 @@ static bool g_movieUsesVdp2Title = false;
 static bool g_movieFrameVisible = false;
 static float g_movieVdp2Info[4] = {};
 static unsigned int g_movieVdp2Tvmd = 0u;
-static float g_movieRbg0Planes[16] = {};
-static float g_movieRbg0PlanesB[16] = {};
-static float g_movieRbg0Ctrl[16] = {};
-static float g_movieRbg0Plsz = 0.0f;
-static float g_movieRbg0Format[4] = {};
-static float g_movieRbg0TransformA[8] = {};
-static float g_movieRbg0TransformB[8] = {};
-static float g_movieRbg0CoefficientA[4] = {};
-static float g_movieRbg0CoefficientB[4] = {};
+struct RbgGpuState {
+    float planesA[16]{}, planesB[16]{}, ctrl[16]{}, plsz = 0.0f;
+    float format[4]{}, transformA[8]{}, transformB[8]{};
+    float coefficientA[4]{}, coefficientB[4]{};
+};
+static RbgGpuState g_movieRbg0;
+static RbgGpuState g_pendingSceneRbg0, g_sceneRbg0;
+static constexpr unsigned int kRawVdp2Bytes = 0x81000u;
+static unsigned char g_pendingSceneVdp2Raw[kRawVdp2Bytes]{};
+static unsigned char g_sceneVdp2Raw[kRawVdp2Bytes]{};
+static bool g_pendingSceneRbg0Enabled = false, g_sceneRbg0Enabled = false;
+static void* g_sceneVdp2GpuRaw = nullptr;
+static SceUID g_sceneVdp2RawUid = -1;
+static SceGxmTexture g_sceneVdp2Texture{};
+static azel::DebugTextureVertex* g_sceneVdp2Vertices = nullptr;
+static SceUID g_sceneVdp2VertexUid = -1;
+static std::uint16_t* g_sceneVdp2Indices = nullptr;
+static SceUID g_sceneVdp2IndexUid = -1;
 static std::atomic<unsigned int> g_azelColorOffsetEnable{0};
 static std::atomic<unsigned int> g_azelColorOffsetSelect{0};
 static std::atomic<int> g_azelColorOffsetARed{0};
@@ -1649,7 +1668,7 @@ static void applyPendingRendererInvalidation()
 bool init()
 {
     logging::writef(
-        "[NeptuneBuild] optimized=%u fieldDescriptorIndex=1\n",
+        "[NeptuneBuild] optimized=%u fieldDescriptorIndex=1 sharedRbg0=1 pooledFieldTextures=1\n",
         static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED));
     const std::size_t allocSize = (kFrameBytes + 0x3FFFFu) & ~0x3FFFFu;
 
@@ -1788,6 +1807,13 @@ void shutdown()
     void* fadeIndexPtr = g_fadeIndices;
     freeSimpleMappedProbe(g_fadeIndexUid, fadeIndexPtr);
     g_fadeIndices = nullptr;
+    freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
+    void* sceneVertices = g_sceneVdp2Vertices;
+    freeSimpleMappedProbe(g_sceneVdp2VertexUid, sceneVertices);
+    g_sceneVdp2Vertices = nullptr;
+    void* sceneIndices = g_sceneVdp2Indices;
+    freeSimpleMappedProbe(g_sceneVdp2IndexUid, sceneIndices);
+    g_sceneVdp2Indices = nullptr;
 
     void* vdp2AtlasPtr = g_vdp2Nbg1AtlasPixels;
     freeSimpleMappedProbe(g_vdp2Nbg1AtlasUid, vdp2AtlasPtr);
@@ -2439,7 +2465,7 @@ bool movie_present_frame(
         // of 224 scanlines (outside-window mode). Build that coverage as
         // reusable textured geometry instead of branching/reading VRAM inside
         // the RBG0 fragment shader.
-        constexpr unsigned int kWindowMaxQuads = 224u * 2u;
+        constexpr unsigned int kWindowMaxQuads = 224u * 3u;
         g_vdp2WindowVertices = static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(
                 kWindowMaxQuads * 4u * sizeof(azel::DebugTextureVertex),
@@ -2693,12 +2719,13 @@ bool movie_republish_frame()
     return renderSlot.publish();
 }
 
-void frontend_set_rbg0_state(const FrontendRbg0State& state)
+static RbgGpuState makeRbgGpuState(const FrontendRbg0State& state)
 {
+    RbgGpuState rbg{};
     for (unsigned int i = 0; i < 16u; ++i) {
-        g_movieRbg0Planes[i] =
+        rbg.planesA[i] =
             static_cast<float>(state.planeA[i]);
-        g_movieRbg0PlanesB[i] =
+        rbg.planesB[i] =
             static_cast<float>(state.planeB[i]);
     }
 
@@ -2706,36 +2733,54 @@ void frontend_set_rbg0_state(const FrontendRbg0State& state)
     // Values are all <= 19 bits (or 16-bit registers), exactly representable
     // as floats on SGX. The shader continues to fetch tile/parameter/
     // coefficient/window data from the raw VRAM snapshot.
-    g_movieRbg0Ctrl[0] = static_cast<float>(state.rpmd);
-    g_movieRbg0Plsz = static_cast<float>(state.plsz);
-    g_movieRbg0Format[0] = static_cast<float>(state.chctlb);
-    g_movieRbg0Format[1] = static_cast<float>(state.pncr);
-    g_movieRbg0Format[2] = static_cast<float>(state.craofb);
-    g_movieRbg0Format[3] = static_cast<float>(state.plsz);
-    g_movieRbg0Ctrl[1] = static_cast<float>(state.ktctl);
-    g_movieRbg0Ctrl[2] = static_cast<float>(state.ktaof);
-    g_movieRbg0Ctrl[3] = static_cast<float>(state.wctlc);
+    rbg.ctrl[0] = static_cast<float>(state.rpmd);
+    rbg.plsz = static_cast<float>(state.plsz);
+    rbg.format[0] = static_cast<float>(state.chctlb);
+    rbg.format[1] = static_cast<float>(state.pncr);
+    rbg.format[2] = static_cast<float>(state.craofb);
+    rbg.format[3] = static_cast<float>(state.plsz);
+    rbg.ctrl[1] = static_cast<float>(state.ktctl);
+    rbg.ctrl[2] = static_cast<float>(state.ktaof);
+    rbg.ctrl[3] = static_cast<float>(state.wctlc);
 
-    g_movieRbg0Ctrl[4] = static_cast<float>(state.wctld);
-    g_movieRbg0Ctrl[5] =
+    rbg.ctrl[4] = static_cast<float>(state.wctld);
+    rbg.ctrl[5] =
         static_cast<float>(state.lineWindow0Address);
-    g_movieRbg0Ctrl[6] =
+    rbg.ctrl[6] =
         static_cast<float>(state.lineWindow1Address);
-    g_movieRbg0Ctrl[7] =
+    rbg.ctrl[7] =
         static_cast<float>(state.lineWindowMask);
 
     for (unsigned int i = 0; i < 4u; ++i) {
-        g_movieRbg0Ctrl[8u + i] =
+        rbg.ctrl[8u + i] =
             static_cast<float>(state.window0[i]);
-        g_movieRbg0Ctrl[12u + i] =
+        rbg.ctrl[12u + i] =
             static_cast<float>(state.window1[i]);
-        g_movieRbg0CoefficientA[i] = state.coefficientA[i];
-        g_movieRbg0CoefficientB[i] = state.coefficientB[i];
+        rbg.coefficientA[i] = state.coefficientA[i];
+        rbg.coefficientB[i] = state.coefficientB[i];
     }
     for (unsigned int i = 0; i < 8u; ++i) {
-        g_movieRbg0TransformA[i] = state.transformA[i];
-        g_movieRbg0TransformB[i] = state.transformB[i];
+        rbg.transformA[i] = state.transformA[i];
+        rbg.transformB[i] = state.transformB[i];
     }
+    return rbg;
+}
+
+void frontend_set_rbg0_state(const FrontendRbg0State& state)
+{
+    g_movieRbg0 = makeRbgGpuState(state);
+}
+
+void presentation_set_vdp2_background(const FrontendRbg0State& state,
+    const unsigned char* vram, const unsigned char* cram, bool enabled)
+{
+    // Producer staging only; publish transfers ownership with the world frame.
+    g_pendingSceneRbg0Enabled = enabled && vram && cram;
+    if (!g_pendingSceneRbg0Enabled)
+        return;
+    g_pendingSceneRbg0 = makeRbgGpuState(state);
+    std::memcpy(g_pendingSceneVdp2Raw, vram, 0x80000u);
+    std::memcpy(g_pendingSceneVdp2Raw + 0x80000u, cram, 0x1000u);
 }
 
 bool frontend_present_vdp2(
@@ -2998,6 +3043,9 @@ static void freeVdp1Textures()
         texture.data = nullptr;
     }
     g_vdp1GpuTextures.clear();
+    for (auto& slab : g_fieldTextureSlabs)
+        freeMovieMappedBlock(slab.uid, slab.data);
+    g_fieldTextureSlabs.clear();
     g_vdp1TextureBatches.clear();
     g_vdp1TexturedReady = false;
 }
@@ -4185,6 +4233,29 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model, bool preservePrefix
     g_vdp1GpuTextures.reserve(model.textureCount);
 
     const std::size_t firstTexture = g_vdp1GpuTextures.size();
+    const bool pooled = g_sceneGameMode == 3u;
+    if (pooled && firstTexture < model.textureCount) {
+        std::size_t requiredBytes = 0u;
+        for (std::size_t i = firstTexture; i < model.textureCount; ++i) {
+            const auto& texture = model.textures[i];
+            const std::size_t bytes = ((texture.width + 7u) & ~7u) *
+                static_cast<std::size_t>(texture.height) * sizeof(std::uint32_t);
+            requiredBytes += (bytes + 63u) & ~std::size_t(63u);
+        }
+        if (g_fieldTextureSlabs.empty() || requiredBytes >
+                g_fieldTextureSlabs.back().bytes - g_fieldTextureSlabs.back().used) {
+            FieldTextureSlab slab{};
+            slab.bytes = std::max(requiredBytes, std::size_t(1024u * 1024u));
+            slab.data = probeGpuAlloc(slab.bytes, SCE_GXM_MEMORY_ATTRIB_READ, &slab.uid);
+            if (!slab.data)
+                return false;
+            g_fieldTextureSlabs.push_back(slab);
+            logging::writef("[FieldTexturePool] bytes=%u textures=%u slabs=%u\n",
+                static_cast<unsigned>(slab.bytes),
+                static_cast<unsigned>(model.textureCount - firstTexture),
+                static_cast<unsigned>(g_fieldTextureSlabs.size()));
+        }
+    }
     for (std::size_t textureIndex = firstTexture;
          textureIndex < model.textureCount; ++textureIndex) {
         const auto& source = model.textures[textureIndex];
@@ -4197,10 +4268,13 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model, bool preservePrefix
             stridePixels * source.height * sizeof(std::uint32_t);
 
         GpuMode1Texture gpu{};
-        gpu.data = probeGpuAlloc(
-            bytes,
-            SCE_GXM_MEMORY_ATTRIB_READ,
-            &gpu.uid);
+        if (pooled) {
+            auto& slab = g_fieldTextureSlabs.back();
+            gpu.data = static_cast<unsigned char*>(slab.data) + slab.used;
+            slab.used += (bytes + 63u) & ~std::size_t(63u);
+        } else {
+            gpu.data = probeGpuAlloc(bytes, SCE_GXM_MEMORY_ATTRIB_READ, &gpu.uid);
+        }
         if (!gpu.data)
             return false;
 
@@ -4233,8 +4307,10 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model, bool preservePrefix
                 source.width,
                 source.height,
                 0) < 0) {
-            sceGxmUnmapMemory(gpu.data);
-            sceKernelFreeMemBlock(gpu.uid);
+            if (gpu.uid >= 0) {
+                sceGxmUnmapMemory(gpu.data);
+                sceKernelFreeMemBlock(gpu.uid);
+            }
             return false;
         }
 
@@ -8045,10 +8121,17 @@ void show_game_presentation()
             g_vdp2Rbg0FormatParam =
                 sceGxmProgramFindParameterByName(
                     vdp2Rbg0FragmentGxp, "rbg0Format");
+            g_vdp2Rbg0SwitchCoefficientParam = sceGxmProgramFindParameterByName(
+                vdp2Rbg0FragmentGxp, "rbg0SwitchCoefficient");
+            g_vdp2Rbg0SwitchInfoParam =
+                sceGxmProgramFindParameterByName(
+                    vdp2Rbg0FragmentGxp, "rbg0SwitchInfo");
             if (!g_vdp2Rbg0Transform0Param ||
                 !g_vdp2Rbg0Transform1Param ||
                 !g_vdp2Rbg0CoefficientParam ||
                 !g_vdp2Rbg0InfoParam ||
+                !g_vdp2Rbg0SwitchCoefficientParam ||
+                !g_vdp2Rbg0SwitchInfoParam ||
                 !g_vdp2Rbg0FormatParam) {
                 logging::writef(
                     "[NeptuneVDP2] RBG0 compact uniforms unavailable; "
@@ -8752,7 +8835,7 @@ void show_game_presentation()
 
     g_fadeVertices = static_cast<azel::DebugColorVertex*>(
         probeGpuAlloc(
-            6u * sizeof(azel::DebugColorVertex),
+            6u * kOverlayVertexSlots * sizeof(azel::DebugColorVertex),
             SCE_GXM_MEMORY_ATTRIB_READ,
             &g_fadeVertexUid));
     g_fadeIndices = static_cast<std::uint16_t*>(
@@ -8779,6 +8862,7 @@ void show_game_presentation()
         g_fadeIndices[i] = static_cast<std::uint16_t>(i);
     }
 
+    g_overlayVertexSlot = 0;
     const int beginResult = sceGxmBeginScene(
         g_probeContext,
         0,
@@ -10385,14 +10469,18 @@ static void drawFadeOverlay(
         !g_fadeFragmentProgram)
         return;
 
+    if (g_overlayVertexSlot >= kOverlayVertexSlots)
+        return;
+    auto* vertices = g_fadeVertices + 6u * g_overlayVertexSlot++;
+    std::memcpy(vertices, g_fadeVertices, 6u * sizeof(*vertices));
     const std::uint8_t a = static_cast<std::uint8_t>(
         std::clamp<int>(
             static_cast<int>(std::lround(alpha * 255.0f)), 0, 255));
     for (unsigned i = 0; i < 6u; ++i) {
-        g_fadeVertices[i].r = red;
-        g_fadeVertices[i].g = green;
-        g_fadeVertices[i].b = blue;
-        g_fadeVertices[i].a = a;
+        vertices[i].r = red;
+        vertices[i].g = green;
+        vertices[i].b = blue;
+        vertices[i].a = a;
     }
 
     sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
@@ -10411,7 +10499,7 @@ static void drawFadeOverlay(
         const ViewerMat4 identity = viewerIdentity();
         sceGxmSetUniformDataF(
             uniforms, g_probeWvpParam, 0, 16, identity.m);
-        sceGxmSetVertexStream(g_probeContext, 0, g_fadeVertices);
+        sceGxmSetVertexStream(g_probeContext, 0, vertices);
         sceGxmDraw(
             g_probeContext,
             SCE_GXM_PRIMITIVE_TRIANGLES,
@@ -10430,6 +10518,10 @@ static void drawColorOffsetPass(
     if (red <= 0 && green <= 0 && blue <= 0)
         return;
 
+    if (g_overlayVertexSlot >= kOverlayVertexSlots)
+        return;
+    auto* vertices = g_fadeVertices + 6u * g_overlayVertexSlot++;
+    std::memcpy(vertices, g_fadeVertices, 6u * sizeof(*vertices));
     const std::uint8_t r = static_cast<std::uint8_t>(
         std::clamp(red, 0, 255));
     const std::uint8_t g = static_cast<std::uint8_t>(
@@ -10438,10 +10530,10 @@ static void drawColorOffsetPass(
         std::clamp(blue, 0, 255));
 
     for (unsigned i = 0; i < 6u; ++i) {
-        g_fadeVertices[i].r = r;
-        g_fadeVertices[i].g = g;
-        g_fadeVertices[i].b = b;
-        g_fadeVertices[i].a = 255u;
+        vertices[i].r = r;
+        vertices[i].g = g;
+        vertices[i].b = b;
+        vertices[i].a = 255u;
     }
 
     sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
@@ -10462,7 +10554,7 @@ static void drawColorOffsetPass(
     const ViewerMat4 identity = viewerIdentity();
     sceGxmSetUniformDataF(
         uniforms, g_probeWvpParam, 0, 16, identity.m);
-    sceGxmSetVertexStream(g_probeContext, 0, g_fadeVertices);
+    sceGxmSetVertexStream(g_probeContext, 0, vertices);
     sceGxmDraw(
         g_probeContext,
         SCE_GXM_PRIMITIVE_TRIANGLES,
@@ -10561,6 +10653,7 @@ static bool renderCinepakResolvePass()
         !g_cinepakResolveIndices)
         return false;
 
+    g_overlayVertexSlot = 0;
     const int beginResult = sceGxmBeginScene(
         g_probeContext,
         0,
@@ -10643,6 +10736,453 @@ static bool renderCinepakResolvePass()
     return submitted;
 }
 
+static bool drawVdp2Rbg0Gpu(
+    const RbgGpuState& rbg, const void* rawTextureData,
+    const azel::DebugTextureVertex* vertices, const std::uint16_t* indices,
+    float xExtent, bool frontend)
+{
+    bool rbgSubmitted = true;
+    sceGxmSetFragmentProgram(
+        g_probeContext, g_vdp2Rbg0FragmentProgram);
+
+    const unsigned int rpmd =
+        static_cast<unsigned int>(rbg.ctrl[0]) & 3u;
+    const unsigned int ktctl =
+        static_cast<unsigned int>(rbg.ctrl[1]);
+    const unsigned int ktaof =
+        static_cast<unsigned int>(rbg.ctrl[2]);
+    const unsigned int wctld =
+        static_cast<unsigned int>(rbg.ctrl[4]);
+    const unsigned int lineWindowMask =
+        static_cast<unsigned int>(rbg.ctrl[7]);
+
+    auto submitRbgParameter =
+        [&](const float* planes,
+            const float* transform,
+            const float* coefficient,
+            unsigned int coefficientEnableBit,
+            unsigned int coefficientSizeBit,
+            unsigned int coefficientOffsetShift,
+            const azel::DebugTextureVertex* vertices,
+            const std::uint16_t* indices,
+            unsigned int indexCount) -> bool {
+        void* rbgUniforms = nullptr;
+        if (sceGxmReserveFragmentDefaultUniformBuffer(
+                g_probeContext, &rbgUniforms) < 0 ||
+            !rbgUniforms)
+            return false;
+
+        for (unsigned int i = 0; i < 4u; ++i) {
+            sceGxmSetUniformDataF(
+                rbgUniforms,
+                g_vdp2Rbg0PlaneParam[i],
+                0, 4,
+                &planes[i * 4u]);
+        }
+
+        const float coefficientSize =
+            (ktctl & coefficientSizeBit) ? 2.0f : 4.0f;
+        const unsigned int coefficientOffset =
+            (ktaof >> coefficientOffsetShift) & 0x7u;
+        const float rbgInfo[4] = {
+            static_cast<float>(coefficientOffset) *
+                coefficientSize * 65536.0f,
+            (ktctl & coefficientEnableBit) ? 1.0f : 0.0f,
+            coefficientSize,
+            rbg.plsz,
+        };
+
+        sceGxmSetUniformDataF(
+            rbgUniforms,
+            g_vdp2Rbg0Transform0Param,
+            0, 4, &transform[0]);
+        sceGxmSetUniformDataF(
+            rbgUniforms,
+            g_vdp2Rbg0Transform1Param,
+            0, 4, &transform[4]);
+        sceGxmSetUniformDataF(
+            rbgUniforms,
+            g_vdp2Rbg0CoefficientParam,
+            0, 4, coefficient);
+        sceGxmSetUniformDataF(
+            rbgUniforms,
+            g_vdp2Rbg0InfoParam,
+            0, 4, rbgInfo);
+        sceGxmSetUniformDataF(
+            rbgUniforms,
+            g_vdp2Rbg0FormatParam,
+            0, 4, rbg.format);
+        const float switchSize = (ktctl & 0x2u) ? 2.0f : 4.0f;
+        const float switchInfo[4] = {
+            static_cast<float>(ktaof & 7u) * switchSize * 65536.0f,
+            (ktctl & 1u) ? 1.0f : 0.0f, switchSize,
+            rpmd == 2u ? (coefficientEnableBit == 1u ? 1.0f : 2.0f) : 0.0f
+        };
+        sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0SwitchCoefficientParam,
+            0, 4, rbg.coefficientA);
+        sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0SwitchInfoParam,
+            0, 4, switchInfo);
+
+        if (sceGxmSetVertexStream(
+                g_probeContext, 0, vertices) < 0)
+            return false;
+
+        return sceGxmDraw(
+            g_probeContext,
+            SCE_GXM_PRIMITIVE_TRIANGLES,
+            SCE_GXM_INDEX_FORMAT_U16,
+            indices,
+            indexCount) >= 0;
+    };
+
+    if (rpmd == 1u || rpmd == 2u || rpmd == 3u) {
+        // Parameter B is the base for RPMD=3.
+        rbgSubmitted = submitRbgParameter(
+            rbg.planesB,
+            rbg.transformB,
+            rbg.coefficientB,
+            0x100u, 0x200u, 8u,
+            vertices, indices, 6u);
+    }
+
+    unsigned int parameterAIndexCount = 6u;
+    const azel::DebugTextureVertex* parameterAVertices =
+        vertices;
+    const std::uint16_t* parameterAIndices =
+        indices;
+
+    if (rbgSubmitted && rpmd == 3u &&
+        g_vdp2WindowVertices && g_vdp2WindowIndices) {
+        unsigned int lineAddress = 0u;
+        bool drawInside = true;
+        int yStart = 0;
+        int yEnd = 223;
+        bool haveSingleLineWindow = false;
+
+        if ((wctld & 0x8u) != 0u &&
+            (lineWindowMask & 0x2u) != 0u) {
+            lineAddress =
+                static_cast<unsigned int>(rbg.ctrl[6]);
+            drawInside = (wctld & 0x4u) != 0u;
+            yStart = static_cast<int>(rbg.ctrl[13]);
+            yEnd = static_cast<int>(rbg.ctrl[15]);
+            haveSingleLineWindow = true;
+        } else if ((wctld & 0x2u) != 0u &&
+                   (lineWindowMask & 0x1u) != 0u) {
+            lineAddress =
+                static_cast<unsigned int>(rbg.ctrl[5]);
+            drawInside = (wctld & 0x1u) != 0u;
+            yStart = static_cast<int>(rbg.ctrl[9]);
+            yEnd = static_cast<int>(rbg.ctrl[11]);
+            haveSingleLineWindow = true;
+        }
+
+        if (haveSingleLineWindow || !frontend) {
+            const auto* rawBytes =
+                static_cast<const unsigned char*>(
+                    rawTextureData);
+
+            // Hardware bring-up diagnostic: D5 currently uses
+            // RPMD=3 with line window 1. Preserve the last
+            // hardware-good B-base/A-overlay compositor while we
+            // inspect the authored line-window coverage before
+            // changing parameter ownership semantics.
+            static bool loggedD5RpWindow = false;
+            if (frontend && !loggedD5RpWindow) {
+                logging::writef(
+                    "[NeptuneVDP2] RPMD3 window WCTLD=%04X "
+                    "mask=%u addr=%05X y=%d..%d inside=%u\n",
+                    wctld, lineWindowMask, lineAddress,
+                    yStart, yEnd, drawInside ? 1u : 0u);
+                const int sampleY[] = {
+                    0, 32, 64, 96, 112, 128, 160, 192, 223
+                };
+                for (unsigned int si = 0;
+                     si < sizeof(sampleY) / sizeof(sampleY[0]);
+                     ++si) {
+                    const int sy = sampleY[si];
+                    const unsigned int addr =
+                        (lineAddress +
+                         static_cast<unsigned int>(sy) * 4u) &
+                        0x7FFFFu;
+                    const unsigned int xsRaw =
+                        static_cast<unsigned int>(rawBytes[addr]) |
+                        (static_cast<unsigned int>(
+                            rawBytes[(addr + 1u) & 0x7FFFFu]) << 8);
+                    const unsigned int xeRaw =
+                        static_cast<unsigned int>(
+                            rawBytes[(addr + 2u) & 0x7FFFFu]) |
+                        (static_cast<unsigned int>(
+                            rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
+                    logging::writef(
+                        "[NeptuneVDP2] LW1 y=%d raw=%04X..%04X "
+                        "x=%u..%u\n",
+                        sy, xsRaw, xeRaw,
+                        (xsRaw >> 1) & 0x1FFu,
+                        (xeRaw >> 1) & 0x1FFu);
+                }
+                loggedD5RpWindow = true;
+            }
+
+
+
+            unsigned int quadCount = 0u;
+            auto emitSpan =
+                [&](int y, int x0, int x1) {
+                if (quadCount >= 224u * 3u)
+                    return;
+                x0 = std::max(x0, 0);
+                x1 = std::min(x1, 351);
+                if (x1 < x0)
+                    return;
+
+                const float u0 =
+                    static_cast<float>(x0) / 352.0f;
+                const float u1 =
+                    static_cast<float>(x1 + 1) / 352.0f;
+                const float v0 =
+                    static_cast<float>(y) / 224.0f;
+                const float v1 =
+                    static_cast<float>(y + 1) / 224.0f;
+                const float px0 =
+                    -xExtent + 2.0f * xExtent * u0;
+                const float px1 =
+                    -xExtent + 2.0f * xExtent * u1;
+                const float py0 = 1.0f - 2.0f * v0;
+                const float py1 = 1.0f - 2.0f * v1;
+
+                const unsigned int base = quadCount * 4u;
+                g_vdp2WindowVertices[base + 0u] =
+                    {px0, py0, 0.5f, u0, v0};
+                g_vdp2WindowVertices[base + 1u] =
+                    {px1, py0, 0.5f, u1, v0};
+                g_vdp2WindowVertices[base + 2u] =
+                    {px0, py1, 0.5f, u0, v1};
+                g_vdp2WindowVertices[base + 3u] =
+                    {px1, py1, 0.5f, u1, v1};
+
+                const unsigned int ii = quadCount * 6u;
+                g_vdp2WindowIndices[ii + 0u] =
+                    static_cast<std::uint16_t>(base + 0u);
+                g_vdp2WindowIndices[ii + 1u] =
+                    static_cast<std::uint16_t>(base + 1u);
+                g_vdp2WindowIndices[ii + 2u] =
+                    static_cast<std::uint16_t>(base + 2u);
+                g_vdp2WindowIndices[ii + 3u] =
+                    static_cast<std::uint16_t>(base + 2u);
+                g_vdp2WindowIndices[ii + 4u] =
+                    static_cast<std::uint16_t>(base + 1u);
+                g_vdp2WindowIndices[ii + 5u] =
+                    static_cast<std::uint16_t>(base + 3u);
+                ++quadCount;
+            };
+
+            if (!frontend) {
+                // Window coverage is geometry; GXM still performs every pixel's
+                // rotation, coefficient lookup, tile decode and palette fetch.
+                const auto accepted = [&](unsigned w, int x, int y) {
+                    const unsigned enable = w ? 8u : 2u;
+                    if (!(wctld & enable)) return 3;
+                    const unsigned base = 8u + w * 4u;
+                    int xs = static_cast<int>(rbg.ctrl[base]);
+                    int xe = static_cast<int>(rbg.ctrl[base + 2u]);
+                    if (lineWindowMask & (1u << w)) {
+                        const unsigned address =
+                            (static_cast<unsigned>(rbg.ctrl[5u + w]) + y * 4u) & 0x7FFFFu;
+                        const unsigned start = rawBytes[address] |
+                            (rawBytes[(address + 1u) & 0x7FFFFu] << 8);
+                        const unsigned end = rawBytes[(address + 2u) & 0x7FFFFu] |
+                            (rawBytes[(address + 3u) & 0x7FFFFu] << 8);
+                        xs = (start >> 1) & 0x1FFu;
+                        xe = (end >> 1) & 0x1FFu;
+                        if (end == 0xFFFFu) { xs = 1; xe = 0; }
+                    }
+                    const bool inside = x >= xs && x <= xe &&
+                        y >= static_cast<int>(rbg.ctrl[base + 1u]) &&
+                        y <= static_cast<int>(rbg.ctrl[base + 3u]);
+                    return inside == ((wctld & (w ? 4u : 1u)) != 0) ? 1 : 0;
+                };
+                for (int y = 0; y < 224; ++y) {
+                    int span = -1;
+                    for (int x = 0; x <= 352; ++x) {
+                        bool draw = false;
+                        if (x < 352) {
+                            const int a = accepted(0, x, y), b = accepted(1, x, y);
+                            draw = (a & 2) ? (b & 1) : (b & 2) ? (a & 1) :
+                                (wctld & 0x80u) ? (a || b) : (a && b);
+                        }
+                        if (draw && span < 0) span = x;
+                        if (!draw && span >= 0) { emitSpan(y, span, x - 1); span = -1; }
+                    }
+                }
+            } else {
+            for (int y = 0; y < 224; ++y) {
+                const unsigned int addr =
+                    (lineAddress +
+                     static_cast<unsigned int>(y) * 4u) &
+                    0x7FFFFu;
+                const unsigned int xsRaw =
+                    static_cast<unsigned int>(rawBytes[addr]) |
+                    (static_cast<unsigned int>(
+                        rawBytes[(addr + 1u) & 0x7FFFFu]) << 8);
+                const unsigned int xeRaw =
+                    static_cast<unsigned int>(
+                        rawBytes[(addr + 2u) & 0x7FFFFu]) |
+                    (static_cast<unsigned int>(
+                        rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
+
+                int xs = 0;
+                int xe = 0;
+                if (xeRaw != 0xFFFFu) {
+                    xs = static_cast<int>((xsRaw >> 1) & 0x1FFu);
+                    xe = static_cast<int>((xeRaw >> 1) & 0x1FFu);
+                }
+
+                const bool yInside =
+                    y >= yStart && y <= yEnd;
+                if (drawInside) {
+                    if (yInside)
+                        emitSpan(y, xs, xe);
+                } else {
+                    if (!yInside) {
+                        emitSpan(y, 0, 351);
+                    } else {
+                        emitSpan(y, 0, xs - 1);
+                        emitSpan(y, xe + 1, 351);
+                    }
+                }
+            }
+
+            }
+
+            if (quadCount) {
+                parameterAVertices = g_vdp2WindowVertices;
+                parameterAIndices = g_vdp2WindowIndices;
+                parameterAIndexCount = quadCount * 6u;
+            } else {
+                parameterAIndexCount = 0u;
+            }
+        }
+    }
+
+    if (rbgSubmitted && rpmd != 1u &&
+        parameterAIndexCount != 0u) {
+        rbgSubmitted = submitRbgParameter(
+            rbg.planesA,
+            rbg.transformA,
+            rbg.coefficientA,
+            0x1u, 0x2u, 0u,
+            parameterAVertices,
+            parameterAIndices,
+            parameterAIndexCount);
+    }
+
+    // RBG0 color offset is CLOFEN bit 4 on Saturn. D5 currently
+    // reports CLOFEN=0x20, which is BACK, so do not incorrectly
+    // tint the rotation plane when only the back screen is selected.
+    if (rbgSubmitted) {
+        constexpr unsigned int kRbg0Bit = 0x10u;
+        drawAzelColorOffsetForLayer(kRbg0Bit, true);
+        // Color-offset passes use colored vertices; restore the texture vertex
+        // program before the caller submits its next VDP2 layer.
+        sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
+        void* vertexUniforms = nullptr;
+        if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &vertexUniforms) >= 0 &&
+            vertexUniforms) {
+            const ViewerMat4 identity = viewerIdentity();
+            sceGxmSetUniformDataF(vertexUniforms, g_textureWvpParam, 0, 16, identity.m);
+        }
+
+    }
+
+    return rbgSubmitted;
+}
+
+static bool prepareSceneVdp2Background()
+{
+    if (!g_sceneRbg0Enabled)
+        return true;
+    if (!g_sceneVdp2GpuRaw) {
+        g_sceneVdp2GpuRaw = probeGpuAlloc(kRawVdp2Bytes,
+            SCE_GXM_MEMORY_ATTRIB_READ, &g_sceneVdp2RawUid);
+        g_sceneVdp2Vertices = static_cast<azel::DebugTextureVertex*>(
+            probeGpuAlloc(4u * sizeof(azel::DebugTextureVertex),
+                SCE_GXM_MEMORY_ATTRIB_READ, &g_sceneVdp2VertexUid));
+        g_sceneVdp2Indices = static_cast<std::uint16_t*>(
+            probeGpuAlloc(6u * sizeof(std::uint16_t),
+                SCE_GXM_MEMORY_ATTRIB_READ, &g_sceneVdp2IndexUid));
+        const auto discard = [] {
+            freeMovieMappedBlock(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
+            void* vertices = g_sceneVdp2Vertices;
+            freeMovieMappedBlock(g_sceneVdp2VertexUid, vertices);
+            g_sceneVdp2Vertices = nullptr;
+            void* indices = g_sceneVdp2Indices;
+            freeMovieMappedBlock(g_sceneVdp2IndexUid, indices);
+            g_sceneVdp2Indices = nullptr;
+        };
+        if (!g_sceneVdp2GpuRaw || !g_sceneVdp2Vertices || !g_sceneVdp2Indices) {
+            discard();
+            return false;
+        }
+        if (sceGxmTextureInitLinear(&g_sceneVdp2Texture, g_sceneVdp2GpuRaw,
+                SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, 512u, 258u, 0) < 0) {
+            discard();
+            return false;
+        }
+        sceGxmTextureSetMinFilter(&g_sceneVdp2Texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(&g_sceneVdp2Texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        const azel::DebugTextureVertex vertices[4] = {
+            {-1,1,0.5f,0,0}, {1,1,0.5f,1,0},
+            {-1,-1,0.5f,0,1}, {1,-1,0.5f,1,1}
+        };
+        const std::uint16_t indices[6] = {0,1,2,2,1,3};
+        std::memcpy(g_sceneVdp2Vertices, vertices, sizeof(vertices));
+        std::memcpy(g_sceneVdp2Indices, indices, sizeof(indices));
+        logging::writef("[NeptuneVDP2] native shared RBG0 GPU background enabled\n");
+    }
+    if ((static_cast<unsigned>(g_sceneRbg0.ctrl[0]) & 3u) == 3u &&
+        (!g_vdp2WindowVertices || !g_vdp2WindowIndices)) {
+        void* oldVertices = g_vdp2WindowVertices;
+        freeMovieMappedBlock(g_vdp2WindowVertexUid, oldVertices);
+        void* oldIndices = g_vdp2WindowIndices;
+        freeMovieMappedBlock(g_vdp2WindowIndexUid, oldIndices);
+        g_vdp2WindowVertices = static_cast<azel::DebugTextureVertex*>(
+            probeGpuAlloc(224u * 3u * 4u * sizeof(azel::DebugTextureVertex),
+                SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowVertexUid));
+        g_vdp2WindowIndices = static_cast<std::uint16_t*>(
+            probeGpuAlloc(224u * 3u * 6u * sizeof(std::uint16_t),
+                SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowIndexUid));
+        if (!g_vdp2WindowVertices || !g_vdp2WindowIndices) return false;
+    }
+    std::memcpy(g_sceneVdp2GpuRaw, g_sceneVdp2Raw, kRawVdp2Bytes);
+    return true;
+}
+
+static void drawSceneVdp2Background()
+{
+    if (!g_sceneRbg0Enabled || !g_sceneVdp2GpuRaw || !g_vdp2Rbg0Available)
+        return;
+    sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetFrontPolygonMode(g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetBackPolygonMode(g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetViewport(g_probeContext, viewerRenderWidth() * 0.5f,
+        viewerRenderWidth() * 0.5f, viewerRenderHeight() * 0.5f,
+        -viewerRenderHeight() * 0.5f, 0.5f, 0.5f);
+    void* uniforms = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &uniforms) < 0 || !uniforms)
+        return;
+    const ViewerMat4 identity = viewerIdentity();
+    sceGxmSetUniformDataF(uniforms, g_textureWvpParam, 0, 16, identity.m);
+    sceGxmSetFragmentTexture(g_probeContext, 0, &g_sceneVdp2Texture);
+    drawVdp2Rbg0Gpu(g_sceneRbg0, g_sceneVdp2Raw,
+        g_sceneVdp2Vertices, g_sceneVdp2Indices, 1.0f, false);
+}
+
 static bool renderMovieFrame()
 {
     const std::uint64_t frameStartUs =
@@ -10712,6 +11252,7 @@ static bool renderMovieFrame()
         static_cast<std::size_t>(pitch) * movieOutputHeight *
             sizeof(std::uint32_t));
 
+    g_overlayVertexSlot = 0;
     const int beginResult = sceGxmBeginScene(
         g_probeContext,
         0,
@@ -10785,302 +11326,13 @@ static bool renderMovieFrame()
             bool rbgSubmitted = true;
             if (g_movieVdp2Info[0] >= 0.5f && g_vdp2Rbg0Available &&
                 g_vdp2Rbg0FragmentProgram && g_vdp2Rbg0InfoParam) {
-                sceGxmSetFragmentProgram(
-                    g_probeContext, g_vdp2Rbg0FragmentProgram);
-
-                const unsigned int rpmd =
-                    static_cast<unsigned int>(g_movieRbg0Ctrl[0]) & 3u;
-                const unsigned int ktctl =
-                    static_cast<unsigned int>(g_movieRbg0Ctrl[1]);
-                const unsigned int ktaof =
-                    static_cast<unsigned int>(g_movieRbg0Ctrl[2]);
-                const unsigned int wctld =
-                    static_cast<unsigned int>(g_movieRbg0Ctrl[4]);
-                const unsigned int lineWindowMask =
-                    static_cast<unsigned int>(g_movieRbg0Ctrl[7]);
-
-                auto submitRbgParameter =
-                    [&](const float* planes,
-                        const float* transform,
-                        const float* coefficient,
-                        unsigned int coefficientEnableBit,
-                        unsigned int coefficientSizeBit,
-                        unsigned int coefficientOffsetShift,
-                        const azel::DebugTextureVertex* vertices,
-                        const std::uint16_t* indices,
-                        unsigned int indexCount) -> bool {
-                    void* rbgUniforms = nullptr;
-                    if (sceGxmReserveFragmentDefaultUniformBuffer(
-                            g_probeContext, &rbgUniforms) < 0 ||
-                        !rbgUniforms)
-                        return false;
-
-                    for (unsigned int i = 0; i < 4u; ++i) {
-                        sceGxmSetUniformDataF(
-                            rbgUniforms,
-                            g_vdp2Rbg0PlaneParam[i],
-                            0, 4,
-                            &planes[i * 4u]);
-                    }
-
-                    const float coefficientSize =
-                        (ktctl & coefficientSizeBit) ? 2.0f : 4.0f;
-                    const unsigned int coefficientOffset =
-                        (ktaof >> coefficientOffsetShift) & 0x7u;
-                    const float rbgInfo[4] = {
-                        static_cast<float>(coefficientOffset) *
-                            coefficientSize * 65536.0f,
-                        (ktctl & coefficientEnableBit) ? 1.0f : 0.0f,
-                        coefficientSize,
-                        g_movieRbg0Plsz,
-                    };
-
-                    sceGxmSetUniformDataF(
-                        rbgUniforms,
-                        g_vdp2Rbg0Transform0Param,
-                        0, 4, &transform[0]);
-                    sceGxmSetUniformDataF(
-                        rbgUniforms,
-                        g_vdp2Rbg0Transform1Param,
-                        0, 4, &transform[4]);
-                    sceGxmSetUniformDataF(
-                        rbgUniforms,
-                        g_vdp2Rbg0CoefficientParam,
-                        0, 4, coefficient);
-                    sceGxmSetUniformDataF(
-                        rbgUniforms,
-                        g_vdp2Rbg0InfoParam,
-                        0, 4, rbgInfo);
-                    sceGxmSetUniformDataF(
-                        rbgUniforms,
-                        g_vdp2Rbg0FormatParam,
-                        0, 4, g_movieRbg0Format);
-
-                    if (sceGxmSetVertexStream(
-                            g_probeContext, 0, vertices) < 0)
-                        return false;
-
-                    return sceGxmDraw(
-                        g_probeContext,
-                        SCE_GXM_PRIMITIVE_TRIANGLES,
-                        SCE_GXM_INDEX_FORMAT_U16,
-                        indices,
-                        indexCount) >= 0;
-                };
-
-                if (rpmd == 1u || rpmd == 3u) {
-                    // Parameter B is the base for RPMD=3.
-                    rbgSubmitted = submitRbgParameter(
-                        g_movieRbg0PlanesB,
-                        g_movieRbg0TransformB,
-                        g_movieRbg0CoefficientB,
-                        0x100u, 0x200u, 8u,
-                        g_movieVertices, g_movieIndices, 6u);
-                }
-
-                unsigned int parameterAIndexCount = 6u;
-                const azel::DebugTextureVertex* parameterAVertices =
-                    g_movieVertices;
-                const std::uint16_t* parameterAIndices =
-                    g_movieIndices;
-
-                if (rbgSubmitted && rpmd == 3u &&
-                    g_vdp2WindowVertices && g_vdp2WindowIndices) {
-                    unsigned int lineAddress = 0u;
-                    bool drawInside = true;
-                    int yStart = 0;
-                    int yEnd = 223;
-                    bool haveSingleLineWindow = false;
-
-                    if ((wctld & 0x8u) != 0u &&
-                        (lineWindowMask & 0x2u) != 0u) {
-                        lineAddress =
-                            static_cast<unsigned int>(g_movieRbg0Ctrl[6]);
-                        drawInside = (wctld & 0x4u) != 0u;
-                        yStart = static_cast<int>(g_movieRbg0Ctrl[13]);
-                        yEnd = static_cast<int>(g_movieRbg0Ctrl[15]);
-                        haveSingleLineWindow = true;
-                    } else if ((wctld & 0x2u) != 0u &&
-                               (lineWindowMask & 0x1u) != 0u) {
-                        lineAddress =
-                            static_cast<unsigned int>(g_movieRbg0Ctrl[5]);
-                        drawInside = (wctld & 0x1u) != 0u;
-                        yStart = static_cast<int>(g_movieRbg0Ctrl[9]);
-                        yEnd = static_cast<int>(g_movieRbg0Ctrl[11]);
-                        haveSingleLineWindow = true;
-                    }
-
-                    if (haveSingleLineWindow) {
-                        const auto* rawBytes =
-                            static_cast<const unsigned char*>(
-                                g_movieTextureData);
-
-                        // Hardware bring-up diagnostic: D5 currently uses
-                        // RPMD=3 with line window 1. Preserve the last
-                        // hardware-good B-base/A-overlay compositor while we
-                        // inspect the authored line-window coverage before
-                        // changing parameter ownership semantics.
-                        static bool loggedD5RpWindow = false;
-                        if (!loggedD5RpWindow) {
-                            logging::writef(
-                                "[NeptuneVDP2] RPMD3 window WCTLD=%04X "
-                                "mask=%u addr=%05X y=%d..%d inside=%u\n",
-                                wctld, lineWindowMask, lineAddress,
-                                yStart, yEnd, drawInside ? 1u : 0u);
-                            const int sampleY[] = {
-                                0, 32, 64, 96, 112, 128, 160, 192, 223
-                            };
-                            for (unsigned int si = 0;
-                                 si < sizeof(sampleY) / sizeof(sampleY[0]);
-                                 ++si) {
-                                const int sy = sampleY[si];
-                                const unsigned int addr =
-                                    (lineAddress +
-                                     static_cast<unsigned int>(sy) * 4u) &
-                                    0x7FFFFu;
-                                const unsigned int xsRaw =
-                                    static_cast<unsigned int>(rawBytes[addr]) |
-                                    (static_cast<unsigned int>(
-                                        rawBytes[(addr + 1u) & 0x7FFFFu]) << 8);
-                                const unsigned int xeRaw =
-                                    static_cast<unsigned int>(
-                                        rawBytes[(addr + 2u) & 0x7FFFFu]) |
-                                    (static_cast<unsigned int>(
-                                        rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
-                                logging::writef(
-                                    "[NeptuneVDP2] LW1 y=%d raw=%04X..%04X "
-                                    "x=%u..%u\n",
-                                    sy, xsRaw, xeRaw,
-                                    (xsRaw >> 1) & 0x1FFu,
-                                    (xeRaw >> 1) & 0x1FFu);
-                            }
-                            loggedD5RpWindow = true;
-                        }
-
-                        const float displayAspect =
-                            static_cast<float>(viewerRenderWidth()) /
-                            static_cast<float>(viewerRenderHeight());
-                        const float xExtent =
-                            (4.0f / 3.0f) / displayAspect;
-
-                        unsigned int quadCount = 0u;
-                        auto emitSpan =
-                            [&](int y, int x0, int x1) {
-                            if (quadCount >= 224u * 2u)
-                                return;
-                            x0 = std::clamp(x0, 0, 351);
-                            x1 = std::clamp(x1, 0, 351);
-                            if (x1 < x0)
-                                return;
-
-                            const float u0 =
-                                static_cast<float>(x0) / 352.0f;
-                            const float u1 =
-                                static_cast<float>(x1 + 1) / 352.0f;
-                            const float v0 =
-                                static_cast<float>(y) / 224.0f;
-                            const float v1 =
-                                static_cast<float>(y + 1) / 224.0f;
-                            const float px0 =
-                                -xExtent + 2.0f * xExtent * u0;
-                            const float px1 =
-                                -xExtent + 2.0f * xExtent * u1;
-                            const float py0 = 1.0f - 2.0f * v0;
-                            const float py1 = 1.0f - 2.0f * v1;
-
-                            const unsigned int base = quadCount * 4u;
-                            g_vdp2WindowVertices[base + 0u] =
-                                {px0, py0, 0.5f, u0, v0};
-                            g_vdp2WindowVertices[base + 1u] =
-                                {px1, py0, 0.5f, u1, v0};
-                            g_vdp2WindowVertices[base + 2u] =
-                                {px0, py1, 0.5f, u0, v1};
-                            g_vdp2WindowVertices[base + 3u] =
-                                {px1, py1, 0.5f, u1, v1};
-
-                            const unsigned int ii = quadCount * 6u;
-                            g_vdp2WindowIndices[ii + 0u] =
-                                static_cast<std::uint16_t>(base + 0u);
-                            g_vdp2WindowIndices[ii + 1u] =
-                                static_cast<std::uint16_t>(base + 1u);
-                            g_vdp2WindowIndices[ii + 2u] =
-                                static_cast<std::uint16_t>(base + 2u);
-                            g_vdp2WindowIndices[ii + 3u] =
-                                static_cast<std::uint16_t>(base + 2u);
-                            g_vdp2WindowIndices[ii + 4u] =
-                                static_cast<std::uint16_t>(base + 1u);
-                            g_vdp2WindowIndices[ii + 5u] =
-                                static_cast<std::uint16_t>(base + 3u);
-                            ++quadCount;
-                        };
-
-                        for (int y = 0; y < 224; ++y) {
-                            const unsigned int addr =
-                                (lineAddress +
-                                 static_cast<unsigned int>(y) * 4u) &
-                                0x7FFFFu;
-                            const unsigned int xsRaw =
-                                static_cast<unsigned int>(rawBytes[addr]) |
-                                (static_cast<unsigned int>(
-                                    rawBytes[(addr + 1u) & 0x7FFFFu]) << 8);
-                            const unsigned int xeRaw =
-                                static_cast<unsigned int>(
-                                    rawBytes[(addr + 2u) & 0x7FFFFu]) |
-                                (static_cast<unsigned int>(
-                                    rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
-
-                            int xs = 0;
-                            int xe = 0;
-                            if (xeRaw != 0xFFFFu) {
-                                xs = static_cast<int>((xsRaw >> 1) & 0x1FFu);
-                                xe = static_cast<int>((xeRaw >> 1) & 0x1FFu);
-                            }
-
-                            const bool yInside =
-                                y >= yStart && y <= yEnd;
-                            if (drawInside) {
-                                if (yInside)
-                                    emitSpan(y, xs, xe);
-                            } else {
-                                if (!yInside) {
-                                    emitSpan(y, 0, 351);
-                                } else {
-                                    emitSpan(y, 0, xs - 1);
-                                    emitSpan(y, xe + 1, 351);
-                                }
-                            }
-                        }
-
-                        if (quadCount) {
-                            parameterAVertices = g_vdp2WindowVertices;
-                            parameterAIndices = g_vdp2WindowIndices;
-                            parameterAIndexCount = quadCount * 6u;
-                        } else {
-                            parameterAIndexCount = 0u;
-                        }
-                    }
-                }
-
-                if (rbgSubmitted && rpmd != 1u &&
-                    parameterAIndexCount != 0u) {
-                    rbgSubmitted = submitRbgParameter(
-                        g_movieRbg0Planes,
-                        g_movieRbg0TransformA,
-                        g_movieRbg0CoefficientA,
-                        0x1u, 0x2u, 0u,
-                        parameterAVertices,
-                        parameterAIndices,
-                        parameterAIndexCount);
-                }
-
-                // RBG0 color offset is CLOFEN bit 4 on Saturn. D5 currently
-                // reports CLOFEN=0x20, which is BACK, so do not incorrectly
-                // tint the rotation plane when only the back screen is selected.
-                if (rbgSubmitted) {
-                    constexpr unsigned int kRbg0Bit = 0x10u;
-                    drawAzelColorOffsetForLayer(kRbg0Bit, true);
-                }
-
+                const float displayAspect =
+                    static_cast<float>(viewerRenderWidth()) /
+                    static_cast<float>(viewerRenderHeight());
+                rbgSubmitted = drawVdp2Rbg0Gpu(
+                    g_movieRbg0, g_movieTextureData,
+                    g_movieVertices, g_movieIndices,
+                    (4.0f / 3.0f) / displayAspect, true);
                 // NBG uses the normal fullscreen front-end quad.
                 sceGxmSetVertexStream(
                     g_probeContext, 0, g_movieVertices);
@@ -11356,6 +11608,8 @@ static void renderBasicWingViewer()
         (viewerRenderHeight() + SCE_GXM_TILE_SIZEY - 1) &
         ~(SCE_GXM_TILE_SIZEY - 1);
 
+    if (nativeSceneMode && !prepareSceneVdp2Background())
+        return;
     const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
     std::memset(colorBuffer, 0,
                 static_cast<std::size_t>(gxmPitch) *
@@ -11367,6 +11621,7 @@ static void renderBasicWingViewer()
         sceKernelGetProcessTimeWide() - clearStartUs);
 
     const std::uint64_t beginSceneStartUs = sceKernelGetProcessTimeWide();
+    g_overlayVertexSlot = 0;
     const int beginSceneResult = sceGxmBeginScene(
             g_probeContext, 0, renderTarget,
             nullptr, nullptr, syncObject,
@@ -11375,6 +11630,9 @@ static void renderBasicWingViewer()
         sceKernelGetProcessTimeWide() - beginSceneStartUs);
     if (beginSceneResult < 0)
         return;
+
+    if (nativeSceneMode)
+        drawSceneVdp2Background();
 
     Vdp1RenderMode renderMode = Vdp1RenderMode::PolygonColor;
     if (!roomMode) {
@@ -11458,12 +11716,14 @@ static void renderBasicWingViewer()
         drawPublishedVdp1Ui();
     }
 
-    // The scripted full-screen fade tracked here belongs to the native
-    // town camera adapter. Do not carry its terminal black state across a
-    // module transition into field mode; field presentation follows Azel's
-    // own VDP2/CLOFEN fade state instead.
+    // Scene entry restarts this fade, so a town fade-out cannot leave the
+    // next field black. BACK-only color offsets do not darken VDP1/RBG0.
     if (roomAuthenticCameraMode && g_sceneGameMode == 1u)
         drawFadeOverlay(updateTownFadeAlpha(), 0u, 0u, 0u);
+    else if (roomAuthenticCameraMode && g_sceneGameMode == 3u) {
+        drawAzelColorOffsetForLayer(0x40u, true);
+        drawFadeOverlay(updateTownFadeAlpha(), 0u, 0u, 0u);
+    }
     g_profileComposeUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - composeStartUs);
 
@@ -12110,6 +12370,11 @@ void presentation_publish_frame()
         g_pendingTownPlayerPosition,
         sizeof(g_townPlayerPosition));
     g_sceneGameMode = g_pendingSceneGameMode;
+    g_sceneRbg0Enabled = g_pendingSceneRbg0Enabled;
+    if (g_sceneRbg0Enabled) {
+        g_sceneRbg0 = g_pendingSceneRbg0;
+        std::memcpy(g_sceneVdp2Raw, g_pendingSceneVdp2Raw, kRawVdp2Bytes);
+    }
     g_townPlayerYaw = g_pendingTownPlayerYaw;
     g_townPlayerGrounded = g_pendingTownPlayerGrounded;
     g_townCollisionContacts = g_pendingTownCollisionContacts;

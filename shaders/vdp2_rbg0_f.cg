@@ -31,7 +31,7 @@ float selectRbg0Plane(
     return p3.w;
 }
 
-float4 sampleRbg0D5Cell(
+float4 sampleRbg0Cell(
     uniform sampler2D raw,
     float mapX,
     float mapY,
@@ -222,6 +222,9 @@ float4 main(
     uniform float4 rbg0Transform1,
     // {KAst, dKAst, dKAx, unused}
     uniform float4 rbg0Coefficient,
+    uniform float4 rbg0SwitchCoefficient,
+    // {A coefficient base, enabled, entry size, 0=none 1=A 2=B}
+    uniform float4 rbg0SwitchInfo,
     // {coefficient table base, enabled, entry size, unused}
     uniform float4 rbg0Info,
     // {CHCTLB, PNCR, CRAOFB, RBG0 PLSZ}
@@ -229,6 +232,21 @@ float4 main(
 {
     const float x = min(351.0f, floor(vTexcoord.x * 352.0f));
     const float y = min(223.0f, floor(vTexcoord.y * 224.0f));
+
+    if (rbg0SwitchInfo.w >= 0.5f) {
+        bool selectB = false;
+        if (rbg0SwitchInfo.y >= 0.5f) {
+            float index = fmod(floor(rbg0SwitchCoefficient.x +
+                rbg0SwitchCoefficient.y * y + rbg0SwitchCoefficient.z * x), 65536.0f);
+            if (index < 0.0f) index += 65536.0f;
+            float address = (abs(rbg0SwitchCoefficient.z) > 0.000001f ?
+                0.0f : rbg0SwitchInfo.x) + index * rbg0SwitchInfo.z;
+            address = fmod(address + rbg0SwitchInfo.z - 1.0f, 524288.0f);
+            selectB = readByte(raw, address) >= 128.0f;
+        }
+        if ((rbg0SwitchInfo.w < 1.5f && selectB) ||
+            (rbg0SwitchInfo.w >= 1.5f && !selectB)) discard;
+    }
 
     float k = 1.0f;
     if (rbg0Info.y >= 0.5f) {
@@ -263,7 +281,7 @@ float4 main(
     const float mapX = k * rotatedX + rbg0Transform1.z;
     const float mapY = k * rotatedY + rbg0Transform1.w;
 
-    return sampleRbg0D5Cell(
+    return sampleRbg0Cell(
         raw, mapX, mapY, rbg0Format,
         rbg0Plane0, rbg0Plane1, rbg0Plane2, rbg0Plane3);
 }

@@ -701,3 +701,52 @@ next hardware capture can test the explanation without per-frame diagnostic
 writes. Renderer behavior and visibility are unchanged. Field entry allocation
 and initial texture upload remain separate unresolved costs. Sky support remains
 unfinished. Goal stays active pending another hardware capture.
+
+## Shared sky, field opening fade, and startup allocations - 2026-10-08
+
+The 13:06:15 hardware log contains 34 complete Full-mode windows (4080 frames).
+Mean renderer time is 9.117 ms. Five frames exceed 25 ms; only the entry frame
+exceeds 33.333 ms (264.856 ms renderer / 255.628 ms build). After the first
+window, renderer maximum is 31.275 ms. Presentation still contains three gaps
+in the first window and one later 50.047 ms / three-vblank gap. The remaining
+32 complete presentation windows maintain nominal 29.970 FPS. maxFieldLog
+reaches 9.904 ms. This is a strong steady-state result, but the later interval
+and entry stall remain; logging is a candidate rather than a proven cause.
+
+This checkpoint moves persistent-file and stdout writes to a lower-priority
+worker. Producers format once and enqueue into a bounded 256 KiB ring; the
+worker drains 16 KiB batches. Queue saturation reports dropped-message counts
+instead of blocking a frame on storage. Shutdown drains after render/audio
+workers stop. Initialization failure retains synchronous logging. Confirm
+`[Log] ... async=1` in the next capture.
+
+Field texture uploads now allocate 64-byte-aligned slices from shared mapped
+GPU blocks instead of mapping one kernel block per texture. Pixel conversion,
+filtering, descriptor identity and stable-prefix reuse remain unchanged. Blocks
+are released with their texture cache. FieldTexturePool reports allocation
+sizes and slab counts; the existing first-frame build/upload timers measure
+whether this reduces startup cost. No preloading or cell visibility changes.
+
+Native scene snapshots now carry the complete VDP2 VRAM/CRAM and RBG0 rotation
+state, published under the same ownership boundary as the world. The existing
+frontend RBG0 draw is shared with native town/field scenes. BGON controls layer
+enabling, and GXM performs rotation, coefficient reads, character/palette fetch
+and composition behind VDP1 geometry. RPMD=2 selects A versus B with coefficient
+A's MSB, exposing the authored flight sky without any A3-specific map or camera
+rules. Native RPMD=3 also supports rectangular/line window combinations through
+bounded coverage geometry. This reuses the existing RBG0 cell-format renderer;
+it does not claim complete emulation of every Saturn bitmap/coefficient format.
+
+A field entry restarts a 30-presented-frame opening fade through the generic
+presentation fade service, including reentry through menus/movies. This avoids
+retaining the town's terminal fade-out or treating BACK-only CLOFEN as a global
+black overlay. Each GPU color/fade pass now uses its own vertex slice so later
+passes cannot overwrite a queued overlay's colors. Module and map selection
+remain Azel-owned. No modifications to the pinned extern/Azel source tree.
+
+The Vita runtime and native RBG0 shader build locally. Hardware validation of
+this checkpoint is pending: check the opening fade and sky during the initial
+camera pan, turn around and traverse the full route both ways, then compare the
+first upload/build timings and every FlightPresentWindow. The performance goal
+remains active until that capture verifies the remaining gaps. Earlier notes
+about unfinished sky support refer to older checkpoints.

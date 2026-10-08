@@ -39,6 +39,8 @@ struct FrontendRbg0State {
     float coefficientB[4]{};
 };
 void frontend_set_rbg0_state(const FrontendRbg0State& state);
+void presentation_set_vdp2_background(const FrontendRbg0State& state,
+    const unsigned char* vram, const unsigned char* cram, bool enabled);
 void set_azel_color_offset_state(
     unsigned int enableMask,
     unsigned int selectMask,

@@ -346,6 +346,13 @@ void runtime_frame()
     const bool nativeSceneFrame =
         gGameStatus.m0_gameMode == 1 ||
         gGameStatus.m0_gameMode == 3;
+    // Restart the presentation fade on every field entry, including a return
+    // through movie/menu mode. Azel retains ownership of module selection.
+    static bool wasFieldFrame = false;
+    const bool fieldFrame = gGameStatus.m0_gameMode == 3;
+    if (fieldFrame && !wasFieldFrame)
+        lagi::platform::renderer::presentation_fade_in(30u);
+    wasFieldFrame = fieldFrame;
     if (traceStartup)
         lagi::platform::logging::writef(
             "[AzelBoot] frame=%u tasks=%d currentInitial=%p pendingInitial=%p\n",
@@ -535,17 +542,19 @@ void runtime_frame()
         }
     }
 
-    if (d5NameSequenceActive) {
+    if (d5NameSequenceActive || nativeSceneFrame) {
         // Snapshot the RBG0 control surface that Azel already produced.
         // Neptune consumes this as renderer state only; all map selection,
         // coefficient generation, windows and sequencing remain Azel-owned.
         const auto* regs = vdp2Controls.m4_pendingVdp2Regs;
         lagi::platform::renderer::FrontendRbg0State state{};
 
-        // D5 config is CHSZ=1 / PNB=1, therefore each 4x4 rotation-map
-        // plane occupies one 0x800-byte page. Derive both parameter A and B
+        // Derive page size from the active character/pattern format. Each rotation-map
+        // plane uses the authored page size. Derive both parameter A and B
         // maps exactly as renderer_vdp2.cpp does from MPOFR + MPxxR[A/B].
-        constexpr unsigned int pageSize = 0x800u;
+        const unsigned int pageDimension = (regs->m2A_CHCTLB & 0x100u) ? 32u : 64u;
+        const unsigned int patternSize = (regs->m38_PNCR & 0x8000u) ? 2u : 4u;
+        const unsigned int pageSize = pageDimension * pageDimension * patternSize;
         const unsigned int mapOffsetA =
             ((regs->m3E_MPOFR >> 0) & 7u) << 6;
         const unsigned int mapOffsetB =
@@ -606,7 +615,7 @@ void runtime_frame()
         }
 
         static bool loggedD5RbgBridge = false;
-        if (!loggedD5RbgBridge) {
+        if (d5NameSequenceActive && !loggedD5RbgBridge) {
             lagi::platform::logging::writef(
                 "[D5RBGBridge] WCTLC=%04X WCTLD=%04X "
                 "LWTA0=%08X LWTA1=%08X mask=%u "
@@ -666,7 +675,7 @@ void runtime_frame()
             paramB, state.transformB, state.coefficientB);
 
         static bool loggedD5RbgParameterB = false;
-        if (!loggedD5RbgParameterB) {
+        if (d5NameSequenceActive && !loggedD5RbgParameterB) {
             lagi::platform::logging::writef(
                 "[D5RBGPlanes] A=%05X,%05X,%05X,%05X "
                 "B=%05X,%05X,%05X,%05X\n",
@@ -1012,7 +1021,12 @@ void runtime_frame()
             loggedD5RbgParameterB = true;
         }
 
-        lagi::platform::renderer::frontend_set_rbg0_state(state);
+        if (d5NameSequenceActive)
+            lagi::platform::renderer::frontend_set_rbg0_state(state);
+        else
+            lagi::platform::renderer::presentation_set_vdp2_background(
+                state, getVdp2Vram(0), getVdp2Cram(0),
+                (regs->m20_BGON & 0x10u) != 0u);
     }
 
     if (titleActive || d5NameSequenceActive) {
