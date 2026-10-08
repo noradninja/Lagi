@@ -11788,13 +11788,20 @@ static void renderBasicWingViewer()
     // g_viewMode is part of the published game->render frame. The render
     // thread never reads mutable controller state directly.
 
+    const bool nativeSceneContext =
+        g_sceneGameMode != 0u && g_townCameraReady;
     const bool nativeSceneMode =
-        g_sceneGameMode != 0u && g_townCameraReady &&
+        nativeSceneContext &&
         !azel_bridge::published_submissions().empty();
+    // Native menus pause the gameplay task, so a valid menu frame can have
+    // zero world submissions while still carrying VDP2/VDP1 UI commands.
+    // Keep the native scene presentation path alive for those UI-only frames.
+    const bool nativeMenuFrame =
+        nativeSceneContext && g_vdp2MenuId != 0u;
     const bool roomMode =
-        g_staticRoomCpuReady || nativeSceneMode;
+        g_staticRoomCpuReady || nativeSceneMode || nativeMenuFrame;
     const bool roomAuthenticCameraMode =
-        nativeSceneMode ||
+        nativeSceneMode || nativeMenuFrame ||
         (g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraValid);
 
     // Legacy Basic Wing regression camera state is renderer-owned. Interactive
@@ -11981,7 +11988,7 @@ static void renderBasicWingViewer()
     const bool submitted = submit_vdp1_model(model, drawState);
     g_profileSubmitUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - submitStartUs);
-    if (!submitted) {
+    if (!submitted && !nativeMenuFrame) {
         sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
         return;
