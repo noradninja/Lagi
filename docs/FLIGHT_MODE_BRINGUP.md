@@ -675,3 +675,29 @@ FlightPresentWindow instrumentation. Earlier references to pending publishing
 approval describe the historical local checkpoints. The latest local Vita
 package build passed; the optimized checkpoint still needs a fresh hardware
 capture. Shared GXM VDP2 sky support remains unfinished and is not included.
+## Optimized hardware capture and remaining drop audit - 2026-10-08
+
+The 12:32:44 log confirms NeptuneBuild optimized=1 fieldDescriptorIndex=1.
+Across 33 complete Full-mode windows (3960 measured frames), mean renderer time
+is 9.751 ms, 5 frames exceed 25 ms, and 2 exceed 33.333 ms. The first window
+includes 263.730 ms renderer time / 254.656 ms build at field entry. One later
+window contains a 47.573 ms renderer / 40.038 ms outer-build outlier.
+Across 3960 measured presentation intervals there are four gaps above two
+vblanks: three in the first window (maximum six vblanks / 100.091 ms) and one
+later (three vblanks / 50.053 ms). The other 31 windows have no missed two-vblank
+intervals and present at the display's nominal 29.970 FPS. User reports near
+flawless playback with only a couple of brief drops. This validates a substantial
+performance gain but does not prove the strict minimum throughout the route.
+
+FieldStream's build timer ends before logging; the outer build timer includes
+synchronous vprintf and sceIoWrite. Outside entry, the largest detailed work
+bucket is 18.006 ms, below the 40.038 ms outer-build outlier. Logging/scheduling
+is a candidate, not a demonstrated cause. The next checkpoint stops printing
+FieldStream solely for routine geometry-visible-set changes or new static
+instance identities. First models/materials, texture growth, allocation, and the
+120-frame heartbeat still report. Counters and per-frame timing windows remain.
+maxFieldLog measures the actual FieldStream write time in each window so the
+next hardware capture can test the explanation without per-frame diagnostic
+writes. Renderer behavior and visibility are unchanged. Field entry allocation
+and initial texture upload remain separate unresolved costs. Sky support remains
+unfinished. Goal stays active pending another hardware capture.

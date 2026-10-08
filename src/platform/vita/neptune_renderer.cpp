@@ -479,6 +479,7 @@ static unsigned int g_profileTasksUs = 0;
 static unsigned int g_profileGameWaitUs = 0;
 static unsigned int g_profileRenderCpuPrepUs = 0;
 static unsigned int g_profileBuildUs = 0;
+static unsigned int g_profileFieldStreamLogUs = 0;
 static unsigned int g_profileBuildScanUs = 0;
 static unsigned int g_profileBuildCacheUs = 0;
 static unsigned int g_profileBuildEdgeUs = 0;
@@ -6100,6 +6101,7 @@ static void refreshLiveTownStaticLighting()
 
 static bool buildLiveTownFrame()
 {
+    g_profileFieldStreamLogUs = 0u;
     const std::uint64_t buildStartUs = sceKernelGetProcessTimeWide();
     const unsigned int decodedTexturesBefore =
         static_cast<unsigned int>(
@@ -6434,12 +6436,12 @@ static bool buildLiveTownFrame()
                 sceKernelGetProcessTimeWide() - buildStartUs);
         const bool periodicSample =
             (fieldStreamHeartbeat++ % 120u) == 0u;
-        if (changed ||
+        if ((changed && !g_profilePrepareReusedGeometry) ||
             modelCacheMisses != 0u ||
             g_profileObjectMaterialCacheMisses != 0u ||
-            g_liveTownStaticIdentityMisses != 0u ||
             decodedTexturesAfter != decodedTexturesBefore ||
             periodicSample) {
+            const std::uint64_t logStartUs = sceKernelGetProcessTimeWide();
             logging::writef(
                 "[FieldStream] frame=%llu submissions=%u polys=%u verts=%u "
                 "modelMiss=%u matMiss=%u textures=%u->%u prepare=%u "
@@ -6491,6 +6493,8 @@ static bool buildLiveTownFrame()
                 g_profilePrepareSubdivAllocUs,
                 g_profilePrepareSubdivBuildUs,
                 g_profilePrepareCopyUs);
+            g_profileFieldStreamLogUs = static_cast<unsigned int>(
+                sceKernelGetProcessTimeWide() - logStartUs);
         }
     }
 
@@ -11507,6 +11511,7 @@ static void renderBasicWingViewer()
     struct FlightTimingWindow {
         unsigned int frames = 0u, over25 = 0u, overDeadline = 0u;
         unsigned int maxRender = 0u, maxBuild = 0u, rebuilds = 0u;
+        unsigned int maxFieldLog = 0u;
         std::uint64_t totalRender = 0u;
     };
     static FlightTimingWindow flightTiming;
@@ -11521,17 +11526,18 @@ static void renderBasicWingViewer()
         flightTiming.totalRender += g_profileRenderUs;
         flightTiming.maxRender = std::max(flightTiming.maxRender, g_profileRenderUs);
         flightTiming.maxBuild = std::max(flightTiming.maxBuild, g_profileBuildUs);
+        flightTiming.maxFieldLog = std::max(flightTiming.maxFieldLog, g_profileFieldStreamLogUs);
         flightTiming.over25 += g_profileRenderUs > 25000u;
         flightTiming.overDeadline += g_profileRenderUs > 33333u;
         flightTiming.rebuilds += g_liveTownStaticRebuilt;
         if (flightTiming.frames == 120u) {
             logging::writef(
                 "[FlightTimingWindow] mode=%u frames=%u mean=%uus max=%uus "
-                "over25=%u over33333=%u maxBuild=%uus rebuilds=%u rendererOnly=1\n",
+                "over25=%u over33333=%u maxBuild=%uus rebuilds=%u maxFieldLog=%uus rendererOnly=1\n",
                 flightTimingMode, flightTiming.frames,
                 static_cast<unsigned int>(flightTiming.totalRender / flightTiming.frames),
                 flightTiming.maxRender, flightTiming.over25, flightTiming.overDeadline,
-                flightTiming.maxBuild, flightTiming.rebuilds);
+                flightTiming.maxBuild, flightTiming.rebuilds, flightTiming.maxFieldLog);
             flightTiming = {};
         }
     }
