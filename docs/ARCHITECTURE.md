@@ -194,6 +194,26 @@ D5 uses the same VDP2 facilities as the rest of the runtime; it is not treated a
 
 The remaining RBG0 work is primarily the D5 name-entry accuracy pass around A/B composition, windows, priority behavior, and color calculation. Shared fade direction/timing/color is now handled by the generic Azel-to-Neptune VDP2 path.
 
+VDP2 implementation is SGX-first. Azel remains authoritative for registers,
+VRAM/CRAM contents, timing, and layer ownership; Neptune translates that state
+into GPU work at the Saturn-authored logical resolution and lets SGX perform
+composition and final scaling. CPU-side work is limited to state capture,
+infrequent resource preparation, and operations that are demonstrably cheaper
+or unavailable on SGX. ARM NEON is used only for measured CPU-bound stages where
+vectorization preserves exact Saturn-visible results; it is not a substitute
+for moving scalable raster work to SGX.
+
+In-game VDP2 backgrounds and world presentation use point filtering. Bilinear
+filtering is reserved for UI and text presentation until that policy is
+explicitly revised.
+
+The native-scene RBG0 path follows these rules explicitly: the coefficient,
+map, character, and palette program resolves one sample per 352x224 Saturn
+pixel into an RGBA surface, then SGX point-scales that surface into the 480x272
+gameplay framebuffer. This preserves the existing point-exact appearance while
+avoiding duplicate execution of the heavy Saturn memory-interpretation shader
+at Vita output resolution.
+
 ## Movie pipeline
 
 Movie sequencing remains part of Azel's movie task/state machine.

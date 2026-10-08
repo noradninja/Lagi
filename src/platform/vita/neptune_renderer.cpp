@@ -118,6 +118,7 @@ static SceGxmRenderTarget* g_probeRenderTargetHalf = nullptr;
 // ordinary RGBA texture for the final bilinear presentation pass.
 static SceGxmRenderTarget* g_movieRenderTarget = nullptr;
 static SceGxmRenderTarget* g_frontendHighRenderTarget = nullptr;
+static SceGxmRenderTarget* g_sceneRbg0RenderTarget = nullptr;
 static SceUID g_probeColorUid = -1;
 static std::uint32_t* g_probeColorBuffer = nullptr;
 static SceGxmColorSurface g_probeColorSurface{};
@@ -729,6 +730,13 @@ static azel::DebugTextureVertex* g_sceneVdp2Vertices = nullptr;
 static SceUID g_sceneVdp2VertexUid = -1;
 static std::uint16_t* g_sceneVdp2Indices = nullptr;
 static SceUID g_sceneVdp2IndexUid = -1;
+static constexpr unsigned int kSceneRbg0Width = 352u;
+static constexpr unsigned int kSceneRbg0Height = 224u;
+static constexpr unsigned int kSceneRbg0Pitch = 384u;
+static SceUID g_sceneRbg0ColorUid = -1;
+static std::uint32_t* g_sceneRbg0ColorBuffer = nullptr;
+static SceGxmColorSurface g_sceneRbg0ColorSurface{};
+static SceGxmTexture g_sceneRbg0ResolvedTexture{};
 static std::atomic<unsigned int> g_azelColorOffsetEnable{0};
 static std::atomic<unsigned int> g_azelColorOffsetSelect{0};
 static std::atomic<int> g_azelColorOffsetARed{0};
@@ -1668,7 +1676,8 @@ static void applyPendingRendererInvalidation()
 bool init()
 {
     logging::writef(
-        "[NeptuneBuild] optimized=%u fieldDescriptorIndex=1 sharedRbg0=1 pooledFieldTextures=1\n",
+        "[NeptuneBuild] optimized=%u fieldDescriptorIndex=1 sharedRbg0=1 "
+        "rbg0NativeResolve=1 pooledFieldTextures=1\n",
         static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED));
     const std::size_t allocSize = (kFrameBytes + 0x3FFFFu) & ~0x3FFFFu;
 
@@ -2197,6 +2206,12 @@ void shutdown()
     g_cinepakResolveColorSurface = {};
     g_cinepakResolveTexture = {};
 
+    void* sceneRbg0Ptr = g_sceneRbg0ColorBuffer;
+    freeProbeMapped(g_sceneRbg0ColorUid, sceneRbg0Ptr);
+    g_sceneRbg0ColorBuffer = nullptr;
+    g_sceneRbg0ColorSurface = {};
+    g_sceneRbg0ResolvedTexture = {};
+
     void* colorPtr2 = g_probeColorBuffer2;
     freeProbeMapped(g_probeColorUid2, colorPtr2);
     g_probeColorBuffer2 = nullptr;
@@ -2210,6 +2225,10 @@ void shutdown()
     if (g_frontendHighRenderTarget) {
         sceGxmDestroyRenderTarget(g_frontendHighRenderTarget);
         g_frontendHighRenderTarget = nullptr;
+    }
+    if (g_sceneRbg0RenderTarget) {
+        sceGxmDestroyRenderTarget(g_sceneRbg0RenderTarget);
+        g_sceneRbg0RenderTarget = nullptr;
     }
     if (g_movieRenderTarget) {
         sceGxmDestroyRenderTarget(g_movieRenderTarget);
@@ -7489,6 +7508,16 @@ void show_game_presentation()
     }
     status("[PASS] GXM FRONTEND 720X408 TARGET", 0xFF80E0FFu);
 
+    SceGxmRenderTargetParams sceneRbg0RtParams = movieRtParams;
+    sceneRbg0RtParams.width = kSceneRbg0Width;
+    sceneRbg0RtParams.height = kSceneRbg0Height;
+    if (sceGxmCreateRenderTarget(
+            &sceneRbg0RtParams, &g_sceneRbg0RenderTarget) < 0) {
+        failure("[FAIL] GXM RBG0 RESOLVE TARGET");
+        return;
+    }
+    status("[PASS] GXM RBG0 352X224 TARGET", 0xFF80E0FFu);
+
     constexpr int gxmPitch = 1024;
     constexpr unsigned int colorBytes =
         static_cast<unsigned int>(gxmPitch * kHeight * sizeof(std::uint32_t));
@@ -7683,6 +7712,44 @@ void show_game_presentation()
         return;
     }
     status("[PASS] CINEPAK RESOLVE SURFACE", 0xFF80E0FFu);
+
+    constexpr unsigned int sceneRbg0Bytes =
+        kSceneRbg0Pitch * kSceneRbg0Height * sizeof(std::uint32_t);
+    g_sceneRbg0ColorBuffer = static_cast<std::uint32_t*>(
+        probeCdramAlloc(
+            sceneRbg0Bytes,
+            SCE_GXM_MEMORY_ATTRIB_READ | SCE_GXM_MEMORY_ATTRIB_WRITE,
+            &g_sceneRbg0ColorUid));
+    if (!g_sceneRbg0ColorBuffer) {
+        failure("[FAIL] RBG0 RESOLVE MEMORY");
+        return;
+    }
+    std::memset(g_sceneRbg0ColorBuffer, 0, sceneRbg0Bytes);
+    if (sceGxmColorSurfaceInit(
+            &g_sceneRbg0ColorSurface,
+            SCE_GXM_COLOR_FORMAT_A8B8G8R8,
+            SCE_GXM_COLOR_SURFACE_LINEAR,
+            SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+            SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+            kSceneRbg0Width,
+            kSceneRbg0Height,
+            kSceneRbg0Pitch,
+            g_sceneRbg0ColorBuffer) < 0 ||
+        sceGxmTextureInitLinearStrided(
+            &g_sceneRbg0ResolvedTexture,
+            g_sceneRbg0ColorBuffer,
+            SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+            kSceneRbg0Width,
+            kSceneRbg0Height,
+            kSceneRbg0Pitch * sizeof(std::uint32_t)) < 0) {
+        failure("[FAIL] RBG0 RESOLVE SURFACE");
+        return;
+    }
+    sceGxmTextureSetMinFilter(
+        &g_sceneRbg0ResolvedTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+    sceGxmTextureSetMagFilter(
+        &g_sceneRbg0ResolvedTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+    status("[PASS] RBG0 RESOLVE SURFACE", 0xFF80E0FFu);
 
     const unsigned int alignedW =
         (kWidth + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
@@ -11158,10 +11225,29 @@ static bool prepareSceneVdp2Background()
     return true;
 }
 
-static void drawSceneVdp2Background()
+static bool renderSceneVdp2BackgroundPass()
 {
-    if (!g_sceneRbg0Enabled || !g_sceneVdp2GpuRaw || !g_vdp2Rbg0Available)
-        return;
+    if (!g_sceneRbg0Enabled)
+        return true;
+    if (!g_sceneVdp2GpuRaw || !g_vdp2Rbg0Available ||
+        !g_sceneRbg0RenderTarget || !g_sceneRbg0ColorBuffer)
+        return false;
+
+    std::memset(
+        g_sceneRbg0ColorBuffer, 0,
+        kSceneRbg0Pitch * kSceneRbg0Height * sizeof(std::uint32_t));
+    g_overlayVertexSlot = 0;
+    const int beginResult = sceGxmBeginScene(
+        g_probeContext, 0, g_sceneRbg0RenderTarget,
+        nullptr, nullptr, nullptr,
+        &g_sceneRbg0ColorSurface, nullptr);
+    if (beginResult < 0) {
+        logging::writef(
+            "[NeptuneVDP2] FAIL RBG0 resolve begin=0x%08X\n",
+            static_cast<unsigned int>(beginResult));
+        return false;
+    }
+
     sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
@@ -11170,17 +11256,65 @@ static void drawSceneVdp2Background()
     sceGxmSetBackDepthWriteEnable(g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
     sceGxmSetFrontPolygonMode(g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
     sceGxmSetBackPolygonMode(g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetDefaultRegionClipAndViewport(
+        g_probeContext,
+        static_cast<int>(kSceneRbg0Width) - 1,
+        static_cast<int>(kSceneRbg0Height) - 1);
+    void* uniforms = nullptr;
+    bool submitted = false;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniforms) >= 0 && uniforms) {
+        const ViewerMat4 identity = viewerIdentity();
+        sceGxmSetUniformDataF(
+            uniforms, g_textureWvpParam, 0, 16, identity.m);
+        sceGxmSetFragmentTexture(
+            g_probeContext, 0, &g_sceneVdp2Texture);
+        submitted = drawVdp2Rbg0Gpu(
+            g_sceneRbg0, g_sceneVdp2Raw,
+            g_sceneVdp2Vertices, g_sceneVdp2Indices, 1.0f, false);
+    }
+    sceGxmEndScene(g_probeContext, nullptr, nullptr);
+    return submitted;
+}
+
+static void drawSceneVdp2Background()
+{
+    if (!g_sceneRbg0Enabled || !g_sceneRbg0ColorBuffer)
+        return;
+    sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(
+        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetFrontPolygonMode(
+        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetBackPolygonMode(
+        g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
     sceGxmSetViewport(g_probeContext, viewerRenderWidth() * 0.5f,
         viewerRenderWidth() * 0.5f, viewerRenderHeight() * 0.5f,
         -viewerRenderHeight() * 0.5f, 0.5f, 0.5f);
     void* uniforms = nullptr;
-    if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &uniforms) < 0 || !uniforms)
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniforms) < 0 || !uniforms)
         return;
     const ViewerMat4 identity = viewerIdentity();
-    sceGxmSetUniformDataF(uniforms, g_textureWvpParam, 0, 16, identity.m);
-    sceGxmSetFragmentTexture(g_probeContext, 0, &g_sceneVdp2Texture);
-    drawVdp2Rbg0Gpu(g_sceneRbg0, g_sceneVdp2Raw,
-        g_sceneVdp2Vertices, g_sceneVdp2Indices, 1.0f, false);
+    sceGxmSetUniformDataF(
+        uniforms, g_textureWvpParam, 0, 16, identity.m);
+    sceGxmSetFragmentTexture(
+        g_probeContext, 0, &g_sceneRbg0ResolvedTexture);
+    if (sceGxmSetVertexStream(
+            g_probeContext, 0, g_sceneVdp2Vertices) >= 0) {
+        sceGxmDraw(
+            g_probeContext,
+            SCE_GXM_PRIMITIVE_TRIANGLES,
+            SCE_GXM_INDEX_FORMAT_U16,
+            g_sceneVdp2Indices,
+            6u);
+    }
 }
 
 static bool renderMovieFrame()
@@ -11609,6 +11743,8 @@ static void renderBasicWingViewer()
         ~(SCE_GXM_TILE_SIZEY - 1);
 
     if (nativeSceneMode && !prepareSceneVdp2Background())
+        return;
+    if (nativeSceneMode && !renderSceneVdp2BackgroundPass())
         return;
     const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
     std::memset(colorBuffer, 0,

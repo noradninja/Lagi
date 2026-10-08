@@ -229,8 +229,15 @@ The RBG0 shader was split from the NBG path after PSP2CGC hit internal-compiler/
 Current RBG0 strategy:
 
 - invariant Saturn rotation terms are precomputed once per host frame;
-- SGX performs coefficient lookup, rotated coordinate generation, tile lookup, CRAM lookup, and pixel rendering;
+- SGX performs coefficient lookup, rotated coordinate generation, tile lookup, CRAM lookup, and pixel rendering at the Saturn-authored 352x224 resolution;
+- native scenes resolve RBG0 to an SGX render texture and point-scale that conventional RGBA result into the 480x272 gameplay framebuffer, avoiding redundant raw-memory shader evaluation for duplicate output pixels;
 - line-window visibility is handled at the compositor level rather than inside the heavy RBG0 fragment shader.
+
+All additional VDP2 work follows the same SGX-first design rule. In-game
+background and world layers use point filtering; bilinear filtering is reserved
+for UI/text presentation until explicitly changed. ARM NEON is reserved for
+measured CPU-bound preparation or decode stages where it is the best exact
+implementation; GPU-bound work is not moved to the CPU merely to use NEON.
 
 A fragment-side line-window implementation caused a real SGX GPU crash and was removed.
 
