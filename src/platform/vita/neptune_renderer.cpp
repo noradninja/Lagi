@@ -5655,6 +5655,34 @@ static void appendLiveTownEdge()
 static void refreshLiveTownStaticLighting()
 {
     std::size_t polygonBase = 0u;
+    static unsigned int fieldFalloffCompareBudget = 96u;
+
+    // Same index math used by updateLiveTownAzelLighting(), but kept local to
+    // this diagnostic so the checkpoint cannot alter rendering.
+    const float activeFar =
+        g_sceneGameMode == 3u && g_nativeSceneFarPlane > 0.0f
+            ? g_nativeSceneFarPlane
+            : (g_staticRoomCpuReady &&
+               g_staticRoomCpuMesh.cameraFar > 0.0f
+                ? g_staticRoomCpuMesh.cameraFar
+                : static_cast<float>(0xF000) / 65536.0f);
+    const std::int64_t farRaw = std::max<std::int64_t>(
+        1,
+        static_cast<std::int64_t>(
+            std::llround(activeFar * 65536.0f)));
+    const std::int64_t oneOverFar =
+        (static_cast<std::int64_t>(0x8000) << 16) / farRaw;
+    const std::int64_t oneOverFar256 = oneOverFar << 8;
+    const auto diagnosticFalloffIndexFromRaw =
+        [&](std::int64_t rawDepth) {
+            const std::int64_t viewDepth =
+                std::max<std::int64_t>(0, rawDepth) << 8;
+            const std::int64_t scaled = std::max<std::int64_t>(
+                0, (viewDepth * oneOverFar256) >> 32);
+            const int byteOffset =
+                (static_cast<int>((scaled << 1) >> 8)) & ~7;
+            return std::clamp(byteOffset >> 3, 0, 31);
+        };
 
     for (const auto& submission : azel_bridge::published_submissions()) {
         if (submission.state.dynamic ||
@@ -5683,6 +5711,60 @@ static void refreshLiveTownStaticLighting()
                 light.falloff[axis] = submission.state.lightFalloff[axis];
             }
             light.valid = true;
+        }
+
+        if (fieldFalloffCompareBudget != 0u &&
+            submission.state.hasNativeViewDepth &&
+            g_sceneGameMode == 3u &&
+            g_nativeSceneViewValid &&
+            polygonBase + polygonCount <=
+                g_liveTownCpuMesh.polygonRecords.size()) {
+            const int objectIndex = diagnosticFalloffIndexFromRaw(
+                submission.state.nativeViewDepthRaw);
+
+            int minPolygonIndex = 31;
+            int maxPolygonIndex = 0;
+            unsigned int differingPolygons = 0u;
+            for (std::size_t p = 0; p < polygonCount; ++p) {
+                const std::size_t globalPolygon = polygonBase + p;
+                if (globalPolygon * 6u >=
+                    g_liveTownCpuMesh.vertices.size())
+                    break;
+
+                const auto& v =
+                    g_liveTownCpuMesh.vertices[globalPolygon * 6u];
+                float viewZ =
+                    v.x * g_nativeSceneViewMatrix[8] +
+                    v.y * g_nativeSceneViewMatrix[9] +
+                    v.z * g_nativeSceneViewMatrix[10] +
+                    g_nativeSceneViewMatrix[11];
+                const std::int64_t rawDepth =
+                    static_cast<std::int64_t>(
+                        std::llround(std::fabs(viewZ) * 65536.0f));
+                const int polygonIndex =
+                    diagnosticFalloffIndexFromRaw(rawDepth);
+                minPolygonIndex =
+                    std::min(minPolygonIndex, polygonIndex);
+                maxPolygonIndex =
+                    std::max(maxPolygonIndex, polygonIndex);
+                if (polygonIndex != objectIndex)
+                    ++differingPolygons;
+            }
+
+            logging::writef(
+                "[FieldFalloffCompare] cell=%u obj=%08X model=%08X "
+                "originRaw=%d objectIdx=%d polyIdx=%d..%d "
+                "different=%u/%u\n",
+                submission.cellIndex,
+                submission.objectIndex,
+                submission.modelTableOffset,
+                submission.state.nativeViewDepthRaw,
+                objectIndex,
+                minPolygonIndex,
+                maxPolygonIndex,
+                differingPolygons,
+                static_cast<unsigned int>(polygonCount));
+            --fieldFalloffCompareBudget;
         }
 
         for (std::size_t p = 0; p < polygonCount; ++p)

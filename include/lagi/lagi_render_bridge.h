@@ -14,6 +14,12 @@ struct SubmissionState {
     std::int32_t lightVector[3]{};
     std::uint16_t lightColor[3]{};
     std::uint32_t lightFalloff[3]{};
+
+    // Diagnostic-only native object-origin depth captured from Azel's actual
+    // view-space pCurrentMatrix at addObjectToDrawList(). 16.16 fixed point.
+    std::int32_t nativeViewDepthRaw = 0;
+    bool hasNativeViewDepth = false;
+
     bool hasModelMatrix = false;
     bool hasLight = false;
     bool billboard = false;

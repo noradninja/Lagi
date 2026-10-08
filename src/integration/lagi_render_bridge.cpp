@@ -368,6 +368,19 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
         !billboard)
         ++g_explicitStaticContextsConsumed;
     if (g_hasPendingTownSubmission) {
+        // Capture Azel's actual object-origin view depth before the explicit
+        // static context replaces the normal runtime-captured submission state.
+        // For a rigid model, pCurrentMatrix[2][3] is the model origin's view Z
+        // in 16.16 fixed point; retain the absolute depth for diagnostics.
+        if (!g_pendingTownSubmission.state.dynamic &&
+            !billboard &&
+            &pCurrentMatrix && pCurrentMatrix) {
+            const std::int32_t viewZ = pCurrentMatrix->m[2][3].asS32();
+            g_pendingTownSubmission.state.nativeViewDepthRaw =
+                viewZ < 0 ? -viewZ : viewZ;
+            g_pendingTownSubmission.state.hasNativeViewDepth = true;
+        }
+
         // For rigid FLD_A3 environment submissions, validate that the
         // generated static hook's world-space matrix/light pair is equivalent
         // to the native Azel view-space pair at this exact draw boundary.
