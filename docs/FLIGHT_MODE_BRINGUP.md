@@ -12,7 +12,7 @@ Neptune renders.
 
 Flight behavior, field scripts, dragon movement, camera state, visibility, animation, encounters, VDP1/VDP2 state, and progression remain Azel-owned. Lagi restores the Vita-facing services and presentation paths required to let that runtime execute natively.
 
-## Current hardware-validated state (2026-10-07)
+## Current hardware-validated state (2026-10-08)
 
 The native FLD_A3 route is live on Vita hardware:
 
@@ -37,7 +37,8 @@ Vita/Vita TV results supplied by the user are authoritative. Host builds, static
 
 - **Date:** 2026-10-07
 - **Branch:** `feature/flight-mode-bringup`
-- **Latest hardware-tested rendering checkpoint:** `a476878a9d0c44b30c4e3a6508273d70c86c2482` (`Reuse static model material bindings`)
+- **Current branch HEAD / latest hardware-tested corrective checkpoint:** `f0ef39492ccca4ab6789420dd8bd1670b00e1b2d` (`Align Full Gouraud correction with Lighting mode`) — hardware-tested, visual regression still present.
+- **Last pre-regression reference region:** before/around the first successfully active FLD_A3 static-grid submission path. Historical A/B checkpoints used during this session include `7b71f8f41c679ac09e76912ee2295e6a4cd8922c`, `662c3f7de0f9f2426b6cc4579127628b0f0afbe7`, `ab2b44e1820825c050d3130cb5639bb0103c74c8`, and `528778889bc5b697579c9a1f23610935cdcd414b`. These were used to bracket the regression, not as new forward-development heads.
 - **Draft pull request:** #12 (`Bring up native FLD_A3 flight entry`)
 
 This is the active rendering checkpoint. Neptune is the native SceGxm renderer, not VitaGL. The gameplay panel is 480x272 and the immediate target is reliable 30 Hz within a 33.3 ms frame budget. Do not merge PR #12 until the user explicitly approves it after Vita/Vita TV testing.
@@ -52,6 +53,47 @@ The normal route from the Ruins elevator through status `0x50`, mode 3, `FLD_A3.
 
 At the latest hardware-tested checkpoint, the static-grid hook is active and the material-binding reuse change has removed the previous ~110-128 ms recurring material-resolution penalty. Across 39 sampled active-field `[ScenePerf]` records, render median is 22.855 ms. The 34 non-rebuild samples have a 21.259 ms median, 25.605 ms p90, and 26.206 ms maximum. Dense 900+ polygon non-rebuild samples have a 23.576 ms median. All five sampled frames over 33.3 ms are static-prefix rebuild frames; their render median is 44.244 ms and maximum is 46.924 ms. First-use texture growth remains a separate hundreds-of-milliseconds residency stall.
 
+### Visual regression discovered after the previous work session
+
+A clear lighting/shading regression is now the highest-priority correctness issue. The user reports that this was not present in the previous work session and became visible around the point where the FLD_A3 environment grid actually began entering Neptune's static submission/cache path after a fresh configure/build. The important boundary is therefore not merely when static-support code was written, but when the generated FLD_A3 hook was confirmed to be present and hardware logs began reporting matching nonzero static contexts/submissions.
+
+The regression is visual, not a geometry-loss problem. Video and same-camera mode cycling show that the affected canyon/rock surfaces remain present in Texture, Quads, and Wires, while Full and Lighting exhibit incorrect quad-to-quad illumination. The darkest faces can resemble holes against the unfinished black background, but the geometry is still drawn. Do not return to missing-geometry/culling explanations unless new evidence contradicts this mode comparison.
+
+Current evidence localizes the fault to lighting/shading state or its Full-path consumption:
+
+- The static world transform itself has been checked against Azel's native draw-boundary matrix. The native-vs-synthesized comparison showed only tiny 16.16 rounding deltas.
+- The captured/synthesized light direction likewise matched to rounding-level differences (typically 0-1 against a dominant 4096 component), so a gross model-space/world-space light-vector mismatch is not supported by hardware diagnostics.
+- The static path is unquestionably active in the affected build: hardware logs show matching `staticCtx=set/consumed`, nonzero `staticSubs`, stable static identity hits, and `staticRebuilt=0` cache-hit frames.
+- The problem appears as hard per-quad brightness discontinuities on continuous surfaces. Texture-only presentation remains coherent.
+- Mode cycling in a particularly obvious area showed that Full can become much darker than the same geometry shown by Lighting, which keeps the textured-Gouraud composition path under suspicion even though CPU-side lighting inputs remain part of the investigation.
+
+### Lighting-regression investigation and attempted corrections
+
+The following checkpoints were implemented and hardware-tested during the 2026-10-07/08 session. None has removed the regression, so do not treat any of them as the established root-cause fix:
+
+1. **`3803c8542b5698285a56d7458b4ec25fb3dfa8f3` — `Keep cached static lighting in model space`.** Static cached normals remain model-space, so the refreshed Azel light was rotated back through the model basis before dot products. This made initial-build and cache-hit coordinate treatment consistent, but hardware still showed the same bad shading.
+2. **`9730e3e94bc118d949dbb6dcb3c73a3280f95c6e` — `Trace native versus cached field lighting`.** Added bounded `[FieldLightCompare]` diagnostics at the native draw boundary. Hardware showed native and synthesized matrices/light vectors agreeing to rounding precision, effectively ruling out the generated static transform/light pair as the primary cause.
+3. **`e3201a304cd32c985c96f3f8a515439555302713` — `Trace field object versus polygon falloff`.** Added `[FieldFalloffCompare]` diagnostics comparing Azel's native object-origin view-depth bucket with Neptune's existing per-polygon first-vertex bucket. Large differences were observed for many rigid objects (often most polygons in a submission), making falloff scope a plausible semantic mismatch.
+4. **`410c2c37eb45e7a4654a820c0362c1e8a193531d` — `Clear cached static Gouraud shading each frame`.** Restored one lifecycle behavior from the former all-dynamic path by clearing the cached static `gouraud555` prefix each frame rather than allowing same-size `resize()` to retain previous-frame shade values. Hardware showed no correction.
+5. **`e56999d9536e1034b5d1f650b21b4d624fedc21d` — `Use object-origin falloff for static field lighting`.** Applied one falloff bucket per rigid FLD_A3 static submission using the native object-origin depth. Hardware mode screenshots still showed the regression. This rendering behavior was subsequently removed; the diagnostic depth capture remains useful evidence.
+6. **`f0ef39492ccca4ab6789420dd8bd1670b00e1b2d` — `Align Full Gouraud correction with Lighting mode`.** Restored the previous per-polygon falloff behavior and changed Full's textured-Gouraud combine to reconstruct/quantize the signed RGB555 Gouraud value around neutral `0x10` before adding it to the base texture, matching the representation exposed by Lighting mode. Hardware still showed the issue.
+
+During regression bracketing, the remote branch HEAD was temporarily moved backward for exact historical A/B builds, including `528778889bc5b697579c9a1f23610935cdcd414b`, `7f8f68ba01c199fd18fd48d74578de78c66934d3`, `7b71f8f41c679ac09e76912ee2295e6a4cd8922c`, and `662c3f7de0f9f2426b6cc4579127628b0f0afbe7`. The branch has now been restored to `f0ef39492ccca4ab6789420dd8bd1670b00e1b2d`. When testing old commits locally, use a hard reset to the remote branch plus `git submodule update --init --recursive`; old checkpoints may also require a clean Ninja/VitaSDK configure because a reused build directory can fall back to the Visual Studio/MSVC generator.
+
+### Current regression hypothesis and next diagnostic
+
+The strongest remaining hypothesis is **static-light refresh equivalence / retained per-polygon lighting metadata or downstream shaded-payload association**, not missing geometry and not a gross world-transform error. The old all-dynamic path reconstructed the full flattened submission every frame; the static cache-hit path retains polygon records/associations and refreshes only a smaller set of lighting state. A targeted next diagnostic should compare the cached static polygon lighting inputs against the current adapted model on the same submission and polygon index:
+
+- `lightingControl`
+- `lightingCount`
+- all per-corner normals
+- mode-2 per-corner colors / `hasColor`
+- current `LivePolygonLightState`
+- current visibility result
+- `gouraud555` before and after `updateLiveTownAzelLighting()`
+- the final Full shaded payload written for the same polygon
+
+Prefer hashing/comparing the cached and current values and logging only mismatches or a bounded set of affected polygons. Do not add another broad lighting rewrite until one of these retained associations is shown to diverge. The historical regression boundary around static-grid activation remains the key clue.
 ### Current correction: preserve cached Saturn mesh-command metadata
 
 The latest full-mode hardware run passed the complete static-grid bridge gate: every sampled active `[FieldStream]` record had matching nonzero `staticCtx=set/consumed`, `staticSubs > 0`, and no context mismatch. The generated FLD_A3 hook, bridge consumption, world-space classification, and Neptune static path are therefore all active. Do not return to the earlier generated-source activation diagnosis unless a later log actually reports `staticCtx=0/0` or `staticSubs=0`.
@@ -64,11 +106,12 @@ The next checkpoint preserves a separate copy of the static mesh-command ranges 
 
 ### Immediate next task
 
-1. Build the new checkpoint and test the complete opening scripted camera without moving the player.
-2. Confirm the previously absent mesh section appears as soon as the camera reveals it.
-3. In `[FieldStream]`, confirm `meshRanges=total/static` retains a nonzero static count on `staticRebuilt=0` frames. Continue to require matching `staticCtx`, `staticSubs > 0`, and nonzero billboards.
-4. Confirm field orientation/winding, corrected lighting, dragon/world relationship, and the point-filtered 48x48 radar remain unchanged.
-5. If the visual gate passes, resume the generic persistent-geometry/resource work. The remaining sampled deadline misses are all rebuild events; do not optimize audio or the dynamic actor path for this milestone.
+1. Keep the branch at `f0ef39492ccca4ab6789420dd8bd1670b00e1b2d` unless performing a deliberate historical A/B.
+2. Reproduce the obvious canyon/rock shading defect and capture the same camera position while cycling Full, Texture, Lighting, Quads, and Wires.
+3. Instrument cached-static polygon lighting metadata versus the current adapted model for the exact same static submission/range. Log bounded mismatches in lighting mode/count, normals, mode-2 colors, visibility, CPU `gouraud555`, and final Full payload association.
+4. Preserve the proven field invariants while diagnosing: native field orientation/winding, 32.0 far clip, reversed Azel light-color storage, point-filtered 48x48 radar, billboard dynamism, and Azel-owned visibility/LOD.
+5. Do not resume residency/performance optimization until this visual regression is understood. The static path materially improves performance, but correctness takes priority.
+6. Keep audio work, ray/laser rendering, and unrelated gameplay changes out of this checkpoint.
 
 At `a476878`, 247 of 296 logged field records still rebuilt the monolithic static prefix. Ordinary build median is 6.680 ms and object append median is 5.062 ms. Rebuild build median has fallen to 26.786 ms because recurring material resolution is now cached; geometry upload remains about 7.928 ms median. That is a major improvement over the prior ~128 ms rebuild median, but rebuild frames still render around 44-47 ms and miss 30 Hz.
 
