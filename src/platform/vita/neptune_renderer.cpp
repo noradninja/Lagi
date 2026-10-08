@@ -381,6 +381,15 @@ static std::unordered_set<
 static std::atomic<std::uint32_t> g_liveTownStaticIdentityResetEpoch{0u};
 static std::uint32_t g_liveTownStaticIdentityAppliedEpoch = 0u;
 
+// Renderer-owned caches and GPU resources must only be invalidated by
+// LagiRender. Azel/game-side callbacks publish these bits; the render thread
+// consumes them as one coherent invalidation before touching renderer state.
+enum : std::uint32_t {
+    kRendererInvalidateCram = 1u << 0,
+    kRendererInvalidateVdp1Textures = 1u << 1,
+};
+static std::atomic<std::uint32_t> g_rendererInvalidationFlags{0u};
+
 static unsigned int g_liveTownStaticIdentityHits = 0u;
 static unsigned int g_liveTownStaticIdentityMisses = 0u;
 
@@ -1463,24 +1472,33 @@ void set_fov(float degrees)
 
 void invalidate_cram_range(unsigned int, unsigned int)
 {
-    // Neptune decodes Saturn palette/material state into its own resident
-    // resources. Force the live-town material/model caches to be rebuilt on
-    // the next published frame when Azel writes CRAM.
-    g_liveTownMaterialCache.clear();
-    g_liveTownStaticIdentityResetEpoch.fetch_add(
-        1u, std::memory_order_relaxed);
-    g_liveTownSignature = 0;
-    g_liveTownStaticSignature = 0;
-    g_liveTownStaticMeshRanges.clear();
-    g_liveTownPrepared = false;
-    g_vdp1TextureDataDirty = true;
+    // This callback can run on the Azel/game side. Do not mutate renderer
+    // containers or GPU resources here; publish an invalidation request for
+    // LagiRender to consume at its next frame boundary.
+    g_rendererInvalidationFlags.fetch_or(
+        kRendererInvalidateCram, std::memory_order_release);
 }
 
 void invalidate_vdp1_texture_range(unsigned int, unsigned int)
 {
-    // Azel's desktop backend invalidates decoded VDP1 textures here. Neptune
-    // owns the Vita texture cache, so invalidate the resident live-town model
-    // and material bindings and rebuild them from the updated VDP1 data.
+    // Texture writes can also arrive off the render thread. In particular,
+    // freeVdp1Textures(), material-cache clears, and static-range mutation
+    // must stay render-thread owned.
+    g_rendererInvalidationFlags.fetch_or(
+        kRendererInvalidateVdp1Textures, std::memory_order_release);
+}
+
+static void applyPendingRendererInvalidation()
+{
+    const std::uint32_t flags = g_rendererInvalidationFlags.exchange(
+        0u, std::memory_order_acquire);
+    if (flags == 0u)
+        return;
+
+    // Apply the dependent renderer state as one transaction. Resetting the
+    // static signature in the same frame that its range/material metadata is
+    // cleared guarantees buildLiveTownFrame() reconstructs a coherent static
+    // prefix before it can be reused.
     g_liveTownMaterialCache.clear();
     g_liveTownStaticIdentityResetEpoch.fetch_add(
         1u, std::memory_order_relaxed);
@@ -1488,7 +1506,13 @@ void invalidate_vdp1_texture_range(unsigned int, unsigned int)
     g_liveTownStaticSignature = 0;
     g_liveTownStaticMeshRanges.clear();
     g_liveTownPrepared = false;
-    freeVdp1Textures();
+
+    if ((flags & kRendererInvalidateVdp1Textures) != 0u)
+        freeVdp1Textures();
+
+    // CRAM changes can alter decoded texture/material output even when the
+    // VDP1 source bytes themselves did not change, so both invalidation types
+    // force the next live-scene prepare to refresh texture data.
     g_vdp1TextureDataDirty = true;
 }
 
@@ -11210,6 +11234,12 @@ static int renderThreadMain(SceSize, void*)
             logging::writef(
                 "[RenderFrame] %u begin\n",
                 g_renderStartupFrame);
+
+        // Azel-side invalidation callbacks only publish atomic requests.
+        // Consume them here, on LagiRender, before any movie/scene renderer
+        // can observe the affected material, static-range, or GPU state.
+        applyPendingRendererInvalidation();
+
         if (!g_debugVisible)
             renderBasicWingViewer();
         if (g_renderStartupFrame < 3)
