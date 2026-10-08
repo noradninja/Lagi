@@ -3,6 +3,8 @@
 #include "lagi/lagi_live_model_adapter.h"
 #include "lagi/platform.h"
 
+#include <algorithm>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <unordered_map>
@@ -65,6 +67,12 @@ static bool g_forceDynamicSubmissions = false;
 static std::int32_t g_viewScopeMatrix[12]{};
 static bool g_nativeSceneViewValid = false;
 static std::int32_t g_nativeSceneViewMatrix[12]{};
+
+// Bounded FLD_A3 diagnostic: compare the static-grid state synthesized by the
+// generated hook with Azel's actual pCurrentMatrix/currentLightVector_M at the
+// native addObjectToDrawList() boundary. This is observation only; it never
+// changes submission state or rendering.
+static unsigned int g_staticLightingCompareBudget = 96u;
 
 static void copyMatrixRaw(const LagiMatrix4x3& source, std::int32_t out[12])
 {
@@ -360,6 +368,101 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
         !billboard)
         ++g_explicitStaticContextsConsumed;
     if (g_hasPendingTownSubmission) {
+        // For rigid FLD_A3 environment submissions, validate that the
+        // generated static hook's world-space matrix/light pair is equivalent
+        // to the native Azel view-space pair at this exact draw boundary.
+        if (g_staticLightingCompareBudget != 0u &&
+            !g_pendingTownSubmission.state.dynamic &&
+            !billboard &&
+            g_forceDynamicSubmissions &&
+            g_nativeSceneViewValid &&
+            &pCurrentMatrix && pCurrentMatrix &&
+            &currentLightVector_M) {
+            std::int32_t actualWorld[12]{};
+            removeViewTransform(
+                g_nativeSceneViewMatrix, *pCurrentMatrix, actualWorld);
+
+            std::int32_t nativeModelLight[3]{};
+            std::int32_t syntheticModelLight[3]{};
+            for (unsigned int axis = 0; axis < 3; ++axis) {
+                std::int64_t native = 0;
+                native += static_cast<std::int64_t>(
+                    pCurrentMatrix->m[0][axis].asS32()) *
+                    currentLightVector_M.lightVector[0].asS32();
+                native += static_cast<std::int64_t>(
+                    pCurrentMatrix->m[1][axis].asS32()) *
+                    currentLightVector_M.lightVector[1].asS32();
+                native += static_cast<std::int64_t>(
+                    pCurrentMatrix->m[2][axis].asS32()) *
+                    currentLightVector_M.lightVector[2].asS32();
+                nativeModelLight[axis] =
+                    static_cast<std::int32_t>(native >> 16);
+
+                std::int64_t synthetic = 0;
+                synthetic += static_cast<std::int64_t>(
+                    g_pendingTownSubmission.state.modelMatrix[axis]) *
+                    g_pendingTownSubmission.state.lightVector[0];
+                synthetic += static_cast<std::int64_t>(
+                    g_pendingTownSubmission.state.modelMatrix[4u + axis]) *
+                    g_pendingTownSubmission.state.lightVector[1];
+                synthetic += static_cast<std::int64_t>(
+                    g_pendingTownSubmission.state.modelMatrix[8u + axis]) *
+                    g_pendingTownSubmission.state.lightVector[2];
+                syntheticModelLight[axis] =
+                    static_cast<std::int32_t>(synthetic >> 16);
+            }
+
+            std::int32_t maxBasisDelta = 0;
+            std::int32_t maxTranslationDelta = 0;
+            for (unsigned int row = 0; row < 3; ++row) {
+                for (unsigned int col = 0; col < 3; ++col) {
+                    const unsigned int i = row * 4u + col;
+                    const std::int32_t delta = static_cast<std::int32_t>(
+                        std::llabs(
+                            static_cast<long long>(actualWorld[i]) -
+                            static_cast<long long>(
+                                g_pendingTownSubmission.state.modelMatrix[i])));
+                    maxBasisDelta = std::max(maxBasisDelta, delta);
+                }
+                const unsigned int i = row * 4u + 3u;
+                const std::int32_t delta = static_cast<std::int32_t>(
+                    std::llabs(
+                        static_cast<long long>(actualWorld[i]) -
+                        static_cast<long long>(
+                            g_pendingTownSubmission.state.modelMatrix[i])));
+                maxTranslationDelta =
+                    std::max(maxTranslationDelta, delta);
+            }
+
+            const std::int32_t lightDelta0 =
+                std::abs(nativeModelLight[0] - syntheticModelLight[0]);
+            const std::int32_t lightDelta1 =
+                std::abs(nativeModelLight[1] - syntheticModelLight[1]);
+            const std::int32_t lightDelta2 =
+                std::abs(nativeModelLight[2] - syntheticModelLight[2]);
+
+            lagi::platform::logging::writef(
+                "[FieldLightCompare] cell=%u obj=%08X model=%08X "
+                "basisDelta=%d transDelta=%d "
+                "nativeLight=(%d,%d,%d) synthLight=(%d,%d,%d) "
+                "lightDelta=(%d,%d,%d)\n",
+                g_pendingTownSubmission.cellIndex,
+                g_pendingTownSubmission.objectIndex,
+                g_pendingTownSubmission.modelTableOffset,
+                maxBasisDelta,
+                maxTranslationDelta,
+                nativeModelLight[0],
+                nativeModelLight[1],
+                nativeModelLight[2],
+                syntheticModelLight[0],
+                syntheticModelLight[1],
+                syntheticModelLight[2],
+                lightDelta0,
+                lightDelta1,
+                lightDelta2);
+            --g_staticLightingCompareBudget;
+        }
+
         g_lastState = g_pendingTownSubmission.state;
         g_lastState.billboard = billboard;
     } else {
