@@ -277,6 +277,69 @@ struct LivePolygonLightState {
     bool valid = false;
 };
 static std::vector<LivePolygonLightState> g_liveTownPolygonLights;
+// A static CPU cache hit does not imply that an offscreen quad has had its
+// current positions written to the reused subdivision GPU buffer.
+static std::vector<std::uint8_t> g_fieldSubdivPositionValid;
+
+// Render-thread-only, bounded field diagnostics. Hash explicit fields, never
+// structure padding. Samples retain exact submission/local/global identity.
+struct FieldPolygonProbe {
+    std::size_t polygon;
+    unsigned int cell, object, model, local;
+};
+static std::vector<FieldPolygonProbe> g_fieldPolygonProbes;
+static unsigned int g_fieldProbeFrames = 0u;
+// Hardware validated the visual correction. Keep probes available for a
+// deliberate diagnostic build, but disable synchronous bursts during profiling.
+static unsigned int g_fieldProbeBudget = 0u;
+static bool g_fieldProbeActive = false;
+
+static std::uint32_t fieldRecordHash(const azel::SaturnPolygonRecord& r)
+{
+    std::uint32_t hash = 2166136261u;
+    const auto add = [&](std::uint32_t value) {
+        hash = (hash ^ value) * 16777619u;
+    };
+    add(r.lightingControl); add(r.lightingCount);
+    add(r.cmdCtrl); add(r.cmdPmod); add(r.cmdColr);
+    add(r.cmdSrca); add(r.cmdSize); add(r.polygonInModel);
+    for (unsigned int c = 0; c < 4u; ++c) {
+        add(r.indices[c]); add(r.lighting[c].hasColor);
+        for (unsigned int a = 0; a < 3u; ++a) {
+            add(static_cast<std::uint16_t>(r.lighting[c].normal[a]));
+            add(r.lighting[c].color[a]);
+        }
+    }
+    return hash;
+}
+
+static void traceFieldPolygonStage(const char* stage)
+{
+    if (!g_fieldProbeActive) return;
+    for (const auto& probe : g_fieldPolygonProbes) {
+        const auto p = probe.polygon;
+        if (p >= g_liveTownCpuMesh.gouraud555.size() ||
+            p >= g_liveTownPolygonLights.size()) continue;
+        const auto& light = g_liveTownPolygonLights[p];
+        const auto& shade = g_liveTownCpuMesh.gouraud555[p];
+        logging::writef(
+            "[FieldPolygonStage] frame=%u stage=%s cell=%u obj=%08X "
+            "model=%08X local=%u p=%u light=%u vec=%d,%d,%d "
+            "color=%u,%u,%u falloff=%u,%u,%u depth=%d/%u "
+            "shade=%.5f,%.5f,%.5f/%.5f,%.5f,%.5f/"
+            "%.5f,%.5f,%.5f/%.5f,%.5f,%.5f\n",
+            g_fieldProbeFrames, stage, probe.cell, probe.object,
+            probe.model, probe.local, static_cast<unsigned int>(p),
+            light.valid, light.vector[0], light.vector[1], light.vector[2],
+            light.color[0], light.color[1], light.color[2],
+            light.falloff[0], light.falloff[1], light.falloff[2],
+            light.nativeViewDepthRaw, light.hasNativeViewDepth,
+            shade.corner[0][0], shade.corner[0][1], shade.corner[0][2],
+            shade.corner[1][0], shade.corner[1][1], shade.corner[1][2],
+            shade.corner[2][0], shade.corner[2][1], shade.corner[2][2],
+            shade.corner[3][0], shade.corner[3][1], shade.corner[3][2]);
+    }
+}
 
 static std::uint64_t g_liveTownSignature = 0;
 static std::uint64_t g_liveTownStaticSignature = 0;
@@ -501,6 +564,10 @@ static std::uint16_t* g_vdp1SubdivIndices = nullptr;
 static unsigned int g_vdp1SubdivVertexCapacity = 0u;
 static unsigned int g_vdp1SubdivIndexCapacity = 0u;
 static std::vector<std::uint16_t> g_vdp1SubdivQuadIndices;
+struct SubdivUvState {
+    unsigned int width = 0u, height = 0u, flip = 0u;
+};
+static std::vector<SubdivUvState> g_fieldSubdivUvStates;
 
 static SceUID g_vdp1SubdivWireVertexUid = -1;
 static SceUID g_vdp1SubdivWireIndexUid = -1;
@@ -522,6 +589,7 @@ struct GpuMode1Texture {
     unsigned int height = 0;
     bool opaque = false;
     bool mesh = false;
+    std::uint16_t cmdPmod = 0, cmdColr = 0, cmdSrca = 0, cmdSize = 0;
 };
 
 static std::vector<TextureBatch> g_vdp1TextureBatches;
@@ -4048,16 +4116,18 @@ static void drawPublishedVdp1Ui()
 
 }
 
-static bool uploadVdp1Textures(const Vdp1ModelSource& model)
+static bool uploadVdp1Textures(const Vdp1ModelSource& model, bool preservePrefix = false)
 {
-    freeVdp1Textures();
+    if (!preservePrefix)
+        freeVdp1Textures();
 
     if (!model.valid())
         return false;
 
     g_vdp1GpuTextures.reserve(model.textureCount);
 
-    for (std::size_t textureIndex = 0;
+    const std::size_t firstTexture = g_vdp1GpuTextures.size();
+    for (std::size_t textureIndex = firstTexture;
          textureIndex < model.textureCount; ++textureIndex) {
         const auto& source = model.textures[textureIndex];
         if (!source.width || !source.height ||
@@ -4084,6 +4154,10 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model)
                 return (pixel >> 24) >= 0x80u;
             });
         gpu.mesh = (source.cmdPmod & 0x0100u) != 0u;
+        gpu.cmdPmod = source.cmdPmod;
+        gpu.cmdColr = source.cmdColr;
+        gpu.cmdSrca = source.cmdSrca;
+        gpu.cmdSize = source.cmdSize;
         std::memset(gpu.data, 0, bytes);
 
         auto* dst = static_cast<std::uint32_t*>(gpu.data);
@@ -4120,7 +4194,8 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model)
 static bool buildVdp1TexturedBuffers(
     const Vdp1ModelSource& model,
     bool reuseMappedBuffers,
-    bool buildPayload)
+    bool buildPayload,
+    unsigned int allocationVertexCount = 0u)
 {
     if (!model.valid() || model.vertexCount > 65535u ||
         g_vdp1GpuTextures.empty())
@@ -4129,12 +4204,14 @@ static bool buildVdp1TexturedBuffers(
     const unsigned int vertexCount =
         static_cast<unsigned int>(model.vertexCount);
 
+    allocationVertexCount = std::max(allocationVertexCount, vertexCount);
+
     const unsigned int textureVertexBytes =
-        vertexCount * sizeof(azel::DebugTextureVertex);
+        allocationVertexCount * sizeof(azel::DebugTextureVertex);
     const unsigned int gouraudVertexBytes =
-        vertexCount * sizeof(azel::DebugGouraudPayloadVertex);
+        allocationVertexCount * sizeof(azel::DebugGouraudPayloadVertex);
     const unsigned int indexBytes =
-        vertexCount * sizeof(std::uint16_t);
+        allocationVertexCount * sizeof(std::uint16_t);
 
     if (!reuseMappedBuffers) {
         const std::uint64_t allocStartUs = sceKernelGetProcessTimeWide();
@@ -4158,8 +4235,8 @@ static bool buildVdp1TexturedBuffers(
                     &g_vdp1TextureIndexUid));
         g_profilePrepareTexturedAllocUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - allocStartUs);
-        g_vdp1TextureVertexCapacity = vertexCount;
-        g_vdp1TextureIndexCapacity = vertexCount;
+        g_vdp1TextureVertexCapacity = allocationVertexCount;
+        g_vdp1TextureIndexCapacity = allocationVertexCount;
     }
 
     if (!g_vdp1TextureVertices ||
@@ -4371,6 +4448,29 @@ bool prepare_vdp1_model(
         !g_vdp1GpuTextures.empty() &&
         g_vdp1GpuTextures.size() == model.textureCount;
 
+    // Live field material discovery appends to the decoded texture table.
+    // Growth must upload only the suffix, rather than freeing/reuploading
+    // hundreds of unchanged textures. Explicit CRAM/VDP1 invalidation remains
+    // authoritative and disables prefix retention via the dirty flag.
+    bool preserveTexturePrefix = preserveResidentTextures &&
+        g_sceneGameMode == 3u &&
+        g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+        !g_vdp1TextureDataDirty && model.texturesValid() &&
+        !g_vdp1GpuTextures.empty() &&
+        g_vdp1GpuTextures.size() <= model.textureCount;
+    if (preserveTexturePrefix) {
+        for (std::size_t t = 0; t < g_vdp1GpuTextures.size(); ++t) {
+            const auto& gpu = g_vdp1GpuTextures[t];
+            const auto& source = model.textures[t];
+            if (gpu.width != source.width || gpu.height != source.height ||
+                gpu.cmdPmod != source.cmdPmod || gpu.cmdColr != source.cmdColr ||
+                gpu.cmdSrca != source.cmdSrca || gpu.cmdSize != source.cmdSize) {
+                preserveTexturePrefix = false;
+                break;
+            }
+        }
+    }
+
     if (model.vertexCount > 65535u)
         return false;
 
@@ -4384,9 +4484,6 @@ bool prepare_vdp1_model(
     const std::size_t wireIndexCount = model.polygonCount * 8u;
     const std::size_t genericIndexCount =
         std::max<std::size_t>(model.vertexCount, wireIndexCount);
-    const unsigned int indexBytes =
-        static_cast<unsigned int>(
-            genericIndexCount * sizeof(std::uint16_t));
     const std::size_t subdivWireVertexCount = model.polygonCount * 4u;
     const std::size_t subdivVertexCount = model.polygonCount * 9u;
     const std::size_t subdivIndexCount = model.polygonCount * 24u;
@@ -4396,29 +4493,49 @@ bool prepare_vdp1_model(
         model.texturesValid() && subdivVertexCount &&
         subdivVertexCount <= 65535u && subdivIndexCount <= 65535u;
 
+    // Allocate field capacity ahead of ordinary cell visibility growth.
+    // 2048 quads exceeds the observed FLD_A3 traversal peak; retain exact
+    // active counts everywhere below. Cap subdivision capacity at its existing
+    // 16-bit index-count limit, and preserve other modes' allocation behavior.
+    const bool reserveFieldCapacity = preserveResidentTextures &&
+        g_sceneGameMode == 3u && subdivBuffersRequired;
+    const std::size_t allocationPolygons = reserveFieldCapacity
+        ? std::min<std::size_t>(65535u / 24u,
+            std::max<std::size_t>(2048u, model.polygonCount + model.polygonCount / 4u))
+        : model.polygonCount;
+    const unsigned int allocationVertices = reserveFieldCapacity
+        ? std::max(vertexCount, static_cast<unsigned int>(allocationPolygons * 6u))
+        : vertexCount;
+    const std::size_t allocationIndices = reserveFieldCapacity
+        ? std::max(genericIndexCount, allocationPolygons * 8u)
+        : genericIndexCount;
+
     // The live field mesh remains a temporary flattened resource, but a
     // visibility change should not churn mapped GXM buffers when the new set
     // fits the capacity already resident. This is independent of texture
     // residency: a CRAM/VDP1 texture invalidation can refresh textures while
     // retaining compatible geometry allocations.
+    // Require the reservation itself at flight entry, not just today's active
+    // count. Otherwise smaller inherited town buffers postpone this allocation
+    // until a growing field cell first exceeds their capacity mid-traversal.
     const bool reuseGeometry =
         preserveResidentTextures &&
         g_vdp1Vertices && g_vdp1LightingVertices && g_vdp1Indices &&
-        g_vdp1VertexCapacity >= vertexCount &&
-        g_vdp1IndexCapacity >= genericIndexCount &&
+        g_vdp1VertexCapacity >= allocationVertices &&
+        g_vdp1IndexCapacity >= allocationIndices &&
         (!model.texturesValid() ||
             (g_vdp1TextureVertices && g_vdp1GouraudVertices &&
              g_vdp1TextureIndices &&
-             g_vdp1TextureVertexCapacity >= vertexCount &&
-             g_vdp1TextureIndexCapacity >= vertexCount)) &&
+             g_vdp1TextureVertexCapacity >= allocationVertices &&
+             g_vdp1TextureIndexCapacity >= allocationVertices)) &&
         (!wireBuffersRequired ||
             (g_vdp1SubdivWireVertices && g_vdp1SubdivWireIndices &&
-             g_vdp1SubdivWireVertexCapacity >= subdivWireVertexCount &&
-             g_vdp1SubdivWireIndexCapacity >= subdivWireVertexCount)) &&
+             g_vdp1SubdivWireVertexCapacity >= allocationPolygons * 4u &&
+             g_vdp1SubdivWireIndexCapacity >= allocationPolygons * 4u)) &&
         (!subdivBuffersRequired ||
             (g_vdp1SubdivVertices && g_vdp1SubdivIndices &&
-             g_vdp1SubdivVertexCapacity >= subdivVertexCount &&
-             g_vdp1SubdivIndexCapacity >= subdivIndexCount));
+             g_vdp1SubdivVertexCapacity >= allocationPolygons * 9u &&
+             g_vdp1SubdivIndexCapacity >= allocationPolygons * 24u));
 
     g_profilePrepareReleaseUs = 0u;
     g_profilePrepareBaseAllocUs = 0u;
@@ -4444,7 +4561,7 @@ bool prepare_vdp1_model(
         g_vdp1TextureIndices || g_vdp1SubdivVertices ||
         g_vdp1SubdivIndices || g_vdp1SubdivWireVertices ||
         g_vdp1SubdivWireIndices || (!reuseTextures && !g_vdp1GpuTextures.empty())))
-        releaseResidentVdp1Model(reuseTextures);
+        releaseResidentVdp1Model(reuseTextures || preserveTexturePrefix);
     g_profilePrepareReleaseUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - releaseStartUs);
 
@@ -4452,23 +4569,23 @@ bool prepare_vdp1_model(
         const std::uint64_t baseAllocStartUs = sceKernelGetProcessTimeWide();
         g_vdp1Vertices = static_cast<azel::DebugColorVertex*>(
             probeGpuAlloc(
-                vertexBytes,
+                allocationVertices * sizeof(azel::DebugColorVertex),
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_vdp1VertexUid));
         g_vdp1LightingVertices = static_cast<azel::DebugColorVertex*>(
             probeGpuAlloc(
-                vertexBytes,
+                allocationVertices * sizeof(azel::DebugColorVertex),
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_vdp1LightingVertexUid));
         g_vdp1Indices = static_cast<std::uint16_t*>(
             probeGpuAlloc(
-                indexBytes,
+                allocationIndices * sizeof(std::uint16_t),
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_vdp1IndexUid));
         g_profilePrepareBaseAllocUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - baseAllocStartUs);
-        g_vdp1VertexCapacity = vertexCount;
-        g_vdp1IndexCapacity = static_cast<unsigned int>(genericIndexCount);
+        g_vdp1VertexCapacity = allocationVertices;
+        g_vdp1IndexCapacity = static_cast<unsigned int>(allocationIndices);
     }
 
     if (!g_vdp1Vertices ||
@@ -4482,9 +4599,9 @@ bool prepare_vdp1_model(
     const std::uint64_t wireStartUs = sceKernelGetProcessTimeWide();
     if (wireBuffersRequired && !reuseGeometry) {
         g_vdp1SubdivWireVertexCapacity =
-            static_cast<unsigned int>(subdivWireVertexCount);
+            static_cast<unsigned int>(allocationPolygons * 4u);
         g_vdp1SubdivWireIndexCapacity =
-            static_cast<unsigned int>(subdivWireVertexCount);
+            static_cast<unsigned int>(allocationPolygons * 4u);
         g_vdp1SubdivWireVertices =
             static_cast<azel::DebugColorVertex*>(
                 probeGpuAlloc(
@@ -4516,30 +4633,43 @@ bool prepare_vdp1_model(
         if (!reuseTextures) {
             const std::uint64_t textureUploadStartUs =
                 sceKernelGetProcessTimeWide();
-            const bool uploaded = uploadVdp1Textures(model);
+            const unsigned int retainedTextures = preserveTexturePrefix
+                ? static_cast<unsigned int>(g_vdp1GpuTextures.size()) : 0u;
+            const bool uploaded = uploadVdp1Textures(model, preserveTexturePrefix);
             g_profilePrepareTextureUploadUs = static_cast<unsigned int>(
                 sceKernelGetProcessTimeWide() - textureUploadStartUs);
+            if (g_sceneGameMode == 3u) {
+                logging::writef(
+                    "[FieldTextureUpload] retained=%u total=%u uploaded=%u time=%uus ok=%u\n",
+                    retainedTextures, static_cast<unsigned int>(g_vdp1GpuTextures.size()),
+                    static_cast<unsigned int>(g_vdp1GpuTextures.size()) - retainedTextures,
+                    g_profilePrepareTextureUploadUs, uploaded);
+            }
             if (!uploaded)
                 return false;
         }
         if (!buildVdp1TexturedBuffers(
                 model,
                 reuseGeometry,
-                !skipBaseTexturedPayload))
+                !skipBaseTexturedPayload,
+                allocationVertices))
             return false;
         if (!reuseTextures)
             g_vdp1TextureDataDirty = false;
         g_vdp1TexturedReady = true;
 
         if (subdivBuffersRequired) {
+            // Prepare can reuse storage with a different polygon association.
+            // Invalidate independently of the CPU static-prefix rebuild flag.
+            g_fieldSubdivPositionValid.clear();
             if (reuseGeometry) {
                 // Positions, UVs, and topology are rewritten below into the
                 // already-mapped capacity. No allocation is required.
             } else {
                 g_vdp1SubdivVertexCapacity =
-                    static_cast<unsigned int>(subdivVertexCount);
+                    static_cast<unsigned int>(allocationPolygons * 9u);
                 g_vdp1SubdivIndexCapacity =
-                    static_cast<unsigned int>(subdivIndexCount);
+                    static_cast<unsigned int>(allocationPolygons * 24u);
                 const std::uint64_t subdivAllocStartUs =
                     sceKernelGetProcessTimeWide();
                 g_vdp1SubdivVertices = static_cast<SubdivGouraudVertex*>(
@@ -4578,6 +4708,9 @@ bool prepare_vdp1_model(
                 const std::size_t previousSubdivIndexCount =
                     g_vdp1SubdivQuadIndices.size();
                 g_vdp1SubdivQuadIndices.resize(subdivIndexCount);
+                if (!reuseGeometry)
+                    g_fieldSubdivUvStates.clear();
+                g_fieldSubdivUvStates.resize(model.polygonCount);
 
                 for (unsigned int p = 0;
                      p < static_cast<unsigned int>(model.polygonCount); ++p) {
@@ -4589,6 +4722,19 @@ bool prepare_vdp1_model(
                     const auto& texture = model.textures[textureIndex];
                     if (!texture.width || !texture.height)
                         return false;
+
+                    // UVs depend only on dimensions and Saturn texture flip,
+                    // not polygon identity, camera, position or light. A field
+                    // cell-set change frequently leaves these values unchanged
+                    // at a buffer slot. Retain the existing nine UV pairs only
+                    // when storage and topology for that slot already exist.
+                    auto& uvState = g_fieldSubdivUvStates[p];
+                    const unsigned int flip = record.textureFlip() & 3u;
+                    if (reuseGeometry && g_sceneGameMode == 3u &&
+                        p * 24u < previousSubdivIndexCount &&
+                        uvState.width == texture.width &&
+                        uvState.height == texture.height && uvState.flip == flip)
+                        continue;
 
                     const float u0 =
                         0.5f / static_cast<float>(texture.width);
@@ -4665,6 +4811,7 @@ bool prepare_vdp1_model(
                         dst.u = gridU[i];
                         dst.v = gridV[i];
                     }
+                    uvState = {texture.width, texture.height, flip};
 
                     const unsigned int quadIndexBase = p * 24u;
                     if (quadIndexBase >= previousSubdivIndexCount) {
@@ -4685,6 +4832,15 @@ bool prepare_vdp1_model(
     }
 
     const std::uint64_t copyStartUs = sceKernelGetProcessTimeWide();
+    if (reserveFieldCapacity && !reuseGeometry) {
+        logging::writef(
+            "[FieldGeometryCapacity] active=%u reserved=%u verts=%u "
+            "subVerts=%u subIndices=%u\n",
+            static_cast<unsigned int>(model.polygonCount),
+            static_cast<unsigned int>(allocationPolygons),
+            g_vdp1VertexCapacity, g_vdp1SubdivVertexCapacity,
+            g_vdp1SubdivIndexCapacity);
+    }
     std::memcpy(g_vdp1Vertices, model.vertices, vertexBytes);
     std::memcpy(g_vdp1LightingVertices, model.lightingVertices, vertexBytes);
     for (unsigned int i = 0; i < vertexCount; ++i)
@@ -5664,7 +5820,11 @@ static void appendLiveTownEdge()
 static void refreshLiveTownStaticLighting()
 {
     std::size_t polygonBase = 0u;
-    static unsigned int fieldFalloffCompareBudget = 96u;
+    g_fieldPolygonProbes.clear();
+    g_fieldProbeActive = g_sceneGameMode == 3u &&
+        g_fieldProbeBudget != 0u && (++g_fieldProbeFrames % 120u == 1u);
+    if (g_fieldProbeActive) --g_fieldProbeBudget;
+    static unsigned int fieldFalloffCompareBudget = 0u;
 
     // Same index math used by updateLiveTownAzelLighting(), but kept local to
     // this diagnostic so the checkpoint cannot alter rendering.
@@ -5707,6 +5867,65 @@ static void refreshLiveTownStaticLighting()
         if (polygonBase + polygonCount > g_liveTownStaticPolygonCount ||
             polygonBase + polygonCount > g_liveTownPolygonLights.size())
             break;
+
+        if (g_fieldProbeActive && polygonBase + polygonCount <=
+                g_liveTownCpuMesh.polygonRecords.size()) {
+            unsigned int mismatches = 0u;
+            unsigned int first = 0u;
+            std::uint32_t cachedHash = 2166136261u, sourceHash = cachedHash;
+            for (std::size_t p = 0; p < polygonCount; ++p) {
+                const auto& cached = g_liveTownCpuMesh.polygonRecords[polygonBase + p];
+                const auto& source = model->polygons[p];
+                const auto ch = fieldRecordHash(cached), sh = fieldRecordHash(source);
+                cachedHash = (cachedHash ^ ch) * 16777619u;
+                sourceHash = (sourceHash ^ sh) * 16777619u;
+                if (ch != sh || cached.model != polygonBase) {
+                    if (mismatches == 0u) first = static_cast<unsigned int>(p);
+                    ++mismatches;
+                }
+            }
+            // At most eight submissions per sample; prefer the first mismatch
+            // within each range, otherwise record a baseline source polygon.
+            if (g_fieldPolygonProbes.size() < 8u && polygonCount != 0u) {
+                g_fieldPolygonProbes.push_back({polygonBase + first,
+                    submission.cellIndex, submission.objectIndex,
+                    submission.modelTableOffset, first});
+                const auto& c = g_liveTownCpuMesh.polygonRecords[polygonBase + first];
+                const auto& s = model->polygons[first];
+                unsigned int differences = 0u;
+                if (c.lightingControl != s.lightingControl) differences |= 1u;
+                if (c.lightingCount != s.lightingCount) differences |= 2u;
+                for (unsigned int corner = 0; corner < 4u; ++corner) {
+                    if (c.lighting[corner].hasColor != s.lighting[corner].hasColor)
+                        differences |= 16u;
+                    for (unsigned int axis = 0; axis < 3u; ++axis) {
+                        if (c.lighting[corner].normal[axis] != s.lighting[corner].normal[axis])
+                            differences |= 4u;
+                        if (c.lighting[corner].color[axis] != s.lighting[corner].color[axis])
+                            differences |= 8u;
+                    }
+                    if (c.indices[corner] != s.indices[corner]) differences |= 32u;
+                }
+                if (c.model != polygonBase || c.polygonInModel != s.polygonInModel)
+                    differences |= 32u;
+                if (c.cmdCtrl != s.cmdCtrl || c.cmdPmod != s.cmdPmod ||
+                    c.cmdColr != s.cmdColr || c.cmdSrca != s.cmdSrca ||
+                    c.cmdSize != s.cmdSize) differences |= 64u;
+                logging::writef(
+                    "[FieldPolygonCompare] frame=%u rebuilt=%u cell=%u obj=%08X "
+                    "model=%08X base=%u count=%u mismatch=%u first=%u "
+                    "hash=%08X/%08X diff=%02X control=%04X/%04X count=%u/%u "
+                    "association=%u/%u texture=%u\n",
+                    g_fieldProbeFrames, g_liveTownStaticRebuilt,
+                    submission.cellIndex, submission.objectIndex,
+                    submission.modelTableOffset, static_cast<unsigned int>(polygonBase),
+                    static_cast<unsigned int>(polygonCount), mismatches, first,
+                    cachedHash, sourceHash, differences, c.lightingControl, s.lightingControl,
+                    c.lightingCount, s.lightingCount, c.model,
+                    static_cast<unsigned int>(polygonBase),
+                    g_liveTownCpuMesh.polygonTextureIndices[polygonBase + first]);
+            }
+        }
 
         LivePolygonLightState light{};
         if (submission.state.hasLight) {
@@ -5919,6 +6138,7 @@ static bool buildLiveTownFrame()
     g_liveTownStaticRebuilt =
         staticSignature != g_liveTownStaticSignature;
     if (g_liveTownStaticRebuilt) {
+        g_fieldSubdivPositionValid.clear();
         g_liveTownCpuMesh.vertices.clear();
         g_liveTownCpuMesh.lightingVertices.clear();
         g_liveTownCpuMesh.polygonRecords.clear();
@@ -9269,6 +9489,11 @@ bool submit_vdp1_model(
         visibleQuads.assign(model.polygonCount, 0u);
 
         const std::uint64_t tPayload = sceKernelGetProcessTimeWide();
+        const bool fieldStaticPositions = g_sceneGameMode == 3u &&
+            model.vertices == g_liveTownCpuMesh.vertices.data();
+        if (fieldStaticPositions && g_fieldSubdivPositionValid.size() !=
+                g_liveTownStaticPolygonCount)
+            g_fieldSubdivPositionValid.assign(g_liveTownStaticPolygonCount, 0u);
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             if (!g_liveTownGouraudPrep[p].visible)
@@ -9295,7 +9520,8 @@ bool submit_vdp1_model(
             const bool updatePosition =
                 g_liveTownStaticRebuilt ||
                 p >= static_cast<unsigned int>(
-                    g_liveTownStaticPolygonCount);
+                    g_liveTownStaticPolygonCount) ||
+                (fieldStaticPositions && !g_fieldSubdivPositionValid[p]);
 
             float gridR[9], gridG[9], gridB[9];
             fillMidpointGrid3x3(
@@ -9316,6 +9542,31 @@ bool submit_vdp1_model(
             }
 
             const unsigned int baseVertex = p * 9u;
+            // Diagnose the actual stale XYZ payload before repairing a quad
+            // first revealed on a cache-hit frame. Bounded independently of
+            // the earlier probe window so a return flight can still report it.
+            static unsigned int positionRepairBudget = 0u;
+            if (fieldStaticPositions && updatePosition &&
+                !g_liveTownStaticRebuilt && p < g_liveTownStaticPolygonCount &&
+                positionRepairBudget != 0u) {
+                unsigned int mismatches = 0u;
+                for (unsigned int i = 0; i < 9u; ++i) {
+                    const auto& dst = g_vdp1SubdivVertices[baseVertex + i];
+                    if (dst.x != gridX[i] || dst.y != gridY[i] || dst.z != gridZ[i])
+                        ++mismatches;
+                }
+                if (mismatches != 0u) {
+                    const auto& old = g_vdp1SubdivVertices[baseVertex];
+                    logging::writef(
+                        "[FieldPositionRepair] p=%u modelBase=%u local=%u "
+                        "texture=%u staleVertices=%u/9 old=%.5f,%.5f,%.5f "
+                        "current=%.5f,%.5f,%.5f\n",
+                        p, model.polygons[p].model, model.polygons[p].polygonInModel,
+                        model.polygonTextureIndices[p], mismatches,
+                        old.x, old.y, old.z, gridX[0], gridY[0], gridZ[0]);
+                    --positionRepairBudget;
+                }
+            }
             for (unsigned int i = 0; i < 9u; ++i) {
                 auto& dst = g_vdp1SubdivVertices[baseVertex + i];
                 if (updatePosition) {
@@ -9326,6 +9577,33 @@ bool submit_vdp1_model(
                 dst.shadeR = gridR[i];
                 dst.shadeG = gridG[i];
                 dst.shadeB = gridB[i];
+            }
+            if (fieldStaticPositions && p < g_fieldSubdivPositionValid.size())
+                g_fieldSubdivPositionValid[p] = 1u;
+
+            if (g_fieldProbeActive && model.vertices ==
+                    g_liveTownCpuMesh.vertices.data()) {
+                for (const auto& probe : g_fieldPolygonProbes) {
+                    if (probe.polygon != p) continue;
+                    std::uint32_t hash = 2166136261u;
+                    unsigned int mismatch = 0u;
+                    for (unsigned int i = 0; i < 9u; ++i) {
+                        const auto& dst = g_vdp1SubdivVertices[baseVertex + i];
+                        const float actual[3] = {dst.shadeR, dst.shadeG, dst.shadeB};
+                        const float expected[3] = {gridR[i], gridG[i], gridB[i]};
+                        for (unsigned int a = 0; a < 3u; ++a) {
+                            std::uint32_t bits;
+                            std::memcpy(&bits, &actual[a], sizeof(bits));
+                            hash = (hash ^ bits) * 16777619u;
+                            if (actual[a] != expected[a]) ++mismatch;
+                        }
+                    }
+                    logging::writef(
+                        "[FieldPolygonPayload] frame=%u p=%u baseVertex=%u "
+                        "texture=%u hash=%08X mismatch=%u\n",
+                        g_fieldProbeFrames, p, baseVertex,
+                        model.polygonTextureIndices[p], hash, mismatch);
+                }
             }
 
             visibleQuads[p] = 1u;
@@ -11023,7 +11301,20 @@ static void renderBasicWingViewer()
     if (roomAuthenticCameraMode &&
         (roomAuthenticLitMode || roomAuthenticLightingOnlyMode)) {
         const std::uint64_t lightingStartUs = sceKernelGetProcessTimeWide();
+        traceFieldPolygonStage("before");
         updateLiveTownAzelLighting();
+        traceFieldPolygonStage("after");
+        if (g_fieldProbeActive) {
+            for (const auto& probe : g_fieldPolygonProbes) {
+                const auto p = probe.polygon;
+                logging::writef(
+                    "[FieldPolygonVisibility] frame=%u p=%u prep=%u visible=%u\n",
+                    g_fieldProbeFrames, static_cast<unsigned int>(p),
+                    g_liveTownGouraudPrepValid,
+                    p < g_liveTownGouraudPrep.size() &&
+                        g_liveTownGouraudPrep[p].visible);
+            }
+        }
         g_profileLightingUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - lightingStartUs);
     } else if (roomDiagnosticLitMode) {
@@ -11115,6 +11406,40 @@ static void renderBasicWingViewer()
     }
 
     static unsigned int scenePerfHeartbeat = 0u;
+    // Count every renderer frame, including cell-load hitches missed by the
+    // detailed heartbeat. Emit only one aggregate line per 120 field frames.
+    // This measures renderer work; it is not a display/game frame-time claim.
+    struct FlightTimingWindow {
+        unsigned int frames = 0u, over25 = 0u, overDeadline = 0u;
+        unsigned int maxRender = 0u, maxBuild = 0u, rebuilds = 0u;
+        std::uint64_t totalRender = 0u;
+    };
+    static FlightTimingWindow flightTiming;
+    static unsigned int flightTimingMode = 0u;
+    if (!nativeSceneMode || g_sceneGameMode != 3u ||
+        flightTimingMode != static_cast<unsigned int>(g_viewMode)) {
+        flightTiming = {};
+        flightTimingMode = static_cast<unsigned int>(g_viewMode);
+    }
+    if (nativeSceneMode && g_sceneGameMode == 3u) {
+        ++flightTiming.frames;
+        flightTiming.totalRender += g_profileRenderUs;
+        flightTiming.maxRender = std::max(flightTiming.maxRender, g_profileRenderUs);
+        flightTiming.maxBuild = std::max(flightTiming.maxBuild, g_profileBuildUs);
+        flightTiming.over25 += g_profileRenderUs > 25000u;
+        flightTiming.overDeadline += g_profileRenderUs > 33333u;
+        flightTiming.rebuilds += g_liveTownStaticRebuilt;
+        if (flightTiming.frames == 120u) {
+            logging::writef(
+                "[FlightTimingWindow] mode=%u frames=%u mean=%uus max=%uus "
+                "over25=%u over33333=%u maxBuild=%uus rebuilds=%u rendererOnly=1\n",
+                flightTimingMode, flightTiming.frames,
+                static_cast<unsigned int>(flightTiming.totalRender / flightTiming.frames),
+                flightTiming.maxRender, flightTiming.over25, flightTiming.overDeadline,
+                flightTiming.maxBuild, flightTiming.rebuilds);
+            flightTiming = {};
+        }
+    }
     if (nativeSceneMode && ((scenePerfHeartbeat++ % 60u) == 0u)) {
         logging::writef(
             "[ScenePerf] build=%uus scan=%u cache=%u obj=%u edge=%u upload=%u "

@@ -82,6 +82,14 @@ During regression bracketing, the remote branch HEAD was temporarily moved backw
 
 ### Current regression hypothesis and next diagnostic
 
+**2026-10-08 local diagnostic and re-entry checkpoint (base `814805b280226e81b6e39241b18dce8542528adc`, uncommitted):** The supplied hardware capture contains 192 `[FieldPolygonCompare]` records and 48 `[FieldPolygonPayload]` records with zero reported mismatches. These are bounded samples of the first eight static submissions per sample, over 24 sample frames; they do not prove equivalence for every polygon or GPU draw. The sampled cached lighting controls/counts, normals/colors, command associations and CPU shade writes agree. The user reports that the issue is flight-only and is especially apparent when previously offscreen quads return into view during the opening camera pan or return flight. Ruins rendering remains correct.
+
+Source inspection identifies a separate concrete subdivision-position lifecycle defect. A capacity-reuse prepare rewrites material UVs but preserves XYZ from the previous polygon association. Full and Lighting then skip offscreen polygons and write static XYZ only on `g_liveTownStaticRebuilt` frames. A static quad skipped in that rebuild can become visible on a cache-hit frame without receiving current XYZ, even though CPU visibility and lighting use the current geometry. Movement that changes the static submission set can rebuild and temporarily repair that quad. This explains the delayed re-entry symptom without changing Azel visibility or lighting math.
+
+The local correction keeps render-thread-owned position-valid bits for field static polygons. Static-prefix rebuild and subdivision-buffer prepare invalidate them; a visible static quad writes its nine current midpoint XYZ positions before becoming valid. Static quads already initialized keep the existing position-write optimization, and dynamic submissions retain their per-frame updates. This correction is gated to native mode-3 geometry; town/Ruins behavior is unchanged. Up to 32 `[FieldPositionRepair]` records report actual stale XYZ before repair on cache-hit frames, independently of the earlier diagnostic sample window.
+
+Vita compilation, package generation and whitespace checks passed. **Hardware validation is pending.** Repeat the opening pan, stationary turnaround and return flight in Full and Lighting, then inspect the new log and presentation. Do not claim that the persistent lighting regression is fixed until the actual affected flight surfaces render correctly; an additional brightness defect remains possible. The diagnostic and correction are local changes in `C:\Dev\Lagi`, not pushed branch commits. Do not repeat the prior falloff or Gouraud rewrite attempts without new contradictory evidence.
+
 The strongest remaining hypothesis is **static-light refresh equivalence / retained per-polygon lighting metadata or downstream shaded-payload association**, not missing geometry and not a gross world-transform error. The old all-dynamic path reconstructed the full flattened submission every frame; the static cache-hit path retains polygon records/associations and refreshes only a smaller set of lighting state. A targeted next diagnostic should compare the cached static polygon lighting inputs against the current adapted model on the same submission and polygon index:
 
 - `lightingControl`
@@ -502,3 +510,89 @@ The milestone completes when Azel naturally advances from the supported FLD_A3 s
 ## Deferred audio optimization
 
 Audio performance work is intentionally separate from flight bring-up. The current deferred branch is `feature/audio-affinity-profiling` / PR #11. It preserves the existing CPU2 default and adds hardware A/B affinity testing for CPU 0, CPU 1, CPU 2, and all user cores. A dedicated ARM DSP worker is considered only after that profiling establishes a worthwhile synchronization target.
+
+## Performance resumption — 2026-10-08 local checkpoints
+
+The user confirms the flight visual regression is corrected. Preserve the static
+subdivision position-validity correction. Performance is now the active objective:
+consistent 30 FPS (33.3 ms deadline), best effort 25 ms across cell loads.
+
+The 10:59:48 capture verifies texture-prefix retention: eleven growth uploads
+cost 1.817 ms median and 8.899 ms maximum, replacing the previous ~350 ms full
+reuploads. Initial field upload is still 298.118 ms. Sampled render median is
+24.012 ms, p90 33.511 ms, max 39.957 ms; 10/89 samples exceed the deadline.
+Some unsampled FieldStream frames still take 58-68 ms in build alone.
+
+Completed lighting diagnostic bursts coincide with 56-58 ms build spikes even
+without prepare, texture uploads or resource misses. The quiet checkpoint disables
+polygon comparison/stage/payload, falloff and position-repair logs; timing and
+texture-upload logs remain. No rendering behavior was changed by this cleanup.
+
+Real geometry-capacity growth also remains expensive: frame 8645 spends 40.336 ms
+in prepare/upload, including new buffer allocations and initialization; frame
+10994 spends 44.476 ms with resident textures but geometry allocations. The next
+local checkpoint reserves consistent capacity across base, textured, wire and
+subdivision buffers for at least 2048 field quads (observed peak 1356). Larger
+requests receive bounded 25-percent headroom up to the existing subdivision
+16-bit index-count limit. Actual copied geometry, initialized active subdivision
+payload and submitted draw counts remain unchanged. Other modes retain exact
+allocation sizes. FieldGeometryCapacity logs active/reserved counts only when
+allocating. Corrected field position validity and texture prefix retention remain.
+
+The capacity checkpoint passes Vita syntax/Wall, full package build and whitespace
+checks. Hardware validation is pending: repeat Full-mode end-and-back traversal;
+expect reuseGeom=1 after first field allocation, zero recurring geometry allocation
+buckets for scenes within reserved capacity, and no visual regression. This moves
+allocation work to field entry and uses additional mapped memory; it does not
+remove static-prefix reconstruction, first material/model misses, or every frame
+above 33.3 ms. Changes remain local, uncommitted/unpushed.
+
+The subsequent local checkpoint also retains subdivision UV payload at field
+buffer slots when width, height and Saturn flip are unchanged and the same mapped
+storage/topology already exists. These are the complete inputs to the current UV
+formula. A new slot, changed dimensions/flip, or newly allocated storage rebuilds
+UVs normally. Static position validity is still invalidated independently on
+prepare, so UV reuse cannot revive the corrected stale-XYZ bug. Town behavior is
+unchanged. Target is the measured ~2-3 ms recurring subBuild cost; actual timing
+and visual equivalence require hardware validation. Includes the prior quiet,
+texture-prefix and geometry-capacity checkpoints, all still local/unpushed.
+
+The latest checkpoint adds FlightTimingWindow: every renderer frame contributes
+to a 120-field-frame aggregate, reporting mean/max render time, counts above
+25 ms and 33.333 ms, max build time and rebuild count. Windows reset on render
+mode changes and leaving flight. Detailed ScenePerf samples remain. This catches
+renderer deadline failures that the one-in-60 sample could miss, without per-frame
+log writes. The final incomplete window is not emitted. These are renderer-only
+measurements; game/display/presentation pacing still requires separate evidence.
+The device D: drive was unavailable during this checkpoint, so no new hardware
+performance conclusion was drawn. Full Vita compilation and whitespace checks
+pass. All capacity/UV optimizations still require the next hardware capture.
+
+The 11:15:48 hardware capture confirms substantially smoother traversal by user
+observation. Sampled steady renderer median is 21.147 ms (max 31.881 ms); static
+rebuild median is 35.794 ms (max 39.221 ms). All six sampled render deadlines
+missed are rebuild frames. Only one geometry allocation occurred, but it was
+mid-traversal at frame 2211: active=1057, build=86.843 ms, upload=59.313 ms.
+The log contains no FlightTimingWindow lines and cannot validate the later UV
+reuse/timing checkpoint. Initial upload remains a separate field-entry cost.
+
+Audit found that reservation allocation was deferred by the reuse test: inherited
+smaller town buffers were reused whenever the current field count fit. The new
+check compares capacities to the requested reservation sizes, establishing the
+2048-quad allocation on first field prepare rather than the first growing cell.
+Non-field requested capacities equal active counts as before. This shifts known
+allocation work to entry; it does not remove entry time or static rebuild cost.
+Latest package includes all prior local checkpoints. Full Vita syntax/Wall,
+package build and whitespace checks pass; hardware validation remains pending.
+
+## Published local-build checkpoint (2026-10-08)
+
+The preceding local checkpoints are now being published together on
+feature/flight-mode-bringup. This includes the hardware-confirmed stale-position
+rendering correction, retained texture uploads, geometry reservation, UV reuse,
+and FlightTimingWindow instrumentation. The first-field reservation correction
+still needs hardware validation. Vita package build and diff checks pass.
+
+The shared GXM VDP2 sky request remains unfinished and is not included in this
+checkpoint. Use the branch commit ID to identify builds; do not infer sky support
+from the performance package filename.
