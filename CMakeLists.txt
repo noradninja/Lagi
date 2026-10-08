@@ -975,6 +975,28 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "__attribute__((weak)) p_workArea createSystemMenuTask(p_workArea workArea)"
    source_text "${source_text}")
 
+  # Azel/Saturn work areas begin cleared. The Vita task host allocates C++
+  # work areas with plain new, so explicitly establish the main status-menu
+  # state before its first Draw() dispatch. Without this, m0 and child pointers
+  # are indeterminate and pressing Start can enter an arbitrary menu state.
+  string(REPLACE
+   "void s_mainMenuWorkArea::Init(s_mainMenuWorkArea* pWorkArea)\n{\n    pWorkArea->m3_menuButtonStates[0] = 1; // item is always enabled"
+   "void s_mainMenuWorkArea::Init(s_mainMenuWorkArea* pWorkArea)\n{\n    // LAGI_STATUS_MENU_ZERO_INIT\n    pWorkArea->m0 = 0;\n    pWorkArea->m1 = 0;\n    pWorkArea->selectedMenu = -1;\n    pWorkArea->m8 = nullptr;\n    pWorkArea->mC = nullptr;\n    pWorkArea->m10_cursorTask = nullptr;\n    pWorkArea->m3_menuButtonStates[0] = 1; // item is always enabled"
+   source_text "${source_text}")
+
+  string(REGEX MATCHALL
+   "LAGI_STATUS_MENU_ZERO_INIT"
+   lagi_status_menu_zero_init_matches
+   "${source_text}")
+  list(LENGTH
+   lagi_status_menu_zero_init_matches
+   lagi_status_menu_zero_init_match_count)
+  if(NOT lagi_status_menu_zero_init_match_count EQUAL 1)
+   message(FATAL_ERROR
+    "Status-menu zero-init patch did not apply exactly once: found "
+    "${lagi_status_menu_zero_init_match_count} matches")
+  endif()
+
   string(REPLACE
    "        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_A5.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_A5;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_C8.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_C8;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D3.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_D3;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D5.PRG\"))"
    "        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D5.PRG\"))"
