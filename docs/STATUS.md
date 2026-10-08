@@ -2,7 +2,7 @@
 
 Current milestone: **0.3.0-alpha — native audio and Cinepak presentation**
 
-Last updated: 2026-10-06
+Last updated: 2026-10-08
 
 Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed game logic executes directly on ARMv7; Saturn rendering and platform-facing behavior are translated to VitaSDK and native SceGxm.
 
@@ -47,6 +47,12 @@ next Azel game mode (flight mode not yet connected)
 ```
 
 The normal path does **not** use the old direct-Ruins loader to choose or start `TWN_RUIN`. Azel remains responsible for game status, module transitions, scripts, task creation, movies, fades, camera/gameplay state, and scene ownership.
+
+The current build also connects Azel's native three-slot save/load flow to Vita
+storage. Title Continue now reflects valid on-disk saves, and the in-game
+System menu can enter Azel's Save and Load tasks. Compile, link, and VPK
+packaging are verified; on-device menu, persistence, and transition validation
+remain pending.
 
 ## Runtime architecture
 

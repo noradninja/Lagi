@@ -732,12 +732,17 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  if(relative_path STREQUAL "kernel/moduleManager.cpp" AND LAGI_AZEL_RUINS_LINK_TRIM)
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
-   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/platform.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/platform.h\"\n#include \"lagi/azel_save_platform.h\""
    source_text "${source_text}")
 
   string(REPLACE
    "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    loadTown,           // 1: town\n    loadTown2,          // 2: town (alt entry)\n    loadField,          // 3: field\n    loadBattle,         // 4: battle\n    loadWorldOverlay,   // 5: worldmap\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    initLoadSavegameScreen, // 9: save/load screen\n    NULL,\n};"
-   "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    loadTown,           // 1: town - authentic 0.040 boot path\n    loadTown2,          // 2: town alt - authentic 0.040 boot path\n    loadField,          // 3: field - D5 name entry\n    NULL,               // 4: battle - deferred until flight milestone\n    NULL,               // 5: worldmap - deferred\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    NULL,               // 9: save/load - deferred\n    NULL,\n};"
+   "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    loadTown,           // 1: town - authentic 0.040 boot path\n    loadTown2,          // 2: town alt - authentic 0.040 boot path\n    loadField,          // 3: field - D5 name entry\n    NULL,               // 4: battle - deferred until flight milestone\n    NULL,               // 5: worldmap - deferred\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    initLoadSavegameScreen, // 9: native Azel save/load screen\n    NULL,\n};"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "        if (gGameStatus.m6_previousGameStatus == 74)"
+   "        if (gGameStatus.m6_previousGameStatus == 74 || lagiAzelSaveConsumeInGameLoad())"
    source_text "${source_text}")
 
   # Trace entry into module-manager state 1 before any transition helper.
@@ -960,6 +965,14 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   string(REPLACE
    "        createSiblingTaskWithArg<s_flagEditTaskWorkArea, p_workArea>(pThis->m8, pThis->m8);"
    "        // Lagi Vita 0.040: desktop/debug flag editor sibling omitted."
+   source_text "${source_text}")
+
+  # Pinned Azel leaves the System submenu constructor as a stub. Keep the
+  # dispatch boundary but let Lagi provide the Vita task that enters Azel's
+  # existing Save and Load tasks.
+  string(REPLACE
+   "p_workArea createSystemMenuTask(p_workArea workArea)"
+   "__attribute__((weak)) p_workArea createSystemMenuTask(p_workArea workArea)"
    source_text "${source_text}")
 
   string(REPLACE
@@ -1233,8 +1246,133 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "                        if (offset)\n                        {\n                            addObjectToDrawList(pThis->m0_fileBundle->get3DModel(offset));\n                        }"
    "                        if (offset)\n                        {\n                            sMatrix4x3 lagiWorldMatrix;\n                            initMatrixToIdentity(&lagiWorldMatrix);\n                            translateMatrix(pThis->mC_position, &lagiWorldMatrix);\n                            translateMatrix(readSaturnVec3(r14 + 4), &lagiWorldMatrix);\n\n                            sVec3_S16_12_4 lagiRotation;\n                            lagiRotation[0] = readSaturnS16(r14 + 0x10);\n                            lagiRotation[1] = readSaturnS16(r14 + 0x12);\n                            lagiRotation[2] = readSaturnS16(r14 + 0x14);\n                            rotateMatrixZYX_s16(lagiRotation, &lagiWorldMatrix);\n\n                            lagi::azel_bridge::SubmissionState lagiState{};\n                            for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n                            {\n                                for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n                                {\n                                    lagiState.modelMatrix[lagiRow * 4u + lagiCol] =\n                                        lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n                                }\n                            }\n                            lagiState.hasModelMatrix = true;\n                            lagiState.dynamic = false;\n                            lagi::azel_bridge::capture_current_light(lagiState);\n\n                            lagi::azel_bridge::set_town_submission_context(\n                                -1,\n                                static_cast<std::uint32_t>(pThis->m8_cellPtr.m_offset),\n                                static_cast<std::uint32_t>(r14.m_offset),\n                                static_cast<std::uint32_t>(offset),\n                                lagiState);\n\n                            addObjectToDrawList(pThis->m0_fileBundle->get3DModel(offset));\n                        }"
    source_text "${source_text}")
- endif()
- if(source_text STREQUAL original_text)
+  endif()
+
+  # Preserve Azel's title/menu ownership while supplying the Vita persistence
+  # boundary and real slot availability. extern/Azel remains untouched.
+  if(relative_path STREQUAL "titleScreen.cpp")
+   string(REPLACE
+    "#include \"o_title.h\""
+    "#include \"o_title.h\"\n#include \"lagi/azel_save_platform.h\""
+    source_text "${source_text}")
+   string(REPLACE
+    [=[bool hasSaveGame()
+{
+    PDS_unimplemented("hasSaveGame");
+    return true;
+}]=]
+    [=[bool hasSaveGame()
+{
+    return lagiAzelSaveHasAnyValidSlot() != 0;
+}]=]
+    source_text "${source_text}")
+   string(REPLACE
+    "        pWorkArea->m_menu[0].m_isEnabled = (azelCdNumber == 0); // new game enabled only is first disk"
+    "        pWorkArea->m_menu[0].m_isEnabled = (azelCdNumber == 0); // new game enabled only is first disk\n        pWorkArea->m_menu[1].m_isEnabled = hasSaveGame();"
+    source_text "${source_text}")
+  elseif(relative_path STREQUAL "kernel/loadSavegameScreen.cpp")
+   string(REPLACE
+    "#include \"3dEngine_textureCache.h\""
+    "#include \"3dEngine_textureCache.h\"\n#include \"lagi/azel_save_platform.h\""
+    source_text "${source_text}")
+   string(REPLACE
+    [=[s32 writeSaveData(s32 deviceId, const std::string* filename, char* description, void* buffer, int size)
+{
+    char finalSaveFileName[1024];
+    sprintf(finalSaveFileName, "save\\%d\\%s", deviceId, filename->c_str());
+    FILE* fHandle = fopen(finalSaveFileName, "wb+");
+    if (fHandle)
+    {
+        fwrite(buffer, size, 1, fHandle);
+        fclose(fHandle);
+        return 0;
+    }
+    return -1;
+}]=]
+    [=[s32 writeSaveData(s32 deviceId, const std::string* filename, char*, void* buffer, int size)
+{
+    return filename && buffer && size > 0
+        ? lagiAzelSaveWrite(deviceId, filename->c_str(), buffer, static_cast<std::size_t>(size))
+        : -1;
+}]=]
+    source_text "${source_text}")
+   string(REPLACE
+    [=[s32 readFrombackup(s32 deviceId, const std::string* filename, sSaveDataRaw* buffer)
+{
+    char finalSaveFileName[1024];
+    sprintf(finalSaveFileName, "save\\%d\\%s", deviceId, filename->c_str());
+    FILE* fHandle = fopen(finalSaveFileName, "rb");
+    if (fHandle)
+    {
+        fread(buffer, sizeof(sSaveDataRaw), 1, fHandle);
+        fclose(fHandle);
+        return 0;
+    }
+    return -1;
+}]=]
+    [=[s32 readFrombackup(s32 deviceId, const std::string* filename, sSaveDataRaw* buffer)
+{
+    return filename && buffer
+        ? lagiAzelSaveRead(deviceId, filename->c_str(), buffer, sizeof(sSaveDataRaw))
+        : -1;
+}]=]
+    source_text "${source_text}")
+   string(REPLACE
+    [=[s32 getBupStatusWithBuffer(s32 slotIndex, u32 dataSize)
+{
+    return 1;
+}
+
+s32 getBupStatus(s32 slotIndex)
+{
+    return 0;
+}]=]
+    [=[s32 getBupStatusWithBuffer(s32 slotIndex, u32)
+{
+    return lagiAzelSaveFreeSlots(slotIndex);
+}
+
+s32 getBupStatus(s32 slotIndex)
+{
+    return lagiAzelSaveDeviceAvailable(slotIndex) ? 0 : -1;
+}]=]
+    source_text "${source_text}")
+   string(REPLACE
+    [=[        char finalSaveFileName[1024];
+        sprintf(finalSaveFileName, "save\\%d\\%s", device, saveFileName.c_str());
+
+        FILE* fHandle = fopen(finalSaveFileName, "rb");
+        if (fHandle)
+        {
+            sSaveDataRaw* pNewGameState = new sSaveDataRaw;
+            fread(pNewGameState, sizeof(sSaveDataRaw), 1, fHandle);
+            fclose(fHandle);
+            return pNewGameState;
+        }
+
+        return NULL;]=]
+    [=[        sSaveDataRaw* pNewGameState = new sSaveDataRaw;
+        if (lagiAzelSaveRead(device, saveFileName.c_str(),
+                pNewGameState, sizeof(sSaveDataRaw)) == 0)
+            return pNewGameState;
+        delete pNewGameState;
+        return NULL;]=]
+    source_text "${source_text}")
+   string(REPLACE
+    "                assert(0); //060196c4 this would create the icon for the disabled slot"
+    "                // Vita exposes only internal storage; unavailable Saturn backup devices stay disabled."
+    source_text "${source_text}")
+   string(REPLACE
+    "                Unimplemented(); // TODO: setSoundOutputMode not yet implemented"
+    "                // Audio output-mode restoration is deferred until that Saturn option is exposed."
+    source_text "${source_text}")
+   string(REPLACE
+    "        Unimplemented();\n    }\n\n    // 06019bd4"
+    "    }\n\n    // 06019bd4"
+    source_text "${source_text}")
+  endif()
+
+  if(source_text STREQUAL original_text)
   message(FATAL_ERROR
    "Upstream Azel source no longer contains the expected PDS.h include: "
    "${relative_path}")
@@ -1468,6 +1606,8 @@ add_executable(lagi
  src/integration/lagi_task_vita.cpp
  src/integration/lagi_saturn_memory_vita.cpp
  src/integration/lagi_disc_file_vita.cpp
+ src/integration/lagi_save_platform_vita.cpp
+ src/integration/lagi_system_menu_vita.cpp
  src/integration/lagi_common_overlay_vita.cpp
  src/integration/lagi_sound_table_vita.cpp
  src/integration/lagi_dragon_common_vita.cpp

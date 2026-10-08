@@ -263,6 +263,21 @@ Normal authentic boot does not depend on state established exclusively by the di
 
 Azel's desktop-facing host interfaces are adapted at the Lagi boundary for Vita builds. The Vita prelude supplies declarations and platform substitutions required for compilation while gameplay and task/state-machine behavior remains in the upstream implementation.
 
+## Save and load ownership
+
+Azel owns the native save payload, weighted checksum, three-slot selection UI,
+load restoration, and game-status transitions. Lagi supplies the Vita storage
+boundary at `ux0:data/lagi/save/0` and maps the original internal-backup device
+to durable files named `PANDRA_3_01` through `PANDRA_3_03`.
+
+Title Continue is enabled only when at least one slot passes Azel's version and
+checksum rules. It enters Azel's load/save overlay through game status `0x4A`.
+The in-game System entry is a Vita replacement for the pinned upstream stub; it
+launches Azel's existing `createSaveTask()` and `createLoadTask()` rather than
+implementing another slot UI or save format. A successful in-game load returns
+to Azel's module manager, which performs the saved scene transition and field
+entry restoration.
+
 
 ## 0.040 native Ruins presentation
 
