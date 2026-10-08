@@ -881,7 +881,7 @@ static int g_pendingViewMode = 7;
 static unsigned int g_pendingProfileTasksUs = 0u;
 static unsigned int g_pendingProfileGameWaitUs = 0u;
 
-static constexpr std::size_t kVdp2TextSnapshotBytes = 0x10000u;
+static constexpr std::size_t kVdp2TextSnapshotBytes = 0x80000u;
 static constexpr std::size_t kVdp2CramSnapshotBytes = 0x1000u;
 static std::uint8_t g_pendingVdp2TextVram[kVdp2TextSnapshotBytes]{};
 static std::uint8_t g_pendingVdp2Cram[kVdp2CramSnapshotBytes]{};
@@ -889,6 +889,10 @@ static std::uint8_t g_vdp2TextVram[kVdp2TextSnapshotBytes]{};
 static std::uint8_t g_vdp2Cram[kVdp2CramSnapshotBytes]{};
 static bool g_pendingVdp2TextValid = false;
 static bool g_vdp2TextValid = false;
+static unsigned int g_pendingVdp2MenuId = 0u;
+static unsigned int g_vdp2MenuId = 0u;
+static int g_pendingVdp2MenuScroll[4]{};
+static int g_vdp2MenuScroll[4]{};
 
 static constexpr std::size_t kVdp2LineScrollBytes = 0x400u;
 static std::uint8_t g_pendingVdp2LineScroll[kVdp2LineScrollBytes]{};
@@ -1383,6 +1387,150 @@ static std::uint32_t vdp2Rgb555ToAbgr(std::uint16_t color)
     const std::uint32_t b =
         static_cast<std::uint32_t>((color >> 10) & 0x1Fu) * 255u / 31u;
     return 0xFF000000u | (b << 16) | (g << 8) | r;
+}
+
+
+static std::uint32_t decodeStatusMenuNbgPixel(
+    std::size_t mapBase,
+    int logicalX,
+    int logicalY,
+    int scrollX,
+    int scrollY)
+{
+    int mapX = (logicalX + scrollX) % 512;
+    int mapY = (logicalY + scrollY) % 512;
+    if (mapX < 0) mapX += 512;
+    if (mapY < 0) mapY += 512;
+
+    const int tileX = mapX >> 4;
+    const int tileY = mapY >> 4;
+    const std::size_t mapAddress =
+        mapBase + static_cast<std::size_t>(
+            (tileY * 32 + tileX) * 2);
+    if (mapAddress + 1u >= kVdp2TextSnapshotBytes)
+        return 0u;
+
+    const std::uint16_t patternName =
+        readVdp2Be16(g_vdp2TextVram, mapAddress);
+    if (!patternName)
+        return 0u;
+
+    int px = mapX & 15;
+    int py = mapY & 15;
+    if (patternName & 0x0400u) px = 15 - px;
+    if (patternName & 0x0800u) py = 15 - py;
+
+    const unsigned int characterNumber =
+        static_cast<unsigned int>(patternName & 0x03FFu) * 4u;
+    const unsigned int cellX = static_cast<unsigned int>(px >> 3);
+    const unsigned int cellY = static_cast<unsigned int>(py >> 3);
+    const unsigned int cellIndex = cellX + cellY * 2u;
+    const std::size_t dotAddress =
+        static_cast<std::size_t>(characterNumber) * 32u +
+        static_cast<std::size_t>(cellIndex) * 32u +
+        static_cast<std::size_t>(py & 7) * 4u +
+        static_cast<std::size_t>((px & 7) >> 1);
+    if (dotAddress >= kVdp2TextSnapshotBytes)
+        return 0u;
+
+    const std::uint8_t packed = g_vdp2TextVram[dotAddress];
+    const unsigned int colorIndex =
+        (px & 1)
+            ? static_cast<unsigned int>(packed & 0x0Fu)
+            : static_cast<unsigned int>(packed >> 4);
+    if (!colorIndex)
+        return 0u;
+
+    // setupVdp2ForMenu(): CHCN=0, CHSZ=1, PNB=1, CNSM=0, CAOS=6.
+    const unsigned int paletteNumber =
+        static_cast<unsigned int>((patternName >> 12) & 0x0Fu);
+    const unsigned int paletteEntry =
+        6u * 0x100u + paletteNumber * 16u + colorIndex;
+    const std::size_t cramOffset =
+        static_cast<std::size_t>(paletteEntry) * 2u;
+    if (cramOffset + 1u >= kVdp2CramSnapshotBytes)
+        return 0u;
+
+    return vdp2Rgb555ToAbgr(
+        readVdp2Be16(g_vdp2Cram, cramOffset));
+}
+
+static void drawAzelStatusMenuVdp2Gpu()
+{
+    if (!g_vdp2TextValid ||
+        !g_vdp2MenuId ||
+        !g_textureVertexProgram ||
+        !g_textureFragmentProgram ||
+        !g_textureWvpParam ||
+        !ensureVdp2UiGpuBuffers())
+        return;
+
+    // setupVdp2ForMenu() assigns NBG0 to 0x71800 and NBG1 to 0x71000.
+    // PRINA gives NBG0 the higher priority, so decode NBG1 first and let
+    // non-transparent NBG0 pixels replace it.
+    for (unsigned int y = 0; y < kVdp2TextLayerHeight; ++y) {
+        for (unsigned int x = 0; x < kVdp2TextLayerWidth; ++x) {
+            std::uint32_t color = decodeStatusMenuNbgPixel(
+                0x71000u,
+                static_cast<int>(x),
+                static_cast<int>(y),
+                g_vdp2MenuScroll[2],
+                g_vdp2MenuScroll[3]);
+            const std::uint32_t nbg0 = decodeStatusMenuNbgPixel(
+                0x71800u,
+                static_cast<int>(x),
+                static_cast<int>(y),
+                g_vdp2MenuScroll[0],
+                g_vdp2MenuScroll[1]);
+            if (nbg0)
+                color = nbg0;
+            g_vdp2TextLayerPixels[
+                y * kVdp2TextLayerWidth + x] = color;
+        }
+    }
+
+    const float renderAspect =
+        static_cast<float>(viewerRenderWidth()) /
+        static_cast<float>(viewerRenderHeight());
+    const float xExtent =
+        (4.0f / 3.0f) / renderAspect;
+    g_vdp2TextLayerVertices[0] =
+        {-xExtent,  1.0f, 0.5f, 0.0f, 0.0f};
+    g_vdp2TextLayerVertices[1] =
+        { xExtent,  1.0f, 0.5f, 1.0f, 0.0f};
+    g_vdp2TextLayerVertices[2] =
+        { xExtent, -1.0f, 0.5f, 1.0f, 1.0f};
+    g_vdp2TextLayerVertices[3] =
+        {-xExtent, -1.0f, 0.5f, 0.0f, 1.0f};
+
+    sceGxmSetVertexProgram(
+        g_probeContext, g_textureVertexProgram);
+    sceGxmSetFragmentProgram(
+        g_probeContext, g_textureFragmentProgram);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+
+    void* uniforms = nullptr;
+    if (sceGxmReserveVertexDefaultUniformBuffer(
+            g_probeContext, &uniforms) < 0 || !uniforms)
+        return;
+    static const float identity[16] = {
+        1.0f,0.0f,0.0f,0.0f,
+        0.0f,1.0f,0.0f,0.0f,
+        0.0f,0.0f,1.0f,0.0f,
+        0.0f,0.0f,0.0f,1.0f
+    };
+    sceGxmSetUniformDataF(
+        uniforms, g_textureWvpParam, 0, 16, identity);
+    sceGxmSetVertexStream(
+        g_probeContext, 0, g_vdp2TextLayerVertices);
+    sceGxmSetFragmentTexture(
+        g_probeContext, 0, &g_vdp2TextLayerTexture);
+    sceGxmDraw(
+        g_probeContext,
+        SCE_GXM_PRIMITIVE_TRIANGLES,
+        SCE_GXM_INDEX_FORMAT_U16,
+        g_vdp2TextLayerIndices,
+        6);
 }
 
 static void drawAzelVdp2TextLayerGpu()
@@ -11846,10 +11994,16 @@ static void renderBasicWingViewer()
         // sprites (including Lock-On and choice cursors) remain above VDP2.
         // Azel still owns the contents/state of every layer; Neptune only
         // translates their final presentation ordering to GXM.
-        drawAzelVdp2Nbg1Gpu();
-        drawAzelVdp2CinematicBarsGpu();
-        drawAzelVdp2TextLayerGpu();
-        drawPublishedVdp1Ui();
+        if (g_vdp2MenuId != 0u) {
+            drawAzelStatusMenuVdp2Gpu();
+            drawPublishedVdp1Ui();
+            drawAzelVdp2TextLayerGpu();
+        } else {
+            drawAzelVdp2Nbg1Gpu();
+            drawAzelVdp2CinematicBarsGpu();
+            drawAzelVdp2TextLayerGpu();
+            drawPublishedVdp1Ui();
+        }
     }
 
     // Scene entry restarts this fade, so a town fade-out cannot leave the
@@ -12568,6 +12722,11 @@ void presentation_publish_frame()
             g_pendingVdp2LineScroll,
             sizeof(g_vdp2LineScroll));
         g_vdp2TextValid = true;
+        g_vdp2MenuId = g_pendingVdp2MenuId;
+        std::memcpy(
+            g_vdp2MenuScroll,
+            g_pendingVdp2MenuScroll,
+            sizeof(g_vdp2MenuScroll));
     }
 
     static unsigned int presentationTraceHeartbeat = 0u;
@@ -12766,7 +12925,12 @@ void presentation_set_camera(
 void presentation_set_vdp2_text(
     const unsigned char* vram,
     const unsigned char* cram,
-    const unsigned char* lineScroll)
+    const unsigned char* lineScroll,
+    unsigned int menuId,
+    int nbg0ScrollX,
+    int nbg0ScrollY,
+    int nbg1ScrollX,
+    int nbg1ScrollY)
 {
     if (!vram || !cram || !lineScroll) {
         g_pendingVdp2TextValid = false;
@@ -12786,6 +12950,11 @@ void presentation_set_vdp2_text(
         lineScroll,
         sizeof(g_pendingVdp2LineScroll));
     g_pendingVdp2TextValid = true;
+    g_pendingVdp2MenuId = menuId;
+    g_pendingVdp2MenuScroll[0] = nbg0ScrollX;
+    g_pendingVdp2MenuScroll[1] = nbg0ScrollY;
+    g_pendingVdp2MenuScroll[2] = nbg1ScrollX;
+    g_pendingVdp2MenuScroll[3] = nbg1ScrollY;
 
     static unsigned int setVdp2TraceHeartbeat = 0u;
     if ((setVdp2TraceHeartbeat++ % 60u) == 0u) {
