@@ -141,11 +141,27 @@ void sync_field_presentation_state()
 
 void sync_presentation_state()
 {
+    // Every native scene consumes the same Azel-authored UI planes. Do not
+    // gate subtitles, badges, LCS backing or cinematic bars on actor type.
+    if (gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 3) {
+        lagi::platform::renderer::presentation_set_vdp2_text(
+            getVdp2Vram(0), getVdp2Cram(0), getVdp2Vram(0x3E000),
+            static_cast<unsigned int>(graphicEngineStatus.m40AC.m0_menuId),
+            graphicEngineStatus.m40BC_layersConfig[0].scrollX,
+            graphicEngineStatus.m40BC_layersConfig[0].scrollY,
+            graphicEngineStatus.m40BC_layersConfig[1].scrollX,
+            graphicEngineStatus.m40BC_layersConfig[1].scrollY);
+    }
     switch (gGameStatus.m0_gameMode) {
     case 1:
         // Town remains Azel-owned. The adapter exposes only renderer-facing
         // state produced by Azel's native town task graph.
         lagi::azel::twn_ruin_sync_platform_state();
+        {
+            std::int32_t nativeView[12]{};
+            if (lagi::azel_bridge::native_scene_view_matrix(nativeView))
+                lagi::platform::renderer::presentation_set_native_view_matrix(nativeView);
+        }
         break;
     case 3:
         // Field remains Azel-owned. Phase 2 only opens the generic

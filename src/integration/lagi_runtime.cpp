@@ -351,7 +351,14 @@ void runtime_frame()
     static bool wasFieldFrame = false;
     const bool fieldFrame = gGameStatus.m0_gameMode == 3;
     if (fieldFrame && !wasFieldFrame)
-        lagi::platform::renderer::presentation_fade_in(30u);
+    {
+        // Restore the field-entry fade through Azel's native controller.
+        // This replaces the old independent renderer-side 30-frame clock.
+        fadePalette(&g_fadeControls.m0_fade0, 0x8000,
+                    g_fadeControls.m_48, 30u);
+        fadePalette(&g_fadeControls.m24_fade1, 0x8000,
+                    g_fadeControls.m_4A, 30u);
+    }
     wasFieldFrame = fieldFrame;
     if (traceStartup)
         lagi::platform::logging::writef(
@@ -462,6 +469,15 @@ void runtime_frame()
             regs.m11E_COBB);
     }
 
+    // Publish the primary native scene fade with this frame. The reconstructed
+    // native setup often enables BACK only; it still drives the whole-scene
+    // transition in fade0. Do not infer it from an Edge camera flag or advance
+    // a second fade clock on the renderer thread.
+    if (gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 3)
+        lagi::platform::renderer::presentation_set_scene_color_offset(
+            g_fadeControls.m0_fade0.m0_color[0].getInteger(),
+            g_fadeControls.m0_fade0.m0_color[1].getInteger(),
+            g_fadeControls.m0_fade0.m0_color[2].getInteger());
     // Front-end VDP2 presentation is a platform service. Azel owns all title
     // graphics, text, palettes, blinking, input and state transitions; Lagi
     // simply presents the VDP2 memory that Azel has already produced.

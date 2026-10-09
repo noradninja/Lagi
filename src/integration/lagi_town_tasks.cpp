@@ -12,7 +12,8 @@
 #include "town/ruin/twn_ruin.h"
 #include "kernel/fade.h"
 #include "kernel/moduleManager.h"
-#include "3dEngine.h"\n#include "VDP2.h"
+#include "3dEngine.h"
+#include "VDP2.h"
 
 #include <algorithm>
 #include <cmath>
@@ -35,8 +36,6 @@ namespace {
 
 p_workArea g_twnRuinRoot = nullptr;
 s_moduleManager* g_directBootModuleManager = nullptr;
-sCameraTask* g_fadeCamera = nullptr;
-bool g_fadeActive = false;
 bool g_reportedPresentation = false;
 
 } // namespace
@@ -138,8 +137,6 @@ bool start_twn_ruin_task_pipeline()
         static_cast<unsigned int>(
             static_cast<std::uint8_t>(gGameStatus.m1)));
 
-    g_fadeCamera = cameraTaskPtr;
-    g_fadeActive = false;
     g_reportedPresentation = false;
 
     platform::logging::writef(
@@ -166,27 +163,7 @@ void twn_ruin_sync_platform_state()
 {
     platform::renderer::presentation_set_scene_mode(1u);
 
-    if (!cameraTaskPtr)
-        return;
-
-    if (cameraTaskPtr != g_fadeCamera) {
-        g_fadeCamera = cameraTaskPtr;
-        g_fadeActive = false;
-    }
-
-    const bool fadeActive = cameraTaskPtr->m1_fadeActive != 0;
-    if (fadeActive != g_fadeActive) {
-        const int remaining = g_fadeControls.m0_fade0.m1E_counter;
-        const unsigned int frames =
-            static_cast<unsigned int>(remaining > 0 ? remaining : 1);
-        if (fadeActive)
-            platform::renderer::presentation_fade_in(frames);
-        else
-            platform::renderer::presentation_fade_out(frames);
-        g_fadeActive = fadeActive;
-    }
-
-    if (!twnMainLogicTask || !twnMainLogicTask->m14_EdgeTask)
+    if (!twnMainLogicTask)
         return;
 
     constexpr float kInvFixed = 1.0f / 65536.0f;
@@ -198,19 +175,26 @@ void twn_ruin_sync_platform_state()
         out[2] = source[2].asS32() * kInvFixed;
     };
 
-    sEdgeTask* const edge = twnMainLogicTask->m14_EdgeTask;
-    float edgePosition[3]{};
-    vec3(edge->mE8.m0_position, edgePosition);
-    const unsigned int animation = static_cast<unsigned int>(
-        std::max<s32>(0, edge->m2C_currentAnimation.asS32()));
-    const unsigned int animationFrame =
-        edge->m34_3dModel.m10_currentAnimationFrame;
-    platform::renderer::presentation_set_player(
-        edgePosition[0], edgePosition[1], edgePosition[2],
-        edge->mE8.mC_rotation[1].asS32() * kTurnsToRadians,
-        false, 0,
-        animation, animationFrame,
-        animation, animationFrame, 1.0f);
+    if (sEdgeTask* const edge = twnMainLogicTask->m14_EdgeTask) {
+        float edgePosition[3]{};
+        vec3(edge->mE8.m0_position, edgePosition);
+        const unsigned int animation = static_cast<unsigned int>(
+            std::max<s32>(0, edge->m2C_currentAnimation.asS32()));
+        const unsigned int animationFrame =
+            edge->m34_3dModel.m10_currentAnimationFrame;
+        platform::renderer::presentation_set_player(
+            edgePosition[0], edgePosition[1], edgePosition[2],
+            edge->mE8.mC_rotation[1].asS32() * kTurnsToRadians,
+            false, 0,
+            animation, animationFrame,
+            animation, animationFrame, 1.0f);
+
+    }
+
+    // Camera, clip planes and UI belong to the scene, not to an Edge actor.
+    platform::renderer::presentation_set_clip_planes(
+        graphicEngineStatus.m405C.m10_nearClipDistance.asS32() * kInvFixed,
+        graphicEngineStatus.m405C.m14_farClipDistance.asS32() * kInvFixed);
 
     float cameraPosition[3]{};
     float rawCameraPosition[3]{};
@@ -229,25 +213,11 @@ void twn_ruin_sync_platform_state()
         twnMainLogicTask->m68_cameraRotation[0].asS32() * kTurnsToRadians,
         twnMainLogicTask->m24_distance.asS32() * kInvFixed);
 
-    // Azel owns the live town VDP2 maps, CRAM and line-scroll table. Snapshot
-    // the exact Saturn-authored state into Neptune's serial presentation
-    // handoff. 0x3E000 is the original working line-scroll transfer source
-    // used by the town renderer path.
-    platform::renderer::presentation_set_vdp2_text(
-        getVdp2Vram(0),
-        getVdp2Cram(0),
-        getVdp2Vram(0x3E000),
-        static_cast<unsigned int>(graphicEngineStatus.m40AC.m0_menuId),
-        graphicEngineStatus.m40BC_layersConfig[0].scrollX,
-        graphicEngineStatus.m40BC_layersConfig[0].scrollY,
-        graphicEngineStatus.m40BC_layersConfig[1].scrollX,
-        graphicEngineStatus.m40BC_layersConfig[1].scrollY);
-
     if (!g_reportedPresentation) {
         platform::logging::writef(
             "[LagiAdapter] upstream town presentation ready "
-            "edge=(%.5f,%.5f,%.5f) camera=(%.5f,%.5f,%.5f)\n",
-            edgePosition[0], edgePosition[1], edgePosition[2],
+            "edgePresent=%u camera=(%.5f,%.5f,%.5f)\n",
+            twnMainLogicTask->m14_EdgeTask ? 1u : 0u,
             cameraPosition[0], cameraPosition[1], cameraPosition[2]);
         g_reportedPresentation = true;
     }

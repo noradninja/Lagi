@@ -1231,6 +1231,32 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "    popMatrix();\n}\n\nvoid sEdgeTask::Delete"
    "    popMatrix();\n    lagi::azel_bridge::end_view_relative_submission_scope();\n}\n\nvoid sEdgeTask::Delete"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "kernel/fade.cpp")
+  # Invert unpackColor() when a running fade becomes a new request's source.
+  # The original >>4 halves negative offsets (-128 becomes -64), making a
+  # black scene pop halfway visible before Azel's next fade has advanced.
+  string(REPLACE
+   [=[    u32 color = ((inColor[0].toInteger() >> 4) + 0x10) << 10;
+    color |= ((inColor[1].toInteger() >> 4) + 0x10) << 5;
+    color |= ((inColor[2].toInteger() >> 4) + 0x10);
+    color |= 0x8000;
+    return color;]=]
+   [=[    // LAGI_FADE_PACK_INVERSE
+    const auto pack = [](s32 value) -> u32 {
+        const s32 component = value < 0 ? value / 8 : value / 9;
+        return static_cast<u32>(std::clamp(component + 0x10, 0, 0x1f));
+    };
+    return 0x8000u | pack(inColor[0].toInteger()) |
+        (pack(inColor[1].toInteger()) << 5) |
+        (pack(inColor[2].toInteger()) << 10);]=]
+   source_text "${source_text}")
+  string(REPLACE
+   "#include \"fade.h\""
+   "#include \"fade.h\"\n#include <algorithm>"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "LAGI_FADE_PACK_INVERSE")
+   message(FATAL_ERROR "Native fade source-color correction did not apply")
+  endif()
  elseif(relative_path STREQUAL "town/townCutscene.cpp")
   # Generic Vita bring-up for Azel's native in-engine town cutscene subsystem.
   # Azel retains ownership of script ordering, fades, camera commands, entity
@@ -1267,14 +1293,14 @@ GfsHn GFS_Open(const std::string& name)
     if (!lagi::disc::open_file(name.c_str(), handle->file))
     {
         lagi::platform::logging::writef(
-            "[AzelCutscene] missing stream file: %s\\n", name.c_str());
+            "[AzelCutscene] missing stream file: %s\n", name.c_str());
         delete handle;
         return temp;
     }
 
     temp.fHandle = reinterpret_cast<FILE*>(handle);
     lagi::platform::logging::writef(
-        "[AzelCutscene] opened %s (%u bytes) from mounted disc\\n",
+        "[AzelCutscene] opened %s (%u bytes) from mounted disc\n",
         name.c_str(), static_cast<unsigned>(handle->file.size));
     return temp;
 }]=]
@@ -1374,7 +1400,7 @@ GfsHn GFS_Open(const std::string& name)
     pThis->m1D4 = dramAllocate(0x28000);
     if (!pThis->m1D4)
     {
-        lagi::platform::logging::writef("[AzelCutscene] stream allocation failed\\n");
+        lagi::platform::logging::writef("[AzelCutscene] stream allocation failed\n");
         pThis->m4.m28.m0 = -1;
         pThis->m0 = &pThis->m4;
         return;
@@ -1391,14 +1417,14 @@ GfsHn GFS_Open(const std::string& name)
     std::string streamFileName =
         readSaturnString(sSaturnPtr::createFromRaw(arg, gCurrentTownOverlay));
     lagi::platform::logging::writef(
-        "[AzelCutscene] request %s arg=%08X\\n",
+        "[AzelCutscene] request %s arg=%08X\n",
         streamFileName.c_str(), static_cast<unsigned>(arg));
 
     pThis->m0 = openFileForStreaming(&streamingParams, streamFileName);
     if (!pThis->m0)
     {
         lagi::platform::logging::writef(
-            "[AzelCutscene] open failed: %s\\n", streamFileName.c_str());
+            "[AzelCutscene] open failed: %s\n", streamFileName.c_str());
         pThis->m4.m28.m0 = -1;
         pThis->m0 = &pThis->m4;
     }
@@ -1424,11 +1450,78 @@ GfsHn GFS_Open(const std::string& name)
         iParm1->m198.m0_gfsHandle.fHandle = nullptr;
     }
 
+    if (iParm1->m28.m0 != 5)
+        lagi::platform::logging::writef(
+            "[AzelCutscene] complete state=%d frame=%u total=%u consumed=%u read=%u\n",
+            iParm1->m28.m0, iParm1->m28.m84_frameIndex,
+            iParm1->m194 ? iParm1->m194->m10_totalFrames : 0u,
+            iParm1->m28.m28, iParm1->m28.m24_currentPositionInFile);
     iParm1->m198.m8_readIsPending = 0;
     iParm1->m28.m0 = 5;
 }]=]
    source_text "${source_text}")
 
+  # Preserve all four bytes of a wrapped command header. The reconstructed
+  # U16 write corrupts a U32 packet length/opcode at command-ring rollover.
+  string(REPLACE
+   "WRITE_BE_U16(puVar3, READ_BE_U32(puVar4));"
+   "WRITE_BE_U32(puVar3, READ_BE_U32(puVar4)); // LAGI_STREAM_HEADER_U32"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "LAGI_STREAM_HEADER_U32")
+   message(FATAL_ERROR "Cutscene command-ring header correction did not apply")
+  endif()
+
+  # The host s_fileBundle is a C++ wrapper, separate from its DRAM payload.
+  # Saturn teardown must release the raw allocation and delete the wrapper.
+  string(REPLACE
+   "            dramFree((u8*)pThis->m0);"
+   "            dramFree(pThis->m0->getRawBuffer());\n            delete pThis->m0;\n            pThis->m0 = nullptr;"
+   source_text "${source_text}")
+  string(REPLACE
+   "            vdp1Free((u8*)pThis->m4);"
+   "            vdp1Free((u8*)pThis->m4);\n            pThis->m4 = nullptr;"
+   source_text "${source_text}")
+
+  # Correct the model-bundle base used by streamed entities as well as their
+  # hierarchy. Otherwise get3DModel() patches texture addresses from zero.
+  string(REPLACE
+   "        //patchFilePointers(iVar4->getRawBuffer(), uVar3);"
+   "        piVar2->m0->setPatchFilePointers(uVar3);"
+   source_text "${source_text}")
+  string(REPLACE
+   "    pHierarchy->patchFilePointers(piVar2->m4->m4_vdp1Memory);"
+   "    // The bundle patches each hierarchy model once at its native VRAM base."
+   source_text "${source_text}")
+  # Sector reads contain zero padding beyond EOF. Never expose that padding
+  # to the packet parser: a zero length otherwise repeats forever in shipping
+  # builds, where the unknown-opcode assert cannot stop the loop.
+  string(REPLACE
+   "        u32 uVar2 = (psParm1->m28).m24_currentPositionInFile - (psParm1->m28).m28;"
+   [=[        const u32 readableEnd = std::min(
+            psParm1->m28.m24_currentPositionInFile,
+            static_cast<u32>(psParm1->m198.m18_fileSize));
+        u32 uVar2 = readableEnd > psParm1->m28.m28
+            ? readableEnd - psParm1->m28.m28 : 0u; // LAGI_STREAM_EOF_BOUND]=]
+   source_text "${source_text}")
+  string(REPLACE
+   "        if ((int)uVar2 < READ_BE_U32((psParm1->m28).m34_pBufferRead)) {"
+   [=[        cutsceneFillCommandBuffer(psParm1, psParm1->m28.m34_pBufferRead);
+        const u32 packetSize = READ_BE_U32(psParm1->m28.m34_pBufferRead);
+        if (packetSize < 0x10u || (packetSize & 3u) != 0u ||
+            packetSize > psParm1->m4_bufferSize - psParm1->m28.m44_headerSize)
+        {
+            lagi::platform::logging::writef(
+                "[AzelCutscene] invalid packet size=%u consumed=%u read=%u frame=%u\n",
+                packetSize, psParm1->m28.m28, readableEnd,
+                psParm1->m28.m84_frameIndex);
+            psParm1->m28.m0 = -1;
+            return;
+        }
+        if (uVar2 < packetSize) {]=]
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "LAGI_STREAM_EOF_BOUND")
+   message(FATAL_ERROR "Cutscene EOF bound did not apply")
+  endif()
   # Keep entity registration safe during failed/tearing-down streams.
   string(REPLACE
    "void setupCutsceneDragonSub0(sStreamingFile* r4, u32 index, u32 param_3, p_workArea param_4, s_3dModel* pModel)\n{\n    if (index < 0x11)"
@@ -1463,6 +1556,13 @@ GfsHn GFS_Open(const std::string& name)
         (psParm1->m194 && psParm1->m194->mC_frameRate)
             ? psParm1->m194->mC_frameRate : 60u;
 
+    if ((psParm1->m28.m84_frameIndex % 120u) < (frameRate + 29u) / 30u)
+        lagi::platform::logging::writef(
+            "[AzelCutscene] timeline state=%d frame=%u total=%u commandFrame=%u consumed=%u read=%u\n",
+            psParm1->m28.m0, psParm1->m28.m84_frameIndex,
+            psParm1->m194 ? psParm1->m194->m10_totalFrames : 0u,
+            psParm1->m28.m88, psParm1->m28.m28,
+            psParm1->m28.m24_currentPositionInFile);
     psParm1->m28.m7C += frameRate;
     while (psParm1->m28.m7C >= 30u)
     {
@@ -1547,6 +1647,17 @@ void pauseCutscene]=]
     "Native town cutscene bridge did not apply completely; upstream Azel changed")
   endif()
  elseif(relative_path STREQUAL "town/townMainLogic.cpp")
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\""
+   source_text "${source_text}")
+  string(REPLACE
+   "    generateCameraMatrix(&cameraProperties2, pThis->m38_interpolatedCameraPosition, var18, pThis->m50_upVector);"
+   "    generateCameraMatrix(&cameraProperties2, pThis->m38_interpolatedCameraPosition, var18, pThis->m50_upVector);\n    lagi::azel_bridge::capture_native_scene_view_matrix();"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "capture_native_scene_view_matrix")
+   message(FATAL_ERROR "Native town view capture did not apply")
+  endif()
   # Correct two reconstructed hard-coded town LCS physical-button tests to
   # match the original manual: B cancels LCS, while A/C enter/select it.
   # Keep this in the generated build copy so extern/Azel remains untouched.

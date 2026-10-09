@@ -125,6 +125,8 @@ static void removeViewTransform(
 void begin_frame(bool forceDynamicSubmissions)
 {
     g_forceDynamicSubmissions = forceDynamicSubmissions;
+    g_nativeSceneViewValid = false;
+    g_viewRelativeScope = false;
     g_submissionCount = 0;
     g_modelCacheMisses = 0;
     g_explicitStaticContextsSet = 0;
@@ -238,11 +240,11 @@ void capture_current_light(SubmissionState& state)
                 currentLightVector_M.color[i];
         }
 
-        // In field mode currentLightVector_M is paired with view-relative
+        // Native scene currentLightVector_M is paired with view-relative
         // model matrices. When the bridge publishes world-space geometry,
         // rotate the light back through inverse(view) too. Later Neptune's
         // model-space transpose multiply then reproduces the same dot product.
-        if (g_forceDynamicSubmissions && g_nativeSceneViewValid) {
+        if (g_nativeSceneViewValid) {
             const std::int32_t in[3] = {
                 state.lightVector[0],
                 state.lightVector[1],
@@ -330,7 +332,7 @@ static void capture_runtime_state(bool billboard)
         g_forceDynamicSubmissions || g_viewRelativeScope || billboard;
 
     // Azel's pCurrentMatrix contains camera/view and model transforms at the
-    // normal submission boundary. Mode 3 strips the captured native view;
+    // normal submission boundary. All native scenes strip the captured view;
     // town view-relative scopes use their existing scoped view snapshot.
     if (&pCurrentMatrix && pCurrentMatrix) {
         if (g_viewRelativeScope) {
@@ -338,10 +340,10 @@ static void capture_runtime_state(bool billboard)
                 g_viewScopeMatrix,
                 *pCurrentMatrix,
                 g_lastState.modelMatrix);
-        } else if (g_forceDynamicSubmissions && g_nativeSceneViewValid) {
-            // Field submissions are authored under Azel's current view matrix.
+        } else if (g_nativeSceneViewValid) {
+            // Native submissions are authored under Azel's current view matrix.
             // Remove only that native camera transform so Neptune receives a
-            // stable world-space model transform and can apply the field
+            // stable world-space model transform and can apply the native
             // camera exactly once at presentation.
             removeViewTransform(
                 g_nativeSceneViewMatrix,

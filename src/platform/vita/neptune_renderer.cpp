@@ -289,7 +289,7 @@ struct LivePolygonLightState {
 static std::vector<LivePolygonLightState> g_liveTownPolygonLights;
 // A static CPU cache hit does not imply that an offscreen quad has had its
 // current positions written to the reused subdivision GPU buffer.
-static std::vector<std::uint8_t> g_fieldSubdivPositionValid;
+static std::vector<std::uint8_t> g_sceneSubdivPositionValid;
 
 // Render-thread-only, bounded field diagnostics. Hash explicit fields, never
 // structure padding. Samples retain exact submission/local/global identity.
@@ -640,7 +640,7 @@ static std::vector<std::uint16_t> g_vdp1SubdivQuadIndices;
 struct SubdivUvState {
     unsigned int width = 0u, height = 0u, flip = 0u;
 };
-static std::vector<SubdivUvState> g_fieldSubdivUvStates;
+static std::vector<SubdivUvState> g_sceneSubdivUvStates;
 
 static SceUID g_vdp1SubdivWireVertexUid = -1;
 static SceUID g_vdp1SubdivWireIndexUid = -1;
@@ -885,6 +885,8 @@ static float g_staticRoomFitDistance = 3.0f;
 // First playable-town runtime slice. The recovered Edge transform is kept
 // mutable here instead of baking movement into the reconstructed room mesh.
 static bool g_townPlayerReady = false;
+static bool g_pendingScenePlayerPresent = false;
+static bool g_scenePlayerPresent = false;
 static bool g_townCameraReady = false;
 static unsigned int g_sceneGameMode = 0u;
 static float g_townPlayerPosition[3]{};
@@ -958,18 +960,11 @@ static std::uint8_t g_vdp2LineScroll[kVdp2LineScrollBytes]{};
 
 // Script-owned town fade command. The game thread stages commands here; the
 // completed-frame publish copies them across the render handoff. This remains
-// separate from VDP2 color offset because Azel's town camera fade is a
-// full-presentation effect, not CLOFEN layer selection.
-static unsigned int g_pendingTownFadeSerial = 0u;
-static bool g_pendingTownFadeIn = false;
-static unsigned int g_pendingTownFadeFrames = 1u;
+// separate from VDP2 layer selection because Azel's primary scene fade is a
+// full-presentation effect.
 
-static unsigned int g_townFadeSerial = 0u;
-static unsigned int g_townFadeAppliedSerial = 0u;
-static bool g_townFadeIn = false;
-static unsigned int g_townFadeFrames = 1u;
-static unsigned int g_townFadeElapsed = 0u;
-static float g_townFadeBlack = 1.0f;
+static int g_pendingSceneColorOffset[3]{};
+static int g_sceneColorOffset[3]{};
 
 static int g_viewMode = 7;
 static constexpr bool g_halfResolution = true;
@@ -4457,7 +4452,7 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model, bool preservePrefix
     g_vdp1GpuTextures.reserve(model.textureCount);
 
     const std::size_t firstTexture = g_vdp1GpuTextures.size();
-    const bool pooled = g_sceneGameMode == 3u;
+    const bool pooled = g_sceneGameMode == 1u || g_sceneGameMode == 3u;
     if (pooled && firstTexture < model.textureCount) {
         std::size_t requiredBytes = 0u;
         for (std::size_t i = firstTexture; i < model.textureCount; ++i) {
@@ -4811,7 +4806,6 @@ bool prepare_vdp1_model(
     // hundreds of unchanged textures. Explicit CRAM/VDP1 invalidation remains
     // authoritative and disables prefix retention via the dirty flag.
     bool preserveTexturePrefix = preserveResidentTextures &&
-        g_sceneGameMode == 3u &&
         g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
         !g_vdp1TextureDataDirty && model.texturesValid() &&
         !g_vdp1GpuTextures.empty() &&
@@ -4855,16 +4849,16 @@ bool prepare_vdp1_model(
     // 2048 quads exceeds the observed FLD_A3 traversal peak; retain exact
     // active counts everywhere below. Cap subdivision capacity at its existing
     // 16-bit index-count limit, and preserve other modes' allocation behavior.
-    const bool reserveFieldCapacity = preserveResidentTextures &&
-        g_sceneGameMode == 3u && subdivBuffersRequired;
-    const std::size_t allocationPolygons = reserveFieldCapacity
+    const bool reserveSceneCapacity = preserveResidentTextures &&
+        (g_sceneGameMode == 1u || g_sceneGameMode == 3u) && subdivBuffersRequired;
+    const std::size_t allocationPolygons = reserveSceneCapacity
         ? std::min<std::size_t>(65535u / 24u,
             std::max<std::size_t>(2048u, model.polygonCount + model.polygonCount / 4u))
         : model.polygonCount;
-    const unsigned int allocationVertices = reserveFieldCapacity
+    const unsigned int allocationVertices = reserveSceneCapacity
         ? std::max(vertexCount, static_cast<unsigned int>(allocationPolygons * 6u))
         : vertexCount;
-    const std::size_t allocationIndices = reserveFieldCapacity
+    const std::size_t allocationIndices = reserveSceneCapacity
         ? std::max(genericIndexCount, allocationPolygons * 8u)
         : genericIndexCount;
 
@@ -5019,7 +5013,7 @@ bool prepare_vdp1_model(
         if (subdivBuffersRequired) {
             // Prepare can reuse storage with a different polygon association.
             // Invalidate independently of the CPU static-prefix rebuild flag.
-            g_fieldSubdivPositionValid.clear();
+            g_sceneSubdivPositionValid.clear();
             if (reuseGeometry) {
                 // Positions, UVs, and topology are rewritten below into the
                 // already-mapped capacity. No allocation is required.
@@ -5067,8 +5061,8 @@ bool prepare_vdp1_model(
                     g_vdp1SubdivQuadIndices.size();
                 g_vdp1SubdivQuadIndices.resize(subdivIndexCount);
                 if (!reuseGeometry)
-                    g_fieldSubdivUvStates.clear();
-                g_fieldSubdivUvStates.resize(model.polygonCount);
+                    g_sceneSubdivUvStates.clear();
+                g_sceneSubdivUvStates.resize(model.polygonCount);
 
                 for (unsigned int p = 0;
                      p < static_cast<unsigned int>(model.polygonCount); ++p) {
@@ -5086,9 +5080,9 @@ bool prepare_vdp1_model(
                     // cell-set change frequently leaves these values unchanged
                     // at a buffer slot. Retain the existing nine UV pairs only
                     // when storage and topology for that slot already exist.
-                    auto& uvState = g_fieldSubdivUvStates[p];
+                    auto& uvState = g_sceneSubdivUvStates[p];
                     const unsigned int flip = record.textureFlip() & 3u;
-                    if (reuseGeometry && g_sceneGameMode == 3u &&
+                    if (reuseGeometry &&
                         p * 24u < previousSubdivIndexCount &&
                         uvState.width == texture.width &&
                         uvState.height == texture.height && uvState.flip == flip)
@@ -5190,7 +5184,7 @@ bool prepare_vdp1_model(
     }
 
     const std::uint64_t copyStartUs = sceKernelGetProcessTimeWide();
-    if (reserveFieldCapacity && !reuseGeometry) {
+    if (reserveSceneCapacity && !reuseGeometry) {
         logging::writef(
             "[FieldGeometryCapacity] active=%u reserved=%u verts=%u "
             "subVerts=%u subIndices=%u\n",
@@ -5737,8 +5731,8 @@ static std::uint16_t liveTownTextureIndex(
     };
     const std::uint64_t key = descriptorKey(
         record.cmdPmod, record.cmdColr, record.cmdSrca, record.cmdSize);
-    const bool indexedField = g_sceneGameMode == 3u;
-    if (indexedField) {
+    const bool indexedScene = g_sceneGameMode == 1u || g_sceneGameMode == 3u;
+    if (indexedScene) {
         // Index only appended descriptors. emplace preserves the original
         // linear search's first match if the source contains duplicates.
         if (g_fieldTextureIndices.bucket_count() < 2048u)
@@ -5758,7 +5752,7 @@ static std::uint16_t liveTownTextureIndex(
         if (found != g_fieldTextureIndices.end())
             return found->second;
     }
-    for (std::size_t i = 0; !indexedField &&
+    for (std::size_t i = 0; !indexedScene &&
          i < g_staticRoomCpuMesh.decodedTextureData.size(); ++i) {
         const auto& texture = g_staticRoomCpuMesh.decodedTextureData[i];
         if (record.cmdPmod == texture.cmdPmod &&
@@ -5778,7 +5772,7 @@ static std::uint16_t liveTownTextureIndex(
         if (next < 0xFFFFu) {
             g_staticRoomCpuMesh.decodedTextureData.push_back(
                 std::move(decoded));
-            if (indexedField) {
+            if (indexedScene) {
                 g_fieldTextureIndices.emplace(
                     key, static_cast<std::uint16_t>(next));
                 g_fieldTextureIndexedCount = next + 1u;
@@ -6222,7 +6216,7 @@ static void refreshLiveTownStaticLighting()
     // Same index math used by updateLiveTownAzelLighting(), but kept local to
     // this diagnostic so the checkpoint cannot alter rendering.
     const float activeFar =
-        g_sceneGameMode == 3u && g_nativeSceneFarPlane > 0.0f
+        g_nativeSceneFarPlane > 0.0f
             ? g_nativeSceneFarPlane
             : (g_staticRoomCpuReady &&
                g_staticRoomCpuMesh.cameraFar > 0.0f
@@ -6583,7 +6577,7 @@ static bool buildLiveTownFrame()
     g_liveTownStaticRebuilt =
         staticSignature != g_liveTownStaticSignature;
     if (g_liveTownStaticRebuilt) {
-        g_fieldSubdivPositionValid.clear();
+        g_sceneSubdivPositionValid.clear();
         g_liveTownCpuMesh.vertices.clear();
         g_liveTownCpuMesh.lightingVertices.clear();
         g_liveTownCpuMesh.polygonRecords.clear();
@@ -6679,7 +6673,7 @@ static bool buildLiveTownFrame()
     // Town mode owns Edge. Field mode publishes its dragon/rider hierarchy
     // through Azel's normal addObjectToDrawList() path, so never inject the
     // town actor into a field frame.
-    if (g_sceneGameMode == 1u)
+    if (g_sceneGameMode == 1u && g_scenePlayerPresent)
         appendLiveTownEdge();
     else {
         g_liveTownShadowFirstPolygon = 0u;
@@ -6753,7 +6747,7 @@ static bool buildLiveTownFrame()
     if (changed) {
         if (!prepare_vdp1_model(
                 liveTownVdp1Source(),
-                g_sceneGameMode == 3u,
+                true,
                 fullSubdivMode))
             return false;
         g_residentVdp1Model = ResidentVdp1Model::LiveTown;
@@ -6867,10 +6861,10 @@ static bool buildLiveTownFrame()
 static ViewerMat4 buildAuthenticRoomWvp()
 {
     const bool nativeCamera =
-        g_townPlayerReady && g_townCameraReady;
+        g_townCameraReady;
 
     ViewerMat4 view{};
-    if (g_sceneGameMode == 3u && g_nativeSceneViewValid) {
+    if (g_nativeSceneViewValid) {
         // Azel stores a row-major 3x4 matrix used as M * column-vector.
         // Neptune shaders consume row-vectors, so transpose it here.
         view = viewerIdentity();
@@ -6901,7 +6895,7 @@ static ViewerMat4 buildAuthenticRoomWvp()
     }
 
     const bool nativeFieldClip =
-        g_sceneGameMode == 3u &&
+        (g_sceneGameMode == 1u || g_sceneGameMode == 3u) &&
         g_nativeSceneNearPlane > 0.0f &&
         g_nativeSceneFarPlane > g_nativeSceneNearPlane;
     const float nearPlane =
@@ -9994,11 +9988,11 @@ bool submit_vdp1_model(
         visibleQuads.assign(model.polygonCount, 0u);
 
         const std::uint64_t tPayload = sceKernelGetProcessTimeWide();
-        const bool fieldStaticPositions = g_sceneGameMode == 3u &&
+        const bool sceneStaticPositions =
             model.vertices == g_liveTownCpuMesh.vertices.data();
-        if (fieldStaticPositions && g_fieldSubdivPositionValid.size() !=
+        if (sceneStaticPositions && g_sceneSubdivPositionValid.size() !=
                 g_liveTownStaticPolygonCount)
-            g_fieldSubdivPositionValid.assign(g_liveTownStaticPolygonCount, 0u);
+            g_sceneSubdivPositionValid.assign(g_liveTownStaticPolygonCount, 0u);
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             if (!g_liveTownGouraudPrep[p].visible)
@@ -10026,7 +10020,7 @@ bool submit_vdp1_model(
                 g_liveTownStaticRebuilt ||
                 p >= static_cast<unsigned int>(
                     g_liveTownStaticPolygonCount) ||
-                (fieldStaticPositions && !g_fieldSubdivPositionValid[p]);
+                (sceneStaticPositions && !g_sceneSubdivPositionValid[p]);
 
             float gridR[9], gridG[9], gridB[9];
             fillMidpointGrid3x3(
@@ -10051,7 +10045,7 @@ bool submit_vdp1_model(
             // first revealed on a cache-hit frame. Bounded independently of
             // the earlier probe window so a return flight can still report it.
             static unsigned int positionRepairBudget = 0u;
-            if (fieldStaticPositions && updatePosition &&
+            if (sceneStaticPositions && updatePosition &&
                 !g_liveTownStaticRebuilt && p < g_liveTownStaticPolygonCount &&
                 positionRepairBudget != 0u) {
                 unsigned int mismatches = 0u;
@@ -10083,8 +10077,8 @@ bool submit_vdp1_model(
                 dst.shadeG = gridG[i];
                 dst.shadeB = gridB[i];
             }
-            if (fieldStaticPositions && p < g_fieldSubdivPositionValid.size())
-                g_fieldSubdivPositionValid[p] = 1u;
+            if (sceneStaticPositions && p < g_sceneSubdivPositionValid.size())
+                g_sceneSubdivPositionValid[p] = 1u;
 
             if (g_fieldProbeActive && model.vertices ==
                     g_liveTownCpuMesh.vertices.data()) {
@@ -10760,78 +10754,6 @@ bool submit_vdp1_model(
     return true;
 }
 
-static float updateTownFadeAlpha()
-{
-    if (g_townFadeSerial != g_townFadeAppliedSerial) {
-        g_townFadeAppliedSerial = g_townFadeSerial;
-        g_townFadeElapsed = 0u;
-    }
-
-    const unsigned int duration = std::max(1u, g_townFadeFrames);
-    if (g_townFadeElapsed < duration) {
-        const float t =
-            static_cast<float>(g_townFadeElapsed + 1u) /
-            static_cast<float>(duration);
-        g_townFadeBlack = g_townFadeIn
-            ? std::max(0.0f, 1.0f - t)
-            : std::min(1.0f, t);
-        ++g_townFadeElapsed;
-    } else {
-        g_townFadeBlack = g_townFadeIn ? 0.0f : 1.0f;
-    }
-    return g_townFadeBlack;
-}
-
-static void drawFadeOverlay(
-    float alpha,
-    std::uint8_t red,
-    std::uint8_t green,
-    std::uint8_t blue)
-{
-    if (alpha <= 0.0f || !g_fadeVertices || !g_fadeIndices ||
-        !g_fadeFragmentProgram)
-        return;
-
-    if (g_overlayVertexSlot >= kOverlayVertexSlots)
-        return;
-    auto* vertices = g_fadeVertices + 6u * g_overlayVertexSlot++;
-    std::memcpy(vertices, g_fadeVertices, 6u * sizeof(*vertices));
-    const std::uint8_t a = static_cast<std::uint8_t>(
-        std::clamp<int>(
-            static_cast<int>(std::lround(alpha * 255.0f)), 0, 255));
-    for (unsigned i = 0; i < 6u; ++i) {
-        vertices[i].r = red;
-        vertices[i].g = green;
-        vertices[i].b = blue;
-        vertices[i].a = a;
-    }
-
-    sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
-    sceGxmSetFragmentProgram(g_probeContext, g_fadeFragmentProgram);
-    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
-    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
-    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
-    sceGxmSetFrontDepthWriteEnable(
-        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
-    sceGxmSetBackDepthWriteEnable(
-        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
-
-    void* uniforms = nullptr;
-    if (sceGxmReserveVertexDefaultUniformBuffer(
-            g_probeContext, &uniforms) >= 0 && uniforms) {
-        const ViewerMat4 identity = viewerIdentity();
-        sceGxmSetUniformDataF(
-            uniforms, g_probeWvpParam, 0, 16, identity.m);
-        sceGxmSetVertexStream(g_probeContext, 0, vertices);
-        sceGxmDraw(
-            g_probeContext,
-            SCE_GXM_PRIMITIVE_TRIANGLES,
-            SCE_GXM_INDEX_FORMAT_U16,
-            g_fadeIndices,
-            6u);
-    }
-}
-
 static void drawColorOffsetPass(
     SceGxmFragmentProgram* program,
     int red, int green, int blue)
@@ -10861,6 +10783,8 @@ static void drawColorOffsetPass(
 
     sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
     sceGxmSetFragmentProgram(g_probeContext, program);
+    sceGxmSetFrontPolygonMode(g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetBackPolygonMode(g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
@@ -12125,16 +12049,17 @@ static void renderBasicWingViewer()
         }
     }
 
-    // Scene entry restarts this fade, so a town fade-out cannot leave the
-    // next field black. BACK-only color offsets do not darken VDP1/RBG0.
-    // The native status menu owns its own VDP2/fade state. Applying the
-    // gameplay-scene fade after menu composition can cover the entire menu.
-    if (!nativeMenuFrame && roomAuthenticCameraMode && g_sceneGameMode == 1u)
-        drawFadeOverlay(updateTownFadeAlpha(), 0u, 0u, 0u);
-    else if (!nativeMenuFrame &&
-             roomAuthenticCameraMode && g_sceneGameMode == 3u) {
-        drawAzelColorOffsetForLayer(0x40u, true);
-        drawFadeOverlay(updateTownFadeAlpha(), 0u, 0u, 0u);
+    // All native scenes share Azel's published primary fade state. Neptune
+    // composes it after world/UI; Azel alone advances the color and countdown.
+    if (!nativeMenuFrame && roomAuthenticCameraMode) {
+        drawColorOffsetPass(g_colorOffsetAddFragmentProgram,
+            std::clamp(g_sceneColorOffset[0] * 2, 0, 255),
+            std::clamp(g_sceneColorOffset[1] * 2, 0, 255),
+            std::clamp(g_sceneColorOffset[2] * 2, 0, 255));
+        drawColorOffsetPass(g_colorOffsetSubtractFragmentProgram,
+            std::clamp(-g_sceneColorOffset[0] * 2, 0, 255),
+            std::clamp(-g_sceneColorOffset[1] * 2, 0, 255),
+            std::clamp(-g_sceneColorOffset[2] * 2, 0, 255));
     }
     g_profileComposeUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - composeStartUs);
@@ -12598,7 +12523,6 @@ static void updateLiveTownAzelLighting()
     // (32.0 / 0x200000 raw) and pushed field polygons prematurely into the
     // darkest end of the falloff table.
     const float activeFar =
-        g_sceneGameMode == 3u &&
         g_nativeSceneFarPlane > 0.0f
             ? g_nativeSceneFarPlane
             : (g_staticRoomCpuReady &&
@@ -12624,7 +12548,7 @@ static void updateLiveTownAzelLighting()
     auto falloffIndex = [&](std::size_t polygon) {
         const auto& v = g_liveTownCpuMesh.vertices[polygon * 6u];
         float depth = 0.0f;
-        if (g_sceneGameMode == 3u && g_nativeSceneViewValid) {
+        if (g_nativeSceneViewValid) {
             depth =
                 v.x * g_nativeSceneViewMatrix[8] +
                 v.y * g_nativeSceneViewMatrix[9] +
@@ -12788,6 +12712,7 @@ void presentation_publish_frame()
             1u, std::memory_order_release);
     }
     g_sceneGameMode = g_pendingSceneGameMode;
+    g_scenePlayerPresent = g_pendingScenePlayerPresent;
     g_sceneRbg0Enabled = g_pendingSceneRbg0Enabled;
     if (g_sceneRbg0Enabled) {
         g_sceneRbg0 = g_pendingSceneRbg0;
@@ -12833,9 +12758,7 @@ void presentation_publish_frame()
     g_viewMode = g_pendingViewMode;
     g_profileTasksUs = g_pendingProfileTasksUs;
     g_profileGameWaitUs = g_pendingProfileGameWaitUs;
-    g_townFadeSerial = g_pendingTownFadeSerial;
-    g_townFadeIn = g_pendingTownFadeIn;
-    g_townFadeFrames = g_pendingTownFadeFrames;
+    std::memcpy(g_sceneColorOffset, g_pendingSceneColorOffset, sizeof(g_sceneColorOffset));
     if (g_pendingVdp2TextValid) {
         std::memcpy(
             g_vdp2TextVram,
@@ -12897,24 +12820,11 @@ void presentation_publish_frame()
         sceKernelSignalSema(g_renderFrameReadySema, 1);
 }
 
-void presentation_fade_in(unsigned int frames)
+void presentation_set_scene_color_offset(int red, int green, int blue)
 {
-    g_pendingTownFadeIn = true;
-    g_pendingTownFadeFrames = std::max(1u, frames);
-    ++g_pendingTownFadeSerial;
-    logging::writef(
-        "[Presentation] FadeIn frames=%u\n",
-        g_pendingTownFadeFrames);
-}
-
-void presentation_fade_out(unsigned int frames)
-{
-    g_pendingTownFadeIn = false;
-    g_pendingTownFadeFrames = std::max(1u, frames);
-    ++g_pendingTownFadeSerial;
-    logging::writef(
-        "[Presentation] FadeOut frames=%u\n",
-        g_pendingTownFadeFrames);
+    g_pendingSceneColorOffset[0] = red;
+    g_pendingSceneColorOffset[1] = green;
+    g_pendingSceneColorOffset[2] = blue;
 }
 
 void presentation_camera_update()
@@ -12925,8 +12835,8 @@ void presentation_camera_update()
 void presentation_set_scene_mode(unsigned int gameMode)
 {
     g_pendingSceneGameMode = gameMode;
-    if (gameMode != 3u)
-        g_pendingNativeSceneViewValid = false;
+    g_pendingNativeSceneViewValid = false;
+    g_pendingScenePlayerPresent = false;
     g_pendingTownPresentationValid = true;
 }
 
@@ -12965,6 +12875,7 @@ void presentation_set_player(
     float transition)
 {
     g_townPlayerReady = true;
+    g_pendingScenePlayerPresent = true;
     g_pendingTownPlayerPosition[0] = x;
     g_pendingTownPlayerPosition[1] = y;
     g_pendingTownPlayerPosition[2] = z;
