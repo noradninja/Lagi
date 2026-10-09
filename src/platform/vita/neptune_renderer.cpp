@@ -582,6 +582,10 @@ static unsigned int g_profileClearUs = 0;
 static unsigned int g_profileBeginSceneUs = 0;
 static unsigned int g_profileComposeUs = 0;
 static unsigned int g_profileGxmWaitUs = 0;
+// Per-frame CPU-side timing for the native VDP2 background pipeline.
+// Resolve measures command recording and any BeginScene stall, not GPU execution.
+static unsigned int g_profileRbgPrepareUs = 0;
+static unsigned int g_profileRbgResolveUs = 0;
 static unsigned int g_profileRenderUs = 0;
 static unsigned int g_profilePresentUs = 0;
 
@@ -11860,6 +11864,8 @@ static void renderBasicWingViewer()
     g_profileLightingUs = 0u;
     g_profileSubmitUs = 0u;
     g_profileGxmWaitUs = 0u;
+    g_profileRbgPrepareUs = 0u;
+    g_profileRbgResolveUs = 0u;
     g_liveTownGouraudPrepValid = false;
 
     // g_viewMode is part of the published game->render frame. The render
@@ -11974,10 +11980,20 @@ static void renderBasicWingViewer()
         (viewerRenderHeight() + SCE_GXM_TILE_SIZEY - 1) &
         ~(SCE_GXM_TILE_SIZEY - 1);
 
-    if (nativeSceneMode && !prepareSceneVdp2Background())
-        return;
-    if (nativeSceneMode && !renderSceneVdp2BackgroundPass())
-        return;
+    if (nativeSceneMode) {
+        const std::uint64_t rbgPrepStart = sceKernelGetProcessTimeWide();
+        const bool prepared = prepareSceneVdp2Background();
+        g_profileRbgPrepareUs = static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - rbgPrepStart);
+        if (!prepared)
+            return;
+        const std::uint64_t rbgResolveStart = sceKernelGetProcessTimeWide();
+        const bool resolved = renderSceneVdp2BackgroundPass();
+        g_profileRbgResolveUs = static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - rbgResolveStart);
+        if (!resolved)
+            return;
+    }
     const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
     std::memset(colorBuffer, 0,
                 static_cast<std::size_t>(gxmPitch) *
@@ -12188,7 +12204,7 @@ static void renderBasicWingViewer()
             "light=%u gourPrep=%u gourPayload=%u gourBucket=%u "
             "gourIndex=%u gourDraw=%u clear=%u begin=%u submit=%u compose=%u "
             "cpuprep=%u gxmwait=%u render=%u polys=%u verts=%u "
-            "staticRebuilt=%u\n",
+            "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -12210,7 +12226,10 @@ static void renderBasicWingViewer()
             g_profileRenderUs,
             static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
             static_cast<unsigned>(g_liveTownCpuMesh.vertices.size()),
-            g_liveTownStaticRebuilt ? 1u : 0u);
+            g_liveTownStaticRebuilt ? 1u : 0u,
+            g_sceneRbg0Enabled ? 1u : 0u,
+            g_profileRbgPrepareUs,
+            g_profileRbgResolveUs);
     }
 
     if (g_showThreadTimingOsd) {
