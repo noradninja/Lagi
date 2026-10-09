@@ -1232,14 +1232,16 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "    popMatrix();\n    lagi::azel_bridge::end_view_relative_submission_scope();\n}\n\nvoid sEdgeTask::Delete"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townCutscene.cpp")
-  # Azel owns the in-engine cutscene state machine and command stream. Vita
-  # only replaces the desktop FILE* transport with Lagi's mounted ISO9660
-  # random-access reader. Keep GfsHn ABI-compatible by treating its FILE*
-  # member as an opaque Vita stream handle inside this generated source.
+  # Generic Vita bring-up for Azel's native in-engine town cutscene subsystem.
+  # Azel retains ownership of script ordering, fades, camera commands, entity
+  # animation, subtitles and completion. Lagi supplies only disc transport,
+  # task allocator semantics, a stable 30 Hz timeline and lifecycle cleanup.
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
-   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/disc_image.h\"\n#include \"lagi/platform.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/disc_image.h\"\n#include \"lagi/platform.h\"\n#include <algorithm>\n#include <cstdint>\n#include <cstring>"
    source_text "${source_text}")
+
+  # Replace desktop FILE* access with the mounted ISO9660 random-access layer.
   string(REPLACE
    [=[GfsHn GFS_Open(const std::string& name)
 {
@@ -1277,6 +1279,7 @@ GfsHn GFS_Open(const std::string& name)
     return temp;
 }]=]
    source_text "${source_text}")
+
   string(REPLACE
    [=[void GFS_GetFileSize(GfsHn handle, s32* sectorSize, s32* numSector, s32* lastSize)
 {
@@ -1302,6 +1305,7 @@ GfsHn GFS_Open(const std::string& name)
         : 0;
 }]=]
    source_text "${source_text}")
+
   string(REPLACE
    [=[s32 GFS_NwFread(GfsHn handle, s32 numSectors, u8* buffer, s32 bufferSize)
 {
@@ -1341,6 +1345,67 @@ GfsHn GFS_Open(const std::string& name)
     return numSectors;
 }]=]
    source_text "${source_text}")
+
+  # The Saturn work-area allocator clears task memory before Init. Recreate
+  # that contract explicitly and reserve the stream's 0x8000-byte PCM scratch
+  # area alongside the 0x20000-byte command ring buffer.
+  string(REPLACE
+   [=[void sCutsceneTask::Init(sCutsceneTask* pThis, s32 arg)
+{
+    pThis->m1D4 = dramAllocate(0x20000);
+
+    sStreamingParams streamingParams;
+    streamingParams.m0_streamingFile = &pThis->m4;
+    streamingParams.m4_streamingFileSize = sizeof(pThis->m4);
+    streamingParams.m8_buffer = pThis->m1D4;
+    streamingParams.mC_bufferSize = 0x20000;
+    streamingParams.m10_audioBuffer = nullptr;//TODO: figure this out
+    streamingParams.m14_audioBufferSize = 0x8000;
+
+    std::string streamFileName = readSaturnString(sSaturnPtr::createFromRaw(arg, gCurrentTownOverlay));
+    findMandatoryFileOnDisc(streamFileName.c_str());
+    pThis->m0 = openFileForStreaming(&streamingParams, streamFileName);
+
+}]=]
+   [=[void sCutsceneTask::Init(sCutsceneTask* pThis, s32 arg)
+{
+    pThis->m0 = nullptr;
+    pThis->m4 = sStreamingFile{};
+    pThis->m1D4 = dramAllocate(0x28000);
+    if (!pThis->m1D4)
+    {
+        lagi::platform::logging::writef("[AzelCutscene] stream allocation failed\\n");
+        pThis->m4.m28.m0 = -1;
+        pThis->m0 = &pThis->m4;
+        return;
+    }
+
+    sStreamingParams streamingParams{};
+    streamingParams.m0_streamingFile = &pThis->m4;
+    streamingParams.m4_streamingFileSize = sizeof(pThis->m4);
+    streamingParams.m8_buffer = pThis->m1D4;
+    streamingParams.mC_bufferSize = 0x20000;
+    streamingParams.m10_audioBuffer = pThis->m1D4 + 0x20000;
+    streamingParams.m14_audioBufferSize = 0x8000;
+
+    std::string streamFileName =
+        readSaturnString(sSaturnPtr::createFromRaw(arg, gCurrentTownOverlay));
+    lagi::platform::logging::writef(
+        "[AzelCutscene] request %s arg=%08X\\n",
+        streamFileName.c_str(), static_cast<unsigned>(arg));
+
+    pThis->m0 = openFileForStreaming(&streamingParams, streamFileName);
+    if (!pThis->m0)
+    {
+        lagi::platform::logging::writef(
+            "[AzelCutscene] open failed: %s\\n", streamFileName.c_str());
+        pThis->m4.m28.m0 = -1;
+        pThis->m0 = &pThis->m4;
+    }
+}]=]
+   source_text "${source_text}")
+
+  # Generic close/completion path. Every town script already waits on state 5.
   string(REPLACE
    [=[void updateStreamingFileReadSub0(sStreamingFile* iParm1)
 {
@@ -1358,9 +1423,129 @@ GfsHn GFS_Open(const std::string& name)
         delete stream;
         iParm1->m198.m0_gfsHandle.fHandle = nullptr;
     }
+
     iParm1->m198.m8_readIsPending = 0;
+    iParm1->m28.m0 = 5;
 }]=]
    source_text "${source_text}")
+
+  # Keep entity registration safe during failed/tearing-down streams.
+  string(REPLACE
+   "void setupCutsceneDragonSub0(sStreamingFile* r4, u32 index, u32 param_3, p_workArea param_4, s_3dModel* pModel)\n{\n    if (index < 0x11)"
+   "void setupCutsceneDragonSub0(sStreamingFile* r4, u32 index, u32 param_3, p_workArea param_4, s_3dModel* pModel)\n{\n    if (!r4) return;\n    if (index < 0x11)"
+   source_text "${source_text}")
+
+  string(REPLACE
+   [=[s32 scriptFunction_605861eSub0Sub0(sStreamingFile* r4)
+{
+    return r4->m28.m0;
+}]=]
+   [=[s32 scriptFunction_605861eSub0Sub0(sStreamingFile* r4)
+{
+    return r4 ? r4->m28.m0 : -1;
+}]=]
+   source_text "${source_text}")
+
+  # Upstream reconstruction still has Saturn timer/audio service stubs. Use the
+  # actual stream frame-rate against Lagi's 30 Hz game tick so Azel's command
+  # timeline, camera, subtitles and animation remain data-driven.
+  string(REPLACE
+   [=[void syncCutsceneTimer(sStreamingFile* psParm1)
+{
+    Unimplemented();
+}]=]
+   [=[void syncCutsceneTimer(sStreamingFile* psParm1)
+{
+    if (!psParm1 || psParm1->m28.m0 != 4 || pauseEngine[0])
+        return;
+
+    const u32 frameRate =
+        (psParm1->m194 && psParm1->m194->mC_frameRate)
+            ? psParm1->m194->mC_frameRate : 60u;
+
+    psParm1->m28.m7C += frameRate;
+    while (psParm1->m28.m7C >= 30u)
+    {
+        ++psParm1->m28.m84_frameIndex;
+        psParm1->m28.m7C -= 30u;
+    }
+}]=]
+   source_text "${source_text}")
+
+  string(REPLACE
+   [=[            if ((psParm1->m28).m8 == 0) {
+                Unimplemented();
+
+                // hack!
+                (psParm1->m28).m84_frameIndex+=2;
+                //assert(0);
+                /*
+]=]
+   [=[            if ((psParm1->m28).m8 == 0) {
+                /*
+]=]
+   source_text "${source_text}")
+
+  # These Saturn-side hooks do not own sequencing. Keep them benign while the
+  # native Azel parser advances commands and the Vita timeline drives frames.
+  string(REPLACE
+   [=[void cutsceneCommand0Sub1(sStreamingFile* param_1)
+{
+    assert(0);
+}]=]
+   [=[void cutsceneCommand0Sub1(sStreamingFile*)
+{
+}]=]
+   source_text "${source_text}")
+
+  string(REPLACE
+   [=[s32 cutsceneCommand1(sStreamingFile* param_1)
+{
+    Unimplemented();
+    return 0;
+}]=]
+   [=[s32 cutsceneCommand1(sStreamingFile*)
+{
+    // Opcode 1 is Saturn streamed-audio service data. Its packet remains part
+    // of Azel's command stream; Vita currently advances it while the game's
+    // native SCSP/BGM service continues independently.
+    return 0;
+}]=]
+   source_text "${source_text}")
+
+  string(REPLACE
+   [=[void pauseCutscene(sStreamingFile* r4, s32 r5)
+{
+    Unimplemented();
+}]=]
+   [=[void pauseCutscene(sStreamingFile*, s32)
+{
+    // pauseEngine[] already gates the Vita cutscene timeline.
+}]=]
+   source_text "${source_text}")
+
+  string(REPLACE
+   [=[
+    Unimplemented();
+}
+
+void pauseCutscene]=]
+   [=[
+}
+
+void pauseCutscene]=]
+   source_text "${source_text}")
+
+  # Validate this generated-source bridge as one unit so future upstream edits
+  # fail configuration rather than silently reverting to desktop/stub behavior.
+  string(REGEX MATCHALL
+   "LagiGfsHandle|stream allocation failed|pauseEngine\\[0\\] already gates"
+   lagi_cutscene_bridge_markers "${source_text}")
+  list(LENGTH lagi_cutscene_bridge_markers lagi_cutscene_bridge_marker_count)
+  if(lagi_cutscene_bridge_marker_count LESS 3)
+   message(FATAL_ERROR
+    "Native town cutscene bridge did not apply completely; upstream Azel changed")
+  endif()
  elseif(relative_path STREQUAL "town/townMainLogic.cpp")
   # Correct two reconstructed hard-coded town LCS physical-button tests to
   # match the original manual: B cancels LCS, while A/C enter/select it.
@@ -1375,12 +1560,12 @@ GfsHn GFS_Open(const std::string& name)
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/town.cpp")
-  # First-flight progression reaches Azel's native TWN_E006 handoff.
-  # Keep Azel's authentic lookup/dispatch for TWN_RUIN and TWN_E006; later
-  # town overlays remain trimmed until their own milestones are integrated.
+  # First-flight progression reaches Azel's native E006 cinematic and then
+  # the Excavation town. Preserve both authentic dispatches; later unrelated
+  # town overlays remain trimmed until their own dependencies are integrated.
   string(REPLACE
    "    else if (overlayFileName == \"TWN_EXCA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_EXCA;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E006;\n    }\n    else if (overlayFileName == \"TWN_E011.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E011;\n    }\n    else if (overlayFileName == \"TWN_E014.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E014;\n    }\n    else if (overlayFileName == \"TWN_CAMP.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CAMP;\n    }\n    else if (overlayFileName == \"TWN_ZOAH.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_ZOAH;\n    }\n    else if (overlayFileName == \"TWN_CARA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CARA;\n    }\n    else if (overlayFileName == \"TWN_SEEK.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_SEEK;\n    }"
-   "    else if (overlayFileName == \"TWN_E006.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E006;\n    }"
+   "    else if (overlayFileName == \"TWN_EXCA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_EXCA;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E006;\n    }"
    source_text "${source_text}")
 
   # Vita bridge for the authentic upstream static world-grid submission path.
@@ -1702,6 +1887,8 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  # E006 is Azel's native destination after the first FLD_A3 flight segment.
  # Its VDP2 background task is shared with the upstream excavation overlay.
  town/exca/twn_exca.cpp
+ town/excaEntity.cpp
+ town/townDragon.cpp
  town/e006/twn_e006.cpp
  town/ruin/twn_ruin.cpp
  town/ruin/twn_ruin_lock.cpp
