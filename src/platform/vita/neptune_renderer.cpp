@@ -12781,6 +12781,12 @@ void presentation_publish_frame()
         g_townPlayerPosition,
         g_pendingTownPlayerPosition,
         sizeof(g_townPlayerPosition));
+    if (g_sceneGameMode != g_pendingSceneGameMode) {
+        // Scene-mode transitions are real ownership boundaries. Defer all
+        // renderer-container cleanup to LagiRender via the existing epoch.
+        g_liveTownStaticIdentityResetEpoch.fetch_add(
+            1u, std::memory_order_release);
+    }
     g_sceneGameMode = g_pendingSceneGameMode;
     g_sceneRbg0Enabled = g_pendingSceneRbg0Enabled;
     if (g_sceneRbg0Enabled) {
