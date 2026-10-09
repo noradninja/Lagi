@@ -584,6 +584,8 @@ static unsigned int g_profileComposeUs = 0;
 static unsigned int g_profileGxmWaitUs = 0;
 static unsigned int g_profileRenderUs = 0;
 static unsigned int g_profilePresentUs = 0;
+static unsigned int g_profileFramePublishUs = 0;
+static std::uint64_t g_pendingPublishStartUs = 0;
 
 enum class ResidentVdp1Model {
     None,
@@ -677,6 +679,10 @@ struct FieldTextureSlab {
 static std::vector<FieldTextureSlab> g_fieldTextureSlabs;
 static bool g_vdp1TexturedReady = false;
 static bool g_vdp1TextureDataDirty = false;
+static std::uint64_t g_nativeTextureGeneration = 1u;
+static std::vector<std::uint64_t> g_nativeDecodedTextureGenerations;
+static std::vector<std::uint64_t> g_nativeGpuTextureGenerations;
+static unsigned int g_nativeTextureUploadCount = 0u;
 static bool g_vdp1BaseTexturedPayloadValid = false;
 
 // Lightweight VDP1 2D/UI translator. These resources are separate from the
@@ -775,6 +781,7 @@ static bool g_movieFrameVisible = false;
 static float g_movieVdp2Info[4] = {};
 static unsigned int g_movieVdp2Tvmd = 0u;
 struct RbgGpuState {
+    float parameterFormat[2]{};
     float planesA[16]{}, planesB[16]{}, ctrl[16]{}, plsz = 0.0f;
     float format[4]{}, transformA[8]{}, transformB[8]{};
     float coefficientA[4]{}, coefficientB[4]{};
@@ -782,8 +789,10 @@ struct RbgGpuState {
 static RbgGpuState g_movieRbg0;
 static RbgGpuState g_pendingSceneRbg0, g_sceneRbg0;
 static constexpr unsigned int kRawVdp2Bytes = 0x81000u;
-static unsigned char g_pendingSceneVdp2Raw[kRawVdp2Bytes]{};
-static unsigned char g_sceneVdp2Raw[kRawVdp2Bytes]{};
+static unsigned char g_sceneVdp2RawBuffers[2][kRawVdp2Bytes]{};
+static unsigned char* g_pendingSceneVdp2Raw = g_sceneVdp2RawBuffers[0];
+static unsigned char* g_sceneVdp2Raw = g_sceneVdp2RawBuffers[1];
+static bool g_pendingSceneVdp2RawDirty = false;
 static bool g_pendingSceneRbg0Enabled = false, g_sceneRbg0Enabled = false;
 static void* g_sceneVdp2GpuRaw = nullptr;
 static SceUID g_sceneVdp2RawUid = -1;
@@ -955,8 +964,10 @@ static bool g_pendingVdp2TextValid = false;
 static bool g_vdp2TextValid = false;
 static unsigned int g_pendingVdp2MenuId = 0u;
 static unsigned int g_vdp2MenuId = 0u;
-static int g_pendingVdp2MenuScroll[4]{};
-static int g_vdp2MenuScroll[4]{};
+static bool g_pendingVdp2SaveLayout = false;
+static bool g_vdp2SaveLayout = false;
+static int g_pendingVdp2MenuScroll[6]{};
+static int g_vdp2MenuScroll[6]{};
 
 static constexpr std::size_t kVdp2LineScrollBytes = 0x400u;
 static std::uint8_t g_pendingVdp2LineScroll[kVdp2LineScrollBytes]{};
@@ -1068,10 +1079,13 @@ static void mark30HzPresented()
     g_presentClockInitialized = true;
 }
 
-static void recordFlightPresentation(bool nativeField, std::uint64_t nowUs)
+static void recordFlightPresentation(
+    bool nativeField, std::uint64_t nowUs, unsigned int postRenderUs = 0u)
 {
     struct Window {
         std::uint64_t lastUs = 0u, totalUs = 0u, maxUs = 0u;
+        std::uint64_t totalPreRender = 0u, totalPostRender = 0u;
+        std::uint64_t totalPublish = 0u, totalPresent = 0u;
         unsigned int lastVcount = 0u, intervals = 0u;
         unsigned int over2Vblanks = 0u, maxVblanks = 0u;
         int mode = -1;
@@ -1091,23 +1105,38 @@ static void recordFlightPresentation(bool nativeField, std::uint64_t nowUs)
         window.maxUs = std::max(window.maxUs, intervalUs);
         window.maxVblanks = std::max(window.maxVblanks, vblanks);
         window.over2Vblanks += vblanks > 2u;
+        const std::uint64_t accountedUs =
+            static_cast<std::uint64_t>(g_profileRenderUs) +
+            postRenderUs + g_profilePresentUs;
+        window.totalPreRender += intervalUs > accountedUs
+            ? intervalUs - accountedUs : 0u;
+        window.totalPostRender += postRenderUs;
+        window.totalPublish += g_profileFramePublishUs;
+        window.totalPresent += g_profilePresentUs;
     }
     window.lastUs = nowUs;
     window.lastVcount = g_lastPresentVcount;
     if (window.intervals == 120u) {
         logging::writef(
             "[FlightPresentWindow] mode=%u intervals=%u mean=%lluus max=%lluus "
-            "fpsMilli=%llu over2Vblanks=%u maxVblanks=%u\n",
+            "fpsMilli=%llu over2Vblanks=%u maxVblanks=%u "
+            "preRender=%lluus postRender=%lluus publish=%lluus present=%lluus\n",
             static_cast<unsigned int>(window.mode), window.intervals,
             static_cast<unsigned long long>(window.totalUs / window.intervals),
             static_cast<unsigned long long>(window.maxUs),
             static_cast<unsigned long long>(
                 window.totalUs ? 1000000000ull * window.intervals / window.totalUs : 0u),
-            window.over2Vblanks, window.maxVblanks);
+            window.over2Vblanks, window.maxVblanks,
+            static_cast<unsigned long long>(window.totalPreRender / window.intervals),
+            static_cast<unsigned long long>(window.totalPostRender / window.intervals),
+            static_cast<unsigned long long>(window.totalPublish / window.intervals),
+            static_cast<unsigned long long>(window.totalPresent / window.intervals));
         // Retain the endpoint so the next window includes the following
         // interval, including any work or logging between these presents.
         window.intervals = window.over2Vblanks = window.maxVblanks = 0u;
         window.totalUs = window.maxUs = 0u;
+        window.totalPreRender = window.totalPostRender = 0u;
+        window.totalPublish = window.totalPresent = 0u;
     }
 }
 
@@ -1490,39 +1519,149 @@ static std::uint32_t decodeStatusMenuNbgPixel(
         12u);
 }
 
-static void drawAzelStatusMenuVdp2Gpu()
+static std::uint32_t decodeSaveMenuNbgPixel(
+    std::size_t mapBase,
+    int logicalX,
+    int logicalY,
+    int scrollX,
+    int scrollY)
+{
+    int mapX = (logicalX + scrollX) % 512;
+    int mapY = (logicalY + scrollY) % 512;
+    if (mapX < 0) mapX += 512;
+    if (mapY < 0) mapY += 512;
+
+    const int tileX = mapX >> 4;
+    const int tileY = mapY >> 4;
+    const std::size_t mapAddress =
+        mapBase + static_cast<std::size_t>((tileY * 32 + tileX) * 2);
+    if (mapAddress + 1u >= kVdp2TextSnapshotBytes)
+        return 0u;
+
+    const std::uint16_t patternName =
+        readVdp2Be16(g_vdp2TextVram, mapAddress);
+    int x = mapX & 15;
+    int y = mapY & 15;
+
+    // loadSaveBackground(): CHCN=1, CHSZ=1, PNB=1, CNSM=1,
+    // SCN=0, CAOS=5. This mirrors sampleTileAtCoordinate()'s native
+    // 16x16/no-flip 8bpp path exactly.
+    y &= 15;
+    if (y & 8)
+        y += 8;
+    if (x & 8)
+        y += 8;
+    x &= 7;
+
+    const unsigned int characterNumber =
+        static_cast<unsigned int>(patternName & 0x0FFFu) << 2;
+    const std::size_t dotOffset =
+        static_cast<std::size_t>(characterNumber) * 0x20u +
+        static_cast<std::size_t>(y * 8 + x);
+    if (dotOffset >= kVdp2TextSnapshotBytes)
+        return 0u;
+
+    const unsigned int colorIndex = g_vdp2TextVram[dotOffset];
+    if (!colorIndex)
+        return 0u;
+    const unsigned int paladdr =
+        static_cast<unsigned int>(patternName & 0x7000u) >> 4;
+    const unsigned int paletteEntry =
+        5u * 0x100u | (paladdr | colorIndex);
+    const std::size_t cramOffset =
+        static_cast<std::size_t>(paletteEntry) * 2u;
+    if (cramOffset + 1u >= kVdp2CramSnapshotBytes)
+        return 0u;
+    return vdp2Rgb555ToAbgr(readVdp2Be16(g_vdp2Cram, cramOffset));
+}
+
+static void overlayAzelTextPlane(int scrollX, int scrollY)
+{
+    constexpr int kTileSize = 8;
+    constexpr int kMapColumns = 64;
+    constexpr int kMapRows = 64;
+    constexpr std::size_t kTextMapOffset = 0x6000u;
+    constexpr std::size_t kFontPaletteOffset = 0x0E00u;
+
+    for (unsigned int sy = 0; sy < kVdp2TextLayerHeight; ++sy) {
+        int mapY = (static_cast<int>(sy) + scrollY) % (kMapRows * kTileSize);
+        if (mapY < 0) mapY += kMapRows * kTileSize;
+        for (unsigned int sx = 0; sx < kVdp2TextLayerWidth; ++sx) {
+            int mapX = (static_cast<int>(sx) + scrollX) %
+                (kMapColumns * kTileSize);
+            if (mapX < 0) mapX += kMapColumns * kTileSize;
+            const std::size_t mapOffset = kTextMapOffset +
+                static_cast<std::size_t>(((mapY >> 3) * kMapColumns +
+                    (mapX >> 3)) * 2);
+            if (mapOffset + 1u >= kVdp2TextSnapshotBytes)
+                continue;
+            const std::uint16_t patternName =
+                readVdp2Be16(g_vdp2TextVram, mapOffset);
+            if (!patternName)
+                continue;
+            const unsigned int palette = (patternName >> 12) & 0x0Fu;
+            const unsigned int tile = patternName & 0x0FFFu;
+            const std::size_t dotOffset =
+                static_cast<std::size_t>(tile) * 32u +
+                static_cast<std::size_t>((mapY & 7) * 4 + (mapX & 7) / 2);
+            if (dotOffset >= kVdp2TextSnapshotBytes)
+                continue;
+            const std::uint8_t packed = g_vdp2TextVram[dotOffset];
+            const unsigned int colorIndex = (mapX & 1)
+                ? static_cast<unsigned int>(packed & 0x0Fu)
+                : static_cast<unsigned int>(packed >> 4);
+            if (!colorIndex)
+                continue;
+            const std::size_t cramOffset = kFontPaletteOffset +
+                static_cast<std::size_t>((palette * 16u + colorIndex) * 2u);
+            if (cramOffset + 1u >= kVdp2CramSnapshotBytes)
+                continue;
+            g_vdp2TextLayerPixels[sy * kVdp2TextLayerWidth + sx] =
+                vdp2Rgb555ToAbgr(readVdp2Be16(g_vdp2Cram, cramOffset));
+        }
+    }
+}
+
+static void drawAzelMenuVdp2Gpu()
 {
     if (!g_vdp2TextValid ||
-        !g_vdp2MenuId ||
+        (!g_vdp2MenuId && !g_vdp2SaveLayout) ||
         !g_textureVertexProgram ||
         !g_textureFragmentProgram ||
         !g_textureWvpParam ||
         !ensureVdp2UiGpuBuffers())
         return;
 
-    // setupVdp2ForMenu() assigns NBG0 to 0x71800 and NBG1 to 0x71000.
-    // PRINA gives NBG0 the higher priority, so decode NBG1 first and let
-    // non-transparent NBG0 pixels replace it.
+    // Both native menu families give NBG0 the higher priority. Select the
+    // original map/character format rather than interpreting SAVE.SCB as the
+    // status menu's 4bpp tiles.
     for (unsigned int y = 0; y < kVdp2TextLayerHeight; ++y) {
         for (unsigned int x = 0; x < kVdp2TextLayerWidth; ++x) {
-            std::uint32_t color = decodeStatusMenuNbgPixel(
-                0x71000u,
-                static_cast<int>(x),
-                static_cast<int>(y),
-                g_vdp2MenuScroll[2],
-                g_vdp2MenuScroll[3]);
-            const std::uint32_t nbg0 = decodeStatusMenuNbgPixel(
-                0x71800u,
-                static_cast<int>(x),
-                static_cast<int>(y),
-                g_vdp2MenuScroll[0],
-                g_vdp2MenuScroll[1]);
+            const std::size_t nbg1Map =
+                g_vdp2SaveLayout ? 0x20800u : 0x71000u;
+            const std::size_t nbg0Map =
+                g_vdp2SaveLayout ? 0x20000u : 0x71800u;
+            std::uint32_t color = g_vdp2SaveLayout
+                ? decodeSaveMenuNbgPixel(nbg1Map, static_cast<int>(x),
+                    static_cast<int>(y), g_vdp2MenuScroll[2],
+                    g_vdp2MenuScroll[3])
+                : decodeStatusMenuNbgPixel(nbg1Map, static_cast<int>(x),
+                    static_cast<int>(y), g_vdp2MenuScroll[2],
+                    g_vdp2MenuScroll[3]);
+            const std::uint32_t nbg0 = g_vdp2SaveLayout
+                ? decodeSaveMenuNbgPixel(nbg0Map, static_cast<int>(x),
+                    static_cast<int>(y), g_vdp2MenuScroll[0],
+                    g_vdp2MenuScroll[1])
+                : decodeStatusMenuNbgPixel(nbg0Map, static_cast<int>(x),
+                    static_cast<int>(y), g_vdp2MenuScroll[0],
+                    g_vdp2MenuScroll[1]);
             if (nbg0)
                 color = nbg0;
             g_vdp2TextLayerPixels[
                 y * kVdp2TextLayerWidth + x] = color;
         }
     }
+    overlayAzelTextPlane(g_vdp2MenuScroll[4], g_vdp2MenuScroll[5]);
 
     const float renderAspect =
         static_cast<float>(viewerRenderWidth()) /
@@ -1850,12 +1989,14 @@ static void applyPendingRendererInvalidation()
         g_liveTownMaterialCache.clear();
         g_fieldTextureIndices.clear();
         g_fieldTextureIndexedCount = 0u;
-        freeVdp1Textures();
+        // Keep mapped texture storage until prepare validates the refreshed
+        // descriptor table. Content invalidation need not churn allocations.
     }
 
     // CRAM changes alter decoded color only. Existing polygon/material indices
     // remain valid; prepare_vdp1_model() will refresh the resident texture data.
     g_vdp1TextureDataDirty = true;
+    ++g_nativeTextureGeneration;
 }
 
 bool init()
@@ -2943,6 +3084,13 @@ static RbgGpuState makeRbgGpuState(const FrontendRbg0State& state)
     rbg.format[1] = static_cast<float>(state.pncr);
     rbg.format[2] = static_cast<float>(state.craofb);
     rbg.format[3] = static_cast<float>(state.plsz);
+    // Low two bits are plane size, next two are the native screen-over
+    // mode; bit 4 disables transparent-dot handling (R0TPON).
+    const unsigned transparentDisable = (state.bgon & 0x1000u) ? 16u : 0u;
+    rbg.parameterFormat[0] = static_cast<float>(
+        state.plsz | (state.screenOverA << 2) | transparentDisable);
+    rbg.parameterFormat[1] = static_cast<float>(
+        state.plszB | (state.screenOverB << 2) | transparentDisable);
     rbg.ctrl[1] = static_cast<float>(state.ktctl);
     rbg.ctrl[2] = static_cast<float>(state.ktaof);
     rbg.ctrl[3] = static_cast<float>(state.wctlc);
@@ -2967,6 +3115,8 @@ static RbgGpuState makeRbgGpuState(const FrontendRbg0State& state)
         rbg.transformA[i] = state.transformA[i];
         rbg.transformB[i] = state.transformB[i];
     }
+    rbg.coefficientA[3] = static_cast<float>(state.overPatternA);
+    rbg.coefficientB[3] = static_cast<float>(state.overPatternB);
     return rbg;
 }
 
@@ -2985,6 +3135,7 @@ void presentation_set_vdp2_background(const FrontendRbg0State& state,
     g_pendingSceneRbg0 = makeRbgGpuState(state);
     std::memcpy(g_pendingSceneVdp2Raw, vram, 0x80000u);
     std::memcpy(g_pendingSceneVdp2Raw + 0x80000u, cram, 0x1000u);
+    g_pendingSceneVdp2RawDirty = true;
 }
 
 bool frontend_present_vdp2(
@@ -3247,6 +3398,7 @@ static void freeVdp1Textures()
         texture.data = nullptr;
     }
     g_vdp1GpuTextures.clear();
+    g_nativeGpuTextureGenerations.clear();
     for (auto& slab : g_fieldTextureSlabs)
         freeMovieMappedBlock(slab.uid, slab.data);
     g_fieldTextureSlabs.clear();
@@ -3846,6 +3998,9 @@ static void drawAzelVdp2CinematicBarsGpu()
 }
 
 
+static bool decodeLiveVdp1Texture(const azel::SaturnPolygonRecord& record,
+    azel::DecodedMode1Texture& out);
+
 static GpuMode1Texture* findOrUploadVdp1UiTexture(
     const azel_bridge::Vdp1UiCommand& command)
 {
@@ -3863,11 +4018,11 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         (static_cast<unsigned int>(command.cmdPmod) >> 3) & 7u;
 
     // Screen-space UI commands are backed by live VDP1 VRAM rather than a
-    // town CGB bundle. Decode 4bpp color-bank and color-LUT sprites directly
+    // town CGB bundle. Decode native color-bank, LUT and RGB555 sprites directly
     // from Saturn memory for normal, scaled and distorted sprite commands.
     // Geometry type does not change the texture encoding.
     if ((commandType == 0u || commandType == 1u || commandType == 2u) &&
-        (colorMode == 0u || colorMode == 1u)) {
+        colorMode <= 5u) {
         const unsigned int width =
             ((static_cast<unsigned int>(command.cmdSize) >> 8) & 0x3Fu) * 8u;
         const unsigned int height =
@@ -3875,7 +4030,8 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         if (!width || !height)
             return nullptr;
 
-        const unsigned int texBytes = (width * height) / 2u;
+        const unsigned int texBytes = colorMode <= 1u ? (width * height) / 2u
+            : width * height * (colorMode == 5u ? 2u : 1u);
         const unsigned int texAddress =
             static_cast<unsigned int>(command.cmdSrca) << 3;
         if (texAddress + texBytes > 0x80000u)
@@ -3894,6 +4050,19 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         decoded.width = width;
         decoded.height = height;
         decoded.rgba.assign(width * height, 0u);
+
+        if (colorMode >= 2u) {
+            // World particles and pickup sprites use live VRAM too. Never
+            // fall back to TWN_RUIN's bundle/palette for a field command.
+            azel::SaturnPolygonRecord record{};
+            record.cmdCtrl = command.cmdCtrl;
+            record.cmdPmod = command.cmdPmod;
+            record.cmdColr = command.cmdColr;
+            record.cmdSrca = command.cmdSrca;
+            record.cmdSize = command.cmdSize;
+            if (!decodeLiveVdp1Texture(record, decoded))
+                return nullptr;
+        } else {
 
         const bool spd = (command.cmdPmod & 0x40u) != 0u;
         const bool endDisabled = (command.cmdPmod & 0x80u) != 0u;
@@ -3958,6 +4127,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
             }
         }
 
+        }
         const unsigned int stridePixels =
             (decoded.width + 7u) & ~7u;
         const unsigned int bytes =
@@ -4415,6 +4585,32 @@ static void drawPublishedVdp1Ui()
                 saturnAspectCorrection;
             pos[3][1] = -static_cast<float>(command.yd) / 112.0f;
         }
+        // Identify oversized late-composed sprites without suppressing or
+        // reordering native commands. Limit to eight unique field rectangles.
+        if (g_sceneGameMode == 3u && commandType != 0u) {
+            static unsigned rectangleBudget = 8u;
+            static std::uint64_t lastRectangle = 0u;
+            const float width = std::abs(pos[2][0] - pos[0][0]) *
+                176.0f / saturnAspectCorrection;
+            const float height = std::abs(pos[2][1] - pos[0][1]) * 112.0f;
+            const std::uint64_t key =
+                (static_cast<std::uint64_t>(command.cmdSrca) << 32) |
+                (static_cast<std::uint64_t>(command.cmdSize) << 16) |
+                command.cmdPmod;
+            if (rectangleBudget && width * height >= 8192.0f &&
+                key != lastRectangle) {
+                lastRectangle = key;
+                --rectangleBudget;
+                logging::writef(
+                    "[SceneOverlay] type=%u CTRL=%04X PMOD=%04X "
+                    "COLR=%04X SRCA=%04X SIZE=%04X "
+                    "A=%d,%d B=%d,%d C=%d,%d D=%d,%d\n",
+                    commandType, command.cmdCtrl, command.cmdPmod,
+                    command.cmdColr, command.cmdSrca, command.cmdSize,
+                    command.xa, command.ya, command.xb, command.yb,
+                    command.xc, command.yc, command.xd, command.yd);
+            }
+        }
         for (unsigned int i = 0; i < 4u; ++i) {
             spriteVertices[i] = {
                 pos[i][0], pos[i][1], 0.0f,
@@ -4475,10 +4671,13 @@ static void drawPublishedVdp1Ui()
 
 }
 
-static bool uploadVdp1Textures(const Vdp1ModelSource& model, bool preservePrefix = false)
+static bool uploadVdp1Textures(const Vdp1ModelSource& model,
+    bool preservePrefix = false, bool refreshPrefix = false)
 {
     if (!preservePrefix)
         freeVdp1Textures();
+
+    g_nativeTextureUploadCount = 0u;
 
     if (!model.valid())
         return false;
@@ -4487,6 +4686,7 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model, bool preservePrefix
 
     const std::size_t firstTexture = g_vdp1GpuTextures.size();
     const bool pooled = g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u;
+    g_nativeGpuTextureGenerations.resize(model.textureCount, 0u);
     if (pooled && firstTexture < model.textureCount) {
         std::size_t requiredBytes = 0u;
         for (std::size_t i = firstTexture; i < model.textureCount; ++i) {
@@ -4509,7 +4709,7 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model, bool preservePrefix
                 static_cast<unsigned>(g_fieldTextureSlabs.size()));
         }
     }
-    for (std::size_t textureIndex = firstTexture;
+    for (std::size_t textureIndex = refreshPrefix ? 0u : firstTexture;
          textureIndex < model.textureCount; ++textureIndex) {
         const auto& source = model.textures[textureIndex];
         if (!source.width || !source.height ||
@@ -4520,8 +4720,16 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model, bool preservePrefix
         const unsigned int bytes =
             stridePixels * source.height * sizeof(std::uint32_t);
 
+        const bool retained = textureIndex < firstTexture;
+        if (pooled && retained &&
+            textureIndex < g_nativeDecodedTextureGenerations.size() &&
+            g_nativeGpuTextureGenerations[textureIndex] ==
+                g_nativeDecodedTextureGenerations[textureIndex])
+            continue;
         GpuMode1Texture gpu{};
-        if (pooled) {
+        if (retained) {
+            gpu = g_vdp1GpuTextures[textureIndex];
+        } else if (pooled) {
             auto& slab = g_fieldTextureSlabs.back();
             gpu.data = static_cast<unsigned char*>(slab.data) + slab.used;
             slab.used += (bytes + 63u) & ~std::size_t(63u);
@@ -4543,17 +4751,23 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model, bool preservePrefix
         gpu.cmdColr = source.cmdColr;
         gpu.cmdSrca = source.cmdSrca;
         gpu.cmdSize = source.cmdSize;
-        std::memset(gpu.data, 0, bytes);
-
         auto* dst = static_cast<std::uint32_t*>(gpu.data);
-        for (unsigned int y = 0; y < source.height; ++y) {
-            std::memcpy(
-                dst + y * stridePixels,
-                source.rgba.data() + y * source.width,
-                source.width * sizeof(std::uint32_t));
+        if (stridePixels == source.width) {
+            std::memcpy(dst, source.rgba.data(), bytes);
+        } else {
+            // Preserve zeroed padding without clearing texels that the upload
+            // immediately overwrites. The resulting GPU bytes are identical.
+            for (unsigned int y = 0; y < source.height; ++y) {
+                auto* row = dst + y * stridePixels;
+                std::memcpy(row,
+                    source.rgba.data() + y * source.width,
+                    source.width * sizeof(std::uint32_t));
+                std::memset(row + source.width, 0,
+                    (stridePixels - source.width) * sizeof(std::uint32_t));
+            }
         }
 
-        if (sceGxmTextureInitLinear(
+        if (!retained && sceGxmTextureInitLinear(
                 &gpu.texture,
                 gpu.data,
                 SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
@@ -4567,12 +4781,21 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model, bool preservePrefix
             return false;
         }
 
-        sceGxmTextureSetMinFilter(
-            &gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
-        sceGxmTextureSetMagFilter(
-            &gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        if (!retained) {
+            sceGxmTextureSetMinFilter(
+                &gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+            sceGxmTextureSetMagFilter(
+                &gpu.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        }
 
-        g_vdp1GpuTextures.push_back(gpu);
+        if (retained)
+            g_vdp1GpuTextures[textureIndex] = gpu;
+        else
+            g_vdp1GpuTextures.push_back(gpu);
+        ++g_nativeTextureUploadCount;
+        if (pooled && textureIndex < g_nativeDecodedTextureGenerations.size())
+            g_nativeGpuTextureGenerations[textureIndex] =
+                g_nativeDecodedTextureGenerations[textureIndex];
     }
 
     return g_vdp1GpuTextures.size() == model.textureCount;
@@ -4837,11 +5060,11 @@ bool prepare_vdp1_model(
 
     // Live field material discovery appends to the decoded texture table.
     // Growth must upload only the suffix, rather than freeing/reuploading
-    // hundreds of unchanged textures. Explicit CRAM/VDP1 invalidation remains
-    // authoritative and disables prefix retention via the dirty flag.
+    // hundreds of unchanged textures. Invalidations refresh retained content;
+    // compatible mappings can survive even when their pixels are dirty.
     bool preserveTexturePrefix = preserveResidentTextures &&
         g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-        !g_vdp1TextureDataDirty && model.texturesValid() &&
+        model.texturesValid() &&
         !g_vdp1GpuTextures.empty() &&
         g_vdp1GpuTextures.size() <= model.textureCount;
     if (preserveTexturePrefix) {
@@ -5021,14 +5244,15 @@ bool prepare_vdp1_model(
                 sceKernelGetProcessTimeWide();
             const unsigned int retainedTextures = preserveTexturePrefix
                 ? static_cast<unsigned int>(g_vdp1GpuTextures.size()) : 0u;
-            const bool uploaded = uploadVdp1Textures(model, preserveTexturePrefix);
+            const bool uploaded = uploadVdp1Textures(model, preserveTexturePrefix,
+                preserveTexturePrefix && g_vdp1TextureDataDirty);
             g_profilePrepareTextureUploadUs = static_cast<unsigned int>(
                 sceKernelGetProcessTimeWide() - textureUploadStartUs);
             if (g_sceneGameMode == 3u) {
                 logging::writef(
                     "[FieldTextureUpload] retained=%u total=%u uploaded=%u time=%uus ok=%u\n",
                     retainedTextures, static_cast<unsigned int>(g_vdp1GpuTextures.size()),
-                    static_cast<unsigned int>(g_vdp1GpuTextures.size()) - retainedTextures,
+                    g_nativeTextureUploadCount,
                     g_profilePrepareTextureUploadUs, uploaded);
             }
             if (!uploaded)
@@ -5665,6 +5889,10 @@ static bool decodeLiveVdp1Texture(
 
     const unsigned textureAddress =
         static_cast<unsigned>(record.cmdSrca) << 3;
+    const unsigned textureBytes = mode <= 1u ? width * height / 2u
+        : width * height * (mode == 5u ? 2u : 1u);
+    if (textureAddress + textureBytes > 0x80000u)
+        return false;
     const unsigned char* const src =
         getVdp1Pointer(0x25C00000u + textureAddress);
     if (!src)
@@ -5736,14 +5964,47 @@ static bool decodeLiveVdp1Texture(
         return true;
     }
 
+    case 2u:
+    case 3u:
+    case 4u: {
+        const unsigned mask = mode == 2u ? 0x3Fu : mode == 3u ? 0x7Fu : 0xFFu;
+        const unsigned bank = record.cmdColr & (0x7FFu & ~mask);
+        for (unsigned y = 0; y < height; ++y) {
+            unsigned endCount = 0u;
+            for (unsigned x = 0; x < width; ++x) {
+                const unsigned p = y * width + x;
+                const unsigned rawDot = src[p];
+                if (endMode && endCount >= 2u) continue;
+                if (rawDot == 0xFFu && !endDisabled) {
+                    ++endCount;
+                    continue;
+                }
+                const unsigned dot = rawDot & mask;
+                if (!dot && !spd) continue;
+                out.rgba[p] = vdp2Rgb555ToAbgr(readVdp2Be16(
+                    g_vdp2Cram, ((bank | dot) * 2u) & 0xFFFu));
+            }
+        }
+        return true;
+    }
+
     case 5u: {
-        for (unsigned p = 0; p < width * height; ++p) {
-            const std::uint16_t color =
-                static_cast<std::uint16_t>(
-                    (static_cast<unsigned>(src[p * 2u]) << 8) |
-                    static_cast<unsigned>(src[p * 2u + 1u]));
-            if (color & 0x8000u)
+        for (unsigned y = 0; y < height; ++y) {
+            unsigned endCount = 0u;
+            for (unsigned x = 0; x < width; ++x) {
+                const unsigned p = y * width + x;
+                const std::uint16_t color =
+                    static_cast<std::uint16_t>(
+                        (static_cast<unsigned>(src[p * 2u]) << 8) |
+                        static_cast<unsigned>(src[p * 2u + 1u]));
+                if (endMode && endCount >= 2u) continue;
+                if (color == 0x7FFFu && !endDisabled) {
+                    ++endCount;
+                    continue;
+                }
+                if (!(color & 0x8000u) && !spd) continue;
                 out.rgba[p] = vdp2Rgb555ToAbgr(color);
+            }
         }
         return true;
     }
@@ -5806,6 +6067,8 @@ static std::uint16_t liveTownTextureIndex(
         if (next < 0xFFFFu) {
             g_staticRoomCpuMesh.decodedTextureData.push_back(
                 std::move(decoded));
+            g_nativeDecodedTextureGenerations.resize(next + 1u, 0u);
+            g_nativeDecodedTextureGenerations[next] = g_nativeTextureGeneration;
             if (indexedScene) {
                 g_fieldTextureIndices.emplace(
                     key, static_cast<std::uint16_t>(next));
@@ -6719,6 +6982,29 @@ static bool buildLiveTownFrame()
         sceKernelGetProcessTimeWide() - tEdge);
 
     const std::uint64_t tValidate = sceKernelGetProcessTimeWide();
+    // Refresh only materials referenced by this native frame. Historical
+    // descriptors stay resident, but cannot supply stale texels when a Saturn
+    // address is reused or its palette changes. An inactive stale entry is
+    // refreshed when it next becomes active, not uploaded on every transition.
+    auto& decodedTextures = g_staticRoomCpuMesh.decodedTextureData;
+    if (g_nativeDecodedTextureGenerations.size() > decodedTextures.size())
+        g_nativeDecodedTextureGenerations.clear();
+    g_nativeDecodedTextureGenerations.resize(decodedTextures.size(), 0u);
+    for (std::size_t polygon = 0;
+         polygon < g_liveTownCpuMesh.polygonTextureIndices.size() &&
+         polygon < g_liveTownCpuMesh.polygonRecords.size(); ++polygon) {
+        const auto index = g_liveTownCpuMesh.polygonTextureIndices[polygon];
+        if (index >= decodedTextures.size() ||
+            g_nativeDecodedTextureGenerations[index] == g_nativeTextureGeneration)
+            continue;
+        const auto& descriptor = g_liveTownCpuMesh.polygonRecords[polygon];
+        azel::DecodedMode1Texture refreshed{};
+        if (!decodeLiveVdp1Texture(descriptor, refreshed))
+            return false;
+        decodedTextures[index] = std::move(refreshed);
+        g_nativeDecodedTextureGenerations[index] = g_nativeTextureGeneration;
+        g_vdp1TextureDataDirty = true;
+    }
     std::uint64_t signature = staticSignature;
     signature ^= g_liveTownCpuMesh.polygonRecords.size();
     signature *= 1099511628211ull;
@@ -11069,12 +11355,15 @@ static bool drawVdp2Rbg0Gpu(
             (ktctl & coefficientSizeBit) ? 2.0f : 4.0f;
         const unsigned int coefficientOffset =
             (ktaof >> coefficientOffsetShift) & 0x7u;
+        bool sharedPlane = true;
+        for (unsigned i = 1; i < 16u; ++i)
+            sharedPlane = sharedPlane && planes[i] == planes[0];
         const float rbgInfo[4] = {
             static_cast<float>(coefficientOffset) *
                 coefficientSize * 65536.0f,
             (ktctl & coefficientEnableBit) ? 1.0f : 0.0f,
             coefficientSize,
-            rbg.plsz,
+            sharedPlane ? 1.0f : 0.0f,
         };
 
         sceGxmSetUniformDataF(
@@ -11093,10 +11382,14 @@ static bool drawVdp2Rbg0Gpu(
             rbgUniforms,
             g_vdp2Rbg0InfoParam,
             0, 4, rbgInfo);
+        float parameterFormat[4] = {
+            rbg.format[0], rbg.format[1], rbg.format[2],
+            rbg.parameterFormat[coefficientEnableBit == 1u ? 0u : 1u]
+        };
         sceGxmSetUniformDataF(
             rbgUniforms,
             g_vdp2Rbg0FormatParam,
-            0, 4, rbg.format);
+            0, 4, parameterFormat);
         const float layerWindowInfo[4] = {
             rbg.ctrl[3], rbg.ctrl[7], rbg.ctrl[5], 0.0f
         };
@@ -11874,11 +12167,11 @@ static void renderBasicWingViewer()
     // zero world submissions while still carrying VDP2/VDP1 UI commands.
     // Keep the native scene presentation path alive for those UI-only frames.
     const bool nativeMenuFrame =
-        nativeSceneContext && g_vdp2MenuId != 0u;
+        g_vdp2TextValid && (g_vdp2MenuId != 0u || g_vdp2SaveLayout);
     const bool roomMode =
-        g_staticRoomCpuReady || nativeSceneContext;
+        g_staticRoomCpuReady || nativeSceneContext || nativeMenuFrame;
     const bool roomAuthenticCameraMode =
-        nativeSceneContext ||
+        nativeSceneContext || nativeMenuFrame ||
         (g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraValid);
 
     // Legacy Basic Wing regression camera state is renderer-owned. Interactive
@@ -11919,14 +12212,14 @@ static void renderBasicWingViewer()
             return;
         g_residentVdp1Model = ResidentVdp1Model::BasicWing;
         applyBasicWingAnimationFrame(g_basicWingAnimationFrame);
-    } else if (nativeSceneMode || (!nativeSceneContext && roomAuthenticCameraMode)) {
+    } else if (nativeSceneMode || (!nativeSceneContext && !nativeMenuFrame && roomAuthenticCameraMode)) {
         const std::uint64_t buildStartUs = sceKernelGetProcessTimeWide();
         const bool liveTownBuilt = buildLiveTownFrame();
         g_profileBuildUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - buildStartUs);
         if (!liveTownBuilt)
             return;
-    } else if (roomMode && !nativeSceneContext) {
+    } else if (roomMode && !nativeSceneContext && !nativeMenuFrame) {
         const ResidentVdp1Model desiredResident =
             ResidentVdp1Model::StaticRoomDiagnostic;
 
@@ -11967,13 +12260,6 @@ static void renderBasicWingViewer()
     SceGxmDepthStencilSurface* const depthSurface =
         g_halfResolution ? &g_probeDepthSurfaceHalf : &g_probeDepthSurface;
 
-    const unsigned int alignedW =
-        (viewerRenderWidth() + SCE_GXM_TILE_SIZEX - 1) &
-        ~(SCE_GXM_TILE_SIZEX - 1);
-    const unsigned int alignedH =
-        (viewerRenderHeight() + SCE_GXM_TILE_SIZEY - 1) &
-        ~(SCE_GXM_TILE_SIZEY - 1);
-
     if (nativeSceneMode && !prepareSceneVdp2Background())
         return;
     if (nativeSceneMode && !renderSceneVdp2BackgroundPass())
@@ -11983,8 +12269,13 @@ static void renderBasicWingViewer()
                 static_cast<std::size_t>(gxmPitch) *
                 viewerRenderHeight() *
                 sizeof(std::uint32_t));
-    std::memset(g_probeDepth, 0xFF, alignedW * alignedH * 4u);
-    std::memset(g_probeStencil, 0, alignedW * alignedH * 4u);
+    // GXM initializes tile-local depth/stencil from these background values.
+    // The backing buffers are spill storage, not an input to this scene:
+    // clearing them on the CPU was unused work with force-load disabled.
+    sceGxmDepthStencilSurfaceSetBackgroundDepth(depthSurface, 1.0f);
+    sceGxmDepthStencilSurfaceSetBackgroundStencil(depthSurface, 0);
+    sceGxmDepthStencilSurfaceSetForceLoadMode(
+        depthSurface, SCE_GXM_DEPTH_STENCIL_FORCE_LOAD_DISABLED);
     g_profileClearUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - clearStartUs);
 
@@ -12049,8 +12340,8 @@ static void renderBasicWingViewer()
     Vdp1DrawState drawState{};
     std::memcpy(drawState.wvp, wvp.m, sizeof(drawState.wvp));
     drawState.mode = renderMode;
-    // Native town/cinematic/flight geometry uses the same culling convention.
-    // The captured native view must not receive an area-specific X reflection.
+    // Preserve the native town/cinematic/flight polygon winding convention.
+    // Camera orientation must be corrected at its source, not through culling.
     drawState.reverseCullWinding = roomMode;
 
     const Vdp1ModelSource model =
@@ -12078,12 +12369,12 @@ static void renderBasicWingViewer()
         // sprites (including Lock-On and choice cursors) remain above VDP2.
         // Azel still owns the contents/state of every layer; Neptune only
         // translates their final presentation ordering to GXM.
-        if (g_vdp2MenuId != 0u) {
+        if (g_vdp2MenuId != 0u || g_vdp2SaveLayout) {
             // setupVdp2ForMenu() replaces the town VDP2 layout. Do not run
             // the legacy 0x6000 town text compositor here: it shares the same
             // RGBA backing texture as the status-menu decode and clears that
             // memory before GXM consumes the queued menu draw.
-            drawAzelStatusMenuVdp2Gpu();
+            drawAzelMenuVdp2Gpu();
             drawPublishedVdp1Ui();
         } else {
             drawAzelVdp2Nbg1Gpu();
@@ -12413,7 +12704,9 @@ static void renderBasicWingViewer()
         sceKernelGetProcessTimeWide() - presentStartUs);
     recordFlightPresentation(
         nativeSceneMode && g_sceneGameMode == 3u,
-        presentStartUs + g_profilePresentUs);
+        presentStartUs + g_profilePresentUs,
+        static_cast<unsigned int>(
+            presentStartUs - renderStartUs - g_profileRenderUs));
 
     // The buffer just queued is now front; draw the next frame into the
     // opposite GXM surface so scanout and rendering never touch the same
@@ -12728,8 +13021,9 @@ void presentation_wait_frame_slot()
     const std::uint64_t waitStartUs = sceKernelGetProcessTimeWide();
     if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
         sceKernelWaitSema(g_renderFrameFreeSema, 1, nullptr);
-    g_pendingProfileGameWaitUs = static_cast<unsigned int>(
-        sceKernelGetProcessTimeWide() - waitStartUs);
+    const std::uint64_t waitEndUs = sceKernelGetProcessTimeWide();
+    g_pendingProfileGameWaitUs = static_cast<unsigned int>(waitEndUs - waitStartUs);
+    g_pendingPublishStartUs = waitEndUs;
 }
 
 void presentation_publish_frame()
@@ -12742,6 +13036,7 @@ void presentation_publish_frame()
         // black even though the process itself is still alive.
         if (g_renderThreadStarted && g_renderFrameFreeSema >= 0)
             sceKernelSignalSema(g_renderFrameFreeSema, 1);
+        g_pendingPublishStartUs = 0u;
         return;
     }
 
@@ -12760,7 +13055,14 @@ void presentation_publish_frame()
     g_sceneRbg0Enabled = g_pendingSceneRbg0Enabled;
     if (g_sceneRbg0Enabled) {
         g_sceneRbg0 = g_pendingSceneRbg0;
-        std::memcpy(g_sceneVdp2Raw, g_pendingSceneVdp2Raw, kRawVdp2Bytes);
+        // The producer owns the free-slot token here: the previous renderer
+        // has finished all CPU/GPU use of this snapshot. Swap ownership,
+        // rather than copying another 528 KiB before starting the next frame.
+        // Unchanged/repeated publications retain the current renderer buffer.
+        if (g_pendingSceneVdp2RawDirty) {
+            std::swap(g_sceneVdp2Raw, g_pendingSceneVdp2Raw);
+            g_pendingSceneVdp2RawDirty = false;
+        }
     }
     g_townPlayerYaw = g_pendingTownPlayerYaw;
     g_townPlayerGrounded = g_pendingTownPlayerGrounded;
@@ -12818,6 +13120,7 @@ void presentation_publish_frame()
             sizeof(g_vdp2LineScroll));
         g_vdp2TextValid = true;
         g_vdp2MenuId = g_pendingVdp2MenuId;
+        g_vdp2SaveLayout = g_pendingVdp2SaveLayout;
         std::memcpy(
             g_vdp2MenuScroll,
             g_pendingVdp2MenuScroll,
@@ -12860,6 +13163,10 @@ void presentation_publish_frame()
             static_cast<unsigned int>(g_liveTownEdgePolygonCount));
     }
 
+    g_profileFramePublishUs = g_pendingPublishStartUs != 0u
+        ? static_cast<unsigned int>(sceKernelGetProcessTimeWide() - g_pendingPublishStartUs)
+        : 0u;
+    g_pendingPublishStartUs = 0u;
     if (g_renderThreadStarted && g_renderFrameReadySema >= 0)
         sceKernelSignalSema(g_renderFrameReadySema, 1);
 }
@@ -13010,10 +13317,13 @@ void presentation_set_vdp2_text(
     const unsigned char* cram,
     const unsigned char* lineScroll,
     unsigned int menuId,
+    bool saveLayout,
     int nbg0ScrollX,
     int nbg0ScrollY,
     int nbg1ScrollX,
-    int nbg1ScrollY)
+    int nbg1ScrollY,
+    int nbg3ScrollX,
+    int nbg3ScrollY)
 {
     if (!vram || !cram || !lineScroll) {
         g_pendingVdp2TextValid = false;
@@ -13034,10 +13344,13 @@ void presentation_set_vdp2_text(
         sizeof(g_pendingVdp2LineScroll));
     g_pendingVdp2TextValid = true;
     g_pendingVdp2MenuId = menuId;
+    g_pendingVdp2SaveLayout = saveLayout;
     g_pendingVdp2MenuScroll[0] = nbg0ScrollX;
     g_pendingVdp2MenuScroll[1] = nbg0ScrollY;
     g_pendingVdp2MenuScroll[2] = nbg1ScrollX;
     g_pendingVdp2MenuScroll[3] = nbg1ScrollY;
+    g_pendingVdp2MenuScroll[4] = nbg3ScrollX;
+    g_pendingVdp2MenuScroll[5] = nbg3ScrollY;
 
     static unsigned int setVdp2TraceHeartbeat = 0u;
     if ((setVdp2TraceHeartbeat++ % 60u) == 0u) {
