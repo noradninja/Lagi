@@ -12,6 +12,206 @@ Neptune renders.
 
 Flight behavior, field scripts, dragon movement, camera state, visibility, animation, encounters, VDP1/VDP2 state, and progression remain Azel-owned. Lagi restores the Vita-facing services and presentation paths required to let that runtime execute natively.
 
+
+## Latest authoritative checkpoint - 2026-10-09
+
+> **Resume from this section.** This checkpoint supersedes the older dated
+> "Current handoff" / "Immediate next task" sections below. Those older sections
+> are retained as investigation history and should not be treated as the current
+> branch head or next action.
+
+- **Branch:** `feature/flight-mode-bringup`
+- **Latest code checkpoint before this documentation update:** `2a6d1d47346c14f61ce02abcb2404418f74b0c12` (`Reset scene residency tracking only on real mode transitions`)
+- **Previous renderer-residency commit:** `c6fa3b42fc7089a2bd13d005fde44d7d20ccfca0` (`Keep static scene geometry resident during native cutscenes`)
+- **Cutscene / Excavation bring-up commit:** `8b13e27161facfe2543cfc219544b359a8f9e277` (`Complete native town cutscene and Excavation bring-up`)
+- **Architecture rule remains absolute:** **Azel decides. Lagi services/bridges. Neptune renders.**
+- Do not create an E006-only renderer, cutscene-specific scene recreation, or
+  area-specific progression logic. Native in-engine cutscenes must feed the same
+  general Azel -> Lagi bridge -> Neptune rendering and resource-residency path
+  used by ordinary towns and fields.
+
+### Progression now reached on hardware
+
+The original end-of-first-field crash has been traced and moved substantially
+forward. The old failure was a stale overlay dispatch caused by milestone link
+trimming: Azel correctly selected game status `0x06` / `TWN_E006.PRG`, but
+Lagi's generated town source had removed the E006 dispatch, leaving
+`gFieldOverlayFunction` pointing at the torn-down FLD_A3 overlay. That path
+eventually called `allocateHeapForTask(nullptr, ...)` and faulted at address
+`0x00000004`.
+
+That stale-dispatch failure is fixed. The Vita now reaches Azel's authentic
+post-flight path:
+
+```text
+FLD_A3 door
+    -> Azel status 0x06
+    -> TWN_E006.PRG
+    -> native town/E006 setup
+    -> fade / in-engine cutscene path
+    -> E006 streamed command data
+    -> fade / transition
+    -> TWN_EXCA.PRG (Excavation Site)
+```
+
+The E006 sequence is an **in-engine Azel cutscene, not Cinepak**. Expected game
+ordering remains:
+
+```text
+fade out
+    -> fade in to in-engine cinematic
+    -> fade out
+    -> fade in at Excavation Site
+```
+
+Lagi must not manually reproduce that ordering. Azel owns the script, fades,
+camera, actors, animation, subtitles, completion and next-area choice.
+
+### Generic native town-cutscene bring-up now wired
+
+The broader bring-up pass intentionally wired the subsystem instead of waiting
+for one null/stub per hardware run.
+
+The generated Vita copy of Azel's town cutscene runtime now receives generic
+platform services for:
+
+- mounted Disc 1 ISO/CUE streaming through Lagi's existing random-access disc
+  layer rather than desktop `fopen()`,
+- stream open/read/close lifecycle,
+- explicit Saturn-style cleared task initialization,
+- the 0x20000 command-stream ring buffer,
+- the expected 0x8000 audio scratch area,
+- safe stream/task teardown and completion state,
+- a 30 Hz Vita timeline driven from the stream's declared frame rate,
+- pause/timeline gating without replacing Azel sequencing,
+- native cutscene entity/model/camera/subtitle command execution,
+- and the native follow-on `TWN_EXCA` overlay/dependencies.
+
+The exact Saturn streamed-audio packet opcode in upstream Azel is still
+incompletely reconstructed. Do **not** invent E006-specific packet semantics.
+Lagi's existing native SCSP/BGM services remain separate while the general
+cutscene stream parser progresses.
+
+### Current rendering/performance problem discovered in E006
+
+Hardware reached the in-engine E006 presentation, but the scene showed a major
+presentation/performance failure: the lower scene geometry appeared badly
+fragmented/corrupt while one CPU core was near saturation (about 93% in the
+captured PSVShell overlay).
+
+The key profiler evidence was not GPU saturation. During affected E006 frames:
+
+```text
+[ScenePerf]
+build ~= 496 ms
+upload ~= 493 ms
+cpuprep ~= 503 ms
+gxmwait ~= 19 ms
+render ~= 522 ms
+staticRebuilt=1
+```
+
+A normal initial/healthy-style sample was orders of magnitude smaller
+(`build` around hundreds of microseconds and essentially no upload). This
+showed that the native cutscene was causing Neptune to repeatedly rebuild /
+re-upload scene geometry on the CPU rather than using the already proven
+field/town residency path.
+
+**Do not optimize a separate cutscene renderer.** The correct architecture is:
+
+```text
+Azel town / field / in-engine cutscene task graph
+        -> normal model submissions
+        -> shared Lagi render bridge
+        -> Neptune static/dynamic residency classification
+        -> resident GXM geometry/material/texture resources
+        -> SceGxm
+```
+
+Camera motion, fades, VDP2 changes and palette/color-offset activity must not
+invalidate rigid VDP1 world geometry.
+
+### Latest renderer-residency correction - hardware validation pending
+
+Commits `c6fa3b4` and `2a6d1d4` implement the current generalized correction.
+They were pushed before the 2026-10-09 work-session handoff but have **not yet
+been hardware-validated**.
+
+The correction changes Neptune's residency rules, not Azel's game logic:
+
+1. **CRAM / VDP1 texture invalidation no longer destroys the static geometry
+   cache.** Palette animation, fades, texture content updates, subtitles and
+   related presentation changes refresh texture/material state without
+   resetting the static world signature, static mesh ranges or resident world
+   topology.
+2. **Transform-changing submissions are automatically promoted to the existing
+   dynamic-object path.** Neptune tracks native instance identity separately
+   from its matrix. If a supposedly rigid submission's transform changes, it is
+   kept dynamic for that scene. This is generic for cutscene actors, moving
+   machinery, NPCs and other task-owned objects.
+3. **Real game-mode/scene ownership transitions reset residency tracking.**
+   Camera/fade/palette changes do not. This prevents stale instance history from
+   crossing a genuine mode transition without turning ordinary presentation
+   changes into full geometry rebuilds.
+4. The field/town rendering pipeline remains the only native 3D path. There is
+   no special E006 renderer.
+
+### Immediate next hardware acceptance test
+
+Build the current branch and replay the same first-flight door transition.
+Capture `lagi.log` and, if useful, video/screenshots through E006 and into
+Excavation.
+
+The primary acceptance condition is that after any legitimate initial
+scene/resource build, steady E006 frames report roughly:
+
+```text
+staticRebuilt=0
+upload = small / near-zero for unchanged resident geometry
+build = normal field/town-scale work, not hundreds of milliseconds
+```
+
+There may be a one-time rebuild when a previously misclassified object is first
+observed moving and is promoted to the dynamic path. It must not trigger
+continuous static-world rebuilds afterward.
+
+Also verify visually:
+
+- E006 static environment remains coherent while the scripted camera moves.
+- Moving cutscene actors animate/move without becoming part of the static
+  environment cache.
+- Fades and palette/VDP2 activity do not make world geometry disappear or
+  regenerate.
+- The sequence continues under Azel ownership into `TWN_EXCA.PRG`.
+- Previously proven FLD_A3 and Ruins/town rendering behavior is not regressed.
+
+If the residency correction fixes CPU rebuild/upload cost but the fragmented
+visual remains, diagnose that as a normal Neptune submission/material/geometry
+association problem using the same field/town pipeline. Do not introduce a
+cutscene-specific renderer.
+
+### Optimization experiment after correctness baseline
+
+Once the E006 -> Excavation route is stable enough to serve as a correctness
+baseline, perform a controlled compiler optimization A/B.
+
+Current runtime optimization is selective: hot Neptune/audio units use `-O2`,
+while the full runtime is not globally built with `-O3` / `-ffast-math`.
+Shader compiler `-O3 -fastprecision` flags do not imply ARM runtime
+optimization.
+
+Recommended order:
+
+1. Baseline current branch on hardware.
+2. Add a build option for broad ARM `-O3`.
+3. Preserve Neptune's strict floating-point behavior initially.
+4. Hardware A/B the same Ruins -> FLD_A3 -> E006 -> Excavation route.
+5. Only then test fast-math separately where it is demonstrably safe.
+
+Do not bundle `-ffast-math` into the first optimization experiment because
+camera/projection/interpolation and reconstructed Saturn math can be sensitive
+to changed floating-point semantics.
+
 ## Current hardware-validated state (2026-10-08)
 
 The native FLD_A3 route is live on Vita hardware:
