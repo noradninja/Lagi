@@ -799,6 +799,10 @@ static unsigned char* g_sceneVdp2Raw = g_sceneVdp2RawBuffers[1];
 static bool g_pendingSceneVdp2RawDirty = false;
 static bool g_pendingSceneRbg0Enabled = false, g_sceneRbg0Enabled = false;
 static void* g_sceneVdp2GpuRaw = nullptr;
+// Track GPU-side raw VDP2 memory only. This is separate from resolved-image
+// invalidation: changing rotation/window registers still requires a new resolve.
+static bool g_sceneVdp2GpuRawInitialized = false;
+static unsigned int g_profileRbgRawUpdatedBytes = 0u;
 static SceUID g_sceneVdp2RawUid = -1;
 static SceGxmTexture g_sceneVdp2Texture{};
 static azel::DebugTextureVertex* g_sceneVdp2Vertices = nullptr;
@@ -11692,6 +11696,7 @@ static bool prepareSceneVdp2Background()
     if (!g_sceneRbg0Enabled)
         return true;
     if (!g_sceneVdp2GpuRaw) {
+        g_sceneVdp2GpuRawInitialized = false;
         g_sceneVdp2GpuRaw = probeGpuAlloc(kRawVdp2Bytes,
             SCE_GXM_MEMORY_ATTRIB_READ, &g_sceneVdp2RawUid);
         g_sceneVdp2Vertices = static_cast<azel::DebugTextureVertex*>(
@@ -11743,7 +11748,22 @@ static bool prepareSceneVdp2Background()
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowIndexUid));
         if (!g_vdp2WindowVertices || !g_vdp2WindowIndices) return false;
     }
-    std::memcpy(g_sceneVdp2GpuRaw, g_sceneVdp2Raw, kRawVdp2Bytes);
+    // Update changed VRAM/CRAM spans only. RBG0's shader still runs each
+    // frame so dynamic rotation, line windows and coefficient-table state are
+    // never frozen by this optimization.
+    constexpr std::size_t kBlockBytes = 4096u;
+    g_profileRbgRawUpdatedBytes = 0u;
+    auto* gpu = static_cast<unsigned char*>(g_sceneVdp2GpuRaw);
+    for (std::size_t offset = 0; offset < kRawVdp2Bytes; offset += kBlockBytes) {
+        const std::size_t bytes = std::min<std::size_t>(
+            kBlockBytes, kRawVdp2Bytes - offset);
+        if (!g_sceneVdp2GpuRawInitialized ||
+            std::memcmp(gpu + offset, g_sceneVdp2Raw + offset, bytes) != 0) {
+            std::memcpy(gpu + offset, g_sceneVdp2Raw + offset, bytes);
+            g_profileRbgRawUpdatedBytes += static_cast<unsigned int>(bytes);
+        }
+    }
+    g_sceneVdp2GpuRawInitialized = true;
     return true;
 }
 
@@ -12159,6 +12179,7 @@ static void renderBasicWingViewer()
     g_profileGxmWaitUs = 0u;
     g_profileRbgPrepareUs = 0u;
     g_profileRbgResolveUs = 0u;
+    g_profileRbgRawUpdatedBytes = 0u;
     g_liveTownGouraudPrepValid = false;
 
     // g_viewMode is part of the published game->render frame. The render
@@ -12497,7 +12518,7 @@ static void renderBasicWingViewer()
             "light=%u gourPrep=%u gourPayload=%u gourBucket=%u "
             "gourIndex=%u gourDraw=%u clear=%u begin=%u submit=%u compose=%u "
             "cpuprep=%u gxmwait=%u render=%u polys=%u verts=%u "
-            "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus\n",
+            "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -12522,7 +12543,8 @@ static void renderBasicWingViewer()
             g_liveTownStaticRebuilt ? 1u : 0u,
             g_sceneRbg0Enabled ? 1u : 0u,
             g_profileRbgPrepareUs,
-            g_profileRbgResolveUs);
+            g_profileRbgResolveUs,
+            g_profileRbgRawUpdatedBytes);
     }
 
     if (g_showThreadTimingOsd) {
