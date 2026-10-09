@@ -950,3 +950,81 @@ camera pan, turn around and traverse the full route both ways, then compare the
 first upload/build timings and every FlightPresentWindow. The performance goal
 remains active until that capture verifies the remaining gaps. Earlier notes
 about unfinished sky support refer to older checkpoints.
+
+
+## Shared rendering requirements and working procedure - 2026-10-09
+
+These requirements apply to future work on this branch and extend the latest
+authoritative checkpoint above.
+
+### One shared native 3D presentation path
+
+Standardize native town, flight, and in-engine cutscene rendering on the methods
+used by the proven flight path. Area type must not select an independent renderer
+or require reimplementing presentation when another level is added. Preserve
+Azel's ownership of gameplay, scripts, camera, visibility, fades, transitions,
+text content, and timing; Lagi supplies shared services/bridges, and Neptune
+renders the submitted scene.
+
+The flight path currently lacks the opening area badge text and its background
+(the badge above the canyon), LCS-associated text and backgrounds, and the
+subtitle text and black bar already supported in Ruins town. Bring that existing
+Ruins presentation support into the shared native presentation path so every
+town, field, and in-engine cutscene can use it. Restore both text and authored
+backgrounds through Azel's existing state; do not hard-code labels, subtitle
+timing, or an area-specific overlay. These are requested implementation changes,
+not a claim that the current build already provides them.
+
+Preserve validated flight orientation/winding, radar point filtering, lighting,
+static position validity, texture reuse, and geometry residency. Shared methods
+must still consume the correct Azel scene state; standardization is not permission
+to apply the town-only horizontal mirror to flight.
+
+### Required edit, publish, local build, and log workflow
+
+1. Read this document's latest authoritative checkpoint and confirm the branch
+   and revision before continuing.
+2. If the current build requires hardware-log analysis, stop dependent renderer
+   changes and wait until the user supplies that build's log. Do not infer a
+   hardware result from compilation or an older capture.
+3. Once the required log has been analyzed, implement the next supported change,
+   run appropriate available checks, and commit/push it to
+   `feature/flight-mode-bringup`.
+4. Give the user the published commit ID and concrete pull/build/install/test
+   directions. The user performs the local Vita build and hardware run.
+5. Wait for the resulting log before diagnosing the next hardware-dependent
+   correction. Record the evidence and next checkpoint here.
+
+The current renderer commits `c6fa3b4` and `2a6d1d4` still require the E006
+residency/visual acceptance capture described above. This documentation update
+does not validate those commits or implement the shared text/background changes.
+
+For a clean local checkout on the existing feature branch:
+
+```powershell
+Set-Location C:\Dev\Lagi
+git status --short
+# If changes are listed, preserve them before proceeding; do not discard them.
+git switch feature/flight-mode-bringup
+if ($LASTEXITCODE -ne 0) { throw 'Branch switch failed' }
+git pull --ff-only origin feature/flight-mode-bringup
+if ($LASTEXITCODE -ne 0) { throw 'Pull failed' }
+git submodule update --init --recursive
+if ($LASTEXITCODE -ne 0) { throw 'Submodule update failed' }
+git rev-parse HEAD
+
+$env:VITASDK = 'C:\Dev\VitaSDK'
+$env:PSP2CGC = 'C:\Dev\sdk\host_tools\bin\psp2cgc.exe'
+$env:PATH = "$env:VITASDK\bin;$env:PATH"
+cmake -S . -B build -DLAGI_OPTIMIZE_NEPTUNE=ON
+if ($LASTEXITCODE -ne 0) { throw 'Configure failed' }
+cmake --build build --parallel 32
+if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+```
+
+Install `C:\Dev\Lagi\build\Lagi.vpk` using the existing Vita deployment
+procedure. Replay Ruins -> FLD_A3 -> first-field door -> E006 -> Excavation.
+Send the fresh `ux0:data/lagi/lagi.log`, the built commit ID, and observations;
+include video/screenshots if geometry is fragmented or text/backgrounds are
+missing. Evaluate steady E006 `staticRebuilt`, build/upload costs, moving actors,
+fades, and the Azel-owned Excavation transition before the next renderer edit.
