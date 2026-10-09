@@ -1239,7 +1239,7 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
    "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/disc_image.h\"\n#include \"lagi/platform.h\""
-   source_text "\${source_text}")
+   source_text "${source_text}")
   string(REPLACE
    [=[GfsHn GFS_Open(const std::string& name)
 {
@@ -1276,7 +1276,7 @@ GfsHn GFS_Open(const std::string& name)
         name.c_str(), static_cast<unsigned>(handle->file.size));
     return temp;
 }]=]
-   source_text "\${source_text}")
+   source_text "${source_text}")
   string(REPLACE
    [=[void GFS_GetFileSize(GfsHn handle, s32* sectorSize, s32* numSector, s32* lastSize)
 {
@@ -1301,7 +1301,7 @@ GfsHn GFS_Open(const std::string& name)
         ? static_cast<s32>(size - static_cast<u32>(*numSector - 1) * 0x800u)
         : 0;
 }]=]
-   source_text "\${source_text}")
+   source_text "${source_text}")
   string(REPLACE
    [=[s32 GFS_NwFread(GfsHn handle, s32 numSectors, u8* buffer, s32 bufferSize)
 {
@@ -1340,7 +1340,7 @@ GfsHn GFS_Open(const std::string& name)
     numReadBytes = requestBytes;
     return numSectors;
 }]=]
-   source_text "\${source_text}")
+   source_text "${source_text}")
   string(REPLACE
    [=[void updateStreamingFileReadSub0(sStreamingFile* iParm1)
 {
@@ -1360,7 +1360,7 @@ GfsHn GFS_Open(const std::string& name)
     }
     iParm1->m198.m8_readIsPending = 0;
 }]=]
-   source_text "\${source_text}")
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townMainLogic.cpp")
   # Correct two reconstructed hard-coded town LCS physical-button tests to
   # match the original manual: B cancels LCS, while A/C enter/select it.
