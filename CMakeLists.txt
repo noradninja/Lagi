@@ -1245,12 +1245,12 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/town.cpp")
-  # 0.040 reaches only TWN_RUIN. Keep the authentic lookup and Ruins dispatch,
-  # but do not retain every later town overlay merely through this generic
-  # dispatcher.
+  # First-flight progression reaches Azel's native TWN_E006 handoff.
+  # Keep Azel's authentic lookup/dispatch for TWN_RUIN and TWN_E006; later
+  # town overlays remain trimmed until their own milestones are integrated.
   string(REPLACE
    "    else if (overlayFileName == \"TWN_EXCA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_EXCA;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E006;\n    }\n    else if (overlayFileName == \"TWN_E011.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E011;\n    }\n    else if (overlayFileName == \"TWN_E014.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E014;\n    }\n    else if (overlayFileName == \"TWN_CAMP.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CAMP;\n    }\n    else if (overlayFileName == \"TWN_ZOAH.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_ZOAH;\n    }\n    else if (overlayFileName == \"TWN_CARA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CARA;\n    }\n    else if (overlayFileName == \"TWN_SEEK.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_SEEK;\n    }"
-   ""
+   "    else if (overlayFileName == \"TWN_E006.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E006;\n    }"
    source_text "${source_text}")
 
   # Vita bridge for the authentic upstream static world-grid submission path.
@@ -1518,6 +1518,10 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  town/townLCS.cpp
  town/collisionRegistry.cpp
  kernel/worldGrid.cpp
+ # E006 is Azel's native destination after the first FLD_A3 flight segment.
+ # Its VDP2 background task is shared with the upstream excavation overlay.
+ town/exca/twn_exca.cpp
+ town/e006/twn_e006.cpp
  town/ruin/twn_ruin.cpp
  town/ruin/twn_ruin_lock.cpp
 )
