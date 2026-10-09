@@ -13,7 +13,69 @@ Neptune renders.
 Flight behavior, field scripts, dragon movement, camera state, visibility, animation, encounters, VDP1/VDP2 state, and progression remain Azel-owned. Lagi restores the Vita-facing services and presentation paths required to let that runtime execute natively.
 
 
-## Latest checkpoint - live presentation and native effects (2026-10-09)
+## Work in progress after hardware build 8993213 (2026-10-09)
+
+The user supplied a fresh `lagi.log` after explicitly rejecting the older log.
+This capture is the evidence for the next changes. Ruins orientation, flight
+subtitles/bar, LCS, Excavation fade-up, Captain selection/FMVs, FMV skipping,
+and the return to Above Excavation/tutorial text are working on hardware.
+Battle is deliberately outside the current milestone: do not enable it.
+
+Remaining hardware failures: Ruins water flicker and cyan hall quad; towns
+around 20 FPS; no flight exit fade; black E006 cinematic (Start can skip it);
+invisible Excavation dragon and Captain. Earlier missing particles, collectible
+trails and excessive pickup lighting also remain unaccepted. The user identifies
+VDP2 sky enablement as the introduction point for the water/FPS regression.
+
+The new log shows E006 advancing through frame 1080 and completing/skipping at
+frame 1106, with 115 model submissions on its periodic heartbeat. Both its
+fade-in and fade-out counters advance. This proves task progression, not visible
+cinematic rendering. Its streamed `updateEngineCamera` call bypassed the town
+camera capture; the generated source now captures that authored view directly.
+
+The bundle relocation helper also added VDP1 allocation offsets to every
+CMDCOLR, including immediate RGB555 polygon colors. The next generated loader
+relocates texture source addresses and mode-1 LUT addresses only, preserving
+flat colors and palette-bank values. This targets the cyan quad through the
+shared resource service rather than editing Ruins geometry. Matrix-driven model
+draw variant 3, previously an empty upstream stub, now traverses the authored
+bone matrices. Shared VDP2 word reads reuse a packed texel for adjacent bytes,
+including a fallback for words crossing a texel boundary, to reduce redundant
+sky/background texture reads without changing resolution.
+
+These changes are not yet a hardware pass. Vita C++ compilation, affected
+RBG0/NBG shader compilation, linking and SELF generation passed. Continue
+investigating the water mask, town presentation timing, field exit sequencing,
+and missing actors; do not infer their acceptance from a successful build.
+
+For a new chat at home: read this section and the checkpoint history below,
+inspect the actual branch HEAD, and use the newest explicitly supplied hardware
+log. Make the edits, validate and push Git, then give pull/local-build directions.
+When a new device log is required, wait for the user to send it; an existing
+`D:\data\lagi\lagi.log` is not automatically the latest capture.
+
+Pull/build/install for this checkpoint (stop if any command fails):
+
+```powershell
+Set-Location C:\Dev\Lagi
+git switch feature/flight-mode-bringup
+git pull --ff-only origin feature/flight-mode-bringup
+git submodule update --init --recursive
+$env:VITASDK='C:\Dev\VitaSDK'
+$env:PSP2CGC='C:\Dev\sdk\host_tools\bin\psp2cgc.exe'
+$env:PATH="$env:VITASDK\bin;$env:PATH"
+cmake -S . -B build -DLAGI_OPTIMIZE_NEPTUNE=ON
+cmake --build build --parallel 32
+```
+
+Install `C:\Dev\Lagi\build\Lagi.vpk`. Test the Ruins hall/water and town FPS,
+flight cave exit/fade, E006 without skipping first, then Excavation dragon and
+Captain. Also check the already-working subtitles/LCS and FMV skip/return.
+Send a fresh log and photos before the next hardware-dependent patch. The new
+chat should obtain the checkpoint hash from the Git commit containing this
+section; the parent hardware baseline is `8993213`.
+
+## Previous checkpoint - live presentation and native effects (2026-10-09)
 
 The user's new hardware report confirms Ruins orientation is fixed, and flight
 subtitles/black bar and LCS text/icons/tiles work. Remaining evidence: unintended

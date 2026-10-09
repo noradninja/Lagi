@@ -958,6 +958,39 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "__attribute__((weak)) sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  # Matrix-driven models without hotpoints select draw function 3. Upstream
+  # leaves that variant empty, although it needs the same hierarchy traversal.
+  string(REPLACE
+   [=[void modelDrawFunction3(s_3dModel* pModel)
+{
+    unimplementedDraw(pModel);
+}]=]
+   [=[static void lagiDrawMatrixHierarchy(sModelHierarchy* node,
+    s_3dModel* model, unsigned& bone)
+{
+    while (node && bone < model->m3C_boneMatrices.size()) {
+        pushCurrentMatrix();
+        multiplyCurrentMatrix(&model->m3C_boneMatrices[bone]);
+        if (node->m0_3dModel) {
+            if (model->m8 & 1)
+                addObjectToDrawList(node->m0_3dModel);
+            else
+                addBillBoardToDrawList(node->m0_3dModel);
+        }
+        ++bone;
+        if (node->m4_subNode)
+            lagiDrawMatrixHierarchy(node->m4_subNode, model, bone);
+        popMatrix();
+        node = node->m8_nextNode;
+    }
+}
+void modelDrawFunction3(s_3dModel* pModel)
+{
+    unsigned bone = 0;
+    lagiDrawMatrixHierarchy(pModel->m4_pModelFile->getModelHierarchy(
+        pModel->mC_modelIndexOffset), pModel, bone);
+}]=]
+   source_text "${source_text}")
   # 0.040 boot-to-Ruins only needs the authentic D5 name-entry field before
   # town handoff. Do not retain references to later field overlays merely
   # because this large upstream translation unit contains the generic debug
@@ -1239,6 +1272,32 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   if(NOT source_text MATCHES "LAGI_FADE_PACK_INVERSE")
    message(FATAL_ERROR "Native fade source-color correction did not apply")
   endif()
+ elseif(relative_path STREQUAL "kernel/fileBundle.cpp")
+  # Relocate addresses, never immediate colors. The reconstructed helper adds
+  # the allocation base to CMDCOLR even for untextured RGB555 polygons.
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   [=[#include "lagi/lagi_azel_upstream_prelude.h"
+#include "processModel.h"
+static void lagiPatchModelAddresses(sProcessed3dModel* model, u32 offset)
+{
+    for (auto& quad : model->mC_Quads) {
+        const unsigned type = quad.mA_CMDCTRL & 15u;
+        if (type <= 2u) {
+            quad.m10_CMDSRCA += offset;
+            if (((quad.mC_CMDPMOD >> 3) & 7u) == 1u)
+                quad.mE_CMDCOLR += offset;
+        }
+    }
+}
+]=]
+   source_text "${source_text}")
+  string(REPLACE "pCachedData->patchFilePointers(mVdp1Offset);"
+   "lagiPatchModelAddresses(pCachedData, mVdp1Offset);"
+   source_text "${source_text}")
+  string(REPLACE "pNewNode->m0_3dModel->patchFilePointers(mVdp1Offset);"
+   "lagiPatchModelAddresses(pNewNode->m0_3dModel, mVdp1Offset);"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townCutscene.cpp")
   # Generic Vita bring-up for Azel's native in-engine town cutscene subsystem.
   # Azel retains ownership of script ordering, fades, camera commands, entity
@@ -1246,7 +1305,14 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   # task allocator semantics, a stable 30 Hz timeline and lifecycle cleanup.
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
-   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/disc_image.h\"\n#include \"lagi/platform.h\"\n#include <algorithm>\n#include <cstdint>\n#include <cstring>"
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/disc_image.h\"\n#include \"lagi/platform.h\"\n#include \"lagi/lagi_render_bridge.h\"\n#include <algorithm>\n#include <cstdint>\n#include <cstring>"
+   source_text "${source_text}")
+
+  # Streamed cameras replace the ordinary town camera during Draw. Capture
+  # that authored view at its own boundary before subsequent model submissions.
+  string(REPLACE
+   "    updateEngineCamera(&cameraProperties2, local_10, local_18);"
+   "    updateEngineCamera(&cameraProperties2, local_10, local_18);\n    lagi::azel_bridge::capture_native_scene_view_matrix();"
    source_text "${source_text}")
 
   # Replace desktop FILE* access with the mounted ISO9660 random-access layer.
