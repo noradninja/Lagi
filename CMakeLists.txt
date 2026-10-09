@@ -1231,6 +1231,136 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "    popMatrix();\n}\n\nvoid sEdgeTask::Delete"
    "    popMatrix();\n    lagi::azel_bridge::end_view_relative_submission_scope();\n}\n\nvoid sEdgeTask::Delete"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/townCutscene.cpp")
+  # Azel owns the in-engine cutscene state machine and command stream. Vita
+  # only replaces the desktop FILE* transport with Lagi's mounted ISO9660
+  # random-access reader. Keep GfsHn ABI-compatible by treating its FILE*
+  # member as an opaque Vita stream handle inside this generated source.
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/disc_image.h\"\n#include \"lagi/platform.h\""
+   source_text "\${source_text}")
+  string(REPLACE
+   [=[GfsHn GFS_Open(const std::string& name)
+{
+    GfsHn temp;
+    temp.fHandle = fopen(name.c_str(), "rb");
+    return temp;
+}]=]
+   [=[struct LagiGfsHandle
+{
+    lagi::disc::FileHandle file;
+    std::uint64_t offset = 0;
+};
+
+static LagiGfsHandle* lagiGfsHandle(GfsHn handle)
+{
+    return reinterpret_cast<LagiGfsHandle*>(handle.fHandle);
+}
+
+GfsHn GFS_Open(const std::string& name)
+{
+    GfsHn temp{};
+    auto* handle = new LagiGfsHandle{};
+    if (!lagi::disc::open_file(name.c_str(), handle->file))
+    {
+        lagi::platform::logging::writef(
+            "[AzelCutscene] missing stream file: %s\\n", name.c_str());
+        delete handle;
+        return temp;
+    }
+
+    temp.fHandle = reinterpret_cast<FILE*>(handle);
+    lagi::platform::logging::writef(
+        "[AzelCutscene] opened %s (%u bytes) from mounted disc\\n",
+        name.c_str(), static_cast<unsigned>(handle->file.size));
+    return temp;
+}]=]
+   source_text "\${source_text}")
+  string(REPLACE
+   [=[void GFS_GetFileSize(GfsHn handle, s32* sectorSize, s32* numSector, s32* lastSize)
+{
+    u32 position = ftell(handle.fHandle);
+
+    fseek(handle.fHandle, 0, SEEK_END);
+    u32 size = ftell(handle.fHandle);
+
+    fseek(handle.fHandle, position, SEEK_SET);
+
+    *sectorSize = 0x800;
+    *numSector = size / 0x800;
+    *lastSize = size - (*numSector * 0x800);
+}]=]
+   [=[void GFS_GetFileSize(GfsHn handle, s32* sectorSize, s32* numSector, s32* lastSize)
+{
+    const LagiGfsHandle* stream = lagiGfsHandle(handle);
+    const u32 size = stream ? stream->file.size : 0;
+    *sectorSize = 0x800;
+    *numSector = static_cast<s32>((size + 0x7ffu) / 0x800u);
+    *lastSize = *numSector
+        ? static_cast<s32>(size - static_cast<u32>(*numSector - 1) * 0x800u)
+        : 0;
+}]=]
+   source_text "\${source_text}")
+  string(REPLACE
+   [=[s32 GFS_NwFread(GfsHn handle, s32 numSectors, u8* buffer, s32 bufferSize)
+{
+    gNumSectors = numSectors;
+    assert(bufferSize >= numSectors * 0x800);
+    numReadBytes = numSectors * 0x800;
+    return fread(buffer, numSectors, 0x800, handle.fHandle);
+}]=]
+   [=[s32 GFS_NwFread(GfsHn handle, s32 numSectors, u8* buffer, s32 bufferSize)
+{
+    LagiGfsHandle* stream = lagiGfsHandle(handle);
+    const s32 requestBytes = numSectors * 0x800;
+    gNumSectors = numSectors;
+    assert(bufferSize >= requestBytes);
+    if (!stream || !buffer || requestBytes < 0)
+        return -1;
+
+    const std::uint64_t size = stream->file.size;
+    const std::uint64_t remaining =
+        stream->offset < size ? size - stream->offset : 0;
+    const std::size_t available = static_cast<std::size_t>(
+        std::min<std::uint64_t>(
+            remaining, static_cast<std::uint64_t>(requestBytes)));
+
+    if (available &&
+        !lagi::disc::read_file_at(
+            stream->file, stream->offset, buffer, available))
+        return -1;
+
+    if (available < static_cast<std::size_t>(requestBytes))
+        std::memset(
+            buffer + available, 0,
+            static_cast<std::size_t>(requestBytes) - available);
+
+    stream->offset += static_cast<std::uint64_t>(requestBytes);
+    numReadBytes = requestBytes;
+    return numSectors;
+}]=]
+   source_text "\${source_text}")
+  string(REPLACE
+   [=[void updateStreamingFileReadSub0(sStreamingFile* iParm1)
+{
+    Unimplemented();
+}]=]
+   [=[void updateStreamingFileReadSub0(sStreamingFile* iParm1)
+{
+    if (!iParm1)
+        return;
+
+    LagiGfsHandle* stream = lagiGfsHandle(iParm1->m198.m0_gfsHandle);
+    if (stream)
+    {
+        lagi::disc::close_file(stream->file);
+        delete stream;
+        iParm1->m198.m0_gfsHandle.fHandle = nullptr;
+    }
+    iParm1->m198.m8_readIsPending = 0;
+}]=]
+   source_text "\${source_text}")
  elseif(relative_path STREQUAL "town/townMainLogic.cpp")
   # Correct two reconstructed hard-coded town LCS physical-button tests to
   # match the original manual: B cancels LCS, while A/C enter/select it.
