@@ -1,5 +1,13 @@
 # Flight Mode Bring-Up
 
+## VDP2 transfer and flight mountain-strip checkpoint (2026-10-09)
+
+- The latest hardware screenshot shows an opaque horizontal mountain/foreground strip overlapping the world. Intended composition: sky, mountain strip, world/dragon, then authored UI. Investigate whether the strip is VDP2 NBG geometry, a late VDP1 command or transparent/window pixels. Do **not** reorder the whole NBG1 UI path: it currently draws subtitle/text backings after VDP1 and moving that path would regress UI.
+- RBG0 shader and offscreen resolve remain SGX-driven. The existing `rbgPrep`/`rbgResolve` diagnostics measure CPU preparation/command submission, not dedicated GPU execution.
+- Native raw VDP2 GPU storage now compares 4 KiB blocks and copies only changed blocks, while retaining the per-frame SGX resolve to honor camera rotation, scrolling, coefficient tables and window changes. `[ScenePerf]` additionally reports `rbgRawBytes`. This is a transfer optimization, **not** resolved-background caching. Compare RBG0 enabled/disabled and monitor GPU waits.
+- Hardware/build validation remains pending. Do not treat the mountain-strip presentation regression as fixed by the transfer change.
+
+
 Lagi's first flight milestone begins immediately after the Ruins elevator movie sequence. Azel advances game status 5 to status `0x50`, which maps to game mode 3 / field index 1 and loads `FLD_A3.PRG` ("above excavation").
 
 The implementation follows the same ownership rule used for the Ruins runtime:
