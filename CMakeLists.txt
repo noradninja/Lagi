@@ -1695,6 +1695,8 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/ruin"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/exca"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/e006"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/kernel"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/audio"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/ThirdParty/aosdk"
