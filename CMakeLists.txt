@@ -1310,7 +1310,15 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    # that original allocator contract at the Vita integration boundary.
    string(REPLACE
     "    static void Init(sSaveTask* pThis)\n    {\n        pThis->mCC = backupMemoryForSaveScreen();"
-    "    static void Init(sSaveTask* pThis)\n    {\n        // LAGI_SAVE_TASK_ZERO_INIT\n        pThis->m4_status = 0;\n        pThis->m34_pSaveProgressTask = nullptr;\n        pThis->m38_operationResult = 0;\n        pThis->mCC = backupMemoryForSaveScreen();"
+    "    static void Init(sSaveTask* pThis)\n    {\n        // LAGI_SAVE_TASK_ZERO_INIT\n        // Saturn work areas are cleared before Init. Initialize every scalar\n        // consumed by the native save/load pipeline before any child Draw.\n        pThis->m0 = 0;\n        pThis->m4_status = 0;\n        pThis->m8 = -1;\n        pThis->mC = 0;\n        pThis->m10 = 0;\n        pThis->m14_selectedDevice = -1;\n        pThis->m18 = nullptr;\n        pThis->m1C[0] = pThis->m1C[1] = pThis->m1C[2] = -1;\n        pThis->m20_selectedFileInDevice = -1;\n        pThis->m24 = nullptr;\n        pThis->m28_slotInfoDisplayTask[0] = nullptr;\n        pThis->m28_slotInfoDisplayTask[1] = nullptr;\n        pThis->m28_slotInfoDisplayTask[2] = nullptr;\n        pThis->m34_pSaveProgressTask = nullptr;\n        pThis->m38_operationResult = 0;\n        pThis->m3C[0].m0_slotStatus = 0;\n        pThis->m3C[1].m0_slotStatus = 0;\n        pThis->m3C[2].m0_slotStatus = 0;\n        pThis->mCC = backupMemoryForSaveScreen();"
+    source_text "${source_text}")
+   string(REPLACE
+    "        pThis->mC = r5;\n        pThis->m20_stringRenderingX = intDivide(8, readSaturnS16(r5));"
+    "        // LAGI_SAVE_SLOT_TASK_ZERO_INIT\n        pThis->m0 = -1;\n        pThis->m4_delay = 0;\n        pThis->m8 = nullptr;\n        pThis->mC = r5;\n        pThis->m10_status = 0;\n        pThis->m14 = 0;\n        pThis->m18 = 0;\n        pThis->m1C_posX = 0;\n        pThis->m1E_posY = 0;\n        pThis->m20_stringRenderingX = intDivide(8, readSaturnS16(r5));"
+    source_text "${source_text}")
+   string(REPLACE
+    "    sSaveProgressTask* pNewTask = createSubTaskFromFunction<sSaveProgressTask>(parent, saveProgressTask_update);\n    pNewTask->m0 = &parent->m3C[parent->m20_selectedFileInDevice];"
+    "    sSaveProgressTask* pNewTask = createSubTaskFromFunction<sSaveProgressTask>(parent, saveProgressTask_update);\n    // LAGI_SAVE_PROGRESS_ZERO_INIT\n    pNewTask->m10_status = 0;\n    pNewTask->m14 = 0;\n    pNewTask->m18 = 0;\n    pNewTask->m0 = &parent->m3C[parent->m20_selectedFileInDevice];"
     source_text "${source_text}")
    string(REPLACE
     [=[s32 writeSaveData(s32 deviceId, const std::string* filename, char* description, void* buffer, int size)
@@ -1408,14 +1416,33 @@ s32 getBupStatus(s32 slotIndex)
     "    }\n\n    // 06019bd4"
     source_text "${source_text}")
    string(REGEX MATCHALL
-    "LAGI_(LOAD_SCREEN|SAVE_TASK)_ZERO_INIT"
+    "LAGI_(LOAD_SCREEN|SAVE_TASK|SAVE_SLOT_TASK|SAVE_PROGRESS)_ZERO_INIT"
     lagi_save_zero_init_matches
     "${source_text}")
    list(LENGTH lagi_save_zero_init_matches lagi_save_zero_init_match_count)
-   if(NOT lagi_save_zero_init_match_count EQUAL 2)
+   if(NOT lagi_save_zero_init_match_count EQUAL 4)
     message(FATAL_ERROR
-     "Save/load zero-init patches did not apply exactly twice: found "
+     "Save/load zero-init patches did not apply exactly four times: found "
      "${lagi_save_zero_init_match_count} matches")
+   endif()
+  elseif(relative_path STREQUAL "kernel/menuCursor.cpp")
+   string(REPLACE
+    "    pThis->m4 = pMenuData->m0;\n    pThis->m8 = pMenuData->m4;"
+    "    // LAGI_MENU_CURSOR_ZERO_INIT\n    pThis->m0_selectedEntry = -1;\n    pThis->m4 = pMenuData->m0;\n    pThis->m8 = pMenuData->m4;\n    pThis->mC = 0;"
+    source_text "${source_text}")
+   string(REPLACE
+    "    pThis->m4 = config;\n    pThis->mC = 2;"
+    "    // LAGI_MENU_CURSOR2_ZERO_INIT\n    pThis->m0 = -1;\n    pThis->m4 = config;\n    pThis->m8 = 0;\n    pThis->mC = 2;"
+    source_text "${source_text}")
+   string(REGEX MATCHALL
+    "LAGI_MENU_CURSOR2?_ZERO_INIT"
+    lagi_menu_cursor_zero_init_matches
+    "${source_text}")
+   list(LENGTH lagi_menu_cursor_zero_init_matches lagi_menu_cursor_zero_init_match_count)
+   if(NOT lagi_menu_cursor_zero_init_match_count EQUAL 2)
+    message(FATAL_ERROR
+     "Menu cursor zero-init patches did not apply exactly twice: found "
+     "${lagi_menu_cursor_zero_init_match_count} matches")
    endif()
   endif()
 
