@@ -13,6 +13,22 @@ Neptune renders.
 Flight behavior, field scripts, dragon movement, camera state, visibility, animation, encounters, VDP1/VDP2 state, and progression remain Azel-owned. Lagi restores the Vita-facing services and presentation paths required to let that runtime execute natively.
 
 
+## Ruins orientation correction - 2026-10-09
+
+The user reports Ruins meshes inside out and horizontally reversed after the
+native-camera checkpoint. The old town-only projection X reflection remained
+active even when consuming the captured native view. That reflection reverses
+screen orientation and projected triangle winding. Native town, cinematic and
+flight views now all omit it and use the same existing native culling convention.
+The reconstructed camera fallback retains its historical transform.
+
+This correction supersedes the prior checkpoint's statement that town mirroring
+was retained. Azel camera/model state remains authoritative; no area-specific
+mesh reorder or game-state change is introduced. Check Ruins left/right layout,
+outer walls and actor visibility, then flight and cinematic orientation. Hardware
+acceptance still requires the user's fresh log/photo. Use the pull/build/install
+instructions below; wait for that evidence before dependent changes.
+
 ## Latest authoritative checkpoint - native scene transitions (2026-10-09)
 
 This section supersedes the earlier checkpoint below. Branch:

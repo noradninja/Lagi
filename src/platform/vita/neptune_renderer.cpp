@@ -6918,11 +6918,10 @@ static ViewerMat4 buildAuthenticRoomWvp()
             nearPlane,
             farPlane);
 
-    // Town/room presentation needs the Saturn->GXM horizontal mirror.
-    // Native field submissions already arrive in the correct horizontal
-    // orientation through Azel's field camera-space path, so do not mirror
-    // mode 3 a second time.
-    if (g_sceneGameMode != 3u)
+    // All captured native views use the same orientation as flight. An extra
+    // X reflection reverses both the image and projected triangle winding.
+    // Retain the historical mirror only for the reconstructed camera fallback.
+    if (!g_nativeSceneViewValid && g_sceneGameMode != 3u)
         projection.m[0] = -projection.m[0];
 
     return viewerMul(view, projection);
@@ -12005,9 +12004,8 @@ static void renderBasicWingViewer()
     Vdp1DrawState drawState{};
     std::memcpy(drawState.wvp, wvp.m, sizeof(drawState.wvp));
     drawState.mode = renderMode;
-    // Town/room presentation uses the historical winding compensation for its
-    // mirrored projection. Native field submissions arrive with the opposite
-    // effective winding and are corrected separately at the rasterizer.
+    // Native town/cinematic/flight geometry uses the same culling convention.
+    // The captured native view must not receive an area-specific X reflection.
     drawState.reverseCullWinding = roomMode;
 
     const Vdp1ModelSource model =
