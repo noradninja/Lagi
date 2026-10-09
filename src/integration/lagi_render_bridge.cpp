@@ -491,6 +491,21 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
         LiveVdp1Model adapted{};
         if (adapt_processed_model(model, adapted))
             cached = g_modelCache.emplace(model, std::move(adapted)).first;
+        else {
+            // Bound failure reporting by model identity; a failed actor must
+            // not turn this diagnostic into a per-frame logging workload.
+            static const sProcessed3dModel* rejected[16]{};
+            static unsigned rejectedCount = 0;
+            bool reported = false;
+            for (unsigned i = 0; i < rejectedCount; ++i)
+                reported |= rejected[i] == model;
+            if (!reported && rejectedCount < 16u) {
+                rejected[rejectedCount++] = model;
+                lagi::platform::logging::writef(
+                    "[NativeModelAdaptRejected] model=%p billboard=%u explicit=%u\n",
+                    model, billboard, g_hasPendingTownSubmission);
+            }
+        }
     }
     if (cached != g_modelCache.end()) {
         g_lastAdaptedModel = &cached->second;

@@ -834,6 +834,15 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # Vita copy. Saturn CLOFEN bit 0 is NBG0; m45_COEN must control that bit,
  # not the unrelated CCRNA ratio register.
  elseif(relative_path STREQUAL "VDP2.cpp")
+  # Azel owns a 512 KiB vdp2Ram buffer. Its reconstructed 2 MiB mask can
+  # return pointers outside that allocation; wrap to the actual VRAM size.
+  string(REPLACE
+   "return vdp2Ram + (offset & 0x1FFFFF);"
+   "return vdp2Ram + (offset & (sizeof(vdp2Ram) - 1u));"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "sizeof\\(vdp2Ram\\) - 1u")
+   message(FATAL_ERROR "VDP2 VRAM address adapter did not apply")
+  endif()
   string(REPLACE
    "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA = (vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA & 0xFFE0) | (arg << 0);\n            break;"
    "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN = (vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN & ~0x1) | (arg << 0);\n            break;"
@@ -957,7 +966,83 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)"
    "__attribute__((weak)) sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/e006/twn_e006.cpp" OR
+        relative_path STREQUAL "town/townDragon.cpp" OR
+        relative_path STREQUAL "town/excaEntity.cpp")
+  # Reused dragon models do not run init3DModelRawData again. Trace their
+  # real task draw boundary independently of the initialization diagnostic.
+  if(relative_path STREQUAL "town/e006/twn_e006.cpp")
+   set(actor_label "E006Dragon")
+   set(actor_draw "submitModelAndShadowModelToRendering(&gDragonState->m28_dragon3dModel, gDragonState->m14_modelIndex, gDragonState->m18_shadowModelIndex, &gDragonCutscenePosition, &gDragonCutsceneRotation, 0)")
+  elseif(relative_path STREQUAL "town/townDragon.cpp")
+   set(actor_label "TownDragon")
+   set(actor_draw "submitModelAndShadowModelToRendering(&gDragonState->m28_dragon3dModel, gDragonState->m14_modelIndex, gDragonState->m18_shadowModelIndex, &pThis->m58_position, &pThis->m64_rotation, 0)")
+  else()
+   set(actor_label "ExcaNPC")
+   set(actor_draw "pThis->m10_3dModel.m18_drawFunction(&pThis->m10_3dModel)")
+  endif()
+  string(FIND "${source_text}" "${actor_draw};" actor_draw_marker)
+  if(actor_draw_marker LESS 0)
+   message(FATAL_ERROR "Native actor draw trace anchor missing: ${relative_path}")
+  endif()
+  string(REPLACE "${actor_draw};"
+   "LAGI_TRACE_ACTOR_DRAW(\"${actor_label}\", ${actor_draw});"
+   source_text "${source_text}")
+  string(PREPEND source_text [=[#include "lagi/platform.h"
+#include "lagi/lagi_render_bridge.h"
+#define LAGI_TRACE_ACTOR_DRAW(label, expression) do { \
+    static unsigned reports = 4; \
+    if (reports) { \
+        const unsigned before = lagi::azel_bridge::submission_count(); \
+        expression; \
+        lagi::platform::logging::writef("[NativeActorDraw] kind=%s submissions=%u\n", \
+            label, lagi::azel_bridge::submission_count() - before); \
+        --reports; \
+    } else { expression; } \
+} while (false)
+]=])
  elseif(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  # Report unsupported native actor variants rather than silently losing
+  # their models in SHIPPING_BUILD. Do not substitute a different draw path.
+  string(PREPEND source_text "#include \"lagi/platform.h\"\n")
+  string(REPLACE
+   [=[void unimplementedDraw(s_3dModel* pDragonStateData1)
+{
+    assert(0);
+}]=]
+   [=[void unimplementedDraw(s_3dModel* model)
+{
+    static const s_3dModel* reported[16]{};
+    static unsigned count = 0;
+    for (unsigned i = 0; i < count; ++i)
+        if (reported[i] == model) return;
+    if (count == 16) return;
+    reported[count++] = model;
+    lagi::platform::logging::writef(
+        "[NativeActorDrawMissing] model=%p flags=%08X hierarchy=%08X bones=%u hotpoints=%u\n",
+        model, static_cast<unsigned>(model->m8),
+        static_cast<unsigned>(model->mC_modelIndexOffset),
+        static_cast<unsigned>(model->m3C_boneMatrices.size()),
+        model->m40 != nullptr);
+}]=]
+   source_text "${source_text}")
+  string(REPLACE
+   "    p3dModel->m1C_addToDisplayListFunction = addObjectToDrawList;"
+   [=[    p3dModel->m1C_addToDisplayListFunction = addObjectToDrawList;
+    static unsigned actorInitReports = 0;
+    if (actorInitReports < 32u) {
+        ++actorInitReports;
+        lagi::platform::logging::writef(
+            "[NativeActorModelReady] model=%p hierarchy=%04X flags=%04X animation=%04X bones=%u matrix=%u color=%u hotpoints=%u\n",
+            p3dModel, static_cast<unsigned>(modelIndexOffset),
+            static_cast<unsigned>(p3dModel->m8),
+            static_cast<unsigned>(p3dModel->mA_animationFlags),
+            static_cast<unsigned>(p3dModel->m12_numBones),
+            static_cast<unsigned>(p3dModel->m3C_boneMatrices.size()),
+            p3dModel->m38_pColorAnim != nullptr,
+            p3dModel->m40 != nullptr);
+    }]=]
+   source_text "${source_text}")
   # Matrix-driven models without hotpoints select draw function 3. Upstream
   # leaves that variant empty, although it needs the same hierarchy traversal.
   string(REPLACE
@@ -1693,6 +1778,28 @@ void pauseCutscene]=]
   if(lagi_cutscene_bridge_marker_count LESS 3)
    message(FATAL_ERROR
     "Native town cutscene bridge did not apply completely; upstream Azel changed")
+  endif()
+ elseif(relative_path STREQUAL "town/exca/twn_exca.cpp")
+  # VDP2 pattern names are Saturn big-endian bytes, unlike host-generated
+  # rotation/coefficient work areas. Preserve the authored 0x5000 entries
+  # without native little-endian u32 stores changing them into 0x0050.
+  string(REPLACE
+   [=[        u32* pVram = (u32*)getVdp2Vram(0x60800);
+        for (int i = 0; i < 0x200; i++)
+        {
+            pVram[0] = 0x50005000;
+            pVram[1] = 0x50005000;
+            pVram[2] = 0x50005000;
+            pVram[3] = 0x50005000;
+            pVram += 4;
+        }]=]
+   [=[        for (u32 patternOffset = 0; patternOffset < 0x2000; patternOffset += 2)
+        {
+            setVdp2VramU16(0x60800 + patternOffset, 0x5000);
+        }]=]
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "setVdp2VramU16\\(0x60800 \\+ patternOffset, 0x5000\\)")
+   message(FATAL_ERROR "Excavation VDP2 pattern endian adapter did not apply")
   endif()
  elseif(relative_path STREQUAL "town/townMainLogic.cpp")
   string(REPLACE

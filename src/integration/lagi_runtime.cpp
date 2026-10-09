@@ -509,6 +509,48 @@ void runtime_frame()
         d5NameSequenceActive &&
         (vdp2Controls.m4_pendingVdp2Regs->m20_BGON & 0x1) != 0;
 
+    // loadSaveBackground() owns a distinct VDP2 layout: both NBG0/NBG1 are
+    // 16x16, 8bpp, one-word pattern names in auxiliary/no-flip mode. Detect
+    // that exact native register state so Continue and in-scene save tasks
+    // share the same presentation path without a renderer-side menu guess.
+    const s_VDP2Regs* const liveRegs = vdp2Controls.m4_pendingVdp2Regs;
+    const bool saveMenuActive = liveRegs &&
+        (((liveRegs->m28_CHCTLA >> 4) & 7u) == 1u) &&
+        (((liveRegs->m28_CHCTLA >> 12) & 3u) == 1u) &&
+        ((liveRegs->m28_CHCTLA & 0x0101u) == 0x0101u) &&
+        ((liveRegs->m30_PNCN0 & 0xC000u) == 0xC000u) &&
+        ((liveRegs->m32_PNCN1 & 0xC000u) == 0xC000u) &&
+        ((liveRegs->mE4_CRAOFA & 0x77u) == 0x55u);
+
+    if (saveMenuActive) {
+        // Save/load can be a child of town/field or the standalone Continue
+        // module. Snapshot the task-owned Saturn planes only after its VDP2
+        // register/DMA update has completed for this frame.
+        lagi::platform::renderer::presentation_set_vdp2_text(
+            getVdp2Vram(0),
+            getVdp2Cram(0),
+            getVdp2Vram(0x3E000),
+            static_cast<unsigned int>(graphicEngineStatus.m40AC.m0_menuId),
+            true,
+            graphicEngineStatus.m40BC_layersConfig[0].scrollX,
+            graphicEngineStatus.m40BC_layersConfig[0].scrollY,
+            graphicEngineStatus.m40BC_layersConfig[1].scrollX,
+            graphicEngineStatus.m40BC_layersConfig[1].scrollY,
+            graphicEngineStatus.m40BC_layersConfig[3].scrollX,
+            graphicEngineStatus.m40BC_layersConfig[3].scrollY);
+
+        if (!nativeSceneFrame) {
+            static const float cameraPosition[3] = {0.0f, 0.0f, 0.0f};
+            static const float cameraTarget[3] = {0.0f, 0.0f, 1.0f};
+            static const float cameraUp[3] = {0.0f, 1.0f, 0.0f};
+            lagi::platform::renderer::presentation_set_scene_mode(
+                static_cast<unsigned int>(gGameStatus.m0_gameMode));
+            lagi::platform::renderer::presentation_set_camera(
+                cameraPosition, cameraPosition, cameraTarget, cameraUp,
+                0.0f, 0.0f, 0.0f);
+        }
+    }
+
     if (titleActive)
         lagi::diagnostics::log_title_vdp2_once();
 
@@ -616,6 +658,35 @@ void runtime_frame()
         // PLSZ packs NBG0/1/2/3/RBG0 plane sizes in successive 2-bit
         // fields. RBG0 is bits 9:8; the low bits belong to NBG0.
         state.plsz = (regs->m3A_PLSZ >> 8) & 3u;
+        state.plszB = (regs->m3A_PLSZ >> 12) & 3u;
+        state.screenOverA = (regs->m3A_PLSZ >> 10) & 3u;
+        state.screenOverB = (regs->m3A_PLSZ >> 14) & 3u;
+        state.overPatternA = regs->mB8_OVPNRA;
+        state.overPatternB = regs->mBA_OVPNRB;
+        state.bgon = regs->m20_BGON;
+        // Bounded transition-only evidence for native composition. Camera
+        // matrices/coefficients are intentionally excluded from this key.
+        static unsigned compositeMode = ~0u;
+        static unsigned compositeBg = ~0u;
+        static unsigned compositePriority = ~0u;
+        const unsigned priorityKey = regs->mFC_PRIR |
+            (static_cast<unsigned>(regs->mF8_PRINA) << 16);
+        if (compositeMode != static_cast<unsigned>(gGameStatus.m0_gameMode) ||
+            compositeBg != state.bgon || compositePriority != priorityKey) {
+            compositeMode = static_cast<unsigned>(gGameStatus.m0_gameMode);
+            compositeBg = state.bgon;
+            compositePriority = priorityKey;
+            lagi::platform::logging::writef(
+                "[SceneComposite] mode=%u BGON=%04X PRIR=%04X "
+                "PRINA=%04X PRINB=%04X PRISA=%04X PRISB=%04X "
+                "SPCTL=%04X RPMD=%u PLSZ=%04X OVPN=%04X,%04X "
+                "mapA=%05X mapB=%05X\n",
+                compositeMode, state.bgon, regs->mFC_PRIR,
+                regs->mF8_PRINA, regs->mFA_PRINB, regs->mF0_PRISA,
+                regs->mF2_PRISB, regs->mE0_SPCTL, state.rpmd,
+                regs->m3A_PLSZ, state.overPatternA, state.overPatternB,
+                state.planeA[0], state.planeB[0]);
+        }
         state.chctlb = regs->m2A_CHCTLB;
         state.pncr = regs->m38_PNCR;
         state.craofb = regs->mE6_CRAOFB;
@@ -1056,7 +1127,8 @@ void runtime_frame()
         else
             lagi::platform::renderer::presentation_set_vdp2_background(
                 state, getVdp2Vram(0), getVdp2Cram(0),
-                (regs->m20_BGON & 0x10u) != 0u);
+                (regs->m20_BGON & 0x10u) != 0u &&
+                (regs->mFC_PRIR & 7u) != 0u);
     }
 
     if (titleActive || d5NameSequenceActive) {
@@ -1106,6 +1178,13 @@ void runtime_frame()
                         lagi::azel_bridge::published_submissions().size()));
             }
         }
+    } else if (saveMenuActive) {
+        // Continue (mode 9) has no 3D scene owner, but the native save task
+        // still emits complete VDP2/VDP1 state and therefore owns a frame.
+        lagi::platform::renderer::movie_clear_frame();
+        lagi::platform::renderer::presentation_wait_frame_slot();
+        lagi::azel_bridge::publish_frame();
+        lagi::platform::renderer::presentation_publish_frame();
     } else if (gGameStatus.m0_gameMode != 0) {
         // Other native gameplay modes are not yet presented by Neptune.
         lagi::platform::renderer::movie_clear_frame();

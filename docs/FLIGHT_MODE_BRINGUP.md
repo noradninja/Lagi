@@ -13,6 +13,239 @@ Neptune renders.
 Flight behavior, field scripts, dragon movement, camera state, visibility, animation, encounters, VDP1/VDP2 state, and progression remain Azel-owned. Lagi restores the Vita-facing services and presentation paths required to let that runtime execute natively.
 
 
+## RBG0 accuracy/performance and effects checkpoint (2026-10-09, unvalidated)
+
+Texture upload now uses a single bulk copy for tightly packed rows; padded rows
+copy texels and zero only the padding rather than clearing the entire buffer
+first. Pixel bytes, point filtering, texture descriptors and ownership are
+unchanged. The host texture_upload_layout_test.ps1 compares the two byte-layout
+algorithms across 114 dimensions starting from dirty destination memory; all
+cases pass. This checks layout equivalence, not GXM timing or cache lifecycle.
+Vita renderer syntax checking passes; hardware upload-time savings are pending.
+
+21:45 capture: scene clear samples are approximately 0.75–0.86 ms after SGX
+tile initialization replaces CPU depth/stencil clears. Heavy flight views
+still miss presentation slots. Tunnel entry retains 1,915 textures and adds
+58, but texture upload costs 96,956 us and build costs 107,099 us. The old
+uploaded count described only the appended suffix, while dirty refresh copied
+the entire retained prefix as well.
+
+The local follow-up tracks decoded and uploaded generations by texture index.
+Native memory/palette invalidation advances the generation. Textures referenced
+by the current flattened native polygon records are decoded from the published
+native memory if stale; unchanged GPU entries are skipped during refresh.
+Inactive stale entries are decoded/uploaded when next referenced, preserving
+current content without copying the full historical cache on every transition.
+New live decodes record their generation immediately. Full GPU residency release
+clears uploaded generations. FieldTextureUpload now counts actual copied textures,
+including refreshed retained entries, rather than only appended entries.
+Vita renderer syntax check and diff whitespace check pass. Hardware visuals,
+palette/address-reuse behavior and tunnel-entry hitch timing remain unverified.
+
+The next actor diagnostic traces the actual E006 dragon, town dragon, and
+Excavation NPC draw expressions with a separate four-report budget at each
+call site. NativeActorDraw reports how many bridge submissions that expression
+emits. The original expression executes exactly once on every invocation;
+there is no substitute model, culling change or task ownership change.
+This closes the initialization-trace blind spot for the reused dragon model.
+CMake generation and Vita syntax checks of all three generated actor source
+files pass. Hardware draw-boundary evidence is pending.
+
+Latest 21:34 hardware log includes the actor diagnostics. It records 32 model
+initializations and no unsupported-draw or model-adaptation rejection reports.
+This does not prove that the reused dragon reaches its draw boundary; dragon
+reinitialization does not call init3DModelRawData. Four of twenty flight
+presentation windows have zero missed two-vblank slots; heavier windows still
+miss slots. Later scene render samples remain about 31–33 ms.
+
+The next local performance change removes CPU clears of the scene depth and
+stencil backing buffers. The installed GXM SDK documents that initialized
+depth/stencil surfaces default to no forced load/store, with tile background
+depth 1.0 and stencil 0. Neptune now explicitly sets those same background
+values and disables forced load before the scene. Spill buffers remain allocated
+and attached; partial-render handling is unchanged. Color-buffer clearing remains.
+Renderer Vita syntax checking passes. Frame-time savings and visual behavior
+need hardware verification; this is not a fix claim for missing actors or
+mountain overlap.
+
+Performance-first follow-up: the latest capture's `FieldStream` frame 7004
+reports 173376 us texture upload, 179699 us build, reuseGeom=1, reuseTex=0,
+and 1942 resident textures. This is a texture refresh/allocation stall, not
+evidence that world-grid geometry itself costs 179 ms.
+
+The local upload change retains GPU mappings across content invalidation when
+the complete retained prefix matches dimensions and native texture descriptors.
+Dirty pixels are still copied, and opacity metadata is recalculated. Compatible
+textures do not repeat allocation or GXM texture initialization; new suffixes
+are allocated normally, and mismatched layouts retain the full replacement
+path. The render-thread invalidation boundary remains intact. No game-owned
+resource lifetime, culling, sampling precision or filtering is changed here.
+
+Vita C++ syntax checking of `neptune_renderer.cpp` passes. Full SELF/VPK build
+and on-device refresh/canyon/tunnel timing are pending; no performance win is
+claimed until the hardware log confirms it. Cold model/texture discovery and
+the remaining RBG0 GPU cost remain separate open work.
+
+The 20:15 user log contains the new `SceneComposite` records. Open FLD_A3
+uses RBG0 priority 3 and map A/B addresses 0x64000/0x60800. The tunnel
+explicitly disables RBG0 (BGON=000A, PRIR=0) and has roughly 9 ms renderer
+windows; open views remain roughly 29–32 ms with 179–192 ms build spikes.
+No claim of meeting the full frame-time target is supported.
+
+The attempted projection-parity culling change failed hardware acceptance:
+it swapped visible winding without correcting the reported 180-degree camera
+orientation. It has been reverted to the previous room culling convention.
+The user subsequently accepted camera orientation. Do not change camera yaw or
+rasterizer winding to address the remaining missing actors or background overlap.
+
+The current hardware report still has no dragon/rider in the cinematic, no
+dragon or Captain in Excavation, and flight mountains appearing over world
+geometry. Source inspection confirms RBG0 is composited before VDP1 world
+geometry, with depth writes disabled; this rules out a simple final-background
+draw-order swap, not every compositing, culling or texture-discard defect.
+The native NPC load-completion task clears its pending flags, and the generic
+NPC switches to its Draw2 method after initialization. These source paths do
+not yet prove that the corresponding actors reach rendering on hardware.
+
+Bounded diagnostics now report NativeActorModelReady (at most 32 initializations),
+NativeActorDrawMissing (at most 16 distinct model pointers reaching an upstream
+empty draw variant), and NativeModelAdaptRejected (at most 16 rejected model
+pointers). No substitute draw behavior was introduced. CMake generation,
+the adapter replacement test, and Vita syntax checks for the generated
+mainMenuDebugTasks.cpp and bridge pass. No SELF/VPK was built by this checkpoint.
+The available 20:48 log predates these diagnostics; hardware actor-boundary
+evidence and full performance acceptance remain pending.
+
+The 20:33 log still reports approximately 33.5–35 ms ordinary scene renders,
+including 18.4–20.1 ms GPU wait. Excavation publishes map A=0x00000 and
+map B=0x60000; its native initializer configures only map B. This is a concrete
+lead for the corrupted floor, not proof of the intended missing map-A setup.
+Ruins publishes map A=0x60000 and map B=0x61000, so the two cases must not be
+treated as one scene-specific floor-disable workaround.
+
+RBG0 aligned-word fetch checkpoint: pattern-name and CRAM reads now use one
+aligned RG/BA pair from the packed raw texture, avoiding the general unaligned
+reader's cross-texel case. CRAM addresses wrap at 4 KiB as native
+`getVdp2Cram()` does. The optimized fragment program compiles successfully;
+its GXP size falls from 9,620 to 8,804 bytes. This is compiled-program evidence,
+not a measured GPU speedup. The SDK shader statistics tool did not return and
+was cancelled; hardware timing and visual acceptance remain required.
+
+Shared-plane sampling now wraps integer coordinates directly to the aliased
+plane instead of first wrapping to the four-by-four map and then to the plane.
+The original unwrapped screen-over test is retained. Both 512- and 1024-dot
+plane dimensions match the old calculation for 65,538 signed coordinate cases
+(-16,384 through +16,384). The combined fragment program compiles to 8,820
+bytes; this optimization is not yet hardware-timed. The log remains the 20:33
+capture and cannot validate these newer shader changes.
+
+Independent Excavation endian correction (next build): its native u32 pattern
+fill at 0x60800 stored intended 0x5000 names as bytes 00-50 on little-endian
+Vita, which `getVdp2VramU16()` and SGX correctly decode as 0x0050. The
+generated-source adapter now uses `setVdp2VramU16()` for the same 8,192-byte
+region. `cmake -P tests/exca_pattern_adapter_test.cmake` passes against the
+actual adapter and upstream source. No map addresses, camera state, plane
+visibility or upstream files change. This repairs a proven write-format bug,
+not the still-unproven intended map-A setup or the camera orientation. A full
+Vita build and hardware check remain user-run; do not attribute an already-built
+shader-only checkpoint's results to this later source adaptation.
+
+Independent VRAM address correction (next build): the upstream helper masked
+relative addresses to 2 MiB despite owning only a 512 KiB `vdp2Ram` array.
+The generated Vita adapter now masks with `sizeof(vdp2Ram) - 1`, preserving
+all existing in-range accesses and keeping mirrored addresses inside the owned
+buffer. `cmake -P tests/vdp2_vram_adapter_test.cmake` validates the actual
+adapter and representative boundary addresses. No upstream file or scene
+policy changes. This prevents out-of-allocation reads; it does not establish
+that such a read caused the reported floor or camera failure.
+
+RBG0 coefficient reuse (later shader checkpoint): RPMD=2 parameter A previously
+fetched the same coefficient separately for its invalid-bit A/B selection and
+coordinate scaling. The shader now decodes both from one packed fetch; B still
+reads A's selector and its own coefficient when enabled. RPMD=0/1/3 selection
+rules are unchanged. Shader compilation passes (8,844-byte GXP), and the old
+last-byte selector agrees with the reused flag for all 65,536 16-bit words plus
+1,280 32-bit boundary/high-byte cases. These are decode checks, not hardware
+performance or full-image equivalence proof. The newly arrived 20:48 log was
+captured before this later edit and must not be attributed to coefficient reuse.
+
+20:48 hardware capture: sampled ScenePerf medians are 30,629 us in mode 1,
+32,440 us in mode 2 and 29,022 us in mode 3. Sample maxima include 85,025 us
+in mode 1 and 34,362 us in mode 3; the full target is not met. Two field
+windows render at about 29.6 ms yet present at about 47–48 ms (20–21 FPS).
+The installed-executable comparison was confirmed by the user; the current
+log has no unique embedded build ID, so retain the executable/VPK hashes.
+
+Next publication checkpoint: RBG0's two existing 528,384-byte CPU snapshots
+are now exchanged under the already-acquired free-slot token instead of
+copied again. A pending-dirty flag prevents repeated publication from swapping
+back to an old snapshot. The producer writes only its buffer and cannot swap
+until the previous renderer has completed GPU work and presentation; SGX
+upload and raw decoding are unchanged. Renderer Vita syntax verification passes;
+hardware correctness/timing remains unverified.
+
+Existing ScenePerf GPU wait and render timings are retained. FlightPresentWindow
+now adds mean preRender, postRender, publish and present times using scalar
+timers only. preRender is interval minus render/postRender/presentation and
+includes publication (publish must not be added to it again); it also includes
+renderer wakeup and any unmeasured front-end/pre-render work. postRender measures
+work between the closed render timer and presentation. These fields distinguish
+missed display slots from GPU-only cost without another polygon traversal.
+
+The user now authorizes reading newly supplied logs directly from
+`D:\Users\Noradninja\Downloads`. Check file freshness/package correspondence
+before using a capture; an unchanged file is not evidence for a newer edit.
+
+Follow-up hardware capture: the updated log still contains 34–36 ms scene
+renders. Several 120-frame windows average about 30 ms rendering while
+presentation averages about 50 ms (20 FPS); renderer-only timing does not
+prove the end-to-end 33 ms target. The user identifies mountains appearing
+over foreground polygons. RBG0 is currently composed before VDP1, so changing
+that call order alone is not an established fix.
+
+The subsequent unvalidated SGX change uses a balanced 16-plane selector and
+an exact shared-plane path when all sixteen native map addresses are equal.
+The latter skips plane selection, not native rotation, screen-over or pixel
+decoding. Shader compilation passes; exhaustive selector-slot checks and
+boundary/negative-coordinate shared-plane checks pass. Hardware speed and
+visual correctness remain unproven.
+
+Transition-only `SceneComposite` logs capture native priorities/maps, and at
+most eight `SceneOverlay` records identify oversized late-composed field
+sprites. These diagnose overlap without hiding objects, changing ordering,
+adding a view mode or adding a per-polygon profiling pass. The next capture
+must establish the responsible layer/command and measure the SGX change.
+
+The latest user-supplied log spans Ruins, canyon and tunnel views. Ruins
+samples show approximately 18–22 ms graphics wait; tunnel samples show about
+2 ms. A later 120-frame window averages 30.955 ms renderer time, with a
+204.492 ms maximum and a 179.495 ms build maximum. Both sustained GPU cost
+and static-frame rebuild hitches need attention; neither the 33 ms worst-frame
+target nor complete effects support is accepted yet.
+
+The working-tree checkpoint preserves the local menu changes and adds:
+
+- Independent native RBG0 A/B plane sizes and screen-over modes/OVPNR.
+- Native transparent-dot control and priority-zero background suppression.
+- Packed coefficient fetches on SGX, with 16-bit coefficient decoding and
+  packed line-window reads; background sampling remains point-filtered.
+- Live VRAM decoding for 64/128/256-color and RGB555 screen sprites, rather
+  than falling back to a Ruins-specific texture decoder for field effects.
+
+Only the revised RBG0 shader has been compiled successfully. Full C++ build,
+SELF/VPK packaging, performance improvement and hardware visuals are pending.
+Native particle/pickup commands already exist; this decoder change alone does
+not establish that their complete lifecycle, ordering and appearance work.
+Pinned Azel prepares `pointLightParams` but lacks the consumer calculation;
+recover that native behavior before adding attenuation, rather than inventing
+an alternate point-light model.
+
+VDP2 design rule: Azel register state governs visibility, mapping and effects;
+Neptune performs the pixel work on SGX. Use NEON only for measured CPU work
+where it preserves the native results. Do not disable backgrounds by town ID
+or trade accuracy for a claimed frame-time win. Wait for the user's next
+hardware log before selecting the next performance change.
+
 ## Work in progress after hardware build 8993213 (2026-10-09)
 
 The user supplied a fresh `lagi.log` after explicitly rejecting the older log.
