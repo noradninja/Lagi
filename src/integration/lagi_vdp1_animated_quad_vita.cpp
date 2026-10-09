@@ -1,5 +1,7 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "kernel/vdp1AnimatedQuad.h"
+#include "kernel/rayDisplay.h"
+#include <cmath>
 
 std::vector<sVdp1Quad> initVdp1Quad(sSaturnPtr ptr)
 {
@@ -59,7 +61,8 @@ int sGunShotTask_UpdateSub4(sAnimatedQuad* pThis)
 static int drawQuadInternal(
     sAnimatedQuad* pThis,
     sVec3_FP* position,
-    fixedPoint scale)
+    fixedPoint scale,
+    const quadColor* colors = nullptr)
 {
     if (!pThis || !pThis->m0_quad || pThis->m0_quad->empty() || !position)
         return 0;
@@ -92,11 +95,21 @@ static int drawQuadInternal(
     auto clamp16 = [](s32 v) -> s16 {
         return static_cast<s16>(std::clamp<s32>(v, -32768, 32767));
     };
+    auto& context = graphicEngineStatus.m14_vdp1Context[0];
+    if (context.mC >= 1018 || (colors && context.m10 == context.m14[0].end()))
+        return 0;
 
     s_vdp1Command& cmd =
         *graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA;
-    cmd.m0_CMDCTRL = 0x1002;
-    cmd.m4_CMDPMOD = q.m4_CMDPMOD | 0x84;
+    cmd = {};
+    cmd.m0_CMDCTRL = 0x1002 | (q.m2_CMDCTRL & 0x30);
+    cmd.m4_CMDPMOD = (q.m4_CMDPMOD | 0x80) & ~4u;
+    if (colors) {
+        auto& ctx = graphicEngineStatus.m14_vdp1Context[0];
+        cmd.m1C_CMDGRA = ctx.m10 - ctx.m14[0].begin();
+        *ctx.m10++ = *colors;
+        cmd.m4_CMDPMOD |= 4u;
+    }
     cmd.m6_CMDCOLR =
         (q.m4_CMDPMOD & 0x38) == 8
             ? static_cast<u16>(pThis->m4_vdp1Memory + q.mA_CMDCOLR)
@@ -133,9 +146,9 @@ int drawProjectedParticle(sAnimatedQuad* pThis, sVec3_FP* position)
 int drawProjectedParticleWithGouraud(
     sAnimatedQuad* pThis,
     sVec3_FP* position,
-    const quadColor*)
+    const quadColor* colors)
 {
-    return drawProjectedParticle(pThis, position);
+    return drawQuadInternal(pThis, position, fixedPoint(0x10000), colors);
 }
 
 int vdp1DrawQuadScaled(
@@ -144,6 +157,66 @@ int vdp1DrawQuadScaled(
     fixedPoint scale)
 {
     return drawQuadInternal(pThis, position, scale);
+}
+
+// Native ray service: Azel supplies view-space endpoints, width, texture and
+// Gouraud colors. Emit the same VDP1 distorted sprite used by particles/UI.
+bool gDirectRayRendering = true;
+
+s32 isGunShotVisible(std::array<sVec3_FP, 2>& points, s_graphicEngineStatus_405C& clip)
+{
+    return points[0][2] > clip.m10_nearClipDistance &&
+        points[1][2] > clip.m10_nearClipDistance &&
+        (points[0][2] < clip.m14_farClipDistance || points[1][2] < clip.m14_farClipDistance);
+}
+
+void displayRaySegmentFromViewSpace(std::array<sVec3_FP, 2>& points,
+    s32 width, u16 characterAddress, s16 characterSize, u16 characterColor,
+    const quadColor* colors, s32 colorMode)
+{
+    const auto& clip = graphicEngineStatus.m405C;
+    if (!isGunShotVisible(points, graphicEngineStatus.m405C)) return;
+    float x[2], y[2], hw[2], hh[2];
+    for (unsigned i = 0; i < 2; ++i) {
+        const fixedPoint invZ = FP_Div(0x10000, points[i][2]);
+        x[i] = MTH_Mul_5_6(clip.m18_widthScale, points[i][0], invZ).asS32() / 65536.0f;
+        y[i] = MTH_Mul_5_6(clip.m1C_heightScale, points[i][1], invZ).asS32() / 65536.0f;
+        hw[i] = MTH_Mul_5_6(clip.m18_widthScale, fixedPoint(width), invZ).asS32() / 65536.0f;
+        hh[i] = MTH_Mul_5_6(clip.m1C_heightScale, fixedPoint(width), invZ).asS32() / 65536.0f;
+    }
+    const float angle = std::atan2(y[0] - y[1], x[0] - x[1]);
+    const float sn = std::sin(angle), cs = std::cos(angle);
+    auto coord = [](float v) -> s16 {
+        return static_cast<s16>(std::clamp(std::lround(v), -32768l, 32767l));
+    };
+    auto& ctx = graphicEngineStatus.m14_vdp1Context[0];
+    if (ctx.mC >= 1018 || ctx.m10 == ctx.m14[0].end()) return;
+    auto& cmd = *ctx.m0_currentVdp1WriteEA;
+    cmd = {};
+    cmd.m0_CMDCTRL = 0x1002;
+    cmd.m4_CMDPMOD = 0x480 | colorMode;
+    cmd.m6_CMDCOLR = characterColor;
+    cmd.m8_CMDSRCA = characterAddress;
+    cmd.mA_CMDSIZE = characterSize;
+    cmd.mC_CMDXA = coord(x[0] - hw[0] * sn);
+    cmd.mE_CMDYA = coord(-(y[0] + hh[0] * cs));
+    cmd.m10_CMDXB = coord(x[1] - hw[1] * sn);
+    cmd.m12_CMDYB = coord(-(y[1] + hh[1] * cs));
+    cmd.m14_CMDXC = coord(x[1] + hw[1] * sn);
+    cmd.m16_CMDYC = coord(-(y[1] - hh[1] * cs));
+    cmd.m18_CMDXD = coord(x[0] + hw[0] * sn);
+    cmd.m1A_CMDYD = coord(-(y[0] - hh[0] * cs));
+    if (colors) {
+        cmd.m1C_CMDGRA = ctx.m10 - ctx.m14[0].begin();
+        *ctx.m10++ = *colors;
+        cmd.m4_CMDPMOD |= 4u;
+    }
+    ctx.m20_pCurrentVdp1Packet->m4_bucketTypes = 0;
+    ctx.m20_pCurrentVdp1Packet->m6_vdp1EA = &cmd;
+    ++ctx.m20_pCurrentVdp1Packet;
+    ++ctx.m1C;
+    ++ctx.mC;
+    ++ctx.m0_currentVdp1WriteEA;
 }
 
 int drawImmediateBillboardSprite(

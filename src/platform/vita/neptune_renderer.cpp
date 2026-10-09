@@ -195,6 +195,8 @@ static const SceGxmProgramParameter* g_vdp2Rbg0SwitchCoefficientParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0SwitchInfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0InfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0FormatParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0LayerWindowParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0LayerWindowInfoParam = nullptr;
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
 static SceGxmFragmentProgram* g_meshTextureFragmentProgram = nullptr;
@@ -690,6 +692,8 @@ static std::vector<Vdp1UiTextureCacheEntry> g_vdp1UiTextureCache;
 static SceUID g_vdp1UiVertexUid = -1;
 static SceUID g_vdp1UiIndexUid = -1;
 static azel::DebugTextureVertex* g_vdp1UiVertices = nullptr;
+static SubdivGouraudVertex* g_vdp1UiGouraudVertices = nullptr;
+static SceUID g_vdp1UiGouraudVertexUid = -1;
 static std::uint16_t* g_vdp1UiIndices = nullptr;
 static SceUID g_vdp1UiLineVertexUid = -1;
 static SceUID g_vdp1UiLineIndexUid = -1;
@@ -3252,7 +3256,7 @@ static void freeVdp1Textures()
 
 static bool ensureVdp1UiBuffers()
 {
-    if (g_vdp1UiVertices && g_vdp1UiIndices &&
+    if (g_vdp1UiVertices && g_vdp1UiGouraudVertices && g_vdp1UiIndices &&
         g_vdp1UiLineVertices && g_vdp1UiLineIndices)
         return true;
 
@@ -3261,6 +3265,9 @@ static bool ensureVdp1UiBuffers()
             128u * 4u * sizeof(azel::DebugTextureVertex),
             SCE_GXM_MEMORY_ATTRIB_READ,
             &g_vdp1UiVertexUid));
+    g_vdp1UiGouraudVertices = static_cast<SubdivGouraudVertex*>(
+        probeGpuAlloc(128u * 4u * sizeof(SubdivGouraudVertex),
+            SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp1UiGouraudVertexUid));
     g_vdp1UiIndices = static_cast<std::uint16_t*>(
         probeGpuAlloc(
             6u * sizeof(std::uint16_t),
@@ -3276,7 +3283,7 @@ static bool ensureVdp1UiBuffers()
             8u * sizeof(std::uint16_t),
             SCE_GXM_MEMORY_ATTRIB_READ,
             &g_vdp1UiLineIndexUid));
-    if (!g_vdp1UiVertices || !g_vdp1UiIndices ||
+    if (!g_vdp1UiVertices || !g_vdp1UiGouraudVertices || !g_vdp1UiIndices ||
         !g_vdp1UiLineVertices || !g_vdp1UiLineIndices)
         return false;
 
@@ -4385,6 +4392,8 @@ static void drawPublishedVdp1Ui()
 
         azel::DebugTextureVertex* const spriteVertices =
             g_vdp1UiVertices + spriteSlot * 4u;
+        SubdivGouraudVertex* const gouraudVertices =
+            g_vdp1UiGouraudVertices + spriteSlot * 4u;
         ++spriteSlot;
 
         float pos[4][2] = {
@@ -4417,6 +4426,24 @@ static void drawPublishedVdp1Ui()
         // vertex slice after issuing its draw within the same scene; the next
         // VDP1 sprite gets a separate 4-vertex region.
         sceGxmSetVertexStream(g_probeContext, 0, spriteVertices);
+        const bool shaded = command.hasGouraud &&
+            g_gouraudSubdivVertexProgram && g_texturedGouraudSubdivFragmentProgram;
+        if (shaded) {
+            for (unsigned i = 0; i < 4u; ++i) {
+                const unsigned c = command.gouraud[i];
+                gouraudVertices[i] = {pos[i][0], pos[i][1], 0.0f,
+                    uv[order[i]][0], uv[order[i]][1],
+                    (static_cast<int>(c & 31u) - 16) / 31.0f,
+                    (static_cast<int>((c >> 5) & 31u) - 16) / 31.0f,
+                    (static_cast<int>((c >> 10) & 31u) - 16) / 31.0f};
+            }
+            sceGxmSetVertexProgram(g_probeContext, g_gouraudSubdivVertexProgram);
+            sceGxmSetFragmentProgram(g_probeContext, g_texturedGouraudSubdivFragmentProgram);
+            void* shadeUniforms = nullptr;
+            if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &shadeUniforms) >= 0 && shadeUniforms)
+                sceGxmSetUniformDataF(shadeUniforms, g_gouraudSubdivWvpParam, 0, 16, identity);
+            sceGxmSetVertexStream(g_probeContext, 0, gouraudVertices);
+        }
         if (fieldRadarMap) {
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
@@ -4431,6 +4458,13 @@ static void drawPublishedVdp1Ui()
             SCE_GXM_INDEX_FORMAT_U16,
             g_vdp1UiIndices,
             6);
+        if (shaded) {
+            sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
+            sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
+            void* textureUniforms = nullptr;
+            if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &textureUniforms) >= 0 && textureUniforms)
+                sceGxmSetUniformDataF(textureUniforms, g_textureWvpParam, 0, 16, identity);
+        }
         if (fieldRadarMap) {
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
@@ -4452,7 +4486,7 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model, bool preservePrefix
     g_vdp1GpuTextures.reserve(model.textureCount);
 
     const std::size_t firstTexture = g_vdp1GpuTextures.size();
-    const bool pooled = g_sceneGameMode == 1u || g_sceneGameMode == 3u;
+    const bool pooled = g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u;
     if (pooled && firstTexture < model.textureCount) {
         std::size_t requiredBytes = 0u;
         for (std::size_t i = firstTexture; i < model.textureCount; ++i) {
@@ -4850,7 +4884,7 @@ bool prepare_vdp1_model(
     // active counts everywhere below. Cap subdivision capacity at its existing
     // 16-bit index-count limit, and preserve other modes' allocation behavior.
     const bool reserveSceneCapacity = preserveResidentTextures &&
-        (g_sceneGameMode == 1u || g_sceneGameMode == 3u) && subdivBuffersRequired;
+        (g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u) && subdivBuffersRequired;
     const std::size_t allocationPolygons = reserveSceneCapacity
         ? std::min<std::size_t>(65535u / 24u,
             std::max<std::size_t>(2048u, model.polygonCount + model.polygonCount / 4u))
@@ -5731,7 +5765,7 @@ static std::uint16_t liveTownTextureIndex(
     };
     const std::uint64_t key = descriptorKey(
         record.cmdPmod, record.cmdColr, record.cmdSrca, record.cmdSize);
-    const bool indexedScene = g_sceneGameMode == 1u || g_sceneGameMode == 3u;
+    const bool indexedScene = g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u;
     if (indexedScene) {
         // Index only appended descriptors. emplace preserves the original
         // linear search's first match if the source contains duplicates.
@@ -6673,7 +6707,7 @@ static bool buildLiveTownFrame()
     // Town mode owns Edge. Field mode publishes its dragon/rider hierarchy
     // through Azel's normal addObjectToDrawList() path, so never inject the
     // town actor into a field frame.
-    if (g_sceneGameMode == 1u && g_scenePlayerPresent)
+    if ((g_sceneGameMode == 1u || g_sceneGameMode == 2u) && g_scenePlayerPresent)
         appendLiveTownEdge();
     else {
         g_liveTownShadowFirstPolygon = 0u;
@@ -6895,7 +6929,7 @@ static ViewerMat4 buildAuthenticRoomWvp()
     }
 
     const bool nativeFieldClip =
-        (g_sceneGameMode == 1u || g_sceneGameMode == 3u) &&
+        (g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u) &&
         g_nativeSceneNearPlane > 0.0f &&
         g_nativeSceneFarPlane > g_nativeSceneNearPlane;
     const float nearPlane =
@@ -8442,13 +8476,18 @@ void show_game_presentation()
             g_vdp2Rbg0SwitchInfoParam =
                 sceGxmProgramFindParameterByName(
                     vdp2Rbg0FragmentGxp, "rbg0SwitchInfo");
+            g_vdp2Rbg0LayerWindowParam = sceGxmProgramFindParameterByName(
+                vdp2Rbg0FragmentGxp, "rbg0LayerWindow");
+            g_vdp2Rbg0LayerWindowInfoParam = sceGxmProgramFindParameterByName(
+                vdp2Rbg0FragmentGxp, "rbg0LayerWindowInfo");
             if (!g_vdp2Rbg0Transform0Param ||
                 !g_vdp2Rbg0Transform1Param ||
                 !g_vdp2Rbg0CoefficientParam ||
                 !g_vdp2Rbg0InfoParam ||
                 !g_vdp2Rbg0SwitchCoefficientParam ||
                 !g_vdp2Rbg0SwitchInfoParam ||
-                !g_vdp2Rbg0FormatParam) {
+                !g_vdp2Rbg0FormatParam ||
+                !g_vdp2Rbg0LayerWindowParam || !g_vdp2Rbg0LayerWindowInfoParam) {
                 logging::writef(
                     "[NeptuneVDP2] RBG0 compact uniforms unavailable; "
                     "disabling RBG0\n");
@@ -11058,6 +11097,13 @@ static bool drawVdp2Rbg0Gpu(
             rbgUniforms,
             g_vdp2Rbg0FormatParam,
             0, 4, rbg.format);
+        const float layerWindowInfo[4] = {
+            rbg.ctrl[3], rbg.ctrl[7], rbg.ctrl[5], 0.0f
+        };
+        sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0LayerWindowParam,
+            0, 4, &rbg.ctrl[8]);
+        sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0LayerWindowInfoParam,
+            0, 4, layerWindowInfo);
         const float switchSize = (ktctl & 0x2u) ? 2.0f : 4.0f;
         const float switchInfo[4] = {
             static_cast<float>(ktaof & 7u) * switchSize * 65536.0f,
@@ -11820,9 +11866,9 @@ static void renderBasicWingViewer()
     // thread never reads mutable controller state directly.
 
     const bool nativeSceneContext =
-        g_sceneGameMode != 0u && g_townCameraReady;
+        g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u;
     const bool nativeSceneMode =
-        nativeSceneContext &&
+        nativeSceneContext && (g_nativeSceneViewValid || g_townCameraReady) &&
         !azel_bridge::published_submissions().empty();
     // Native menus pause the gameplay task, so a valid menu frame can have
     // zero world submissions while still carrying VDP2/VDP1 UI commands.
@@ -11830,9 +11876,9 @@ static void renderBasicWingViewer()
     const bool nativeMenuFrame =
         nativeSceneContext && g_vdp2MenuId != 0u;
     const bool roomMode =
-        g_staticRoomCpuReady || nativeSceneMode || nativeMenuFrame;
+        g_staticRoomCpuReady || nativeSceneContext;
     const bool roomAuthenticCameraMode =
-        nativeSceneMode || nativeMenuFrame ||
+        nativeSceneContext ||
         (g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraValid);
 
     // Legacy Basic Wing regression camera state is renderer-owned. Interactive
@@ -11873,15 +11919,14 @@ static void renderBasicWingViewer()
             return;
         g_residentVdp1Model = ResidentVdp1Model::BasicWing;
         applyBasicWingAnimationFrame(g_basicWingAnimationFrame);
-    } else if (roomAuthenticCameraMode &&
-               (!nativeMenuFrame || nativeSceneMode)) {
+    } else if (nativeSceneMode || (!nativeSceneContext && roomAuthenticCameraMode)) {
         const std::uint64_t buildStartUs = sceKernelGetProcessTimeWide();
         const bool liveTownBuilt = buildLiveTownFrame();
         g_profileBuildUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - buildStartUs);
         if (!liveTownBuilt)
             return;
-    } else if (roomMode) {
+    } else if (roomMode && !nativeSceneContext) {
         const ResidentVdp1Model desiredResident =
             ResidentVdp1Model::StaticRoomDiagnostic;
 
@@ -12016,7 +12061,8 @@ static void renderBasicWingViewer()
             : basicWingVdp1Source());
 
     const std::uint64_t submitStartUs = sceKernelGetProcessTimeWide();
-    const bool submitted = submit_vdp1_model(model, drawState);
+    const bool submitted = nativeSceneContext && !nativeSceneMode
+        ? true : submit_vdp1_model(model, drawState);
     g_profileSubmitUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - submitStartUs);
     if (!submitted && !nativeMenuFrame) {
@@ -12665,7 +12711,7 @@ bool presentation_active()
         g_pendingViewMode == 10 || g_pendingViewMode == 9 ||
         g_pendingViewMode == 11;
     const bool nativeSceneReady =
-        g_sceneGameMode != 0u && g_townCameraReady;
+        g_sceneGameMode != 0u && (g_nativeSceneViewValid || g_townCameraReady);
     const bool legacyRoomReady =
         g_staticRoomCpuReady && g_staticRoomCpuMesh.cameraValid;
     return !g_debugVisible && sceneMode &&

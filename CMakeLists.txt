@@ -1159,25 +1159,7 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
     "found ${lagi_field_grid_static_match_count} matches")
   endif()
 
-  # Upstream rayDisplay.cpp is BGFX/GLM desktop renderer code. FLD_A3 is now
-  # reachable for flight bring-up, but native ray/laser presentation belongs
-  # to a later Neptune phase. Keep only those desktop draw branches suppressed.
-  string(REPLACE
-   "        if (isGunShotVisible(segment, graphicEngineStatus.m405C))"
-   "        if (false)"
-   source_text "${source_text}")
-  string(REPLACE
-   "            displayRaySegmentFromViewSpace(segment, 0x333, vdp1Base + 0xF8, 0x210, vdp1Base + 0x173C, &gouraud, 8);"
-   "            /* Lagi flight bring-up: field laser ray draw deferred to native Neptune path */"
-   source_text "${source_text}")
-  string(REPLACE
-   "    if (gDirectRayRendering)"
-   "    if (false)"
-   source_text "${source_text}")
-  string(REPLACE
-   "            displayRaySegmentFromViewSpace(segment, width, characterAddress, characterSize, characterColor, &(*arg0)[i], 8);"
-   "            /* Lagi flight bring-up: field laser ray draw deferred to native Neptune path */"
-   source_text "${source_text}")
+  # Native ray calls terminate in Lagi's shared VDP1 effect service.
 
  elseif(relative_path STREQUAL "field.cpp")
   string(REPLACE

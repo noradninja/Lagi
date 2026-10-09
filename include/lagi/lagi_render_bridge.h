@@ -35,6 +35,8 @@ struct Vdp1UiCommand {
     std::uint16_t cmdColr = 0;
     std::uint16_t cmdSrca = 0;
     std::uint16_t cmdSize = 0;
+    bool hasGouraud = false;
+    std::uint16_t gouraud[4]{0x4210, 0x4210, 0x4210, 0x4210};
     std::int16_t xa = 0, ya = 0;
     std::int16_t xb = 0, yb = 0;
     std::int16_t xc = 0, yc = 0;

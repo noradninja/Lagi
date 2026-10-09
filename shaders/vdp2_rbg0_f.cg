@@ -228,10 +228,29 @@ float4 main(
     // {coefficient table base, enabled, entry size, unused}
     uniform float4 rbg0Info,
     // {CHCTLB, PNCR, CRAOFB, RBG0 PLSZ}
-    uniform float4 rbg0Format)
+    uniform float4 rbg0Format,
+    uniform float4 rbg0LayerWindow,
+    uniform float4 rbg0LayerWindowInfo)
 {
     const float x = min(351.0f, floor(vTexcoord.x * 352.0f));
     const float y = min(223.0f, floor(vTexcoord.y * 224.0f));
+
+    // Layer visibility (WCTLC) is independent of parameter selection (WCTLD).
+    if (fmod(floor(rbg0LayerWindowInfo.x / 2.0f), 2.0f) >= 1.0f) {
+        float xs = rbg0LayerWindow.x;
+        float xe = rbg0LayerWindow.z;
+        if (fmod(rbg0LayerWindowInfo.y, 2.0f) >= 1.0f) {
+            float address = rbg0LayerWindowInfo.z + y * 4.0f;
+            xs = floor((readByte(raw, address) +
+                256.0f * readByte(raw, address + 1.0f)) / 2.0f);
+            xe = floor((readByte(raw, address + 2.0f) +
+                256.0f * readByte(raw, address + 3.0f)) / 2.0f);
+        }
+        const bool inside = x >= xs && x <= xe &&
+            y >= rbg0LayerWindow.y && y <= rbg0LayerWindow.w;
+        const bool drawInside = fmod(rbg0LayerWindowInfo.x, 2.0f) >= 1.0f;
+        if (inside != drawInside) discard;
+    }
 
     if (rbg0SwitchInfo.w >= 0.5f) {
         bool selectB = false;

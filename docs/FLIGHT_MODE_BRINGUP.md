@@ -13,6 +13,51 @@ Neptune renders.
 Flight behavior, field scripts, dragon movement, camera state, visibility, animation, encounters, VDP1/VDP2 state, and progression remain Azel-owned. Lagi restores the Vita-facing services and presentation paths required to let that runtime execute natively.
 
 
+## Latest checkpoint - live presentation and native effects (2026-10-09)
+
+The user's new hardware report confirms Ruins orientation is fixed, and flight
+subtitles/black bar and LCS text/icons/tiles work. Remaining evidence: unintended
+Ruins water/white-blue background, frozen flight image through E006/Excavation,
+missing effects, wrong laser color, and excessive item-collection lighting.
+
+The new log proves E006's stream advances to frame 1160, completes at exactly
+310556 consumed bytes, and loads TWN_EXCA.PRG. This is a presentation failure,
+not evidence that the cinematic task stopped. Two gates were wrong: rendering
+required a nonempty fallback camera despite a valid captured native matrix,
+and publication excluded native town mode 2 (Excavation uses mode 2/status 0x51).
+Both are corrected generically. Scene fades/UI are also presented on empty
+world frames and during native module transitions, avoiding a retained flight
+image when the old task graph is torn down. Azel still advances all fade state.
+
+RBG0's WCTLC visibility window is now applied independently of WCTLD rotation
+parameter switching. Ruins authors this mask for its water/background; removing
+RBG0 altogether would suppress native content instead of fixing visibility.
+The shared shader consumes the authored rectangle/line-window data.
+
+Native projected particles now preserve texture flips and supplied Gouraud
+colors; unshaded particles no longer request an uninitialized Gouraud table.
+The frame snapshot carries the four colors, and Neptune composes them through
+its existing RGB555 shader. Previously disabled flight ray calls now terminate
+at Lagi's shared VDP1 service, using Azel's endpoints, width, texture/palette and
+colors. This restores the path for beams and homing/trail effects without
+hard-coding a blue palette or changing native item behavior.
+
+The collection-light locality issue remains open: native field code requests
+point-light state, but the current bridge implements directional lighting.
+Do not claim that the present checkpoint fixes its spatial falloff. Flight exit
+fade timing also needs hardware confirmation: the supplied log shows no gradual
+field fade request before module teardown, though E006 fades advance normally.
+
+Use the pull/build/install steps below. Capture Ruins background at the same
+hall location, flight particles and an item collection, laser/trail color, cave
+entry, E006 camera/world animation and fades, Excavation arrival and its visible
+pause menu. Send the full fresh log and photos of any remaining fault. Wait for
+that user evidence before dependent fixes; do not mark the overall goal complete.
+
+Validation for this checkpoint: Vita C++ and RBG0 shader compilation, link,
+VELF/SELF creation and VPK packaging passed. These checks do not establish
+on-device correctness. Upstream Azel remains unchanged.
+
 ## Ruins orientation correction - 2026-10-09
 
 The user reports Ruins meshes inside out and horizontally reversed after the

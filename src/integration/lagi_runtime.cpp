@@ -68,6 +68,11 @@ static void capture_azel_vdp1_frontend_commands()
         ui.cmdColr = cmd->m6_CMDCOLR;
         ui.cmdSrca = cmd->m8_CMDSRCA;
         ui.cmdSize = cmd->mA_CMDSIZE;
+        if ((ui.cmdPmod & 4u) && cmd->m1C_CMDGRA < ctx.m14[0].size()) {
+            ui.hasGouraud = true;
+            for (unsigned i = 0; i < 4; ++i)
+                ui.gouraud[i] = ctx.m14[0][cmd->m1C_CMDGRA][i];
+        }
         ui.xa = cmd->mC_CMDXA;   ui.ya = cmd->mE_CMDYA;
         ui.xb = cmd->m10_CMDXB;  ui.yb = cmd->m12_CMDYB;
         ui.xc = cmd->m14_CMDXC;  ui.yc = cmd->m16_CMDYC;
@@ -343,9 +348,16 @@ void runtime_frame()
 
     // Native 3D scene capability check. Town (1) and field (3) both
     // remain Azel-owned; Lagi only opens their generic presentation boundary.
-    const bool nativeSceneFrame =
-        gGameStatus.m0_gameMode == 1 ||
+    static unsigned lastNativeSceneMode = 0u;
+    const bool nativeTransitionFrame =
+        gGameStatus.m0_gameMode == -1 && lastNativeSceneMode != 0u;
+    const bool nativeSceneFrame = nativeTransitionFrame ||
+        gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 2 ||
         gGameStatus.m0_gameMode == 3;
+    if (!nativeTransitionFrame && nativeSceneFrame)
+        lastNativeSceneMode = static_cast<unsigned>(gGameStatus.m0_gameMode);
+    if (gGameStatus.m0_gameMode == 0)
+        lastNativeSceneMode = 0u;
     // Restart the presentation fade on every field entry, including a return
     // through movie/menu mode. Azel retains ownership of module selection.
     static bool wasFieldFrame = false;
@@ -409,6 +421,8 @@ void runtime_frame()
         // Lagi snapshots only renderer-facing state through the generic scene
         // bridge after the native task pass.
         lagi::scene_bridge::sync_presentation_state();
+        if (gGameStatus.m0_gameMode == -1 && lastNativeSceneMode != 0u)
+            lagi::platform::renderer::presentation_set_scene_mode(lastNativeSceneMode);
     }
 
     if (gGameStatus.m4_gameStatus == 2 &&
@@ -473,7 +487,7 @@ void runtime_frame()
     // native setup often enables BACK only; it still drives the whole-scene
     // transition in fade0. Do not infer it from an Edge camera flag or advance
     // a second fade clock on the renderer thread.
-    if (gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 3)
+    if (nativeSceneFrame)
         lagi::platform::renderer::presentation_set_scene_color_offset(
             g_fadeControls.m0_fade0.m0_color[0].getInteger(),
             g_fadeControls.m0_fade0.m0_color[1].getInteger(),
@@ -1067,7 +1081,7 @@ void runtime_frame()
         // fade. Re-submit the retained final frame only while the movie-mode
         // state machine still owns presentation.
         lagi::platform::renderer::movie_republish_frame();
-    } else if (gGameStatus.m0_gameMode == 1 ||
+    } else if (nativeTransitionFrame || gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 2 ||
                gGameStatus.m0_gameMode == 3) {
         // The frame that *enters* a native scene began as a movie/module-manager
         // frame and therefore did not acquire the scene producer slot. Release
