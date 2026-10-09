@@ -458,6 +458,64 @@ static std::unordered_set<
     LiveTownStaticIdentity,
     LiveTownStaticIdentityHash> g_liveTownKnownStaticIdentities;
 
+
+// Some native Azel submissions (cutscene actors, machinery, ordinary town
+// tasks) arrive through the same addObjectToDrawList() boundary as rigid world
+// geometry and may not carry an explicit dynamic flag. Classify them by actual
+// transform stability instead of by game mode or area. Once an instance moves,
+// keep it on the dynamic path for the lifetime of that scene so camera/fade/
+// palette activity can never force the static environment to rebuild around it.
+struct LiveTownInstanceKey {
+    sProcessed3dModel* model = nullptr;
+    std::uint32_t sceneMode = 0;
+    std::int8_t bundleIndex = -1;
+    std::uint32_t cellIndex = 0;
+    std::uint32_t objectIndex = 0;
+    std::uint32_t modelTableOffset = 0;
+
+    bool operator==(const LiveTownInstanceKey& rhs) const
+    {
+        return model == rhs.model &&
+            sceneMode == rhs.sceneMode &&
+            bundleIndex == rhs.bundleIndex &&
+            cellIndex == rhs.cellIndex &&
+            objectIndex == rhs.objectIndex &&
+            modelTableOffset == rhs.modelTableOffset;
+    }
+};
+
+struct LiveTownInstanceKeyHash {
+    std::size_t operator()(const LiveTownInstanceKey& key) const
+    {
+        std::uint64_t hash = 1469598103934665603ull;
+        const auto add = [&hash](std::uint64_t value) {
+            hash ^= value;
+            hash *= 1099511628211ull;
+        };
+        add(static_cast<std::uint64_t>(
+            reinterpret_cast<std::uintptr_t>(key.model)));
+        add(key.sceneMode);
+        add(static_cast<std::uint8_t>(key.bundleIndex));
+        add(key.cellIndex);
+        add(key.objectIndex);
+        add(key.modelTableOffset);
+        return static_cast<std::size_t>(hash);
+    }
+};
+
+struct LiveTownTransformHistory {
+    std::int32_t matrix[12]{};
+    bool valid = false;
+};
+
+static std::unordered_map<
+    LiveTownInstanceKey,
+    LiveTownTransformHistory,
+    LiveTownInstanceKeyHash> g_liveTownTransformHistory;
+static std::unordered_set<
+    LiveTownInstanceKey,
+    LiveTownInstanceKeyHash> g_liveTownAutoDynamicIdentities;
+
 // The identity set is owned exclusively by LagiRender. CRAM/VDP1 invalidation
 // can arrive from the game/Azel side while the renderer is hashing/reserving,
 // so producers only bump this epoch; buildLiveTownFrame() performs the actual
@@ -1776,26 +1834,28 @@ static void applyPendingRendererInvalidation()
     if (flags == 0u)
         return;
 
-    // Apply the dependent renderer state as one transaction. Resetting the
-    // static signature in the same frame that its range/material metadata is
-    // cleared guarantees buildLiveTownFrame() reconstructs a coherent static
-    // prefix before it can be reused.
-    g_liveTownMaterialCache.clear();
-    g_fieldTextureIndices.clear();
-    g_fieldTextureIndexedCount = 0u;
-    g_liveTownStaticIdentityResetEpoch.fetch_add(
-        1u, std::memory_order_relaxed);
+    // Palette and VDP1 texture writes invalidate texture *contents*, not
+    // world geometry. Keep the flattened static prefix, its signature, mesh
+    // ranges, and stable-instance identities resident. This is essential for
+    // fades, cutscenes, palette animation, and ordinary town effects: none of
+    // those events changes the rigid environment topology.
+    //
+    // Force the GPU-side prepare path to refresh affected texture payloads,
+    // while leaving CPU geometry residency untouched.
     g_liveTownSignature = 0;
-    g_liveTownStaticSignature = 0;
-    g_liveTownStaticMeshRanges.clear();
     g_liveTownPrepared = false;
 
-    if ((flags & kRendererInvalidateVdp1Textures) != 0u)
+    if ((flags & kRendererInvalidateVdp1Textures) != 0u) {
+        // VDP1 source writes may change material descriptors as well as texels.
+        // Re-resolve model->texture bindings, but do not rebuild model geometry.
+        g_liveTownMaterialCache.clear();
+        g_fieldTextureIndices.clear();
+        g_fieldTextureIndexedCount = 0u;
         freeVdp1Textures();
+    }
 
-    // CRAM changes can alter decoded texture/material output even when the
-    // VDP1 source bytes themselves did not change, so both invalidation types
-    // force the next live-scene prepare to refresh texture data.
+    // CRAM changes alter decoded color only. Existing polygon/material indices
+    // remain valid; prepare_vdp1_model() will refresh the resident texture data.
     g_vdp1TextureDataDirty = true;
 }
 
@@ -6380,6 +6440,8 @@ static bool buildLiveTownFrame()
         g_liveTownStaticIdentityResetEpoch.load(std::memory_order_relaxed);
     if (identityResetEpoch != g_liveTownStaticIdentityAppliedEpoch) {
         g_liveTownKnownStaticIdentities.clear();
+        g_liveTownTransformHistory.clear();
+        g_liveTownAutoDynamicIdentities.clear();
         g_liveTownStaticIdentityAppliedEpoch = identityResetEpoch;
     }
 
@@ -6395,6 +6457,55 @@ static bool buildLiveTownFrame()
     g_liveTownStaticSubmittedPolygons = 0u;
     g_liveTownBillboardSubmittedPolygons = 0u;
 
+    // Promote transform-changing instances to the universal dynamic path.
+    // The key deliberately excludes the matrix: the matrix is what we observe
+    // for change. Explicit dynamic/billboard submissions already bypass this.
+    for (const auto& submission : azel_bridge::published_submissions()) {
+        if (submission.state.dynamic ||
+            submission.state.billboard ||
+            submission.adaptedModelIndex < 0 ||
+            !submission.state.hasModelMatrix)
+            continue;
+
+        LiveTownInstanceKey key{};
+        key.model = submission.model;
+        key.sceneMode = g_sceneGameMode;
+        key.bundleIndex = submission.bundleIndex;
+        key.cellIndex = submission.cellIndex;
+        key.objectIndex = submission.objectIndex;
+        key.modelTableOffset = submission.modelTableOffset;
+
+        auto& history = g_liveTownTransformHistory[key];
+        if (history.valid &&
+            std::memcmp(
+                history.matrix,
+                submission.state.modelMatrix,
+                sizeof(history.matrix)) != 0) {
+            g_liveTownAutoDynamicIdentities.emplace(key);
+        }
+        std::memcpy(
+            history.matrix,
+            submission.state.modelMatrix,
+            sizeof(history.matrix));
+        history.valid = true;
+    }
+
+    const auto submissionIsDynamic =
+        [](const azel_bridge::RenderSubmission& submission) {
+            if (submission.state.dynamic || submission.state.billboard)
+                return true;
+
+            LiveTownInstanceKey key{};
+            key.model = submission.model;
+            key.sceneMode = g_sceneGameMode;
+            key.bundleIndex = submission.bundleIndex;
+            key.cellIndex = submission.cellIndex;
+            key.objectIndex = submission.objectIndex;
+            key.modelTableOffset = submission.modelTableOffset;
+            return g_liveTownAutoDynamicIdentities.find(key) !=
+                g_liveTownAutoDynamicIdentities.end();
+        };
+
     for (const auto& submission : azel_bridge::published_submissions()) {
         if (submission.adaptedModelIndex < 0)
             continue;
@@ -6407,13 +6518,13 @@ static bool buildLiveTownFrame()
             ++g_liveTownBillboardSubmissionCount;
             g_liveTownBillboardSubmittedPolygons +=
                 static_cast<unsigned int>(model->polygons.size());
-        } else if (!submission.state.dynamic) {
+        } else if (!submissionIsDynamic(submission)) {
             ++g_liveTownStaticSubmissionCount;
             g_liveTownStaticSubmittedPolygons +=
                 static_cast<unsigned int>(model->polygons.size());
         }
 
-        if (!submission.state.dynamic) {
+        if (!submissionIsDynamic(submission)) {
             // Geometry/material identity only. Lighting is renderer state and
             // must not invalidate/rebuild the static world mesh.
             staticSignature ^= static_cast<std::uint64_t>(
@@ -6480,7 +6591,7 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.polygonTextureIndices.clear();
         g_liveTownPolygonLights.clear();
         for (const auto& submission : azel_bridge::published_submissions()) {
-            if (submission.state.dynamic ||
+            if (submissionIsDynamic(submission) ||
                 submission.adaptedModelIndex < 0)
                 continue;
             const auto* model = azel_bridge::published_adapted_model(
@@ -6545,7 +6656,7 @@ static bool buildLiveTownFrame()
     // per instance each frame.
     const std::uint64_t tObjects = sceKernelGetProcessTimeWide();
     for (const auto& submission : azel_bridge::published_submissions()) {
-        if (!submission.state.dynamic ||
+        if (!submissionIsDynamic(submission) ||
             submission.adaptedModelIndex < 0)
             continue;
         const auto* model = azel_bridge::published_adapted_model(
