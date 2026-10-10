@@ -994,6 +994,7 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
     static unsigned reports = 4; \
     if (reports) { \
         const unsigned before = lagi::azel_bridge::submission_count(); \
+        lagi::azel_bridge::trace_actor_submission_matrix(label); \
         expression; \
         lagi::platform::logging::writef("[NativeActorDraw] kind=%s submissions=%u\n", \
             label, lagi::azel_bridge::submission_count() - before); \

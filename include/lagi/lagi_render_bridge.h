@@ -65,6 +65,10 @@ void begin_frame(bool forceDynamicSubmissions = false);
 // during the current frame.
 std::uint32_t submission_count();
 
+// Bounded callers may inspect native actor/view transforms without changing
+// the matrix stack, visibility, or submitted model.
+void trace_actor_submission_matrix(const char* label);
+
 // Most recently submitted Azel processed model. This remains opaque at the
 // bridge layer until the live-model adapter converts it to Vdp1ModelSource.
 sProcessed3dModel* last_model();

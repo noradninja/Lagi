@@ -146,6 +146,24 @@ std::uint32_t submission_count()
     return g_submissionCount;
 }
 
+void trace_actor_submission_matrix(const char* label)
+{
+    std::int32_t current[12]{};
+    const bool valid = &pCurrentMatrix && pCurrentMatrix;
+    if (valid)
+        copyMatrixRaw(*pCurrentMatrix, current);
+    const auto report = [&](const char* space, const std::int32_t* m) {
+        lagi::platform::logging::writef(
+            "[NativeActorMatrix] kind=%s space=%s currentValid=%u viewValid=%u scoped=%u "
+            "matrix=%d,%d,%d,%d;%d,%d,%d,%d;%d,%d,%d,%d\n",
+            label, space, valid ? 1u : 0u, g_nativeSceneViewValid ? 1u : 0u,
+            g_viewRelativeScope ? 1u : 0u,
+            m[0],m[1],m[2],m[3],m[4],m[5],m[6],m[7],m[8],m[9],m[10],m[11]);
+    };
+    report("actorBoundary", current);
+    report("nativeView", g_nativeSceneViewMatrix);
+}
+
 sProcessed3dModel* last_model()
 {
     return g_lastModel;

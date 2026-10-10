@@ -1,5 +1,28 @@
 # Flight Mode Bring-Up
 
+## Excavation-only actor placement investigation (2026-10-10)
+
+User screenshot shows dragon/Captain misplaced relative to Excavation world
+geometry and clarifies this occurs only in Excavation. This is the town path,
+not a reason to alter the hardware-confirmed native flight X/winding rule.
+Latest log (796,740 bytes, 21:36 UTC) reports TownDragon=62 and ExcaNPC=17
+submissions per bounded actor diagnostic. This proves submission, not correct
+world placement, model contents or camera-space conversion. Native render
+samples median 24.407 ms; completed field windows still contain 56.298 and
+59.571 ms rebuild outliers. Performance completion remains contradicted.
+
+Source: town dragon builds its local model matrix then multiplies the current
+matrix; ExcaNPC translates/rotates the current matrix. The generic bridge
+removes the captured native view, while Edge additionally uses an explicit
+view-relative scope. A new bounded NativeActorMatrix trace prints the actual
+actor-boundary and captured-view 3x4 fixed-point matrices before the existing
+draw expression, plus validity/scope flags. NPC boundary already includes its
+local transform; do not interpret it as a bare camera. Existing four-report
+budgets remain, expressions still execute exactly once, and no transforms,
+visibility or models are changed. Compare these against static town placement
+before choosing a correction. No upstream Azel edits. Source diff checks pass;
+native build and hardware diagnosis remain pending.
+
 ## Grouped opacity scan and latest capture (2026-10-10)
 
 Downloads changed to 874,424 bytes, 19:50 UTC; tested binary SHA awaits user
