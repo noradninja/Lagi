@@ -1,5 +1,46 @@
 # Flight Mode Bring-Up
 
+## Hardware preparation results and startup texture arena (2026-10-10)
+
+Capture: Downloads/lagi.log, 783808 bytes, 18:25 local time, user testing c9b1f92.
+RBG-enabled sampled native render median 24.089 ms, p90 25.637 ms. Completed
+field windows cover 3960 frames: 462 over 25 ms, two over 33.333 ms. Field
+baseline-reset outliers remain 55.824/61.080 ms; missing baseline presentation
+intervals do not prove those entries displayed on time. Separate mode-1 initial
+sample is 77.483 ms. Median bound holds only for completed field windows.
+
+79 preparation events averaged 107.9 us decode and 453.6 us upload, maxima
+944/747 us. Initial field still decodes 227 textures and uploads 512960 bytes
+in 19.033 ms (13.027 ms allocation). Later field load discovers 137 new textures
+and refreshes/uploads 246 textures in 20.635 ms (13.051 ms allocation). The
+registrations publish immediately before visible entry; native load/cell setup
+can complete within the same game update. Current warming therefore has no
+advance opportunity for first-visible resources. No isolated speedup claimed.
+
+User confirms 128 MiB total VRAM; do not treat all of it as spare texture budget.
+Existing render targets and other CDRAM resources retain their allocation paths.
+Next checkpoint reserves an optional 8 MiB mapped native texture slab during
+renderer initialization, before starting the render thread. This covers this
+capture's pooled high-water allocation but is not a universal capacity claim.
+Scene texture release resets that slab's used cursor without releasing it;
+ordinary overflow slabs retain their existing release behavior. Shutdown frees
+the reserved slab too. Existing mapped texture prefixes remain untouched during
+geometry-only prepares. Uploads use the same aligned first-fit allocator and
+grow normally if capacity is exceeded; failed startup reservation falls back
+to the existing allocator rather than failing initialization. Reservation prefers
+USER_CDRAM_RW (dedicated VRAM), then GPU-mapped USER_RW_UNCACHE system RAM.
+Overflow allocations remain system RAM. The previous slab allocator did not use
+dedicated VRAM; this change does not migrate every renderer allocation to CDRAM.
+
+Tradeoff: 8 MiB remains reserved across menus/movies/towns until shutdown, with
+allocation latency moved to startup. This is allocation residency, NOT persistent
+per-model geometry or earlier decoding. Cold decode/resource CPU work still
+exceeds the target and remains next work. NativeTextureArena logs bytes/ready/
+startupUs; compare native upload allocation stages and complete frame tails on
+hardware; cdram identifies which heap succeeded. Native syntax/diff checks pass.
+No package build or hardware validation of the arena checkpoint. CPU upload and
+GPU sampling behavior in CDRAM must be measured, not assumed faster.
+
 ## Avoid geometry rebuilds for prepared offscreen materials (2026-10-10)
 
 Follow-up to the preparation consumer: the live frame signature now hashes

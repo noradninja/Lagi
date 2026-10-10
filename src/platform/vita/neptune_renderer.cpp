@@ -684,6 +684,7 @@ struct FieldTextureSlab {
     SceUID uid = -1;
     void* data = nullptr;
     std::size_t bytes = 0u, used = 0u;
+    bool startupArena = false;
 };
 static std::vector<FieldTextureSlab> g_fieldTextureSlabs;
 static bool g_vdp1TexturedReady = false;
@@ -1066,7 +1067,7 @@ static bool g_presentClockInitialized = false;
 static unsigned int g_lastPresentVcount = 0;
 
 // Defined below with the textured-viewer helpers; shutdown() needs it earlier.
-static void freeVdp1Textures();
+static void freeVdp1Textures(bool releaseArena = false);
 static void freeMovieResources();
 static void updateLiveTownAzelLighting();
 static bool ensureVdp2UiGpuBuffers();
@@ -1395,6 +1396,7 @@ static void drawViewerModeOverlay(
 }
 
 // Forward declarations used by the decoded title cache helpers below.
+static void* probeCdramAlloc(unsigned int size, unsigned int attribs, SceUID* uid);
 static void* probeGpuAlloc(
     unsigned int size,
     unsigned int attribs,
@@ -2123,6 +2125,29 @@ bool init()
         return false;
     }
 
+    // Pay the bounded native texture arena allocation before gameplay/render
+    // publication begins, not on the first visible frame of a streamed scene.
+    if (g_fieldTextureSlabs.empty()) {
+        FieldTextureSlab arena{};
+        arena.bytes = 8u * 1024u * 1024u;
+        arena.startupArena = true;
+        const auto arenaStartUs = sceKernelGetProcessTimeWide();
+        arena.data = probeCdramAlloc(static_cast<unsigned>(arena.bytes),
+            SCE_GXM_MEMORY_ATTRIB_READ, &arena.uid);
+        const bool arenaCdram = arena.data != nullptr;
+        if (!arena.data)
+            arena.data = probeGpuAlloc(static_cast<unsigned>(arena.bytes),
+                SCE_GXM_MEMORY_ATTRIB_READ, &arena.uid);
+        if (arena.data)
+            g_fieldTextureSlabs.push_back(arena);
+        logging::writef("[NativeTextureArena] bytes=%u ready=%u cdram=%u startupUs=%llu\n",
+            static_cast<unsigned>(arena.bytes), arena.data ? 1u : 0u,
+            arenaCdram ? 1u : 0u,
+            static_cast<unsigned long long>(sceKernelGetProcessTimeWide() - arenaStartUs));
+        // A failed optional reservation leaves the existing upload allocator
+        // available. Do not fail otherwise working rendering on this optimization.
+    }
+
     g_renderThreadRunning = true;
     g_renderThread = sceKernelCreateThread(
         "LagiRender",
@@ -2255,7 +2280,7 @@ void shutdown()
     g_vdp1SubdivVertexCapacity = 0u;
     g_vdp1SubdivIndexCapacity = 0u;
     g_vdp1SubdivQuadIndices.clear();
-    freeVdp1Textures();
+    freeVdp1Textures(true);
     freeMovieResources();
 
     if (g_probeShaderPatcher) {
@@ -3457,7 +3482,7 @@ static void probePatcherHostFree(void*, void* mem)
     std::free(mem);
 }
 
-static void freeVdp1Textures()
+static void freeVdp1Textures(bool releaseArena)
 {
     for (auto& texture : g_vdp1GpuTextures) {
         if (texture.uid >= 0) {
@@ -3470,9 +3495,16 @@ static void freeVdp1Textures()
     }
     g_vdp1GpuTextures.clear();
     g_nativeGpuTextureGenerations.clear();
-    for (auto& slab : g_fieldTextureSlabs)
-        freeMovieMappedBlock(slab.uid, slab.data);
-    g_fieldTextureSlabs.clear();
+    for (auto& slab : g_fieldTextureSlabs) {
+        if (slab.startupArena && !releaseArena)
+            slab.used = 0u;
+        else
+            freeMovieMappedBlock(slab.uid, slab.data);
+    }
+    g_fieldTextureSlabs.erase(std::remove_if(g_fieldTextureSlabs.begin(),
+        g_fieldTextureSlabs.end(), [releaseArena](const auto& slab) {
+            return releaseArena || !slab.startupArena;
+        }), g_fieldTextureSlabs.end());
     g_vdp1TextureBatches.clear();
     g_vdp1TexturedReady = false;
 }
