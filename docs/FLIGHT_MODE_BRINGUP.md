@@ -1,5 +1,35 @@
 # Flight Mode Bring-Up
 
+## Located field resource-inventory boundary (2026-10-10)
+
+Source audit: setupField2 in field_a3/o_fld_a3.cpp calls
+loadFileFromFileList(r4->mC), creates every grid cell task, pauses them, then
+enables Azel-selected cells. setupGridCell binds each task's memory area and
+environment/billboard cell lists. field.cpp::loadFileFromFileList loads MCB
+into the native bundle slot and CGB into the native VDP1 character area;
+getMemoryArea maps indices above two to slot two. This is a candidate
+game-thread inventory boundary, not evidence that asynchronous readiness,
+publication, or resource preparation has been implemented.
+
+The generic bridge must distinguish resource registration from render
+submission. Registration must not run cell draw tasks, unpause cells or
+change visibility. Collect authored render-model offsets/LOD alternatives
+from the loaded grid; do not treat the fifth collision-model offset as a
+visual resource. Publish adapted immutable descriptors with bundle/scene
+generation and texture-memory readiness at the existing frame boundary;
+Neptune prepares GPU resources only on its owning thread. Pointer identity
+alone cannot distinguish reloaded bundles at reused addresses. A grid
+inventory does not cover task-created actors, particles or dynamic object
+models, which retain first-encounter registration.
+
+published_adapted_model currently exposes only this frame's submitted model
+list, although backing adapted models persist in g_modelCache. Iterating that
+published list cannot discover not-yet-submitted cells. Actual hardware
+FieldTextureUpload confirms the first slow frame uploads only the appended
+227 textures (retained=677,total=904,uploaded=227); retained texture reupload
+is not its cause. Earlier preparation needs the separate inventory channel,
+not another modification to the active flattened geometry set.
+
 ## Native sprite projection unit correction (2026-10-10)
 
 User confirms missing collection orb sprites, following trails and save-station
