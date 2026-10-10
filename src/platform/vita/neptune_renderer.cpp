@@ -116,7 +116,7 @@ static SceGxmContext* g_probeContext = nullptr;
 static void* g_probeContextHost = nullptr;
 static SceGxmRenderTarget* g_probeRenderTarget = nullptr;
 static SceGxmRenderTarget* g_probeRenderTargetHalf = nullptr;
-// Movie/front-end presentation uses a dedicated 480x272 single-sample target.
+// Movie/front-end presentation uses the selected gameplay-sized single-sample target.
 // Cinepak is reconstructed at source resolution first, then sampled from an
 // ordinary RGBA texture for the final bilinear presentation pass.
 static SceGxmRenderTarget* g_movieRenderTarget = nullptr;
@@ -1015,7 +1015,11 @@ static int g_pendingSceneColorOffset[3]{};
 static int g_sceneColorOffset[3]{};
 
 static int g_viewMode = 7;
+#if defined(LAGI_FULLRES) && LAGI_FULLRES
+static constexpr bool g_halfResolution = false;
+#else
 static constexpr bool g_halfResolution = true;
+#endif
 // Compact timing HUD used for capture/video analysis of the game/render split.
 // Hidden by default; Select toggles it at runtime.
 static bool g_showThreadTimingOsd = false;
@@ -8341,8 +8345,8 @@ void show_game_presentation()
     status("[PASS] GXM RENDER TARGET", 0xFF80E0FFu);
 
     SceGxmRenderTargetParams halfRtParams = rtParams;
-    halfRtParams.width = kWidth / 2;
-    halfRtParams.height = kHeight / 2;
+    halfRtParams.width = viewerRenderWidth();
+    halfRtParams.height = viewerRenderHeight();
 
     const int halfRtResult =
         sceGxmCreateRenderTarget(&halfRtParams, &g_probeRenderTargetHalf);
@@ -8432,7 +8436,7 @@ void show_game_presentation()
         SCE_GXM_COLOR_SURFACE_LINEAR,
         SCE_GXM_COLOR_SURFACE_SCALE_NONE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
-        kWidth / 2, kHeight / 2, 512, g_probeColorBuffer);
+        viewerRenderWidth(), viewerRenderHeight(), viewerRenderPitch(), g_probeColorBuffer);
     if (halfColorResult < 0) {
         char line[78];
         std::snprintf(line, sizeof(line), "[FAIL] GXM HALF COLOR 0X%08X",
@@ -8447,7 +8451,7 @@ void show_game_presentation()
         SCE_GXM_COLOR_SURFACE_LINEAR,
         SCE_GXM_COLOR_SURFACE_SCALE_NONE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
-        kWidth / 2, kHeight / 2, 512, g_probeColorBuffer);
+        viewerRenderWidth(), viewerRenderHeight(), viewerRenderPitch(), g_probeColorBuffer);
     if (movieColorResult < 0) {
         char line[78];
         std::snprintf(line, sizeof(line), "[FAIL] GXM MOVIE COLOR 0X%08X",
@@ -8512,7 +8516,7 @@ void show_game_presentation()
         SCE_GXM_COLOR_SURFACE_LINEAR,
         SCE_GXM_COLOR_SURFACE_SCALE_NONE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
-        kWidth / 2, kHeight / 2, 512, g_probeColorBuffer2);
+        viewerRenderWidth(), viewerRenderHeight(), viewerRenderPitch(), g_probeColorBuffer2);
     if (halfColorResult2 < 0) {
         char line[78];
         std::snprintf(line, sizeof(line), "[FAIL] GXM HALF COLOR2 0X%08X",
@@ -8527,7 +8531,7 @@ void show_game_presentation()
         SCE_GXM_COLOR_SURFACE_LINEAR,
         SCE_GXM_COLOR_SURFACE_SCALE_NONE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
-        kWidth / 2, kHeight / 2, 512, g_probeColorBuffer2);
+        viewerRenderWidth(), viewerRenderHeight(), viewerRenderPitch(), g_probeColorBuffer2);
     if (movieColorResult2 < 0) {
         char line[78];
         std::snprintf(line, sizeof(line), "[FAIL] GXM MOVIE COLOR2 0X%08X",
