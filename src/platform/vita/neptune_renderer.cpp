@@ -4791,6 +4791,12 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
         freeVdp1Textures();
 
     g_nativeTextureUploadCount = 0u;
+    const std::uint64_t uploadStartUs = sceKernelGetProcessTimeWide();
+    std::uint64_t allocationUs = 0u;
+    std::uint64_t opacityUs = 0u;
+    std::uint64_t copyUs = 0u;
+    std::uint64_t setupUs = 0u;
+    std::size_t copiedBytes = 0u;
 
     if (!model.valid())
         return false;
@@ -4812,7 +4818,9 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
                 g_fieldTextureSlabs.back().bytes - g_fieldTextureSlabs.back().used) {
             FieldTextureSlab slab{};
             slab.bytes = std::max(requiredBytes, std::size_t(1024u * 1024u));
+            const auto allocationStartUs = sceKernelGetProcessTimeWide();
             slab.data = probeGpuAlloc(slab.bytes, SCE_GXM_MEMORY_ATTRIB_READ, &slab.uid);
+            allocationUs += sceKernelGetProcessTimeWide() - allocationStartUs;
             if (!slab.data)
                 return false;
             g_fieldTextureSlabs.push_back(slab);
@@ -4847,24 +4855,29 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
             gpu.data = static_cast<unsigned char*>(slab.data) + slab.used;
             slab.used += (bytes + 63u) & ~std::size_t(63u);
         } else {
+            const auto allocationStartUs = sceKernelGetProcessTimeWide();
             gpu.data = probeGpuAlloc(bytes, SCE_GXM_MEMORY_ATTRIB_READ, &gpu.uid);
+            allocationUs += sceKernelGetProcessTimeWide() - allocationStartUs;
         }
         if (!gpu.data)
             return false;
 
         gpu.width = source.width;
         gpu.height = source.height;
+        const auto opacityStartUs = sceKernelGetProcessTimeWide();
         gpu.opaque = std::all_of(
             source.rgba.begin(), source.rgba.end(),
             [](std::uint32_t pixel) {
                 return (pixel >> 24) >= 0x80u;
             });
+        opacityUs += sceKernelGetProcessTimeWide() - opacityStartUs;
         gpu.mesh = (source.cmdPmod & 0x0100u) != 0u;
         gpu.cmdPmod = source.cmdPmod;
         gpu.cmdColr = source.cmdColr;
         gpu.cmdSrca = source.cmdSrca;
         gpu.cmdSize = source.cmdSize;
         auto* dst = static_cast<std::uint32_t*>(gpu.data);
+        const auto copyStartUs = sceKernelGetProcessTimeWide();
         if (stridePixels == source.width) {
             std::memcpy(dst, source.rgba.data(), bytes);
         } else {
@@ -4880,6 +4893,9 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
             }
         }
 
+        copyUs += sceKernelGetProcessTimeWide() - copyStartUs;
+        copiedBytes += bytes;
+        const auto setupStartUs = sceKernelGetProcessTimeWide();
         if (!retained && sceGxmTextureInitLinear(
                 &gpu.texture,
                 gpu.data,
@@ -4909,8 +4925,16 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
         if (pooled && textureIndex < g_nativeDecodedTextureGenerations.size())
             g_nativeGpuTextureGenerations[textureIndex] =
                 g_nativeDecodedTextureGenerations[textureIndex];
+        setupUs += sceKernelGetProcessTimeWide() - setupStartUs;
     }
 
+    if (pooled && g_nativeTextureUploadCount != 0u) {
+        logging::writef("[NativeTextureUploadStages] uploaded=%u bytes=%u alloc=%uus opacity=%uus copy=%uus setup=%uus total=%uus\n",
+            g_nativeTextureUploadCount, static_cast<unsigned>(copiedBytes),
+            static_cast<unsigned>(allocationUs), static_cast<unsigned>(opacityUs),
+            static_cast<unsigned>(copyUs), static_cast<unsigned>(setupUs),
+            static_cast<unsigned>(sceKernelGetProcessTimeWide() - uploadStartUs));
+    }
     return g_vdp1GpuTextures.size() == model.textureCount;
 }
 

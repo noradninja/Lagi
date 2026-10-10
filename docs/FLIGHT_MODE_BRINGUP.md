@@ -1,5 +1,22 @@
 # Flight Mode Bring-Up
 
+## Upload-stage diagnostic checkpoint (2026-10-10)
+
+NativeTextureUploadStages now separates GPU allocation, opacity scan, pixel
+copy and texture setup/bookkeeping for uploads in native towns/fields. It
+reports uploaded count, padded copied bytes and inclusive total time. The
+total also includes descriptor validation, suffix sizing, logging and timing
+overhead; it is not the sum of the four stage counters. Retained unchanged
+textures continue to skip uploads. No visibility, texture bytes, filter or
+residency semantics changed. Failed uploads retain existing error handling
+and do not produce a successful stage summary.
+
+Use this beside FieldTextureUpload and the rebuild outlier record to determine
+whether the remaining suffix-upload cost is allocation, opacity scanning or
+memory copy before choosing the next optimization. Timers run only during
+resource uploads, not ordinary retained-texture frames. Source diff checks
+passed; this checkpoint has not been compiled or hardware-tested yet.
+
 ## c075a81 collection/save capture (2026-10-10)
 
 User reports collecting Stolarium and the field map and activating the save
