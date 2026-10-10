@@ -4070,7 +4070,7 @@ static void drawAzelVdp2CinematicBarsGpu()
 
 
 static bool decodeLiveVdp1Texture(const azel::SaturnPolygonRecord& record,
-    azel::DecodedMode1Texture& out);
+    azel::DecodedMode1Texture& out, const unsigned char* textureMemory = nullptr);
 
 static GpuMode1Texture* findOrUploadVdp1UiTexture(
     const azel_bridge::Vdp1UiCommand& command)
@@ -5987,7 +5987,7 @@ static void transformTownEdgeVertices()
 
 static bool decodeLiveVdp1Texture(
     const azel::SaturnPolygonRecord& record,
-    azel::DecodedMode1Texture& out)
+    azel::DecodedMode1Texture& out, const unsigned char* textureMemory)
 {
     const unsigned commandType =
         static_cast<unsigned>(record.cmdCtrl) & 0x000Fu;
@@ -6035,7 +6035,8 @@ static bool decodeLiveVdp1Texture(
     if (textureAddress + textureBytes > 0x80000u)
         return false;
     const unsigned char* const src =
-        getVdp1Pointer(0x25C00000u + textureAddress);
+        textureMemory ? textureMemory + textureAddress
+                      : getVdp1Pointer(0x25C00000u + textureAddress);
     if (!src)
         return false;
 
@@ -6104,8 +6105,11 @@ static bool decodeLiveVdp1Texture(
     case 1u: {
         const unsigned lutAddress =
             static_cast<unsigned>(record.cmdColr) << 3;
+        if (textureMemory && lutAddress > 0x80000u - 32u)
+            return false;
         const unsigned char* const lut =
-            getVdp1Pointer(0x25C00000u + lutAddress);
+            textureMemory ? textureMemory + lutAddress
+                          : getVdp1Pointer(0x25C00000u + lutAddress);
         if (!lut)
             return false;
 
@@ -6174,7 +6178,8 @@ static bool decodeLiveVdp1Texture(
 }
 
 static std::uint16_t liveTownTextureIndex(
-    const azel::SaturnPolygonRecord& record)
+    const azel::SaturnPolygonRecord& record,
+    const unsigned char* textureMemory = nullptr)
 {
     const auto descriptorKey = [](unsigned pmod, unsigned colr,
                                   unsigned srca, unsigned size) {
@@ -6220,7 +6225,7 @@ static std::uint16_t liveTownTextureIndex(
     // descriptor directly from that Saturn address space rather than relying
     // on the historical direct-boot town bundle/overlay registry.
     azel::DecodedMode1Texture decoded{};
-    if (decodeLiveVdp1Texture(record, decoded)) {
+    if (decodeLiveVdp1Texture(record, decoded, textureMemory)) {
         const std::size_t next =
             g_staticRoomCpuMesh.decodedTextureData.size();
         if (next < 0xFFFFu) {
@@ -6269,6 +6274,55 @@ static Vdp1ModelSource liveTownVdp1Source()
     source.polygonTextureIndexCount =
         g_liveTownCpuMesh.polygonTextureIndices.size();
     return source;
+}
+
+// Preparation only: registrations do not select visibility or submit geometry.
+// Decode at most one new material per frame; all reads use published ownership.
+static bool prepareRegisteredNativeMaterial()
+{
+    if (g_sceneGameMode < 1u || g_sceneGameMode > 3u ||
+        g_liveTownCpuMesh.polygonRecords.empty())
+        return false;
+    static std::uint64_t revision = 0u, generation = 0u;
+    static std::size_t resourceIndex = 0u, polygonIndex = 0u;
+    const auto currentRevision = azel_bridge::published_resource_revision();
+    if (revision != currentRevision || generation != g_nativeTextureGeneration) {
+        revision = currentRevision;
+        generation = g_nativeTextureGeneration;
+        resourceIndex = polygonIndex = 0u;
+    }
+    const auto& resources = azel_bridge::published_model_resources();
+    const auto startUs = sceKernelGetProcessTimeWide();
+    const auto before = g_staticRoomCpuMesh.decodedTextureData.size();
+    while (resourceIndex < resources.size()) {
+        const auto& resource = resources[resourceIndex];
+        // A pending native write requires a newly published snapshot, not a
+        // fallback read of mutable native VRAM on this renderer thread.
+        if (resource.textureWriteEpoch != azel_bridge::native_texture_write_epoch())
+            return false;
+        if (!resource.model || !resource.textureMemory ||
+            resource.textureMemory->size() != 0x80000u ||
+            polygonIndex >= resource.model->polygons.size()) {
+            ++resourceIndex;
+            polygonIndex = 0u;
+            continue;
+        }
+        liveTownTextureIndex(resource.model->polygons[polygonIndex++],
+            resource.textureMemory->data());
+        if (resource.textureWriteEpoch != azel_bridge::native_texture_write_epoch()) {
+            // Nothing was uploaded yet. Discard an obsolete appended decode.
+            g_staticRoomCpuMesh.decodedTextureData.resize(before);
+            g_nativeDecodedTextureGenerations.resize(before);
+            g_fieldTextureIndices.clear();
+            g_fieldTextureIndexedCount = 0u;
+            return false;
+        }
+        if (g_staticRoomCpuMesh.decodedTextureData.size() != before)
+            return true;
+        if (sceKernelGetProcessTimeWide() - startUs >= 1000u)
+            break;
+    }
+    return false;
 }
 
 static const std::vector<std::uint16_t>* resolvedLiveTownMaterialIndices(
@@ -12645,10 +12699,23 @@ static void renderBasicWingViewer()
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     g_profileGxmEndSceneUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - endSceneStartUs);
+    const auto materialPrepareStartUs = sceKernelGetProcessTimeWide();
+    const bool preparedMaterial = prepareRegisteredNativeMaterial();
+    const auto materialPrepareUs = sceKernelGetProcessTimeWide() - materialPrepareStartUs;
     const std::uint64_t finishStartUs = sceKernelGetProcessTimeWide();
     sceGxmFinish(g_probeContext);
     g_profileGxmFinishUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - finishStartUs);
+    if (preparedMaterial) {
+        // Upload only an appended suffix after GPU completion. Never refresh
+        // retained payloads or mutate descriptors used by an in-flight scene.
+        const auto uploadStartUs = sceKernelGetProcessTimeWide();
+        uploadVdp1Textures(liveTownVdp1Source(), true, false);
+        logging::writef("[NativeResourcePrepare] decodeUs=%llu uploadUs=%llu textures=%u\n",
+            static_cast<unsigned long long>(materialPrepareUs),
+            static_cast<unsigned long long>(sceKernelGetProcessTimeWide() - uploadStartUs),
+            static_cast<unsigned>(g_staticRoomCpuMesh.decodedTextureData.size()));
+    }
     g_profileGxmWaitUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - gxmWaitStartUs);
 

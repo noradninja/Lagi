@@ -1,5 +1,42 @@
 # Flight Mode Bring-Up
 
+## Registered material preparation consumer (2026-10-10)
+
+User confirms the latest actor correction is correct in Excavation and the
+in-engine cinematic. Preserve the native camera scopes; rendering performance
+is the active priority again. Latest hardware capture still contains 56.627 and
+60.354 ms baseline-reset field frames despite completed-window medians meeting
+25 ms. First-field texture allocation remains about 13.338 ms. Target is not met.
+
+Neptune now consumes published registrations without creating draw submissions
+or changing Azel visibility. After EndScene, it scans immutable registered model
+descriptors and decodes at most one new material into the existing generic
+native material cache. Cache-hit scanning stops after 1 ms; a single decode is
+non-preemptible, so this is NOT a guaranteed 1 ms deadline. Decoder pixel/LUT
+reads use the owned 512 KiB snapshot, while CRAM stays renderer-frame-owned.
+Inventory revision or native texture generation resets the cursor. Stale write
+epochs stop work; a write observed during decode discards newly appended data.
+
+CPU decoding can overlap GPU completion. Appended GPU texture upload happens
+only AFTER sceGxmFinish, preserving existing prefix payloads and descriptors.
+The upload/allocation itself is not hidden by the GPU wait and may exceed the
+frame deadline. NativeResourcePrepare reports decodeUs/uploadUs/textures;
+GxmWait and Render include this work, while GxmFinish measures only the finish
+call. Do not add these overlapping durations. Resource cache growth can trigger
+the existing geometry prepare path on the next frame. This is incremental
+texture preparation, NOT persistent per-model GPU geometry or a hitch fix.
+Current registrations originate in native field adapters; the consumer accepts
+native scene modes 1..3, but generic town registration remains future work.
+
+Vita renderer syntax check and 2592 actual-decoder differential cases pass;
+snapshot-isolation tests also compare decoding after live pixel/LUT mutation.
+No package build or hardware validation. Test the exact new commit across entry,
+traversal, Excavation and cinematic, checking total frame tails as well as
+NativeResourcePrepare and NativeTextureUpload stages. One-at-a-time warming may
+increase early-frame resource work; report a regression rather than assuming
+preparation is a performance improvement. First visible materials may still
+arrive before any preparation opportunity.
+
 ## Registration snapshot invalidation protocol (2026-10-10)
 
 VDP1 texture-write callbacks now advance a bridge-owned atomic 32-bit epoch,

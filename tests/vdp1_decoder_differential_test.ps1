@@ -8,7 +8,7 @@ function Select-Decoder([string]$Source, [string]$Name) {
     $start = $Source.LastIndexOf('static bool decodeLiveVdp1Texture(')
     $end = $Source.IndexOf('static std::uint16_t liveTownTextureIndex(', $start)
     if ($start -lt 0 -or $end -lt 0) { throw 'Decoder extraction boundary changed' }
-    return $Source.Substring($start, $end - $start).Replace('decodeLiveVdp1Texture(', "$Name(")
+    return $Source.Substring($start, $end - $start).Replace('decodeLiveVdp1Texture(', "$Name(").Replace('const unsigned char* textureMemory)', 'const unsigned char* textureMemory = nullptr)')
 }
 $preamble = @'
 #include <cstdint>
@@ -51,6 +51,7 @@ int main() {
         for(auto& b:g_vdp2Cram) { seed=seed*1664525u+1013904223u; b=seed>>24; }
         // Palette/LUT zero entries explicitly exercise cached transparent results.
         g_vdp2Cram[0]=g_vdp2Cram[1]=0;
+        const std::vector<unsigned char> snapshot(vram,vram+sizeof(vram));
         for(unsigned mode=0;mode<6;++mode)
         for(unsigned flags=0;flags<4;++flags)
         for(unsigned width: {8u,32u,128u})
@@ -68,9 +69,21 @@ int main() {
                 return 1;
             }
             ++cases;
+            // Published decoding must not fall back to mutated live pixels/LUT.
+            vram[8192]^=255;
+            vram[bank<<3]^=255;
+            azel::DecodedMode1Texture owned;
+            bool c=decodeCandidate(record,owned,snapshot.data());
+            vram[bank<<3]^=255;
+            vram[8192]^=255;
+            if(c!=a || owned.width!=reference.width || owned.height!=reference.height ||
+               owned.rgba!=reference.rgba) {
+                std::printf("FAIL immutable snapshot mode=%u bank=%u\n",mode,bank);
+                return 1;
+            }
         }
     }
-    std::printf("PASS: %u actual-decoder differential cases (controlled memory/resolver)\n",cases);
+    std::printf("PASS: %u decoder differential and immutable snapshot cases\n",cases);
 }
 '@
 # Generated test artifacts, not repository source edits. Keep them for inspection.
