@@ -1,5 +1,17 @@
 # Flight Mode Bring-Up
 
+## Outlier stage attribution (2026-10-10)
+
+FlightPresentOutlier now includes existing CPU preparation, submission,
+composition, GXM end/finish, and RBG preparation/resolve timings for the actual
+slow frame. The 60-frame ScenePerf heartbeat can miss isolated stalls such as
+the 477.919 ms tunnel frame; these event records avoid attributing that stall
+from unrelated sampled frames. CPU preparation includes build/composition,
+so these fields are not all additive. GXM finish is a CPU wait for completion,
+not a direct GPU execution timestamp. Rendering behavior is unchanged.
+Use a fresh hardware capture to locate the remaining deadline violations;
+neither the median target nor hitch elimination is established yet.
+
 ## Requested native point lights and flight particles (2026-10-10)
 
 User requests collection lighting and missing visible flight particles. Both
@@ -14,6 +26,20 @@ Absence of these records does not prove that every effect is absent: other
 emitters may use other draw paths. The immediate two-point billboard service
 is separately a Vita stub; its located caller is battlePowerGauge, not proof
 of the reported flight failure. Do not generalize the stub to all particles.
+
+Further source tracing identifies a separate flight collection gap:
+`LCS.cpp::sSparkleParticle::Draw` computes position and scaled opacity, then
+stops at `Unimplemented()` with a TODO referencing Saturn function 0602f610.
+Consequently these collection sparkles cannot reach the native particle
+emission diagnostics. The reconstructed immediate-billboard helper carries
+the same function address, but its only actual caller is battlePowerGauge.
+Implementing that helper alone will not connect the flight sparkle task.
+Recover the collection sprite descriptor, color selection and endpoint
+contract before wiring it through generated-source integration; do not choose
+an arbitrary replacement texture or apply the camera twice. The existing
+helper transforms its inputs despite its header describing view-space points,
+so the transform contract specifically needs verification. No particle visual
+fix or hardware validation is claimed by this source audit.
 
 Field dragon special-color drawing calls dragonFieldTaskDrawSub1Sub0, which
 is unimplemented upstream, then publishes point position via Sub1Sub1 with
