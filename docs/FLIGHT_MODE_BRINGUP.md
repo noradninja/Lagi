@@ -1,5 +1,24 @@
 # Flight Mode Bring-Up
 
+## Grouped opacity scan and latest capture (2026-10-10)
+
+Downloads changed to 874,424 bytes, 19:50 UTC; tested binary SHA awaits user
+confirmation, so do not attribute changes to slab reuse yet. 111 sampled
+RBG-enabled native records: render median 24.006 ms, p90 25.360 ms. Completed
+field windows cover 4,800 frames, 692 above 25 ms, two above 33.333 ms; rebuild
+outliers are 55.301 and 60.761 ms. First field suffix upload remains 18.450 ms:
+allocation 12.078 ms, opacity 3.479 ms, copy 1.762 ms, setup 0.254 ms.
+This contradicts full deadline compliance regardless of package identity.
+
+Upload opacity classification now checks eight packed pixels per branch by
+AND-reducing bit 31, with a bounded scalar tail. This is exactly the existing
+alpha>=128 rule, including empty spans; no decoder, palette, pixel copy,
+Gouraud or blend semantics change. Actual shared helper passed 8,487,168 host
+comparisons against std::all_of, covering every alpha value at every position
+for lengths 0..257. This verifies classification, not ARM code generation,
+GXM behavior or performance. Native compilation/hardware testing remains
+pending. Preserve stage timings to measure rather than assume a speedup.
+
 ## Image-particle clarification and slab reuse checkpoint (2026-10-10)
 
 User clarifies that save-station dot particles are correctly cyan. Grayscale

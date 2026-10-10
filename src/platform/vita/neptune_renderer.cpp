@@ -7,6 +7,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/lagi_live_model_adapter.h"
 #include "neptune_texture_pool.h"
+#include "neptune_texture_pixels.h"
 
 #include <psp2/display.h>
 #include <psp2/gxm.h>
@@ -4871,11 +4872,7 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
         gpu.width = source.width;
         gpu.height = source.height;
         const auto opacityStartUs = sceKernelGetProcessTimeWide();
-        gpu.opaque = std::all_of(
-            source.rgba.begin(), source.rgba.end(),
-            [](std::uint32_t pixel) {
-                return (pixel >> 24) >= 0x80u;
-            });
+        gpu.opaque = texturePixelsOpaque(source.rgba.data(), source.rgba.size());
         opacityUs += sceKernelGetProcessTimeWide() - opacityStartUs;
         gpu.mesh = (source.cmdPmod & 0x0100u) != 0u;
         gpu.cmdPmod = source.cmdPmod;
