@@ -799,8 +799,11 @@ static unsigned char* g_sceneVdp2Raw = g_sceneVdp2RawBuffers[1];
 static bool g_pendingSceneVdp2RawDirty = false;
 static bool g_pendingSceneRbg0Enabled = false, g_sceneRbg0Enabled = false;
 static void* g_sceneVdp2GpuRaw = nullptr;
-// Track GPU-side raw VDP2 memory only. This is separate from resolved-image
-// invalidation: changing rotation/window registers still requires a new resolve.
+// Renderer-owned CPU shadow of the bytes last copied into GPU-mapped storage.
+// Comparing ordinary cached RAM avoids a full readback scan of uncached GXM
+// memory every frame. This is separate from resolved-image invalidation:
+// changing rotation/window registers still requires a new resolve.
+alignas(64) static unsigned char g_sceneVdp2GpuRawShadow[kRawVdp2Bytes]{};
 static bool g_sceneVdp2GpuRawInitialized = false;
 static unsigned int g_profileRbgRawUpdatedBytes = 0u;
 static SceUID g_sceneVdp2RawUid = -1;
@@ -2151,6 +2154,7 @@ void shutdown()
     freeSimpleMappedProbe(g_fadeIndexUid, fadeIndexPtr);
     g_fadeIndices = nullptr;
     freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
+    g_sceneVdp2GpuRawInitialized = false;
     void* sceneVertices = g_sceneVdp2Vertices;
     freeSimpleMappedProbe(g_sceneVdp2VertexUid, sceneVertices);
     g_sceneVdp2Vertices = nullptr;
@@ -11707,6 +11711,7 @@ static bool prepareSceneVdp2Background()
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_sceneVdp2IndexUid));
         const auto discard = [] {
             freeMovieMappedBlock(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
+            g_sceneVdp2GpuRawInitialized = false;
             void* vertices = g_sceneVdp2Vertices;
             freeMovieMappedBlock(g_sceneVdp2VertexUid, vertices);
             g_sceneVdp2Vertices = nullptr;
@@ -11758,8 +11763,11 @@ static bool prepareSceneVdp2Background()
         const std::size_t bytes = std::min<std::size_t>(
             kBlockBytes, kRawVdp2Bytes - offset);
         if (!g_sceneVdp2GpuRawInitialized ||
-            std::memcmp(gpu + offset, g_sceneVdp2Raw + offset, bytes) != 0) {
+            std::memcmp(g_sceneVdp2GpuRawShadow + offset,
+                g_sceneVdp2Raw + offset, bytes) != 0) {
             std::memcpy(gpu + offset, g_sceneVdp2Raw + offset, bytes);
+            std::memcpy(g_sceneVdp2GpuRawShadow + offset,
+                g_sceneVdp2Raw + offset, bytes);
             g_profileRbgRawUpdatedBytes += static_cast<unsigned int>(bytes);
         }
     }
