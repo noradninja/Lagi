@@ -1,5 +1,56 @@
 # Flight Mode Bring-Up
 
+## Full-mode VDP2 regression capture and producer generations (2026-10-09)
+
+- **Authoritative working branch:** `feature/vdp2-perf-diagnostics`. The capture
+  supplied on 2026-10-09 does not contain the later `gxmend` / `gxmfinish`
+  fields, so it is treated as a hardware run of the preceding CPU-shadow and
+  flight-layering checkpoint, most likely `21319cb`. This revision identity is
+  inferred from the log contract; it was not embedded explicitly in the log.
+- The user's full-mode observation is steady 20 FPS after native VDP2 became
+  active. Across 74 sampled `ScenePerf` records, render time is 34.925 ms
+  median, 36.664 ms p90, and 81.578 ms maximum. CPU preparation is 15.534 ms
+  median; combined GXM completion wait is 17.834 ms median and 20.160 ms p90.
+  `rbgPrep` is 7.837 ms median and `rbgResolve` is 0.683 ms median. Ordinary
+  world build is 2.936 ms median. Later 120-frame renderer windows miss the
+  33.333 ms budget on essentially every frame. This independently confirms
+  that native VDP2 CPU preparation plus GPU work, rather than field geometry,
+  is the steady-state limiter in this run.
+- The CPU shadow removed the earlier 36-37 ms uncached/GXM comparison penalty,
+  but scanning the complete 528 KiB cached snapshot on the render thread still
+  costs approximately 7.8 ms on hardware. Commit `ee7318d` (`Publish VDP2 dirty
+  block generations`) moves the exact 4 KiB comparisons to the producer while
+  Azel's source and the staging history are ordinary cached CPU memory. A
+  per-block generation array is published and ownership-swapped with the raw
+  snapshot. The render thread compares only 129 generation integers, copying
+  the corresponding raw blocks to GXM storage. The producer comparison remains
+  byte-exact and detects changes that later revert; no probabilistic hashes are
+  used. GPU resource recreation still forces a complete upload.
+- `tests/vdp2_raw_shadow_test.ps1` now covers initial, unchanged, changed-block,
+  changed-tail, parameter-only, and GPU-recreation behavior using published
+  generations. `tests/gxm_completion_profile_test.ps1` also passes. The full
+  Vita build, shader build, link, SELF generation, and VPK packaging pass at
+  `ee7318d`. These are host/toolchain results only. Hardware must confirm lower
+  `rbgPrep`, improved presentation cadence, unchanged sky/floor/palette output,
+  and the new `gxmend` / `gxmfinish` split before this optimization is accepted.
+- The user also reports that the fade-out fails at the end of the first canyon
+  section. The log places the event at field mode 3 -> transitional mode -1,
+  followed by Azel's `fadeOutAllSequences()` and `fadePalette()` calls before
+  E006 loads. Existing adapter code is intended to retain the last native scene
+  mode and publish Azel's primary fade during mode -1. The `SceneComposite`
+  diagnostic prints mode `4294967295` from inside the bridge before that later
+  preservation assignment, so it does not by itself prove the renderer
+  consumed mode -1. The visible failure remains authoritative and unresolved.
+  Do not change Azel's transition logic or add a renderer-owned fade timer from
+  this evidence; first add/inspect post-publication transition and fade-state
+  telemetry after the performance checkpoint is measured.
+- FLD_A3 uses `RPMD=2`. Neptune currently resolves it using two full-screen
+  RBG0 draws: parameter B first, then parameter A, both performing expensive
+  per-pixel Saturn tile/palette work. A future generic optimization may combine
+  RPMD2 A/B selection into one fragment pass while preserving RPMD0/1/3, but it
+  is deliberately not mixed into `ee7318d`; the producer-generation result is
+  intended to remain independently hardware-testable.
+
 ## VDP2 transfer and flight mountain-strip checkpoint (2026-10-09)
 
 - **Authoritative branch:** `feature/vdp2-perf-diagnostics`; resumed remote baseline `f69c5693f675eac3058734636295b84a32adc3f7`.
