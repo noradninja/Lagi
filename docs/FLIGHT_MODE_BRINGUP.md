@@ -41,6 +41,13 @@ hardware; cdram identifies which heap succeeded. Native syntax/diff checks pass.
 No package build or hardware validation of the arena checkpoint. CPU upload and
 GPU sampling behavior in CDRAM must be measured, not assumed faster.
 
+Host lifecycle regression test native_texture_arena_lifecycle_test.ps1 extracts
+the actual freeVdp1Textures implementation and mocks only platform memory calls.
+It passes scene reset/reuse, ordinary owned texture and overflow cleanup, arena
+identity/capacity preservation, repeated releases, shutdown and double-shutdown
+checks. This validates release control flow, not real GXM synchronization,
+allocation availability, VRAM access performance or native package behavior.
+
 ## Avoid geometry rebuilds for prepared offscreen materials (2026-10-10)
 
 Follow-up to the preparation consumer: the live frame signature now hashes
