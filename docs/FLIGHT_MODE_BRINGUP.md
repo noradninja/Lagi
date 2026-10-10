@@ -1,5 +1,27 @@
 # Flight Mode Bring-Up
 
+## Native sprite projection unit correction (2026-10-10)
+
+User confirms missing collection orb sprites, following trails and save-station
+particles in every debug view, not just Full. Source audit found a concrete
+adapter error: PDS::initVDP1Projection computes r0 from integer half-screen
+width via setDividend(width/2, cos, sin), then FP_Mul applies aspect ratios.
+Thus width/height scales carry raw integer pixels, despite fixedPoint type.
+MTH_Mul_5_6(scale, viewPosition, inverseDepth) already returns raw pixels.
+Upstream battleEnemyLifeMeter compares those results directly with integer
+screen bounds. Vita drawQuadInternal incorrectly used getInteger(), shifting
+them by an additional 16 bits, then clamped tiny half-sizes to one pixel.
+
+The adapter now uses asS32() for particle position/half-size projection and
+removes the equivalent /65536 in the native ray-segment projection path.
+No Azel changes, arbitrary particle enlargement, camera rewrite or desktop
+BGFX route. Texture animation, command descriptors and clipping are retained.
+The reference check demonstrates scale=176, x=1, z=2 projects to 88 pixels,
+not zero; it is a numerical/source guard, not full runtime coverage.
+Vita package compilation passed. Require hardware checks of orbs, trails,
+save particles, occlusion and frame-time impact. The separate collection
+sparkle Unimplemented draw and immediate billboard stub remain unresolved.
+
 ## Hardware baseline e8ac156 results (2026-10-10)
 
 User identifies tested package as e8ac1568c79ff01c97d78d4ac5a3db1ec34af61d

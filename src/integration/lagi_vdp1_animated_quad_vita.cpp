@@ -98,16 +98,18 @@ static int drawQuadInternal(
     const fixedPoint scaledW = MTH_Mul(q.mC_width, scale);
     const fixedPoint scaledH = MTH_Mul(q.m10_height, scale);
 
+    // initVDP1Projection stores integer-pixel scales in the raw fixedPoint
+    // payload. These products are already pixels, not 16.16 coordinates.
     const s32 cx = MTH_Mul_5_6(
-        graphicEngineStatus.m405C.m18_widthScale, viewPos[0], invZ).getInteger();
+        graphicEngineStatus.m405C.m18_widthScale, viewPos[0], invZ).asS32();
     const s32 cy = MTH_Mul_5_6(
-        graphicEngineStatus.m405C.m1C_heightScale, viewPos[1], invZ).getInteger();
+        graphicEngineStatus.m405C.m1C_heightScale, viewPos[1], invZ).asS32();
     const s32 hw = std::max<s32>(1, MTH_Mul_5_6(
         graphicEngineStatus.m405C.m18_widthScale,
-        scaledW / 2, invZ).getInteger());
+        scaledW / 2, invZ).asS32());
     const s32 hh = std::max<s32>(1, MTH_Mul_5_6(
         graphicEngineStatus.m405C.m1C_heightScale,
-        scaledH / 2, invZ).getInteger());
+        scaledH / 2, invZ).asS32());
 
     auto clamp16 = [](s32 v) -> s16 {
         return static_cast<s16>(std::clamp<s32>(v, -32768, 32767));
@@ -205,10 +207,10 @@ void displayRaySegmentFromViewSpace(std::array<sVec3_FP, 2>& points,
     float x[2], y[2], hw[2], hh[2];
     for (unsigned i = 0; i < 2; ++i) {
         const fixedPoint invZ = FP_Div(0x10000, points[i][2]);
-        x[i] = MTH_Mul_5_6(clip.m18_widthScale, points[i][0], invZ).asS32() / 65536.0f;
-        y[i] = MTH_Mul_5_6(clip.m1C_heightScale, points[i][1], invZ).asS32() / 65536.0f;
-        hw[i] = MTH_Mul_5_6(clip.m18_widthScale, fixedPoint(width), invZ).asS32() / 65536.0f;
-        hh[i] = MTH_Mul_5_6(clip.m1C_heightScale, fixedPoint(width), invZ).asS32() / 65536.0f;
+        x[i] = MTH_Mul_5_6(clip.m18_widthScale, points[i][0], invZ).asS32();
+        y[i] = MTH_Mul_5_6(clip.m1C_heightScale, points[i][1], invZ).asS32();
+        hw[i] = MTH_Mul_5_6(clip.m18_widthScale, fixedPoint(width), invZ).asS32();
+        hh[i] = MTH_Mul_5_6(clip.m1C_heightScale, fixedPoint(width), invZ).asS32();
     }
     const float angle = std::atan2(y[0] - y[1], x[0] - x[1]);
     const float sn = std::sin(angle), cs = std::cos(angle);
