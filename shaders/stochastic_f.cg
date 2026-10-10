@@ -1,21 +1,32 @@
-// Stable 4x4 ordered one-tap approximation to bilinear on SGX.
-// textureInfo = (source width, source height, destination width, destination height).
-// Texture state MUST use point filtering.
-float4 main(float2 uv : TEXCOORD0, uniform sampler2D tex, uniform float4 textureInfo)
+// SGX one-fetch bilinear approximation with an 8x8 ordered Bayer matrix.
+// textureInfo=(sourceW,sourceH,outputW,outputH); sampler MUST be POINT.
+// The Bayer rank is computed arithmetically to avoid dependent texture reads.
+float4 main(float2 uv : TEXCOORD0, uniform sampler2D tex,
+            uniform float4 textureInfo)
 {
     float2 p = saturate(uv) * textureInfo.xy - 0.5f;
-    float2 baseTexel = floor(p);
-    float2 w = frac(p);
-    float2 screenPixel = floor(saturate(uv) * textureInfo.zw);
-    float2 cell = screenPixel - 4.0f * floor(screenPixel / 4.0f);
-    // Two decorrelated 4x4 Bayer threshold sequences.
-    float2 a = floor(cell / 2.0f);
-    float2 b = cell - 2.0f * a;
-    float thresholdX = (dot(b, float2(2.0f, 3.0f)) + dot(a, float2(0.0f, 1.0f)) * 4.0f + 0.5f) / 16.0f;
-    float thresholdY = frac(thresholdX + 0.4375f);
-    float2 choice = float2(w.x > thresholdX ? 1.0f : 0.0f,
-                           w.y > thresholdY ? 1.0f : 0.0f);
-    float2 texel = clamp(baseTexel + choice, float2(0.0f,0.0f), textureInfo.xy - 1.0f);
+    float2 origin = floor(p);
+    float2 weight = frac(p);
+
+    float2 pixel = floor(saturate(uv) * textureInfo.zw);
+    float2 cell = pixel - 8.0f * floor(pixel / 8.0f);
+    float2 b0 = cell - 2.0f * floor(cell / 2.0f);
+    float2 b1 = floor(cell / 2.0f);
+    b1 = b1 - 2.0f * floor(b1 / 2.0f);
+    float2 b2 = floor(cell / 4.0f);
+
+    // Recursive Bayer rank: B2=(2*xbit+3*ybit) mod 4.
+    // B8=16*B2(low bits)+4*B2(mid bits)+B2(high bits).
+    float rank0 = frac(dot(b0, float2(2.0f,3.0f)) * 0.25f) * 4.0f;
+    float rank1 = frac(dot(b1, float2(2.0f,3.0f)) * 0.25f) * 4.0f;
+    float rank2 = frac(dot(b2, float2(2.0f,3.0f)) * 0.25f) * 4.0f;
+    float thresholdX = (16.0f * rank0 + 4.0f * rank1 + rank2 + 0.5f) / 64.0f;
+    float thresholdY = frac(thresholdX + 0.4921875f);
+
+    float2 selected = float2(weight.x > thresholdX ? 1.0f : 0.0f,
+                             weight.y > thresholdY ? 1.0f : 0.0f);
+    float2 texel = clamp(origin + selected, float2(0.0f,0.0f),
+                         textureInfo.xy - 1.0f);
     float4 color = tex2D(tex, (texel + 0.5f) / textureInfo.xy);
     if (color.a < 0.5f) discard;
     return color;
