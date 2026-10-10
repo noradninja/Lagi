@@ -51,6 +51,11 @@ static sProcessed3dModel* g_lastModel = nullptr;
 static const LiveVdp1Model* g_lastAdaptedModel = nullptr;
 static SubmissionState g_lastState{};
 static std::unordered_map<sProcessed3dModel*, LiveVdp1Model> g_modelCache;
+static std::uint64_t g_resourceGeneration = 0;
+static std::unordered_map<std::int8_t, std::uint64_t> g_bundleGenerations;
+static std::unordered_map<std::uint64_t, RegisteredModelResource> g_registeredResources;
+static std::vector<RegisteredModelResource> g_publishedResources;
+static bool g_resourceInventoryDirty = false;
 static std::vector<const LiveVdp1Model*> g_adaptedModels;
 static std::vector<RenderSubmission> g_submissions;
 static std::vector<const LiveVdp1Model*> g_publishedAdaptedModels;
@@ -193,6 +198,17 @@ const LiveVdp1Model* adapted_model(std::uint32_t index)
 
 void publish_frame()
 {
+    if (g_resourceInventoryDirty) {
+        std::vector<RegisteredModelResource> snapshot;
+        snapshot.reserve(g_registeredResources.size());
+        for (const auto& entry : g_registeredResources)
+            snapshot.push_back(entry.second);
+        g_publishedResources.swap(snapshot);
+        g_resourceInventoryDirty = false;
+        lagi::platform::logging::writef("[NativeResourceInventory] generation=%llu models=%u\n",
+            static_cast<unsigned long long>(g_resourceGeneration),
+            static_cast<unsigned>(g_publishedResources.size()));
+    }
     // LiveVdp1Model objects themselves live in g_modelCache and therefore
     // remain stable across frames. Only the per-frame ordering/state vectors
     // need to be snapshotted here.
@@ -204,6 +220,44 @@ void publish_frame()
     g_publishedExplicitStaticContextsConsumed =
         g_explicitStaticContextsConsumed;
     ++g_publishedFrameNumber;
+}
+
+void notify_native_bundle_loaded(std::int8_t bundleIndex)
+{
+    g_bundleGenerations[bundleIndex] = ++g_resourceGeneration;
+    for (auto it = g_registeredResources.begin(); it != g_registeredResources.end();) {
+        if (it->second.bundleIndex == bundleIndex)
+            it = g_registeredResources.erase(it);
+        else
+            ++it;
+    }
+    // Published shared ownership protects the renderer's prior frame until
+    // the existing frame-slot wait allows publish_frame() to replace it.
+    g_resourceInventoryDirty = true;
+}
+
+void register_native_model_resource(std::int8_t bundleIndex,
+    std::uint32_t modelOffset, sProcessed3dModel* model)
+{
+    const auto generation = g_bundleGenerations.find(bundleIndex);
+    if (!model || !modelOffset || generation == g_bundleGenerations.end())
+        return;
+    const std::uint64_t key =
+        (static_cast<std::uint64_t>(static_cast<std::uint8_t>(bundleIndex)) << 32) |
+        modelOffset;
+    if (g_registeredResources.find(key) != g_registeredResources.end())
+        return;
+    auto adapted = std::make_shared<LiveVdp1Model>();
+    if (!adapt_processed_model(model, *adapted))
+        return;
+    g_registeredResources.emplace(key, RegisteredModelResource{
+        generation->second, bundleIndex, modelOffset, std::move(adapted)});
+    g_resourceInventoryDirty = true;
+}
+
+const std::vector<RegisteredModelResource>& published_model_resources()
+{
+    return g_publishedResources;
 }
 
 void record_vdp1_ui_command(const Vdp1UiCommand& command)

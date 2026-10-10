@@ -1229,6 +1229,14 @@ void modelDrawFunction3(s_3dModel* pModel)
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  string(PREPEND source_text "#include \"lagi/lagi_render_bridge.h\"\n")
+  string(REPLACE
+   "    r5->m14_index = index;"
+   "    r5->m14_index = index;\n    if (r5->m0_memoryLayout.m0_mainMemoryBundle && r4->m30->m0_environmentGrid.size()) {\n        const auto bundleSlot = static_cast<std::int8_t>(std::min(2, static_cast<int>(r4->m30->mC)));\n        for (const auto& object : r4->m30->m0_environmentGrid[index]) {\n            for (unsigned lod = 0; lod < 4; ++lod) {\n                const auto offset = object.m0_modelsOffets[lod];\n                if (offset) lagi::azel_bridge::register_native_model_resource(bundleSlot, offset, r5->m0_memoryLayout.m0_mainMemoryBundle->get3DModel(offset));\n            }\n        }\n    }"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "register_native_model_resource")
+   message(FATAL_ERROR "Field resource registration hook did not apply")
+  endif()
   # Flight Phase 1 diagnostics: prove Azel reaches and initializes FLD_A3
   # before any field-specific Neptune presentation is enabled.
   string(REPLACE
@@ -1306,6 +1314,14 @@ void modelDrawFunction3(s_3dModel* pModel)
   # Native ray calls terminate in Lagi's shared VDP1 effect service.
 
  elseif(relative_path STREQUAL "field.cpp")
+  string(PREPEND source_text "#include \"lagi/lagi_render_bridge.h\"\n")
+  string(REPLACE
+   "}\n\nvoid getMemoryArea(s_memoryAreaOutput* pOutput, u32 areaIndex)"
+   "    if (pFileData->MCB || pFileData->CGB) lagi::azel_bridge::notify_native_bundle_loaded(static_cast<std::int8_t>(slot));\n}\n\nvoid getMemoryArea(s_memoryAreaOutput* pOutput, u32 areaIndex)"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "notify_native_bundle_loaded")
+   message(FATAL_ERROR "Native bundle generation hook did not apply")
+  endif()
   string(REPLACE
    "int findMandatoryFileOnDisc(const char* fileName)"
    "__attribute__((weak)) int findMandatoryFileOnDisc(const char* fileName)"

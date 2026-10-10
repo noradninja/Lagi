@@ -1,5 +1,34 @@
 # Flight Mode Bring-Up
 
+## Generation-tagged registration channel foundation (2026-10-10)
+
+Implemented generic RegisteredModelResource publication independently of
+RenderSubmission. Native field load completion advances the loaded slot's
+generation after MCB/CGB calls finish; replacement retires registrations for
+that slot. Grid setup registers visual model offsets 0..3, not collision offset
+4, without calling cell draw tasks or changing pause/visibility state. Repeated
+offsets deduplicate within the loaded slot. Adapted descriptors own their vertex,
+polygon, lighting and Gouraud vectors and publish as shared_ptr<const> resources.
+Old published snapshots stay alive until the existing frame-slot wait permits
+publish_frame() to replace them. Registration survives begin_frame(); publication
+changes only at the established frame boundary when inventory is dirty.
+
+NativeResourceInventory reports generation and registered model count. The
+API is scene-generic, with field grid/load adapters as the initial producer;
+town producers and Neptune consumption are not implemented yet. No texture
+preparation or GPU residency benefit is claimed at this intermediate checkpoint.
+It adds earlier CPU adaptation and memory cost until its consumer is connected.
+Existing draw-model cache/lifetime behavior is not retroactively repaired by
+this independent registry. Do not use raw pointer identity as its GPU cache key;
+consume bundle generation, slot and authored model offset together.
+
+CMake generation and Vita syntax-only checks passed for the render bridge,
+generated field.cpp and generated field_a3/o_fld_a3.cpp using configured native
+compiler flags. No package build or hardware validation performed. Next step
+is renderer-owned bounded preparation from this inventory, with native texture
+readiness/generation invalidation retained and first-use costs still measured.
+This is not a hardware-test milestone or completion of the residency design.
+
 ## 56b98a9 hardware acceptance and performance continuation (2026-10-10)
 
 User confirms actor positions are now correct in both E006 in-engine cinematic

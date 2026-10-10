@@ -2,12 +2,27 @@
 
 #include <cstdint>
 #include <vector>
+#include <memory>
 
 struct sProcessed3dModel;
 
 namespace lagi::azel_bridge {
 
 struct LiveVdp1Model;
+
+struct RegisteredModelResource {
+    std::uint64_t bundleGeneration = 0;
+    std::int8_t bundleIndex = -1;
+    std::uint32_t modelOffset = 0;
+    std::shared_ptr<const LiveVdp1Model> model;
+};
+
+// Registration is not a draw submission. Call after native bundle/character
+// loading completes; publish immutable resources only at publish_frame().
+void notify_native_bundle_loaded(std::int8_t bundleIndex);
+void register_native_model_resource(std::int8_t bundleIndex,
+    std::uint32_t modelOffset, sProcessed3dModel* model);
+const std::vector<RegisteredModelResource>& published_model_resources();
 
 struct SubmissionState {
     std::int32_t modelMatrix[12]{};
