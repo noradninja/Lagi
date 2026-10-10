@@ -1,32 +1,24 @@
-// SGX one-fetch bilinear approximation with an 8x8 ordered Bayer matrix.
-// textureInfo=(sourceW,sourceH,outputW,outputH); sampler MUST be POINT.
-// The Bayer rank is computed arithmetically to avoid dependent texture reads.
+// Unreal-inspired 2x2 ordered coordinate-dithered nearest sampling.
+// Uses the published four coordinated U/V offsets, not independent hashes.
+// textureInfo = source texture width/height, output width/height.
+// Sampler state must be POINT; one texture fetch per output fragment.
 float4 main(float2 uv : TEXCOORD0, uniform sampler2D tex,
             uniform float4 textureInfo)
 {
-    float2 p = saturate(uv) * textureInfo.xy - 0.5f;
-    float2 origin = floor(p);
-    float2 weight = frac(p);
-
     float2 pixel = floor(saturate(uv) * textureInfo.zw);
-    float2 cell = pixel - 8.0f * floor(pixel / 8.0f);
-    float2 b0 = cell - 2.0f * floor(cell / 2.0f);
-    float2 b1 = floor(cell / 2.0f);
-    b1 = b1 - 2.0f * floor(b1 / 2.0f);
-    float2 b2 = floor(cell / 4.0f);
-
-    // Recursive Bayer rank: B2=(2*xbit+3*ybit) mod 4.
-    // B8=16*B2(low bits)+4*B2(mid bits)+B2(high bits).
-    float rank0 = frac(dot(b0, float2(2.0f,3.0f)) * 0.25f) * 4.0f;
-    float rank1 = frac(dot(b1, float2(2.0f,3.0f)) * 0.25f) * 4.0f;
-    float rank2 = frac(dot(b2, float2(2.0f,3.0f)) * 0.25f) * 4.0f;
-    float thresholdX = (16.0f * rank0 + 4.0f * rank1 + rank2 + 0.5f) / 64.0f;
-    float thresholdY = frac(thresholdX + 0.4921875f);
-
-    float2 selected = float2(weight.x > thresholdX ? 1.0f : 0.0f,
-                             weight.y > thresholdY ? 1.0f : 0.0f);
-    float2 texel = clamp(origin + selected, float2(0.0f,0.0f),
-                         textureInfo.xy - 1.0f);
+    float2 parity = pixel - 2.0f * floor(pixel * 0.5f);
+    float index = parity.x + 2.0f * parity.y;
+    // Screen parity: (0,0)=(.25,0), (1,0)=(.50,.75),
+    //                (0,1)=(.75,.50), (1,1)=(0,.25).
+    float du = index < 0.5f ? 0.25f :
+               (index < 1.5f ? 0.50f :
+               (index < 2.5f ? 0.75f : 0.0f));
+    float dv = index < 0.5f ? 0.0f :
+               (index < 1.5f ? 0.75f :
+               (index < 2.5f ? 0.50f : 0.25f));
+    float2 source = saturate(uv) * textureInfo.xy;
+    float2 texel = clamp(floor(source + float2(du,dv) - 0.5f),
+                         float2(0.0f,0.0f), textureInfo.xy - 1.0f);
     float4 color = tex2D(tex, (texel + 0.5f) / textureInfo.xy);
     if (color.a < 0.5f) discard;
     return color;
