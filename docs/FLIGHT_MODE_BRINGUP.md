@@ -1,5 +1,22 @@
 # Flight Mode Bring-Up
 
+## Actual C++ decoder differential verification (2026-10-10)
+
+tests/vdp1_decoder_differential_test.ps1 extracts the actual pre-cache decoder
+from 386fff22889b8e63676e8d6d23177f36c1fd4f6f and the current decoder into
+a generated host harness. MSVC BuildTools compiled and executed 2,592
+comparisons successfully: modes 0-5, SPD/end-code flags, three widths/heights,
+four palette banks, zero/all-ones/random VRAM and changed CRAM between passes.
+It compares return status, dimensions and every decoded RGBA pixel.
+
+The harness supplies controlled memory, descriptor accessors, logging stubs
+and the same color resolver to both actual function bodies. It isolates
+decoder/cache equivalence; it does not validate those harness adapters, native
+memory synchronization, GPU uploads, pixel appearance or Vita frame time.
+Generated source/executable remain in build/host-vdp1-decode for inspection.
+This is stronger than the independent cache reference test, not a replacement
+for the user's current e5cd6df hardware test. No runtime changes in this test.
+
 ## All-frame median budget bound (2026-10-10)
 
 The report now derives a conservative median <=25 ms proof from completed
