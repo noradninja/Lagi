@@ -7221,8 +7221,13 @@ static bool buildLiveTownFrame()
     std::uint64_t signature = staticSignature;
     signature ^= g_liveTownCpuMesh.polygonRecords.size();
     signature *= 1099511628211ull;
-    signature ^= g_staticRoomCpuMesh.decodedTextureData.size();
-    signature *= 1099511628211ull;
+    // Offscreen material preparation appends to the atlas without changing
+    // this frame's topology or bindings. Hash referenced bindings instead;
+    // a new active material still changes the signature even at equal counts.
+    for (const auto index : g_liveTownCpuMesh.polygonTextureIndices) {
+        signature ^= index;
+        signature *= 1099511628211ull;
+    }
     g_liveTownCpuMesh.polygons = static_cast<unsigned int>(
         g_liveTownCpuMesh.polygonRecords.size());
     if (g_liveTownCpuMesh.vertices.empty() ||
@@ -7274,6 +7279,8 @@ static bool buildLiveTownFrame()
     const bool fullSubdivMode = g_viewMode == 7;
     const bool changed = !g_liveTownPrepared ||
         g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
+        g_vdp1TextureDataDirty ||
+        g_vdp1GpuTextures.size() != g_staticRoomCpuMesh.decodedTextureData.size() ||
         signature != g_liveTownSignature ||
         (!fullSubdivMode && !g_vdp1BaseTexturedPayloadValid);
     g_liveTownSignature = signature;

@@ -1,5 +1,18 @@
 # Flight Mode Bring-Up
 
+## Avoid geometry rebuilds for prepared offscreen materials (2026-10-10)
+
+Follow-up to the preparation consumer: the live frame signature now hashes
+referenced polygon material indices instead of the complete decoded atlas size.
+Preparing an unused texture and successfully uploading its suffix no longer
+invalidates visible geometry merely because the cache grew. Active binding
+changes still invalidate the signature, including equal-count replacement.
+Dirty texture data or CPU/GPU texture-count mismatch explicitly requests prepare,
+so native invalidation and failed/incomplete speculative uploads retain their
+existing repair path. This does not change visibility, camera transforms,
+geometry ownership or polygon topology. Native syntax validation only; hardware
+timing benefit remains unproven. Test this follow-up together with preparation.
+
 ## Registered material preparation consumer (2026-10-10)
 
 User confirms the latest actor correction is correct in Excavation and the
