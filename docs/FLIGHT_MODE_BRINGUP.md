@@ -1,5 +1,35 @@
 # Flight Mode Bring-Up
 
+## Remaining first-use rebuild costs (2026-10-10 source/log audit)
+
+The older 750,237-byte capture's two expensive FieldStream builds are:
+
+| Frame | Build | Material resolve | Texture upload | Texture growth |
+| --- | ---: | ---: | ---: | --- |
+| 1961 | 40.327 ms | 18.342 ms | 17.900 ms | 677 -> 904 |
+| 6407 | 45.300 ms | 17.319 ms | 18.488 ms | 1758 -> 1895 |
+
+Both report reuseGeom=1, baseAlloc=0 and subAlloc=0. Thus these records
+specifically do not support buffer allocation churn as the dominant remaining
+rebuild cost. Ordinary no-growth prepare records are much smaller (e.g. frame
+2321 build 4.274 ms, upload 1.881 ms). The two slow builds accompany the
+61.039/66.441 ms reset-baseline renderer outliers. Counters can overlap and
+are not a complete additive accounting of frame time.
+
+Source confirms liveTownTextureIndex decodes descriptors on their first miss;
+resolvedLiveTownMaterialIndices then caches per-model bindings, and
+uploadVdp1Textures uploads appended texture entries using resident slabs.
+Persistent geometry residency alone cannot remove first-use material decode
+and upload costs. The next resource-system step must consider preparing
+available scene model/material resources before first visible use, using
+stable source identities and published native memory, without changing Azel
+visibility or withholding geometry until preparation completes. Do not
+predecode game-thread-mutating memory from the renderer unsynchronized.
+
+Keep the 477.919 ms tunnel outlier separate: its build is only 3.580 ms, so
+the two first-use rebuild records do not explain it. Fresh e8ac156 stage
+telemetry is required before choosing an optimization for that stall.
+
 ## Reproducible hardware log report (2026-10-10)
 
 Run `tools/analyze-flight-log.ps1 -LogPath <hardware-log>` to produce JSON
