@@ -1,5 +1,22 @@
 # Flight Mode Bring-Up
 
+## Shared decoded-opacity checkpoint (2026-10-10)
+
+The initial field upload in the latest hardware log spends 3168 us classifying
+opacity separately from copying pixels. Native decoding now carries opacity
+metadata alongside the decoded image: written-pixel count detects transparent
+skips/end-code row tails, and combined alpha bits classify produced pixels.
+Upload uses this classification when known; other texture producers retain the
+existing full scan. Refresh decoding replaces pixels and metadata together.
+No scene ID, map selection, gameplay, visibility, or upstream Azel change is used.
+This removes an upload scan, not a proven net performance improvement: additional
+decoder bookkeeping must be measured on the user's hardware against 2524c88.
+Compare material/decode time plus upload opacity/total time and full frame tails.
+The floor investigation remains unresolved and independent of this change.
+Host differential tests cover both end-code modes, all supported color modes,
+transparent skips, palette/LUT colors, snapshot ownership and opacity versus a
+full pixel scan. Vita syntax validation passes; no package or hardware test run.
+
 ## Smooth-play checkpoint and Excavation floor investigation (2026-10-10)
 
 User reports smooth play after decoder checkpoint 2524c88. Latest capture is

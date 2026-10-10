@@ -13,6 +13,7 @@ function Select-Decoder([string]$Source, [string]$Name) {
 $preamble = @'
 #include <cstdint>
 #include <vector>
+#include <algorithm>
 #include <cstdio>
 namespace azel {
 struct SaturnPolygonRecord {
@@ -25,6 +26,7 @@ struct DecodedMode1Texture {
     std::uint16_t cmdPmod,cmdColr,cmdSrca,cmdSize;
     unsigned width=0,height=0;
     std::vector<std::uint32_t> rgba;
+    bool opacityKnown=false,opaque=false;
 };
 }
 static unsigned char vram[0x80000],g_vdp2Cram[4096];
@@ -53,12 +55,12 @@ int main() {
         g_vdp2Cram[0]=g_vdp2Cram[1]=0;
         const std::vector<unsigned char> snapshot(vram,vram+sizeof(vram));
         for(unsigned mode=0;mode<6;++mode)
-        for(unsigned flags=0;flags<4;++flags)
+        for(unsigned flags=0;flags<8;++flags)
         for(unsigned width: {8u,32u,128u})
         for(unsigned height: {1u,8u,32u})
         for(unsigned bank: {0u,16u,256u,2032u}) {
             azel::SaturnPolygonRecord record;
-            record.cmdPmod=(mode<<3)|((flags&1)?0x40:0)|((flags&2)?0x80:0);
+            record.cmdPmod=(mode<<3)|((flags&1)?0x40:0)|((flags&2)?0x80:0)|((flags&4)?0x20:0);
             record.cmdColr=bank;
             record.cmdSize=((width/8)<<8)|height;
             azel::DecodedMode1Texture reference,candidate;
@@ -69,6 +71,12 @@ int main() {
                 return 1;
             }
             ++cases;
+            if(b && (!candidate.opacityKnown || candidate.opaque !=
+                std::all_of(candidate.rgba.begin(),candidate.rgba.end(),
+                    [](std::uint32_t p) { return (p & 0x80000000u)!=0; }))) {
+                std::printf("FAIL opacity mode=%u flags=%u width=%u height=%u bank=%u\n",mode,flags,width,height,bank);
+                return 1;
+            }
             // Published decoding must not fall back to mutated live pixels/LUT.
             vram[8192]^=255;
             vram[bank<<3]^=255;
@@ -81,9 +89,19 @@ int main() {
                 std::printf("FAIL immutable snapshot mode=%u bank=%u\n",mode,bank);
                 return 1;
             }
+            if(c && (!owned.opacityKnown || owned.opaque !=
+                std::all_of(owned.rgba.begin(),owned.rgba.end(),
+                    [](std::uint32_t p) { return (p & 0x80000000u)!=0; }))) return 1;
         }
     }
-    std::printf("PASS: %u decoder differential and immutable snapshot cases\n",cases);
+    for(unsigned color: {0x8000u,0xffffu,0x9234u}) {
+        azel::SaturnPolygonRecord record;
+        record.cmdCtrl=4; record.cmdColr=color;
+        azel::DecodedMode1Texture candidate;
+        if(!decodeCandidate(record,candidate) || !candidate.opacityKnown ||
+            !candidate.opaque || candidate.rgba.size()!=1) return 1;
+    }
+    std::printf("PASS: %u decoder differential, opacity and immutable snapshot cases; 3 flat materials\n",cases);
 }
 '@
 # Generated test artifacts, not repository source edits. Keep them for inspection.

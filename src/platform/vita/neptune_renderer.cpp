@@ -4882,7 +4882,8 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
         gpu.width = source.width;
         gpu.height = source.height;
         const auto opacityStartUs = sceKernelGetProcessTimeWide();
-        gpu.opaque = texturePixelsOpaque(source.rgba.data(), source.rgba.size());
+        gpu.opaque = source.opacityKnown ? source.opaque
+            : texturePixelsOpaque(source.rgba.data(), source.rgba.size());
         opacityUs += sceKernelGetProcessTimeWide() - opacityStartUs;
         gpu.mesh = (source.cmdPmod & 0x0100u) != 0u;
         gpu.cmdPmod = source.cmdPmod;
@@ -6020,6 +6021,8 @@ static bool decodeLiveVdp1Texture(
         out.width = 1u;
         out.height = 1u;
         out.rgba.assign(1u, vdp2Rgb555ToAbgr(record.cmdColr));
+        out.opacityKnown = true;
+        out.opaque = (out.rgba[0] & 0x80000000u) != 0u;
 
         static bool loggedSolidPolygon = false;
         if (!loggedSolidPolygon) {
@@ -6052,6 +6055,23 @@ static bool decodeLiveVdp1Texture(
     out.width = width;
     out.height = height;
     out.rgba.assign(static_cast<std::size_t>(width) * height, 0u);
+
+    // Unwritten texels remain transparent (including end-code row tails).
+    // Count produced texels and combine their alpha bits without rereading
+    // the entire image at upload. Each decoder writes a texel at most once.
+    std::size_t writtenPixels = 0u;
+    std::uint32_t opaqueBits = 0x80000000u;
+    auto storePixel = [&](unsigned pixel, std::uint32_t color) {
+        out.rgba[pixel] = color;
+        opaqueBits &= color;
+        ++writtenPixels;
+    };
+    auto finishDecode = [&]() {
+        out.opacityKnown = true;
+        out.opaque = writtenPixels == out.rgba.size() &&
+            (opaqueBits & 0x80000000u) != 0u;
+        return true;
+    };
 
     const bool spd = (record.cmdPmod & 0x40u) != 0u;
     const bool endDisabled = (record.cmdPmod & 0x80u) != 0u;
@@ -6106,8 +6126,8 @@ static bool decodeLiveVdp1Texture(
                     ++endCount;
                     continue;
                 }
-                out.rgba[pixel] = eagerPalette ? dotColors[dot]
-                    : cachedDotColor(dot, resolveColor);
+                storePixel(pixel, eagerPalette ? dotColors[dot]
+                    : cachedDotColor(dot, resolveColor));
             }
         }
     };
@@ -6119,7 +6139,7 @@ static bool decodeLiveVdp1Texture(
         decodeDot4([&](unsigned dot) {
             return cramColor(bank | dot);
         }, true);
-        return true;
+        return finishDecode();
     }
 
     case 1u: {
@@ -6142,7 +6162,7 @@ static bool decodeLiveVdp1Texture(
                 return vdp2Rgb555ToAbgr(entry);
             return entry ? cramColor(entry & 0x07FFu) : 0u;
         }, lutAddress <= 0x80000u - 32u);
-        return true;
+        return finishDecode();
     }
 
     case 2u:
@@ -6162,13 +6182,13 @@ static bool decodeLiveVdp1Texture(
                 }
                 const unsigned dot = rawDot & mask;
                 if (!dot && !spd) continue;
-                out.rgba[p] = cachedDotColor(dot, [&](unsigned value) {
+                storePixel(p, cachedDotColor(dot, [&](unsigned value) {
                     return vdp2Rgb555ToAbgr(readVdp2Be16(
                         g_vdp2Cram, ((bank | value) * 2u) & 0xFFFu));
-                });
+                }));
             }
         }
-        return true;
+        return finishDecode();
     }
 
     case 5u: {
@@ -6186,10 +6206,10 @@ static bool decodeLiveVdp1Texture(
                     continue;
                 }
                 if (!(color & 0x8000u) && !spd) continue;
-                out.rgba[p] = vdp2Rgb555ToAbgr(color);
+                storePixel(p, vdp2Rgb555ToAbgr(color));
             }
         }
-        return true;
+        return finishDecode();
     }
 
     default:
