@@ -65,7 +65,8 @@ static int drawQuadInternal(
     fixedPoint scale,
     const quadColor* colors = nullptr)
 {
-    static unsigned missingReports = 0u, clipReports = 0u, emittedReports = 0u;
+    static unsigned missingReports = 0u, clipReports = 0u;
+    static unsigned emittedReports[2]{};
     if (!pThis || !pThis->m0_quad || pThis->m0_quad->empty() || !position)
     {
         if (missingReports < 8u) {
@@ -154,14 +155,21 @@ static int drawQuadInternal(
     ++ctx.m1C;
     ++ctx.m0_currentVdp1WriteEA;
     ++ctx.mC;
-    if (emittedReports < 8u) {
-        ++emittedReports;
+    unsigned& emissionBudget = emittedReports[colors ? 1u : 0u];
+    if (emissionBudget < 8u) {
+        ++emissionBudget;
         lagi::platform::logging::writef(
             "[NativeParticle] emitted src=%04X size=%04X pmod=%04X "
-            "z=%d center=%d,%d half=%d,%d\n",
+            "z=%d center=%d,%d half=%d,%d shaded=%u gra=%u "
+            "colors=%04X,%04X,%04X,%04X\n",
             static_cast<unsigned>(cmd.m8_CMDSRCA),
             static_cast<unsigned>(cmd.mA_CMDSIZE),
-            static_cast<unsigned>(cmd.m4_CMDPMOD), z, cx, cy, hw, hh);
+            static_cast<unsigned>(cmd.m4_CMDPMOD), z, cx, cy, hw, hh,
+            colors ? 1u : 0u, static_cast<unsigned>(cmd.m1C_CMDGRA),
+            colors ? static_cast<unsigned>((*colors)[0]) : 0x4210u,
+            colors ? static_cast<unsigned>((*colors)[1]) : 0x4210u,
+            colors ? static_cast<unsigned>((*colors)[2]) : 0x4210u,
+            colors ? static_cast<unsigned>((*colors)[3]) : 0x4210u);
     }
     return 1;
 }

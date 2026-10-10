@@ -4722,6 +4722,21 @@ static void drawPublishedVdp1Ui(
         sceGxmSetVertexStream(g_probeContext, 0, spriteVertices);
         const bool shaded = command.hasGouraud &&
             g_gouraudSubdivVertexProgram && g_texturedGouraudSubdivFragmentProgram;
+        if (g_sceneGameMode == 3u && command.hasGouraud) {
+            static unsigned colorReports = 0u;
+            if (colorReports < 8u) {
+                ++colorReports;
+                logging::writef(
+                    "[NativeSpriteColor] src=%04X pmod=%04X shaded=%u "
+                    "colors=%04X,%04X,%04X,%04X\n",
+                    static_cast<unsigned>(command.cmdSrca),
+                    static_cast<unsigned>(command.cmdPmod), shaded ? 1u : 0u,
+                    static_cast<unsigned>(command.gouraud[0]),
+                    static_cast<unsigned>(command.gouraud[1]),
+                    static_cast<unsigned>(command.gouraud[2]),
+                    static_cast<unsigned>(command.gouraud[3]));
+            }
+        }
         if (shaded) {
             for (unsigned i = 0; i < 4u; ++i) {
                 const unsigned c = command.gouraud[i];

@@ -1,5 +1,43 @@
 # Flight Mode Bring-Up
 
+## e5cd6df hardware effects result and grayscale investigation (2026-10-10)
+
+User confirms collection orbs/particles, save-station effects and spawned
+world particles such as destruction smoke now work, but appear grayscale.
+This validates restored visibility for those effects, not their color,
+occlusion, lighting or complete sprite coverage. Tested version is
+e5cd6dfd05c49ebb4a6a8829096ef03fa547556b. New log is 880,802 bytes,
+timestamp 19:08 UTC. NativeParticle sample now reports half=17,13 instead of
+half=1,1, consistent with corrected integer-pixel projection.
+
+RBG-enabled native-scene samples: render median 23.941 ms, p90 24.938 ms,
+build median 3.046 ms, finish median 14.113 ms. 36 completed field windows
+cover 4,320 frames, 288 over 25 ms and two over 33.333 ms; maximum 59.344 ms.
+Outliers render/build are 55.972/35.321 and 59.344/39.181 ms. Different
+route/sample coverage and combined changes prevent isolated attribution.
+First-use hitches remain; the full performance goal is not achieved.
+User additionally reports 30 FPS throughout ordinary traversal with perceptible
+initial-load spikes. Preserve this qualitative hardware result alongside the
+measured outliers; neither steady 30 FPS nor completed presentation windows
+establish hitch-free first-use behavior.
+
+Color audit: SavePointParticleTask explicitly supplies 0xD325 at all corners;
+LaserHomingDraw supplies 0xE280. The adapter writes supplied quadColor into
+the transient Gouraud table, runtime capture snapshots it, and the compositor
+has a textured Gouraud path. In contrast, sTrailParticle stores a type-selected
+m1C_gouraudData pointer but its Draw never consumes it; LaserTrailDraw also
+omits a color argument. Do not infer a single missing global tint switch or
+invent item colors. Stored table format/animation semantics need verification
+before generated-source wiring for these paths.
+
+Bounded diagnostics now distinguish shaded/unshaded particle emissions
+(eight each) with table index and four color words. NativeSpriteColor logs
+eight field Gouraud commands with captured words and whether the shaded
+program is selected. This changes logging only, not sprite color behavior.
+Use matching source/PMOD/color words to locate save-station color loss before
+changing emitter, bridge or shader. Native world-sprite depth and collection
+light reconstruction remain separate open tasks.
+
 ## Actual C++ decoder differential verification (2026-10-10)
 
 tests/vdp1_decoder_differential_test.ps1 extracts the actual pre-cache decoder
