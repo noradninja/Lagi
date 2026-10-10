@@ -30,11 +30,25 @@ The native selector word is modified executable code, not a modern light
 object. Do not emulate this with executable memory writes on Vita.
 Point setup 0601E200 stores XYZ/parameter in lightSetup at 06052B2C
 offsets 1C/20/24/28, calls 0601FE32 to preprocess five values at 0601FE50,
-and queues corresponding slave setup 0601F0B6. The next native routine
-at 0601FE78 begins subtracting transformed vertex coordinates from point
-coordinates. Recover its complete fixed-point calculation and selection
-before implementing a shared renderer evaluator; radius/intensity semantics
-are not yet proven. Current Neptune submission capture contains direction,
+and queues corresponding slave setup 0601F0B6. Full disassembly corrects the
+initial inference about the following routine: 0601FE78 builds the ordinary
+32-entry falloff table (constants 8421/84210 and three second differences),
+not a point-light vector. The point-light branch begins at 0601FCDC and
+calls 0601FD52. The latter subtracts model translation at matrix offsets
+2C/1C/0C from point Z/Y/X at 0601FE50+8/+4/+0, pushes those three deltas,
+and computes their squared length using three MAC.L operations. Thus this
+path derives a model-relative light vector, not a separate light at every
+polygon vertex. The branch then multiplies that vector through the model
+matrix before publishing the three light components at 0601FBC0.
+At 0601FD76, the squared-distance high word is compared with 1000; the
+larger-distance route computes an integer square root in 16 iterations and
+shifts it by 16. The following threshold is 04000000. The divide route uses
+SH-2 division registers at FFFFFF00 with numerator pointParams[3]; the
+out-of-range route clears the output vector. Recover zero-distance behavior,
+division overflow and the exact selector/coordinate-space contract before
+translating this into the shared renderer. In particular do not substitute
+an arbitrary per-vertex inverse-square lamp or guess the parameter's units.
+Current Neptune submission capture contains direction,
 color and distance falloff only, so the restored argument alone cannot reach
 the lighting evaluator. The upstream push stub also does not advance its
 stack pointer; simply calling that stub is not a faithful activation fix.
