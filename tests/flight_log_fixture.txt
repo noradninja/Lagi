@@ -1,0 +1,7 @@
+[ScenePerf] render=20000 build=1000 cpuprep=4000 gxmfinish=12000 rbgEnabled=1
+[ScenePerf] render=30000 build=3000 cpuprep=6000 gxmfinish=16000 rbgEnabled=1
+[ScenePerf] render=7000 build=2000 rbgEnabled=0
+[FlightTimingWindow] frames=120 max=40000 over25=15 over33333=1
+[FlightPresentWindow] intervals=120 max=33340 over2Vblanks=0
+[FlightPresentOutlier] baseline=1 render=470000us build=3000us interval=480000us vblanks=29 rebuild=0
+[FlightPresentOutlier] baseline=0 render=40000us build=20000us interval=0us vblanks=0 rebuild=1 cpuprep=25000 submit=1000 compose=500 gxmend=100 gxmfinish=14000

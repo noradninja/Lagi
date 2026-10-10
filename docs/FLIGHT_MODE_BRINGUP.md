@@ -1,5 +1,25 @@
 # Flight Mode Bring-Up
 
+## Reproducible hardware log report (2026-10-10)
+
+Run `tools/analyze-flight-log.ps1 -LogPath <hardware-log>` to produce JSON
+containing sampled native-scene distributions split by RBG enablement,
+complete field renderer/presentation window totals, and individual outliers.
+It deliberately does not assert an exact all-frame median from heartbeat
+samples or hide incomplete-tail outliers behind passing complete windows.
+Package identity must still be supplied separately. Missing stage fields are
+null, not zero; overlapping CPU counters must not be added. The fixture test
+checks even-count median, nearest-rank p90, window totals and both old/new
+outlier formats.
+
+The unchanged 750,237-byte log has 110 RBG-enabled native-scene samples:
+render median 25.1045 ms, p90 26.736 ms, finish median 15.084 ms. These samples
+are not field-only. Its 38 completed field render windows cover 4,560 frames,
+2,654 over 25 ms and two over 33.333 ms (maximum 66.441 ms). Completed
+presentation windows cover 4,560 intervals with zero >2-vblank intervals, but
+the separate tunnel outlier is 480.707 ms/29 vblanks; it must not be discarded.
+This remains older evidence, not a capture of e8ac156 or the shader experiment.
+
 ## Aligned coefficient decoding experiment (2026-10-10)
 
 The shared RBG0 shader now converts the fetched coefficient texel's four
