@@ -4288,7 +4288,24 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
     return &g_vdp1UiTextureCache.back().gpu;
 }
 
-static void drawPublishedVdp1Ui()
+enum class Vdp1UiPass {
+    All,
+    Background,
+    Foreground
+};
+
+static bool isVdp1BackgroundCommand(
+    const azel_bridge::Vdp1UiCommand& command)
+{
+    // Native scene background sprites are authored at farClip - 1 and carry
+    // that normalized depth in s_vd1ExtendedCommand. Keep a small tolerance
+    // for the fixed-point division without relying on FLD_A3 texture IDs.
+    return command.hasDepth && command.depth >= 0.999f;
+}
+
+static void drawPublishedVdp1Ui(
+    Vdp1UiPass pass = Vdp1UiPass::All,
+    unsigned int* sharedSpriteSlot = nullptr)
 {
     const auto& commands = azel_bridge::published_vdp1_ui_commands();
     if (commands.empty() || !g_textureVertexProgram ||
@@ -4335,8 +4352,16 @@ static void drawPublishedVdp1Ui()
             viewerRenderHeight());
     }
 
-    unsigned int spriteSlot = 0u;
+    unsigned int localSpriteSlot = 0u;
+    unsigned int& spriteSlot = sharedSpriteSlot
+        ? *sharedSpriteSlot
+        : localSpriteSlot;
     for (const auto& command : commands) {
+        const bool background = isVdp1BackgroundCommand(command);
+        if ((pass == Vdp1UiPass::Background && !background) ||
+            (pass == Vdp1UiPass::Foreground && background))
+            continue;
+
         const unsigned int commandType = command.cmdCtrl & 0x000Fu;
 
         const float renderAspect =
@@ -4440,13 +4465,16 @@ static void drawPublishedVdp1Ui()
             if (uiTraceBudget != 0u) {
                 logging::writef(
                     "[PresentationTrace][NeptuneUI] DROP type=%u CTRL=%04X "
-                    "PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X reason=texture\n",
+                    "PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X "
+                    "pass=%u depth=%.6f reason=texture\n",
                     commandType,
                     command.cmdCtrl,
                     command.cmdPmod,
                     command.cmdColr,
                     command.cmdSrca,
-                    command.cmdSize);
+                    command.cmdSize,
+                    static_cast<unsigned int>(pass),
+                    static_cast<double>(command.depth));
                 --uiTraceBudget;
             }
             continue;
@@ -4456,7 +4484,7 @@ static void drawPublishedVdp1Ui()
             logging::writef(
                 "[PresentationTrace][NeptuneUI] DRAW type=%u CTRL=%04X "
                 "PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X "
-                "A=(%d,%d) B=(%d,%d)\n",
+                "A=(%d,%d) B=(%d,%d) pass=%u depth=%.6f\n",
                 commandType,
                 command.cmdCtrl,
                 command.cmdPmod,
@@ -4464,7 +4492,9 @@ static void drawPublishedVdp1Ui()
                 command.cmdSrca,
                 command.cmdSize,
                 command.xa, command.ya,
-                command.xb, command.yb);
+                command.xb, command.yb,
+                static_cast<unsigned int>(pass),
+                static_cast<double>(command.depth));
             --uiTraceBudget;
         }
 
@@ -12337,8 +12367,15 @@ static void renderBasicWingViewer()
     if (beginSceneResult < 0)
         return;
 
-    if (nativeSceneMode)
+    unsigned int vdp1UiSpriteSlot = 0u;
+    if (nativeSceneMode) {
         drawSceneVdp2Background();
+        // Azel's far-plane VDP1 sprites (for example the flight horizon
+        // strip) sit above RBG0 but behind world geometry. Foreground VDP1
+        // commands remain in the normal late composition pass below.
+        drawPublishedVdp1Ui(
+            Vdp1UiPass::Background, &vdp1UiSpriteSlot);
+    }
 
     Vdp1RenderMode renderMode = Vdp1RenderMode::PolygonColor;
     if (!roomMode) {
@@ -12422,12 +12459,14 @@ static void renderBasicWingViewer()
             // RGBA backing texture as the status-menu decode and clears that
             // memory before GXM consumes the queued menu draw.
             drawAzelMenuVdp2Gpu();
-            drawPublishedVdp1Ui();
+            drawPublishedVdp1Ui(
+                Vdp1UiPass::Foreground, &vdp1UiSpriteSlot);
         } else {
             drawAzelVdp2Nbg1Gpu();
             drawAzelVdp2CinematicBarsGpu();
             drawAzelVdp2TextLayerGpu();
-            drawPublishedVdp1Ui();
+            drawPublishedVdp1Ui(
+                Vdp1UiPass::Foreground, &vdp1UiSpriteSlot);
         }
     }
 

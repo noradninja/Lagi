@@ -37,6 +37,11 @@ struct Vdp1UiCommand {
     std::uint16_t cmdSize = 0;
     bool hasGouraud = false;
     std::uint16_t gouraud[4]{0x4210, 0x4210, 0x4210, 0x4210};
+    // Azel attaches normalized VDP1 depth to scene-space sprites. Preserve it
+    // so Neptune can compose far-plane sprites between VDP2 and 3D geometry
+    // without classifying commands by field/texture identity.
+    float depth = 0.0f;
+    bool hasDepth = false;
     std::int16_t xa = 0, ya = 0;
     std::int16_t xb = 0, yb = 0;
     std::int16_t xc = 0, yc = 0;

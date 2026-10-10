@@ -73,6 +73,11 @@ static void capture_azel_vdp1_frontend_commands()
             for (unsigned i = 0; i < 4; ++i)
                 ui.gouraud[i] = ctx.m14[0][cmd->m1C_CMDGRA][i];
         }
+        if (const s_vd1ExtendedCommand* extended =
+                fetchVdp1ExtendedCommand(*cmd)) {
+            ui.depth = extended->depth;
+            ui.hasDepth = true;
+        }
         ui.xa = cmd->mC_CMDXA;   ui.ya = cmd->mE_CMDYA;
         ui.xb = cmd->m10_CMDXB;  ui.yb = cmd->m12_CMDYB;
         ui.xc = cmd->m14_CMDXC;  ui.yc = cmd->m16_CMDYC;
