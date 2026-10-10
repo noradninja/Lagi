@@ -234,20 +234,22 @@ float readRbgCoefficient(
 
     // Coefficient entries are naturally aligned. Fetch the packed word
     // once, rather than three dependent texture lookups per fragment.
-    const float4 bytes = rawTexel(raw, floor(byteAddress * 0.25f));
-    const float lane = fmod(byteAddress, 4.0f);
-    const float b0 = selectByte(bytes, lane);
-    const float b1 = selectByte(bytes, lane + 1.0f);
+    // Convert all channels once. A two-byte entry selects RG or BA;
+    // a four-byte entry always occupies the whole aligned texel.
+    const float4 bytes = floor(
+        rawTexel(raw, floor(byteAddress * 0.25f)) * 255.0f + 0.5f);
     if (entrySize < 2.5f) {
-        invalid = b1 >= 128.0f;
-        float value16 = b0 + fmod(b1, 128.0f) * 256.0f;
+        const float2 word = fmod(byteAddress, 4.0f) < 0.5f
+            ? bytes.rg : bytes.ba;
+        invalid = word.y >= 128.0f;
+        float value16 = word.x + fmod(word.y, 128.0f) * 256.0f;
         if (value16 >= 16384.0f) value16 -= 32768.0f;
         return value16 / 1024.0f;
     }
-    const float b2 = selectByte(bytes, 2.0f);
-    invalid = selectByte(bytes, 3.0f) >= 128.0f;
+    const float b2 = bytes.b;
+    invalid = bytes.a >= 128.0f;
 
-    float value = b0 + b1 * 256.0f + b2 * 65536.0f;
+    float value = bytes.r + bytes.g * 256.0f + b2 * 65536.0f;
     if (b2 >= 128.0f)
         value -= 16777216.0f;
     return value / 65536.0f;

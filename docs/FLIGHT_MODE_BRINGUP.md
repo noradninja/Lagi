@@ -1,5 +1,23 @@
 # Flight Mode Bring-Up
 
+## Aligned coefficient decoding experiment (2026-10-10)
+
+The shared RBG0 shader now converts the fetched coefficient texel's four
+UNORM channels to bytes once. Two-byte entries select RG/BA directly;
+four-byte entries read RGBA directly, eliminating individual selectByte
+branches. Texture fetch count, coefficient addressing, invalid-bit selection,
+signed payload decoding and A/B policy are unchanged. This applies to every
+scene using the shared shader, not just flight.
+
+`tests/rbg0_coefficient_decode_test.ps1` passed all 65,536 two-byte values in
+both aligned lanes with UNORM reconstruction and invalid/sign checks, plus
+four-byte sign-boundary reference cases. Vita shader/package compilation
+passed; compiled RBG0 GXP is 9,460 bytes. These are not GPU pixel equivalence
+or performance results. User is currently testing the separate diagnostic
+baseline `e8ac1568c79ff01c97d78d4ac5a3db1ec34af61d`; do not attribute that
+capture to this shader experiment. Require the same route/settings and fresh
+visual checks on this experiment before retaining it as a performance win.
+
 ## Outlier stage attribution (2026-10-10)
 
 FlightPresentOutlier now includes existing CPU preparation, submission,
