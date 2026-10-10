@@ -1,5 +1,39 @@
 # Flight Mode Bring-Up
 
+## c075a81 collection/save capture (2026-10-10)
+
+User reports collecting Stolarium and the field map and activating the save
+station while testing c075a81bf54feef589f436ed2382228f8b45a1bb. Their expected
+visual reference is yellow Stolarium and blue field-map/save effects (colors
+recalled tentatively). Preserve authored native color selection, not an
+item-name-specific renderer tint. Downloads log is 377,070 bytes, timestamp
+19:20 UTC; binary identity comes from the user's test report.
+
+62 sampled RBG-enabled native-scene records: render median 23.698 ms, p90
+24.536 ms; build median 2.9505 ms, GXM finish median 13.9005 ms. These samples
+are not field-only. 23 complete field windows cover 2,760 frames: 148 above
+25 ms and one above 33.333 ms, maximum 55.990 ms. The completed-window median
+is bounded at <=25 ms, but the deadline is not met on every frame. All 2,760
+counted presentation intervals remain at two vblanks; the rebuild outlier
+is at a reset baseline and is excluded from those interval counts. Do not
+use that exclusion as evidence of hitch-free presentation.
+
+The outlier records build=35.417 ms, CPU prep=42.699 ms and GXM finish=11.980
+ms. CPU prep includes other stages and must not be summed with build. This
+continues to point toward first-use CPU/resource work rather than an unusually
+long completion wait; earlier suffix-upload evidence remains the next lead.
+
+Color diagnostics are inconclusive for the requested save/collection route:
+the eight renderer samples are ray sources 3998/39F8, while the eight shaded
+particle emissions contain E280 from the homing path. They do not constitute
+an emitter-to-renderer match for D325 save particles. First-eight budgets were
+consumed before the desired effects; future diagnostics must select distinct
+source/color signatures or explicitly target those effects. Source still
+shows the type-selected trail pointer unused in sTrailParticle::Draw and
+LaserTrailDraw supplying no color argument. Native table layout/animation
+must be verified before wiring it. No color fix or hitch-free hardware
+validation is claimed for this logging-only checkpoint.
+
 ## e5cd6df hardware effects result and grayscale investigation (2026-10-10)
 
 User confirms collection orbs/particles, save-station effects and spawned
