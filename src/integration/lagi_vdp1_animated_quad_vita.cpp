@@ -2,6 +2,7 @@
 #include "kernel/vdp1AnimatedQuad.h"
 #include "kernel/rayDisplay.h"
 #include "lagi/platform.h"
+#include "lagi/lagi_particle_color_adapter.h"
 #include <cmath>
 
 std::vector<sVdp1Quad> initVdp1Quad(sSaturnPtr ptr)
@@ -185,6 +186,18 @@ int drawProjectedParticleWithGouraud(
     const quadColor* colors)
 {
     return drawQuadInternal(pThis, position, fixedPoint(0x10000), colors);
+}
+
+int lagiDrawParticleWithColorTable(sAnimatedQuad* particle, sVec3_FP* position,
+    sSaturnPtr colors, unsigned frameStride)
+{
+    if (!particle)
+        return 0;
+    const auto entry = colors + static_cast<unsigned>(particle->m7_currentFrame) * frameStride;
+    quadColor gouraud{};
+    for (unsigned corner = 0; corner < 4; ++corner)
+        gouraud[corner] = readSaturnU16(entry + corner * 2u);
+    return drawProjectedParticleWithGouraud(particle, position, &gouraud);
 }
 
 int vdp1DrawQuadScaled(

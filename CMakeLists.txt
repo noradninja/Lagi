@@ -1229,6 +1229,23 @@ void modelDrawFunction3(s_3dModel* pModel)
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  string(PREPEND source_text "#include \"lagi/lagi_particle_color_adapter.h\"\n")
+  # Native FLD_A3: 0607AC3C indexes the trail table by frame*4 and
+  # 0607AD44 selects an eight-byte orb block at 06094F64 by color type.
+  # Restore omitted arguments, not renderer-side item color guesses.
+  string(REPLACE
+   "drawProjectedParticleWithGouraud(&pThis->m8_animQuad, &pThis->m10_position);"
+   "lagiDrawParticleWithColorTable(&pThis->m8_animQuad, &pThis->m10_position, pThis->m1C_gouraudData, 4u);"
+   source_text "${source_text}")
+  string(REPLACE
+   "drawProjectedParticleWithGouraud(&pThis->m58, &drawPos);"
+   "lagiDrawParticleWithColorTable(&pThis->m58, &drawPos, gFLD_A3->getSaturnPtr(0x06094F64) + static_cast<unsigned>(pThis->m27) * 8u, 0u);"
+   source_text "${source_text}")
+  string(REGEX MATCHALL "lagiDrawParticleWithColorTable" lagi_collection_color_calls "${source_text}")
+  list(LENGTH lagi_collection_color_calls lagi_collection_color_count)
+  if(NOT lagi_collection_color_count EQUAL 2)
+   message(FATAL_ERROR "Native collection color argument adapters did not apply")
+  endif()
   string(PREPEND source_text "#include \"lagi/lagi_render_bridge.h\"\n")
   string(REPLACE
    "    r5->m14_index = index;"

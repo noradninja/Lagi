@@ -1,5 +1,27 @@
 # Flight Mode Bring-Up
 
+## Native collection color recovery in progress (2026-10-10)
+
+New work branch: feature/native-point-lights-effects, based on merged main.
+Point lighting and grayscale image particles/orbs remain separate open goals.
+Original Disc 1 FLD_A3.PRG (logical sector 244544, 268888 bytes) confirms
+0607AC3C passes the trail Gouraud pointer plus animationFrame*4 to shared helper
+0602D0DC. That helper copies four big-endian words at offsets 0/2/4/6 into the
+Gouraud table. Thus trail entries overlap: a four-byte stride selects an
+eight-byte window, not a fixed block or a synthesized item tint.
+Original orb draw at 0607AD44 selects the separate inline table at 06094F64
+with colorIndex*8 and calls the same helper. The reconstructed calls omit
+these arguments. Local generated-source adapters restore both contracts using
+a generic Lagi color-table service and existing Gouraud sprite output.
+extern/Azel is unchanged; no gameplay color selection or projection change.
+Configuration and Vita syntax checks pass after correcting the adapter header's
+type include. The actual adapter passes 384 host color-window cases across
+strides 0/4/8, including endian order, argument forwarding and null handling.
+Memory access and the downstream draw are controlled test doubles; this does
+not validate GXM output or native task/color selection. Hardware validation is
+still pending; this is not a completed color fix. Other image emitters and point-light
+activation/evaluation/reset semantics still need reconstruction.
+
 ## User acceptance and main merge authorization (2026-10-10)
 
 The user explicitly considers this rendering goal met for the current milestone:
