@@ -1,5 +1,42 @@
 # Flight Mode Bring-Up
 
+## Hardware baseline e8ac156 results (2026-10-10)
+
+User identifies tested package as e8ac1568c79ff01c97d78d4ac5a3db1ec34af61d
+and confirms LCS icons now draw correctly in all modes. This hardware result
+validates the icon-layering correction; do not extend that statement to the
+target rectangle, particles, or collection lights without user confirmation.
+
+Fresh Downloads lagi.log is 522,290 bytes, timestamp 2026-10-10 18:49 UTC.
+Its 98 RBG-enabled native-scene heartbeat samples have render median 24.733 ms,
+p90 26.465 ms, max 80.390 ms; build median 3.0665 ms, finish median 15.196 ms.
+These sampled statistics are not an exact field-only/all-frame median.
+23 complete field windows cover 2,760 frames: 1,100 exceed 25 ms and two exceed
+33.333 ms (max 67.530 ms). Matching complete presentation windows contain zero
+>2-vblank intervals, max 33.393 ms, but reset-baseline outliers remain excluded
+from interval classification. The performance objective is not met.
+
+The two actual outlier records report render/build/CPU-prep/finish:
+60.872/40.125/47.598/11.869 ms and 67.530/46.380/50.746/15.607 ms.
+FieldStream frame 2502 grows textures 677->904, material 17.893 ms,
+texture upload 17.749 ms. Frame 6560 grows 1758->1895, material 17.428 ms,
+texture upload 19.531 ms. Both reuse geometry with zero base/subdivision
+allocation timing. This strengthens first-use resource preparation as the
+remaining rebuild target; it is not proof of a benefit from later experiments.
+The earlier 477.919 ms tunnel stall is not present in this capture, which
+does not establish that it is fixed or the same route was fully exercised.
+
+NativeParticle diagnostics contain eight negative-depth rejections and eight
+emissions with src=514C, size=0C50, pmod=0080, z=131072, center=0,0,
+half=1,1. These bounded early samples prove some commands are emitted but do
+not identify their task or demonstrate visible flight effects. Investigate
+projection/size and emitter transform contracts before applying scale changes.
+Collection sparkles still stop before a drawing call; keep that separate.
+
+Next A/B candidates remain the aligned coefficient shader (386fff2) and
+per-decode indexed color cache (af32835). They are absent from e8ac156 and
+have no hardware timing or correctness result yet.
+
 ## Per-decode indexed color cache experiment (2026-10-10)
 
 decodeLiveVdp1Texture now memoizes each used indexed dot's resolved RGBA
