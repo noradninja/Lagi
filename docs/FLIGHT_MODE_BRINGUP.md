@@ -1,5 +1,38 @@
 # Flight Mode Bring-Up
 
+## Image-particle clarification and slab reuse checkpoint (2026-10-10)
+
+User clarifies that save-station dot particles are correctly cyan. Grayscale
+affects image-based collection sparkle/orbs and image particles emitted by
+destructible objects from item boxes/save station. Do not describe all save
+particles as grayscale or treat this as a universal missing particle tint.
+The color issue remains open; no color behavior changes in this checkpoint.
+
+New Downloads capture: 678,698 bytes, 19:35 UTC, contains upload-stage counters.
+96 RBG-enabled native-scene samples: render median 23.777 ms, p90 24.976 ms.
+35 complete field windows: 4,200 frames, 333 above 25 ms, two above 33.333 ms;
+outliers 56.261 and 61.007 ms. Their presentation baselines are reset, so zero
+>2-vblank intervals in completed windows cannot establish hitch-free behavior.
+First field suffix upload: 227 textures, 512,960 padded bytes, total 19.351 ms,
+allocation 13.027 ms, opacity 3.436 ms, copy 1.689 ms, setup 0.255 ms.
+Allocation is the largest measured upload component in that event.
+
+Source found batch packing abandoning free tails: when an entire suffix did
+not fit the latest slab, all new textures went into a new slab, even if older
+slabs could fit individual textures. Native town/field uploads now first-fit
+each 64-byte-aligned texture into existing slab tails before allocating a new
+slab. Existing payloads do not move; texture pointers, filtering, invalidation
+generations and Azel visibility are unchanged. Growth still uses the remaining
+suffix byte requirement with a 1 MiB minimum. This reduces avoidable allocation
+and wasted capacity but does not implement resource prewarming or guarantee
+deadline compliance when new GPU storage genuinely is required.
+
+Actual shared selector compiled/executed in the host C++ test: empty pool,
+older-tail reuse, exact fits, exhausted tails, bounds and repeated allocations
+pass. Source diff checks pass. Native renderer compilation and Vita validation
+remain pending; no performance win is claimed. Fresh capture must include
+FieldTexturePool/NativeTextureUploadStages plus full rebuild timing.
+
 ## Upload-stage diagnostic checkpoint (2026-10-10)
 
 NativeTextureUploadStages now separates GPU allocation, opacity scan, pixel

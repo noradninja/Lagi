@@ -6,6 +6,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/lagi_live_model_adapter.h"
+#include "neptune_texture_pool.h"
 
 #include <psp2/display.h>
 #include <psp2/gxm.h>
@@ -4806,28 +4807,13 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
     const std::size_t firstTexture = g_vdp1GpuTextures.size();
     const bool pooled = g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u;
     g_nativeGpuTextureGenerations.resize(model.textureCount, 0u);
+    std::size_t remainingNewTextureBytes = 0u;
     if (pooled && firstTexture < model.textureCount) {
-        std::size_t requiredBytes = 0u;
         for (std::size_t i = firstTexture; i < model.textureCount; ++i) {
             const auto& texture = model.textures[i];
             const std::size_t bytes = ((texture.width + 7u) & ~7u) *
                 static_cast<std::size_t>(texture.height) * sizeof(std::uint32_t);
-            requiredBytes += (bytes + 63u) & ~std::size_t(63u);
-        }
-        if (g_fieldTextureSlabs.empty() || requiredBytes >
-                g_fieldTextureSlabs.back().bytes - g_fieldTextureSlabs.back().used) {
-            FieldTextureSlab slab{};
-            slab.bytes = std::max(requiredBytes, std::size_t(1024u * 1024u));
-            const auto allocationStartUs = sceKernelGetProcessTimeWide();
-            slab.data = probeGpuAlloc(slab.bytes, SCE_GXM_MEMORY_ATTRIB_READ, &slab.uid);
-            allocationUs += sceKernelGetProcessTimeWide() - allocationStartUs;
-            if (!slab.data)
-                return false;
-            g_fieldTextureSlabs.push_back(slab);
-            logging::writef("[FieldTexturePool] bytes=%u textures=%u slabs=%u\n",
-                static_cast<unsigned>(slab.bytes),
-                static_cast<unsigned>(model.textureCount - firstTexture),
-                static_cast<unsigned>(g_fieldTextureSlabs.size()));
+            remainingNewTextureBytes += (bytes + 63u) & ~std::size_t(63u);
         }
     }
     for (std::size_t textureIndex = refreshPrefix ? 0u : firstTexture;
@@ -4851,9 +4837,29 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
         if (retained) {
             gpu = g_vdp1GpuTextures[textureIndex];
         } else if (pooled) {
-            auto& slab = g_fieldTextureSlabs.back();
+            const std::size_t alignedBytes = (bytes + 63u) & ~std::size_t(63u);
+            std::size_t slabIndex = findTextureSlabWithSpace(
+                g_fieldTextureSlabs, alignedBytes);
+            if (slabIndex == g_fieldTextureSlabs.size()) {
+                FieldTextureSlab newSlab{};
+                newSlab.bytes = std::max(remainingNewTextureBytes,
+                    std::size_t(1024u * 1024u));
+                const auto allocationStartUs = sceKernelGetProcessTimeWide();
+                newSlab.data = probeGpuAlloc(newSlab.bytes,
+                    SCE_GXM_MEMORY_ATTRIB_READ, &newSlab.uid);
+                allocationUs += sceKernelGetProcessTimeWide() - allocationStartUs;
+                if (!newSlab.data)
+                    return false;
+                g_fieldTextureSlabs.push_back(newSlab);
+                logging::writef("[FieldTexturePool] bytes=%u textures=%u slabs=%u\n",
+                    static_cast<unsigned>(newSlab.bytes),
+                    static_cast<unsigned>(model.textureCount - textureIndex),
+                    static_cast<unsigned>(g_fieldTextureSlabs.size()));
+            }
+            auto& slab = g_fieldTextureSlabs[slabIndex];
             gpu.data = static_cast<unsigned char*>(slab.data) + slab.used;
-            slab.used += (bytes + 63u) & ~std::size_t(63u);
+            slab.used += alignedBytes;
+            remainingNewTextureBytes -= alignedBytes;
         } else {
             const auto allocationStartUs = sceKernelGetProcessTimeWide();
             gpu.data = probeGpuAlloc(bytes, SCE_GXM_MEMORY_ATTRIB_READ, &gpu.uid);
