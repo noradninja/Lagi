@@ -43,6 +43,7 @@ int main() {
     texture.nativeDependenciesKnown=true;
     texture.width=32; texture.height=16; texture.cmdSize=0x410;
     texture.cmdSrca=0x1000; texture.cmdColr=0x200;
+    texture.nativeCramDependencies[1]=1u; // block at CRAM 0x400
     Vdp1WriteBlocks pixels;
     CramWriteBlocks palettes;
     for(unsigned mode=0;mode<6;++mode) {
@@ -54,11 +55,14 @@ int main() {
         palettes.publish(0x400,1);
         assert(textureDependsOnWrites(texture,{},palettes.consume(),false,true)==(mode!=5));
         palettes.publish(0xc00,1);
-        assert(textureDependsOnWrites(texture,{},palettes.consume(),false,true)==(mode==1));
+        assert(!textureDependsOnWrites(texture,{},palettes.consume(),false,true));
     }
     texture.cmdPmod=1<<3;
     pixels.publish(0x1000,1); // LUT, separate from image at 0x8000.
     assert(textureDependsOnWrites(texture,pixels.consume(),{},true,false));
+    texture.nativeCramDependencies={}; // direct-RGB LUT, no CRAM reads
+    palettes.publish(0x400,1);
+    assert(!textureDependsOnWrites(texture,{},palettes.consume(),false,true));
     assert(textureDependsOnWrites(texture,{},{},true,false)); // missing range fallback
     texture.cmdSize=0;
     assert(!textureDependsOnWrites(texture,{},{},true,true)); // native flat color

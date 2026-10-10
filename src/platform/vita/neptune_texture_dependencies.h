@@ -78,11 +78,12 @@ bool textureDependsOnWrites(const Texture& texture,
                 unsigned(texture.cmdColr) << 3u, 32u)) return true;
     }
     if (!paletteNotification || mode == 5u) return false;
-    // LUT entries may reference arbitrary CRAM colors. Until exact used-entry
-    // dependencies are captured, retain conservative whole-CRAM invalidation.
-    if (mode == 1u || CramWriteBlocks::empty(palettes)) return true;
-    const unsigned mask = mode == 0u ? 15u : mode == 2u ? 63u : mode == 3u ? 127u : 255u;
-    const unsigned bank = texture.cmdColr & (0x7ffu & ~mask);
-    return CramWriteBlocks::overlaps(palettes, bank * 2u, (mask + 1u) * 2u);
+    if (CramWriteBlocks::empty(palettes)) return true;
+    // Captured reads include zero colors and eager palette entries. LUT RGB555
+    // entries do not access CRAM; palette-indexed LUT entries can access any
+    // block, not necessarily the material's nominal bank.
+    for (unsigned word = 0; word < palettes.size(); ++word)
+        if (texture.nativeCramDependencies[word] & palettes[word]) return true;
+    return false;
 }
 } // namespace lagi::platform::renderer

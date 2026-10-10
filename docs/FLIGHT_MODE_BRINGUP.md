@@ -1,5 +1,35 @@
 # Flight Mode Bring-Up
 
+## Captured CRAM dependency checkpoint (2026-10-10)
+
+User reports no visual or performance regression for range-aware invalidation.
+Latest capture is 913219 bytes, 20:45 local: sampled native RBG median
+23.887 ms/p90 25.163 ms. Completed field windows cover 3960 frames with
+513 over 25 ms and two over 33.333 ms (39.078/41.906 ms), without baseline
+presentation intervals for those outliers. Completed presentation windows have
+zero >2-vblank intervals. The previous 245-texture refresh burst is absent,
+but routes/windows are unmatched, so do not claim a controlled speedup.
+The remaining transition refreshes 109 textures in 2505 us and resolves
+materials in 9007 us. Full deadline compliance remains unproven.
+
+The next shared refinement captures actual CRAM reads in the native decoder:
+four 32-bit words identify 128 palette blocks of 32 bytes (16 bytes/texture).
+This covers arbitrary LUT palette indices, zero palette colors and eager
+palette resolution. Direct RGB555 LUT entries never read CRAM and therefore
+do not become stale for unrelated palette writes. Pixel/LUT range checking,
+unknown-producer fallback, empty-notification fallback, CPU/GPU epoch ownership
+and previously stale entries remain unchanged. No scene-dependent branch or
+upstream edit is introduced. Re-decoding replaces dependency metadata too.
+
+Dependency tests and 5184 actual-decoder differential/opacity/snapshot cases
+pass. Additional representative actual decodes mutate all 128 CRAM blocks:
+every observed pixel change must be covered by the original dependency mask.
+Vita syntax passes; no package build or hardware validation for this refinement.
+Compare refreshed counts/time on the same route and inspect palette-driven
+dragon/item/save effects. New material decoding still remains a separate cold
+cost; this checkpoint does not claim to solve initial-entry deadlines or floor
+sampling.
+
 ## Shared range-aware invalidation checkpoint (2026-10-10)
 
 Latest diagnostic capture: 833969 bytes, 20:31 local. Sampled RBG-enabled

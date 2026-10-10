@@ -14,6 +14,7 @@ $preamble = @'
 #include <cstdint>
 #include <vector>
 #include <algorithm>
+#include <array>
 #include <cstdio>
 namespace azel {
 struct SaturnPolygonRecord {
@@ -28,6 +29,7 @@ struct DecodedMode1Texture {
     std::vector<std::uint32_t> rgba;
     bool opacityKnown=false,opaque=false;
     bool nativeDependenciesKnown=false;
+    std::array<std::uint32_t,4> nativeCramDependencies{};
 };
 }
 static unsigned char vram[0x80000],g_vdp2Cram[4096];
@@ -72,6 +74,22 @@ int main() {
                 return 1;
             }
             ++cases;
+            if(b && !candidate.nativeDependenciesKnown) return 1;
+            // Mutate every CRAM block for representative actual decodes.
+            // Any changed output must have declared that block as a dependency.
+            if(b && flags==0 && width==32 && height==8 && (bank==0 || bank==256)) {
+                for(unsigned block=0;block<128;++block) {
+                    for(unsigned byte=block*32;byte<(block+1)*32;++byte) g_vdp2Cram[byte]^=255;
+                    azel::DecodedMode1Texture changed;
+                    bool changedOk=decodeCandidate(record,changed);
+                    for(unsigned byte=block*32;byte<(block+1)*32;++byte) g_vdp2Cram[byte]^=255;
+                    if(changedOk && changed.rgba!=candidate.rgba &&
+                        !(candidate.nativeCramDependencies[block/32] & (1u<<(block%32)))) {
+                        std::printf("FAIL missed CRAM dependency mode=%u bank=%u block=%u\n",mode,bank,block);
+                        return 1;
+                    }
+                }
+            }
             if(b && (!candidate.opacityKnown || candidate.opaque !=
                 std::all_of(candidate.rgba.begin(),candidate.rgba.end(),
                     [](std::uint32_t p) { return (p & 0x80000000u)!=0; }))) {

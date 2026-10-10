@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <array>
 #include <vector>
 
 namespace lagi::azel {
@@ -43,6 +44,7 @@ struct DecodedMode1Texture {
     bool opacityKnown = false;
     bool opaque = false;
     bool nativeDependenciesKnown = false;
+    std::array<std::uint32_t, 4> nativeCramDependencies{};
 };
 
 struct SaturnLightingExtra {

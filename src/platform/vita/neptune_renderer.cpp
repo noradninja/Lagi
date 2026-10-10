@@ -6102,8 +6102,13 @@ static bool decodeLiveVdp1Texture(
     const bool endDisabled = (record.cmdPmod & 0x80u) != 0u;
     const bool endMode = (record.cmdPmod & 0x20u) == 0u;
 
-    auto cramColor = [](unsigned index) -> std::uint32_t {
+    auto trackCramRead = [&](unsigned byte) {
+        const unsigned block = (byte & 0x0fffu) / 32u;
+        out.nativeCramDependencies[block / 32u] |= 1u << (block % 32u);
+    };
+    auto cramColor = [&](unsigned index) -> std::uint32_t {
         const unsigned byte = (index * 2u) & 0x0FFFu;
+        trackCramRead(byte);
         const std::uint16_t c = readVdp2Be16(g_vdp2Cram, byte);
         return c ? vdp2Rgb555ToAbgr(c) : 0u;
     };
@@ -6208,6 +6213,7 @@ static bool decodeLiveVdp1Texture(
                 const unsigned dot = rawDot & mask;
                 if (!dot && !spd) continue;
                 storePixel(p, cachedDotColor(dot, [&](unsigned value) {
+                    trackCramRead(((bank | value) * 2u) & 0xFFFu);
                     return vdp2Rgb555ToAbgr(readVdp2Be16(
                         g_vdp2Cram, ((bank | value) * 2u) & 0xFFFu));
                 }));
