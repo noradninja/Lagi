@@ -552,6 +552,8 @@ static unsigned int g_profileBuildScanUs = 0;
 static unsigned int g_profileBuildCacheUs = 0;
 static unsigned int g_profileBuildEdgeUs = 0;
 static unsigned int g_profileBuildValidateUs = 0;
+static unsigned int g_profileTextureRefreshUs = 0;
+static unsigned int g_profileTextureRefreshCount = 0;
 static unsigned int g_profileBuildUploadUs = 0;
 static unsigned int g_profilePrepareReleaseUs = 0;
 static unsigned int g_profilePrepareBaseAllocUs = 0;
@@ -6961,6 +6963,8 @@ static bool buildLiveTownFrame()
     g_profileBuildCacheUs = 0u;
     g_profileBuildEdgeUs = 0u;
     g_profileBuildValidateUs = 0u;
+    g_profileTextureRefreshUs = 0u;
+    g_profileTextureRefreshCount = 0u;
     g_profileBuildUploadUs = 0u;
     g_profilePrepareReleaseUs = 0u;
     g_profilePrepareBaseAllocUs = 0u;
@@ -7243,6 +7247,7 @@ static bool buildLiveTownFrame()
     if (g_nativeDecodedTextureGenerations.size() > decodedTextures.size())
         g_nativeDecodedTextureGenerations.clear();
     g_nativeDecodedTextureGenerations.resize(decodedTextures.size(), 0u);
+    const auto refreshStartUs = sceKernelGetProcessTimeWide();
     for (std::size_t polygon = 0;
          polygon < g_liveTownCpuMesh.polygonTextureIndices.size() &&
          polygon < g_liveTownCpuMesh.polygonRecords.size(); ++polygon) {
@@ -7256,8 +7261,11 @@ static bool buildLiveTownFrame()
             return false;
         decodedTextures[index] = std::move(refreshed);
         g_nativeDecodedTextureGenerations[index] = g_nativeTextureGeneration;
+        ++g_profileTextureRefreshCount;
         g_vdp1TextureDataDirty = true;
     }
+    g_profileTextureRefreshUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - refreshStartUs);
     std::uint64_t signature = staticSignature;
     signature ^= g_liveTownCpuMesh.polygonRecords.size();
     signature *= 1099511628211ull;
@@ -7375,7 +7383,8 @@ static bool buildLiveTownFrame()
                 "staticRebuilt=%u append=%uus material=%uus "
                 "upload=%uus build=%uus reuseTex=%u reuseGeom=%u skipBase=%u release=%uus "
                 "baseAlloc=%uus wire=%uus texUpload=%uus texAlloc=%uus "
-                "texBuild=%uus subAlloc=%uus subBuild=%uus copy=%uus\n",
+                "texBuild=%uus subAlloc=%uus subBuild=%uus copy=%uus "
+                "validate=%uus refresh=%uus refreshed=%u\n",
                 static_cast<unsigned long long>(
                     azel_bridge::published_frame_number()),
                 g_liveTownSubmissionCount,
@@ -7417,7 +7426,10 @@ static bool buildLiveTownFrame()
                 g_profilePrepareTexturedBuildUs,
                 g_profilePrepareSubdivAllocUs,
                 g_profilePrepareSubdivBuildUs,
-                g_profilePrepareCopyUs);
+                g_profilePrepareCopyUs,
+                g_profileBuildValidateUs,
+                g_profileTextureRefreshUs,
+                g_profileTextureRefreshCount);
             g_profileFieldStreamLogUs = static_cast<unsigned int>(
                 sceKernelGetProcessTimeWide() - logStartUs);
         }

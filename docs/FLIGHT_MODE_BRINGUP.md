@@ -1,5 +1,27 @@
 # Flight Mode Bring-Up
 
+## Opacity hardware observation and refresh profiling (2026-10-10)
+
+Latest Downloads capture is 1295660 bytes, 20:20 local. Initial 227-texture
+upload: opacity 161 us, copy 2095 us, setup 258 us, total 3415 us, allocation
+zero. Previous capture measured opacity 3168 us and total 6357 us. Sampled
+RBG-enabled native median is 23.774 ms/p90 25.609 ms; completed field windows
+cover 6240 frames, with 648 over 25 ms and three over 33.333 ms. These are
+unmatched route observations, not controlled A/B proof; log does not embed SHA.
+Outliers remain 38.829/35.485/45.745 ms, all without presentation baselines.
+Completed presentation windows contain zero >2-vblank intervals (6120 samples).
+Do not declare the full frame deadline achieved.
+
+The 35.485 ms frame retains static geometry but refreshes/uploads 245 textures
+(517344 bytes). FieldStream build is 15901 us, material lookup 521 us, upload
+5348 us; refresh decoding was hidden in validation. The 45.745 ms frame resolves
+new materials (12474 us) and uploads 246 textures, including refreshed entries.
+Next diagnostic adds validate/refresh/refreshed to existing FieldStream lines,
+using two block-level timer reads rather than per-pixel timing. No change to
+texture invalidation, refresh ownership, upload selection or scene behavior.
+This distinguishes new-material work from existing-material epoch refreshes
+before attempting a shared invalidation/residency optimization.
+
 ## Shared decoded-opacity checkpoint (2026-10-10)
 
 The initial field upload in the latest hardware log spends 3168 us classifying
