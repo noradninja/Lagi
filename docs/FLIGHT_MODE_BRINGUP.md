@@ -1,5 +1,24 @@
 # Flight Mode Bring-Up
 
+## Registered texture-memory ownership (2026-10-10)
+
+Resource registrations now retain an immutable 512 KiB VDP1 address-space
+snapshot captured on the game thread after bundle/character loading completes.
+All models registered for that slot/load share the same snapshot; it is not
+copied per model or per frame. Replacing a slot drops producer ownership, while
+published/shared references preserve the prior generation's bytes. Missing
+native memory prevents registration rather than publishing a descriptor whose
+texture payload is unavailable. CRAM/palette remains frame-owned, not baked
+into this snapshot, and must be resolved with the consumer's published frame.
+
+This closes load-generation ownership for future deferred preparation; it does
+not establish a policy for subsequent animated/runtime VDP1 writes. A consumer
+must continue honoring invalidation/current content and must not reuse an old
+snapshot as authoritative after a later same-generation texture mutation.
+Native syntax check and diff checks pass. No decoder consumer, GPU uploads,
+package build or hardware validation in this step. Snapshot memory/copy cost
+is additional intermediate overhead; performance improvement remains unproven.
+
 ## Generation-tagged registration channel foundation (2026-10-10)
 
 Implemented generic RegisteredModelResource publication independently of

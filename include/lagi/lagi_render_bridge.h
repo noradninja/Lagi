@@ -15,6 +15,9 @@ struct RegisteredModelResource {
     std::int8_t bundleIndex = -1;
     std::uint32_t modelOffset = 0;
     std::shared_ptr<const LiveVdp1Model> model;
+    // Immutable Saturn VDP1 address space captured after this bundle's load.
+    // Palette state remains frame-owned and must be resolved by the consumer.
+    std::shared_ptr<const std::vector<std::uint8_t>> textureMemory;
 };
 
 // Registration is not a draw submission. Call after native bundle/character

@@ -10,6 +10,7 @@
 #include <unordered_map>
 
 struct sProcessed3dModel;
+extern unsigned char* getVdp1Pointer(unsigned int address) __attribute__((weak));
 
 // Minimal layout mirrors for the live Azel globals we capture. These match the
 // portable prefix used by upstream Azel but avoid including common.h, which
@@ -53,6 +54,8 @@ static SubmissionState g_lastState{};
 static std::unordered_map<sProcessed3dModel*, LiveVdp1Model> g_modelCache;
 static std::uint64_t g_resourceGeneration = 0;
 static std::unordered_map<std::int8_t, std::uint64_t> g_bundleGenerations;
+static std::unordered_map<std::int8_t,
+    std::shared_ptr<const std::vector<std::uint8_t>>> g_bundleTextureMemory;
 static std::unordered_map<std::uint64_t, RegisteredModelResource> g_registeredResources;
 static std::vector<RegisteredModelResource> g_publishedResources;
 static bool g_resourceInventoryDirty = false;
@@ -225,6 +228,14 @@ void publish_frame()
 void notify_native_bundle_loaded(std::int8_t bundleIndex)
 {
     g_bundleGenerations[bundleIndex] = ++g_resourceGeneration;
+    g_bundleTextureMemory.erase(bundleIndex);
+    if (&getVdp1Pointer) {
+        if (const auto* memory = getVdp1Pointer(0x25C00000u)) {
+            g_bundleTextureMemory.emplace(bundleIndex,
+                std::make_shared<const std::vector<std::uint8_t>>(
+                    memory, memory + 0x80000u));
+        }
+    }
     for (auto it = g_registeredResources.begin(); it != g_registeredResources.end();) {
         if (it->second.bundleIndex == bundleIndex)
             it = g_registeredResources.erase(it);
@@ -240,7 +251,9 @@ void register_native_model_resource(std::int8_t bundleIndex,
     std::uint32_t modelOffset, sProcessed3dModel* model)
 {
     const auto generation = g_bundleGenerations.find(bundleIndex);
-    if (!model || !modelOffset || generation == g_bundleGenerations.end())
+    const auto memory = g_bundleTextureMemory.find(bundleIndex);
+    if (!model || !modelOffset || generation == g_bundleGenerations.end() ||
+        memory == g_bundleTextureMemory.end())
         return;
     const std::uint64_t key =
         (static_cast<std::uint64_t>(static_cast<std::uint8_t>(bundleIndex)) << 32) |
@@ -251,7 +264,7 @@ void register_native_model_resource(std::int8_t bundleIndex,
     if (!adapt_processed_model(model, *adapted))
         return;
     g_registeredResources.emplace(key, RegisteredModelResource{
-        generation->second, bundleIndex, modelOffset, std::move(adapted)});
+        generation->second, bundleIndex, modelOffset, std::move(adapted), memory->second});
     g_resourceInventoryDirty = true;
 }
 
