@@ -1,5 +1,33 @@
 # Flight Mode Bring-Up
 
+## 56b98a9 hardware acceptance and performance continuation (2026-10-10)
+
+User confirms actor positions are now correct in both E006 in-engine cinematic
+and Excavation after testing the early-actor view correction. This validates
+placement in those two scenes, not every scene/camera mode. Preserve the scoped
+native-view correction and the separate hardware-confirmed flight orientation.
+User requests returning to the full performance goal.
+
+Downloads log: 929,062 bytes, 22:00 UTC. Native RBG-enabled render samples:
+94 records, median 24.049 ms, p90 25.322 ms. 31 completed field windows cover
+3,720 frames; 678 above 25 ms, two above 33.333 ms. Rebuild outliers render/build
+56.627/35.751 and 60.354/40.158 ms. Median bound holds within counted windows;
+deadline compliance does not. Reset-baseline outliers remain outside completed
+presentation interval counts. First field suffix upload: 227 textures,
+512,960 bytes, total 19.247 ms, allocation 13.338 ms, opacity 3.045 ms,
+copy 1.708 ms, setup 0.255 ms. No isolated performance win is established for
+slab-tail reuse or grouped opacity scanning. Renderer reports optimized=1.
+
+Source audit also confirms probeGpuAlloc does not CPU-clear payloads: its cost
+is kernel allocation/base lookup and GXM mapping, not a redundant memset that
+can simply be deleted. Retain correct memory initialization/upload semantics.
+Avoid further arbitrary slab-size tweaks as a substitute for the generic
+resource-inventory/residency milestone documented below. Registration must
+be separate from visibility submission, scene/bundle-generation-aware,
+published at the existing frame boundary, and prepared on Neptune's owning
+thread before first visibility. Truly new dynamic resources retain a measured
+first-use path; no hidden-cell draw execution or synthetic camera is authorized.
+
 ## Early town actor camera-space correction (2026-10-10)
 
 Fresh log: 756,860 bytes, 21:49 UTC. TownDragon and ExcaNPC draw with
