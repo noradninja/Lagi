@@ -27,6 +27,7 @@ struct DecodedMode1Texture {
     unsigned width=0,height=0;
     std::vector<std::uint32_t> rgba;
     bool opacityKnown=false,opaque=false;
+    bool nativeDependenciesKnown=false;
 };
 }
 static unsigned char vram[0x80000],g_vdp2Cram[4096];

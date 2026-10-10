@@ -1,5 +1,41 @@
 # Flight Mode Bring-Up
 
+## Shared range-aware invalidation checkpoint (2026-10-10)
+
+Latest diagnostic capture: 833969 bytes, 20:31 local. Sampled RBG-enabled
+native median 23.666 ms/p90 25.045 ms; 6240 completed field frames include
+427 over 25 ms and three over 33.333 ms (38.904/36.750/42.786 ms). Full goal
+remains unproven. The 36.750 ms frame refreshes 245 existing textures in
+8189 us and uploads them in 3539 us without rebuilding static geometry.
+The 42.786 ms frame spends 8829 us on materials and 2389 us refreshing
+109 existing textures. This establishes refresh decoding as significant work.
+
+Both invalidation callbacks previously discarded supplied write ranges and
+advanced every active texture to a stale global epoch. Shared dependency logic
+now publishes bounded atomic dirty blocks (512-byte VDP1, 32-byte CRAM), consumed
+on the renderer thread. VDP1 offsets and absolute 0x25C00000 addresses normalize
+to the same range; wrap is conservatively covered. Invalid/unknown/zero-size
+notifications preserve full invalidation. No allocations or renderer-container
+mutation occur in the producer callbacks. Concurrent notifications can cause
+extra invalidation, never intentional exclusion of missing range information.
+
+Native decoded textures track image ranges and mode-1 LUT ranges. Banked modes
+track their entire CRAM bank; RGB555 textures and native flat colors have no
+CRAM dependency. Mode-1 LUT materials conservatively depend on all CRAM, since
+LUT entries can reference arbitrary palette colors. Unknown texture producers
+keep legacy full invalidation. Only previously current, unaffected CPU/GPU
+epochs are promoted; already stale entries remain stale until used. Descriptor
+cache clearing and native resource write notifications remain conservative and
+unchanged. This is a generic native-material policy, not a scene override.
+
+Host dependency tests cover offsets/absolute addresses, wrap, boundary bytes,
+concurrent producers, image/LUT/bank overlap and conservative fallbacks.
+5184 actual-decoder pixel/opacity/snapshot cases and three flat-material cases
+pass; Vita syntax check passes. No package build or hardware validation yet.
+Test the same route, compare refreshed counts/times and cold-frame tails, and
+inspect dragon morphing, collection sprites, save particles and palette-driven
+effects for stale pixels/colors. Floor/map sampling is unchanged and unresolved.
+
 ## Opacity hardware observation and refresh profiling (2026-10-10)
 
 Latest Downloads capture is 1295660 bytes, 20:20 local. Initial 227-texture

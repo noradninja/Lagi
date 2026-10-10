@@ -8,6 +8,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/lagi_live_model_adapter.h"
 #include "neptune_texture_pool.h"
 #include "neptune_texture_pixels.h"
+#include "neptune_texture_dependencies.h"
 
 #include <psp2/display.h>
 #include <psp2/gxm.h>
@@ -536,6 +537,8 @@ enum : std::uint32_t {
     kRendererInvalidateVdp1Textures = 1u << 1,
 };
 static std::atomic<std::uint32_t> g_rendererInvalidationFlags{0u};
+static Vdp1WriteBlocks g_pendingVdp1Writes;
+static CramWriteBlocks g_pendingCramWrites;
 
 static unsigned int g_liveTownStaticIdentityHits = 0u;
 static unsigned int g_liveTownStaticIdentityMisses = 0u;
@@ -2001,18 +2004,20 @@ void set_fov(float degrees)
         g_azelProjectionFovDegrees = degrees;
 }
 
-void invalidate_cram_range(unsigned int, unsigned int)
+void invalidate_cram_range(unsigned int start, unsigned int size)
 {
     // This callback can run on the Azel/game side. Do not mutate renderer
     // containers or GPU resources here; publish an invalidation request for
     // LagiRender to consume at its next frame boundary.
+    g_pendingCramWrites.publish(start, size);
     g_rendererInvalidationFlags.fetch_or(
         kRendererInvalidateCram, std::memory_order_release);
 }
 
-void invalidate_vdp1_texture_range(unsigned int, unsigned int)
+void invalidate_vdp1_texture_range(unsigned int start, unsigned int size)
 {
     azel_bridge::notify_native_texture_write();
+    g_pendingVdp1Writes.publish(start, size);
     // Texture writes can also arrive off the render thread. In particular,
     // freeVdp1Textures(), material-cache clears, and static-range mutation
     // must stay render-thread owned.
@@ -2051,7 +2056,24 @@ static void applyPendingRendererInvalidation()
     // CRAM changes alter decoded color only. Existing polygon/material indices
     // remain valid; prepare_vdp1_model() will refresh the resident texture data.
     g_vdp1TextureDataDirty = true;
-    ++g_nativeTextureGeneration;
+    const auto pixelWrites = g_pendingVdp1Writes.consume();
+    const auto paletteWrites = g_pendingCramWrites.consume();
+    const auto previousGeneration = g_nativeTextureGeneration++;
+    // Only advance entries already valid at the previous epoch. Older stale
+    // entries must remain stale until first use decodes them. GPU generations
+    // advance independently so unaffected resident bytes are not re-uploaded.
+    const auto& textures = g_staticRoomCpuMesh.decodedTextureData;
+    for (std::size_t index = 0; index < textures.size(); ++index) {
+        if (textureDependsOnWrites(textures[index], pixelWrites, paletteWrites,
+                (flags & kRendererInvalidateVdp1Textures) != 0u,
+                (flags & kRendererInvalidateCram) != 0u)) continue;
+        if (index < g_nativeDecodedTextureGenerations.size() &&
+            g_nativeDecodedTextureGenerations[index] == previousGeneration)
+            g_nativeDecodedTextureGenerations[index] = g_nativeTextureGeneration;
+        if (index < g_nativeGpuTextureGenerations.size() &&
+            g_nativeGpuTextureGenerations[index] == previousGeneration)
+            g_nativeGpuTextureGenerations[index] = g_nativeTextureGeneration;
+    }
 }
 
 bool init()
@@ -6012,6 +6034,7 @@ static bool decodeLiveVdp1Texture(
     out.cmdColr = record.cmdColr;
     out.cmdSrca = record.cmdSrca;
     out.cmdSize = record.cmdSize;
+    out.nativeDependenciesKnown = true;
 
     // VDP1 command type 4 is an untextured polygon. CMDSIZE is therefore
     // legitimately zero; CMDCOLR supplies the flat RGB555 color. Represent

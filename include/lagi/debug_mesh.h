@@ -42,6 +42,7 @@ struct DecodedMode1Texture {
     // producers leave this unknown and retain upload-time classification.
     bool opacityKnown = false;
     bool opaque = false;
+    bool nativeDependenciesKnown = false;
 };
 
 struct SaturnLightingExtra {
