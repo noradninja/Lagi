@@ -6079,24 +6079,35 @@ static bool decodeLiveVdp1Texture(
         return dotColors[dot];
     };
 
-    auto decodeDot4 = [&](auto resolveColor) {
+    auto decodeDot4 = [&](auto resolveColor, bool completePaletteAvailable) {
+        // Larger 4-bit images amortize sixteen resolves; avoid a validity-bit
+        // lookup/branch for every texel. Small images retain lazy resolution.
+        const bool eagerPalette = completePaletteAvailable && width * height >= 64u;
+        if (eagerPalette) {
+            for (unsigned dot = 0u; dot < 16u; ++dot)
+                dotColors[dot] = resolveColor(dot);
+        }
         unsigned pixel = 0u;
         for (unsigned y = 0; y < height; ++y) {
             unsigned endCount = 0u;
             for (unsigned x = 0; x < width; ++x, ++pixel) {
+                if (endMode && endCount >= 2u) {
+                    // assign() already zeroed the rest of this row.
+                    pixel += width - x;
+                    break;
+                }
                 const std::uint8_t packed =
                     src[(x + y * width) / 2u];
                 const unsigned dot =
                     (x & 1u) ? (packed & 0x0Fu) : (packed >> 4);
-                if (endMode && endCount >= 2u)
-                    continue;
                 if (dot == 0u && !spd)
                     continue;
                 if (dot == 0x0Fu && !endDisabled) {
                     ++endCount;
                     continue;
                 }
-                out.rgba[pixel] = cachedDotColor(dot, resolveColor);
+                out.rgba[pixel] = eagerPalette ? dotColors[dot]
+                    : cachedDotColor(dot, resolveColor);
             }
         }
     };
@@ -6107,7 +6118,7 @@ static bool decodeLiveVdp1Texture(
             static_cast<unsigned>(record.cmdColr) & 0x07F0u;
         decodeDot4([&](unsigned dot) {
             return cramColor(bank | dot);
-        });
+        }, true);
         return true;
     }
 
@@ -6130,7 +6141,7 @@ static bool decodeLiveVdp1Texture(
             if (entry & 0x8000u)
                 return vdp2Rgb555ToAbgr(entry);
             return entry ? cramColor(entry & 0x07FFu) : 0u;
-        });
+        }, lutAddress <= 0x80000u - 32u);
         return true;
     }
 
@@ -6142,9 +6153,9 @@ static bool decodeLiveVdp1Texture(
         for (unsigned y = 0; y < height; ++y) {
             unsigned endCount = 0u;
             for (unsigned x = 0; x < width; ++x) {
+                if (endMode && endCount >= 2u) break;
                 const unsigned p = y * width + x;
                 const unsigned rawDot = src[p];
-                if (endMode && endCount >= 2u) continue;
                 if (rawDot == 0xFFu && !endDisabled) {
                     ++endCount;
                     continue;
@@ -6164,12 +6175,12 @@ static bool decodeLiveVdp1Texture(
         for (unsigned y = 0; y < height; ++y) {
             unsigned endCount = 0u;
             for (unsigned x = 0; x < width; ++x) {
+                if (endMode && endCount >= 2u) break;
                 const unsigned p = y * width + x;
                 const std::uint16_t color =
                     static_cast<std::uint16_t>(
                         (static_cast<unsigned>(src[p * 2u]) << 8) |
                         static_cast<unsigned>(src[p * 2u + 1u]));
-                if (endMode && endCount >= 2u) continue;
                 if (color == 0x7FFFu && !endDisabled) {
                     ++endCount;
                     continue;

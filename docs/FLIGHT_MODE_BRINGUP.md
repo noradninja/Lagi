@@ -1,5 +1,35 @@
 # Flight Mode Bring-Up
 
+## VRAM arena hardware acceptance and decode checkpoint (2026-10-10)
+
+Capture 1486225 bytes, 18:49 local, corrected-arena build: ready=1/cdram=1,
+8388608-byte reservation took 5031 us at GXM startup. All 100 recorded native
+texture-upload events show zero allocation time. This proves arena use on this
+route, not zero allocations for arbitrarily larger scenes. Initial field upload
+227 textures/512960 bytes now takes 6591 us (opacity 3218, copy 2091, setup 265),
+with material resolution 11833 us. Field baseline-reset spikes remain
+43.441/49.019 ms. RBG-enabled native sampled median 24.144 ms/p90 25.327 ms.
+Completed field windows cover 7200 frames, 884 over 25 ms and two over 33.333 ms;
+no completed-window presentation interval exceeds two vblanks. Baseline-reset
+outlier intervals are still missing, so full deadline compliance is not proven.
+
+User identified a separate periodic five-second stutter in capture software;
+turning that software off removed it. Do not attribute that symptom to logging
+or the native renderer. Native cold resource work remains visible in CPU timing.
+
+Next narrow decode checkpoint: mode-0/1 images with at least 64 pixels resolve
+all sixteen palette entries once, then index them directly rather than performing
+the lazy cache validity check per texel. Smaller images keep lazy resolution.
+Mode-1 eager resolution requires a complete in-range 32-byte LUT; unusual native
+boundary LUTs retain the previous lazy behavior. CRAM/LUT transparency rules,
+native snapshot ownership and palette lifetime remain unchanged. All supported
+decoders stop scanning the remainder of a row after its second end marker when
+the existing end-mode rule applies; pre-zeroed output preserves transparency.
+2592 actual-decoder differential/snapshot cases and Vita syntax checks pass.
+No native package build or hardware performance evidence for this decoder change.
+Compare cold material timings and complete frame tails; do not infer a speedup
+from desktop tests. Logging, geometry, arena and native gameplay are unchanged.
+
 ## Arena initialization-order correction (2026-10-10)
 
 Latest capture: 1203845 bytes, 18:37 local. Arena ready=0/cdram=0, startup
