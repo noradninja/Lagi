@@ -2,6 +2,15 @@
 
 ## Native collection color recovery in progress (2026-10-10)
 
+Latest user screenshot still shows grayscale collection orb and image trail,
+with cyan save-station dots intact. The latest log reports shaded=1 and
+non-neutral Gouraud words for sources 3998/39F8, but the first-eight-draw
+diagnostic cannot establish the visible orb's values. Treat the color fix as
+unvalidated, not successful. Sprite diagnostics now report the first draw of
+each distinct shaded texture source (bounded to 64 sources), so recurring
+early effects cannot exhaust the budget before collection. This changes
+observation only; it does not alter colors, shaders or gameplay.
+
 New work branch: feature/native-point-lights-effects, based on merged main.
 Point lighting and grayscale image particles/orbs remain separate open goals.
 Original Disc 1 FLD_A3.PRG (logical sector 244544, 268888 bytes) confirms

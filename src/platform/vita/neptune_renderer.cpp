@@ -4759,9 +4759,16 @@ static void drawPublishedVdp1Ui(
         const bool shaded = command.hasGouraud &&
             g_gouraudSubdivVertexProgram && g_texturedGouraudSubdivFragmentProgram;
         if (g_sceneGameMode == 3u && command.hasGouraud) {
+            // Sample distinct texture sources, not the first eight draws:
+            // recurring early effects otherwise consume every report before
+            // collection orbs and their trails ever reach this path.
+            static std::uint16_t reportedSources[64]{};
             static unsigned colorReports = 0u;
-            if (colorReports < 8u) {
-                ++colorReports;
+            bool reported = false;
+            for (unsigned i = 0; i < colorReports; ++i)
+                reported |= reportedSources[i] == command.cmdSrca;
+            if (!reported && colorReports < 64u) {
+                reportedSources[colorReports++] = command.cmdSrca;
                 logging::writef(
                     "[NativeSpriteColor] src=%04X pmod=%04X shaded=%u "
                     "colors=%04X,%04X,%04X,%04X\n",
