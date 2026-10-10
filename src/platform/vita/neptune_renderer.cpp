@@ -120,6 +120,8 @@ static SceGxmRenderTarget* g_probeRenderTargetHalf = nullptr;
 // Cinepak is reconstructed at source resolution first, then sampled from an
 // ordinary RGBA texture for the final bilinear presentation pass.
 static SceGxmRenderTarget* g_movieRenderTarget = nullptr;
+// Cinepak reconstruction stays at its source-sized 480x272 resolve surface.
+static SceGxmRenderTarget* g_cinepakResolveRenderTarget = nullptr;
 static SceGxmRenderTarget* g_frontendHighRenderTarget = nullptr;
 static SceGxmRenderTarget* g_sceneRbg0RenderTarget = nullptr;
 static SceUID g_probeColorUid = -1;
@@ -2637,6 +2639,10 @@ void shutdown()
     if (g_sceneRbg0RenderTarget) {
         sceGxmDestroyRenderTarget(g_sceneRbg0RenderTarget);
         g_sceneRbg0RenderTarget = nullptr;
+    }
+    if (g_cinepakResolveRenderTarget) {
+        sceGxmDestroyRenderTarget(g_cinepakResolveRenderTarget);
+        g_cinepakResolveRenderTarget = nullptr;
     }
     if (g_movieRenderTarget) {
         sceGxmDestroyRenderTarget(g_movieRenderTarget);
@@ -8373,6 +8379,15 @@ void show_game_presentation()
     }
     status("[PASS] GXM MOVIE TARGET NO-MSAA", 0xFF80E0FFu);
 
+    SceGxmRenderTargetParams cinepakResolveRtParams = movieRtParams;
+    cinepakResolveRtParams.width = kWidth / 2;
+    cinepakResolveRtParams.height = kHeight / 2;
+    if (sceGxmCreateRenderTarget(
+            &cinepakResolveRtParams, &g_cinepakResolveRenderTarget) < 0) {
+        failure("[FAIL] GXM CINEPAK RESOLVE TARGET");
+        return;
+    }
+
     SceGxmRenderTargetParams frontendHighRtParams = movieRtParams;
     frontendHighRtParams.width = 720;
     frontendHighRtParams.height = 408;
@@ -11573,7 +11588,7 @@ static bool renderCinepakResolvePass()
     const int beginResult = sceGxmBeginScene(
         g_probeContext,
         0,
-        g_movieRenderTarget,
+        g_cinepakResolveRenderTarget,
         nullptr,
         nullptr,
         nullptr,
@@ -12255,14 +12270,15 @@ static bool renderMovieFrame()
         logging::writef(
             "[VDP2Display] TVMD=%04X framebuffer=%s\n",
             g_movieVdp2Tvmd & 0xFFFFu,
-            highResolutionFrontend ? "720x408" : "480x272");
+            highResolutionFrontend ? "720x408" :
+                 (g_halfResolution ? "480x272" : "960x544"));
         lastFrontendDisplayMode = frontendDisplayMode;
     }
-    const int pitch = highResolutionFrontend ? 1024 : 512;
+    const int pitch = highResolutionFrontend ? 1024 : viewerRenderPitch();
     const int movieOutputWidth =
-        highResolutionFrontend ? 720 : (kWidth / 2);
+        highResolutionFrontend ? 720 : viewerRenderWidth();
     const int movieOutputHeight =
-        highResolutionFrontend ? 408 : (kHeight / 2);
+        highResolutionFrontend ? 408 : viewerRenderHeight();
     std::uint32_t* const colorBuffer =
         g_gxmDrawBuffer == 0 ? g_probeColorBuffer : g_probeColorBuffer2;
     SceGxmColorSurface* const colorSurface =
