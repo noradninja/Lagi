@@ -1764,11 +1764,8 @@ static void drawAzelMenuVdp2Gpu()
     sceGxmSetVertexProgram(
         g_probeContext, g_textureVertexProgram);
     sceGxmSetFragmentProgram(g_probeContext,g_textureFragmentProgram);
-    if (kStochastic) {
-        setStochastic(kVdp2TextLayerWidth,kVdp2TextLayerHeight,viewerRenderWidth(),viewerRenderHeight());
-        sceGxmTextureSetMinFilter(&g_vdp2TextLayerTexture,SCE_GXM_TEXTURE_FILTER_POINT);
-        sceGxmTextureSetMagFilter(&g_vdp2TextLayerTexture,SCE_GXM_TEXTURE_FILTER_POINT);
-    }
+    // Keep high-contrast text on SGX hardware bilinear: one-tap
+    // stochastic sampling visibly fragments glyph strokes.
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
 
     void* uniforms = nullptr;
@@ -1901,11 +1898,8 @@ static void drawAzelVdp2TextLayerGpu()
     sceGxmSetVertexProgram(
         g_probeContext, g_textureVertexProgram);
     sceGxmSetFragmentProgram(g_probeContext,g_textureFragmentProgram);
-    if (kStochastic) {
-        setStochastic(kVdp2TextLayerWidth,kVdp2TextLayerHeight,viewerRenderWidth(),viewerRenderHeight());
-        sceGxmTextureSetMinFilter(&g_vdp2TextLayerTexture,SCE_GXM_TEXTURE_FILTER_POINT);
-        sceGxmTextureSetMagFilter(&g_vdp2TextLayerTexture,SCE_GXM_TEXTURE_FILTER_POINT);
-    }
+    // Keep high-contrast text on SGX hardware bilinear: one-tap
+    // stochastic sampling visibly fragments glyph strokes.
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
 
     void* uniforms = nullptr;
