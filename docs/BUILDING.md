@@ -1,8 +1,25 @@
 # Building Lagi
 
-Current development milestone: **0.3.0-alpha**
+Current development milestone: **native FLD_A3 flight and shared Neptune rendering**
 
-Last updated: 2026-10-06
+Last updated: 2026-10-10
+
+## Rendering merge checkpoint
+
+The rendering work is accepted for main on 2026-10-10. To update an existing clean home checkout and build without deleting the build directory:
+
+```powershell
+cd E:\dev\Lagi
+git switch main
+git pull --ff-only origin main
+$env:PSP2CGC = 'E:\PSVITA\sdk\host_tools\bin\psp2cgc.exe'
+cmake -S . -B build
+cmake --build build --parallel 32
+```
+
+Preserve local edits and untracked assets; do not clean/reset the checkout to perform this update. This session does not build or hardware-test the final merged package. Test the native Ruins -> elevator -> FLD_A3 -> E006 -> Excavation route, including actor placement, radar, LCS layering and palette-driven collection/save effects. Logs are at `ux0:data/lagi/lagi.log`; retain the matching unstripped `build/lagi.velf` for crashes.
+
+Useful diagnostics include `[FieldStream]` validate/refresh/refreshed counters, `[NativeTextureUploadStages]`, `[NativeTextureArena]`, `[ScenePerf]`, `[FlightTimingWindow]` and `[FlightPresentOutlier]`. Analyze a copied hardware log with `tools/analyze-flight-log.ps1 -LogPath <path>`. Ordinary-frame timing is not proof that first-use resource spikes are eliminated; the two latest cold-frame spikes are explicitly accepted for now. See `docs/FLIGHT_MODE_BRINGUP.md` for exact validation boundaries.
 
 ## Requirements
 

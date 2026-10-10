@@ -25,6 +25,18 @@ Neptune consumes those snapshots and presents them through native SceGxm.
 
 `extern/Azel` remains an upstream source tree. Vita-specific adaptation is implemented outside it.
 
+## Shared field/town rendering and resource lifetime
+
+Native FLD_A3 visibility tasks choose active cells/models; Lagi publishes stable identities, transforms and native camera state, and Neptune services their presentation. Static-instance residency is independent of changing lighting/visibility. Dynamic actors and image particles remain native submissions. Camera-space paths are classified/scoped before removing the native view transform; do not synthesize a Vita follow camera or blanket-convert every submission.
+
+Field geometry uses Azel's native horizontal orientation without town's extra Saturn-to-GXM X mirror or winding XOR. Town/Ruins retains its historical mirror. The field radar map intentionally uses point filtering at its original 48x48 output-pixel size to preserve mesh/checker pseudo-transparency.
+
+Native textures retain GPU storage across geometry-only changes. An 8 MiB CDRAM-preferred startup arena is reserved after GXM initialization, with system-memory/overflow fallback and renderer-owned release. Producer callbacks publish bounded atomic write blocks rather than modifying caches: 512-byte VDP1 blocks and 32-byte CRAM blocks. Offsets and absolute Saturn addresses normalize to the same ranges; unknown ranges retain full invalidation.
+
+Decoded materials carry opacity and palette-read metadata. Image bytes, LUT bytes and recorded CRAM blocks determine refresh dependencies. Only previously valid unaffected CPU/GPU generations advance; older stale entries remain stale until used. RGB555 LUT entries do not depend on CRAM; zero-valued palette reads still do. Unknown producers retain conservative behavior. No scene-ID overrides are used. The final captured-CRAM refinement is host/syntax-validated but awaits separate hardware evidence.
+
+Shared VDP2 snapshots carry Azel's rotation parameters, maps, windows, priorities and fades to SGX sampling/composition. The incorrect E006/Excavation floor remains under investigation; original map-table presence does not justify forcing a map address. Persistent per-model GPU resources remain the scaling direction for larger towns such as Zoah; the current flattened active buffers are not the final universal scene-resource architecture.
+
 ## Native runtime host
 
 The normal Vita host loop is implemented in `src/integration/lagi_runtime.cpp`.

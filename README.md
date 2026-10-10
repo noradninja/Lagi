@@ -1,6 +1,6 @@
 # Lagi
 
-**Current development milestone: 0.3.0-alpha — native audio and Cinepak presentation**
+**Current development milestone: native FLD_A3 flight and shared Neptune rendering**
 
 **Lagi** is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed game logic runs directly on the Vita's ARM CPU, while Saturn-era rendering and platform behavior are translated to VitaSDK and native SceGxm.
 
@@ -8,9 +8,15 @@ Lagi is not a Sega Saturn emulator and does not use VitaGL.
 
 ## Current status
 
-Lagi 0.3.0 extends the authentic Azel boot path into a substantially more complete Disc 1 runtime slice. The Vita build starts through `azelInit()` / `resetEngine()`, follows Azel's native task and module flow through the opening movies, title, New Game, D5 name entry, the pre-Ruins cinematic, the playable Ruins sequence, the elevator choice, and the post-elevator Cinepak handoff. Flight mode is not implemented yet, so the current public build ends after that movie when Azel advances into the next unsupported mode.
+Current main extends the authentic Azel boot path through the opening movies, title, New Game, D5 name entry, playable Ruins, elevator/Cinepak handoff, native FLD_A3 flight, E006 in-engine cinematic and Excavation arrival. Azel owns the native field task graph, camera, visibility cells and transitions. This development state extends the earlier public v0.3.0alpha release; it does not imply a new packaged release or complete game support.
 
 Working systems include:
+
+- native FLD_A3 entry, dragon/rider, radar, LCS and cell-driven environment rendering
+- shared native VDP2 rotation-background and priority-aware composition
+- native image particles, collection orbs/trails, save-station effects and destructible-object effects
+- native actor placement through cinematic and Excavation camera changes
+- reusable texture residency, a CDRAM-preferred upload arena, and range-aware image/LUT/palette invalidation
 
 - Disc 1 CUE/BIN and ISO9660 access
 - `COMMON.DAT` and town resource loading
@@ -191,6 +197,10 @@ The game is currently presented at 30 FPS.
 The authentic first-Ruins path is hardware-proven at the intended **30 Hz** presentation rate with live world geometry, Edge, task-owned objects, textures, and Gouraud lighting active. Static geometry/material caching is kept independent from live lighting state so normal light updates do not invalidate and rebuild the room.
 
 The 30 Hz cap remains in place because the game/simulation timing path has not been converted to a variable-rate model.
+
+On 2026-10-10 the user accepted the rendering milestone after reporting smooth play and no visual/performance regression on the tested range-invalidation route. The latest hardware capture has a sampled native render median of 23.887 ms; 3960 completed field frames contain two cold frames of 39.078/41.906 ms. Those spikes are accepted for now, not evidence of universal 33.3 ms compliance. The final captured-palette dependency refinement has host/syntax validation but no separate hardware capture yet.
+
+Known remaining work includes the incorrect VDP2 floor in E006/Excavation, cold resource preparation, broader scene coverage and deferred native ray/laser rendering. See [the detailed rendering handoff](docs/FLIGHT_MODE_BRINGUP.md).
 
 ## Game data
 

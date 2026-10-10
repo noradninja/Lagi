@@ -1,5 +1,18 @@
 # Flight Mode Bring-Up
 
+## User acceptance and main merge authorization (2026-10-10)
+
+The user explicitly considers this rendering goal met for the current milestone:
+the two remaining measured spikes are not noticeable enough to prioritize now.
+They authorize merging feature/vdp2-perf-diagnostics to main and updating README
+and internal documentation. Preserve this acceptance separately from strict
+deadline proof: latest tested capture is 6f74bf2, with 39.078/41.906 ms cold
+frames and a sampled 23.887 ms median. Final runtime dd579eb is host/syntax
+checked but has no separate hardware capture. No final merged package build or
+hardware validation is claimed. The E006/Excavation floor remains unresolved;
+audio PR #11 stays separate. This acceptance supersedes the earlier instruction
+to continue eliminating all measured cold spikes before closing this milestone.
+
 ## Captured CRAM dependency checkpoint (2026-10-10)
 
 User reports no visual or performance regression for range-aware invalidation.
