@@ -45,11 +45,13 @@ $scene = @()
 $timing = @()
 $present = @()
 $outliers = @()
+$uploads = @()
 foreach ($line in Get-Content -LiteralPath $file.FullName) {
     if ($line.Contains('[ScenePerf]')) { $scene += ,(Read-Counters $line) }
     elseif ($line.Contains('[FlightTimingWindow]')) { $timing += ,(Read-Counters $line) }
     elseif ($line.Contains('[FlightPresentWindow]')) { $present += ,(Read-Counters $line) }
     elseif ($line.Contains('[FlightPresentOutlier]')) { $outliers += ,(Read-Counters $line) }
+    elseif ($line.Contains('[NativeTextureUploadStages]')) { $uploads += ,(Read-Counters $line) }
 }
 $groups = @()
 foreach ($enabled in @(0, 1)) {
@@ -73,6 +75,17 @@ $medianBoundProven = Test-MedianBudgetBound $completedFrames $completedOver25
     lastWriteTimeUtc = $file.LastWriteTimeUtc.ToString('o')
     scope = 'ScenePerf is sampled across native scenes, not field-only. Windows omit incomplete tails. No exact all-frame median is available.'
     sampledNativeScenes = $groups
+    nativeTextureUploads = [ordered]@{
+        events = $uploads.Count
+        textures = Sum-Counter $uploads 'uploaded'
+        copiedBytes = Sum-Counter $uploads 'bytes'
+        allocation = Get-Distribution $uploads 'alloc'
+        opacity = Get-Distribution $uploads 'opacity'
+        copy = Get-Distribution $uploads 'copy'
+        setup = Get-Distribution $uploads 'setup'
+        total = Get-Distribution $uploads 'total'
+        scope = 'Successful upload events across native towns/fields, not per-frame costs. Inclusive total includes unclassified work and timer overhead.'
+    }
     completeFieldRenderWindows = [ordered]@{
         windows = $timing.Count
         frames = $completedFrames

@@ -25,3 +25,12 @@ if ($report.outliers.Count -ne 2 -or $report.outliers[0].vblanks -ne 29 -or
     throw 'Outlier retention or missing-field mismatch'
 }
 Write-Output 'PASS: sampled distributions, window totals, incomplete-tail outliers and missing stages'
+if ($report.nativeTextureUploads.events -ne 2 -or
+    $report.nativeTextureUploads.textures -ne 5 -or
+    $report.nativeTextureUploads.copiedBytes -ne 12288 -or
+    $report.nativeTextureUploads.allocation.medianUs -ne 150 -or
+    $report.nativeTextureUploads.copy.p90Us -ne 80 -or
+    $report.nativeTextureUploads.total.medianUs -ne 310) {
+    throw 'Upload-stage distributions or totals mismatch'
+}
+Write-Output 'PASS: upload stage distributions and byte/count totals'
