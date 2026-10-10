@@ -1,6 +1,7 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "kernel/vdp1AnimatedQuad.h"
 #include "kernel/rayDisplay.h"
+#include "lagi/platform.h"
 #include <cmath>
 
 std::vector<sVdp1Quad> initVdp1Quad(sSaturnPtr ptr)
@@ -64,8 +65,15 @@ static int drawQuadInternal(
     fixedPoint scale,
     const quadColor* colors = nullptr)
 {
+    static unsigned missingReports = 0u, clipReports = 0u, emittedReports = 0u;
     if (!pThis || !pThis->m0_quad || pThis->m0_quad->empty() || !position)
+    {
+        if (missingReports < 8u) {
+            ++missingReports;
+            lagi::platform::logging::writef("[NativeParticle] rejected=missing-data\n");
+        }
         return 0;
+    }
 
     const sVdp1Quad& q = pThis->m0_quad->at(pThis->m7_currentFrame);
 
@@ -75,7 +83,16 @@ static int drawQuadInternal(
     const s32 z = viewPos[2].asS32();
     if (z <= static_cast<s32>(graphicEngineStatus.m405C.m10_nearClipDistance) ||
         z >= static_cast<s32>(graphicEngineStatus.m405C.m14_farClipDistance))
+    {
+        if (clipReports < 8u) {
+            ++clipReports;
+            lagi::platform::logging::writef(
+                "[NativeParticle] rejected=depth z=%d near=%d far=%d\n", z,
+                static_cast<s32>(graphicEngineStatus.m405C.m10_nearClipDistance),
+                static_cast<s32>(graphicEngineStatus.m405C.m14_farClipDistance));
+        }
         return 0;
+    }
 
     const fixedPoint invZ = FP_Div(0x10000, viewPos[2]);
     const fixedPoint scaledW = MTH_Mul(q.mC_width, scale);
@@ -135,6 +152,15 @@ static int drawQuadInternal(
     ++ctx.m1C;
     ++ctx.m0_currentVdp1WriteEA;
     ++ctx.mC;
+    if (emittedReports < 8u) {
+        ++emittedReports;
+        lagi::platform::logging::writef(
+            "[NativeParticle] emitted src=%04X size=%04X pmod=%04X "
+            "z=%d center=%d,%d half=%d,%d\n",
+            static_cast<unsigned>(cmd.m8_CMDSRCA),
+            static_cast<unsigned>(cmd.mA_CMDSIZE),
+            static_cast<unsigned>(cmd.m4_CMDPMOD), z, cx, cy, hw, hh);
+    }
     return 1;
 }
 

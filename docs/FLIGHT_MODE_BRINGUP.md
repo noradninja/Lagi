@@ -1,5 +1,31 @@
 # Flight Mode Bring-Up
 
+## Requested native point lights and flight particles (2026-10-10)
+
+User requests collection lighting and missing visible flight particles. Both
+remain open. Source audit: fieldParticlePool calls drawProjectedParticle for
+its simple/billboard entries; the Vita animated-quad adapter already emits
+distorted VDP1 commands, preserving animation, texture and optional Gouraud
+data. Bounded NativeParticle reports now distinguish missing input, depth
+rejection and emitted commands (eight reports per category). Emission records
+include source address, texture size, PMOD, view depth and projected bounds.
+No animation, clipping or rendering behavior changes in this diagnostic.
+Absence of these records does not prove that every effect is absent: other
+emitters may use other draw paths. The immediate two-point billboard service
+is separately a Vita stub; its located caller is battlePowerGauge, not proof
+of the reported flight failure. Do not generalize the stub to all particles.
+
+Field dragon special-color drawing calls dragonFieldTaskDrawSub1Sub0, which
+is unimplemented upstream, then publishes point position via Sub1Sub1 with
+default parameter zero. The post-draw special-light path is also unimplemented.
+pointLightParams stores native position and two derived parameter words, but
+the bridge currently captures only directional vector/color/falloff. The
+actual point-light evaluation and reset semantics need source reconstruction
+before implementing Neptune output. Do not infer radius/intensity from the
+packed parameter or replace Azel's light with a generic additive glow. Inspect
+the collection task's special-color control and native lighting mode alongside
+the original pipeline before choosing the bridge representation.
+
 ## LCS layering regression and frame metadata lifetime (2026-10-10)
 
 User reports LCS icons and the targeting rectangle layering incorrectly after
