@@ -20,6 +20,24 @@ adapter restores 0x14000 without editing extern/Azel. Existing preprocessing
 then produces params[3]=0x14000000 and params[4]=0x19000. This restores
 input only: activation, evaluation and reset are still unimplemented and
 no visible point-light restoration is claimed.
+
+Read-only original 1ST_READ.PRG trace (logical sector 58, load 06006000):
+activation 0601E124 calls master push helper 0601FDF8 and queues slave
+0601F07C; restore 0601E1C8 calls master pop 0601FE14 and queues slave
+0601F098. Master push saves the word at 0601FA9E on the stack addressed
+by 0601FE64, then enters the dispatch reset; pop restores the saved word.
+The native selector word is modified executable code, not a modern light
+object. Do not emulate this with executable memory writes on Vita.
+Point setup 0601E200 stores XYZ/parameter in lightSetup at 06052B2C
+offsets 1C/20/24/28, calls 0601FE32 to preprocess five values at 0601FE50,
+and queues corresponding slave setup 0601F0B6. The next native routine
+at 0601FE78 begins subtracting transformed vertex coordinates from point
+coordinates. Recover its complete fixed-point calculation and selection
+before implementing a shared renderer evaluator; radius/intensity semantics
+are not yet proven. Current Neptune submission capture contains direction,
+color and distance falloff only, so the restored argument alone cannot reach
+the lighting evaluator. The upstream push stub also does not advance its
+stack pointer; simply calling that stub is not a faithful activation fix.
 Original Disc 1 FLD_A3.PRG (logical sector 244544, 268888 bytes) confirms
 0607AC3C passes the trail Gouraud pointer plus animationFrame*4 to shared helper
 0602D0DC. That helper copies four big-endian words at offsets 0/2/4/6 into the
