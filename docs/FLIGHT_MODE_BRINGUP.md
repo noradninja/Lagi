@@ -1,5 +1,26 @@
 # Flight Mode Bring-Up
 
+## New comparison capture, identity pending confirmation (2026-10-10)
+
+Downloads log changed to 643,982 bytes, timestamp 18:59 UTC, while user reports
+testing 386fff22889b8e63676e8d6d23177f36c1fd4f6f. Treat it provisionally as
+that test, not an independently identified binary. Its 76 RBG-enabled native
+samples have render median 24.2005 ms, p90 25.637 ms and finish median
+14.175 ms, versus e8ac156's 24.733/26.465/15.196 ms. Route and sample-count
+differences prevent attributing the entire change to coefficient decoding.
+25 complete field windows cover 3,000 frames: 392 over 25 ms and two over
+33.333 ms, max 59.156 ms. Complete presentation windows report zero
+>2-vblank intervals. Reset-baseline rebuild outliers remain 56.022 and
+59.156 ms with builds 35.441 and 38.984 ms. No goal completion claim.
+
+Separate sprite-path audit: native projected particles currently enter the
+VDP1 screen-space compositor, which uses depth ALWAYS with depth writes
+disabled. Correcting pixel units restores size but does not establish world
+occlusion. A future generic world-sprite submission needs explicit transform
+space/depth ownership, separate from foreground LCS/UI. Do not change all UI
+depth testing to repair particles. This is a source limitation, not a newly
+observed hardware regression on the untested sprite correction.
+
 ## Located field resource-inventory boundary (2026-10-10)
 
 Source audit: setupField2 in field_a3/o_fld_a3.cpp calls
