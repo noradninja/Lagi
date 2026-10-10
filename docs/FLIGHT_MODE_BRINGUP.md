@@ -1,5 +1,27 @@
 # Flight Mode Bring-Up
 
+## Arena initialization-order correction (2026-10-10)
+
+Latest capture: 1203845 bytes, 18:37 local. Arena ready=0/cdram=0, startup
+100675 us; no arena performance benefit was exercised. Source inspection found
+the reservation in renderer init(), BEFORE show_game_presentation initializes
+GXM. Both allocator helpers require sceGxmMapMemory; a pre-initialization
+failure is not evidence that the 128 MiB VRAM pool is exhausted. Move optional
+reservation after essential GXM/backend allocation success and before native
+presentation readiness. Capacity/fallback/release behavior remains unchanged.
+Check ready=1 and cdram on hardware before interpreting allocation improvements.
+
+Capture median 23.9875 ms (sampled RBG-enabled native scenes), p90 25.026 ms;
+field baseline-reset spikes 56.306/64.445 ms. Completed field windows: 3600
+frames, 338 over 25 ms, two over 33.333 ms. Full goal remains unmet.
+
+Logging is async=1 in this capture. Producers still perform vsnprintf, semaphore
+locking, queue copies and wake signaling; the worker performs storage writes
+and stdout mirroring. Capture includes 6695 PresentationTrace messages. No
+on/off measurement exists, so logging overhead cannot be quantified or blamed
+for the measured resource spikes. Keep logging reduction as a separate matched
+experiment rather than mixing it with this initialization correction.
+
 ## Hardware preparation results and startup texture arena (2026-10-10)
 
 Capture: Downloads/lagi.log, 783808 bytes, 18:25 local time, user testing c9b1f92.

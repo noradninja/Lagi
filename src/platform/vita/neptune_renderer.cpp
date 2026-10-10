@@ -2125,29 +2125,6 @@ bool init()
         return false;
     }
 
-    // Pay the bounded native texture arena allocation before gameplay/render
-    // publication begins, not on the first visible frame of a streamed scene.
-    if (g_fieldTextureSlabs.empty()) {
-        FieldTextureSlab arena{};
-        arena.bytes = 8u * 1024u * 1024u;
-        arena.startupArena = true;
-        const auto arenaStartUs = sceKernelGetProcessTimeWide();
-        arena.data = probeCdramAlloc(static_cast<unsigned>(arena.bytes),
-            SCE_GXM_MEMORY_ATTRIB_READ, &arena.uid);
-        const bool arenaCdram = arena.data != nullptr;
-        if (!arena.data)
-            arena.data = probeGpuAlloc(static_cast<unsigned>(arena.bytes),
-                SCE_GXM_MEMORY_ATTRIB_READ, &arena.uid);
-        if (arena.data)
-            g_fieldTextureSlabs.push_back(arena);
-        logging::writef("[NativeTextureArena] bytes=%u ready=%u cdram=%u startupUs=%llu\n",
-            static_cast<unsigned>(arena.bytes), arena.data ? 1u : 0u,
-            arenaCdram ? 1u : 0u,
-            static_cast<unsigned long long>(sceKernelGetProcessTimeWide() - arenaStartUs));
-        // A failed optional reservation leaves the existing upload allocator
-        // available. Do not fail otherwise working rendering on this optimization.
-    }
-
     g_renderThreadRunning = true;
     g_renderThread = sceKernelCreateThread(
         "LagiRender",
@@ -9818,6 +9795,29 @@ void show_game_presentation()
             status("[INFO] BASIC WING VDP1 REGRESSION PATH UNAVAILABLE",
                    0xFFB0B0B0u);
         }
+    }
+
+    // Mapping requires initialized GXM. Reserve only after essential backend
+    // allocations succeeded, but before native gameplay presentation is ready.
+    if (!std::any_of(g_fieldTextureSlabs.begin(), g_fieldTextureSlabs.end(),
+            [](const auto& slab) { return slab.startupArena; })) {
+        FieldTextureSlab arena{};
+        arena.bytes = 8u * 1024u * 1024u;
+        arena.startupArena = true;
+        const auto arenaStartUs = sceKernelGetProcessTimeWide();
+        arena.data = probeCdramAlloc(static_cast<unsigned>(arena.bytes),
+            SCE_GXM_MEMORY_ATTRIB_READ, &arena.uid);
+        const bool arenaCdram = arena.data != nullptr;
+        if (!arena.data)
+            arena.data = probeGpuAlloc(static_cast<unsigned>(arena.bytes),
+                SCE_GXM_MEMORY_ATTRIB_READ, &arena.uid);
+        if (arena.data)
+            g_fieldTextureSlabs.push_back(arena);
+        logging::writef("[NativeTextureArena] bytes=%u ready=%u cdram=%u startupUs=%llu\n",
+            static_cast<unsigned>(arena.bytes), arena.data ? 1u : 0u,
+            arenaCdram ? 1u : 0u,
+            static_cast<unsigned long long>(sceKernelGetProcessTimeWide() - arenaStartUs));
+        // Optional reservation failure retains normal upload allocation.
     }
 
     std::memset(
