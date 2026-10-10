@@ -18,6 +18,7 @@ struct RegisteredModelResource {
     // Immutable Saturn VDP1 address space captured after this bundle's load.
     // Palette state remains frame-owned and must be resolved by the consumer.
     std::shared_ptr<const std::vector<std::uint8_t>> textureMemory;
+    std::uint64_t textureWriteEpoch = 0;
 };
 
 // Registration is not a draw submission. Call after native bundle/character
@@ -26,6 +27,9 @@ void notify_native_bundle_loaded(std::int8_t bundleIndex);
 void register_native_model_resource(std::int8_t bundleIndex,
     std::uint32_t modelOffset, sProcessed3dModel* model);
 const std::vector<RegisteredModelResource>& published_model_resources();
+void notify_native_texture_write();
+std::uint64_t native_texture_write_epoch();
+std::uint64_t published_resource_revision();
 
 struct SubmissionState {
     std::int32_t modelMatrix[12]{};

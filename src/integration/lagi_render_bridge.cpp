@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <unordered_map>
+#include <atomic>
 
 struct sProcessed3dModel;
 extern unsigned char* getVdp1Pointer(unsigned int address) __attribute__((weak));
@@ -59,6 +60,9 @@ static std::unordered_map<std::int8_t,
 static std::unordered_map<std::uint64_t, RegisteredModelResource> g_registeredResources;
 static std::vector<RegisteredModelResource> g_publishedResources;
 static bool g_resourceInventoryDirty = false;
+static std::atomic<std::uint32_t> g_textureWriteEpoch{0};
+static std::unordered_map<std::int8_t, std::uint64_t> g_bundleTextureEpochs;
+static std::uint64_t g_publishedResourceRevision = 0;
 static std::vector<const LiveVdp1Model*> g_adaptedModels;
 static std::vector<RenderSubmission> g_submissions;
 static std::vector<const LiveVdp1Model*> g_publishedAdaptedModels;
@@ -201,6 +205,29 @@ const LiveVdp1Model* adapted_model(std::uint32_t index)
 
 void publish_frame()
 {
+    // This is the game-side publication boundary. Refresh immutable texture
+    // bytes once per write epoch, not per model. No renderer container is
+    // mutated by the asynchronous invalidation callback.
+    const auto writeEpoch = native_texture_write_epoch();
+    const bool staleMemory = std::any_of(g_registeredResources.begin(),
+        g_registeredResources.end(), [&](const auto& entry) {
+            return entry.second.textureWriteEpoch != writeEpoch;
+        });
+    if (staleMemory && &getVdp1Pointer) {
+        if (const auto* bytes = getVdp1Pointer(0x25C00000u)) {
+            auto snapshot = std::make_shared<const std::vector<std::uint8_t>>(
+                bytes, bytes + 0x80000u);
+            for (auto& entry : g_registeredResources) {
+                entry.second.textureMemory = snapshot;
+                entry.second.textureWriteEpoch = writeEpoch;
+            }
+            for (auto& entry : g_bundleTextureMemory) {
+                entry.second = snapshot;
+                g_bundleTextureEpochs[entry.first] = writeEpoch;
+            }
+            g_resourceInventoryDirty = true;
+        }
+    }
     if (g_resourceInventoryDirty) {
         std::vector<RegisteredModelResource> snapshot;
         snapshot.reserve(g_registeredResources.size());
@@ -208,6 +235,7 @@ void publish_frame()
             snapshot.push_back(entry.second);
         g_publishedResources.swap(snapshot);
         g_resourceInventoryDirty = false;
+        ++g_publishedResourceRevision;
         lagi::platform::logging::writef("[NativeResourceInventory] generation=%llu models=%u\n",
             static_cast<unsigned long long>(g_resourceGeneration),
             static_cast<unsigned>(g_publishedResources.size()));
@@ -229,11 +257,13 @@ void notify_native_bundle_loaded(std::int8_t bundleIndex)
 {
     g_bundleGenerations[bundleIndex] = ++g_resourceGeneration;
     g_bundleTextureMemory.erase(bundleIndex);
+    g_bundleTextureEpochs.erase(bundleIndex);
     if (&getVdp1Pointer) {
         if (const auto* memory = getVdp1Pointer(0x25C00000u)) {
             g_bundleTextureMemory.emplace(bundleIndex,
                 std::make_shared<const std::vector<std::uint8_t>>(
                     memory, memory + 0x80000u));
+            g_bundleTextureEpochs[bundleIndex] = native_texture_write_epoch();
         }
     }
     for (auto it = g_registeredResources.begin(); it != g_registeredResources.end();) {
@@ -264,13 +294,29 @@ void register_native_model_resource(std::int8_t bundleIndex,
     if (!adapt_processed_model(model, *adapted))
         return;
     g_registeredResources.emplace(key, RegisteredModelResource{
-        generation->second, bundleIndex, modelOffset, std::move(adapted), memory->second});
+        generation->second, bundleIndex, modelOffset, std::move(adapted), memory->second,
+        g_bundleTextureEpochs.at(bundleIndex)});
     g_resourceInventoryDirty = true;
 }
 
 const std::vector<RegisteredModelResource>& published_model_resources()
 {
     return g_publishedResources;
+}
+
+void notify_native_texture_write()
+{
+    g_textureWriteEpoch.fetch_add(1, std::memory_order_release);
+}
+
+std::uint64_t native_texture_write_epoch()
+{
+    return g_textureWriteEpoch.load(std::memory_order_acquire);
+}
+
+std::uint64_t published_resource_revision()
+{
+    return g_publishedResourceRevision;
 }
 
 void record_vdp1_ui_command(const Vdp1UiCommand& command)

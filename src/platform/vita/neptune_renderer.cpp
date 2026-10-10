@@ -2008,6 +2008,7 @@ void invalidate_cram_range(unsigned int, unsigned int)
 
 void invalidate_vdp1_texture_range(unsigned int, unsigned int)
 {
+    azel_bridge::notify_native_texture_write();
     // Texture writes can also arrive off the render thread. In particular,
     // freeVdp1Textures(), material-cache clears, and static-range mutation
     // must stay render-thread owned.

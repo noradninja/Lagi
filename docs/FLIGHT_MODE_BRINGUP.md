@@ -1,5 +1,31 @@
 # Flight Mode Bring-Up
 
+## Registration snapshot invalidation protocol (2026-10-10)
+
+VDP1 texture-write callbacks now advance a bridge-owned atomic 32-bit epoch,
+alongside existing renderer invalidation flags. Registration records retain
+the epoch associated with their texture snapshot. At game-side publish_frame,
+stale registrations refresh from one shared immutable 512 KiB VDP1 snapshot;
+the new bytes/epoch are attached to current resources and slot owners. Existing
+published ownership is not changed before the frame-slot boundary. Inventory
+publication also advances a revision for future consumer cursor resets.
+
+This extends snapshots to later native texture mutations, rather than assuming
+loaded pixels never change. CRAM remains the renderer's frame-owned palette.
+A future consumer must compare the resource epoch against the current write
+epoch and skip work if another write occurred after publication; it must not
+read live VDP1 bytes to continue a stale inventory job. Epoch wrap is the same
+32-bit counter limitation as existing renderer invalidation epochs; no unlimited
+session uniqueness claim is made. These hooks do not make concurrent arbitrary
+raw-memory writers safe; native texture mutation remains game-owned.
+
+Native syntax checks pass for bridge and renderer; diff checks pass. No native
+package or hardware test performed. Decoder/preparation consumption remains
+unconnected, so this is still an intermediate ownership checkpoint with added
+snapshot/scan overhead, not a performance milestone. Next integration should
+measure preparation during the GPU completion interval, without rewriting
+in-flight retained texture payloads or changing current-frame submissions.
+
 ## Registered texture-memory ownership (2026-10-10)
 
 Resource registrations now retain an immutable 512 KiB VDP1 address-space
