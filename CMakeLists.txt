@@ -988,6 +988,31 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   string(REPLACE "${actor_draw};"
    "LAGI_TRACE_ACTOR_DRAW(\"${actor_label}\", ${actor_draw});"
    source_text "${source_text}")
+  # These town actors can draw before townMainLogic publishes this frame's
+  # native view. Their stack root already contains the town camera. Strip
+  # that root at submission, just as townEdge does, rather than treating
+  # camera-space geometry as world-space and applying a second camera.
+  if(relative_path STREQUAL "town/townDragon.cpp" OR
+     relative_path STREQUAL "town/e006/twn_e006.cpp")
+   string(REPLACE
+    "LAGI_TRACE_ACTOR_DRAW(\"${actor_label}\", ${actor_draw});"
+    "lagi::azel_bridge::begin_view_relative_submission_scope();\n        LAGI_TRACE_ACTOR_DRAW(\"${actor_label}\", ${actor_draw});\n        lagi::azel_bridge::end_view_relative_submission_scope();"
+    source_text "${source_text}")
+  elseif(relative_path STREQUAL "town/excaEntity.cpp")
+   # Capture before NPC translation/rotation, not at the hierarchy call.
+   string(REPLACE
+    "static void Draw2(sGenericTownNPC* pThis)\n    {\n        pushCurrentMatrix();"
+    "static void Draw2(sGenericTownNPC* pThis)\n    {\n        lagi::azel_bridge::begin_view_relative_submission_scope();\n        pushCurrentMatrix();"
+    source_text "${source_text}")
+   string(REPLACE
+    "        popMatrix();\n    }\n\n    static void Delete(sGenericTownNPC* pThis)"
+    "        popMatrix();\n        lagi::azel_bridge::end_view_relative_submission_scope();\n    }\n\n    static void Delete(sGenericTownNPC* pThis)"
+    source_text "${source_text}")
+  endif()
+  if(NOT source_text MATCHES "begin_view_relative_submission_scope" OR
+     NOT source_text MATCHES "end_view_relative_submission_scope")
+   message(FATAL_ERROR "Native town actor view scope did not apply: ${relative_path}")
+  endif()
   string(PREPEND source_text [=[#include "lagi/platform.h"
 #include "lagi/lagi_render_bridge.h"
 #define LAGI_TRACE_ACTOR_DRAW(label, expression) do { \

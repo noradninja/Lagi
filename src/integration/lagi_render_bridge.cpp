@@ -295,6 +295,15 @@ void begin_view_relative_submission_scope()
     if (&pCurrentMatrix && pCurrentMatrix) {
         copyMatrixRaw(*pCurrentMatrix, g_viewScopeMatrix);
         g_viewRelativeScope = true;
+        // Scoped callers enter before their local model transforms. Early
+        // town actors can precede this frame's camera Draw task; retain that
+        // native root for presentation as well as removing it at submission.
+        // A later authored camera capture remains free to replace this view.
+        if (!g_nativeSceneViewValid) {
+            std::memcpy(g_nativeSceneViewMatrix, g_viewScopeMatrix,
+                sizeof(g_nativeSceneViewMatrix));
+            g_nativeSceneViewValid = true;
+        }
     }
 }
 

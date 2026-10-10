@@ -1,5 +1,32 @@
 # Flight Mode Bring-Up
 
+## Early town actor camera-space correction (2026-10-10)
+
+Fresh log: 756,860 bytes, 21:49 UTC. TownDragon and ExcaNPC draw with
+currentValid=1 but viewValid=0. TownDragon's boundary matrix equals the retained
+camera matrix numerically; NPC has the same basis plus its translated origin.
+E006Dragon also reports viewValid=0 with the native axis-swapped camera root.
+Invalid view storage is diagnostic only, not an authoritative published view.
+User confirms the placement problem affects the in-engine cinematic as well.
+
+The bridge resets native-view validity at begin_frame. These early actor draw
+calls can precede the camera task's capture, so generic submission capture
+previously copied view*model as if it were world space. Generated TownDragon,
+E006Dragon and ExcaNPC draw hooks now use the existing view-relative scope,
+capturing the stack root before local transforms (NPC before push/translation).
+The scope also seeds the frame's native presentation view when absent; a later
+native camera capture can replace it. This prevents dropping the removed camera
+when no later camera task publishes one. No synthetic camera, position offsets,
+flight X/winding changes, or upstream edits. Draw expressions execute once.
+
+CMake generation succeeds with installed PSP2CGC; generated scope begin/end
+and original draw expressions were inspected in all three output files.
+Diff checks pass. Native compilation and user hardware acceptance remain
+pending. Retest Excavation dragon/Captain, E006 cinematic and working Ruins/
+flight paths. This is a source-supported correction, not hardware validation.
+Performance remains incomplete: capture median sampled native RBG render
+24.0535 ms; completed field rebuild outliers 55.562 and 59.151 ms.
+
 ## Excavation-only actor placement investigation (2026-10-10)
 
 User screenshot shows dragon/Captain misplaced relative to Excavation world
