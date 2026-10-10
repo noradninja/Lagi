@@ -1122,6 +1122,25 @@ static void recordFlightPresentation(
     }
     if (!nativeField)
         return;
+    // Window reset/first publication has no previous presentation endpoint.
+    // Retain slow-frame evidence even when no interval can be classified yet.
+    // This also ties renderer outliers to their actual presentation endpoint
+    // rather than trying to align two independent 120-frame windows later.
+    const std::uint64_t intervalUs = window.lastUs != 0u
+        ? nowUs - window.lastUs : 0u;
+    const unsigned int intervalVblanks = window.lastUs != 0u
+        ? g_lastPresentVcount - window.lastVcount : 0u;
+    if (g_profileRenderUs > 33333u || intervalVblanks > 2u) {
+        logging::writef(
+            "[FlightPresentOutlier] mode=%u baseline=%u render=%uus "
+            "build=%uus interval=%lluus vblanks=%u present=%uus "
+            "rebuild=%u rbg=%u\n",
+            static_cast<unsigned int>(g_viewMode), window.lastUs != 0u ? 1u : 0u,
+            g_profileRenderUs, g_profileBuildUs,
+            static_cast<unsigned long long>(intervalUs), intervalVblanks,
+            g_profilePresentUs, g_liveTownStaticRebuilt ? 1u : 0u,
+            g_sceneRbg0Enabled ? 1u : 0u);
+    }
     if (window.lastUs != 0u) {
         const std::uint64_t intervalUs = nowUs - window.lastUs;
         const unsigned int vblanks = g_lastPresentVcount - window.lastVcount;

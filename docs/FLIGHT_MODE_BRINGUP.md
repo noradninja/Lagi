@@ -1,5 +1,28 @@
 # Flight Mode Bring-Up
 
+## Updated single-pass capture and interval audit (2026-10-10)
+
+The latest log is 536,134 bytes. Its 95 RBG0-enabled ScenePerf samples have
+24.428 ms render median, 26.112 ms p90 and 81.355 ms maximum across native
+scenes. GPU finish median is 15.366 ms; raw prepare median is 58 us. The prior
+973,550-byte capture had 27.732 ms render and 17.812 ms finish medians; route
+and workload differences mean these runs are not a controlled shader A/B.
+The updated run supports improved timing, not sole attribution to RPMD2.
+
+All 26 complete presentation windows (3,120 intervals) report zero missed
+two-vblank intervals. Renderer windows covering 3,120 frames nevertheless
+contain two deadline overruns, 60.895 and 67.729 ms; 1,143 frames exceed 25 ms.
+The sampled median meets 25 ms, but deadline/hitch acceptance remains unmet.
+`recordFlightPresentation()` omits the first interval after reset, whereas
+renderer aggregates include their first frame. This is a candidate explanation,
+not a proven explanation of both spikes. The follow-up telemetry emits
+`FlightPresentOutlier` whenever renderer time exceeds 33.333 ms or the measured
+interval spans more than two vblanks. It records whether a prior endpoint
+exists (`baseline`), render/build time, interval/vblank gap, pacing time,
+rebuild and RBG state. A baseline of zero cannot establish a display interval.
+This observation-only change preserves all render/pacing behavior and exposes
+slow initial frames that the presentation aggregate cannot classify.
+
 ## Shared RPMD2 single-pass checkpoint (hardware pending)
 
 The user requests a universal VDP2 system shared with frontend screens such
