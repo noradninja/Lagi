@@ -1,3 +1,7 @@
+## Full-resolution presentation experiment (2026-10-10; hardware pending)
+
+Branch `feature/fullres-dithered-filtering` adds `-DLAGI_FULLRES=ON` (OFF by default). The existing half-resolution gameplay and movie render targets use native 960x544 when enabled, including matching color-surface dimensions and pitch; the 720x408 title mode remains separate. Cinepak source decode/resolve remains at source dimensions and retains the existing centered 4:3 presentation geometry. This is a GPU-fill and memory-bandwidth stress test, not a claim of improved performance or hardware validation. Compare matched scenes and movies against an OFF build in separate build directories; preserve logs and check for presentation/crop and mode-switch regressions. Do not change the radar point-filtered sampling or Azel scene decisions.
+
 # Flight Mode Bring-Up
 
 ## Native collection color recovery in progress (2026-10-10)
