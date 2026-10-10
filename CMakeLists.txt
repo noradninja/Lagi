@@ -15,6 +15,7 @@ set(VITA_VERSION "00.40")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(LAGI_STOCHASTIC_FILTER "Use SGX stochastic filter for UI and Cinepak" ON)
 option(LAGI_FULLRES "Render native Vita gameplay/movie modes at 960x544 (test only)" OFF)
 option(LAGI_AZEL_PROBE "Compile an Azel source portability probe" ON)
 option(LAGI_AZEL_RUINS_LINK_TRIM "Temporarily discard unreachable Azel code for Ruins bring-up" ON)
@@ -104,6 +105,8 @@ set(LAGI_TEXTURE_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v.gxp")
 set(LAGI_TEXTURE_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f.gxp")
 set(LAGI_TEXTURE_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v_gxp.o")
 set(LAGI_TEXTURE_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f_gxp.o")
+set(LAGI_STOCHASTIC_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_stochastic_f.gxp")
+set(LAGI_STOCHASTIC_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_stochastic_f_gxp.o")
 set(LAGI_MESH_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_mesh_f.gxp")
 set(LAGI_MESH_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_mesh_f_gxp.o")
 set(LAGI_CINEPAK_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_cinepak_f.gxp")
@@ -552,6 +555,20 @@ add_custom_command(
 )
 
 add_custom_command(
+ OUTPUT "${LAGI_STOCHASTIC_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_f.cg" -Wperf -fastprecision -O3 -o "${LAGI_STOCHASTIC_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_f.cg"
+ VERBATIM
+)
+add_custom_command(
+ OUTPUT "${LAGI_STOCHASTIC_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm "lagi_stochastic_f.gxp" "${LAGI_STOCHASTIC_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_STOCHASTIC_F_GXP}"
+ VERBATIM
+)
+add_custom_command(
  OUTPUT "${LAGI_MESH_F_GXP}"
  COMMAND "${PSP2CGC_EXECUTABLE}"
   -profile sce_fp_psp2
@@ -689,7 +706,7 @@ set_source_files_properties(
  "${LAGI_GOURAUD_SUBDIV_V_OBJ}"
  "${LAGI_TEXTURED_GOURAUD_SUBDIV_F_OBJ}"
  "${LAGI_GOURAUD_SUBDIV_GRAY_F_OBJ}"
- "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}"
+ "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}" "${LAGI_STOCHASTIC_F_OBJ}"
  "${LAGI_MESH_F_OBJ}"
  "${LAGI_CINEPAK_F_OBJ}"
  "${LAGI_VDP2_NBG_F_OBJ}" "${LAGI_VDP2_RBG0_F_OBJ}"
@@ -2302,6 +2319,7 @@ add_executable(lagi
  ${LAGI_GOURAUD_SUBDIV_GRAY_F_OBJ}
  ${LAGI_TEXTURE_V_OBJ}
  ${LAGI_TEXTURE_F_OBJ}
+ ${LAGI_STOCHASTIC_F_OBJ}
  ${LAGI_MESH_F_OBJ}
  ${LAGI_CINEPAK_F_OBJ}
  ${LAGI_VDP2_NBG_F_OBJ}
@@ -2416,7 +2434,7 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/menu"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
 )
-target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1 LAGI_FULLRES=$<BOOL:${LAGI_FULLRES}>)
+target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1 LAGI_FULLRES=$<BOOL:${LAGI_FULLRES}> LAGI_STOCHASTIC_FILTER=$<BOOL:${LAGI_STOCHASTIC_FILTER}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without
