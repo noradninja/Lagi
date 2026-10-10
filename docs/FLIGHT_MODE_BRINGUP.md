@@ -25,9 +25,21 @@ mapB=60000. It also fills a 0x5000-word table starting at 0x60800.
 This is a lead, not proof that A should point to 0x60800: zero is a legal VDP2
 map base, and source/log inspection alone does not establish intended ground
 map contents or original overlay setup. Do not hardcode an Excavation renderer
-override or alter upstream Azel on this evidence. Need original TWN_EXCA.PRG /
-TWN_E006.PRG bytes (or access to the user's Disc 1 CUE/BIN) to verify the missing
-setup against native data. No floor correction implemented; camera/actor scopes,
+override or alter upstream Azel on this evidence. Original Disc 1 BIN/CUE is now
+available in Downloads and has been inspected read-only; no game data is copied
+into the repository. TWN_EXCA.PRG is at logical sector 235981 (75640 bytes).
+Its native tables at 0x06064B94 and 0x06064BD4 contain sixteen pointers each to
+0x25E60000 and 0x25E60800 respectively. The native initialization call passes
+index 1 and the first table to setupRotationMapPlanes. Inspection of the original
+shared helper confirms index 0 writes A and index 1 writes B; it does not
+automatically consume the adjacent table. Therefore changing that helper to
+configure both maps would not preserve the original program. The second table's
+activation remains unproven; continue tracing native state before choosing a fix.
+The user explicitly requires general solutions wherever possible: no scene-ID
+override, forced map address, or altered visibility/gameplay decision. Any eventual
+correction should address shared state adaptation or sampling semantics, with a
+scene adapter only if original behavior actually requires it.
+No floor correction implemented; camera/actor scopes,
 flight orientation, shader, VRAM arena and decoder remain unchanged.
 
 ## VRAM arena hardware acceptance and decode checkpoint (2026-10-10)
