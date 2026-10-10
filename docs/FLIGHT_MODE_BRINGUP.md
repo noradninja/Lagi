@@ -1,5 +1,33 @@
 # Flight Mode Bring-Up
 
+## Shared RPMD2 single-pass checkpoint (hardware pending)
+
+The user requests a universal VDP2 system shared with frontend screens such
+as name entry. Source inspection confirms native scene resolves and frontend
+D5/name-entry composition both call `drawVdp2Rbg0Gpu()`, using the same
+fragment program. This checkpoint combines RPMD2 selection into one draw:
+A's coefficient fetch supplies its scale and selector; B-selected pixels use
+B's independent transform, planes, format, over-pattern and coefficient.
+Disabled A coefficients select A with unit scale. Disabled B coefficients use
+unit scale. RPMD0/1/3 keep their existing selection/window behavior. No
+upstream Azel source is edited. D5's RPMD3 still uses the shared implementation
+and its authored line-window rules.
+
+The compiled GXP is 10,020 bytes versus 8,844 previously. Increased program
+size/register pressure may offset reduced selection and draw overhead; no
+speedup is claimed from compilation. The signed-wrap and raw-generation host
+checks pass; these do not validate shader image output. Hardware must cover
+name entry, Ruins, open flight sky, canyon transitions, E006 and Excavation,
+plus the RBG-disabled tunnel, and compare completion/presentation timings.
+
+Sharing the draw/shader is already implemented; sharing all raw-memory staging
+and GPU residency is a separate remaining integration step. Frontend raw upload
+still owns its movie/frontend storage, while native scenes use the producer
+generation snapshots. A universal resource owner must preserve these lifetimes
+and frontend render-slot synchronization rather than aliasing their storage.
+Future optimizations should operate on common VDP2 resources and authored layer
+state so screens inherit improvements without area-specific renderer paths.
+
 ## Producer-generation hardware result (2026-10-09)
 
 The fresh Downloads log (757,748 bytes) contains the split `gxmend` and

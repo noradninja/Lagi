@@ -273,6 +273,15 @@ float4 main(
     uniform float4 rbg0Info,
     // {CHCTLB, PNCR, CRAOFB, RBG0 PLSZ}
     uniform float4 rbg0Format,
+    uniform float4 rbg0BPlane0,
+    uniform float4 rbg0BPlane1,
+    uniform float4 rbg0BPlane2,
+    uniform float4 rbg0BPlane3,
+    uniform float4 rbg0BTransform0,
+    uniform float4 rbg0BTransform1,
+    uniform float4 rbg0BCoefficient,
+    uniform float4 rbg0BInfo,
+    uniform float4 rbg0BFormat,
     uniform float4 rbg0LayerWindow,
     uniform float4 rbg0LayerWindowInfo)
 {
@@ -295,10 +304,11 @@ float4 main(
     }
 
     float k = 1.0f;
+    bool selectB = false;
     // Parameter B needs A's invalid bit to choose its pixels. Parameter A
     // obtains the same bit together with its own coefficient below.
     if (rbg0SwitchInfo.w >= 1.5f) {
-        bool selectB = false;
+        bool selectedForB = false;
         if (rbg0SwitchInfo.y >= 0.5f) {
             float index = fmod(floor(rbg0SwitchCoefficient.x +
                 rbg0SwitchCoefficient.y * y + rbg0SwitchCoefficient.z * x), 65536.0f);
@@ -306,9 +316,9 @@ float4 main(
             float address = (abs(rbg0SwitchCoefficient.z) > 0.000001f ?
                 0.0f : rbg0SwitchInfo.x) + index * rbg0SwitchInfo.z;
             address = fmod(address + rbg0SwitchInfo.z - 1.0f, 524288.0f);
-            selectB = readByte(raw, address) >= 128.0f;
+            selectedForB = readByte(raw, address) >= 128.0f;
         }
-        if (!selectB) discard;
+        if (!selectedForB) discard;
     }
 
     if (rbg0Info.y >= 0.5f) {
@@ -332,23 +342,56 @@ float4 main(
         k = readRbgCoefficient(raw, address, rbg0Info.z, invalid);
         // In RPMD=2, the CPU publishes A's table/size/accumulator in both
         // selection and scaling uniforms. Reuse this fetch's invalid bit.
-        if (rbg0SwitchInfo.w >= 0.5f && rbg0SwitchInfo.w < 1.5f && invalid)
-            discard;
+        if (rbg0SwitchInfo.w >= 0.5f && rbg0SwitchInfo.w < 1.5f)
+            selectB = invalid;
+    }
+
+    // RPMD2 is one draw. A's coefficient provides both its scale and the
+    // selector; only B-selected pixels fetch B's independent coefficient.
+    float4 transform0 = rbg0Transform0;
+    float4 transform1 = rbg0Transform1;
+    float4 coefficient = rbg0Coefficient;
+    float4 info = rbg0Info;
+    float4 format = rbg0Format;
+    float4 plane0 = rbg0Plane0;
+    float4 plane1 = rbg0Plane1;
+    float4 plane2 = rbg0Plane2;
+    float4 plane3 = rbg0Plane3;
+    if (selectB) {
+        transform0 = rbg0BTransform0;
+        transform1 = rbg0BTransform1;
+        coefficient = rbg0BCoefficient;
+        info = rbg0BInfo;
+        format = rbg0BFormat;
+        plane0 = rbg0BPlane0;
+        plane1 = rbg0BPlane1;
+        plane2 = rbg0BPlane2;
+        plane3 = rbg0BPlane3;
+        k = 1.0f;
+        if (info.y >= 0.5f) {
+            float index = fmod(floor(coefficient.x + coefficient.y * y +
+                coefficient.z * x), 65536.0f);
+            if (index < 0.0f) index += 65536.0f;
+            const float address = (abs(coefficient.z) > 0.000001f ?
+                0.0f : info.x) + index * info.z;
+            bool invalidB;
+            k = readRbgCoefficient(raw, address, info.z, invalidB);
+        }
     }
 
     const float rotatedX =
-        rbg0Transform0.x +
-        rbg0Transform1.x * y +
-        rbg0Transform0.z * x;
+        transform0.x +
+        transform1.x * y +
+        transform0.z * x;
     const float rotatedY =
-        rbg0Transform0.y +
-        rbg0Transform1.y * y +
-        rbg0Transform0.w * x;
+        transform0.y +
+        transform1.y * y +
+        transform0.w * x;
 
-    const float mapX = k * rotatedX + rbg0Transform1.z;
-    const float mapY = k * rotatedY + rbg0Transform1.w;
+    const float mapX = k * rotatedX + transform1.z;
+    const float mapY = k * rotatedY + transform1.w;
 
     return sampleRbg0Cell(
-        raw, mapX, mapY, rbg0Format, rbg0Coefficient.w, rbg0Info.w,
-        rbg0Plane0, rbg0Plane1, rbg0Plane2, rbg0Plane3);
+        raw, mapX, mapY, format, coefficient.w, info.w,
+        plane0, plane1, plane2, plane3);
 }

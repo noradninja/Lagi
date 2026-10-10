@@ -193,6 +193,7 @@ static const SceGxmProgramParameter* g_vdp2Rbg0Transform1Param = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0CoefficientParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0SwitchCoefficientParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0SwitchInfoParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0BParam[9]{};
 static const SceGxmProgramParameter* g_vdp2Rbg0InfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0FormatParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0LayerWindowParam = nullptr;
@@ -8800,6 +8801,16 @@ void show_game_presentation()
     }
 
     if (g_vdp2Rbg0Available) {
+        static const char* kBNames[9] = {
+            "rbg0BPlane0", "rbg0BPlane1", "rbg0BPlane2", "rbg0BPlane3",
+            "rbg0BTransform0", "rbg0BTransform1", "rbg0BCoefficient",
+            "rbg0BInfo", "rbg0BFormat"
+        };
+        for (unsigned i = 0; i < 9u; ++i) {
+            g_vdp2Rbg0BParam[i] = sceGxmProgramFindParameterByName(
+                vdp2Rbg0FragmentGxp, kBNames[i]);
+            if (!g_vdp2Rbg0BParam[i]) g_vdp2Rbg0Available = false;
+        }
         static const char* kRbg0PlaneNames[4] = {
             "rbg0Plane0", "rbg0Plane1", "rbg0Plane2", "rbg0Plane3"
         };
@@ -11482,6 +11493,25 @@ static bool drawVdp2Rbg0Gpu(
         sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0SwitchInfoParam,
             0, 4, switchInfo);
 
+        const float bSize = (ktctl & 0x200u) ? 2.0f : 4.0f;
+        bool bShared = true;
+        for (unsigned i = 1; i < 16u; ++i)
+            bShared = bShared && rbg.planesB[i] == rbg.planesB[0];
+        const float bInfo[4] = {
+            static_cast<float>((ktaof >> 8u) & 7u) * bSize * 65536.0f,
+            (ktctl & 0x100u) ? 1.0f : 0.0f, bSize, bShared ? 1.0f : 0.0f
+        };
+        const float bFormat[4] = {
+            rbg.format[0], rbg.format[1], rbg.format[2], rbg.parameterFormat[1]
+        };
+        const float* bValues[9] = {
+            rbg.planesB, rbg.planesB + 4, rbg.planesB + 8, rbg.planesB + 12,
+            rbg.transformB, rbg.transformB + 4, rbg.coefficientB, bInfo, bFormat
+        };
+        for (unsigned i = 0; i < 9u; ++i)
+            sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0BParam[i],
+                0, 4, bValues[i]);
+
         if (sceGxmSetVertexStream(
                 g_probeContext, 0, vertices) < 0)
             return false;
@@ -11494,7 +11524,7 @@ static bool drawVdp2Rbg0Gpu(
             indexCount) >= 0;
     };
 
-    if (rpmd == 1u || rpmd == 2u || rpmd == 3u) {
+    if (rpmd == 1u || rpmd == 3u) {
         // Parameter B is the base for RPMD=3.
         rbgSubmitted = submitRbgParameter(
             rbg.planesB,
