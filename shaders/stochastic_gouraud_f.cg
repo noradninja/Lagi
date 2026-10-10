@@ -1,0 +1,37 @@
+// Screen-space 2x2 ordered coordinate-dithered sampling for VDP1 sprites
+// that also carry Saturn Gouraud color.  This is intentionally separate from
+// the world-polygon shader so enabling the presentation filter cannot change
+// the established 3D renderer path.
+float4 main(
+    float2 vTexcoord : TEXCOORD0,
+    float3 vShade : TEXCOORD1,
+    float4 fragCoord : WPOS,
+    uniform sampler2D tex,
+    uniform float2 textureSize)
+{
+    float2 pixel = floor(fragCoord.xy);
+    float2 parity = pixel - 2.0f * floor(pixel * 0.5f);
+    float index = parity.x + 2.0f * parity.y;
+    float du = index < 0.5f ? 0.25f :
+               (index < 1.5f ? 0.50f :
+               (index < 2.5f ? 0.75f : 0.0f));
+    float dv = index < 0.5f ? 0.0f :
+               (index < 1.5f ? 0.75f :
+               (index < 2.5f ? 0.50f : 0.25f));
+
+    float2 source = saturate(vTexcoord) * textureSize;
+    float2 texel = clamp(
+        floor(source + float2(du, dv) - 0.5f),
+        float2(0.0f, 0.0f), textureSize - 1.0f);
+    float4 color = tex2D(tex, (texel + 0.5f) / textureSize);
+    if (color.a < 0.5f)
+        discard;
+
+    float3 light5 = clamp(vShade * 31.0f + 16.0f, 0.0f, 31.0f);
+    light5 = floor(light5 + 0.5f);
+    float3 correction5 = light5 - 16.0f;
+
+    float3 base5 = floor(color.rgb * 31.0f + 0.5f);
+    float3 result5 = clamp(base5 + correction5, 0.0f, 31.0f);
+    return float4(result5 / 31.0f, color.a);
+}

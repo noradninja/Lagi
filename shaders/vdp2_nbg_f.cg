@@ -51,27 +51,28 @@ float4 sampleTitleNbg0Point(
     return rgb555(readBE16(raw, cramAddress));
 }
 
-float4 sampleTitleNbg0Filtered(
+float4 sampleTitleNbg0Dithered(
     uniform sampler2D raw,
-    float2 uv)
+    float2 uv,
+    float2 fragCoord)
 {
     // The title artwork is authored in Azel's 704x448 high-resolution VDP2
-    // raster. Raw VRAM and CRAM accesses remain point-exact inside
-    // sampleTitleNbg0Point(); filtering happens only after four neighboring
-    // palette entries have been decoded to RGB.
-    const float sourceX = uv.x * 704.0f - 0.5f;
-    const float sourceY = uv.y * 448.0f - 0.5f;
-    const float x0 = floor(sourceX);
-    const float y0 = floor(sourceY);
-    const float fx = sourceX - x0;
-    const float fy = sourceY - y0;
-
-    const float4 c00 = sampleTitleNbg0Point(raw, x0,       y0);
-    const float4 c10 = sampleTitleNbg0Point(raw, x0 + 1.0f, y0);
-    const float4 c01 = sampleTitleNbg0Point(raw, x0,       y0 + 1.0f);
-    const float4 c11 = sampleTitleNbg0Point(raw, x0 + 1.0f, y0 + 1.0f);
-
-    return lerp(lerp(c00, c10, fx), lerp(c01, c11, fx), fy);
+    // raster. Select one exact palette result using the same screen-space 2x2
+    // offset sequence as the decoded-RGBA presentation shader.
+    const float2 pixel = floor(fragCoord);
+    const float2 parity = pixel - 2.0f * floor(pixel * 0.5f);
+    const float index = parity.x + 2.0f * parity.y;
+    const float du = index < 0.5f ? 0.25f :
+                     (index < 1.5f ? 0.50f :
+                     (index < 2.5f ? 0.75f : 0.0f));
+    const float dv = index < 0.5f ? 0.0f :
+                     (index < 1.5f ? 0.75f :
+                     (index < 2.5f ? 0.50f : 0.25f));
+    const float2 source = uv * float2(704.0f, 448.0f);
+    const float2 texel = clamp(
+        floor(source + float2(du, dv) - 0.5f),
+        float2(0.0f, 0.0f), float2(703.0f, 447.0f));
+    return sampleTitleNbg0Point(raw, texel.x, texel.y);
 }
 
 float4 sampleNameNbg0(
@@ -185,6 +186,7 @@ float4 sampleNativeTextLayer(
 
 float4 main(
     float2 vTexcoord : TEXCOORD0,
+    float4 fragCoord : WPOS,
     uniform sampler2D raw,
     uniform float4 vdp2Info)
 {
@@ -196,7 +198,7 @@ float4 main(
     float4 color = float4(0.0f, 0.0f, 0.0f, 0.0f);
 
     if (vdp2Info.x < 0.5f) {
-        color = sampleTitleNbg0Filtered(raw, vTexcoord);
+        color = sampleTitleNbg0Dithered(raw, vTexcoord, fragCoord.xy);
     } else {
         // Azel keeps NBG0 disabled while script 0 presents the lead-in text.
         // flags bit 0 is the live BGON.NBG0 state from nameEntryEnable().

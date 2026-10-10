@@ -42,6 +42,7 @@ extern const unsigned char _binary_lagi_color_f_gxp_start[];
 extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
 extern const unsigned char _binary_lagi_stochastic_f_gxp_start[];
+extern const unsigned char _binary_lagi_stochastic_gouraud_f_gxp_start[];
 extern const unsigned char _binary_lagi_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_cinepak_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
@@ -173,12 +174,14 @@ static std::uint16_t* g_fadeIndices = nullptr;
 static SceGxmShaderPatcherId g_textureVertexProgramId{};
 static SceGxmShaderPatcherId g_textureFragmentProgramId{};
 static SceGxmShaderPatcherId g_stochasticFragmentProgramId{};
+static SceGxmShaderPatcherId g_stochasticGouraudFragmentProgramId{};
 static SceGxmShaderPatcherId g_cinepakFragmentProgramId{};
 static SceGxmShaderPatcherId g_vdp2NbgFragmentProgramId{};
 static SceGxmShaderPatcherId g_vdp2Rbg0FragmentProgramId{};
 static bool g_textureVertexRegistered = false;
 static bool g_textureFragmentRegistered = false;
 static bool g_stochasticFragmentRegistered = false;
+static bool g_stochasticGouraudFragmentRegistered = false;
 static bool g_cinepakFragmentRegistered = false;
 static bool g_vdp2NbgFragmentRegistered = false;
 static bool g_vdp2Rbg0FragmentRegistered = false;
@@ -186,20 +189,41 @@ static bool g_vdp2Rbg0Available = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_stochasticFragmentProgram = nullptr;
-static const SceGxmProgramParameter* g_stochasticTextureInfoParam = nullptr;
+static SceGxmFragmentProgram* g_stochasticGouraudFragmentProgram = nullptr;
+static const SceGxmProgramParameter* g_stochasticTextureSizeParam = nullptr;
+static const SceGxmProgramParameter* g_stochasticGouraudTextureSizeParam = nullptr;
 #if defined(LAGI_STOCHASTIC_FILTER) && LAGI_STOCHASTIC_FILTER
 static constexpr bool kStochastic = true;
 #else
 static constexpr bool kStochastic = false;
 #endif
-static void setStochastic(unsigned w, unsigned h, unsigned outW, unsigned outH)
+static void setStochastic(unsigned w, unsigned h)
 {
-    if (!kStochastic || !g_stochasticFragmentProgram || !g_stochasticTextureInfoParam) return;
+    if (!kStochastic || !g_stochasticFragmentProgram ||
+        !g_stochasticTextureSizeParam)
+        return;
     sceGxmSetFragmentProgram(g_probeContext, g_stochasticFragmentProgram);
     void* ub = nullptr;
     if (sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext, &ub) >= 0 && ub) {
-        const float info[4] = {float(w),float(h),float(outW),float(outH)};
-        sceGxmSetUniformDataF(ub, g_stochasticTextureInfoParam, 0, 4, info);
+        const float size[2] = {float(w), float(h)};
+        sceGxmSetUniformDataF(
+            ub, g_stochasticTextureSizeParam, 0, 2, size);
+    }
+}
+
+static void setStochasticGouraud(unsigned w, unsigned h)
+{
+    if (!kStochastic || !g_stochasticGouraudFragmentProgram ||
+        !g_stochasticGouraudTextureSizeParam)
+        return;
+    sceGxmSetFragmentProgram(
+        g_probeContext, g_stochasticGouraudFragmentProgram);
+    void* ub = nullptr;
+    if (sceGxmReserveFragmentDefaultUniformBuffer(
+            g_probeContext, &ub) >= 0 && ub) {
+        const float size[2] = {float(w), float(h)};
+        sceGxmSetUniformDataF(
+            ub, g_stochasticGouraudTextureSizeParam, 0, 2, size);
     }
 }
 
@@ -1764,8 +1788,13 @@ static void drawAzelMenuVdp2Gpu()
     sceGxmSetVertexProgram(
         g_probeContext, g_textureVertexProgram);
     sceGxmSetFragmentProgram(g_probeContext,g_textureFragmentProgram);
-    // Keep high-contrast text on SGX hardware bilinear: one-tap
-    // stochastic sampling visibly fragments glyph strokes.
+    if (kStochastic) {
+        setStochastic(kVdp2TextLayerWidth, kVdp2TextLayerHeight);
+        sceGxmTextureSetMinFilter(
+            &g_vdp2TextLayerTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(
+            &g_vdp2TextLayerTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+    }
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
 
     void* uniforms = nullptr;
@@ -1898,8 +1927,13 @@ static void drawAzelVdp2TextLayerGpu()
     sceGxmSetVertexProgram(
         g_probeContext, g_textureVertexProgram);
     sceGxmSetFragmentProgram(g_probeContext,g_textureFragmentProgram);
-    // Keep high-contrast text on SGX hardware bilinear: one-tap
-    // stochastic sampling visibly fragments glyph strokes.
+    if (kStochastic) {
+        setStochastic(kVdp2TextLayerWidth, kVdp2TextLayerHeight);
+        sceGxmTextureSetMinFilter(
+            &g_vdp2TextLayerTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(
+            &g_vdp2TextLayerTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+    }
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
 
     void* uniforms = nullptr;
@@ -2403,6 +2437,11 @@ void shutdown()
             sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_stochasticFragmentProgram);
             g_stochasticFragmentProgram=nullptr;
         }
+        if (g_stochasticGouraudFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(
+                g_probeShaderPatcher, g_stochasticGouraudFragmentProgram);
+            g_stochasticGouraudFragmentProgram = nullptr;
+        }
         if (g_movieTextureFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_movieTextureFragmentProgram);
@@ -2522,6 +2561,11 @@ void shutdown()
         if (g_stochasticFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_stochasticFragmentProgramId);
             g_stochasticFragmentRegistered=false;
+        }
+        if (g_stochasticGouraudFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(
+                g_probeShaderPatcher, g_stochasticGouraudFragmentProgramId);
+            g_stochasticGouraudFragmentRegistered = false;
         }
         if (g_textureFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -3699,8 +3743,8 @@ static bool ensureVdp2UiGpuBuffers()
         return false;
 
     // Decoded 2D presentation assets are ordinary RGBA textures at this
-    // point. Use SGX linear filtering when Saturn-authored UI is rescaled
-    // into the active Vita framebuffer.
+    // point. Linear remains the disabled-filter fallback; stochastic draws
+    // switch these samplers to POINT before issuing their SGX pass.
     sceGxmTextureSetMinFilter(
         &g_vdp2Nbg1AtlasTexture,
         SCE_GXM_TEXTURE_FILTER_LINEAR);
@@ -3997,6 +4041,13 @@ static void drawAzelVdp2Nbg1Gpu()
         g_probeContext, g_textureVertexProgram);
     sceGxmSetFragmentProgram(
         g_probeContext, g_textureFragmentProgram);
+    if (kStochastic) {
+        setStochastic(kVdp2Nbg1AtlasWidth, kVdp2Nbg1AtlasHeight);
+        sceGxmTextureSetMinFilter(
+            &g_vdp2Nbg1AtlasTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(
+            &g_vdp2Nbg1AtlasTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+    }
 
     void* uniforms = nullptr;
     if (sceGxmReserveVertexDefaultUniformBuffer(
@@ -4837,8 +4888,15 @@ static void drawPublishedVdp1Ui(
                 sceGxmSetUniformDataF(shadeUniforms, g_gouraudSubdivWvpParam, 0, 16, identity);
             sceGxmSetVertexStream(g_probeContext, 0, gouraudVertices);
         }
+        if (shaded && !fieldRadarMap && kStochastic) {
+            setStochasticGouraud(texture->width, texture->height);
+            sceGxmTextureSetMinFilter(
+                &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
+            sceGxmTextureSetMagFilter(
+                &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        }
         if (!shaded && !fieldRadarMap && kStochastic) {
-            setStochastic(texture->width,texture->height,viewerRenderWidth(),viewerRenderHeight());
+            setStochastic(texture->width, texture->height);
             sceGxmTextureSetMinFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
         }
@@ -4862,6 +4920,12 @@ static void drawPublishedVdp1Ui(
             sceGxmSetFragmentProgram(g_probeContext,g_textureFragmentProgram);
         }
         if (shaded) {
+            if (kStochastic) {
+                sceGxmTextureSetMinFilter(
+                    &texture->texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+                sceGxmTextureSetMagFilter(
+                    &texture->texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+            }
             sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
             sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
             void* textureUniforms = nullptr;
@@ -9044,8 +9108,12 @@ void show_game_presentation()
         failure("[FAIL] STOCHASTIC REGISTER");return;
     }
     g_stochasticFragmentRegistered=true;
-    g_stochasticTextureInfoParam=sceGxmProgramFindParameterByName(stochasticGxp,"textureInfo");
-    if (!g_stochasticTextureInfoParam) {failure("[FAIL] STOCHASTIC UNIFORM");return;}
+    g_stochasticTextureSizeParam =
+        sceGxmProgramFindParameterByName(stochasticGxp, "textureSize");
+    if (!g_stochasticTextureSizeParam) {
+        failure("[FAIL] STOCHASTIC UNIFORM");
+        return;
+    }
 
     if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
@@ -9333,6 +9401,9 @@ void show_game_presentation()
     const SceGxmProgram* texturedGouraudSubdivFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_textured_gouraud_subdiv_f_gxp_start);
+    const SceGxmProgram* stochasticGouraudFragmentGxp =
+        reinterpret_cast<const SceGxmProgram*>(
+            _binary_lagi_stochastic_gouraud_f_gxp_start);
     const SceGxmProgram* gouraudSubdivGrayFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_gouraud_subdiv_gray_f_gxp_start);
@@ -9376,6 +9447,7 @@ void show_game_presentation()
     if (sceGxmProgramCheck(gouraudPayloadVertexGxp) < 0 ||
         sceGxmProgramCheck(gouraudSubdivVertexGxp) < 0 ||
         sceGxmProgramCheck(texturedGouraudSubdivFragmentGxp) < 0 ||
+        sceGxmProgramCheck(stochasticGouraudFragmentGxp) < 0 ||
         sceGxmProgramCheck(gouraudSubdivGrayFragmentGxp) < 0 ||
         sceGxmProgramCheck(gouraudDebugFragmentGxp) < 0 ||
         sceGxmProgramCheck(texturedLitFragmentGxp) < 0 ||
@@ -9419,6 +9491,22 @@ void show_game_presentation()
         return;
     }
     g_texturedGouraudSubdivFragmentRegistered = true;
+
+    if (sceGxmShaderPatcherRegisterProgram(
+            g_probeShaderPatcher,
+            stochasticGouraudFragmentGxp,
+            &g_stochasticGouraudFragmentProgramId) < 0) {
+        failure("[FAIL] STOCHASTIC GOURAUD FP REG");
+        return;
+    }
+    g_stochasticGouraudFragmentRegistered = true;
+    g_stochasticGouraudTextureSizeParam =
+        sceGxmProgramFindParameterByName(
+            stochasticGouraudFragmentGxp, "textureSize");
+    if (!g_stochasticGouraudTextureSizeParam) {
+        failure("[FAIL] STOCHASTIC GOURAUD UNIFORM");
+        return;
+    }
 
     if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
@@ -9586,6 +9674,18 @@ void show_game_presentation()
             gouraudSubdivVertexGxp,
             &g_texturedGouraudSubdivFragmentProgram) < 0) {
         failure("[FAIL] CREATE GOURAUD SUBDIV FP");
+        return;
+    }
+
+    if (sceGxmShaderPatcherCreateFragmentProgram(
+            g_probeShaderPatcher,
+            g_stochasticGouraudFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+            SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,
+            gouraudSubdivVertexGxp,
+            &g_stochasticGouraudFragmentProgram) < 0) {
+        failure("[FAIL] CREATE STOCHASTIC GOURAUD FP");
         return;
     }
 
@@ -12421,10 +12521,12 @@ static bool renderMovieFrame()
             sceGxmSetFragmentTexture(
                 g_probeContext, 0, &g_titleDecodedTexture);
             sceGxmSetFragmentProgram(g_probeContext,g_movieTextureFragmentProgram);
-            if (kStochastic && g_movieUsesCinepakPayload) {
-                setStochastic(g_movieWidth,g_movieHeight,movieOutputWidth,movieOutputHeight);
-                sceGxmTextureSetMinFilter(&g_cinepakResolveTexture,SCE_GXM_TEXTURE_FILTER_POINT);
-                sceGxmTextureSetMagFilter(&g_cinepakResolveTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+            if (kStochastic) {
+                setStochastic(kTitleDecodedWidth, kTitleDecodedHeight);
+                sceGxmTextureSetMinFilter(
+                    &g_titleDecodedTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+                sceGxmTextureSetMagFilter(
+                    &g_titleDecodedTexture, SCE_GXM_TEXTURE_FILTER_POINT);
             }
             submitted = sceGxmDraw(
                 g_probeContext,
@@ -12470,10 +12572,17 @@ static bool renderMovieFrame()
             submitted = rbgSubmitted && nbgSubmitted;
         } else if (streamReady) {
             // Cinepak has already been reconstructed to a conventional RGBA
-            // source-resolution texture above. Final presentation is now the
-            // same cheap bilinear texture path as an ordinary decoded frame.
+            // source-resolution texture above. Apply the same screen-space
+            // one-tap dither used by the other scaled presentation assets.
             sceGxmSetFragmentProgram(
                 g_probeContext, g_movieTextureFragmentProgram);
+            if (kStochastic && g_movieUsesCinepakPayload) {
+                setStochastic(g_movieWidth, g_movieHeight);
+                sceGxmTextureSetMinFilter(
+                    &g_cinepakResolveTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+                sceGxmTextureSetMagFilter(
+                    &g_cinepakResolveTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+            }
             submitted = sceGxmDraw(
                 g_probeContext,
                 SCE_GXM_PRIMITIVE_TRIANGLES,
@@ -12484,8 +12593,8 @@ static bool renderMovieFrame()
     }
 
     // Front-end text is decoded from Azel's NBG1/NBG3 VRAM/CRAM snapshot
-    // into an ordinary RGBA texture. Draw it after the VDP2 backgrounds so
-    // the existing LINEAR sampler handles presentation scaling in hardware.
+    // into an ordinary RGBA texture. Draw it after the VDP2 backgrounds and
+    // use the same screen-space dither as the other scaled presentation art.
     // VDP1 selectors/arrows remain above the text layer.
     if (submitted && g_movieUsesVdp2Title)
         drawAzelVdp2TextLayerGpu();

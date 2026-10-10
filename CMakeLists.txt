@@ -107,6 +107,8 @@ set(LAGI_TEXTURE_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v_gxp.o")
 set(LAGI_TEXTURE_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f_gxp.o")
 set(LAGI_STOCHASTIC_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_stochastic_f.gxp")
 set(LAGI_STOCHASTIC_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_stochastic_f_gxp.o")
+set(LAGI_STOCHASTIC_GOURAUD_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_stochastic_gouraud_f.gxp")
+set(LAGI_STOCHASTIC_GOURAUD_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_stochastic_gouraud_f_gxp.o")
 set(LAGI_MESH_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_mesh_f.gxp")
 set(LAGI_MESH_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_mesh_f_gxp.o")
 set(LAGI_CINEPAK_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_cinepak_f.gxp")
@@ -569,6 +571,20 @@ add_custom_command(
  VERBATIM
 )
 add_custom_command(
+ OUTPUT "${LAGI_STOCHASTIC_GOURAUD_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_gouraud_f.cg" -Wperf -fastprecision -O3 -o "${LAGI_STOCHASTIC_GOURAUD_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_gouraud_f.cg"
+ VERBATIM
+)
+add_custom_command(
+ OUTPUT "${LAGI_STOCHASTIC_GOURAUD_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm "lagi_stochastic_gouraud_f.gxp" "${LAGI_STOCHASTIC_GOURAUD_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_STOCHASTIC_GOURAUD_F_GXP}"
+ VERBATIM
+)
+add_custom_command(
  OUTPUT "${LAGI_MESH_F_GXP}"
  COMMAND "${PSP2CGC_EXECUTABLE}"
   -profile sce_fp_psp2
@@ -707,6 +723,7 @@ set_source_files_properties(
  "${LAGI_TEXTURED_GOURAUD_SUBDIV_F_OBJ}"
  "${LAGI_GOURAUD_SUBDIV_GRAY_F_OBJ}"
  "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}" "${LAGI_STOCHASTIC_F_OBJ}"
+ "${LAGI_STOCHASTIC_GOURAUD_F_OBJ}"
  "${LAGI_MESH_F_OBJ}"
  "${LAGI_CINEPAK_F_OBJ}"
  "${LAGI_VDP2_NBG_F_OBJ}" "${LAGI_VDP2_RBG0_F_OBJ}"
@@ -2320,6 +2337,7 @@ add_executable(lagi
  ${LAGI_TEXTURE_V_OBJ}
  ${LAGI_TEXTURE_F_OBJ}
  ${LAGI_STOCHASTIC_F_OBJ}
+ ${LAGI_STOCHASTIC_GOURAUD_F_OBJ}
  ${LAGI_MESH_F_OBJ}
  ${LAGI_CINEPAK_F_OBJ}
  ${LAGI_VDP2_NBG_F_OBJ}
