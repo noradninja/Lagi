@@ -795,17 +795,28 @@ struct RbgGpuState {
 static RbgGpuState g_movieRbg0;
 static RbgGpuState g_pendingSceneRbg0, g_sceneRbg0;
 static constexpr unsigned int kRawVdp2Bytes = 0x81000u;
+static constexpr unsigned int kSceneVdp2BlockBytes = 4096u;
+static constexpr unsigned int kSceneVdp2BlockCount =
+    (kRawVdp2Bytes + kSceneVdp2BlockBytes - 1u) / kSceneVdp2BlockBytes;
 static unsigned char g_sceneVdp2RawBuffers[2][kRawVdp2Bytes]{};
 static unsigned char* g_pendingSceneVdp2Raw = g_sceneVdp2RawBuffers[0];
 static unsigned char* g_sceneVdp2Raw = g_sceneVdp2RawBuffers[1];
+static std::uint32_t g_sceneVdp2BlockGenerationBuffers[2][kSceneVdp2BlockCount]{};
+static std::uint32_t* g_pendingSceneVdp2BlockGenerations =
+    g_sceneVdp2BlockGenerationBuffers[0];
+static std::uint32_t* g_sceneVdp2BlockGenerations =
+    g_sceneVdp2BlockGenerationBuffers[1];
+// Producer-owned history. The game thread performs the exact comparison while
+// both Azel's source and the staging destination are ordinary cached memory.
+// The render thread consumes only the published generation array and therefore
+// never scans the entire 528 KiB snapshot merely to discover changed blocks.
+alignas(64) static unsigned char g_stagedSceneVdp2RawShadow[kRawVdp2Bytes]{};
+static std::uint32_t g_stagedSceneVdp2BlockGenerations[kSceneVdp2BlockCount]{};
+static bool g_stagedSceneVdp2RawInitialized = false;
 static bool g_pendingSceneVdp2RawDirty = false;
 static bool g_pendingSceneRbg0Enabled = false, g_sceneRbg0Enabled = false;
 static void* g_sceneVdp2GpuRaw = nullptr;
-// Renderer-owned CPU shadow of the bytes last copied into GPU-mapped storage.
-// Comparing ordinary cached RAM avoids a full readback scan of uncached GXM
-// memory every frame. This is separate from resolved-image invalidation:
-// changing rotation/window registers still requires a new resolve.
-alignas(64) static unsigned char g_sceneVdp2GpuRawShadow[kRawVdp2Bytes]{};
+static std::uint32_t g_uploadedSceneVdp2BlockGenerations[kSceneVdp2BlockCount]{};
 static bool g_sceneVdp2GpuRawInitialized = false;
 static unsigned int g_profileRbgRawUpdatedBytes = 0u;
 static SceUID g_sceneVdp2RawUid = -1;
@@ -3149,6 +3160,25 @@ void presentation_set_vdp2_background(const FrontendRbg0State& state,
     g_pendingSceneRbg0 = makeRbgGpuState(state);
     std::memcpy(g_pendingSceneVdp2Raw, vram, 0x80000u);
     std::memcpy(g_pendingSceneVdp2Raw + 0x80000u, cram, 0x1000u);
+    for (unsigned int block = 0u; block < kSceneVdp2BlockCount; ++block) {
+        const std::size_t offset =
+            static_cast<std::size_t>(block) * kSceneVdp2BlockBytes;
+        const std::size_t bytes = std::min<std::size_t>(
+            kSceneVdp2BlockBytes, kRawVdp2Bytes - offset);
+        if (!g_stagedSceneVdp2RawInitialized ||
+            std::memcmp(g_stagedSceneVdp2RawShadow + offset,
+                g_pendingSceneVdp2Raw + offset, bytes) != 0) {
+            std::memcpy(g_stagedSceneVdp2RawShadow + offset,
+                g_pendingSceneVdp2Raw + offset, bytes);
+            // Reserve zero as the never-published value so wraparound cannot
+            // accidentally look like a pristine block.
+            if (++g_stagedSceneVdp2BlockGenerations[block] == 0u)
+                ++g_stagedSceneVdp2BlockGenerations[block];
+        }
+        g_pendingSceneVdp2BlockGenerations[block] =
+            g_stagedSceneVdp2BlockGenerations[block];
+    }
+    g_stagedSceneVdp2RawInitialized = true;
     g_pendingSceneVdp2RawDirty = true;
 }
 
@@ -11788,18 +11818,19 @@ static bool prepareSceneVdp2Background()
     // Update changed VRAM/CRAM spans only. RBG0's shader still runs each
     // frame so dynamic rotation, line windows and coefficient-table state are
     // never frozen by this optimization.
-    constexpr std::size_t kBlockBytes = 4096u;
     g_profileRbgRawUpdatedBytes = 0u;
     auto* gpu = static_cast<unsigned char*>(g_sceneVdp2GpuRaw);
-    for (std::size_t offset = 0; offset < kRawVdp2Bytes; offset += kBlockBytes) {
+    for (unsigned int block = 0u; block < kSceneVdp2BlockCount; ++block) {
+        const std::size_t offset =
+            static_cast<std::size_t>(block) * kSceneVdp2BlockBytes;
         const std::size_t bytes = std::min<std::size_t>(
-            kBlockBytes, kRawVdp2Bytes - offset);
+            kSceneVdp2BlockBytes, kRawVdp2Bytes - offset);
         if (!g_sceneVdp2GpuRawInitialized ||
-            std::memcmp(g_sceneVdp2GpuRawShadow + offset,
-                g_sceneVdp2Raw + offset, bytes) != 0) {
+            g_uploadedSceneVdp2BlockGenerations[block] !=
+                g_sceneVdp2BlockGenerations[block]) {
             std::memcpy(gpu + offset, g_sceneVdp2Raw + offset, bytes);
-            std::memcpy(g_sceneVdp2GpuRawShadow + offset,
-                g_sceneVdp2Raw + offset, bytes);
+            g_uploadedSceneVdp2BlockGenerations[block] =
+                g_sceneVdp2BlockGenerations[block];
             g_profileRbgRawUpdatedBytes += static_cast<unsigned int>(bytes);
         }
     }
@@ -13164,6 +13195,8 @@ void presentation_publish_frame()
         // Unchanged/repeated publications retain the current renderer buffer.
         if (g_pendingSceneVdp2RawDirty) {
             std::swap(g_sceneVdp2Raw, g_pendingSceneVdp2Raw);
+            std::swap(g_sceneVdp2BlockGenerations,
+                g_pendingSceneVdp2BlockGenerations);
             g_pendingSceneVdp2RawDirty = false;
         }
     }
