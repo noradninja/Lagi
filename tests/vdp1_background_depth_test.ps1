@@ -23,6 +23,15 @@ $repo = Split-Path $PSScriptRoot -Parent
 $bridgeHeader = Get-Content "$repo\include\lagi\lagi_render_bridge.h" -Raw
 $runtime = Get-Content "$repo\src\integration\lagi_runtime.cpp" -Raw
 $renderer = Get-Content "$repo\src\platform\vita\neptune_renderer.cpp" -Raw
+$upstream = Get-Content "$repo\extern\Azel\AzelLib\mainMenuDebugTasks.cpp" -Raw
+if ($upstream -notmatch 'pPacket->frameIndex != frameIndex') {
+    throw 'Upstream extended-command validity contract changed'
+}
+$frameAdvance = $runtime.IndexOf('++frameIndex;')
+$tailRewind = $runtime.IndexOf('ctx.m0_currentVdp1WriteEA = mainContextVdp1[0].begin() + 6')
+if ($frameAdvance -lt 0 -or $frameAdvance -ge $tailRewind) {
+    throw 'Recycled VDP1 command slots can retain valid prior-frame depth'
+}
 
 if ($bridgeHeader -notmatch 'float\s+depth\s*=\s*0\.0f' -or
     $bridgeHeader -notmatch 'bool\s+hasDepth\s*=\s*false') {

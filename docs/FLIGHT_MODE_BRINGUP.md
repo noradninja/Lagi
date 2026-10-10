@@ -1,5 +1,35 @@
 # Flight Mode Bring-Up
 
+## LCS layering regression and frame metadata lifetime (2026-10-10)
+
+User reports LCS icons and the targeting rectangle layering incorrectly after
+the far-plane background ordering change. Source identifies a missing native
+frame lifecycle step: upstream PDS advances global `frameIndex` each frame;
+`createVdp1ExtendedCommand()` stamps that index and the fetch helper rejects
+metadata from a different frame. Lagi rewound command slots without advancing
+the index. LCS emitters do not create extended depth, so recycled slots could
+inherit a previous mountain sprite's valid-looking far-plane depth. The bridge
+then classified foreground commands as background.
+
+The adapter now advances Azel's frame index before rewinding the transient
+VDP1 tail. Current-frame background depth remains valid; prior-frame extended
+metadata is rejected by the existing upstream helper. No command-type or
+texture-address exceptions, upstream edits, or shader changes are introduced.
+The background-depth host check additionally verifies this lifecycle boundary.
+Hardware must confirm LCS icons/rectangle above world geometry and mountains
+behind world/dragon across movement and camera transitions. The supplied video
+has not been viewed because the available viewer cannot open local MP4 files;
+the source diagnosis does not constitute visual validation of the correction.
+
+The fresh 750,237-byte log includes FlightPresentOutlier telemetry. The 61.039
+and 66.441 ms rebuild frames both have `baseline=0`, confirming that they are
+excluded from interval classification after reset. This explains why complete
+presentation windows can miss these renderer stalls. A separate tunnel record
+has `baseline=1`, render=477.919 ms, build=3.580 ms and interval=480.707 ms /
+29 vblanks; it is a real measured long interval, but its low build time does
+not identify its cause. Do not attribute it to texture streaming without
+further evidence. The full performance target remains unmet.
+
 ## Updated single-pass capture and interval audit (2026-10-10)
 
 The latest log is 536,134 bytes. Its 95 RBG0-enabled ScenePerf samples have

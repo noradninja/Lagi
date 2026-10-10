@@ -21,6 +21,7 @@
 #include "audio/soundDriver.h"
 
 extern int numActiveTask;
+extern u32 frameIndex;
 void azelInit();
 void resetEngine();
 void updateFadeInterrupt();
@@ -38,6 +39,10 @@ static void begin_azel_vdp1_frame()
     if (mainContextVdp1[0].size() < 1024)
         return;
 
+    // Azel's desktop frame loop advances this before issuing commands.
+    // Extended metadata belongs to one frame: recycled slots used by HUD/LCS
+    // commands must not inherit a previous background sprite's far depth.
+    ++frameIndex;
     ctx.m0_currentVdp1WriteEA = mainContextVdp1[0].begin() + 6;
     ctx.m20_pCurrentVdp1Packet = ctx.m24_vdp1Packets;
     ctx.m1C = 0;
