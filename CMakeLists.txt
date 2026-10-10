@@ -1215,6 +1215,18 @@ void modelDrawFunction3(s_3dModel* pModel)
    "p_workArea startSegaLogoModule(p_workArea workArea)\n{\n    return startTitleScreenVideo(workArea);\n}"
    source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "field/fieldDragon.cpp")
+  # Original FLD_A3 06074026 loads R7=00014000 before calling
+  # point-light setup at 0601E200. The reconstruction omitted R7.
+  set(lagi_point_setup_original "dragonFieldTaskDrawSub1Sub1(lightLocation[0], lightLocation[1], lightLocation[2]);")
+  set(lagi_point_setup_restored "dragonFieldTaskDrawSub1Sub1(lightLocation[0], lightLocation[1], lightLocation[2], 0x14000u);")
+  string(FIND "${source_text}" "${lagi_point_setup_original}" lagi_point_setup_offset)
+  if(lagi_point_setup_offset EQUAL -1)
+   message(FATAL_ERROR "Native collection point-light argument adapter did not apply")
+  endif()
+  string(REPLACE "${lagi_point_setup_original}" "${lagi_point_setup_restored}"
+   source_text "${source_text}")
+
  elseif(relative_path STREQUAL "field/fieldCamera.cpp")
   # Field Phase 4: capture Azel's exact active view matrix after it has been
   # applied to pCurrentMatrix. The bridge removes it from field submissions

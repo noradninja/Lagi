@@ -13,6 +13,13 @@ observation only; it does not alter colors, shaders or gameplay.
 
 New work branch: feature/native-point-lights-effects, based on merged main.
 Point lighting and grayscale image particles/orbs remain separate open goals.
+Native point-light argument recovery: FLD_A3 06074026 loads R7=00014000;
+0607402E loads helper 0601E200 and 06074030 calls it. The reconstructed
+dragon collection setup omits R7 and therefore uses zero. A generated-source
+adapter restores 0x14000 without editing extern/Azel. Existing preprocessing
+then produces params[3]=0x14000000 and params[4]=0x19000. This restores
+input only: activation, evaluation and reset are still unimplemented and
+no visible point-light restoration is claimed.
 Original Disc 1 FLD_A3.PRG (logical sector 244544, 268888 bytes) confirms
 0607AC3C passes the trail Gouraud pointer plus animationFrame*4 to shared helper
 0602D0DC. That helper copies four big-endian words at offsets 0/2/4/6 into the
