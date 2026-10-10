@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <memory>
 
 struct sProcessed3dModel;
 
@@ -9,11 +10,38 @@ namespace lagi::azel_bridge {
 
 struct LiveVdp1Model;
 
+struct RegisteredModelResource {
+    std::uint64_t bundleGeneration = 0;
+    std::int8_t bundleIndex = -1;
+    std::uint32_t modelOffset = 0;
+    std::shared_ptr<const LiveVdp1Model> model;
+    // Immutable Saturn VDP1 address space captured after this bundle's load.
+    // Palette state remains frame-owned and must be resolved by the consumer.
+    std::shared_ptr<const std::vector<std::uint8_t>> textureMemory;
+    std::uint64_t textureWriteEpoch = 0;
+};
+
+// Registration is not a draw submission. Call after native bundle/character
+// loading completes; publish immutable resources only at publish_frame().
+void notify_native_bundle_loaded(std::int8_t bundleIndex);
+void register_native_model_resource(std::int8_t bundleIndex,
+    std::uint32_t modelOffset, sProcessed3dModel* model);
+const std::vector<RegisteredModelResource>& published_model_resources();
+void notify_native_texture_write();
+std::uint64_t native_texture_write_epoch();
+std::uint64_t published_resource_revision();
+
 struct SubmissionState {
     std::int32_t modelMatrix[12]{};
     std::int32_t lightVector[3]{};
     std::uint16_t lightColor[3]{};
     std::uint32_t lightFalloff[3]{};
+
+    // Diagnostic-only native object-origin depth captured from Azel's actual
+    // view-space pCurrentMatrix at addObjectToDrawList(). 16.16 fixed point.
+    std::int32_t nativeViewDepthRaw = 0;
+    bool hasNativeViewDepth = false;
+
     bool hasModelMatrix = false;
     bool hasLight = false;
     bool billboard = false;
@@ -29,6 +57,13 @@ struct Vdp1UiCommand {
     std::uint16_t cmdColr = 0;
     std::uint16_t cmdSrca = 0;
     std::uint16_t cmdSize = 0;
+    bool hasGouraud = false;
+    std::uint16_t gouraud[4]{0x4210, 0x4210, 0x4210, 0x4210};
+    // Azel attaches normalized VDP1 depth to scene-space sprites. Preserve it
+    // so Neptune can compose far-plane sprites between VDP2 and 3D geometry
+    // without classifying commands by field/texture identity.
+    float depth = 0.0f;
+    bool hasDepth = false;
     std::int16_t xa = 0, ya = 0;
     std::int16_t xb = 0, yb = 0;
     std::int16_t xc = 0, yc = 0;
@@ -46,11 +81,15 @@ struct RenderSubmission {
 };
 
 // Reset per-frame submission diagnostics before Azel task draw execution.
-void begin_frame();
+void begin_frame(bool forceDynamicSubmissions = false);
 
 // Number of model submissions observed through Azel's native render boundary
 // during the current frame.
 std::uint32_t submission_count();
+
+// Bounded callers may inspect native actor/view transforms without changing
+// the matrix stack, visibility, or submitted model.
+void trace_actor_submission_matrix(const char* label);
 
 // Most recently submitted Azel processed model. This remains opaque at the
 // bridge layer until the live-model adapter converts it to Vdp1ModelSource.
@@ -78,6 +117,16 @@ const std::vector<RenderSubmission>& published_submissions();
 const LiveVdp1Model* published_adapted_model(std::uint32_t index);
 std::uint64_t published_frame_number();
 
+// Number of previously unseen native model identities adapted while building
+// the published Azel frame. Used only for field-streaming diagnostics.
+std::uint32_t published_model_cache_misses();
+
+// Diagnostic counts for explicitly supplied non-dynamic submission contexts.
+// "Set" proves the generated draw hook ran; "consumed" proves the following
+// native model submission received that context at the bridge boundary.
+std::uint32_t published_explicit_static_contexts_set();
+std::uint32_t published_explicit_static_contexts_consumed();
+
 // Copy Azel's current lighting payload into an explicitly constructed
 // submission state without also inheriting pCurrentMatrix (which may already
 // contain the camera/view transform).
@@ -88,6 +137,12 @@ void capture_current_light(SubmissionState& state);
 // are published to Neptune.
 void begin_view_relative_submission_scope();
 void end_view_relative_submission_scope();
+
+// Field mode publishes Azel's native view matrix explicitly. The camera task
+// captures it after applyCameraStatusToEngine(), then normal mode-3 model
+// submissions can remove that view transform before reaching Neptune.
+void capture_native_scene_view_matrix();
+bool native_scene_view_matrix(std::int32_t out[12]);
 
 void set_town_submission_context(
     std::int8_t bundleIndex,

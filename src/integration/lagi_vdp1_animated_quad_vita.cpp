@@ -1,5 +1,8 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "kernel/vdp1AnimatedQuad.h"
+#include "kernel/rayDisplay.h"
+#include "lagi/platform.h"
+#include <cmath>
 
 std::vector<sVdp1Quad> initVdp1Quad(sSaturnPtr ptr)
 {
@@ -59,10 +62,19 @@ int sGunShotTask_UpdateSub4(sAnimatedQuad* pThis)
 static int drawQuadInternal(
     sAnimatedQuad* pThis,
     sVec3_FP* position,
-    fixedPoint scale)
+    fixedPoint scale,
+    const quadColor* colors = nullptr)
 {
+    static unsigned missingReports = 0u, clipReports = 0u;
+    static unsigned emittedReports[2]{};
     if (!pThis || !pThis->m0_quad || pThis->m0_quad->empty() || !position)
+    {
+        if (missingReports < 8u) {
+            ++missingReports;
+            lagi::platform::logging::writef("[NativeParticle] rejected=missing-data\n");
+        }
         return 0;
+    }
 
     const sVdp1Quad& q = pThis->m0_quad->at(pThis->m7_currentFrame);
 
@@ -72,31 +84,52 @@ static int drawQuadInternal(
     const s32 z = viewPos[2].asS32();
     if (z <= static_cast<s32>(graphicEngineStatus.m405C.m10_nearClipDistance) ||
         z >= static_cast<s32>(graphicEngineStatus.m405C.m14_farClipDistance))
+    {
+        if (clipReports < 8u) {
+            ++clipReports;
+            lagi::platform::logging::writef(
+                "[NativeParticle] rejected=depth z=%d near=%d far=%d\n", z,
+                static_cast<s32>(graphicEngineStatus.m405C.m10_nearClipDistance),
+                static_cast<s32>(graphicEngineStatus.m405C.m14_farClipDistance));
+        }
         return 0;
+    }
 
     const fixedPoint invZ = FP_Div(0x10000, viewPos[2]);
     const fixedPoint scaledW = MTH_Mul(q.mC_width, scale);
     const fixedPoint scaledH = MTH_Mul(q.m10_height, scale);
 
+    // initVDP1Projection stores integer-pixel scales in the raw fixedPoint
+    // payload. These products are already pixels, not 16.16 coordinates.
     const s32 cx = MTH_Mul_5_6(
-        graphicEngineStatus.m405C.m18_widthScale, viewPos[0], invZ).getInteger();
+        graphicEngineStatus.m405C.m18_widthScale, viewPos[0], invZ).asS32();
     const s32 cy = MTH_Mul_5_6(
-        graphicEngineStatus.m405C.m1C_heightScale, viewPos[1], invZ).getInteger();
+        graphicEngineStatus.m405C.m1C_heightScale, viewPos[1], invZ).asS32();
     const s32 hw = std::max<s32>(1, MTH_Mul_5_6(
         graphicEngineStatus.m405C.m18_widthScale,
-        scaledW / 2, invZ).getInteger());
+        scaledW / 2, invZ).asS32());
     const s32 hh = std::max<s32>(1, MTH_Mul_5_6(
         graphicEngineStatus.m405C.m1C_heightScale,
-        scaledH / 2, invZ).getInteger());
+        scaledH / 2, invZ).asS32());
 
     auto clamp16 = [](s32 v) -> s16 {
         return static_cast<s16>(std::clamp<s32>(v, -32768, 32767));
     };
+    auto& context = graphicEngineStatus.m14_vdp1Context[0];
+    if (context.mC >= 1018 || (colors && context.m10 == context.m14[0].end()))
+        return 0;
 
     s_vdp1Command& cmd =
         *graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA;
-    cmd.m0_CMDCTRL = 0x1002;
-    cmd.m4_CMDPMOD = q.m4_CMDPMOD | 0x84;
+    cmd = {};
+    cmd.m0_CMDCTRL = 0x1002 | (q.m2_CMDCTRL & 0x30);
+    cmd.m4_CMDPMOD = (q.m4_CMDPMOD | 0x80) & ~4u;
+    if (colors) {
+        auto& ctx = graphicEngineStatus.m14_vdp1Context[0];
+        cmd.m1C_CMDGRA = ctx.m10 - ctx.m14[0].begin();
+        *ctx.m10++ = *colors;
+        cmd.m4_CMDPMOD |= 4u;
+    }
     cmd.m6_CMDCOLR =
         (q.m4_CMDPMOD & 0x38) == 8
             ? static_cast<u16>(pThis->m4_vdp1Memory + q.mA_CMDCOLR)
@@ -122,6 +155,22 @@ static int drawQuadInternal(
     ++ctx.m1C;
     ++ctx.m0_currentVdp1WriteEA;
     ++ctx.mC;
+    unsigned& emissionBudget = emittedReports[colors ? 1u : 0u];
+    if (emissionBudget < 8u) {
+        ++emissionBudget;
+        lagi::platform::logging::writef(
+            "[NativeParticle] emitted src=%04X size=%04X pmod=%04X "
+            "z=%d center=%d,%d half=%d,%d shaded=%u gra=%u "
+            "colors=%04X,%04X,%04X,%04X\n",
+            static_cast<unsigned>(cmd.m8_CMDSRCA),
+            static_cast<unsigned>(cmd.mA_CMDSIZE),
+            static_cast<unsigned>(cmd.m4_CMDPMOD), z, cx, cy, hw, hh,
+            colors ? 1u : 0u, static_cast<unsigned>(cmd.m1C_CMDGRA),
+            colors ? static_cast<unsigned>((*colors)[0]) : 0x4210u,
+            colors ? static_cast<unsigned>((*colors)[1]) : 0x4210u,
+            colors ? static_cast<unsigned>((*colors)[2]) : 0x4210u,
+            colors ? static_cast<unsigned>((*colors)[3]) : 0x4210u);
+    }
     return 1;
 }
 
@@ -133,9 +182,9 @@ int drawProjectedParticle(sAnimatedQuad* pThis, sVec3_FP* position)
 int drawProjectedParticleWithGouraud(
     sAnimatedQuad* pThis,
     sVec3_FP* position,
-    const quadColor*)
+    const quadColor* colors)
 {
-    return drawProjectedParticle(pThis, position);
+    return drawQuadInternal(pThis, position, fixedPoint(0x10000), colors);
 }
 
 int vdp1DrawQuadScaled(
@@ -144,6 +193,66 @@ int vdp1DrawQuadScaled(
     fixedPoint scale)
 {
     return drawQuadInternal(pThis, position, scale);
+}
+
+// Native ray service: Azel supplies view-space endpoints, width, texture and
+// Gouraud colors. Emit the same VDP1 distorted sprite used by particles/UI.
+bool gDirectRayRendering = true;
+
+s32 isGunShotVisible(std::array<sVec3_FP, 2>& points, s_graphicEngineStatus_405C& clip)
+{
+    return points[0][2] > clip.m10_nearClipDistance &&
+        points[1][2] > clip.m10_nearClipDistance &&
+        (points[0][2] < clip.m14_farClipDistance || points[1][2] < clip.m14_farClipDistance);
+}
+
+void displayRaySegmentFromViewSpace(std::array<sVec3_FP, 2>& points,
+    s32 width, u16 characterAddress, s16 characterSize, u16 characterColor,
+    const quadColor* colors, s32 colorMode)
+{
+    const auto& clip = graphicEngineStatus.m405C;
+    if (!isGunShotVisible(points, graphicEngineStatus.m405C)) return;
+    float x[2], y[2], hw[2], hh[2];
+    for (unsigned i = 0; i < 2; ++i) {
+        const fixedPoint invZ = FP_Div(0x10000, points[i][2]);
+        x[i] = MTH_Mul_5_6(clip.m18_widthScale, points[i][0], invZ).asS32();
+        y[i] = MTH_Mul_5_6(clip.m1C_heightScale, points[i][1], invZ).asS32();
+        hw[i] = MTH_Mul_5_6(clip.m18_widthScale, fixedPoint(width), invZ).asS32();
+        hh[i] = MTH_Mul_5_6(clip.m1C_heightScale, fixedPoint(width), invZ).asS32();
+    }
+    const float angle = std::atan2(y[0] - y[1], x[0] - x[1]);
+    const float sn = std::sin(angle), cs = std::cos(angle);
+    auto coord = [](float v) -> s16 {
+        return static_cast<s16>(std::clamp(std::lround(v), -32768l, 32767l));
+    };
+    auto& ctx = graphicEngineStatus.m14_vdp1Context[0];
+    if (ctx.mC >= 1018 || ctx.m10 == ctx.m14[0].end()) return;
+    auto& cmd = *ctx.m0_currentVdp1WriteEA;
+    cmd = {};
+    cmd.m0_CMDCTRL = 0x1002;
+    cmd.m4_CMDPMOD = 0x480 | colorMode;
+    cmd.m6_CMDCOLR = characterColor;
+    cmd.m8_CMDSRCA = characterAddress;
+    cmd.mA_CMDSIZE = characterSize;
+    cmd.mC_CMDXA = coord(x[0] - hw[0] * sn);
+    cmd.mE_CMDYA = coord(-(y[0] + hh[0] * cs));
+    cmd.m10_CMDXB = coord(x[1] - hw[1] * sn);
+    cmd.m12_CMDYB = coord(-(y[1] + hh[1] * cs));
+    cmd.m14_CMDXC = coord(x[1] + hw[1] * sn);
+    cmd.m16_CMDYC = coord(-(y[1] - hh[1] * cs));
+    cmd.m18_CMDXD = coord(x[0] + hw[0] * sn);
+    cmd.m1A_CMDYD = coord(-(y[0] - hh[0] * cs));
+    if (colors) {
+        cmd.m1C_CMDGRA = ctx.m10 - ctx.m14[0].begin();
+        *ctx.m10++ = *colors;
+        cmd.m4_CMDPMOD |= 4u;
+    }
+    ctx.m20_pCurrentVdp1Packet->m4_bucketTypes = 0;
+    ctx.m20_pCurrentVdp1Packet->m6_vdp1EA = &cmd;
+    ++ctx.m20_pCurrentVdp1Packet;
+    ++ctx.m1C;
+    ++ctx.mC;
+    ++ctx.m0_currentVdp1WriteEA;
 }
 
 int drawImmediateBillboardSprite(

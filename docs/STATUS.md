@@ -1,14 +1,14 @@
 # Lagi Development Status
 
-Current milestone: **0.3.0-alpha — native audio and Cinepak presentation**
+Current milestone: **native FLD_A3 flight and shared Neptune rendering — user accepted**
 
-Last updated: 2026-10-06
+Last updated: 2026-10-10
 
 Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed game logic executes directly on ARMv7; Saturn rendering and platform-facing behavior are translated to VitaSDK and native SceGxm.
 
 ## Current development stage
 
-The v0.3.0alpha hardware milestone carries the authentic Azel boot path through the first playable Ruins sequence and its post-elevator cinematic. The runtime now combines that native game flow with Vita BGM/SFX output, runtime ARM translation of SCSP DSP programs, and the two-stage SGX Cinepak presentation path.
+Current main extends the earlier public v0.3.0alpha hardware milestone through native FLD_A3 flight, E006 cinematic and Excavation arrival. Native audio and Cinepak remain integrated; this merge is a development checkpoint, not a new packaged release.
 
 The current hardware path reaches:
 
@@ -43,10 +43,20 @@ elevator choice
   ↓
 EVT004_1.CPK / EVT004_2.CPK
   ↓
-next Azel game mode (flight mode not yet connected)
+FLD_A3.PRG / native field task graph
+  ↓
+E006 in-engine cinematic
+  ↓
+Excavation arrival
 ```
 
 The normal path does **not** use the old direct-Ruins loader to choose or start `TWN_RUIN`. Azel remains responsible for game status, module transitions, scripts, task creation, movies, fades, camera/gameplay state, and scene ownership.
+
+The current build also connects Azel's native three-slot save/load flow to Vita
+storage. Title Continue now reflects valid on-disk saves, and the in-game
+System menu can enter Azel's Save and Load tasks. Compile, link, and VPK
+packaging are verified; on-device menu, persistence, and transition validation
+remain pending.
 
 ## Runtime architecture
 
@@ -229,8 +239,15 @@ The RBG0 shader was split from the NBG path after PSP2CGC hit internal-compiler/
 Current RBG0 strategy:
 
 - invariant Saturn rotation terms are precomputed once per host frame;
-- SGX performs coefficient lookup, rotated coordinate generation, tile lookup, CRAM lookup, and pixel rendering;
+- SGX performs coefficient lookup, rotated coordinate generation, tile lookup, CRAM lookup, and pixel rendering at the Saturn-authored 352x224 resolution;
+- native scenes resolve RBG0 to an SGX render texture and point-scale that conventional RGBA result into the 480x272 gameplay framebuffer, avoiding redundant raw-memory shader evaluation for duplicate output pixels;
 - line-window visibility is handled at the compositor level rather than inside the heavy RBG0 fragment shader.
+
+All additional VDP2 work follows the same SGX-first design rule. In-game
+background and world layers use point filtering; bilinear filtering is reserved
+for UI/text presentation until explicitly changed. ARM NEON is reserved for
+measured CPU-bound preparation or decode stages where it is the best exact
+implementation; GPU-bound work is not moved to the CPU merely to use NEON.
 
 A fragment-side line-window implementation caused a real SGX GPU crash and was removed.
 
@@ -377,7 +394,7 @@ Renderer data for the native path is sourced from generic platform initializatio
 
 ### Material/resource lifetime
 
-The live material cache still lacks generation-aware lifetime invalidation for frequent scene/resource transitions.
+Native textures now have generation-aware CPU/GPU residency and bounded write-range invalidation. Image/LUT writes and recorded CRAM dependencies determine staleness; callbacks only publish atomic notifications and the render thread owns cache/resource mutation. Unknown dependencies retain conservative invalidation. Static-instance/model caching reduces traversal rebuilding, but cold material preparation and flattened shared-buffer/index limits remain architectural debt.
 
 ### Batching/index limits
 
@@ -385,7 +402,11 @@ The current live 3D renderer still flattens active work into shared buffers with
 
 ## Current development focus
 
-With the v0.3.0alpha boot, Ruins, movie, and native-audio paths established, the next major runtime boundary is flight mode. D5 name-entry presentation also remains active VDP2 accuracy work: RBG0 A/B selection, windows, priority/color calculation, and final layer composition still need to converge on Saturn hardware output.
+The user accepted the flight/rendering milestone on 2026-10-10 and authorized merging the rendering branch to main. Hardware confirms native field entry, correct field orientation, cinematic/Excavation actor placement, LCS layering and visible collection/save/destructible effects. Native field has no additional Saturn-to-GXM X mirror or winding XOR; town retains its historical mirror. The radar map stays point-filtered at 48x48 output pixels.
+
+Latest authoritative capture: 913219 bytes, 20:45 local, range-invalidation checkpoint 6f74bf2. Sampled RBG-enabled native render median 23.887 ms, p90 25.163 ms. Completed field windows contain 3960 frames, 513 over 25 ms and two over 33.333 ms (39.078/41.906 ms). Completed presentation windows have zero >2-vblank intervals; cold outliers lack presentation baselines. The user explicitly accepts these two spikes for now. This is acceptance of the milestone, not proof that every scene/frame meets the original deadline.
+
+Final runtime checkpoint dd579eb records the actual CRAM blocks read by native decoding. Dependency tests, 5184 decoder comparisons and Vita syntax validation pass; no separate hardware capture validates that refinement. No final merged package was built in this session. Keep the incorrect E006/Excavation VDP2 floor open; its cause is not established. Native ray/laser rendering and broader scene coverage remain deferred. Audio profiling PR #11 is separate and is not merged by this rendering task.
 
 Longer-term work includes additional game modes, broader scene/resource lifetime handling, migration of historical `town_*` renderer naming, and continued movement of presentation work toward SGX where it improves the Vita path without taking ownership away from Azel.
 

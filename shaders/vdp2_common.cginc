@@ -28,14 +28,24 @@ float readByte(uniform sampler2D raw, float byteAddress)
 
 float readBE16(uniform sampler2D raw, float byteAddress)
 {
-    return readByte(raw, byteAddress) * 256.0f +
-           readByte(raw, byteAddress + 1.0f);
+    const float index = floor(byteAddress * 0.25f);
+    const float lane = byteAddress - index * 4.0f;
+    const float4 bytes = rawTexel(raw, index);
+    const float next = lane < 2.5f
+        ? selectByte(bytes, lane + 1.0f)
+        : selectByte(rawTexel(raw, index + 1.0f), 0.0f);
+    return selectByte(bytes, lane) * 256.0f + next;
 }
 
 float readLE16(uniform sampler2D raw, float byteAddress)
 {
-    return readByte(raw, byteAddress) +
-           readByte(raw, byteAddress + 1.0f) * 256.0f;
+    const float index = floor(byteAddress * 0.25f);
+    const float lane = byteAddress - index * 4.0f;
+    const float4 bytes = rawTexel(raw, index);
+    const float next = lane < 2.5f
+        ? selectByte(bytes, lane + 1.0f)
+        : selectByte(rawTexel(raw, index + 1.0f), 0.0f);
+    return selectByte(bytes, lane) + next * 256.0f;
 }
 
 // Native Azel rotation/coefficient work areas are copied to emulated VRAM

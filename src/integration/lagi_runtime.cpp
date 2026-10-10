@@ -21,6 +21,7 @@
 #include "audio/soundDriver.h"
 
 extern int numActiveTask;
+extern u32 frameIndex;
 void azelInit();
 void resetEngine();
 void updateFadeInterrupt();
@@ -38,6 +39,10 @@ static void begin_azel_vdp1_frame()
     if (mainContextVdp1[0].size() < 1024)
         return;
 
+    // Azel's desktop frame loop advances this before issuing commands.
+    // Extended metadata belongs to one frame: recycled slots used by HUD/LCS
+    // commands must not inherit a previous background sprite's far depth.
+    ++frameIndex;
     ctx.m0_currentVdp1WriteEA = mainContextVdp1[0].begin() + 6;
     ctx.m20_pCurrentVdp1Packet = ctx.m24_vdp1Packets;
     ctx.m1C = 0;
@@ -68,6 +73,16 @@ static void capture_azel_vdp1_frontend_commands()
         ui.cmdColr = cmd->m6_CMDCOLR;
         ui.cmdSrca = cmd->m8_CMDSRCA;
         ui.cmdSize = cmd->mA_CMDSIZE;
+        if ((ui.cmdPmod & 4u) && cmd->m1C_CMDGRA < ctx.m14[0].size()) {
+            ui.hasGouraud = true;
+            for (unsigned i = 0; i < 4; ++i)
+                ui.gouraud[i] = ctx.m14[0][cmd->m1C_CMDGRA][i];
+        }
+        if (const s_vd1ExtendedCommand* extended =
+                fetchVdp1ExtendedCommand(*cmd)) {
+            ui.depth = extended->depth;
+            ui.hasDepth = true;
+        }
         ui.xa = cmd->mC_CMDXA;   ui.ya = cmd->mE_CMDYA;
         ui.xb = cmd->m10_CMDXB;  ui.yb = cmd->m12_CMDYB;
         ui.xc = cmd->m14_CMDXC;  ui.yc = cmd->m16_CMDYC;
@@ -98,14 +113,18 @@ static void capture_azel_vdp1_frontend_commands()
         }
     }
 
-    static std::uint32_t lastSignature = 0u;
+    static int lastMode = -1;
+    static int lastStatus = -1;
     static unsigned int heartbeat = 0u;
-    if (signature != lastSignature || ((heartbeat++ % 120u) == 0u)) {
+    const int mode = static_cast<int>(gGameStatus.m0_gameMode);
+    const int status = static_cast<int>(gGameStatus.m4_gameStatus);
+    const bool periodicSample = (heartbeat++ % 120u) == 0u;
+    if (mode != lastMode || status != lastStatus || periodicSample) {
         lagi::platform::logging::writef(
             "[PresentationTrace][AzelVDP1] mode=%d status=%d cmds=%u "
             "normal=%u scaled=%u distorted=%u polyline=%u other=%u hash=%08X\n",
-            static_cast<int>(gGameStatus.m0_gameMode),
-            static_cast<int>(gGameStatus.m4_gameStatus),
+            mode,
+            status,
             commandCount,
             normalSprites,
             scaledSprites,
@@ -113,7 +132,8 @@ static void capture_azel_vdp1_frontend_commands()
             polylines,
             otherCommands,
             static_cast<unsigned int>(signature));
-        lastSignature = signature;
+        lastMode = mode;
+        lastStatus = status;
     }
 
     if (gGameStatus.m0_gameMode == 1 && commandCount != 0u) {
@@ -334,12 +354,34 @@ void runtime_frame()
     }
 
     begin_azel_vdp1_frame();
-    lagi::azel_bridge::begin_frame();
+    lagi::azel_bridge::begin_frame(gGameStatus.m0_gameMode == 3);
 
-    // Mode 1 is currently the first native 3D scene class Neptune can
-    // present. This is a capability check, not Lagi ownership of "town".
-    const bool nativeSceneFrame =
-        gGameStatus.m0_gameMode == 1;
+    // Native 3D scene capability check. Town (1) and field (3) both
+    // remain Azel-owned; Lagi only opens their generic presentation boundary.
+    static unsigned lastNativeSceneMode = 0u;
+    const bool nativeTransitionFrame =
+        gGameStatus.m0_gameMode == -1 && lastNativeSceneMode != 0u;
+    const bool nativeSceneFrame = nativeTransitionFrame ||
+        gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 2 ||
+        gGameStatus.m0_gameMode == 3;
+    if (!nativeTransitionFrame && nativeSceneFrame)
+        lastNativeSceneMode = static_cast<unsigned>(gGameStatus.m0_gameMode);
+    if (gGameStatus.m0_gameMode == 0)
+        lastNativeSceneMode = 0u;
+    // Restart the presentation fade on every field entry, including a return
+    // through movie/menu mode. Azel retains ownership of module selection.
+    static bool wasFieldFrame = false;
+    const bool fieldFrame = gGameStatus.m0_gameMode == 3;
+    if (fieldFrame && !wasFieldFrame)
+    {
+        // Restore the field-entry fade through Azel's native controller.
+        // This replaces the old independent renderer-side 30-frame clock.
+        fadePalette(&g_fadeControls.m0_fade0, 0x8000,
+                    g_fadeControls.m_48, 30u);
+        fadePalette(&g_fadeControls.m24_fade1, 0x8000,
+                    g_fadeControls.m_4A, 30u);
+    }
+    wasFieldFrame = fieldFrame;
     if (traceStartup)
         lagi::platform::logging::writef(
             "[AzelBoot] frame=%u tasks=%d currentInitial=%p pendingInitial=%p\n",
@@ -349,6 +391,35 @@ void runtime_frame()
             reinterpret_cast<void*>(initialTaskStatus.m_pendingTask));
 
     runTasks();
+
+    // Flight Phase 1: record only the transition into and activity around
+    // game status 0x50 / game mode 3. This is diagnostic only; field
+    // presentation remains disabled until the next milestone.
+    {
+        static int lastFlightStatus = -1;
+        static int lastFlightMode = -1;
+        static int lastFlightNext = -1;
+        const int status = gGameStatus.m4_gameStatus;
+        const int mode = gGameStatus.m0_gameMode;
+        const int next = gGameStatus.m8_nextGameStatus;
+        const bool flightRelevant =
+            status == 5 || status == 0x50 || next == 0x50 || mode == 3;
+        if (flightRelevant &&
+            (status != lastFlightStatus ||
+             mode != lastFlightMode ||
+             next != lastFlightNext)) {
+            lagi::platform::logging::writef(
+                "[LagiFlight] status=%02X mode=%d next=%02X prev=%02X tasks=%d\n",
+                static_cast<unsigned>(status),
+                mode,
+                static_cast<unsigned>(next),
+                static_cast<unsigned>(gGameStatus.m6_previousGameStatus),
+                numActiveTask);
+            lastFlightStatus = status;
+            lastFlightMode = mode;
+            lastFlightNext = next;
+        }
+    }
 
     // Capture the VDP1 commands Azel emitted this frame before the transient
     // command tail is rewound on the next host frame. Neptune publishes this
@@ -360,6 +431,8 @@ void runtime_frame()
         // Lagi snapshots only renderer-facing state through the generic scene
         // bridge after the native task pass.
         lagi::scene_bridge::sync_presentation_state();
+        if (gGameStatus.m0_gameMode == -1 && lastNativeSceneMode != 0u)
+            lagi::platform::renderer::presentation_set_scene_mode(lastNativeSceneMode);
     }
 
     if (gGameStatus.m4_gameStatus == 2 &&
@@ -420,6 +493,15 @@ void runtime_frame()
             regs.m11E_COBB);
     }
 
+    // Publish the primary native scene fade with this frame. The reconstructed
+    // native setup often enables BACK only; it still drives the whole-scene
+    // transition in fade0. Do not infer it from an Edge camera flag or advance
+    // a second fade clock on the renderer thread.
+    if (nativeSceneFrame)
+        lagi::platform::renderer::presentation_set_scene_color_offset(
+            g_fadeControls.m0_fade0.m0_color[0].getInteger(),
+            g_fadeControls.m0_fade0.m0_color[1].getInteger(),
+            g_fadeControls.m0_fade0.m0_color[2].getInteger());
     // Front-end VDP2 presentation is a platform service. Azel owns all title
     // graphics, text, palettes, blinking, input and state transitions; Lagi
     // simply presents the VDP2 memory that Azel has already produced.
@@ -436,6 +518,48 @@ void runtime_frame()
     const bool nameKeyboardVisible =
         d5NameSequenceActive &&
         (vdp2Controls.m4_pendingVdp2Regs->m20_BGON & 0x1) != 0;
+
+    // loadSaveBackground() owns a distinct VDP2 layout: both NBG0/NBG1 are
+    // 16x16, 8bpp, one-word pattern names in auxiliary/no-flip mode. Detect
+    // that exact native register state so Continue and in-scene save tasks
+    // share the same presentation path without a renderer-side menu guess.
+    const s_VDP2Regs* const liveRegs = vdp2Controls.m4_pendingVdp2Regs;
+    const bool saveMenuActive = liveRegs &&
+        (((liveRegs->m28_CHCTLA >> 4) & 7u) == 1u) &&
+        (((liveRegs->m28_CHCTLA >> 12) & 3u) == 1u) &&
+        ((liveRegs->m28_CHCTLA & 0x0101u) == 0x0101u) &&
+        ((liveRegs->m30_PNCN0 & 0xC000u) == 0xC000u) &&
+        ((liveRegs->m32_PNCN1 & 0xC000u) == 0xC000u) &&
+        ((liveRegs->mE4_CRAOFA & 0x77u) == 0x55u);
+
+    if (saveMenuActive) {
+        // Save/load can be a child of town/field or the standalone Continue
+        // module. Snapshot the task-owned Saturn planes only after its VDP2
+        // register/DMA update has completed for this frame.
+        lagi::platform::renderer::presentation_set_vdp2_text(
+            getVdp2Vram(0),
+            getVdp2Cram(0),
+            getVdp2Vram(0x3E000),
+            static_cast<unsigned int>(graphicEngineStatus.m40AC.m0_menuId),
+            true,
+            graphicEngineStatus.m40BC_layersConfig[0].scrollX,
+            graphicEngineStatus.m40BC_layersConfig[0].scrollY,
+            graphicEngineStatus.m40BC_layersConfig[1].scrollX,
+            graphicEngineStatus.m40BC_layersConfig[1].scrollY,
+            graphicEngineStatus.m40BC_layersConfig[3].scrollX,
+            graphicEngineStatus.m40BC_layersConfig[3].scrollY);
+
+        if (!nativeSceneFrame) {
+            static const float cameraPosition[3] = {0.0f, 0.0f, 0.0f};
+            static const float cameraTarget[3] = {0.0f, 0.0f, 1.0f};
+            static const float cameraUp[3] = {0.0f, 1.0f, 0.0f};
+            lagi::platform::renderer::presentation_set_scene_mode(
+                static_cast<unsigned int>(gGameStatus.m0_gameMode));
+            lagi::platform::renderer::presentation_set_camera(
+                cameraPosition, cameraPosition, cameraTarget, cameraUp,
+                0.0f, 0.0f, 0.0f);
+        }
+    }
 
     if (titleActive)
         lagi::diagnostics::log_title_vdp2_once();
@@ -500,17 +624,19 @@ void runtime_frame()
         }
     }
 
-    if (d5NameSequenceActive) {
+    if (d5NameSequenceActive || nativeSceneFrame) {
         // Snapshot the RBG0 control surface that Azel already produced.
         // Neptune consumes this as renderer state only; all map selection,
         // coefficient generation, windows and sequencing remain Azel-owned.
         const auto* regs = vdp2Controls.m4_pendingVdp2Regs;
         lagi::platform::renderer::FrontendRbg0State state{};
 
-        // D5 config is CHSZ=1 / PNB=1, therefore each 4x4 rotation-map
-        // plane occupies one 0x800-byte page. Derive both parameter A and B
+        // Derive page size from the active character/pattern format. Each rotation-map
+        // plane uses the authored page size. Derive both parameter A and B
         // maps exactly as renderer_vdp2.cpp does from MPOFR + MPxxR[A/B].
-        constexpr unsigned int pageSize = 0x800u;
+        const unsigned int pageDimension = (regs->m2A_CHCTLB & 0x100u) ? 32u : 64u;
+        const unsigned int patternSize = (regs->m38_PNCR & 0x8000u) ? 2u : 4u;
+        const unsigned int pageSize = pageDimension * pageDimension * patternSize;
         const unsigned int mapOffsetA =
             ((regs->m3E_MPOFR >> 0) & 7u) << 6;
         const unsigned int mapOffsetB =
@@ -542,6 +668,35 @@ void runtime_frame()
         // PLSZ packs NBG0/1/2/3/RBG0 plane sizes in successive 2-bit
         // fields. RBG0 is bits 9:8; the low bits belong to NBG0.
         state.plsz = (regs->m3A_PLSZ >> 8) & 3u;
+        state.plszB = (regs->m3A_PLSZ >> 12) & 3u;
+        state.screenOverA = (regs->m3A_PLSZ >> 10) & 3u;
+        state.screenOverB = (regs->m3A_PLSZ >> 14) & 3u;
+        state.overPatternA = regs->mB8_OVPNRA;
+        state.overPatternB = regs->mBA_OVPNRB;
+        state.bgon = regs->m20_BGON;
+        // Bounded transition-only evidence for native composition. Camera
+        // matrices/coefficients are intentionally excluded from this key.
+        static unsigned compositeMode = ~0u;
+        static unsigned compositeBg = ~0u;
+        static unsigned compositePriority = ~0u;
+        const unsigned priorityKey = regs->mFC_PRIR |
+            (static_cast<unsigned>(regs->mF8_PRINA) << 16);
+        if (compositeMode != static_cast<unsigned>(gGameStatus.m0_gameMode) ||
+            compositeBg != state.bgon || compositePriority != priorityKey) {
+            compositeMode = static_cast<unsigned>(gGameStatus.m0_gameMode);
+            compositeBg = state.bgon;
+            compositePriority = priorityKey;
+            lagi::platform::logging::writef(
+                "[SceneComposite] mode=%u BGON=%04X PRIR=%04X "
+                "PRINA=%04X PRINB=%04X PRISA=%04X PRISB=%04X "
+                "SPCTL=%04X RPMD=%u PLSZ=%04X OVPN=%04X,%04X "
+                "mapA=%05X mapB=%05X\n",
+                compositeMode, state.bgon, regs->mFC_PRIR,
+                regs->mF8_PRINA, regs->mFA_PRINB, regs->mF0_PRISA,
+                regs->mF2_PRISB, regs->mE0_SPCTL, state.rpmd,
+                regs->m3A_PLSZ, state.overPatternA, state.overPatternB,
+                state.planeA[0], state.planeB[0]);
+        }
         state.chctlb = regs->m2A_CHCTLB;
         state.pncr = regs->m38_PNCR;
         state.craofb = regs->mE6_CRAOFB;
@@ -571,7 +726,7 @@ void runtime_frame()
         }
 
         static bool loggedD5RbgBridge = false;
-        if (!loggedD5RbgBridge) {
+        if (d5NameSequenceActive && !loggedD5RbgBridge) {
             lagi::platform::logging::writef(
                 "[D5RBGBridge] WCTLC=%04X WCTLD=%04X "
                 "LWTA0=%08X LWTA1=%08X mask=%u "
@@ -631,7 +786,7 @@ void runtime_frame()
             paramB, state.transformB, state.coefficientB);
 
         static bool loggedD5RbgParameterB = false;
-        if (!loggedD5RbgParameterB) {
+        if (d5NameSequenceActive && !loggedD5RbgParameterB) {
             lagi::platform::logging::writef(
                 "[D5RBGPlanes] A=%05X,%05X,%05X,%05X "
                 "B=%05X,%05X,%05X,%05X\n",
@@ -977,7 +1132,13 @@ void runtime_frame()
             loggedD5RbgParameterB = true;
         }
 
-        lagi::platform::renderer::frontend_set_rbg0_state(state);
+        if (d5NameSequenceActive)
+            lagi::platform::renderer::frontend_set_rbg0_state(state);
+        else
+            lagi::platform::renderer::presentation_set_vdp2_background(
+                state, getVdp2Vram(0), getVdp2Cram(0),
+                (regs->m20_BGON & 0x10u) != 0u &&
+                (regs->mFC_PRIR & 7u) != 0u);
     }
 
     if (titleActive || d5NameSequenceActive) {
@@ -1002,11 +1163,12 @@ void runtime_frame()
         // fade. Re-submit the retained final frame only while the movie-mode
         // state machine still owns presentation.
         lagi::platform::renderer::movie_republish_frame();
-    } else if (gGameStatus.m0_gameMode == 1) {
-        // The frame that *enters* native scene mode began as a movie/module-manager
+    } else if (nativeTransitionFrame || gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 2 ||
+               gGameStatus.m0_gameMode == 3) {
+        // The frame that *enters* a native scene began as a movie/module-manager
         // frame and therefore did not acquire the scene producer slot. Release
         // the retained movie immediately, but publish only on a frame that
-        // began in native scene mode and acquired that slot before runTasks().
+        // began in a supported native scene mode.
         lagi::platform::renderer::movie_clear_frame();
         if (nativeSceneFrame) {
             // All scene adapters write staging state. Acquire the render slot
@@ -1019,12 +1181,20 @@ void runtime_frame()
             static unsigned int sceneHeartbeat = 0;
             if ((sceneHeartbeat++ % 60u) == 0u) {
                 lagi::platform::logging::writef(
-                    "[AzelScene] frame heartbeat tasks=%d submissions=%u\n",
+                    "[AzelScene] mode=%d heartbeat tasks=%d submissions=%u\n",
+                    static_cast<int>(gGameStatus.m0_gameMode),
                     numActiveTask,
                     static_cast<unsigned int>(
                         lagi::azel_bridge::published_submissions().size()));
             }
         }
+    } else if (saveMenuActive) {
+        // Continue (mode 9) has no 3D scene owner, but the native save task
+        // still emits complete VDP2/VDP1 state and therefore owns a frame.
+        lagi::platform::renderer::movie_clear_frame();
+        lagi::platform::renderer::presentation_wait_frame_slot();
+        lagi::azel_bridge::publish_frame();
+        lagi::platform::renderer::presentation_publish_frame();
     } else if (gGameStatus.m0_gameMode != 0) {
         // Other native gameplay modes are not yet presented by Neptune.
         lagi::platform::renderer::movie_clear_frame();

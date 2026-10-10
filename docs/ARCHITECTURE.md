@@ -25,6 +25,18 @@ Neptune consumes those snapshots and presents them through native SceGxm.
 
 `extern/Azel` remains an upstream source tree. Vita-specific adaptation is implemented outside it.
 
+## Shared field/town rendering and resource lifetime
+
+Native FLD_A3 visibility tasks choose active cells/models; Lagi publishes stable identities, transforms and native camera state, and Neptune services their presentation. Static-instance residency is independent of changing lighting/visibility. Dynamic actors and image particles remain native submissions. Camera-space paths are classified/scoped before removing the native view transform; do not synthesize a Vita follow camera or blanket-convert every submission.
+
+Field geometry uses Azel's native horizontal orientation without town's extra Saturn-to-GXM X mirror or winding XOR. Town/Ruins retains its historical mirror. The field radar map intentionally uses point filtering at its original 48x48 output-pixel size to preserve mesh/checker pseudo-transparency.
+
+Native textures retain GPU storage across geometry-only changes. An 8 MiB CDRAM-preferred startup arena is reserved after GXM initialization, with system-memory/overflow fallback and renderer-owned release. Producer callbacks publish bounded atomic write blocks rather than modifying caches: 512-byte VDP1 blocks and 32-byte CRAM blocks. Offsets and absolute Saturn addresses normalize to the same ranges; unknown ranges retain full invalidation.
+
+Decoded materials carry opacity and palette-read metadata. Image bytes, LUT bytes and recorded CRAM blocks determine refresh dependencies. Only previously valid unaffected CPU/GPU generations advance; older stale entries remain stale until used. RGB555 LUT entries do not depend on CRAM; zero-valued palette reads still do. Unknown producers retain conservative behavior. No scene-ID overrides are used. The final captured-CRAM refinement is host/syntax-validated but awaits separate hardware evidence.
+
+Shared VDP2 snapshots carry Azel's rotation parameters, maps, windows, priorities and fades to SGX sampling/composition. The incorrect E006/Excavation floor remains under investigation; original map-table presence does not justify forcing a map address. Persistent per-model GPU resources remain the scaling direction for larger towns such as Zoah; the current flattened active buffers are not the final universal scene-resource architecture.
+
 ## Native runtime host
 
 The normal Vita host loop is implemented in `src/integration/lagi_runtime.cpp`.
@@ -194,6 +206,26 @@ D5 uses the same VDP2 facilities as the rest of the runtime; it is not treated a
 
 The remaining RBG0 work is primarily the D5 name-entry accuracy pass around A/B composition, windows, priority behavior, and color calculation. Shared fade direction/timing/color is now handled by the generic Azel-to-Neptune VDP2 path.
 
+VDP2 implementation is SGX-first. Azel remains authoritative for registers,
+VRAM/CRAM contents, timing, and layer ownership; Neptune translates that state
+into GPU work at the Saturn-authored logical resolution and lets SGX perform
+composition and final scaling. CPU-side work is limited to state capture,
+infrequent resource preparation, and operations that are demonstrably cheaper
+or unavailable on SGX. ARM NEON is used only for measured CPU-bound stages where
+vectorization preserves exact Saturn-visible results; it is not a substitute
+for moving scalable raster work to SGX.
+
+In-game VDP2 backgrounds and world presentation use point filtering. Bilinear
+filtering is reserved for UI and text presentation until that policy is
+explicitly revised.
+
+The native-scene RBG0 path follows these rules explicitly: the coefficient,
+map, character, and palette program resolves one sample per 352x224 Saturn
+pixel into an RGBA surface, then SGX point-scales that surface into the 480x272
+gameplay framebuffer. This preserves the existing point-exact appearance while
+avoiding duplicate execution of the heavy Saturn memory-interpretation shader
+at Vita output resolution.
+
 ## Movie pipeline
 
 Movie sequencing remains part of Azel's movie task/state machine.
@@ -242,6 +274,21 @@ Normal authentic boot does not depend on state established exclusively by the di
 ## Upstream integration
 
 Azel's desktop-facing host interfaces are adapted at the Lagi boundary for Vita builds. The Vita prelude supplies declarations and platform substitutions required for compilation while gameplay and task/state-machine behavior remains in the upstream implementation.
+
+## Save and load ownership
+
+Azel owns the native save payload, weighted checksum, three-slot selection UI,
+load restoration, and game-status transitions. Lagi supplies the Vita storage
+boundary at `ux0:data/lagi/save/0` and maps the original internal-backup device
+to durable files named `PANDRA_3_01` through `PANDRA_3_03`.
+
+Title Continue is enabled only when at least one slot passes Azel's version and
+checksum rules. It enters Azel's load/save overlay through game status `0x4A`.
+The in-game System entry is a Vita replacement for the pinned upstream stub; it
+launches Azel's existing `createSaveTask()` and `createLoadTask()` rather than
+implementing another slot UI or save format. A successful in-game load returns
+to Azel's module manager, which performs the saved scene transition and field
+entry restoration.
 
 
 ## 0.040 native Ruins presentation

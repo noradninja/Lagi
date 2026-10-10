@@ -732,12 +732,17 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  if(relative_path STREQUAL "kernel/moduleManager.cpp" AND LAGI_AZEL_RUINS_LINK_TRIM)
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
-   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/platform.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/platform.h\"\n#include \"lagi/azel_save_platform.h\""
    source_text "${source_text}")
 
   string(REPLACE
    "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    loadTown,           // 1: town\n    loadTown2,          // 2: town (alt entry)\n    loadField,          // 3: field\n    loadBattle,         // 4: battle\n    loadWorldOverlay,   // 5: worldmap\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    initLoadSavegameScreen, // 9: save/load screen\n    NULL,\n};"
-   "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    loadTown,           // 1: town - authentic 0.040 boot path\n    loadTown2,          // 2: town alt - authentic 0.040 boot path\n    loadField,          // 3: field - D5 name entry\n    NULL,               // 4: battle - deferred until flight milestone\n    NULL,               // 5: worldmap - deferred\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    NULL,               // 9: save/load - deferred\n    NULL,\n};"
+   "p_workArea(*overlayDispatchTable[])(p_workArea, s32) = {\n    loadMovieOverlay,   // 0: movie\n    loadTown,           // 1: town - authentic 0.040 boot path\n    loadTown2,          // 2: town alt - authentic 0.040 boot path\n    loadField,          // 3: field - D5 name entry\n    NULL,               // 4: battle - deferred until flight milestone\n    NULL,               // 5: worldmap - deferred\n    NULL,               // 6: unused\n    NULL,               // 7: unused\n    NULL,               // 8: unused\n    initLoadSavegameScreen, // 9: native Azel save/load screen\n    NULL,\n};"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "        if (gGameStatus.m6_previousGameStatus == 74)"
+   "        if (gGameStatus.m6_previousGameStatus == 74 || lagiAzelSaveConsumeInGameLoad())"
    source_text "${source_text}")
 
   # Trace entry into module-manager state 1 before any transition helper.
@@ -829,6 +834,15 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # Vita copy. Saturn CLOFEN bit 0 is NBG0; m45_COEN must control that bit,
  # not the unrelated CCRNA ratio register.
  elseif(relative_path STREQUAL "VDP2.cpp")
+  # Azel owns a 512 KiB vdp2Ram buffer. Its reconstructed 2 MiB mask can
+  # return pointers outside that allocation; wrap to the actual VRAM size.
+  string(REPLACE
+   "return vdp2Ram + (offset & 0x1FFFFF);"
+   "return vdp2Ram + (offset & (sizeof(vdp2Ram) - 1u));"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "sizeof\\(vdp2Ram\\) - 1u")
+   message(FATAL_ERROR "VDP2 VRAM address adapter did not apply")
+  endif()
   string(REPLACE
    "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA = (vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA & 0xFFE0) | (arg << 0);\n            break;"
    "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN = (vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN & ~0x1) | (arg << 0);\n            break;"
@@ -952,7 +966,142 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)"
    "__attribute__((weak)) sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/e006/twn_e006.cpp" OR
+        relative_path STREQUAL "town/townDragon.cpp" OR
+        relative_path STREQUAL "town/excaEntity.cpp")
+  # Reused dragon models do not run init3DModelRawData again. Trace their
+  # real task draw boundary independently of the initialization diagnostic.
+  if(relative_path STREQUAL "town/e006/twn_e006.cpp")
+   set(actor_label "E006Dragon")
+   set(actor_draw "submitModelAndShadowModelToRendering(&gDragonState->m28_dragon3dModel, gDragonState->m14_modelIndex, gDragonState->m18_shadowModelIndex, &gDragonCutscenePosition, &gDragonCutsceneRotation, 0)")
+  elseif(relative_path STREQUAL "town/townDragon.cpp")
+   set(actor_label "TownDragon")
+   set(actor_draw "submitModelAndShadowModelToRendering(&gDragonState->m28_dragon3dModel, gDragonState->m14_modelIndex, gDragonState->m18_shadowModelIndex, &pThis->m58_position, &pThis->m64_rotation, 0)")
+  else()
+   set(actor_label "ExcaNPC")
+   set(actor_draw "pThis->m10_3dModel.m18_drawFunction(&pThis->m10_3dModel)")
+  endif()
+  string(FIND "${source_text}" "${actor_draw};" actor_draw_marker)
+  if(actor_draw_marker LESS 0)
+   message(FATAL_ERROR "Native actor draw trace anchor missing: ${relative_path}")
+  endif()
+  string(REPLACE "${actor_draw};"
+   "LAGI_TRACE_ACTOR_DRAW(\"${actor_label}\", ${actor_draw});"
+   source_text "${source_text}")
+  # These town actors can draw before townMainLogic publishes this frame's
+  # native view. Their stack root already contains the town camera. Strip
+  # that root at submission, just as townEdge does, rather than treating
+  # camera-space geometry as world-space and applying a second camera.
+  if(relative_path STREQUAL "town/townDragon.cpp" OR
+     relative_path STREQUAL "town/e006/twn_e006.cpp")
+   string(REPLACE
+    "LAGI_TRACE_ACTOR_DRAW(\"${actor_label}\", ${actor_draw});"
+    "lagi::azel_bridge::begin_view_relative_submission_scope();\n        LAGI_TRACE_ACTOR_DRAW(\"${actor_label}\", ${actor_draw});\n        lagi::azel_bridge::end_view_relative_submission_scope();"
+    source_text "${source_text}")
+  elseif(relative_path STREQUAL "town/excaEntity.cpp")
+   # Capture before NPC translation/rotation, not at the hierarchy call.
+   string(REPLACE
+    "static void Draw2(sGenericTownNPC* pThis)\n    {\n        pushCurrentMatrix();"
+    "static void Draw2(sGenericTownNPC* pThis)\n    {\n        lagi::azel_bridge::begin_view_relative_submission_scope();\n        pushCurrentMatrix();"
+    source_text "${source_text}")
+   string(REPLACE
+    "        popMatrix();\n    }\n\n    static void Delete(sGenericTownNPC* pThis)"
+    "        popMatrix();\n        lagi::azel_bridge::end_view_relative_submission_scope();\n    }\n\n    static void Delete(sGenericTownNPC* pThis)"
+    source_text "${source_text}")
+  endif()
+  if(NOT source_text MATCHES "begin_view_relative_submission_scope" OR
+     NOT source_text MATCHES "end_view_relative_submission_scope")
+   message(FATAL_ERROR "Native town actor view scope did not apply: ${relative_path}")
+  endif()
+  string(PREPEND source_text [=[#include "lagi/platform.h"
+#include "lagi/lagi_render_bridge.h"
+#define LAGI_TRACE_ACTOR_DRAW(label, expression) do { \
+    static unsigned reports = 4; \
+    if (reports) { \
+        const unsigned before = lagi::azel_bridge::submission_count(); \
+        lagi::azel_bridge::trace_actor_submission_matrix(label); \
+        expression; \
+        lagi::platform::logging::writef("[NativeActorDraw] kind=%s submissions=%u\n", \
+            label, lagi::azel_bridge::submission_count() - before); \
+        --reports; \
+    } else { expression; } \
+} while (false)
+]=])
  elseif(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  # Report unsupported native actor variants rather than silently losing
+  # their models in SHIPPING_BUILD. Do not substitute a different draw path.
+  string(PREPEND source_text "#include \"lagi/platform.h\"\n")
+  string(REPLACE
+   [=[void unimplementedDraw(s_3dModel* pDragonStateData1)
+{
+    assert(0);
+}]=]
+   [=[void unimplementedDraw(s_3dModel* model)
+{
+    static const s_3dModel* reported[16]{};
+    static unsigned count = 0;
+    for (unsigned i = 0; i < count; ++i)
+        if (reported[i] == model) return;
+    if (count == 16) return;
+    reported[count++] = model;
+    lagi::platform::logging::writef(
+        "[NativeActorDrawMissing] model=%p flags=%08X hierarchy=%08X bones=%u hotpoints=%u\n",
+        model, static_cast<unsigned>(model->m8),
+        static_cast<unsigned>(model->mC_modelIndexOffset),
+        static_cast<unsigned>(model->m3C_boneMatrices.size()),
+        model->m40 != nullptr);
+}]=]
+   source_text "${source_text}")
+  string(REPLACE
+   "    p3dModel->m1C_addToDisplayListFunction = addObjectToDrawList;"
+   [=[    p3dModel->m1C_addToDisplayListFunction = addObjectToDrawList;
+    static unsigned actorInitReports = 0;
+    if (actorInitReports < 32u) {
+        ++actorInitReports;
+        lagi::platform::logging::writef(
+            "[NativeActorModelReady] model=%p hierarchy=%04X flags=%04X animation=%04X bones=%u matrix=%u color=%u hotpoints=%u\n",
+            p3dModel, static_cast<unsigned>(modelIndexOffset),
+            static_cast<unsigned>(p3dModel->m8),
+            static_cast<unsigned>(p3dModel->mA_animationFlags),
+            static_cast<unsigned>(p3dModel->m12_numBones),
+            static_cast<unsigned>(p3dModel->m3C_boneMatrices.size()),
+            p3dModel->m38_pColorAnim != nullptr,
+            p3dModel->m40 != nullptr);
+    }]=]
+   source_text "${source_text}")
+  # Matrix-driven models without hotpoints select draw function 3. Upstream
+  # leaves that variant empty, although it needs the same hierarchy traversal.
+  string(REPLACE
+   [=[void modelDrawFunction3(s_3dModel* pModel)
+{
+    unimplementedDraw(pModel);
+}]=]
+   [=[static void lagiDrawMatrixHierarchy(sModelHierarchy* node,
+    s_3dModel* model, unsigned& bone)
+{
+    while (node && bone < model->m3C_boneMatrices.size()) {
+        pushCurrentMatrix();
+        multiplyCurrentMatrix(&model->m3C_boneMatrices[bone]);
+        if (node->m0_3dModel) {
+            if (model->m8 & 1)
+                addObjectToDrawList(node->m0_3dModel);
+            else
+                addBillBoardToDrawList(node->m0_3dModel);
+        }
+        ++bone;
+        if (node->m4_subNode)
+            lagiDrawMatrixHierarchy(node->m4_subNode, model, bone);
+        popMatrix();
+        node = node->m8_nextNode;
+    }
+}
+void modelDrawFunction3(s_3dModel* pModel)
+{
+    unsigned bone = 0;
+    lagiDrawMatrixHierarchy(pModel->m4_pModelFile->getModelHierarchy(
+        pModel->mC_modelIndexOffset), pModel, bone);
+}]=]
+   source_text "${source_text}")
   # 0.040 boot-to-Ruins only needs the authentic D5 name-entry field before
   # town handoff. Do not retain references to later field overlays merely
   # because this large upstream translation unit contains the generic debug
@@ -961,6 +1110,36 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "        createSiblingTaskWithArg<s_flagEditTaskWorkArea, p_workArea>(pThis->m8, pThis->m8);"
    "        // Lagi Vita 0.040: desktop/debug flag editor sibling omitted."
    source_text "${source_text}")
+
+  # Pinned Azel leaves the System submenu constructor as a stub. Keep the
+  # dispatch boundary but let Lagi provide the Vita task that enters Azel's
+  # existing Save and Load tasks.
+  string(REPLACE
+   "p_workArea createSystemMenuTask(p_workArea workArea)"
+   "__attribute__((weak)) p_workArea createSystemMenuTask(p_workArea workArea)"
+   source_text "${source_text}")
+
+  # Azel/Saturn work areas begin cleared. The Vita task host allocates C++
+  # work areas with plain new, so explicitly establish the main status-menu
+  # state before its first Draw() dispatch. Without this, m0 and child pointers
+  # are indeterminate and pressing Start can enter an arbitrary menu state.
+  string(REPLACE
+   "void s_mainMenuWorkArea::Init(s_mainMenuWorkArea* pWorkArea)\n{\n    pWorkArea->m3_menuButtonStates[0] = 1; // item is always enabled"
+   "void s_mainMenuWorkArea::Init(s_mainMenuWorkArea* pWorkArea)\n{\n    // LAGI_STATUS_MENU_ZERO_INIT\n    pWorkArea->m0 = 0;\n    pWorkArea->m1 = 0;\n    pWorkArea->selectedMenu = -1;\n    pWorkArea->m8 = nullptr;\n    pWorkArea->mC = nullptr;\n    pWorkArea->m10_cursorTask = nullptr;\n    pWorkArea->m3_menuButtonStates[0] = 1; // item is always enabled"
+   source_text "${source_text}")
+
+  string(REGEX MATCHALL
+   "LAGI_STATUS_MENU_ZERO_INIT"
+   lagi_status_menu_zero_init_matches
+   "${source_text}")
+  list(LENGTH
+   lagi_status_menu_zero_init_matches
+   lagi_status_menu_zero_init_match_count)
+  if(NOT lagi_status_menu_zero_init_match_count EQUAL 1)
+   message(FATAL_ERROR
+    "Status-menu zero-init patch did not apply exactly once: found "
+    "${lagi_status_menu_zero_init_match_count} matches")
+  endif()
 
   string(REPLACE
    "        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_A5.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_A5;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_C8.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_C8;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D3.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_D3;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D5.PRG\"))"
@@ -972,17 +1151,19 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    ""
    source_text "${source_text}")
 
-  # Status/inventory menus are not reachable in the 0.040 boot path. Avoid
-  # retaining inventoryMenu.cpp solely through static function-pointer tables.
+  # Inventory and System are the currently backed native status-menu entries.
+  # Keep Azel's real inventory task, but do not advertise the two constructors
+  # that are still assert-only stubs in the pinned upstream revision.
   string(REPLACE
-   "    createInventoryMenuTask,"
-   "    NULL,"
+   "    if (mainGameState.gameStats.m20_XP) // defeated monsters menu\n    {\n        pWorkArea->m3_menuButtonStates[2] = 1;\n    }\n    else\n    {\n        pWorkArea->m3_menuButtonStates[2] = -1;\n    }\n    pWorkArea->m3_menuButtonStates[3] = 1; // map"
+   "    pWorkArea->m3_menuButtonStates[2] = -1; // enemy list is an upstream stub\n    pWorkArea->m3_menuButtonStates[3] = -1; // map is an upstream stub"
    source_text "${source_text}")
 
-  # FLD_A3 belongs to the next milestone (first flight), not boot-to-Ruins.
+  # First-flight milestone: keep Azel's native FLD_A3 dispatcher entry.
+  # Phase 1 only restores reachability; rendering remains unchanged.
   string(REPLACE
-   "        if (!strcmp(pFieldDefinition->m_prg, \"FLD_A3.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_A3;\n        }\n        else if"
-   "        if"
+   "            gFieldOverlayFunction = overlayStart_FLD_A3;"
+   "            gFieldOverlayFunction = overlayStart_FLD_A3;\n            PDS_Log(\"[LagiFlight] selected FLD_A3 field=%d sub=%d entry=%d prevSub=%d\\n\", fieldTaskPtr->m2C_currentFieldIndex, fieldTaskPtr->m2E_currentSubFieldIndex, fieldTaskPtr->m30_fieldEntryPoint, fieldTaskPtr->m32_previousSubField);"
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "collision.cpp")
@@ -1034,7 +1215,59 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "p_workArea startSegaLogoModule(p_workArea workArea)\n{\n    return startTitleScreenVideo(workArea);\n}"
    source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "field/fieldCamera.cpp")
+  # Field Phase 4: capture Azel's exact active view matrix after it has been
+  # applied to pCurrentMatrix. The bridge removes it from field submissions
+  # and Neptune reapplies it once at presentation.
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\""
+   source_text "${source_text}")
+  string(REPLACE
+   "    copyMatrix(pCurrentMatrix, &pTypedWorkArea->m384_viewMatrix);"
+   "    copyMatrix(pCurrentMatrix, &pTypedWorkArea->m384_viewMatrix);\n    lagi::azel_bridge::capture_native_scene_view_matrix();"
+   source_text "${source_text}")
+
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  string(PREPEND source_text "#include \"lagi/lagi_render_bridge.h\"\n")
+  string(REPLACE
+   "    r5->m14_index = index;"
+   "    r5->m14_index = index;\n    if (r5->m0_memoryLayout.m0_mainMemoryBundle && r4->m30->m0_environmentGrid.size()) {\n        const auto bundleSlot = static_cast<std::int8_t>(std::min(2, static_cast<int>(r4->m30->mC)));\n        for (const auto& object : r4->m30->m0_environmentGrid[index]) {\n            for (unsigned lod = 0; lod < 4; ++lod) {\n                const auto offset = object.m0_modelsOffets[lod];\n                if (offset) lagi::azel_bridge::register_native_model_resource(bundleSlot, offset, r5->m0_memoryLayout.m0_mainMemoryBundle->get3DModel(offset));\n            }\n        }\n    }"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "register_native_model_resource")
+   message(FATAL_ERROR "Field resource registration hook did not apply")
+  endif()
+  # Flight Phase 1 diagnostics: prove Azel reaches and initializes FLD_A3
+  # before any field-specific Neptune presentation is enabled.
+  string(REPLACE
+   "bool initField(p_workArea workArea, const s_MCB_CGB* fieldFileList, u32 arg)\n{\n    reset3dEngine();"
+   "bool initField(p_workArea workArea, const s_MCB_CGB* fieldFileList, u32 arg)\n{\n    PDS_Log(\"[LagiFlight] initField begin field=%d sub=%d arg=%u\\n\", getFieldTaskPtr()->m2C_currentFieldIndex, getFieldTaskPtr()->m2E_currentSubFieldIndex, (unsigned)arg);\n    reset3dEngine();"
+   source_text "${source_text}")
+  string(REPLACE
+   "    loadCommonFieldResources();\n\n    setupFileList(fieldFileList);"
+   "    loadCommonFieldResources();\n    PDS_Log(\"[LagiFlight] initField common-resources ready\\n\");\n\n    setupFileList(fieldFileList);\n    PDS_Log(\"[LagiFlight] initField file-list ready\\n\");"
+   source_text "${source_text}")
+  string(REPLACE
+   "    loadFileFromFileList(0);\n    createFieldScriptTask(workArea);\n    createFieldOverlaySubTask(workArea);\n    initFieldDragon(workArea, arg);\n    createFieldOverlaySubTask2(workArea);\n    createFieldCameraTask(workArea);\n    createRandomBattleTask(workArea);\n    resetProjectVector();"
+   "    loadFileFromFileList(0);\n    PDS_Log(\"[LagiFlight] initField file0 loaded\\n\");\n    createFieldScriptTask(workArea);\n    PDS_Log(\"[LagiFlight] initField script-task created\\n\");\n    createFieldOverlaySubTask(workArea);\n    PDS_Log(\"[LagiFlight] initField overlay-task created\\n\");\n    initFieldDragon(workArea, arg);\n    PDS_Log(\"[LagiFlight] initField dragon-task created\\n\");\n    createFieldOverlaySubTask2(workArea);\n    PDS_Log(\"[LagiFlight] initField overlay-task2 created\\n\");\n    createFieldCameraTask(workArea);\n    PDS_Log(\"[LagiFlight] initField camera-task created\\n\");\n    createRandomBattleTask(workArea);\n    PDS_Log(\"[LagiFlight] initField encounter-task created\\n\");\n    resetProjectVector();"
+   source_text "${source_text}")
+  string(REPLACE
+   "    pauseEngine[2] = 1;\n\n    return true;"
+   "    pauseEngine[2] = 1;\n    PDS_Log(\"[LagiFlight] initField complete\\n\");\n\n    return true;"
+   source_text "${source_text}")
+  string(REPLACE
+   "p_workArea overlayStart_FLD_A3(p_workArea workArea, u32 arg)\n{\n    // Custom loader thing"
+   "p_workArea overlayStart_FLD_A3(p_workArea workArea, u32 arg)\n{\n    PDS_Log(\"[LagiFlight] overlayStart_FLD_A3 enter field=%d sub=%d entry=%d prevSub=%d arg=%u\\n\", getFieldTaskPtr()->m2C_currentFieldIndex, getFieldTaskPtr()->m2E_currentSubFieldIndex, getFieldTaskPtr()->m30_fieldEntryPoint, getFieldTaskPtr()->m32_previousSubField, (unsigned)arg);\n    // Custom loader thing"
+   source_text "${source_text}")
+  string(REPLACE
+   "    if (!initField(workArea, fieldFileList, arg))\n    {\n        return NULL;\n    }"
+   "    if (!initField(workArea, fieldFileList, arg))\n    {\n        PDS_Log(\"[LagiFlight] overlayStart_FLD_A3 initField FAILED\\n\");\n        return NULL;\n    }\n    PDS_Log(\"[LagiFlight] overlayStart_FLD_A3 initField ok\\n\");"
+   source_text "${source_text}")
+  string(REPLACE
+   "    //0605404C\n    loadFileFromFileList(1);"
+   "    //0605404C\n    loadFileFromFileList(1);\n    PDS_Log(\"[LagiFlight] overlayStart_FLD_A3 secondary field file loaded\\n\");"
+   source_text "${source_text}")
+
   # Azel/Saturn work areas begin cleared. Make the field-script task's
   # no-active-script invariant explicit on Vita so New Game cannot enter the
   # interpreter with stale/poisoned state before a script is queued.
@@ -1047,34 +1280,48 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   # service. Avoid the upstream desktop SoLoud backend on Vita.
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
-   "#include \"lagi/lagi_azel_upstream_prelude.h\"\nextern void lagiAzelFieldPlayPCM(const char* filename);"
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\"\nextern void lagiAzelFieldPlayPCM(const char* filename);"
    source_text "${source_text}")
   string(REPLACE
    "    playPCMFile(pPcmName);"
    "    lagiAzelFieldPlayPCM(pPcmName);"
    source_text "${source_text}")
+  # Phase 4 static field-grid bridge. Azel still performs clipping and LOD
+  # selection; Lagi only publishes the selected rigid environment object with
+  # its stable pre-view world transform.
+  string(REPLACE
+   "                if (r14->m0_modelsOffets[depthRangeIndex])\n                {\n                    sProcessed3dModel* pModel = pTypedWorkAread->m0_memoryLayout.m0_mainMemoryBundle->get3DModel(r14->m0_modelsOffets[depthRangeIndex]);\n                    addObjectToDrawList(pModel);\n                }"
+   "                if (r14->m0_modelsOffets[depthRangeIndex])\n                {\n                    const u32 lagiModelOffset = r14->m0_modelsOffets[depthRangeIndex];\n                    sProcessed3dModel* pModel = pTypedWorkAread->m0_memoryLayout.m0_mainMemoryBundle->get3DModel(lagiModelOffset);\n\n                    sMatrix4x3 lagiWorldMatrix;\n                    initMatrixToIdentity(&lagiWorldMatrix);\n                    translateMatrix(&r14->m4, &lagiWorldMatrix);\n                    rotateMatrixZYX_s16(r14->m10, &lagiWorldMatrix);\n\n                    lagi::azel_bridge::SubmissionState lagiState{};\n                    for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n                    {\n                        for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n                        {\n                            lagiState.modelMatrix[lagiRow * 4u + lagiCol] = lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n                        }\n                    }\n                    lagiState.hasModelMatrix = true;\n                    lagiState.dynamic = false;\n                    lagi::azel_bridge::capture_current_light(lagiState);\n                    // LAGI_FLD_A3_STATIC_IDENTITY\n                    lagi::azel_bridge::set_town_submission_context(\n                        -1,\n                        static_cast<std::uint32_t>(pTypedWorkAread->m14_index),\n                        static_cast<std::uint32_t>(r14->EA.m_offset),\n                        static_cast<std::uint32_t>(lagiModelOffset),\n                        lagiState);\n\n                    addObjectToDrawList(pModel);\n                }"
+   source_text "${source_text}")
 
-  # Upstream rayDisplay.cpp is BGFX/GLM desktop renderer code. A3 field
-  # laser rendering is not reachable in the 0.040 title/name-entry/Ruins
-  # path, so suppress only those draw branches in this generated Vita copy.
-  string(REPLACE
-   "        if (isGunShotVisible(segment, graphicEngineStatus.m405C))"
-   "        if (false)"
-   source_text "${source_text}")
-  string(REPLACE
-   "            displayRaySegmentFromViewSpace(segment, 0x333, vdp1Base + 0xF8, 0x210, vdp1Base + 0x173C, &gouraud, 8);"
-   "            /* Lagi 0.040: field laser ray draw deferred to native Neptune path */"
-   source_text "${source_text}")
-  string(REPLACE
-   "    if (gDirectRayRendering)"
-   "    if (false)"
-   source_text "${source_text}")
-  string(REPLACE
-   "            displayRaySegmentFromViewSpace(segment, width, characterAddress, characterSize, characterColor, &(*arg0)[i], 8);"
-   "            /* Lagi 0.040: field laser ray draw deferred to native Neptune path */"
-   source_text "${source_text}")
+  # o_fld_a3.cpp receives several independent generated-source patches. The
+  # whole-file changed check below cannot prove that this performance-critical
+  # draw-boundary replacement matched, so require its unique injected call
+  # exactly once before allowing configuration to continue.
+  string(REGEX MATCHALL
+   "LAGI_FLD_A3_STATIC_IDENTITY"
+   lagi_field_grid_static_matches
+   "${source_text}")
+  list(LENGTH
+   lagi_field_grid_static_matches
+   lagi_field_grid_static_match_count)
+  if(NOT lagi_field_grid_static_match_count EQUAL 1)
+   message(FATAL_ERROR
+    "FLD_A3 static grid submission patch did not apply exactly once: "
+    "found ${lagi_field_grid_static_match_count} matches")
+  endif()
+
+  # Native ray calls terminate in Lagi's shared VDP1 effect service.
 
  elseif(relative_path STREQUAL "field.cpp")
+  string(PREPEND source_text "#include \"lagi/lagi_render_bridge.h\"\n")
+  string(REPLACE
+   "}\n\nvoid getMemoryArea(s_memoryAreaOutput* pOutput, u32 areaIndex)"
+   "    if (pFileData->MCB || pFileData->CGB) lagi::azel_bridge::notify_native_bundle_loaded(static_cast<std::int8_t>(slot));\n}\n\nvoid getMemoryArea(s_memoryAreaOutput* pOutput, u32 areaIndex)"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "notify_native_bundle_loaded")
+   message(FATAL_ERROR "Native bundle generation hook did not apply")
+  endif()
   string(REPLACE
    "int findMandatoryFileOnDisc(const char* fileName)"
    "__attribute__((weak)) int findMandatoryFileOnDisc(const char* fileName)"
@@ -1126,7 +1373,488 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "    popMatrix();\n}\n\nvoid sEdgeTask::Delete"
    "    popMatrix();\n    lagi::azel_bridge::end_view_relative_submission_scope();\n}\n\nvoid sEdgeTask::Delete"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "kernel/fade.cpp")
+  # Invert unpackColor() when a running fade becomes a new request's source.
+  # The original >>4 halves negative offsets (-128 becomes -64), making a
+  # black scene pop halfway visible before Azel's next fade has advanced.
+  string(REPLACE
+   [=[    u32 color = ((inColor[0].toInteger() >> 4) + 0x10) << 10;
+    color |= ((inColor[1].toInteger() >> 4) + 0x10) << 5;
+    color |= ((inColor[2].toInteger() >> 4) + 0x10);
+    color |= 0x8000;
+    return color;]=]
+   [=[    // LAGI_FADE_PACK_INVERSE
+    const auto pack = [](s32 value) -> u32 {
+        const s32 component = value < 0 ? value / 8 : value / 9;
+        return static_cast<u32>(std::clamp(component + 0x10, 0, 0x1f));
+    };
+    return 0x8000u | pack(inColor[0].toInteger()) |
+        (pack(inColor[1].toInteger()) << 5) |
+        (pack(inColor[2].toInteger()) << 10);]=]
+   source_text "${source_text}")
+  string(REPLACE
+   "#include \"fade.h\""
+   "#include \"fade.h\"\n#include <algorithm>"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "LAGI_FADE_PACK_INVERSE")
+   message(FATAL_ERROR "Native fade source-color correction did not apply")
+  endif()
+ elseif(relative_path STREQUAL "kernel/fileBundle.cpp")
+  # Relocate addresses, never immediate colors. The reconstructed helper adds
+  # the allocation base to CMDCOLR even for untextured RGB555 polygons.
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   [=[#include "lagi/lagi_azel_upstream_prelude.h"
+#include "processModel.h"
+static void lagiPatchModelAddresses(sProcessed3dModel* model, u32 offset)
+{
+    for (auto& quad : model->mC_Quads) {
+        const unsigned type = quad.mA_CMDCTRL & 15u;
+        if (type <= 2u) {
+            quad.m10_CMDSRCA += offset;
+            if (((quad.mC_CMDPMOD >> 3) & 7u) == 1u)
+                quad.mE_CMDCOLR += offset;
+        }
+    }
+}
+]=]
+   source_text "${source_text}")
+  string(REPLACE "pCachedData->patchFilePointers(mVdp1Offset);"
+   "lagiPatchModelAddresses(pCachedData, mVdp1Offset);"
+   source_text "${source_text}")
+  string(REPLACE "pNewNode->m0_3dModel->patchFilePointers(mVdp1Offset);"
+   "lagiPatchModelAddresses(pNewNode->m0_3dModel, mVdp1Offset);"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/townCutscene.cpp")
+  # Generic Vita bring-up for Azel's native in-engine town cutscene subsystem.
+  # Azel retains ownership of script ordering, fades, camera commands, entity
+  # animation, subtitles and completion. Lagi supplies only disc transport,
+  # task allocator semantics, a stable 30 Hz timeline and lifecycle cleanup.
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/disc_image.h\"\n#include \"lagi/platform.h\"\n#include \"lagi/lagi_render_bridge.h\"\n#include <algorithm>\n#include <cstdint>\n#include <cstring>"
+   source_text "${source_text}")
+
+  # Streamed cameras replace the ordinary town camera during Draw. Capture
+  # that authored view at its own boundary before subsequent model submissions.
+  string(REPLACE
+   "    updateEngineCamera(&cameraProperties2, local_10, local_18);"
+   "    updateEngineCamera(&cameraProperties2, local_10, local_18);\n    lagi::azel_bridge::capture_native_scene_view_matrix();"
+   source_text "${source_text}")
+
+  # Replace desktop FILE* access with the mounted ISO9660 random-access layer.
+  string(REPLACE
+   [=[GfsHn GFS_Open(const std::string& name)
+{
+    GfsHn temp;
+    temp.fHandle = fopen(name.c_str(), "rb");
+    return temp;
+}]=]
+   [=[struct LagiGfsHandle
+{
+    lagi::disc::FileHandle file;
+    std::uint64_t offset = 0;
+};
+
+static LagiGfsHandle* lagiGfsHandle(GfsHn handle)
+{
+    return reinterpret_cast<LagiGfsHandle*>(handle.fHandle);
+}
+
+GfsHn GFS_Open(const std::string& name)
+{
+    GfsHn temp{};
+    auto* handle = new LagiGfsHandle{};
+    if (!lagi::disc::open_file(name.c_str(), handle->file))
+    {
+        lagi::platform::logging::writef(
+            "[AzelCutscene] missing stream file: %s\n", name.c_str());
+        delete handle;
+        return temp;
+    }
+
+    temp.fHandle = reinterpret_cast<FILE*>(handle);
+    lagi::platform::logging::writef(
+        "[AzelCutscene] opened %s (%u bytes) from mounted disc\n",
+        name.c_str(), static_cast<unsigned>(handle->file.size));
+    return temp;
+}]=]
+   source_text "${source_text}")
+
+  string(REPLACE
+   [=[void GFS_GetFileSize(GfsHn handle, s32* sectorSize, s32* numSector, s32* lastSize)
+{
+    u32 position = ftell(handle.fHandle);
+
+    fseek(handle.fHandle, 0, SEEK_END);
+    u32 size = ftell(handle.fHandle);
+
+    fseek(handle.fHandle, position, SEEK_SET);
+
+    *sectorSize = 0x800;
+    *numSector = size / 0x800;
+    *lastSize = size - (*numSector * 0x800);
+}]=]
+   [=[void GFS_GetFileSize(GfsHn handle, s32* sectorSize, s32* numSector, s32* lastSize)
+{
+    const LagiGfsHandle* stream = lagiGfsHandle(handle);
+    const u32 size = stream ? stream->file.size : 0;
+    *sectorSize = 0x800;
+    *numSector = static_cast<s32>((size + 0x7ffu) / 0x800u);
+    *lastSize = *numSector
+        ? static_cast<s32>(size - static_cast<u32>(*numSector - 1) * 0x800u)
+        : 0;
+}]=]
+   source_text "${source_text}")
+
+  string(REPLACE
+   [=[s32 GFS_NwFread(GfsHn handle, s32 numSectors, u8* buffer, s32 bufferSize)
+{
+    gNumSectors = numSectors;
+    assert(bufferSize >= numSectors * 0x800);
+    numReadBytes = numSectors * 0x800;
+    return fread(buffer, numSectors, 0x800, handle.fHandle);
+}]=]
+   [=[s32 GFS_NwFread(GfsHn handle, s32 numSectors, u8* buffer, s32 bufferSize)
+{
+    LagiGfsHandle* stream = lagiGfsHandle(handle);
+    const s32 requestBytes = numSectors * 0x800;
+    gNumSectors = numSectors;
+    assert(bufferSize >= requestBytes);
+    if (!stream || !buffer || requestBytes < 0)
+        return -1;
+
+    const std::uint64_t size = stream->file.size;
+    const std::uint64_t remaining =
+        stream->offset < size ? size - stream->offset : 0;
+    const std::size_t available = static_cast<std::size_t>(
+        std::min<std::uint64_t>(
+            remaining, static_cast<std::uint64_t>(requestBytes)));
+
+    if (available &&
+        !lagi::disc::read_file_at(
+            stream->file, stream->offset, buffer, available))
+        return -1;
+
+    if (available < static_cast<std::size_t>(requestBytes))
+        std::memset(
+            buffer + available, 0,
+            static_cast<std::size_t>(requestBytes) - available);
+
+    stream->offset += static_cast<std::uint64_t>(requestBytes);
+    numReadBytes = requestBytes;
+    return numSectors;
+}]=]
+   source_text "${source_text}")
+
+  # The Saturn work-area allocator clears task memory before Init. Recreate
+  # that contract explicitly and reserve the stream's 0x8000-byte PCM scratch
+  # area alongside the 0x20000-byte command ring buffer.
+  string(REPLACE
+   [=[void sCutsceneTask::Init(sCutsceneTask* pThis, s32 arg)
+{
+    pThis->m1D4 = dramAllocate(0x20000);
+
+    sStreamingParams streamingParams;
+    streamingParams.m0_streamingFile = &pThis->m4;
+    streamingParams.m4_streamingFileSize = sizeof(pThis->m4);
+    streamingParams.m8_buffer = pThis->m1D4;
+    streamingParams.mC_bufferSize = 0x20000;
+    streamingParams.m10_audioBuffer = nullptr;//TODO: figure this out
+    streamingParams.m14_audioBufferSize = 0x8000;
+
+    std::string streamFileName = readSaturnString(sSaturnPtr::createFromRaw(arg, gCurrentTownOverlay));
+    findMandatoryFileOnDisc(streamFileName.c_str());
+    pThis->m0 = openFileForStreaming(&streamingParams, streamFileName);
+
+}]=]
+   [=[void sCutsceneTask::Init(sCutsceneTask* pThis, s32 arg)
+{
+    pThis->m0 = nullptr;
+    pThis->m4 = sStreamingFile{};
+    pThis->m1D4 = dramAllocate(0x28000);
+    if (!pThis->m1D4)
+    {
+        lagi::platform::logging::writef("[AzelCutscene] stream allocation failed\n");
+        pThis->m4.m28.m0 = -1;
+        pThis->m0 = &pThis->m4;
+        return;
+    }
+
+    sStreamingParams streamingParams{};
+    streamingParams.m0_streamingFile = &pThis->m4;
+    streamingParams.m4_streamingFileSize = sizeof(pThis->m4);
+    streamingParams.m8_buffer = pThis->m1D4;
+    streamingParams.mC_bufferSize = 0x20000;
+    streamingParams.m10_audioBuffer = pThis->m1D4 + 0x20000;
+    streamingParams.m14_audioBufferSize = 0x8000;
+
+    std::string streamFileName =
+        readSaturnString(sSaturnPtr::createFromRaw(arg, gCurrentTownOverlay));
+    lagi::platform::logging::writef(
+        "[AzelCutscene] request %s arg=%08X\n",
+        streamFileName.c_str(), static_cast<unsigned>(arg));
+
+    pThis->m0 = openFileForStreaming(&streamingParams, streamFileName);
+    if (!pThis->m0)
+    {
+        lagi::platform::logging::writef(
+            "[AzelCutscene] open failed: %s\n", streamFileName.c_str());
+        pThis->m4.m28.m0 = -1;
+        pThis->m0 = &pThis->m4;
+    }
+}]=]
+   source_text "${source_text}")
+
+  # Generic close/completion path. Every town script already waits on state 5.
+  string(REPLACE
+   [=[void updateStreamingFileReadSub0(sStreamingFile* iParm1)
+{
+    Unimplemented();
+}]=]
+   [=[void updateStreamingFileReadSub0(sStreamingFile* iParm1)
+{
+    if (!iParm1)
+        return;
+
+    LagiGfsHandle* stream = lagiGfsHandle(iParm1->m198.m0_gfsHandle);
+    if (stream)
+    {
+        lagi::disc::close_file(stream->file);
+        delete stream;
+        iParm1->m198.m0_gfsHandle.fHandle = nullptr;
+    }
+
+    if (iParm1->m28.m0 != 5)
+        lagi::platform::logging::writef(
+            "[AzelCutscene] complete state=%d frame=%u total=%u consumed=%u read=%u\n",
+            iParm1->m28.m0, iParm1->m28.m84_frameIndex,
+            iParm1->m194 ? iParm1->m194->m10_totalFrames : 0u,
+            iParm1->m28.m28, iParm1->m28.m24_currentPositionInFile);
+    iParm1->m198.m8_readIsPending = 0;
+    iParm1->m28.m0 = 5;
+}]=]
+   source_text "${source_text}")
+
+  # Preserve all four bytes of a wrapped command header. The reconstructed
+  # U16 write corrupts a U32 packet length/opcode at command-ring rollover.
+  string(REPLACE
+   "WRITE_BE_U16(puVar3, READ_BE_U32(puVar4));"
+   "WRITE_BE_U32(puVar3, READ_BE_U32(puVar4)); // LAGI_STREAM_HEADER_U32"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "LAGI_STREAM_HEADER_U32")
+   message(FATAL_ERROR "Cutscene command-ring header correction did not apply")
+  endif()
+
+  # The host s_fileBundle is a C++ wrapper, separate from its DRAM payload.
+  # Saturn teardown must release the raw allocation and delete the wrapper.
+  string(REPLACE
+   "            dramFree((u8*)pThis->m0);"
+   "            dramFree(pThis->m0->getRawBuffer());\n            delete pThis->m0;\n            pThis->m0 = nullptr;"
+   source_text "${source_text}")
+  string(REPLACE
+   "            vdp1Free((u8*)pThis->m4);"
+   "            vdp1Free((u8*)pThis->m4);\n            pThis->m4 = nullptr;"
+   source_text "${source_text}")
+
+  # Correct the model-bundle base used by streamed entities as well as their
+  # hierarchy. Otherwise get3DModel() patches texture addresses from zero.
+  string(REPLACE
+   "        //patchFilePointers(iVar4->getRawBuffer(), uVar3);"
+   "        piVar2->m0->setPatchFilePointers(uVar3);"
+   source_text "${source_text}")
+  string(REPLACE
+   "    pHierarchy->patchFilePointers(piVar2->m4->m4_vdp1Memory);"
+   "    // The bundle patches each hierarchy model once at its native VRAM base."
+   source_text "${source_text}")
+  # Sector reads contain zero padding beyond EOF. Never expose that padding
+  # to the packet parser: a zero length otherwise repeats forever in shipping
+  # builds, where the unknown-opcode assert cannot stop the loop.
+  string(REPLACE
+   "        u32 uVar2 = (psParm1->m28).m24_currentPositionInFile - (psParm1->m28).m28;"
+   [=[        const u32 readableEnd = std::min(
+            psParm1->m28.m24_currentPositionInFile,
+            static_cast<u32>(psParm1->m198.m18_fileSize));
+        u32 uVar2 = readableEnd > psParm1->m28.m28
+            ? readableEnd - psParm1->m28.m28 : 0u; // LAGI_STREAM_EOF_BOUND]=]
+   source_text "${source_text}")
+  string(REPLACE
+   "        if ((int)uVar2 < READ_BE_U32((psParm1->m28).m34_pBufferRead)) {"
+   [=[        cutsceneFillCommandBuffer(psParm1, psParm1->m28.m34_pBufferRead);
+        const u32 packetSize = READ_BE_U32(psParm1->m28.m34_pBufferRead);
+        if (packetSize < 0x10u || (packetSize & 3u) != 0u ||
+            packetSize > psParm1->m4_bufferSize - psParm1->m28.m44_headerSize)
+        {
+            lagi::platform::logging::writef(
+                "[AzelCutscene] invalid packet size=%u consumed=%u read=%u frame=%u\n",
+                packetSize, psParm1->m28.m28, readableEnd,
+                psParm1->m28.m84_frameIndex);
+            psParm1->m28.m0 = -1;
+            return;
+        }
+        if (uVar2 < packetSize) {]=]
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "LAGI_STREAM_EOF_BOUND")
+   message(FATAL_ERROR "Cutscene EOF bound did not apply")
+  endif()
+  # Keep entity registration safe during failed/tearing-down streams.
+  string(REPLACE
+   "void setupCutsceneDragonSub0(sStreamingFile* r4, u32 index, u32 param_3, p_workArea param_4, s_3dModel* pModel)\n{\n    if (index < 0x11)"
+   "void setupCutsceneDragonSub0(sStreamingFile* r4, u32 index, u32 param_3, p_workArea param_4, s_3dModel* pModel)\n{\n    if (!r4) return;\n    if (index < 0x11)"
+   source_text "${source_text}")
+
+  string(REPLACE
+   [=[s32 scriptFunction_605861eSub0Sub0(sStreamingFile* r4)
+{
+    return r4->m28.m0;
+}]=]
+   [=[s32 scriptFunction_605861eSub0Sub0(sStreamingFile* r4)
+{
+    return r4 ? r4->m28.m0 : -1;
+}]=]
+   source_text "${source_text}")
+
+  # Upstream reconstruction still has Saturn timer/audio service stubs. Use the
+  # actual stream frame-rate against Lagi's 30 Hz game tick so Azel's command
+  # timeline, camera, subtitles and animation remain data-driven.
+  string(REPLACE
+   [=[void syncCutsceneTimer(sStreamingFile* psParm1)
+{
+    Unimplemented();
+}]=]
+   [=[void syncCutsceneTimer(sStreamingFile* psParm1)
+{
+    if (!psParm1 || psParm1->m28.m0 != 4 || pauseEngine[0])
+        return;
+
+    const u32 frameRate =
+        (psParm1->m194 && psParm1->m194->mC_frameRate)
+            ? psParm1->m194->mC_frameRate : 60u;
+
+    if ((psParm1->m28.m84_frameIndex % 120u) < (frameRate + 29u) / 30u)
+        lagi::platform::logging::writef(
+            "[AzelCutscene] timeline state=%d frame=%u total=%u commandFrame=%u consumed=%u read=%u\n",
+            psParm1->m28.m0, psParm1->m28.m84_frameIndex,
+            psParm1->m194 ? psParm1->m194->m10_totalFrames : 0u,
+            psParm1->m28.m88, psParm1->m28.m28,
+            psParm1->m28.m24_currentPositionInFile);
+    psParm1->m28.m7C += frameRate;
+    while (psParm1->m28.m7C >= 30u)
+    {
+        ++psParm1->m28.m84_frameIndex;
+        psParm1->m28.m7C -= 30u;
+    }
+}]=]
+   source_text "${source_text}")
+
+  string(REPLACE
+   [=[            if ((psParm1->m28).m8 == 0) {
+                Unimplemented();
+
+                // hack!
+                (psParm1->m28).m84_frameIndex+=2;
+                //assert(0);
+                /*
+]=]
+   [=[            if ((psParm1->m28).m8 == 0) {
+                /*
+]=]
+   source_text "${source_text}")
+
+  # These Saturn-side hooks do not own sequencing. Keep them benign while the
+  # native Azel parser advances commands and the Vita timeline drives frames.
+  string(REPLACE
+   [=[void cutsceneCommand0Sub1(sStreamingFile* param_1)
+{
+    assert(0);
+}]=]
+   [=[void cutsceneCommand0Sub1(sStreamingFile*)
+{
+}]=]
+   source_text "${source_text}")
+
+  string(REPLACE
+   [=[s32 cutsceneCommand1(sStreamingFile* param_1)
+{
+    Unimplemented();
+    return 0;
+}]=]
+   [=[s32 cutsceneCommand1(sStreamingFile*)
+{
+    // Opcode 1 is Saturn streamed-audio service data. Its packet remains part
+    // of Azel's command stream; Vita currently advances it while the game's
+    // native SCSP/BGM service continues independently.
+    return 0;
+}]=]
+   source_text "${source_text}")
+
+  string(REPLACE
+   [=[void pauseCutscene(sStreamingFile* r4, s32 r5)
+{
+    Unimplemented();
+}]=]
+   [=[void pauseCutscene(sStreamingFile*, s32)
+{
+    // pauseEngine[] already gates the Vita cutscene timeline.
+}]=]
+   source_text "${source_text}")
+
+  string(REPLACE
+   [=[
+    Unimplemented();
+}
+
+void pauseCutscene]=]
+   [=[
+}
+
+void pauseCutscene]=]
+   source_text "${source_text}")
+
+  # Validate this generated-source bridge as one unit so future upstream edits
+  # fail configuration rather than silently reverting to desktop/stub behavior.
+  string(REGEX MATCHALL
+   "LagiGfsHandle|stream allocation failed|pauseEngine\\[0\\] already gates"
+   lagi_cutscene_bridge_markers "${source_text}")
+  list(LENGTH lagi_cutscene_bridge_markers lagi_cutscene_bridge_marker_count)
+  if(lagi_cutscene_bridge_marker_count LESS 3)
+   message(FATAL_ERROR
+    "Native town cutscene bridge did not apply completely; upstream Azel changed")
+  endif()
+ elseif(relative_path STREQUAL "town/exca/twn_exca.cpp")
+  # VDP2 pattern names are Saturn big-endian bytes, unlike host-generated
+  # rotation/coefficient work areas. Preserve the authored 0x5000 entries
+  # without native little-endian u32 stores changing them into 0x0050.
+  string(REPLACE
+   [=[        u32* pVram = (u32*)getVdp2Vram(0x60800);
+        for (int i = 0; i < 0x200; i++)
+        {
+            pVram[0] = 0x50005000;
+            pVram[1] = 0x50005000;
+            pVram[2] = 0x50005000;
+            pVram[3] = 0x50005000;
+            pVram += 4;
+        }]=]
+   [=[        for (u32 patternOffset = 0; patternOffset < 0x2000; patternOffset += 2)
+        {
+            setVdp2VramU16(0x60800 + patternOffset, 0x5000);
+        }]=]
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "setVdp2VramU16\\(0x60800 \\+ patternOffset, 0x5000\\)")
+   message(FATAL_ERROR "Excavation VDP2 pattern endian adapter did not apply")
+  endif()
  elseif(relative_path STREQUAL "town/townMainLogic.cpp")
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\""
+   source_text "${source_text}")
+  string(REPLACE
+   "    generateCameraMatrix(&cameraProperties2, pThis->m38_interpolatedCameraPosition, var18, pThis->m50_upVector);"
+   "    generateCameraMatrix(&cameraProperties2, pThis->m38_interpolatedCameraPosition, var18, pThis->m50_upVector);\n    lagi::azel_bridge::capture_native_scene_view_matrix();"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "capture_native_scene_view_matrix")
+   message(FATAL_ERROR "Native town view capture did not apply")
+  endif()
   # Correct two reconstructed hard-coded town LCS physical-button tests to
   # match the original manual: B cancels LCS, while A/C enter/select it.
   # Keep this in the generated build copy so extern/Azel remains untouched.
@@ -1140,12 +1868,12 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/town.cpp")
-  # 0.040 reaches only TWN_RUIN. Keep the authentic lookup and Ruins dispatch,
-  # but do not retain every later town overlay merely through this generic
-  # dispatcher.
+  # First-flight progression reaches Azel's native E006 cinematic and then
+  # the Excavation town. Preserve both authentic dispatches; later unrelated
+  # town overlays remain trimmed until their own dependencies are integrated.
   string(REPLACE
    "    else if (overlayFileName == \"TWN_EXCA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_EXCA;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E006;\n    }\n    else if (overlayFileName == \"TWN_E011.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E011;\n    }\n    else if (overlayFileName == \"TWN_E014.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E014;\n    }\n    else if (overlayFileName == \"TWN_CAMP.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CAMP;\n    }\n    else if (overlayFileName == \"TWN_ZOAH.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_ZOAH;\n    }\n    else if (overlayFileName == \"TWN_CARA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CARA;\n    }\n    else if (overlayFileName == \"TWN_SEEK.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_SEEK;\n    }"
-   ""
+   "    else if (overlayFileName == \"TWN_EXCA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_EXCA;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E006;\n    }"
    source_text "${source_text}")
 
   # Vita bridge for the authentic upstream static world-grid submission path.
@@ -1164,8 +1892,184 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "                        if (offset)\n                        {\n                            addObjectToDrawList(pThis->m0_fileBundle->get3DModel(offset));\n                        }"
    "                        if (offset)\n                        {\n                            sMatrix4x3 lagiWorldMatrix;\n                            initMatrixToIdentity(&lagiWorldMatrix);\n                            translateMatrix(pThis->mC_position, &lagiWorldMatrix);\n                            translateMatrix(readSaturnVec3(r14 + 4), &lagiWorldMatrix);\n\n                            sVec3_S16_12_4 lagiRotation;\n                            lagiRotation[0] = readSaturnS16(r14 + 0x10);\n                            lagiRotation[1] = readSaturnS16(r14 + 0x12);\n                            lagiRotation[2] = readSaturnS16(r14 + 0x14);\n                            rotateMatrixZYX_s16(lagiRotation, &lagiWorldMatrix);\n\n                            lagi::azel_bridge::SubmissionState lagiState{};\n                            for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n                            {\n                                for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n                                {\n                                    lagiState.modelMatrix[lagiRow * 4u + lagiCol] =\n                                        lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n                                }\n                            }\n                            lagiState.hasModelMatrix = true;\n                            lagiState.dynamic = false;\n                            lagi::azel_bridge::capture_current_light(lagiState);\n\n                            lagi::azel_bridge::set_town_submission_context(\n                                -1,\n                                static_cast<std::uint32_t>(pThis->m8_cellPtr.m_offset),\n                                static_cast<std::uint32_t>(r14.m_offset),\n                                static_cast<std::uint32_t>(offset),\n                                lagiState);\n\n                            addObjectToDrawList(pThis->m0_fileBundle->get3DModel(offset));\n                        }"
    source_text "${source_text}")
- endif()
- if(source_text STREQUAL original_text)
+  endif()
+
+  # Preserve Azel's title/menu ownership while supplying the Vita persistence
+  # boundary and real slot availability. extern/Azel remains untouched.
+  if(relative_path STREQUAL "titleScreen.cpp")
+   string(REPLACE
+    "#include \"o_title.h\""
+    "#include \"o_title.h\"\n#include \"lagi/azel_save_platform.h\""
+    source_text "${source_text}")
+   string(REPLACE
+    [=[bool hasSaveGame()
+{
+    PDS_unimplemented("hasSaveGame");
+    return true;
+}]=]
+    [=[bool hasSaveGame()
+{
+    return lagiAzelSaveHasAnyValidSlot() != 0;
+}]=]
+    source_text "${source_text}")
+   string(REPLACE
+    "        pWorkArea->m_menu[0].m_isEnabled = (azelCdNumber == 0); // new game enabled only is first disk"
+    "        pWorkArea->m_menu[0].m_isEnabled = (azelCdNumber == 0); // new game enabled only is first disk\n        pWorkArea->m_menu[1].m_isEnabled = hasSaveGame();"
+    source_text "${source_text}")
+  elseif(relative_path STREQUAL "kernel/loadSavegameScreen.cpp")
+   string(REPLACE
+    "#include \"3dEngine_textureCache.h\""
+    "#include \"3dEngine_textureCache.h\"\n#include \"lagi/azel_save_platform.h\""
+    source_text "${source_text}")
+   # Saturn work areas are cleared before Init. The C++ task host uses plain
+   # `new T`, so establish the load-overlay dispatch state explicitly before
+   # its first Draw. Otherwise Continue may branch on an indeterminate status.
+   string(REPLACE
+    "    static void Init(sLoadSavegameScreen* pThis, p_workArea pParent)\n    {\n        pThis->m4 = pParent;"
+    "    static void Init(sLoadSavegameScreen* pThis, p_workArea pParent)\n    {\n        // LAGI_LOAD_SCREEN_ZERO_INIT\n        pThis->m0_status = 0;\n        pThis->m4 = pParent;"
+    source_text "${source_text}")
+   # The native save/load task likewise expects its state and optional child
+   # pointer to begin cleared. Preserve Azel's Init sequence after restoring
+   # that original allocator contract at the Vita integration boundary.
+   string(REPLACE
+    "    static void Init(sSaveTask* pThis)\n    {\n        pThis->mCC = backupMemoryForSaveScreen();"
+    "    static void Init(sSaveTask* pThis)\n    {\n        // LAGI_SAVE_TASK_ZERO_INIT\n        // Saturn work areas are cleared before Init. Initialize every scalar\n        // consumed by the native save/load pipeline before any child Draw.\n        pThis->m0 = 0;\n        pThis->m4_status = 0;\n        pThis->m8 = -1;\n        pThis->mC = 0;\n        pThis->m10 = 0;\n        pThis->m14_selectedDevice = -1;\n        pThis->m18 = nullptr;\n        pThis->m1C[0] = pThis->m1C[1] = pThis->m1C[2] = -1;\n        pThis->m20_selectedFileInDevice = -1;\n        pThis->m24 = nullptr;\n        pThis->m28_slotInfoDisplayTask[0] = nullptr;\n        pThis->m28_slotInfoDisplayTask[1] = nullptr;\n        pThis->m28_slotInfoDisplayTask[2] = nullptr;\n        pThis->m34_pSaveProgressTask = nullptr;\n        pThis->m38_operationResult = 0;\n        pThis->m3C[0].m0_slotStatus = 0;\n        pThis->m3C[1].m0_slotStatus = 0;\n        pThis->m3C[2].m0_slotStatus = 0;\n        pThis->mCC = backupMemoryForSaveScreen();"
+    source_text "${source_text}")
+   string(REPLACE
+    "        pThis->mC = r5;\n        pThis->m20_stringRenderingX = intDivide(8, readSaturnS16(r5));"
+    "        // LAGI_SAVE_SLOT_TASK_ZERO_INIT\n        pThis->m0 = -1;\n        pThis->m4_delay = 0;\n        pThis->m8 = nullptr;\n        pThis->mC = r5;\n        pThis->m10_status = 0;\n        pThis->m14 = 0;\n        pThis->m18 = 0;\n        pThis->m1C_posX = 0;\n        pThis->m1E_posY = 0;\n        pThis->m20_stringRenderingX = intDivide(8, readSaturnS16(r5));"
+    source_text "${source_text}")
+   string(REPLACE
+    "    sSaveProgressTask* pNewTask = createSubTaskFromFunction<sSaveProgressTask>(parent, saveProgressTask_update);\n    pNewTask->m0 = &parent->m3C[parent->m20_selectedFileInDevice];"
+    "    sSaveProgressTask* pNewTask = createSubTaskFromFunction<sSaveProgressTask>(parent, saveProgressTask_update);\n    // LAGI_SAVE_PROGRESS_ZERO_INIT\n    pNewTask->m10_status = 0;\n    pNewTask->m14 = 0;\n    pNewTask->m18 = 0;\n    pNewTask->m0 = &parent->m3C[parent->m20_selectedFileInDevice];"
+    source_text "${source_text}")
+   string(REPLACE
+    [=[s32 writeSaveData(s32 deviceId, const std::string* filename, char* description, void* buffer, int size)
+{
+    char finalSaveFileName[1024];
+    sprintf(finalSaveFileName, "save\\%d\\%s", deviceId, filename->c_str());
+    FILE* fHandle = fopen(finalSaveFileName, "wb+");
+    if (fHandle)
+    {
+        fwrite(buffer, size, 1, fHandle);
+        fclose(fHandle);
+        return 0;
+    }
+    return -1;
+}]=]
+    [=[s32 writeSaveData(s32 deviceId, const std::string* filename, char*, void* buffer, int size)
+{
+    return filename && buffer && size > 0
+        ? lagiAzelSaveWrite(deviceId, filename->c_str(), buffer, static_cast<std::size_t>(size))
+        : -1;
+}]=]
+    source_text "${source_text}")
+   string(REPLACE
+    [=[s32 readFrombackup(s32 deviceId, const std::string* filename, sSaveDataRaw* buffer)
+{
+    char finalSaveFileName[1024];
+    sprintf(finalSaveFileName, "save\\%d\\%s", deviceId, filename->c_str());
+    FILE* fHandle = fopen(finalSaveFileName, "rb");
+    if (fHandle)
+    {
+        fread(buffer, sizeof(sSaveDataRaw), 1, fHandle);
+        fclose(fHandle);
+        return 0;
+    }
+    return -1;
+}]=]
+    [=[s32 readFrombackup(s32 deviceId, const std::string* filename, sSaveDataRaw* buffer)
+{
+    return filename && buffer
+        ? lagiAzelSaveRead(deviceId, filename->c_str(), buffer, sizeof(sSaveDataRaw))
+        : -1;
+}]=]
+    source_text "${source_text}")
+   string(REPLACE
+    [=[s32 getBupStatusWithBuffer(s32 slotIndex, u32 dataSize)
+{
+    return 1;
+}
+
+s32 getBupStatus(s32 slotIndex)
+{
+    return 0;
+}]=]
+    [=[s32 getBupStatusWithBuffer(s32 slotIndex, u32)
+{
+    return lagiAzelSaveFreeSlots(slotIndex);
+}
+
+s32 getBupStatus(s32 slotIndex)
+{
+    return lagiAzelSaveDeviceAvailable(slotIndex) ? 0 : -1;
+}]=]
+    source_text "${source_text}")
+   string(REPLACE
+    [=[        char finalSaveFileName[1024];
+        sprintf(finalSaveFileName, "save\\%d\\%s", device, saveFileName.c_str());
+
+        FILE* fHandle = fopen(finalSaveFileName, "rb");
+        if (fHandle)
+        {
+            sSaveDataRaw* pNewGameState = new sSaveDataRaw;
+            fread(pNewGameState, sizeof(sSaveDataRaw), 1, fHandle);
+            fclose(fHandle);
+            return pNewGameState;
+        }
+
+        return NULL;]=]
+    [=[        sSaveDataRaw* pNewGameState = new sSaveDataRaw;
+        if (lagiAzelSaveRead(device, saveFileName.c_str(),
+                pNewGameState, sizeof(sSaveDataRaw)) == 0)
+            return pNewGameState;
+        delete pNewGameState;
+        return NULL;]=]
+    source_text "${source_text}")
+   string(REPLACE
+    "                assert(0); //060196c4 this would create the icon for the disabled slot"
+    "                // Vita exposes only internal storage; unavailable Saturn backup devices stay disabled."
+    source_text "${source_text}")
+   string(REPLACE
+    "                Unimplemented(); // TODO: setSoundOutputMode not yet implemented"
+    "                // Audio output-mode restoration is deferred until that Saturn option is exposed."
+    source_text "${source_text}")
+   string(REPLACE
+    "        Unimplemented();\n    }\n\n    // 06019bd4"
+    "    }\n\n    // 06019bd4"
+    source_text "${source_text}")
+   string(REGEX MATCHALL
+    "LAGI_(LOAD_SCREEN|SAVE_TASK|SAVE_SLOT_TASK|SAVE_PROGRESS)_ZERO_INIT"
+    lagi_save_zero_init_matches
+    "${source_text}")
+   list(LENGTH lagi_save_zero_init_matches lagi_save_zero_init_match_count)
+   if(NOT lagi_save_zero_init_match_count EQUAL 4)
+    message(FATAL_ERROR
+     "Save/load zero-init patches did not apply exactly four times: found "
+     "${lagi_save_zero_init_match_count} matches")
+   endif()
+  elseif(relative_path STREQUAL "kernel/menuCursor.cpp")
+   string(REPLACE
+    "    pThis->m4 = pMenuData->m0;\n    pThis->m8 = pMenuData->m4;"
+    "    // LAGI_MENU_CURSOR_ZERO_INIT\n    pThis->m0_selectedEntry = -1;\n    pThis->m4 = pMenuData->m0;\n    pThis->m8 = pMenuData->m4;\n    pThis->mC = 0;"
+    source_text "${source_text}")
+   string(REPLACE
+    "    pThis->m4 = config;\n    pThis->mC = 2;"
+    "    // LAGI_MENU_CURSOR2_ZERO_INIT\n    pThis->m0 = -1;\n    pThis->m4 = config;\n    pThis->m8 = 0;\n    pThis->mC = 2;"
+    source_text "${source_text}")
+   string(REGEX MATCHALL
+    "LAGI_MENU_CURSOR2?_ZERO_INIT"
+    lagi_menu_cursor_zero_init_matches
+    "${source_text}")
+   list(LENGTH lagi_menu_cursor_zero_init_matches lagi_menu_cursor_zero_init_match_count)
+   if(NOT lagi_menu_cursor_zero_init_match_count EQUAL 2)
+    message(FATAL_ERROR
+     "Menu cursor zero-init patches did not apply exactly twice: found "
+     "${lagi_menu_cursor_zero_init_match_count} matches")
+   endif()
+  endif()
+
+  if(source_text STREQUAL original_text)
   message(FATAL_ERROR
    "Upstream Azel source no longer contains the expected PDS.h include: "
    "${relative_path}")
@@ -1195,6 +2099,7 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  menu_dragonMorph.cpp
  dragonData.cpp
  mainMenuDebugTasks.cpp
+ menu/inventoryMenu.cpp
  collision.cpp
  kernel/grid.cpp
  kernel/fileBundle.cpp
@@ -1218,13 +2123,47 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  field/fieldVisibilityGrid.cpp
  field/fieldRadar.cpp
  field/fieldCutsceneTask.cpp
+ field/fieldCutsceneTask2.cpp
+ field/fieldCutsceneTask3.cpp
+ field/exitField.cpp
+ field/fieldItemBoxDefinition.cpp
+ field/fieldItemBox.cpp
+ field/fieldItemBox_type0.cpp
+ field/fieldItemBox_type1.cpp
+ field/fieldItemBox_type2.cpp
+ field/fieldSavePoint.cpp
+ field/fieldParticlePool.cpp
+ field/fieldDebrisScatter.cpp
+ field/battleStart.cpp
  field/fieldDragonMovement.cpp
  field/fieldDragonInput.cpp
  field/fieldDialog.cpp
  field/fieldScriptWaitTask.cpp
  field/dragonLightWingEvolution.cpp
+ field/field_a3/a3_0_task4.cpp
+ field/field_a3/a3_2_crashedImperialShip.cpp
+ field/field_a3/a3_background_layer.cpp
+ field/field_a3/a3_birds.cpp
+ field/field_a3/a3_crane_lower.cpp
+ field/field_a3/a3_crane_upper.cpp
+ field/field_a3/a3_dynamic_mine_cart.cpp
+ field/field_a3/a3_fan.cpp
+ field/field_a3/a3_static_mine_cart.cpp
+ field/field_a3/a3_waterfall.cpp
  field/field_a3/o_fld_a3.cpp
+ field/field_a3/o_fld_a3_0.cpp
  field/field_a3/o_fld_a3_1.cpp
+ field/field_a3/o_fld_a3_2.cpp
+ field/field_a3/o_fld_a3_3.cpp
+ field/field_a3/o_fld_a3_4.cpp
+ field/field_a3/o_fld_a3_5.cpp
+ field/field_a3/o_fld_a3_6.cpp
+ field/field_a3/o_fld_a3_7.cpp
+ field/field_a3/o_fld_a3_8.cpp
+ field/field_a3/o_fld_a3_9.cpp
+ field/field_a3/o_fld_a3_A.cpp
+ field/field_a3/o_fld_a3_B.cpp
+ field/field_a3/o_fld_a3_C.cpp
  LCS.cpp
  field/field_d5/o_fld_d5.cpp
  field/field_d5/d5_nameEntry.cpp
@@ -1237,6 +2176,7 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  battle/battleDebugList.cpp
  battle/battleOverlay.cpp
  battle/battlePowerGauge.cpp
+ battle/gunShotRootTask.cpp
  kernel/menuSprite.cpp
  kernel/menuCursor.cpp
  kernel/flagEditor.cpp
@@ -1252,6 +2192,12 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  town/townLCS.cpp
  town/collisionRegistry.cpp
  kernel/worldGrid.cpp
+ # E006 is Azel's native destination after the first FLD_A3 flight segment.
+ # Its VDP2 background task is shared with the upstream excavation overlay.
+ town/exca/twn_exca.cpp
+ town/excaEntity.cpp
+ town/townDragon.cpp
+ town/e006/twn_e006.cpp
  town/ruin/twn_ruin.cpp
  town/ruin/twn_ruin_lock.cpp
 )
@@ -1365,6 +2311,8 @@ add_executable(lagi
  src/integration/lagi_task_vita.cpp
  src/integration/lagi_saturn_memory_vita.cpp
  src/integration/lagi_disc_file_vita.cpp
+ src/integration/lagi_save_platform_vita.cpp
+ src/integration/lagi_system_menu_vita.cpp
  src/integration/lagi_common_overlay_vita.cpp
  src/integration/lagi_sound_table_vita.cpp
  src/integration/lagi_dragon_common_vita.cpp
@@ -1374,6 +2322,24 @@ add_executable(lagi
  src/integration/lagi_vdp1_animated_quad_vita.cpp
  ${LAGI_AZEL_UPSTREAM_SOURCES}
 )
+
+# Neptune performs the measured field transforms, lighting, material decoding
+# and submission preparation. Bring-up configurations often have no build type,
+# so make its optimization explicit rather than depending on Release flags.
+# Keep floating-point operation order; hardware A/B can disable this separately.
+option(LAGI_OPTIMIZE_NEPTUNE "Optimize Neptune CPU renderer" ON)
+if(LAGI_OPTIMIZE_NEPTUNE)
+ set_source_files_properties(
+  src/platform/vita/neptune_renderer.cpp
+  PROPERTIES COMPILE_OPTIONS "-O2;-fno-fast-math;-ffp-contract=off"
+             COMPILE_DEFINITIONS "LAGI_NEPTUNE_OPTIMIZED=1"
+ )
+else()
+ set_source_files_properties(
+  src/platform/vita/neptune_renderer.cpp
+  PROPERTIES COMPILE_DEFINITIONS "LAGI_NEPTUNE_OPTIMIZED=0"
+ )
+endif()
 
 # The SCSP DSP interpreter is the measured native-audio hotspot. Optimize only
 # the Lagi-owned replacement; keep the rest of the bring-up build unchanged.
@@ -1405,6 +2371,8 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/ruin"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/exca"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/e006"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/kernel"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/audio"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/ThirdParty/aosdk"

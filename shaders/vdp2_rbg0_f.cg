@@ -6,6 +6,16 @@
 // and final RBG0 rendering.
 #include "vdp2_common.cginc"
 
+// Pattern-name and palette words are always even-addressed. Unlike the
+// general byte reader, this needs one fetch and no cross-texel word case.
+float readRbgAlignedBE16(uniform sampler2D raw, float byteAddress)
+{
+    const float4 bytes = rawTexel(raw, floor(byteAddress * 0.25f));
+    const float2 word = fmod(byteAddress, 4.0f) < 0.5f
+        ? bytes.rg : bytes.ba;
+    return dot(floor(word * 255.0f + 0.5f), float2(256.0f, 1.0f));
+}
+
 float selectRbg0Plane(
     float index,
     float4 p0,
@@ -13,29 +23,27 @@ float selectRbg0Plane(
     float4 p2,
     float4 p3)
 {
-    if (index < 0.5f) return p0.x;
-    if (index < 1.5f) return p0.y;
-    if (index < 2.5f) return p0.z;
-    if (index < 3.5f) return p0.w;
-    if (index < 4.5f) return p1.x;
-    if (index < 5.5f) return p1.y;
-    if (index < 6.5f) return p1.z;
-    if (index < 7.5f) return p1.w;
-    if (index < 8.5f) return p2.x;
-    if (index < 9.5f) return p2.y;
-    if (index < 10.5f) return p2.z;
-    if (index < 11.5f) return p2.w;
-    if (index < 12.5f) return p3.x;
-    if (index < 13.5f) return p3.y;
-    if (index < 14.5f) return p3.z;
-    return p3.w;
+    // Balanced selection: four decisions rather than up to fifteen.
+    float4 plane;
+    float lane;
+    if (index < 7.5f) {
+        plane = index < 3.5f ? p0 : p1;
+        lane = index < 3.5f ? index : index - 4.0f;
+    } else {
+        plane = index < 11.5f ? p2 : p3;
+        lane = index < 11.5f ? index - 8.0f : index - 12.0f;
+    }
+    if (lane < 1.5f) return lane < 0.5f ? plane.x : plane.y;
+    return lane < 2.5f ? plane.z : plane.w;
 }
 
-float4 sampleRbg0D5Cell(
+float4 sampleRbg0Cell(
     uniform sampler2D raw,
     float mapX,
     float mapY,
     float4 format,
+    float overPattern,
+    float sharedPlane,
     float4 p0,
     float4 p1,
     float4 p2,
@@ -44,7 +52,8 @@ float4 sampleRbg0D5Cell(
     const float chctlb = format.x;
     const float pncr = format.y;
     const float craofb = format.z;
-    const float plsz = format.w;
+    const float plsz = fmod(format.w, 4.0f);
+    const float screenOver = fmod(floor(format.w / 4.0f), 4.0f);
 
     const float chsz = fmod(floor(chctlb / 256.0f), 2.0f);
     const float chcn = fmod(floor(chctlb / 4096.0f), 8.0f);
@@ -54,25 +63,45 @@ float4 sampleRbg0D5Cell(
     const float caos = fmod(craofb, 8.0f);
 
     const float planeWidth =
-        (fmod(floor(plsz), 2.0f) >= 1.0f) ? 1024.0f : 512.0f;
+        plsz >= 0.5f ? 1024.0f : 512.0f;
     const float planeHeight =
-        (floor(plsz / 2.0f) >= 1.0f) ? 1024.0f : 512.0f;
+        plsz >= 1.5f ? 1024.0f : 512.0f;
     const float mapWidth = planeWidth * 4.0f;
     const float mapHeight = planeHeight * 4.0f;
 
-    mapX = fmod(floor(mapX), mapWidth);
-    mapY = fmod(floor(mapY), mapHeight);
-    if (mapX < 0.0f) mapX += mapWidth;
-    if (mapY < 0.0f) mapY += mapHeight;
+    // Test the unwrapped coordinates. Modes 2/3 make the outside area
+    // transparent; mode 1 repeats OVPNR, not the map's edge tiles.
+    const float limitX = screenOver >= 2.5f ? 512.0f : mapWidth;
+    const float limitY = screenOver >= 2.5f ? 512.0f : mapHeight;
+    const bool outside = mapX < 0.0f || mapY < 0.0f ||
+        mapX >= limitX || mapY >= limitY;
+    if (outside && screenOver >= 1.5f)
+        return float4(0.0f, 0.0f, 0.0f, 0.0f);
 
-    const float planeX = floor(mapX / planeWidth);
-    const float planeY = floor(mapY / planeHeight);
-    const float planeIndex = planeY * 4.0f + planeX;
-    const float planeBase = selectRbg0Plane(
-        planeIndex, p0, p1, p2, p3);
-
-    const float inPlaneX = mapX - planeX * planeWidth;
-    const float inPlaneY = mapY - planeY * planeHeight;
+    float planeBase;
+    float inPlaneX;
+    float inPlaneY;
+    if (sharedPlane >= 0.5f) {
+        // All authored planes reference the same page data. Rotation and
+        // screen-over still apply; only the redundant plane lookup is gone.
+        planeBase = p0.x;
+        // Wrapping to the map and then to a plane is redundant when every
+        // plane aliases the same data. Keep the unwrapped screen-over test
+        // above, but normalize the integer sample directly to its plane.
+        // Dimensions are powers of two. Binary scaling + frac gives the same
+        // positive integer remainder, without signed-remainder correction.
+        inPlaneX = frac(floor(mapX) / planeWidth) * planeWidth;
+        inPlaneY = frac(floor(mapY) / planeHeight) * planeHeight;
+    } else {
+        mapX = frac(floor(mapX) / mapWidth) * mapWidth;
+        mapY = frac(floor(mapY) / mapHeight) * mapHeight;
+        const float planeX = floor(mapX / planeWidth);
+        const float planeY = floor(mapY / planeHeight);
+        planeBase = selectRbg0Plane(
+            planeY * 4.0f + planeX, p0, p1, p2, p3);
+        inPlaneX = mapX - planeX * planeWidth;
+        inPlaneY = mapY - planeY * planeHeight;
+    }
     const float pageX = floor(inPlaneX / 512.0f);
     const float pageY = floor(inPlaneY / 512.0f);
     const float inPageX = inPlaneX - pageX * 512.0f;
@@ -83,7 +112,7 @@ float4 sampleRbg0D5Cell(
     const float patternSize = (pnb >= 0.5f) ? 2.0f : 4.0f;
     const float pageSize = pageDimension * pageDimension * patternSize;
 
-    const float pageNumber = pageY * pageDimension + pageX;
+    const float pageNumber = pageY * (planeWidth / 512.0f) + pageX;
     const float pageBase = planeBase + pageNumber * pageSize;
     const float patternX = floor(inPageX / patternDim);
     const float patternY = floor(inPageY / patternDim);
@@ -92,7 +121,8 @@ float4 sampleRbg0D5Cell(
 
     // D5 uses one-word pattern names. Keep the generic state live, but avoid
     // inventing a two-word decode until a scene actually requires it.
-    const float patternName = readBE16(raw, patternAddress);
+    const float patternName = outside && screenOver >= 0.5f
+        ? overPattern : readRbgAlignedBE16(raw, patternAddress);
 
     float characterNumber = 0.0f;
     float flipFunction = 0.0f;
@@ -182,28 +212,44 @@ float4 sampleRbg0D5Cell(
         dotColor = readByte(raw, dotAddress);
     }
 
-    if (dotColor < 0.5f)
+    if (dotColor < 0.5f && format.w < 16.0f)
         return float4(0.0f, 0.0f, 0.0f, 0.0f);
 
     const float paletteEntry =
         caos * 256.0f + paladdr + dotColor;
-    return rgb555(readBE16(
-        raw, 524288.0f + paletteEntry * 2.0f));
+    // Native getVdp2Cram() wraps at 4 KiB, including palette-bank carry.
+    return rgb555(readRbgAlignedBE16(
+        raw, 524288.0f + fmod(paletteEntry, 2048.0f) * 2.0f));
 }
 
 float readRbgCoefficient(
     uniform sampler2D raw,
-    float byteAddress)
+    float byteAddress,
+    float entrySize,
+    out bool invalid)
 {
     byteAddress = fmod(byteAddress, 524288.0f);
     if (byteAddress < 0.0f)
         byteAddress += 524288.0f;
 
-    const float b0 = readByte(raw, byteAddress);
-    const float b1 = readByte(raw, byteAddress + 1.0f);
-    const float b2 = readByte(raw, byteAddress + 2.0f);
+    // Coefficient entries are naturally aligned. Fetch the packed word
+    // once, rather than three dependent texture lookups per fragment.
+    // Convert all channels once. A two-byte entry selects RG or BA;
+    // a four-byte entry always occupies the whole aligned texel.
+    const float4 bytes = floor(
+        rawTexel(raw, floor(byteAddress * 0.25f)) * 255.0f + 0.5f);
+    if (entrySize < 2.5f) {
+        const float2 word = fmod(byteAddress, 4.0f) < 0.5f
+            ? bytes.rg : bytes.ba;
+        invalid = word.y >= 128.0f;
+        float value16 = word.x + fmod(word.y, 128.0f) * 256.0f;
+        if (value16 >= 16384.0f) value16 -= 32768.0f;
+        return value16 / 1024.0f;
+    }
+    const float b2 = bytes.b;
+    invalid = bytes.a >= 128.0f;
 
-    float value = b0 + b1 * 256.0f + b2 * 65536.0f;
+    float value = bytes.r + bytes.g * 256.0f + b2 * 65536.0f;
     if (b2 >= 128.0f)
         value -= 16777216.0f;
     return value / 65536.0f;
@@ -220,17 +266,63 @@ float4 main(
     uniform float4 rbg0Transform0,
     // {X-yStep, Y-yStep, Xp, Yp}
     uniform float4 rbg0Transform1,
-    // {KAst, dKAst, dKAx, unused}
+    // {KAst, dKAst, dKAx, OVPNR}
     uniform float4 rbg0Coefficient,
-    // {coefficient table base, enabled, entry size, unused}
+    uniform float4 rbg0SwitchCoefficient,
+    // {A coefficient base, enabled, entry size, 0=none 1=A 2=B}
+    uniform float4 rbg0SwitchInfo,
+    // {coefficient table base, enabled, entry size, all planes identical}
     uniform float4 rbg0Info,
     // {CHCTLB, PNCR, CRAOFB, RBG0 PLSZ}
-    uniform float4 rbg0Format)
+    uniform float4 rbg0Format,
+    uniform float4 rbg0BPlane0,
+    uniform float4 rbg0BPlane1,
+    uniform float4 rbg0BPlane2,
+    uniform float4 rbg0BPlane3,
+    uniform float4 rbg0BTransform0,
+    uniform float4 rbg0BTransform1,
+    uniform float4 rbg0BCoefficient,
+    uniform float4 rbg0BInfo,
+    uniform float4 rbg0BFormat,
+    uniform float4 rbg0LayerWindow,
+    uniform float4 rbg0LayerWindowInfo)
 {
     const float x = min(351.0f, floor(vTexcoord.x * 352.0f));
     const float y = min(223.0f, floor(vTexcoord.y * 224.0f));
 
+    // Layer visibility (WCTLC) is independent of parameter selection (WCTLD).
+    if (fmod(floor(rbg0LayerWindowInfo.x / 2.0f), 2.0f) >= 1.0f) {
+        float xs = rbg0LayerWindow.x;
+        float xe = rbg0LayerWindow.z;
+        if (fmod(rbg0LayerWindowInfo.y, 2.0f) >= 1.0f) {
+            float address = rbg0LayerWindowInfo.z + y * 4.0f;
+            xs = floor(readLE16(raw, address) / 2.0f);
+            xe = floor(readLE16(raw, address + 2.0f) / 2.0f);
+        }
+        const bool inside = x >= xs && x <= xe &&
+            y >= rbg0LayerWindow.y && y <= rbg0LayerWindow.w;
+        const bool drawInside = fmod(rbg0LayerWindowInfo.x, 2.0f) >= 1.0f;
+        if (inside != drawInside) discard;
+    }
+
     float k = 1.0f;
+    bool selectB = false;
+    // Parameter B needs A's invalid bit to choose its pixels. Parameter A
+    // obtains the same bit together with its own coefficient below.
+    if (rbg0SwitchInfo.w >= 1.5f) {
+        bool selectedForB = false;
+        if (rbg0SwitchInfo.y >= 0.5f) {
+            float index = fmod(floor(rbg0SwitchCoefficient.x +
+                rbg0SwitchCoefficient.y * y + rbg0SwitchCoefficient.z * x), 65536.0f);
+            if (index < 0.0f) index += 65536.0f;
+            float address = (abs(rbg0SwitchCoefficient.z) > 0.000001f ?
+                0.0f : rbg0SwitchInfo.x) + index * rbg0SwitchInfo.z;
+            address = fmod(address + rbg0SwitchInfo.z - 1.0f, 524288.0f);
+            selectedForB = readByte(raw, address) >= 128.0f;
+        }
+        if (!selectedForB) discard;
+    }
+
     if (rbg0Info.y >= 0.5f) {
         const float accum =
             rbg0Coefficient.x +
@@ -248,22 +340,60 @@ float4 main(
         const float address =
             (perPixelCoefficient ? 0.0f : rbg0Info.x) +
             coeffIndex * rbg0Info.z;
-        k = readRbgCoefficient(raw, address);
+        bool invalid;
+        k = readRbgCoefficient(raw, address, rbg0Info.z, invalid);
+        // In RPMD=2, the CPU publishes A's table/size/accumulator in both
+        // selection and scaling uniforms. Reuse this fetch's invalid bit.
+        if (rbg0SwitchInfo.w >= 0.5f && rbg0SwitchInfo.w < 1.5f)
+            selectB = invalid;
+    }
+
+    // RPMD2 is one draw. A's coefficient provides both its scale and the
+    // selector; only B-selected pixels fetch B's independent coefficient.
+    float4 transform0 = rbg0Transform0;
+    float4 transform1 = rbg0Transform1;
+    float4 coefficient = rbg0Coefficient;
+    float4 info = rbg0Info;
+    float4 format = rbg0Format;
+    float4 plane0 = rbg0Plane0;
+    float4 plane1 = rbg0Plane1;
+    float4 plane2 = rbg0Plane2;
+    float4 plane3 = rbg0Plane3;
+    if (selectB) {
+        transform0 = rbg0BTransform0;
+        transform1 = rbg0BTransform1;
+        coefficient = rbg0BCoefficient;
+        info = rbg0BInfo;
+        format = rbg0BFormat;
+        plane0 = rbg0BPlane0;
+        plane1 = rbg0BPlane1;
+        plane2 = rbg0BPlane2;
+        plane3 = rbg0BPlane3;
+        k = 1.0f;
+        if (info.y >= 0.5f) {
+            float index = fmod(floor(coefficient.x + coefficient.y * y +
+                coefficient.z * x), 65536.0f);
+            if (index < 0.0f) index += 65536.0f;
+            const float address = (abs(coefficient.z) > 0.000001f ?
+                0.0f : info.x) + index * info.z;
+            bool invalidB;
+            k = readRbgCoefficient(raw, address, info.z, invalidB);
+        }
     }
 
     const float rotatedX =
-        rbg0Transform0.x +
-        rbg0Transform1.x * y +
-        rbg0Transform0.z * x;
+        transform0.x +
+        transform1.x * y +
+        transform0.z * x;
     const float rotatedY =
-        rbg0Transform0.y +
-        rbg0Transform1.y * y +
-        rbg0Transform0.w * x;
+        transform0.y +
+        transform1.y * y +
+        transform0.w * x;
 
-    const float mapX = k * rotatedX + rbg0Transform1.z;
-    const float mapY = k * rotatedY + rbg0Transform1.w;
+    const float mapX = k * rotatedX + transform1.z;
+    const float mapY = k * rotatedY + transform1.w;
 
-    return sampleRbg0D5Cell(
-        raw, mapX, mapY, rbg0Format,
-        rbg0Plane0, rbg0Plane1, rbg0Plane2, rbg0Plane3);
+    return sampleRbg0Cell(
+        raw, mapX, mapY, format, coefficient.w, info.w,
+        plane0, plane1, plane2, plane3);
 }

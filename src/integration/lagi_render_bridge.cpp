@@ -3,11 +3,15 @@
 #include "lagi/lagi_live_model_adapter.h"
 #include "lagi/platform.h"
 
+#include <algorithm>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <unordered_map>
+#include <atomic>
 
 struct sProcessed3dModel;
+extern unsigned char* getVdp1Pointer(unsigned int address) __attribute__((weak));
 
 // Minimal layout mirrors for the live Azel globals we capture. These match the
 // portable prefix used by upstream Azel but avoid including common.h, which
@@ -39,10 +43,26 @@ extern LagiLightSetup lightSetup __attribute__((weak));
 namespace lagi::azel_bridge {
 
 static std::uint32_t g_submissionCount = 0;
+static std::uint32_t g_modelCacheMisses = 0;
+static std::uint32_t g_publishedModelCacheMisses = 0;
+static std::uint32_t g_explicitStaticContextsSet = 0;
+static std::uint32_t g_explicitStaticContextsConsumed = 0;
+static std::uint32_t g_publishedExplicitStaticContextsSet = 0;
+static std::uint32_t g_publishedExplicitStaticContextsConsumed = 0;
 static sProcessed3dModel* g_lastModel = nullptr;
 static const LiveVdp1Model* g_lastAdaptedModel = nullptr;
 static SubmissionState g_lastState{};
 static std::unordered_map<sProcessed3dModel*, LiveVdp1Model> g_modelCache;
+static std::uint64_t g_resourceGeneration = 0;
+static std::unordered_map<std::int8_t, std::uint64_t> g_bundleGenerations;
+static std::unordered_map<std::int8_t,
+    std::shared_ptr<const std::vector<std::uint8_t>>> g_bundleTextureMemory;
+static std::unordered_map<std::uint64_t, RegisteredModelResource> g_registeredResources;
+static std::vector<RegisteredModelResource> g_publishedResources;
+static bool g_resourceInventoryDirty = false;
+static std::atomic<std::uint32_t> g_textureWriteEpoch{0};
+static std::unordered_map<std::int8_t, std::uint64_t> g_bundleTextureEpochs;
+static std::uint64_t g_publishedResourceRevision = 0;
 static std::vector<const LiveVdp1Model*> g_adaptedModels;
 static std::vector<RenderSubmission> g_submissions;
 static std::vector<const LiveVdp1Model*> g_publishedAdaptedModels;
@@ -55,7 +75,16 @@ static bool g_hasPendingTownSubmission = false;
 static bool g_reportedFirstSubmission = false;
 static bool g_reportedFirstAdaptedModel = false;
 static bool g_viewRelativeScope = false;
+static bool g_forceDynamicSubmissions = false;
 static std::int32_t g_viewScopeMatrix[12]{};
+static bool g_nativeSceneViewValid = false;
+static std::int32_t g_nativeSceneViewMatrix[12]{};
+
+// Bounded FLD_A3 diagnostic: compare the static-grid state synthesized by the
+// generated hook with Azel's actual pCurrentMatrix/currentLightVector_M at the
+// native addObjectToDrawList() boundary. This is observation only; it never
+// changes submission state or rendering.
+static unsigned int g_staticLightingCompareBudget = 96u;
 
 static void copyMatrixRaw(const LagiMatrix4x3& source, std::int32_t out[12])
 {
@@ -105,9 +134,15 @@ static void removeViewTransform(
     }
 }
 
-void begin_frame()
+void begin_frame(bool forceDynamicSubmissions)
 {
+    g_forceDynamicSubmissions = forceDynamicSubmissions;
+    g_nativeSceneViewValid = false;
+    g_viewRelativeScope = false;
     g_submissionCount = 0;
+    g_modelCacheMisses = 0;
+    g_explicitStaticContextsSet = 0;
+    g_explicitStaticContextsConsumed = 0;
     g_lastModel = nullptr;
     g_lastAdaptedModel = nullptr;
     g_lastState = {};
@@ -121,6 +156,24 @@ void begin_frame()
 std::uint32_t submission_count()
 {
     return g_submissionCount;
+}
+
+void trace_actor_submission_matrix(const char* label)
+{
+    std::int32_t current[12]{};
+    const bool valid = &pCurrentMatrix && pCurrentMatrix;
+    if (valid)
+        copyMatrixRaw(*pCurrentMatrix, current);
+    const auto report = [&](const char* space, const std::int32_t* m) {
+        lagi::platform::logging::writef(
+            "[NativeActorMatrix] kind=%s space=%s currentValid=%u viewValid=%u scoped=%u "
+            "matrix=%d,%d,%d,%d;%d,%d,%d,%d;%d,%d,%d,%d\n",
+            label, space, valid ? 1u : 0u, g_nativeSceneViewValid ? 1u : 0u,
+            g_viewRelativeScope ? 1u : 0u,
+            m[0],m[1],m[2],m[3],m[4],m[5],m[6],m[7],m[8],m[9],m[10],m[11]);
+    };
+    report("actorBoundary", current);
+    report("nativeView", g_nativeSceneViewMatrix);
 }
 
 sProcessed3dModel* last_model()
@@ -152,13 +205,118 @@ const LiveVdp1Model* adapted_model(std::uint32_t index)
 
 void publish_frame()
 {
+    // This is the game-side publication boundary. Refresh immutable texture
+    // bytes once per write epoch, not per model. No renderer container is
+    // mutated by the asynchronous invalidation callback.
+    const auto writeEpoch = native_texture_write_epoch();
+    const bool staleMemory = std::any_of(g_registeredResources.begin(),
+        g_registeredResources.end(), [&](const auto& entry) {
+            return entry.second.textureWriteEpoch != writeEpoch;
+        });
+    if (staleMemory && &getVdp1Pointer) {
+        if (const auto* bytes = getVdp1Pointer(0x25C00000u)) {
+            auto snapshot = std::make_shared<const std::vector<std::uint8_t>>(
+                bytes, bytes + 0x80000u);
+            for (auto& entry : g_registeredResources) {
+                entry.second.textureMemory = snapshot;
+                entry.second.textureWriteEpoch = writeEpoch;
+            }
+            for (auto& entry : g_bundleTextureMemory) {
+                entry.second = snapshot;
+                g_bundleTextureEpochs[entry.first] = writeEpoch;
+            }
+            g_resourceInventoryDirty = true;
+        }
+    }
+    if (g_resourceInventoryDirty) {
+        std::vector<RegisteredModelResource> snapshot;
+        snapshot.reserve(g_registeredResources.size());
+        for (const auto& entry : g_registeredResources)
+            snapshot.push_back(entry.second);
+        g_publishedResources.swap(snapshot);
+        g_resourceInventoryDirty = false;
+        ++g_publishedResourceRevision;
+        lagi::platform::logging::writef("[NativeResourceInventory] generation=%llu models=%u\n",
+            static_cast<unsigned long long>(g_resourceGeneration),
+            static_cast<unsigned>(g_publishedResources.size()));
+    }
     // LiveVdp1Model objects themselves live in g_modelCache and therefore
     // remain stable across frames. Only the per-frame ordering/state vectors
     // need to be snapshotted here.
     g_publishedSubmissions = g_submissions;
     g_publishedVdp1UiCommands = g_vdp1UiCommands;
     g_publishedAdaptedModels = g_adaptedModels;
+    g_publishedModelCacheMisses = g_modelCacheMisses;
+    g_publishedExplicitStaticContextsSet = g_explicitStaticContextsSet;
+    g_publishedExplicitStaticContextsConsumed =
+        g_explicitStaticContextsConsumed;
     ++g_publishedFrameNumber;
+}
+
+void notify_native_bundle_loaded(std::int8_t bundleIndex)
+{
+    g_bundleGenerations[bundleIndex] = ++g_resourceGeneration;
+    g_bundleTextureMemory.erase(bundleIndex);
+    g_bundleTextureEpochs.erase(bundleIndex);
+    if (&getVdp1Pointer) {
+        if (const auto* memory = getVdp1Pointer(0x25C00000u)) {
+            g_bundleTextureMemory.emplace(bundleIndex,
+                std::make_shared<const std::vector<std::uint8_t>>(
+                    memory, memory + 0x80000u));
+            g_bundleTextureEpochs[bundleIndex] = native_texture_write_epoch();
+        }
+    }
+    for (auto it = g_registeredResources.begin(); it != g_registeredResources.end();) {
+        if (it->second.bundleIndex == bundleIndex)
+            it = g_registeredResources.erase(it);
+        else
+            ++it;
+    }
+    // Published shared ownership protects the renderer's prior frame until
+    // the existing frame-slot wait allows publish_frame() to replace it.
+    g_resourceInventoryDirty = true;
+}
+
+void register_native_model_resource(std::int8_t bundleIndex,
+    std::uint32_t modelOffset, sProcessed3dModel* model)
+{
+    const auto generation = g_bundleGenerations.find(bundleIndex);
+    const auto memory = g_bundleTextureMemory.find(bundleIndex);
+    if (!model || !modelOffset || generation == g_bundleGenerations.end() ||
+        memory == g_bundleTextureMemory.end())
+        return;
+    const std::uint64_t key =
+        (static_cast<std::uint64_t>(static_cast<std::uint8_t>(bundleIndex)) << 32) |
+        modelOffset;
+    if (g_registeredResources.find(key) != g_registeredResources.end())
+        return;
+    auto adapted = std::make_shared<LiveVdp1Model>();
+    if (!adapt_processed_model(model, *adapted))
+        return;
+    g_registeredResources.emplace(key, RegisteredModelResource{
+        generation->second, bundleIndex, modelOffset, std::move(adapted), memory->second,
+        g_bundleTextureEpochs.at(bundleIndex)});
+    g_resourceInventoryDirty = true;
+}
+
+const std::vector<RegisteredModelResource>& published_model_resources()
+{
+    return g_publishedResources;
+}
+
+void notify_native_texture_write()
+{
+    g_textureWriteEpoch.fetch_add(1, std::memory_order_release);
+}
+
+std::uint64_t native_texture_write_epoch()
+{
+    return g_textureWriteEpoch.load(std::memory_order_acquire);
+}
+
+std::uint64_t published_resource_revision()
+{
+    return g_publishedResourceRevision;
 }
 
 void record_vdp1_ui_command(const Vdp1UiCommand& command)
@@ -188,6 +346,21 @@ std::uint64_t published_frame_number()
     return g_publishedFrameNumber;
 }
 
+std::uint32_t published_model_cache_misses()
+{
+    return g_publishedModelCacheMisses;
+}
+
+std::uint32_t published_explicit_static_contexts_set()
+{
+    return g_publishedExplicitStaticContextsSet;
+}
+
+std::uint32_t published_explicit_static_contexts_consumed()
+{
+    return g_publishedExplicitStaticContextsConsumed;
+}
+
 void capture_current_light(SubmissionState& state)
 {
     if (&currentLightVector_M) {
@@ -197,6 +370,29 @@ void capture_current_light(SubmissionState& state)
             state.lightColor[i] =
                 currentLightVector_M.color[i];
         }
+
+        // Native scene currentLightVector_M is paired with view-relative
+        // model matrices. When the bridge publishes world-space geometry,
+        // rotate the light back through inverse(view) too. Later Neptune's
+        // model-space transpose multiply then reproduces the same dot product.
+        if (g_nativeSceneViewValid) {
+            const std::int32_t in[3] = {
+                state.lightVector[0],
+                state.lightVector[1],
+                state.lightVector[2]};
+            for (unsigned int axis = 0; axis < 3; ++axis) {
+                std::int64_t value = 0;
+                value += static_cast<std::int64_t>(
+                    g_nativeSceneViewMatrix[axis]) * in[0];
+                value += static_cast<std::int64_t>(
+                    g_nativeSceneViewMatrix[4u + axis]) * in[1];
+                value += static_cast<std::int64_t>(
+                    g_nativeSceneViewMatrix[8u + axis]) * in[2];
+                state.lightVector[axis] =
+                    static_cast<std::int32_t>(value >> 16);
+            }
+        }
+
         if (&lightSetup) {
             state.lightFalloff[0] = lightSetup.falloff[0];
             state.lightFalloff[1] = lightSetup.falloff[1];
@@ -212,12 +408,37 @@ void begin_view_relative_submission_scope()
     if (&pCurrentMatrix && pCurrentMatrix) {
         copyMatrixRaw(*pCurrentMatrix, g_viewScopeMatrix);
         g_viewRelativeScope = true;
+        // Scoped callers enter before their local model transforms. Early
+        // town actors can precede this frame's camera Draw task; retain that
+        // native root for presentation as well as removing it at submission.
+        // A later authored camera capture remains free to replace this view.
+        if (!g_nativeSceneViewValid) {
+            std::memcpy(g_nativeSceneViewMatrix, g_viewScopeMatrix,
+                sizeof(g_nativeSceneViewMatrix));
+            g_nativeSceneViewValid = true;
+        }
     }
 }
 
 void end_view_relative_submission_scope()
 {
     g_viewRelativeScope = false;
+}
+
+void capture_native_scene_view_matrix()
+{
+    if (&pCurrentMatrix && pCurrentMatrix) {
+        copyMatrixRaw(*pCurrentMatrix, g_nativeSceneViewMatrix);
+        g_nativeSceneViewValid = true;
+    }
+}
+
+bool native_scene_view_matrix(std::int32_t out[12])
+{
+    if (!out || !g_nativeSceneViewValid)
+        return false;
+    std::memcpy(out, g_nativeSceneViewMatrix, sizeof(g_nativeSceneViewMatrix));
+    return true;
 }
 
 void set_town_submission_context(
@@ -234,22 +455,38 @@ void set_town_submission_context(
     g_pendingTownSubmission.modelTableOffset = modelTableOffset;
     g_pendingTownSubmission.state = state;
     g_hasPendingTownSubmission = true;
+    if (!state.dynamic)
+        ++g_explicitStaticContextsSet;
 }
 
 static void capture_runtime_state(bool billboard)
 {
     g_lastState = {};
     g_lastState.billboard = billboard;
-    g_lastState.dynamic = g_viewRelativeScope;
+    // Field mode still defaults task-owned submissions to dynamic, but the
+    // native field view is now removed below so every submission presented by
+    // Neptune uses world-space geometry. Explicit environment-grid contexts
+    // can therefore opt into the static cache without affecting actors,
+    // effects, moving machinery, or billboards.
+    g_lastState.dynamic =
+        g_forceDynamicSubmissions || g_viewRelativeScope || billboard;
 
-    // For normal objects Azel's pCurrentMatrix already contains camera/view
-    // and model transforms at submission time. Billboard capture will later
-    // substitute cameraProperties2.m88_billboardViewMatrix when that path is
-    // linked into the Vita runtime.
+    // Azel's pCurrentMatrix contains camera/view and model transforms at the
+    // normal submission boundary. All native scenes strip the captured view;
+    // town view-relative scopes use their existing scoped view snapshot.
     if (&pCurrentMatrix && pCurrentMatrix) {
         if (g_viewRelativeScope) {
             removeViewTransform(
                 g_viewScopeMatrix,
+                *pCurrentMatrix,
+                g_lastState.modelMatrix);
+        } else if (g_nativeSceneViewValid) {
+            // Native submissions are authored under Azel's current view matrix.
+            // Remove only that native camera transform so Neptune receives a
+            // stable world-space model transform and can apply the native
+            // camera exactly once at presentation.
+            removeViewTransform(
+                g_nativeSceneViewMatrix,
                 *pCurrentMatrix,
                 g_lastState.modelMatrix);
         } else {
@@ -268,7 +505,119 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
 
     ++g_submissionCount;
     g_lastModel = model;
+    if (g_hasPendingTownSubmission &&
+        !g_pendingTownSubmission.state.dynamic &&
+        !billboard)
+        ++g_explicitStaticContextsConsumed;
     if (g_hasPendingTownSubmission) {
+        // Capture Azel's actual object-origin view depth before the explicit
+        // static context replaces the normal runtime-captured submission state.
+        // For a rigid model, pCurrentMatrix[2][3] is the model origin's view Z
+        // in 16.16 fixed point; retain the absolute depth for diagnostics.
+        if (!g_pendingTownSubmission.state.dynamic &&
+            !billboard &&
+            &pCurrentMatrix && pCurrentMatrix) {
+            const std::int32_t viewZ = pCurrentMatrix->m[2][3].asS32();
+            g_pendingTownSubmission.state.nativeViewDepthRaw =
+                viewZ < 0 ? -viewZ : viewZ;
+            g_pendingTownSubmission.state.hasNativeViewDepth = true;
+        }
+
+        // For rigid FLD_A3 environment submissions, validate that the
+        // generated static hook's world-space matrix/light pair is equivalent
+        // to the native Azel view-space pair at this exact draw boundary.
+        if (g_staticLightingCompareBudget != 0u &&
+            !g_pendingTownSubmission.state.dynamic &&
+            !billboard &&
+            g_forceDynamicSubmissions &&
+            g_nativeSceneViewValid &&
+            &pCurrentMatrix && pCurrentMatrix &&
+            &currentLightVector_M) {
+            std::int32_t actualWorld[12]{};
+            removeViewTransform(
+                g_nativeSceneViewMatrix, *pCurrentMatrix, actualWorld);
+
+            std::int32_t nativeModelLight[3]{};
+            std::int32_t syntheticModelLight[3]{};
+            for (unsigned int axis = 0; axis < 3; ++axis) {
+                std::int64_t native = 0;
+                native += static_cast<std::int64_t>(
+                    pCurrentMatrix->m[0][axis].asS32()) *
+                    currentLightVector_M.lightVector[0].asS32();
+                native += static_cast<std::int64_t>(
+                    pCurrentMatrix->m[1][axis].asS32()) *
+                    currentLightVector_M.lightVector[1].asS32();
+                native += static_cast<std::int64_t>(
+                    pCurrentMatrix->m[2][axis].asS32()) *
+                    currentLightVector_M.lightVector[2].asS32();
+                nativeModelLight[axis] =
+                    static_cast<std::int32_t>(native >> 16);
+
+                std::int64_t synthetic = 0;
+                synthetic += static_cast<std::int64_t>(
+                    g_pendingTownSubmission.state.modelMatrix[axis]) *
+                    g_pendingTownSubmission.state.lightVector[0];
+                synthetic += static_cast<std::int64_t>(
+                    g_pendingTownSubmission.state.modelMatrix[4u + axis]) *
+                    g_pendingTownSubmission.state.lightVector[1];
+                synthetic += static_cast<std::int64_t>(
+                    g_pendingTownSubmission.state.modelMatrix[8u + axis]) *
+                    g_pendingTownSubmission.state.lightVector[2];
+                syntheticModelLight[axis] =
+                    static_cast<std::int32_t>(synthetic >> 16);
+            }
+
+            std::int32_t maxBasisDelta = 0;
+            std::int32_t maxTranslationDelta = 0;
+            for (unsigned int row = 0; row < 3; ++row) {
+                for (unsigned int col = 0; col < 3; ++col) {
+                    const unsigned int i = row * 4u + col;
+                    const std::int32_t delta = static_cast<std::int32_t>(
+                        std::llabs(
+                            static_cast<long long>(actualWorld[i]) -
+                            static_cast<long long>(
+                                g_pendingTownSubmission.state.modelMatrix[i])));
+                    maxBasisDelta = std::max(maxBasisDelta, delta);
+                }
+                const unsigned int i = row * 4u + 3u;
+                const std::int32_t delta = static_cast<std::int32_t>(
+                    std::llabs(
+                        static_cast<long long>(actualWorld[i]) -
+                        static_cast<long long>(
+                            g_pendingTownSubmission.state.modelMatrix[i])));
+                maxTranslationDelta =
+                    std::max(maxTranslationDelta, delta);
+            }
+
+            const std::int32_t lightDelta0 =
+                std::abs(nativeModelLight[0] - syntheticModelLight[0]);
+            const std::int32_t lightDelta1 =
+                std::abs(nativeModelLight[1] - syntheticModelLight[1]);
+            const std::int32_t lightDelta2 =
+                std::abs(nativeModelLight[2] - syntheticModelLight[2]);
+
+            lagi::platform::logging::writef(
+                "[FieldLightCompare] cell=%u obj=%08X model=%08X "
+                "basisDelta=%d transDelta=%d "
+                "nativeLight=(%d,%d,%d) synthLight=(%d,%d,%d) "
+                "lightDelta=(%d,%d,%d)\n",
+                g_pendingTownSubmission.cellIndex,
+                g_pendingTownSubmission.objectIndex,
+                g_pendingTownSubmission.modelTableOffset,
+                maxBasisDelta,
+                maxTranslationDelta,
+                nativeModelLight[0],
+                nativeModelLight[1],
+                nativeModelLight[2],
+                syntheticModelLight[0],
+                syntheticModelLight[1],
+                syntheticModelLight[2],
+                lightDelta0,
+                lightDelta1,
+                lightDelta2);
+            --g_staticLightingCompareBudget;
+        }
+
         g_lastState = g_pendingTownSubmission.state;
         g_lastState.billboard = billboard;
     } else {
@@ -278,9 +627,25 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
     std::int32_t adaptedIndex = -1;
     auto cached = g_modelCache.find(model);
     if (cached == g_modelCache.end()) {
+        ++g_modelCacheMisses;
         LiveVdp1Model adapted{};
         if (adapt_processed_model(model, adapted))
             cached = g_modelCache.emplace(model, std::move(adapted)).first;
+        else {
+            // Bound failure reporting by model identity; a failed actor must
+            // not turn this diagnostic into a per-frame logging workload.
+            static const sProcessed3dModel* rejected[16]{};
+            static unsigned rejectedCount = 0;
+            bool reported = false;
+            for (unsigned i = 0; i < rejectedCount; ++i)
+                reported |= rejected[i] == model;
+            if (!reported && rejectedCount < 16u) {
+                rejected[rejectedCount++] = model;
+                lagi::platform::logging::writef(
+                    "[NativeModelAdaptRejected] model=%p billboard=%u explicit=%u\n",
+                    model, billboard, g_hasPendingTownSubmission);
+            }
+        }
     }
     if (cached != g_modelCache.end()) {
         g_lastAdaptedModel = &cached->second;

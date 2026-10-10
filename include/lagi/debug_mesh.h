@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <array>
 #include <vector>
 
 namespace lagi::azel {
@@ -38,6 +39,12 @@ struct DecodedMode1Texture {
     unsigned int width = 0;
     unsigned int height = 0;
     std::vector<std::uint32_t> rgba;
+    // Native decoding can classify alpha while producing pixels. Other
+    // producers leave this unknown and retain upload-time classification.
+    bool opacityKnown = false;
+    bool opaque = false;
+    bool nativeDependenciesKnown = false;
+    std::array<std::uint32_t, 4> nativeCramDependencies{};
 };
 
 struct SaturnLightingExtra {
