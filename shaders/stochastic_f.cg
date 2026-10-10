@@ -1,0 +1,16 @@
+// SGX single-tap stochastic approximation to bilinear filtering.
+// Sampler must use POINT filtering. textureInfo=(sourceW,sourceH,outputW,outputH).
+float4 main(float2 uv : TEXCOORD0, uniform sampler2D tex, uniform float4 textureInfo)
+{
+    float2 p = saturate(uv) * textureInfo.xy - 0.5f;
+    float2 baseTexel = floor(p);
+    float2 weight = frac(p);
+    float2 pixel = floor(saturate(uv) * textureInfo.zw);
+    float randomX = frac(52.9829189f * frac(dot(pixel, float2(0.06711056f, 0.00583715f))));
+    float randomY = frac(52.9829189f * frac(dot(pixel + float2(37.0f,17.0f), float2(0.06711056f,0.00583715f))));
+    float2 offset = float2(randomX < weight.x ? 1.0f : 0.0f, randomY < weight.y ? 1.0f : 0.0f);
+    float2 texel = clamp(baseTexel + offset, float2(0.0f,0.0f), textureInfo.xy - 1.0f);
+    float4 color = tex2D(tex, (texel + 0.5f) / textureInfo.xy);
+    if (color.a < 0.5f) discard;
+    return color;
+}
