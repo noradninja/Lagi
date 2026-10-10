@@ -1,5 +1,24 @@
 # Flight Mode Bring-Up
 
+## Per-decode indexed color cache experiment (2026-10-10)
+
+decodeLiveVdp1Texture now memoizes each used indexed dot's resolved RGBA
+within one descriptor decode. Modes 0/1 retain their existing CRAM/LUT color
+resolver; modes 2/3/4 retain their existing bank/mask resolver. At most 16,
+64, 128 or 256 color resolutions occur instead of one per surviving texel.
+Validity bits are distinct from RGBA values, so transparent zero results are
+cached too. No persistent palette cache is added: each invocation starts
+empty, preserving native texture invalidation and published palette state.
+Direct RGB mode 5, flat polygons, SPD/end-code gates and addressing are
+unchanged. This is shared scene decoding, not a field visibility modification.
+
+The host reference test covers all dot masks/bits, repeated and zero values,
+and palette changes between decodes, with source integration guards. It does
+not execute the Vita C++ decoder or prove full texture/GPU equivalence.
+Require fresh first-use material timing and visual checks before claiming a
+win; hardware baseline e8ac156 does not include this experiment. Vita package
+build and the host reference test passed locally; hardware remains pending.
+
 ## Remaining first-use rebuild costs (2026-10-10 source/log audit)
 
 The older 750,237-byte capture's two expensive FieldStream builds are:

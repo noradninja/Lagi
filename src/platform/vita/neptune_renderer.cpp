@@ -6010,6 +6010,22 @@ static bool decodeLiveVdp1Texture(
         return c ? vdp2Rgb555ToAbgr(c) : 0u;
     };
 
+    // A descriptor's palette/LUT is fixed throughout this decode. Resolve
+    // each used dot once, rather than repeating endian reads and RGB555
+    // conversion for every texel. Keep this local: native invalidation and
+    // descriptor lifetime semantics are unchanged, including zero colors.
+    std::uint32_t dotColors[256];
+    std::uint32_t dotColorValid[8]{};
+    auto cachedDotColor = [&](unsigned dot, auto resolveColor) {
+        const unsigned word = dot >> 5u;
+        const std::uint32_t bit = std::uint32_t(1u) << (dot & 31u);
+        if ((dotColorValid[word] & bit) == 0u) {
+            dotColors[dot] = resolveColor(dot);
+            dotColorValid[word] |= bit;
+        }
+        return dotColors[dot];
+    };
+
     auto decodeDot4 = [&](auto resolveColor) {
         unsigned pixel = 0u;
         for (unsigned y = 0; y < height; ++y) {
@@ -6027,7 +6043,7 @@ static bool decodeLiveVdp1Texture(
                     ++endCount;
                     continue;
                 }
-                out.rgba[pixel] = resolveColor(dot);
+                out.rgba[pixel] = cachedDotColor(dot, resolveColor);
             }
         }
     };
@@ -6079,8 +6095,10 @@ static bool decodeLiveVdp1Texture(
                 }
                 const unsigned dot = rawDot & mask;
                 if (!dot && !spd) continue;
-                out.rgba[p] = vdp2Rgb555ToAbgr(readVdp2Be16(
-                    g_vdp2Cram, ((bank | dot) * 2u) & 0xFFFu));
+                out.rgba[p] = cachedDotColor(dot, [&](unsigned value) {
+                    return vdp2Rgb555ToAbgr(readVdp2Be16(
+                        g_vdp2Cram, ((bank | value) * 2u) & 0xFFFu));
+                });
             }
         }
         return true;
