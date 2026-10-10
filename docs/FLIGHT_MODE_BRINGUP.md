@@ -1,5 +1,39 @@
 # Flight Mode Bring-Up
 
+## Producer-generation hardware result (2026-10-09)
+
+The fresh Downloads log (757,748 bytes) contains the split `gxmend` and
+`gxmfinish` telemetry and validates the dirty-generation implementation's
+timing effect. Among 99 RBG0-enabled ScenePerf samples, `rbgPrep` median is
+54 us and p90 is 67 us, compared with 7,837 us median in the preceding run.
+Render median is 27.951 ms, p90 30.337 ms, and maximum 83.687 ms. CPU
+preparation median is 9.002 ms. GXM completion remains 17.839 ms median:
+`gxmend` is 112 us and `gxmfinish` is 17.725 ms. This localizes the remaining
+large wait to GPU completion rather than command finalization. The sample
+set spans native scenes and is not a field-only timing distribution.
+
+Thirty complete Full-mode flight windows cover 3,600 renderer frames and
+3,600 presentation intervals. Twenty-six presentation windows have no missed
+two-vblank intervals and report nominal 29.970 FPS. Four windows contain five
+missed intervals total, each with a three-vblank maximum near 50.05 ms.
+Three renderer windows exceed 33.333 ms, with maxima 64.614, 33.424 and
+70.942 ms. Most open-field frames remain over the 25 ms budget. These results
+validate recovery from sustained 20 FPS, but fail the complete performance
+goal. First-use/rebuild hitches remain part of the acceptance gate.
+
+Ten sampled tunnel frames have RBG0 disabled: render median 8.164 ms,
+`gxmfinish` median 1.976 ms, and CPU preparation median 5.026 ms. Different
+scene contents prevent treating this as a controlled GPU A/B measurement;
+together with the completion split, it supports targeting RBG0 GPU work next.
+The next candidate is a generic RPMD2 single-pass selection path, retaining
+the current RPMD0/1/3 behavior and exact coefficient, screen-over, tile and
+palette semantics. Complementary early discards in the existing passes mean
+draw-count reduction alone does not predict the speedup. Preserve the current
+hardware-tested checkpoint for comparison and measure the next shader on Vita.
+The new log includes canyon -> E006 -> Excavation and later field/tunnel
+activity; no fresh visual acceptance statement accompanies it, so the earlier
+failed canyon fade remains unresolved.
+
 ## Full-mode VDP2 regression capture and producer generations (2026-10-09)
 
 - **Authoritative working branch:** `feature/vdp2-perf-diagnostics`. The capture
