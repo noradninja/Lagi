@@ -41,6 +41,7 @@ extern const unsigned char _binary_lagi_color_v_gxp_start[];
 extern const unsigned char _binary_lagi_color_f_gxp_start[];
 extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
+extern const unsigned char _binary_lagi_stochastic_f_gxp_start[];
 extern const unsigned char _binary_lagi_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_cinepak_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
@@ -171,17 +172,37 @@ static std::uint16_t* g_fadeIndices = nullptr;
 
 static SceGxmShaderPatcherId g_textureVertexProgramId{};
 static SceGxmShaderPatcherId g_textureFragmentProgramId{};
+static SceGxmShaderPatcherId g_stochasticFragmentProgramId{};
 static SceGxmShaderPatcherId g_cinepakFragmentProgramId{};
 static SceGxmShaderPatcherId g_vdp2NbgFragmentProgramId{};
 static SceGxmShaderPatcherId g_vdp2Rbg0FragmentProgramId{};
 static bool g_textureVertexRegistered = false;
 static bool g_textureFragmentRegistered = false;
+static bool g_stochasticFragmentRegistered = false;
 static bool g_cinepakFragmentRegistered = false;
 static bool g_vdp2NbgFragmentRegistered = false;
 static bool g_vdp2Rbg0FragmentRegistered = false;
 static bool g_vdp2Rbg0Available = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
+static SceGxmFragmentProgram* g_stochasticFragmentProgram = nullptr;
+static const SceGxmProgramParameter* g_stochasticTextureInfoParam = nullptr;
+#if defined(LAGI_STOCHASTIC_FILTER) && LAGI_STOCHASTIC_FILTER
+static constexpr bool kStochastic = true;
+#else
+static constexpr bool kStochastic = false;
+#endif
+static void setStochastic(unsigned w, unsigned h, unsigned outW, unsigned outH)
+{
+    if (!kStochastic || !g_stochasticFragmentProgram || !g_stochasticTextureInfoParam) return;
+    sceGxmSetFragmentProgram(g_probeContext, g_stochasticFragmentProgram);
+    void* ub = nullptr;
+    if (sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext, &ub) >= 0 && ub) {
+        const float info[4] = {float(w),float(h),float(outW),float(outH)};
+        sceGxmSetUniformDataF(ub, g_stochasticTextureInfoParam, 0, 4, info);
+    }
+}
+
 // Movie/front-end variants are explicitly single-sample. The normal texture
 // program uses kMultisampleMode, which is also single-sample globally.
 static SceGxmFragmentProgram* g_movieTextureFragmentProgram = nullptr;
@@ -1742,8 +1763,12 @@ static void drawAzelMenuVdp2Gpu()
 
     sceGxmSetVertexProgram(
         g_probeContext, g_textureVertexProgram);
-    sceGxmSetFragmentProgram(
-        g_probeContext, g_textureFragmentProgram);
+    sceGxmSetFragmentProgram(g_probeContext,g_textureFragmentProgram);
+    if (kStochastic) {
+        setStochastic(kVdp2TextLayerWidth,kVdp2TextLayerHeight,viewerRenderWidth(),viewerRenderHeight());
+        sceGxmTextureSetMinFilter(&g_vdp2TextLayerTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(&g_vdp2TextLayerTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+    }
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
 
     void* uniforms = nullptr;
@@ -1875,8 +1900,12 @@ static void drawAzelVdp2TextLayerGpu()
 
     sceGxmSetVertexProgram(
         g_probeContext, g_textureVertexProgram);
-    sceGxmSetFragmentProgram(
-        g_probeContext, g_textureFragmentProgram);
+    sceGxmSetFragmentProgram(g_probeContext,g_textureFragmentProgram);
+    if (kStochastic) {
+        setStochastic(kVdp2TextLayerWidth,kVdp2TextLayerHeight,viewerRenderWidth(),viewerRenderHeight());
+        sceGxmTextureSetMinFilter(&g_vdp2TextLayerTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(&g_vdp2TextLayerTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+    }
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
 
     void* uniforms = nullptr;
@@ -2376,6 +2405,10 @@ void shutdown()
                 g_probeShaderPatcher, g_cinepakFragmentProgram);
             g_cinepakFragmentProgram = nullptr;
         }
+        if (g_stochasticFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_stochasticFragmentProgram);
+            g_stochasticFragmentProgram=nullptr;
+        }
         if (g_movieTextureFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_movieTextureFragmentProgram);
@@ -2491,6 +2524,10 @@ void shutdown()
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_cinepakFragmentProgramId);
             g_cinepakFragmentRegistered = false;
+        }
+        if (g_stochasticFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_stochasticFragmentProgramId);
+            g_stochasticFragmentRegistered=false;
         }
         if (g_textureFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -4806,6 +4843,11 @@ static void drawPublishedVdp1Ui(
                 sceGxmSetUniformDataF(shadeUniforms, g_gouraudSubdivWvpParam, 0, 16, identity);
             sceGxmSetVertexStream(g_probeContext, 0, gouraudVertices);
         }
+        if (!shaded && !fieldRadarMap && kStochastic) {
+            setStochastic(texture->width,texture->height,viewerRenderWidth(),viewerRenderHeight());
+            sceGxmTextureSetMinFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
+            sceGxmTextureSetMagFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
+        }
         if (fieldRadarMap) {
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
@@ -4820,6 +4862,11 @@ static void drawPublishedVdp1Ui(
             SCE_GXM_INDEX_FORMAT_U16,
             g_vdp1UiIndices,
             6);
+        if (!shaded && !fieldRadarMap && kStochastic) {
+            sceGxmTextureSetMinFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_LINEAR);
+            sceGxmTextureSetMagFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_LINEAR);
+            sceGxmSetFragmentProgram(g_probeContext,g_textureFragmentProgram);
+        }
         if (shaded) {
             sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
             sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
@@ -8958,6 +9005,7 @@ void show_game_presentation()
     const SceGxmProgram* textureFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_texture_f_gxp_start);
+    const SceGxmProgram* stochasticGxp = reinterpret_cast<const SceGxmProgram*>(_binary_lagi_stochastic_f_gxp_start);
     const SceGxmProgram* meshFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_mesh_f_gxp_start);
@@ -8973,6 +9021,7 @@ void show_game_presentation()
 
     if (sceGxmProgramCheck(textureVertexGxp) < 0 ||
         sceGxmProgramCheck(textureFragmentGxp) < 0 ||
+        sceGxmProgramCheck(stochasticGxp) < 0 ||
         sceGxmProgramCheck(meshFragmentGxp) < 0 ||
         sceGxmProgramCheck(cinepakFragmentGxp) < 0 ||
         sceGxmProgramCheck(vdp2NbgFragmentGxp) < 0) {
@@ -8997,6 +9046,12 @@ void show_game_presentation()
         return;
     }
     g_textureFragmentRegistered = true;
+    if (sceGxmShaderPatcherRegisterProgram(g_probeShaderPatcher,stochasticGxp,&g_stochasticFragmentProgramId)<0) {
+        failure("[FAIL] STOCHASTIC REGISTER");return;
+    }
+    g_stochasticFragmentRegistered=true;
+    g_stochasticTextureInfoParam=sceGxmProgramFindParameterByName(stochasticGxp,"textureInfo");
+    if (!g_stochasticTextureInfoParam) {failure("[FAIL] STOCHASTIC UNIFORM");return;}
 
     if (sceGxmShaderPatcherRegisterProgram(
             g_probeShaderPatcher,
@@ -9185,6 +9240,11 @@ void show_game_presentation()
         return;
     }
 
+    if (sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_stochasticFragmentProgramId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,
+            nullptr,textureVertexGxp,&g_stochasticFragmentProgram)<0) {
+        failure("[FAIL] STOCHASTIC CREATE");return;
+    }
     if (sceGxmShaderPatcherCreateFragmentProgram(
             g_probeShaderPatcher,
             g_textureFragmentProgramId,
@@ -12366,8 +12426,12 @@ static bool renderMovieFrame()
             g_movieVdp2Info[0] < 0.5f && g_titleDecodedValid) {
             sceGxmSetFragmentTexture(
                 g_probeContext, 0, &g_titleDecodedTexture);
-            sceGxmSetFragmentProgram(
-                g_probeContext, g_movieTextureFragmentProgram);
+            sceGxmSetFragmentProgram(g_probeContext,g_movieTextureFragmentProgram);
+            if (kStochastic && g_movieUsesCinepakPayload) {
+                setStochastic(g_movieWidth,g_movieHeight,movieOutputWidth,movieOutputHeight);
+                sceGxmTextureSetMinFilter(&g_cinepakResolveTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+                sceGxmTextureSetMagFilter(&g_cinepakResolveTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+            }
             submitted = sceGxmDraw(
                 g_probeContext,
                 SCE_GXM_PRIMITIVE_TRIANGLES,
