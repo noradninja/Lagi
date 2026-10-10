@@ -582,6 +582,8 @@ static unsigned int g_profileClearUs = 0;
 static unsigned int g_profileBeginSceneUs = 0;
 static unsigned int g_profileComposeUs = 0;
 static unsigned int g_profileGxmWaitUs = 0;
+static unsigned int g_profileGxmEndSceneUs = 0;
+static unsigned int g_profileGxmFinishUs = 0;
 // Per-frame CPU-side timing for the native VDP2 background pipeline.
 // Resolve measures command recording and any BeginScene stall, not GPU execution.
 static unsigned int g_profileRbgPrepareUs = 0;
@@ -12215,6 +12217,8 @@ static void renderBasicWingViewer()
     g_profileLightingUs = 0u;
     g_profileSubmitUs = 0u;
     g_profileGxmWaitUs = 0u;
+    g_profileGxmEndSceneUs = 0u;
+    g_profileGxmFinishUs = 0u;
     g_profileRbgPrepareUs = 0u;
     g_profileRbgResolveUs = 0u;
     g_profileRbgRawUpdatedBytes = 0u;
@@ -12492,8 +12496,14 @@ static void renderBasicWingViewer()
         renderCpuBeforeWaitUs > g_profileSubmitUs
             ? renderCpuBeforeWaitUs - g_profileSubmitUs
             : 0u;
+    const std::uint64_t endSceneStartUs = sceKernelGetProcessTimeWide();
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
+    g_profileGxmEndSceneUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - endSceneStartUs);
+    const std::uint64_t finishStartUs = sceKernelGetProcessTimeWide();
     sceGxmFinish(g_probeContext);
+    g_profileGxmFinishUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - finishStartUs);
     g_profileGxmWaitUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - gxmWaitStartUs);
 
@@ -12564,7 +12574,8 @@ static void renderBasicWingViewer()
             "[ScenePerf] build=%uus scan=%u cache=%u obj=%u edge=%u upload=%u "
             "light=%u gourPrep=%u gourPayload=%u gourBucket=%u "
             "gourIndex=%u gourDraw=%u clear=%u begin=%u submit=%u compose=%u "
-            "cpuprep=%u gxmwait=%u render=%u polys=%u verts=%u "
+            "cpuprep=%u gxmwait=%u gxmend=%u gxmfinish=%u "
+            "render=%u polys=%u verts=%u "
             "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
@@ -12584,6 +12595,8 @@ static void renderBasicWingViewer()
             g_profileComposeUs,
             g_profileRenderCpuPrepUs,
             g_profileGxmWaitUs,
+            g_profileGxmEndSceneUs,
+            g_profileGxmFinishUs,
             g_profileRenderUs,
             static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
             static_cast<unsigned>(g_liveTownCpuMesh.vertices.size()),
