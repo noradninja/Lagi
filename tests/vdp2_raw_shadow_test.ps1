@@ -136,6 +136,61 @@ $updated = Upload-PublishedSnapshot $source $gpu $publishedGenerations $uploaded
 if ($updated -ne $rawBytes) { throw "Recreated GPU upload was $updated bytes" }
 Assert-BytesEqual $source $gpu 'Recreated GPU copy mismatch'
 
+# Model the ownership boundary independently of the byte comparison: producer
+# staging must leave the current renderer snapshot untouched, even when the
+# alternating pending buffer contains an older value of a reverted block.
+$fixtureBytes = 2 * $blockBytes
+$fixtureSource = [byte[]]::new($fixtureBytes)
+$fixtureShadow = [byte[]]::new($fixtureBytes)
+$fixtureGpu = [byte[]]::new($fixtureBytes)
+$pendingRaw = [byte[]]::new($fixtureBytes)
+$currentRaw = [byte[]]::new($fixtureBytes)
+$fixtureStaged = [uint32[]]::new(2)
+$pendingGenerations = [uint32[]]::new(2)
+$currentGenerations = [uint32[]]::new(2)
+$fixtureUploaded = [uint32[]]::new(2)
+$fixtureProducerInitialized = $false
+$fixtureGpuInitialized = $false
+foreach ($value in @(0, 0x5a, 0, 0xa5, 0xa5, 0)) {
+    $fixtureSource[17] = $value
+    $oldCurrentValue = $currentRaw[17]
+    $oldCurrentGeneration = $currentGenerations[0]
+    [Buffer]::BlockCopy($fixtureSource, 0, $pendingRaw, 0, $fixtureBytes)
+    Stage-RawSnapshot $pendingRaw $fixtureShadow $fixtureStaged $pendingGenerations ([ref]$fixtureProducerInitialized)
+    if ($currentRaw[17] -ne $oldCurrentValue -or
+        $currentGenerations[0] -ne $oldCurrentGeneration) {
+        throw 'Producer staging modified the renderer-owned snapshot'
+    }
+    $oldGpuValue = $fixtureGpu[17]
+    $wasInitialized = $fixtureGpuInitialized
+    $swapRaw = $currentRaw
+    $currentRaw = $pendingRaw
+    $pendingRaw = $swapRaw
+    $swapGenerations = $currentGenerations
+    $currentGenerations = $pendingGenerations
+    $pendingGenerations = $swapGenerations
+    $updated = Upload-PublishedSnapshot $currentRaw $fixtureGpu $currentGenerations $fixtureUploaded ([ref]$fixtureGpuInitialized)
+    $expectedBytes = if (-not $wasInitialized) { $fixtureBytes }
+        elseif ($oldGpuValue -ne $value) { $blockBytes } else { 0 }
+    if ($updated -ne $expectedBytes) {
+        throw "Alternating-buffer value $value updated $updated bytes, expected $expectedBytes"
+    }
+    Assert-BytesEqual $fixtureSource $fixtureGpu 'Alternating snapshot/reversion mismatch'
+}
+
+# Multiple staging calls before publication must still select the newest bytes.
+# Reverting between calls advances the generation rather than comparing against
+# the two-frames-old pending buffer and accidentally skipping the upload.
+$fixtureSource[17] = 0x5a
+[Buffer]::BlockCopy($fixtureSource, 0, $pendingRaw, 0, $fixtureBytes)
+Stage-RawSnapshot $pendingRaw $fixtureShadow $fixtureStaged $pendingGenerations ([ref]$fixtureProducerInitialized)
+$fixtureSource[17] = 0
+[Buffer]::BlockCopy($fixtureSource, 0, $pendingRaw, 0, $fixtureBytes)
+Stage-RawSnapshot $pendingRaw $fixtureShadow $fixtureStaged $pendingGenerations ([ref]$fixtureProducerInitialized)
+$updated = Upload-PublishedSnapshot $pendingRaw $fixtureGpu $pendingGenerations $fixtureUploaded ([ref]$fixtureGpuInitialized)
+if ($updated -ne $blockBytes) { throw 'Unpublished change/reversion lost its generation' }
+Assert-BytesEqual $fixtureSource $fixtureGpu 'Newest staged snapshot mismatch'
+
 $renderer = Get-Content "$PSScriptRoot\..\src\platform\vita\neptune_renderer.cpp" -Raw
 if ($renderer -match 'memcmp\s*\(\s*gpu\s*\+') {
     throw 'Renderer still compares against GPU-mapped memory'
@@ -153,4 +208,4 @@ if ($renderer -notmatch 'swap\(g_sceneVdp2BlockGenerations,') {
     throw 'Published block generations do not follow snapshot ownership'
 }
 
-Write-Output 'PASS: VDP2 producer generations cover initial, unchanged, changed-block, tail, and recreation cases'
+Write-Output 'PASS: VDP2 generations cover initial, unchanged, changes/reversions, alternating ownership, tail, and recreation'

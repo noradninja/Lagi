@@ -51,6 +51,18 @@
   is deliberately not mixed into `ee7318d`; the producer-generation result is
   intended to remain independently hardware-testable.
 
+Follow-up source audit: the RPMD2 A/B passes discard complementary pixels
+before `sampleRbg0Cell()`. They therefore do not both perform tile/palette
+sampling for every output pixel. A combined pass could remove duplicate
+selection/rasterization overhead, but a near-halving of GPU time cannot be
+inferred from the draw count. Measure the split completion times first.
+Producer generations also move the exact comparison work to the game thread;
+they do not remove that comparison from total CPU work. Evaluate actual
+presentation intervals as well as renderer time before claiming improvement.
+The generation test additionally passes alternating-buffer ownership,
+change/reversion, unchanged repetitions, and multiple staging calls before
+publication. The runtime/package remains the `ee7318d` implementation.
+
 ## VDP2 transfer and flight mountain-strip checkpoint (2026-10-09)
 
 - **Authoritative branch:** `feature/vdp2-perf-diagnostics`; resumed remote baseline `f69c5693f675eac3058734636295b84a32adc3f7`.
