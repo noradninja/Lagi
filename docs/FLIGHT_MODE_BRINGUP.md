@@ -1,5 +1,35 @@
 # Flight Mode Bring-Up
 
+## Smooth-play checkpoint and Excavation floor investigation (2026-10-10)
+
+User reports smooth play after decoder checkpoint 2524c88. Latest capture is
+977607 bytes, 19:01 local: RBG-enabled sampled native render median 23.886 ms,
+p90 25.305 ms. Completed field windows cover 3840 frames, 509 over 25 ms and
+two over 33.333 ms; baseline-reset entry outliers remain 41.312/44.957 ms.
+There are no >2-vblank intervals in completed presentation windows, but entry
+outlier intervals lack a baseline. Do not declare the full deadline goal achieved.
+VRAM arena ready=1/cdram=1, startup 4966 us; all recorded upload allocations zero.
+Initial 227-texture upload takes 6357 us. These are route observations, not a
+controlled A/B proof of decoder speedup or validation of every scene.
+
+User additionally requests investigation of incorrect VDP2 floor in Excavation
+and E006 cinematic, visible as broken horizontal texture patches through wires.
+Both invoke startExcaBackgroundTask. Native configuration is CHCN=1 (256 colors),
+CHSZ=1 (16x16), PNB=1 (one-word names), CNSM=0, SCN=8, RPMD=2. The shader's
+unimplemented two-word pattern branch is therefore NOT the established cause.
+Sky character data EXCA_SCR.SCB loads at 0x40000, names at 0x60000; native setup
+sets parameter-B map planes at 0x60000. The shared initializer does not call
+setupRotationMapPlanes for A. Captured mode-1/2 state shows mapA=00000,
+mapB=60000. It also fills a 0x5000-word table starting at 0x60800.
+
+This is a lead, not proof that A should point to 0x60800: zero is a legal VDP2
+map base, and source/log inspection alone does not establish intended ground
+map contents or original overlay setup. Do not hardcode an Excavation renderer
+override or alter upstream Azel on this evidence. Need original TWN_EXCA.PRG /
+TWN_E006.PRG bytes (or access to the user's Disc 1 CUE/BIN) to verify the missing
+setup against native data. No floor correction implemented; camera/actor scopes,
+flight orientation, shader, VRAM arena and decoder remain unchanged.
+
 ## VRAM arena hardware acceptance and decode checkpoint (2026-10-10)
 
 Capture 1486225 bytes, 18:49 local, corrected-arena build: ready=1/cdram=1,
