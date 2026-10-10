@@ -1,5 +1,18 @@
 # Flight Mode Bring-Up
 
+## All-frame median budget bound (2026-10-10)
+
+The report now derives a conservative median <=25 ms proof from completed
+field windows when strictly fewer than half their frames exceed 25 ms.
+This covers every counted frame, unlike ScenePerf heartbeat samples, but
+does not recover the exact median or cover incomplete tails/reset gaps.
+The strict threshold handles even-count middle-value averaging; exactly
+half above the budget is inconclusive. Empty/even/odd threshold tests pass.
+For the 643,982-byte provisional comparison: 392/3,000 frames exceed 25 ms,
+so the completed-window median bound is proven. The two 56-59 ms rebuild
+outliers still contradict deadline compliance; overall completion remains
+unproven and no performance target has been relaxed.
+
 ## New comparison capture, identity pending confirmation (2026-10-10)
 
 Downloads log changed to 643,982 bytes, timestamp 18:59 UTC, while user reports

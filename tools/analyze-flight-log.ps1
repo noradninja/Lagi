@@ -36,6 +36,10 @@ function Sum-Counter($Records, [string]$Key) {
     return $sum
 }
 
+function Test-MedianBudgetBound([long]$Frames, [long]$OverBudget) {
+    return $Frames -gt 0 -and 2 * $OverBudget -lt $Frames
+}
+
 $file = Get-Item -LiteralPath $LogPath
 $scene = @()
 $timing = @()
@@ -58,6 +62,11 @@ foreach ($enabled in @(0, 1)) {
         cpuPrep = Get-Distribution $records 'cpuprep'
     }
 }
+$completedFrames = Sum-Counter $timing 'frames'
+$completedOver25 = Sum-Counter $timing 'over25'
+# Strictly fewer than half above the budget guarantees both middle values
+# (for an even count) are within it. Equality does not establish that bound.
+$medianBoundProven = Test-MedianBudgetBound $completedFrames $completedOver25
 [ordered]@{
     path = $file.FullName
     bytes = $file.Length
@@ -66,8 +75,10 @@ foreach ($enabled in @(0, 1)) {
     sampledNativeScenes = $groups
     completeFieldRenderWindows = [ordered]@{
         windows = $timing.Count
-        frames = Sum-Counter $timing 'frames'
-        over25ms = Sum-Counter $timing 'over25'
+        frames = $completedFrames
+        over25ms = $completedOver25
+        medianAtMost25msProven = $medianBoundProven
+        medianScope = 'Only completed field windows; not an exact median or whole-capture proof.'
         over33333us = Sum-Counter $timing 'over33333'
         maxRenderUs = ($timing | ForEach-Object { $_['max'] } | Measure-Object -Maximum).Maximum
     }
