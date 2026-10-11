@@ -2115,6 +2115,37 @@ void pauseCutscene]=]
     "        pWorkArea->m_menu[0].m_isEnabled = (azelCdNumber == 0); // new game enabled only is first disk\n        pWorkArea->m_menu[1].m_isEnabled = hasSaveGame();"
     source_text "${source_text}")
   elseif(relative_path STREQUAL "kernel/loadSavegameScreen.cpp")
+   # Native 06026DF8 mini-data +4 is saved play frames, not the device ID.
+   string(REPLACE "    s32 m4_device;\n    std::string m8_playerName;"
+    "    s32 m4_playFrames; // LAGI_SAVE_PREVIEW_TIME\n    std::string m8_playerName;"
+    source_text "${source_text}")
+   string(REPLACE "            outputData->m4_device = device;"
+    "            outputData->m4_playFrames = loadedGameState->mC_mainGameState.gameStats.m3C_frameCounter;"
+    source_text "${source_text}")
+   # Native 060191C4, including the US executable's exact format strings.
+   string(REPLACE
+    [=[            drawObjectName(pSaveData->m4_miniData.m8_playerName.c_str());
+            break;]=]
+    [=[            drawObjectName(pSaveData->m4_miniData.m8_playerName.c_str());
+            // LAGI_SAVE_PREVIEW_FIELDS: native player/dragon/time/rider level.
+            vdp2StringContext.m4_cursorX = vdp2StringContext.mC_X + 2;
+            vdp2StringContext.m8_cursorY = vdp2StringContext.m10_Y + 3;
+            drawObjectName(pSaveData->m4_miniData.m19_dragonName.c_str());
+            if (pThis->m20_stringRenderingX < 0x18)
+            {
+                const s32 minutes = std::min<s32>(intDivide(0xE10, pSaveData->m4_miniData.m4_playFrames), 0x176F);
+                const s32 hours = intDivide(60, minutes);
+                vdp2PrintStatus.m10_palette = 0xC000;
+                vdp2DebugPrintSetPosition(pThis->m20_stringRenderingX + 0x14, pThis->m22_stringRenderingY + 1);
+                vdp2PrintfLargeFont("%2d:%02d", hours, minutes - hours * 60);
+                vdp2DebugPrintSetPosition(pThis->m20_stringRenderingX + 0x14, pThis->m22_stringRenderingY + 3);
+                vdp2PrintfLargeFont("LV %2d", static_cast<int>(pSaveData->m4_miniData.m0_level) + 1);
+            }
+            break;]=]
+    source_text "${source_text}")
+   if(NOT source_text MATCHES "LAGI_SAVE_PREVIEW_FIELDS" OR NOT source_text MATCHES "LAGI_SAVE_PREVIEW_TIME")
+    message(FATAL_ERROR "Native save-preview anchors changed")
+   endif()
    string(REPLACE
     "#include \"3dEngine_textureCache.h\""
     "#include \"3dEngine_textureCache.h\"\n#include \"lagi/azel_save_platform.h\""
