@@ -160,6 +160,18 @@ pointers, not coordinates. The adapter now reads coordinates at `0020F764`.
 This correction still requires device confirmation; text composition and
 cursor animation remain unresolved.
 
+Additional `9ecb699` hardware evidence: the user confirms inventory item
+descriptions work, with the Hand Gun description visible in the supplied
+screenshot. This validates that displayed case, not all item actions/pages.
+Cancelling Save exposes Lagi's temporary text-only SAVE/LOAD/RETURN adapter;
+that adapter is not the original System screen and must be replaced, not
+accepted as native restoration. Original COMMON constructor table entry
+`0020DCE8` points to `0601AE8A`, which constructs a `0x68`-byte task using
+COMMON task definition `0020FDE0`. These addresses were read from the user's
+disc image without modifying or copying assets into the repository.
+The definition has Init `0601AC2C`, no Update, Draw `0601AD2E`, and Delete
+`0601AE24`; these routines are the next implementation boundary.
+
 Scope includes opening menu/Continue, load selection and transitions, native
 in-game menu pages, system Save/Load/Return, visible slot selection and
 confirmation/cancellation, and save persistence. The user reports saving a
