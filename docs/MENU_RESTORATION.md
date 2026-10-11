@@ -192,6 +192,18 @@ and source guards pass; no full build, GPU execution or hardware acceptance
 is claimed. This does not replace the temporary System task or prove its
 cancel/return lifecycle fixed.
 
+Separate user-reported flight issue: particles remain visible through world
+geometry. Published VDP1 sprite rendering currently uses ALWAYS depth test,
+disabled writes, and zero vertex Z. The bridge now also preserves each
+command's original packet `m4_bucketTypes` key, independently of optional
+desktop extended depth. Capture is a bounded linear packet scan into fixed
+arrays, with command membership/alignment validation; no texture-specific
+world/HUD guessing or heap allocation was added. At most 16 distinct flight
+texture sources emit `[NativeSpriteDepth]` diagnostics. This is prerequisite
+metadata/evidence, not an occlusion fix: key semantics and conversion to the
+world depth convention must be established before enabling depth tests.
+Runtime and fullres/dither renderer Vita syntax checks pass; hardware pending.
+
 Scope includes opening menu/Continue, load selection and transitions, native
 in-game menu pages, system Save/Load/Return, visible slot selection and
 confirmation/cancellation, and save persistence. The user reports saving a

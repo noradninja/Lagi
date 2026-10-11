@@ -4640,6 +4640,21 @@ static void drawPublishedVdp1Ui(
 
         const unsigned int commandType = command.cmdCtrl & 0x000Fu;
 
+        if (g_sceneGameMode == 3u && !g_vdp2MenuId && !g_vdp2SaveLayout &&
+            command.hasNativeSortKey && command.nativeSortKey != 0) {
+            static std::uint16_t depthSources[16]{};
+            static unsigned depthReports = 0;
+            bool reported = false;
+            for (unsigned i = 0; i < depthReports; ++i)
+                reported |= depthSources[i] == command.cmdSrca;
+            if (!reported && depthReports < 16) {
+                depthSources[depthReports++] = command.cmdSrca;
+                logging::writef("[NativeSpriteDepth] src=%04X type=%u key=%04X extended=%u depth=%.6f\n",
+                    unsigned(command.cmdSrca), commandType, unsigned(command.nativeSortKey),
+                    command.hasDepth ? 1u : 0u, double(command.depth));
+            }
+        }
+
         const float renderAspect =
             static_cast<float>(viewerRenderWidth()) /
             static_cast<float>(viewerRenderHeight());

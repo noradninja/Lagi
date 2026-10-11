@@ -64,6 +64,10 @@ struct Vdp1UiCommand {
     // without classifying commands by field/texture identity.
     float depth = 0.0f;
     bool hasDepth = false;
+    // Native packet ordering metadata is distinct from desktop normalized
+    // depth. Preserve it without guessing a world/HUD class from texture IDs.
+    std::uint16_t nativeSortKey = 0;
+    bool hasNativeSortKey = false;
     std::int16_t xa = 0, ya = 0;
     std::int16_t xb = 0, yb = 0;
     std::int16_t xc = 0, yc = 0;

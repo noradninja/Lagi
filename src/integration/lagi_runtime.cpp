@@ -58,6 +58,21 @@ static void capture_azel_vdp1_frontend_commands()
 
     const auto begin = mainContextVdp1[0].begin() + 6;
     const auto end = ctx.m0_currentVdp1WriteEA;
+    std::array<std::uint16_t, 1024> nativeSortKeys{};
+    std::array<bool, 1024> nativeSortKeyValid{};
+    const auto commandBase = reinterpret_cast<std::uintptr_t>(mainContextVdp1[0].data());
+    const auto commandLimit = commandBase + mainContextVdp1[0].size() * sizeof(s_vdp1Command);
+    for (auto* packet = ctx.m24_vdp1Packets;
+         packet < ctx.m20_pCurrentVdp1Packet && packet < ctx.m24_vdp1Packets + 1024;
+         ++packet) {
+        const auto address = reinterpret_cast<std::uintptr_t>(packet->m6_vdp1EA);
+        if (address < commandBase || address >= commandLimit ||
+            (address - commandBase) % sizeof(s_vdp1Command)) continue;
+        const auto index = (address - commandBase) / sizeof(s_vdp1Command);
+        if (index >= nativeSortKeys.size()) continue;
+        nativeSortKeys[index] = packet->m4_bucketTypes;
+        nativeSortKeyValid[index] = true;
+    }
     unsigned int commandCount = 0u;
     unsigned int normalSprites = 0u;
     unsigned int scaledSprites = 0u;
@@ -73,6 +88,11 @@ static void capture_azel_vdp1_frontend_commands()
         ui.cmdColr = cmd->m6_CMDCOLR;
         ui.cmdSrca = cmd->m8_CMDSRCA;
         ui.cmdSize = cmd->mA_CMDSIZE;
+        const auto nativeIndex = static_cast<std::size_t>(cmd - mainContextVdp1[0].begin());
+        if (nativeIndex < nativeSortKeys.size()) {
+            ui.nativeSortKey = nativeSortKeys[nativeIndex];
+            ui.hasNativeSortKey = nativeSortKeyValid[nativeIndex];
+        }
         if ((ui.cmdPmod & 4u) && cmd->m1C_CMDGRA < ctx.m14[0].size()) {
             ui.hasGouraud = true;
             for (unsigned i = 0; i < 4; ++i)
