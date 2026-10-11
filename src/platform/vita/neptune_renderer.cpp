@@ -4735,7 +4735,8 @@ static void drawPublishedVdp1Ui(
 
         // FLD_A3's 48x48 radar sphere deliberately uses alternating
         // transparent texels (Saturn mesh-style translucency). Preserve that
-        // pattern at one source texel per output pixel with point sampling.
+        // pattern with point sampling. Its 48x48 reference size belongs to
+        // the 480x272 layout, not to the selected output resolution.
         const bool fieldRadarMap =
             g_sceneGameMode == 3u &&
             commandType == 0x0000u &&
@@ -4774,12 +4775,17 @@ static void drawPublishedVdp1Ui(
                 continue;
 
             if (fieldRadarMap) {
+                // Keep the established layout size: 48x48 at 480x272,
+                // 96x96 at 960x544. The origin follows the same native UI
+                // transform as the radar frame and other decorations.
+                constexpr float radarReferenceWidth = 480.0f;
+                constexpr float radarReferenceHeight = 272.0f;
                 x1 = x0 +
                     (2.0f * static_cast<float>(spriteWidth)) /
-                    static_cast<float>(viewerRenderWidth());
+                    radarReferenceWidth;
                 y1 = y0 -
                     (2.0f * static_cast<float>(spriteHeight)) /
-                    static_cast<float>(viewerRenderHeight());
+                    radarReferenceHeight;
             } else {
                 x1 =
                     (static_cast<float>(

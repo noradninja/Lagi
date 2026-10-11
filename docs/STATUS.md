@@ -404,7 +404,7 @@ The current live 3D renderer still flattens active work into shared buffers with
 
 ## Current development focus
 
-The user accepted the flight/rendering milestone on 2026-10-10 and authorized merging the rendering branch to main. Hardware confirms native field entry, correct field orientation, cinematic/Excavation actor placement, LCS layering and visible collection/save/destructible effects. Native field has no additional Saturn-to-GXM X mirror or winding XOR; town retains its historical mirror. The radar map stays point-filtered at 48x48 output pixels.
+The user accepted the flight/rendering milestone on 2026-10-10 and authorized merging the rendering branch to main. Hardware confirms native field entry, correct field orientation, cinematic/Excavation actor placement, LCS layering and visible collection/save/destructible effects. Native field has no additional Saturn-to-GXM X mirror or winding XOR; town retains its historical mirror. The radar map stays point-filtered. A follow-up corrects its fixed-output-pixel sizing: 48x48 in the 480x272 reference layout becomes 96x96 at 960x544. That follow-up is CPU/syntax-checked; hardware alignment and checker appearance still need confirmation.
 
 Latest authoritative capture: 913219 bytes, 20:45 local, range-invalidation checkpoint 6f74bf2. Sampled RBG-enabled native render median 23.887 ms, p90 25.163 ms. Completed field windows contain 3960 frames, 513 over 25 ms and two over 33.333 ms (39.078/41.906 ms). Completed presentation windows have zero >2-vblank intervals; cold outliers lack presentation baselines. The user explicitly accepts these two spikes for now. This is acceptance of the milestone, not proof that every scene/frame meets the original deadline.
 
