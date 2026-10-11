@@ -70,6 +70,19 @@ foreach ($hp in @(0,999,1000)) {
     }
 }
 Write-Output "PASS: $healCases healing gate/cap/BP models; not hardware execution"
+$refreshCases = 0
+foreach ($count in 1..100) {
+    foreach ($oldIndex in 0..($count-1)) {
+        $remaining = $count-1
+        if ($remaining -eq 0) { ++$refreshCases; continue }
+        $selected = [math]::Min($oldIndex,$remaining-1)
+        $page = [math]::Floor($selected/5)
+        $row = $selected%5
+        if ($selected -lt 0 -or $selected -ge $remaining -or $page*5+$row -ne $selected) { throw 'Consumed row refresh went out of range' }
+        ++$refreshCases
+    }
+}
+Write-Output "PASS: $refreshCases consumed-row refresh models including empty category and last row; not hardware"
 if ($VitaCompiler) {
     $replacement = [regex]::Match($cmake,'"(        // LAGI_INVENTORY_PAGE_BOUND[^"\r\n]*)"')
     if (!$replacement.Success) { throw 'Production inventory replacement missing' }

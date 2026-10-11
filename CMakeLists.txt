@@ -2356,7 +2356,32 @@ u16 saveMenuData_[]{]=]
     "void useInventoryItem(s_inventoryMenu* pThis)\n{\n    Unimplemented();\n}"
     [=[void inventoryMenuTaskDrawSub1(s_inventoryMenu* pThis);
 void inventoryMenuTaskDrawSub2(s_inventoryMenu* pThis, s32 item);
+void inventoryMenuTaskDrawSub0(s_inventoryMenu* pThis, s32 categoryId);
 static s16 lagiInventoryBerserkBPCost(s16 baseCost);
+
+static bool lagiInventoryConsumeHeal(eItems item)
+{
+    // Native 0600FAB8: authoritative nine-entry table at COMMON 00208A20.
+    for (int i = 0; i < 9; ++i)
+    {
+        const auto entry = gCommonFile->getSaturnPtr(0x208A20) + i * 6;
+        if (readSaturnS16(entry) != item) continue;
+        const s16 hpHeal = readSaturnS16(entry + 2);
+        const s16 bpHeal = readSaturnS16(entry + 4);
+        auto& stats = mainGameState.gameStats;
+        if (!mainGameState.consumables[item] ||
+            ((!hpHeal || stats.m10_currentHP >= stats.mB8_maxHP) &&
+             (!bpHeal || stats.m14_currentBP >= stats.mBA_maxBP)))
+            return false;
+        --mainGameState.consumables[item];
+        const s32 hp = stats.m10_currentHP + hpHeal;
+        const s32 bp = stats.m14_currentBP + bpHeal;
+        stats.m10_currentHP = static_cast<s16>(hp > stats.mB8_maxHP ? stats.mB8_maxHP : hp);
+        stats.m14_currentBP = static_cast<s16>(bp > stats.mBA_maxBP ? stats.mBA_maxBP : bp);
+        return true;
+    }
+    return false;
+}
 
 static s16 lagiInventoryBerserkHeal(eItems item)
 {
@@ -2420,7 +2445,35 @@ void useInventoryItem(s_inventoryMenu* pThis)
         playSystemSoundEffect(stats.m1_dragonLevel == 8 ? 0x21 : 0x1A);
         return;
     }
-    // Consumable and key-item native handlers remain to port.
+    if (pThis->m1C_selectedCategory == 0)
+    {
+        if (!lagiInventoryConsumeHeal(item))
+        {
+            playSystemSoundEffect(5);
+            return;
+        }
+        playSystemSoundEffect(mainGameState.gameStats.m1_dragonLevel == 8 ? 0x21 : 0x1A);
+        inventoryMenuTaskDrawSub0(pThis, 0);
+        if (pThis->m30_numItemsInCurrentCategory == 0)
+        {
+            pThis->m2C_hasCategoryAtLeastOneEntry[0] = 0;
+            switchVdp2MenuTileToHightlighted(inventoryMenuSpriteTable[0], 2, 2, 0x630);
+            displayInventoryCategoryDescription(pThis);
+            return;
+        }
+        // Native 06018420 rebuilds around the consumed item's old position.
+        // Bound that position when the removed item was the final row.
+        const int selected = index < pThis->m30_numItemsInCurrentCategory
+            ? index : pThis->m30_numItemsInCurrentCategory - 1;
+        pThis->m4_currentPageInItemList = selected / 5;
+        pThis->m24_currentSelectedItemInCurrentItemPage = selected % 5;
+        pThis->m20_menuCursorCategory->m0_selectedEntry = -1;
+        pThis->m28_menuCursorItem->m0 = selected % 5;
+        inventoryMenuTaskDrawSub1(pThis);
+        inventoryMenuTaskDrawSub2(pThis, pThis->m34_itemsInCurrentCategory[selected]);
+        return;
+    }
+    // Key-item native handlers remain to port.
     Unimplemented();
 }]=]
     source_text "${source_text}")

@@ -4,6 +4,18 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Consumable healing: `0600FAB8` uses the nine-entry table at COMMON.DAT
+`00208A20`. The adapter reads that table directly, refuses an empty inventory
+or an effect that cannot benefit HP/BP, consumes one only on success, and caps
+both resources. The menu refresh follows `06018420`: rebuild the owned list,
+keep selection near the consumed row, disable an emptied category and return
+to category selection. The old position is bounded if removal exhausts the
+last row (memory-safety guard, not an invented effect). Tests model 5050 row
+refresh cases and syntax-compile the actual patched native inventory source.
+Hardware resource changes, quantity rendering, sounds, depleted-category
+navigation and persistence remain unverified. Key-item callbacks remain
+unfinished; this does not complete the overall menu goal.
+
 Healing Berserk action: native table `06042E3C` contains IDs AA/AB/AC with
 base heals 400/900/20000. The adapter follows `060073F8`'s fixed-point SPR
 scaling and `06018634`'s full-HP, nonzero-heal and sufficient-BP gates. BP is
