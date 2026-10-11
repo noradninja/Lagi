@@ -2870,6 +2870,7 @@ add_executable(lagi
  src/integration/lagi_saturn_memory_vita.cpp
  src/integration/lagi_disc_file_vita.cpp
  src/integration/lagi_save_platform_vita.cpp
+ src/integration/lagi_azel_books_menu.cpp
  src/integration/lagi_system_menu_vita.cpp
  src/integration/lagi_common_overlay_vita.cpp
  src/integration/lagi_sound_table_vita.cpp

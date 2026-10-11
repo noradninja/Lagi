@@ -4,6 +4,14 @@ Status: original disc research, not an implemented screen or hardware result.
 Keep `createMenuBKTask` disabled until its real constructor and renderer flow
 are present. Inventory category 1 remains unfinished.
 
+Implemented prerequisite: `lagi_azel_books_menu.cpp` now provides the native
+`06016004`/`0601604E` graphics backup/restore boundary. It allocates `0x169A0`
+bytes with `dramAllocate`, copies VDP1 `0x12000/0x580`, VDP2
+`0x20000/0x16000`, and CRAM `0x7E0/0x420` in native order, then restores,
+releases and invalidates renderer caches. The translation unit passes Vita
+C++ syntax checking. It is not yet invoked because the Books task is still
+unported; no screen or runtime ownership roundtrip is claimed validated.
+
 Evidence: read-only inspection of the user-provided US Disc 1 MODE1/2352
 image. `1ST_READ.PRG` loads at `06006000`; COMMON.DAT at `00200000`.
 No game files or `extern/Azel` were modified or copied into the repository.
