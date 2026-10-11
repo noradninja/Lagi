@@ -1512,6 +1512,13 @@ void modelDrawFunction3(s_3dModel* pModel)
   # Native ray calls terminate in Lagi's shared VDP1 effect service.
 
  elseif(relative_path STREQUAL "field.cpp")
+  string(REPLACE
+   "        pNewTask->m10 = 20;"
+   "        pNewTask->m10 = 20;\n        pNewTask->m14_status = 0; // LAGI_FIELD_EXIT_ZERO_STATE: original cleared task contract"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "LAGI_FIELD_EXIT_ZERO_STATE")
+   message(FATAL_ERROR "Native field-exit initialization anchor changed")
+  endif()
   string(PREPEND source_text "#include \"lagi/lagi_render_bridge.h\"\n")
   string(REPLACE
    "}\n\nvoid getMemoryArea(s_memoryAreaOutput* pOutput, u32 areaIndex)"
