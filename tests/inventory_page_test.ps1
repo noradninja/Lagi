@@ -37,6 +37,13 @@ foreach ($learnedIndex in -1..30) {
     }
 }
 Write-Output 'PASS: 32 learned-ability patterns preserve native 30-row ordering (model only)'
+foreach ($case in @(@(0x13333,20),@(0x18000,50),@(0x20000,100),@(0x10000,0),@(0xB333,-30),@(0x1E666,90))) {
+    $wrapped = (([long]$case[0]-0x10000)*100+0x8000) -band 0xffffffffL
+    $modifier = ($wrapped -shr 16) -band 0xffff
+    if ($modifier -ge 0x8000) { $modifier -= 0x10000 }
+    if ($modifier -ne $case[1]) { throw 'Native rounded weapon modifier model changed' }
+}
+Write-Output 'PASS: six native weapon-modifier cases including negative fixed-point rounding (model only)'
 if ($VitaCompiler) {
     $replacement = [regex]::Match($cmake,'"(        // LAGI_INVENTORY_PAGE_BOUND[^"\r\n]*)"')
     if (!$replacement.Success) { throw 'Production inventory replacement missing' }
@@ -59,6 +66,10 @@ if ($VitaCompiler) {
     }
     if (!$berserkRowsNew -or !$berserkPrintNew) { throw 'Missing native Berserk production patch' }
     $patched = $patched.Replace($berserkRowsOld,$berserkRowsNew).Replace($berserkPrintOld,$berserkPrintNew)
+    $detailsOld = "void inventoryMenuTaskDrawSub2(s_inventoryMenu* pThis, s32 param_2)`n{`n    Unimplemented();`n}"
+    $detailsNew = [regex]::Match($cmake,'(?s)\[=\[(void inventoryMenuTaskDrawSub2.*?)\]=\]').Groups[1].Value.Replace("`r`n","`n")
+    if (!$detailsNew -or ($patched.Split(@($detailsOld),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Native inventory details patch target changed' }
+    $patched = $patched.Replace($detailsOld,$detailsNew).Replace('#include "items.h"',"#include `"items.h`"`n#include `"battle/gunShotRootTask.h`"")
     $repo = Split-Path $PSScriptRoot -Parent
     $patched | & $VitaCompiler -std=c++20 -fsyntax-only -DLAGI_PLATFORM_VITA=1 -DLAGI_NEPTUNE_RENDERER=1 -I "$repo/include" -I "$repo/src/integration" -I $AzelSourceRoot -I "$AzelSourceRoot/menu" -x c++ -
     if ($LASTEXITCODE -ne 0) { throw 'Patched inventory source Vita syntax check failed' }

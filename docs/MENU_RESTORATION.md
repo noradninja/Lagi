@@ -4,6 +4,16 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Inventory details: native `06017F7A` is restored for ordinary descriptions,
+Berserk descriptions/unlearned placeholders and the six class strings from
+the pointer table at `0604329C`. Weapon details use the original `weaponTable`
+and `06017F4C` modifier formula: rounded signed percentage of multiplier minus
+one, with native encoded prefixes/suffix and widths. The adapter preserves
+the `3,0x38,0x26,4` text region and second-row placement. Tests check exact
+stub replacement, six weapon modifier cases and actual patched Vita syntax.
+Descriptions, class text and percentage alignment need hardware verification;
+actual item use remains unimplemented.
+
 Numeric display: native `060258C0` uses encoded digits `0x8002..0x800B`,
 minus `0x8041`, and padding glyph `0x8001`. The generated number printer
 now writes the native 2x2 tile ordering to VRAM and the column-major
@@ -24,7 +34,7 @@ already reconstructed in `battleCommandMenu.cpp`; a local helper avoids
 linking that omitted battle task translation unit. Tests cover native patch
 targets, 32 learned-entry patterns and patched inventory Vita syntax.
 The number printer beneath this display has now been restored; inventory
-details and actual item use remain unfinished. This is not full Berserk/menu completion and
+details have also been restored; actual item use remains unfinished. This is not full Berserk/menu completion and
 requires hardware visual/navigation checks.
 
 Outer-menu lifecycle: original graphics task Delete at `0601579A` clears

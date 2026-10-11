@@ -2353,6 +2353,60 @@ u16 saveMenuData_[]{]=]
    endif()
   elseif(relative_path STREQUAL "menu/inventoryMenu.cpp")
    string(REPLACE
+    "void inventoryMenuTaskDrawSub2(s_inventoryMenu* pThis, s32 param_2)\n{\n    Unimplemented();\n}"
+    [=[void inventoryMenuTaskDrawSub2(s_inventoryMenu* pThis, s32 param_2)
+{
+    // LAGI_NATIVE_INVENTORY_DETAILS: native 06017F7A..06018052.
+    setupVDP2StringRendering(3, 0x38, 0x26, 4);
+    clearVdp2TextArea();
+    if (param_2 < 0) return;
+    const auto item = static_cast<eItems>(param_2);
+    vdp2StringContext.m0 = 0;
+    auto printCommon = [](u32 address) {
+        printVdp2String2(readSaturnString(gCommonFile->getSaturnPtr(address)).c_str());
+    };
+    if (pThis->m1C_selectedCategory == 2)
+    {
+        drawObjectName(item == 0
+            ? readSaturnString(gCommonFile->getSaturnPtr(0x20D882)).c_str()
+            : getObjectListEntry(item)->m8_description.c_str());
+        vdp2StringContext.m4_cursorX = vdp2StringContext.mC_X;
+        vdp2StringContext.m8_cursorY = vdp2StringContext.m10_Y + 2;
+        // Original pointer table at 0604329C, indexed by Berserk page.
+        static const u32 classes[6] = {0x20D896, 0x20D8AF, 0x20D8CE,
+            0x20D8E9, 0x20D904, 0x20D925};
+        printCommon(classes[pThis->m4_currentPageInItemList]);
+        return;
+    }
+    drawObjectName(getObjectListEntry(item)->m8_description.c_str());
+    if (pThis->m1C_selectedCategory != 3) return;
+    vdp2StringContext.m4_cursorX = vdp2StringContext.mC_X;
+    vdp2StringContext.m8_cursorY = vdp2StringContext.m10_Y + 2;
+    drawObjectName(readSaturnString(gCommonFile->getSaturnPtr(0x20D86C)).c_str());
+    s16 modifier = 0;
+    for (const auto& weapon : weaponTable)
+    {
+        if (weapon.m0_weaponType < 0) break;
+        if (weapon.m0_weaponType != item) continue;
+        const u32 product = (static_cast<u32>(weapon.m4.asS32()) - 0x10000u) * 100u + 0x8000u;
+        modifier = static_cast<s16>(product >> 16);
+        break;
+    }
+    int width = 4;
+    if (modifier > 0)
+    {
+        printCommon(modifier > 99 ? 0x20D87A : 0x20D87D);
+        width = modifier > 99 ? 3 : 2;
+    }
+    printVdp2Number2(modifier, width);
+    printCommon(0x20D877);
+}]=]
+    source_text "${source_text}")
+   string(REPLACE
+    "#include \"items.h\""
+    "#include \"items.h\"\n#include \"battle/gunShotRootTask.h\""
+    source_text "${source_text}")
+   string(REPLACE
     "    case 2: // berserks\n        assert(0);\n        break;"
     [=[    case 2: // LAGI_NATIVE_BERSERK_ROWS: native 06017C62..06017C9E.
         while (*currentCategoryItemList >= 0)
