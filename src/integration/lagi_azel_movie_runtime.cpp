@@ -11,6 +11,7 @@
 namespace {
 
 std::uint64_t g_lastMovieUpdateUs = 0;
+std::uint64_t g_lastMoviePowerTickUs = 0;
 
 void clear_backend_marker()
 {
@@ -23,6 +24,7 @@ void lagiAzelMovieStreamOpen(const char* cpkFileName)
 {
     clear_backend_marker();
     g_lastMovieUpdateUs = 0;
+    g_lastMoviePowerTickUs = 0;
 
     lagi::platform::logging::writef(
         "[AzelMovie] open selected CPK=%s\n",
@@ -94,6 +96,7 @@ void lagiAzelMovieStreamClose()
     lagi::azel::movie_backend_close();
     clear_backend_marker();
     g_lastMovieUpdateUs = 0;
+    g_lastMoviePowerTickUs = 0;
 
     // A Saturn Start edge used to skip a movie must be consumed by the movie
     // task. runTasks() can continue into newly-created gameplay/menu tasks in
@@ -129,8 +132,22 @@ std::uint32_t lagiAzelMovieLastUpdate()
     fileInfoStruct.m14_frameCount =
         static_cast<u32>(lagi::azel::movie_backend_pts());
 
-    if (lagi::azel::movie_backend_active())
+    if (lagi::azel::movie_backend_active()) {
+        // Playback has no pad activity. Refresh idle timers once a second,
+        // scoped to the active backend; no persistent power lock to release.
+        constexpr std::uint64_t kPowerTickIntervalUs = 1000000u;
+        if (!g_lastMoviePowerTickUs ||
+            now - g_lastMoviePowerTickUs >= kPowerTickIntervalUs) {
+            const int tickResult = sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+            if (!g_lastMoviePowerTickUs) {
+                lagi::platform::logging::writef(
+                    "[AzelMovie] keepAwake=power-tick intervalUs=1000000 result=0x%08X\n",
+                    static_cast<unsigned int>(tickResult));
+            }
+            g_lastMoviePowerTickUs = now;
+        }
         return 0;
+    }
 
     if (lagi::azel::movie_backend_finished()) {
         lagi::platform::logging::writef(
