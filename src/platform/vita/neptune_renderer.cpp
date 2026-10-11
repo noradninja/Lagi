@@ -2145,6 +2145,9 @@ bool init()
         "[NeptuneBuild] optimized=%u fieldDescriptorIndex=1 sharedRbg0=1 "
         "rbg0NativeResolve=1 pooledFieldTextures=1\n",
         static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED));
+    logging::writef(
+        "[DitherFilter] enabled=%u pattern=screen-2x2 sampling=direct-point-v1\n",
+        static_cast<unsigned int>(kStochastic));
     const std::size_t allocSize = (kFrameBytes + 0x3FFFFu) & ~0x3FFFFu;
 
     for (int i = 0; i < 2; ++i) {
@@ -12653,7 +12656,9 @@ static bool renderMovieFrame()
                         ? "SGX-RGBA-TITLE-720X408"
                         : "SGX-RGBA-TITLE")
                     : "SGX-VDP2")
-                : (g_movieUsesCinepakPayload ? "SGX-Cinepak-Linear" : "RGBA"));
+                : (g_movieUsesCinepakPayload
+                    ? (kStochastic ? "SGX-Cinepak-Dither" : "SGX-Cinepak-Linear")
+                    : "RGBA"));
         g_movieRenderLogged = true;
     }
 

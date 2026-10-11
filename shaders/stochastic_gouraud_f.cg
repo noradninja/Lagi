@@ -15,11 +15,12 @@ float4 main(
     float du = 0.25f + 0.25f * parity.x + 0.50f * parity.y - both;
     float dv = 0.75f * parity.x + 0.50f * parity.y - both;
 
-    float2 source = saturate(vTexcoord) * textureSize.xy;
-    float2 texel = clamp(
-        floor(source + float2(du, dv) - 0.5f),
-        float2(0.0f, 0.0f), textureSize.xy - 1.0f);
-    float4 color = tex2D(tex, (texel + 0.5f) * textureSize.zw);
+    // Let POINT perform texel selection; clamp to texel centers at edges.
+    float2 halfTexel = 0.5f * textureSize.zw;
+    float2 sampleUv = clamp(
+        saturate(vTexcoord) + (float2(du, dv) - 0.5f) * textureSize.zw,
+        halfTexel, 1.0f - halfTexel);
+    float4 color = tex2D(tex, sampleUv);
     if (color.a < 0.5f)
         discard;
 

@@ -15,10 +15,14 @@ float4 main(float2 uv : TEXCOORD0, float4 fragCoord : WPOS,
     float both = parity.x * parity.y;
     float du = 0.25f + 0.25f * parity.x + 0.50f * parity.y - both;
     float dv = 0.75f * parity.x + 0.50f * parity.y - both;
-    float2 source = saturate(uv) * textureSize.xy;
-    float2 texel = clamp(floor(source + float2(du,dv) - 0.5f),
-                         float2(0.0f,0.0f), textureSize.xy - 1.0f);
-    float4 color = tex2D(tex, (texel + 0.5f) * textureSize.zw);
+    // POINT selects floor(sampleUv * size) itself. Keep edge coordinates
+    // inside the first/last texel, independently of sampler address mode.
+    // This removes the source-space floor and normalize round trip.
+    float2 halfTexel = 0.5f * textureSize.zw;
+    float2 sampleUv = clamp(
+        saturate(uv) + (float2(du, dv) - 0.5f) * textureSize.zw,
+        halfTexel, 1.0f - halfTexel);
+    float4 color = tex2D(tex, sampleUv);
     if (color.a < 0.5f) discard;
     return color;
 }
