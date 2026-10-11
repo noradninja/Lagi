@@ -28,6 +28,8 @@
 #include "VDP1.h"
 // Presentation ownership only; the native radar still emits its own commands.
 void lagiMarkFieldRadarCommands(const void* begin, const void* end);
+// Read the existing native text-substitution table; ownership stays in VDP2.
+bool lagiGlobalStringTableEntryHasText(int index);
 #include "VDP2.h"
 #include "titleScreen.h"
 #include "common.h"

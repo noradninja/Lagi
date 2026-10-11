@@ -910,6 +910,17 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # Vita copy. Saturn CLOFEN bit 0 is NBG0; m45_COEN must control that bit,
  # not the unrelated CCRNA ratio register.
  elseif(relative_path STREQUAL "VDP2.cpp")
+  # 06025780 identifies context base 060525D0; +8 is global string table.
+  string(APPEND source_text [=[
+
+bool lagiGlobalStringTableEntryHasText(int index)
+{
+    if (index < 0 || index >= vdp2StringContext2.m0_numEntries ||
+        !vdp2StringContext2.m8_globalStrings) return false;
+    const char* text = vdp2StringContext2.m8_globalStrings[index];
+    return text && static_cast<unsigned char>(text[0]) != 0;
+}
+]=])
   # Native 06024FB0 links the old tail to the newly loaded font. Without
   # that link, font indices are reused and setActiveFont cannot find them.
   set(font_link_old "    pNew->pPrevious = pOld;\n    pNew->pNext = NULL;\n    pNew->m14 = pData[1];")
@@ -1438,6 +1449,15 @@ void modelDrawFunction3(s_3dModel* pModel)
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  # Native 06073172: table at 060525D8 -> slot 2 -> first byte != 0.
+  set(navigator_dispatch_anchor "    case 0x060730bc: // 060730bc — destination multichoice dialog")
+  string(FIND "${source_text}" "${navigator_dispatch_anchor}" navigator_dispatch_match)
+  if(navigator_dispatch_match LESS 0)
+   message(FATAL_ERROR "Native navigator selected-text dispatch anchor changed")
+  endif()
+  string(REPLACE "${navigator_dispatch_anchor}"
+   "    case 0x06073172: // LAGI_NATIVE_NAVIGATOR_SELECTED_TEXT\n        return lagiGlobalStringTableEntryHasText(2) ? 1 : 0;\n${navigator_dispatch_anchor}"
+   source_text "${source_text}")
   string(PREPEND source_text "#include \"lagi/lagi_particle_color_adapter.h\"\n")
   # Native FLD_A3: 0607AC3C indexes the trail table by frame*4 and
   # 0607AD44 selects an eight-byte orb block at 06094F64 by color type.

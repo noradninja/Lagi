@@ -42,3 +42,31 @@ integer-grid placement. radar_direction_test.ps1 checks anchors, cardinal
 segment geometry and patched-source Vita syntax. Rotation and on-device line
 appearance remain unverified; destination dots/palette fade are not restored
 by this initializer repair.
+
+Hardware report on f1ca85c: tunnel exit now fades back into gameplay correctly.
+Navigator release still fails, and save-file load shows garbled tiles instead
+of the required black fade. These are separate acceptance gates.
+
+New dump 1791751375 expands to 5,850,576 bytes; all 63 segments fit. MODULE_INFO
+places lagi RX at 81048000, whereas the matching local raw ELF starts at
+81000000: subtract 48000 before symbolizing RX addresses. PC 8119A91A maps to
+_kill_r; the stack contains abort/__assert_func and return 8112ACB1 mapping to
+FLD_A3_data::executeNative's default assert at raw 810E2CAC. Native dispatch
+argument 06073172 appears on that stack. This proves a deliberate default
+assert, not an arbitrary GPU fault; it does not explain the reported regression
+timing by itself. Do not disable navigator or return a guessed constant.
+
+Original 06073172 reads global pointer 060525D8, then pointer at +8, then its
+first byte, and returns byte != 0. Main executable 060256A8's string-length
+routine uses context at 060525D0 (literal 06025780); its +8 table member is
+060525D8. That establishes the queried text as global string slot 2, not a
+field task status byte. The generated dispatch now queries the existing
+vdp2StringContext2 table via a read-only helper, returning the original boolean
+for populated entries. Missing/unallocated entries safely return false.
+There is no substitute table, forced result, or navigator disabling.
+navigator_text_dispatch_test.ps1 verifies the unique patch anchor and compiles
+the patched original dispatcher and VDP2 helper with the Vita compiler. These
+are syntax checks only; release-R behavior requires a new device test. The
+user's report that this worked before radar placement changes remains recorded;
+the dump establishes the failing path, not that historical regression's cause.
+Load-transition video and black fade still require separate diagnosis.
