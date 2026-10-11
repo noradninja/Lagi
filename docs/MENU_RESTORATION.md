@@ -4,6 +4,15 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Inventory weapon confirmation: native `06018570` checks the item's context
+flags before dispatch. Its category-3 branch at `0601869E` toggles the selected
+weapon against `mA_weaponType`, plays sound 7, then redraws rows and details.
+The generated adapter restores this branch, with a bounds guard on the
+selected row. Other categories still reach the unfinished native-handler
+boundary; this is not a generic item-effect replacement. Actual equip/
+unequip state and gameplay gun power require hardware checks. Consumables,
+key-item callbacks and healing Berserks remain to port.
+
 Inventory details: native `06017F7A` is restored for ordinary descriptions,
 Berserk descriptions/unlearned placeholders and the six class strings from
 the pointer table at `0604329C`. Weapon details use the original `weaponTable`

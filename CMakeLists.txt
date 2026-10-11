@@ -2353,6 +2353,37 @@ u16 saveMenuData_[]{]=]
    endif()
   elseif(relative_path STREQUAL "menu/inventoryMenu.cpp")
    string(REPLACE
+    "void useInventoryItem(s_inventoryMenu* pThis)\n{\n    Unimplemented();\n}"
+    [=[void inventoryMenuTaskDrawSub1(s_inventoryMenu* pThis);
+void inventoryMenuTaskDrawSub2(s_inventoryMenu* pThis, s32 item);
+
+void useInventoryItem(s_inventoryMenu* pThis)
+{
+    // LAGI_NATIVE_INVENTORY_WEAPON_USE: native 06018570 / 0601869E.
+    const int index = pThis->m4_currentPageInItemList * 5 + pThis->m24_currentSelectedItemInCurrentItemPage;
+    if (index < 0 || index >= pThis->m30_numItemsInCurrentCategory ||
+        index >= static_cast<int>(pThis->m34_itemsInCurrentCategory.size()))
+        return;
+    const auto item = pThis->m34_itemsInCurrentCategory[index];
+    if (!(getObjectListEntry(item)->m0_flags & pThis->m10))
+    {
+        playSystemSoundEffect(5);
+        return;
+    }
+    if (pThis->m1C_selectedCategory == 3)
+    {
+        mainGameState.gameStats.mA_weaponType =
+            mainGameState.gameStats.mA_weaponType == item ? static_cast<eItems>(0) : item;
+        playSystemSoundEffect(7);
+        inventoryMenuTaskDrawSub1(pThis);
+        inventoryMenuTaskDrawSub2(pThis, item);
+        return;
+    }
+    // Consumable, key-item and healing-Berserk native handlers remain to port.
+    Unimplemented();
+}]=]
+    source_text "${source_text}")
+   string(REPLACE
     "void inventoryMenuTaskDrawSub2(s_inventoryMenu* pThis, s32 param_2)\n{\n    Unimplemented();\n}"
     [=[void inventoryMenuTaskDrawSub2(s_inventoryMenu* pThis, s32 param_2)
 {
