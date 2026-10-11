@@ -4,6 +4,13 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Inventory font cleanup: original Delete at `06018B4C` reads the font ID from
+task offset `0xC` and tail-calls `060250E6` (literal `06018B8C`). The generated
+inventory Delete now calls the restored ID-based cleanup rather than the
+empty stub. The production replacement is checked and Vita syntax-compiled
+by `tests/inventory_page_test.ps1`. Hardware entry/exit verification remains
+pending; item usage and other unfinished inventory routines remain in scope.
+
 Save file-selection cancellation now returns after hiding the spinning file
 cursor and starting the slot close animation. Previously it fell through to
 navigation and reassigned the visible cursor index in the same frame. This

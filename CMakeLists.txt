@@ -2294,6 +2294,13 @@ u16 saveMenuData_[]{]=]
      "${lagi_save_zero_init_match_count} matches")
    endif()
   elseif(relative_path STREQUAL "menu/inventoryMenu.cpp")
+   set(inventory_delete_old "void inventoryMenuTaskDelete(s_inventoryMenu* pThis)\n{\n    Unimplemented();\n}")
+   set(inventory_delete_new "void inventoryMenuTaskDelete(s_inventoryMenu* pThis)\n{\n    lagiAzelUnloadFontByIndex(pThis->mC); // LAGI_INVENTORY_FONT_DELETE: native 06018B4C.\n}")
+   string(FIND "${source_text}" "${inventory_delete_old}" inventory_delete_position)
+   if(inventory_delete_position LESS 0)
+    message(FATAL_ERROR "Native inventory font cleanup target changed")
+   endif()
+   string(REPLACE "${inventory_delete_old}" "${inventory_delete_new}" source_text "${source_text}")
    string(REPLACE
     "        if (i < pThis->m30_numItemsInCurrentCategory) {"
     "        // LAGI_INVENTORY_PAGE_BOUND\n        const int itemIndex = 5 * pThis->m4_currentPageInItemList + i;\n        if (itemIndex >= 0 && itemIndex < pThis->m30_numItemsInCurrentCategory &&\n            itemIndex < static_cast<int>(pThis->m34_itemsInCurrentCategory.size())) {"

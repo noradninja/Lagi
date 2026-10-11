@@ -30,6 +30,14 @@ if ($VitaCompiler) {
     if (!$replacement.Success) { throw 'Production inventory replacement missing' }
     $new = $replacement.Groups[1].Value.Replace('\n',"`n")
     $patched = $native.Replace($old,$new).Replace('#include "PDS.h"','#include "lagi/lagi_azel_upstream_prelude.h"')
+    foreach ($name in @('inventory_delete_old','inventory_delete_new')) {
+        $literal = [regex]::Match($cmake,'set\(' + $name + ' "((?:\\.|[^"\r\n])*)"\)')
+        if (!$literal.Success) { throw "Missing production $name" }
+        Set-Variable -Name $name -Value $literal.Groups[1].Value.Replace('\n',"`n")
+    }
+    $patched = $patched.Replace("`r`n","`n")
+    if (($patched.Split(@($inventory_delete_old),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Inventory Delete target must occur once' }
+    $patched = $patched.Replace($inventory_delete_old,$inventory_delete_new)
     $repo = Split-Path $PSScriptRoot -Parent
     $patched | & $VitaCompiler -std=c++20 -fsyntax-only -DLAGI_PLATFORM_VITA=1 -DLAGI_NEPTUNE_RENDERER=1 -I "$repo/include" -I "$repo/src/integration" -I $AzelSourceRoot -I "$AzelSourceRoot/menu" -x c++ -
     if ($LASTEXITCODE -ne 0) { throw 'Patched inventory source Vita syntax check failed' }
