@@ -140,7 +140,8 @@ hardware testing. Cursor blinking/movement is not proven fixed.
 The original `1ST_READ.PRG` unavailable-device path at `060196BA` creates
 a child task using the definition at COMMON.DAT `0020F790`. Its Init
 (`060190BE`) retains layer/position configuration; Draw (`060190C8`)
-selects the device position from `0020F770`, subtracts NBG0 scrolling,
+selects the device position from `0020F764` (the pointer stored at
+`0020F774` in init data `0020F770`), subtracts NBG0 scrolling,
 and draws the covering sprite at `0020F724` with palette `0x500`.
 The port previously skipped this task, leaving background device icons
 visible. The generated-source adapter now restores that native task for
@@ -151,6 +152,13 @@ Validation: patched native source passes Vita C++ syntax checking through
 `tests/save_overwrite_test.ps1`; visual coverage and device behavior require
 an on-device Save/Load/Continue check. Cursor movement/blinking is a separate
 remaining investigation, not claimed fixed by this change.
+
+Hardware check of `9ecb699`: user reports loading works. Screenshots show
+misplaced unavailable-device covers and incorrect text layering/overlap.
+Read-only disc inspection identified the cover error: `0020F770` contains
+pointers, not coordinates. The adapter now reads coordinates at `0020F764`.
+This correction still requires device confirmation; text composition and
+cursor animation remain unresolved.
 
 Scope includes opening menu/Continue, load selection and transitions, native
 in-game menu pages, system Save/Load/Return, visible slot selection and
