@@ -13,6 +13,31 @@ constexpr u32 backupBytes = spriteBytes + tileBytes + paletteBytes;
 static_assert(backupBytes == 0x169A0);
 }
 
+void drawGaugeVdp1(u16 mode, std::array<sVec2_S16, 4>& params, u16 color, fixedPoint depth);
+
+bool lagiAzelBooksPresentWindow(std::int32_t scrollX, std::int32_t scrollY,
+    std::int32_t step, std::int32_t duration)
+{
+    LagiAzelBooksWindow window{};
+    if (!lagiAzelBooksCalculateWindow(scrollX, scrollY, step, duration, window)) return false;
+    // 06016088 writes both banks at offsets C8/CA/CC/CE, not window 0.
+    for (auto& regs : vdp2Controls.m20_registers) {
+        regs.mC8_WPSX1 = static_cast<u16>(window.registerLeft);
+        regs.mCA_WPSY1 = static_cast<u16>(window.registerTop);
+        regs.mCC_WPEX1 = static_cast<u16>(window.registerRight);
+        regs.mCE_WPEY1 = static_cast<u16>(window.registerBottom);
+    }
+    std::array<sVec2_S16, 4> quad;
+    for (unsigned i = 0; i < 4; ++i) {
+        quad[i][0] = static_cast<s16>(window.quad[i * 2]);
+        quad[i][1] = static_cast<s16>(window.quad[i * 2 + 1]);
+    }
+    // Native 0602CB5E is drawGaugeVdp1: preserve C0 mode, D294 color,
+    // zero sort depth and native Y inversion inside that shared helper.
+    drawGaugeVdp1(0xC0, quad, 0xD294, 0);
+    return true;
+}
+
 std::uint8_t* lagiAzelBooksBackupGraphics()
 {
     // Native 06016004: contiguous backup, same three source ranges/order.

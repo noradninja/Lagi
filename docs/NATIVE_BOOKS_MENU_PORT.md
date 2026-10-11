@@ -130,6 +130,13 @@ steps and invalid denominator/range rejection. Register writes, solid draw,
 window clipping and task integration remain to be connected; no Books screen
 or hardware reveal validation is claimed.
 
+The native service lagiAzelBooksPresentWindow now writes those window-1 fields
+to both existing VDP2 register banks and submits the native solid quad through
+drawGaugeVdp1 (original 0602CB5E), mode C0, RGB555 D294, depth zero. This service
+is not invoked until the Books task is connected. Renderer window clipping and
+generic menu solid-polygon support still need verification/integration before
+the service can establish a working page; radar-only solid support is not enough.
+
 Implemented support now includes graphics backup/restore, owned-list selection,
 validated MENUBK heading/body readers and body-to-heading association. Native
 06015D30/06015DA4 index input is available as lagiAzelBooksStepIndex: repeat masks

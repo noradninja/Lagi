@@ -55,6 +55,9 @@ struct LagiAzelBooksWindow {
 // Native 06016088 window/quad calculation; positive denominator required.
 bool lagiAzelBooksCalculateWindow(std::int32_t scrollX, std::int32_t scrollY,
     std::int32_t step, std::int32_t duration, LagiAzelBooksWindow& out);
+// Native register writes and VDP1 polygon submission for that window.
+bool lagiAzelBooksPresentWindow(std::int32_t scrollX, std::int32_t scrollY,
+    std::int32_t step, std::int32_t duration);
 // Native 06015D30 (left/right) and 06015DA4 (up/down). The caller supplies
 // the native repeat and held masks and retains a separate edge latch per axis.
 LagiAzelBooksIndexStep lagiAzelBooksStepIndex(std::int32_t& index,
