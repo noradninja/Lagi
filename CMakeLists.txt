@@ -765,6 +765,21 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   endif()
  endif()
  if(relative_path STREQUAL "field/fieldRadar.cpp")
+  # FLD_A3 06071E3E initializer: 06071E7C, 06071E76/8C, 06071E8E/98.
+  # Preserve the native 24 -> 10 direction segment and positive center offset.
+  foreach(radar_init_pair IN ITEMS
+    "mC_X = pTypedWorkArea->m8 + 0x30|mC_X = pTypedWorkArea->m8 + 0x60"
+    "m34 = 0x18|m34 = 0x0A"
+    "m28 = -0x1D|m28 = 0x1D")
+   string(REPLACE "|" ";" radar_init_parts "${radar_init_pair}")
+   list(GET radar_init_parts 0 radar_init_old)
+   list(GET radar_init_parts 1 radar_init_new)
+   string(FIND "${source_text}" "${radar_init_old}" radar_init_match)
+   if(radar_init_match LESS 0)
+    message(FATAL_ERROR "Native radar initializer anchor changed: ${radar_init_old}")
+   endif()
+   string(REPLACE "${radar_init_old}" "${radar_init_new}" source_text "${source_text}")
+  endforeach()
   set(radar_begin "void fieldRadar_draw(s_FieldRadar* pThis)\n{")
   set(radar_end "    // Frame counter\n    pThis->m44++;")
   foreach(anchor IN ITEMS radar_begin radar_end)

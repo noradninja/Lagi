@@ -31,3 +31,14 @@ fade), while preserving the file-list wait, priority 6, channel targets
 m_48/m_4A and one-shot state advance. Init now clears fieldSubTaskStatus under
 the original cleared-task contract. Source/CPU checks are not native runtime
 or hardware validation. Verify white -> load -> neutral on the same tunnel.
+
+Orientation initializer audit: original FLD_A3 06071E3E stores m34=10
+(06071E76/06071E8C), m28=+29 (06071E8E/06071E98), and initial
+mC_X=m8+96 (06071E7C). Reconstructed source instead used 24, -29 and +48.
+The equal outer/inner radii produced a zero-length direction line; its center
+was also on the wrong side of the frame. Generated adapters restore these
+three original values without modifying extern/Azel or the renderer's accepted
+integer-grid placement. radar_direction_test.ps1 checks anchors, cardinal
+segment geometry and patched-source Vita syntax. Rotation and on-device line
+appearance remain unverified; destination dots/palette fade are not restored
+by this initializer repair.
