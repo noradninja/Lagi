@@ -45,6 +45,16 @@ disable it. The reader preserves these commands rather than treating them
 as strings. Host execution covers all 168 real body pages, including two
 illustration commands. It does not draw them or implement task navigation.
 
+Native `06016738` first handles cancel (new-input bit 1), then selects an
+input focus in `[0,2]` using `06015DA4`: owned book, heading, or body page.
+`06015D30` changes the focused index within its logical count. Changing a
+book resets the heading to zero; changing a book/heading sets the global
+body page to that heading's first page. Changing the body page calls
+`060166C2`, which scans heading ranges and selects the containing heading,
+defaulting to zero if none matches. The portable helper now implements
+that final association; host execution checks all 168 real pages. The
+input helpers, cursor flags, fade transition and task remain unconnected.
+
 Evidence: read-only inspection of the user-provided US Disc 1 MODE1/2352
 image. `1ST_READ.PRG` loads at `06006000`; COMMON.DAT at `00200000`.
 No game files or `extern/Azel` were modified or copied into the repository.

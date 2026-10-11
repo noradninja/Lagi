@@ -65,3 +65,26 @@ bool lagiAzelBooksReadBodyPage(const std::uint8_t* data, std::size_t bytes,
     out.nativeValue = value;
     return true;
 }
+
+bool lagiAzelBooksHeadingForBodyPage(const std::uint8_t* data, std::size_t bytes,
+    std::uint32_t bookIndex, std::uint32_t bodyPageIndex, std::uint32_t& headingIndex)
+{
+    headingIndex = 0;
+    LagiAzelBooksBodyPage body;
+    if (!lagiAzelBooksReadBodyPage(data, bytes, bookIndex, bodyPageIndex, body)) return false;
+    // ReadHeading validates the record table and each logical heading index.
+    const std::size_t table = (std::uint32_t(data[0]) << 24) |
+        (std::uint32_t(data[1]) << 16) | (std::uint32_t(data[2]) << 8) | data[3];
+    const auto* book = data + table + bookIndex * 16;
+    const auto count = (std::uint32_t(book[12]) << 8) | book[13];
+    for (std::uint32_t index = 0; index < count; ++index) {
+        LagiAzelBooksHeading heading;
+        if (!lagiAzelBooksReadHeading(data, bytes, bookIndex, index, heading)) return false;
+        if (bodyPageIndex >= heading.firstBodyPage &&
+            bodyPageIndex - heading.firstBodyPage < heading.bodyPageCount) {
+            headingIndex = index;
+            return true;
+        }
+    }
+    return true;
+}

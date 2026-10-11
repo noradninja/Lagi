@@ -43,6 +43,10 @@ int main(int argc, char** argv)
             if (!lagiAzelBooksReadBodyPage(data.data(), data.size(), book, page, body) ||
                 ((body.nativeValue > 3) != (body.text != nullptr))) return 9;
             ++bodyTested;
+            unsigned selectedHeading = 0;
+            if (!lagiAzelBooksHeadingForBodyPage(data.data(), data.size(), book, page, selectedHeading) ||
+                !lagiAzelBooksReadHeading(data.data(), data.size(), book, selectedHeading, heading) ||
+                page < heading.firstBodyPage || page - heading.firstBodyPage >= heading.bodyPageCount) return 11;
             if (body.nativeValue == 1 || body.nativeValue == 2) ++illustrations;
         }
         if (lagiAzelBooksReadBodyPage(data.data(), data.size(), book, bodyCount, body)) return 10;
@@ -52,5 +56,6 @@ int main(int argc, char** argv)
         lagiAzelBooksReadHeading(nullptr, data.size(), 0, 0, heading)) return 8;
     printf("PASS: production reader, 22 real books / %u headings; invalid book, heading and truncated image rejected (host, not Vita)\n", tested);
     printf("PASS: %u native body pages, including %u illustration commands (host, not renderer execution)\n", bodyTested, illustrations);
+    printf("PASS: body-page-to-heading selection for all %u real pages (host, not input execution)\n", bodyTested);
     return 0;
 }
