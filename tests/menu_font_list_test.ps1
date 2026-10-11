@@ -10,6 +10,11 @@ function Get-Literal($name) {
 }
 $old = Get-Literal 'font_link_old'
 $new = Get-Literal 'font_link_new'
+$menuNative = Get-Content -Raw (Join-Path $AzelSourceRoot 'mainMenuDebugTasks.cpp')
+$menuDeleteOld = Get-Literal 'menu_font_delete_old'
+$menuDeleteNew = Get-Literal 'menu_font_delete_new'
+if (($menuNative.Split(@($menuDeleteOld),[StringSplitOptions]::None).Length-1) -ne 1 -or $menuDeleteNew -notmatch 'lagiAzelUnloadFontByIndex\(graphicEngineStatus.m40AC.fontIndex\)') { throw 'Outer-menu font cleanup target changed' }
+Write-Output 'PASS: outer-menu native Delete patch matches once (source guard)'
 if (($native.Split(@($old),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Font link target must occur once' }
 if ($new -notmatch 'pOld->pNext = pNew;' -or $new -notmatch 'pNew->m15 = 0;') { throw 'Native link/ownership initialization missing' }
 # Linked-list model of the production tail append and active-font lookup.

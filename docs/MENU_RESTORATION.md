@@ -4,6 +4,14 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Outer-menu lifecycle: original graphics task Delete at `0601579A` clears
+the menu task pointer and tail-calls font cleanup by the menu font ID. The
+reconstruction cleared the pointer but left font cleanup commented out.
+The generated adapter restores that call. It runs when the graphics task
+is deleted, not each time the retained menu is hidden. The font-list test
+checks the exact source target; runtime task destruction and field/title
+transitions remain hardware verification gates.
+
 Font-switch text clearing: native `06025166` clears `width` 16-bit cells
 per row, starting at `0x25E06000 + 2*(y*64+x)`, advancing `0x80` bytes per
 row. The generated adapter now replaces the `clearVdp2TextMemoryRect` stub

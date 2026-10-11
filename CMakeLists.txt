@@ -1118,6 +1118,13 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
 } while (false)
 ]=])
  elseif(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  set(menu_font_delete_old "    // clearSaveText(graphicEngineStatus.m40AC.fontIndex) — unloads menu font")
+  set(menu_font_delete_new "    lagiAzelUnloadFontByIndex(graphicEngineStatus.m40AC.fontIndex); // LAGI_MENU_FONT_DELETE: native 0601579A.")
+  string(FIND "${source_text}" "${menu_font_delete_old}" menu_font_delete_position)
+  if(menu_font_delete_position LESS 0)
+   message(FATAL_ERROR "Native outer-menu font cleanup target changed")
+  endif()
+  string(REPLACE "${menu_font_delete_old}" "${menu_font_delete_new}" source_text "${source_text}")
   string(REPLACE
    "    PDS_unimplemented(\"Unimplemented unloadFnt\");"
    "    lagiAzelUnloadCurrentFont();"
