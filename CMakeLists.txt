@@ -2103,6 +2103,64 @@ s32 getBupStatus(s32 slotIndex)
     "        Unimplemented();\n    }\n\n    // 06019bd4"
     "    }\n\n    // 06019bd4"
     source_text "${source_text}")
+   # Upstream's overwrite dialog is a stub that immediately proceeds to the
+   # write. Restore the pending confirmation state without replacing the
+   # native save task or touching existing files during startup/diagnostics.
+   string(REPLACE
+    [=[        default:
+            assert(0);
+        }
+    case 1:
+        DisplayMenuMsg("Will erase old file. Execute?\n");
+        Unimplemented(); pThis->m10_status = 3;
+        //pThis->m10_status++;
+        break;
+    case 2:
+        if (pThis->m14)
+        {
+            return;
+        }
+        if (pThis->m18 == 0)
+        {
+            *pThis->mC_pOperationResult = 1;
+            pThis->getTask()->markFinished();
+            return;
+        }
+        pThis->m10_status++;
+        break;]=]
+    [=[        default:
+            assert(0);
+        }
+        return; // Do not fall through: an empty slot needs no overwrite prompt.
+    case 1:
+        // LAGI_SAVE_OVERWRITE_CONFIRM
+        DisplayMenuMsg("Overwrite old file? Confirm: Yes / Cancel: No");
+        pThis->m10_status = 2;
+        return; // Never reuse the button edge that selected the slot.
+    case 2:
+    {
+        const auto buttons = graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown;
+        if (buttons & 1) // Cancel wins if both actions are pressed.
+        {
+            playSystemSoundEffect(1);
+            *pThis->mC_pOperationResult = 1;
+            pThis->getTask()->markFinished();
+            return;
+        }
+        if (buttons & 6)
+        {
+            playSystemSoundEffect(0);
+            pThis->m10_status = 3;
+        }
+        return;
+    }]=]
+    source_text "${source_text}")
+   string(REGEX MATCHALL "LAGI_SAVE_OVERWRITE_CONFIRM"
+    lagi_save_confirm_matches "${source_text}")
+   list(LENGTH lagi_save_confirm_matches lagi_save_confirm_count)
+   if(NOT lagi_save_confirm_count EQUAL 1)
+    message(FATAL_ERROR "Save overwrite confirmation patch did not apply exactly once")
+   endif()
    string(REGEX MATCHALL
     "LAGI_(LOAD_SCREEN|SAVE_TASK|SAVE_SLOT_TASK|SAVE_PROGRESS)_ZERO_INIT"
     lagi_save_zero_init_matches

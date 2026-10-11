@@ -26,6 +26,16 @@ does not itself overlap CAOS; this correction preserves those addresses while
 fixing shared-decoder configurations whose supplemental palette bank does.
 It is not evidence that the missing menu layers are fixed.
 
+Save overwrite safety: the unfinished upstream progress task bypassed its
+overwrite question and case 0 fell through even for empty slots. The generated
+Vita adapter now returns after classifying a slot, presents a confirmation
+message for an existing file, and waits for a fresh Confirm or Cancel edge.
+Cancel (including simultaneous Confirm/Cancel) finishes with native result 1
+without reaching saveData. Empty slots proceed without an overwrite question.
+This uses the native message plane/input mapping and save state machine; it
+does not claim to reconstruct the original Saturn yes/no cursor dialog.
+Hardware gates include readable prompt text and parent-task recovery on cancel.
+
 Remaining gates: verify save-layout detection from native registers, VDP2
 map/font/scroll interpretation, visible VDP1 selectors, title-to-Continue
 handoff, zero-world-submission menu frames, all in-game pages and return,
