@@ -4,6 +4,22 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Cursor investigation: input-triggered `[MenuCursor]`/`[MenuCursor2]` logs now
+record selected entry, blink counter or spinning frame/countdown, vsync count
+and pressed buttons. No per-frame logging, animation speed changes or forced
+pause bypass were added. The cursor syntax test applies all four production
+patches to native source and compiles it for Vita. To distinguish controller
+state from sprite presentation, capture Save/Load: enter Internal, wait a
+second between Up/Down presses across all slots, cancel and reenter, then
+compare the log with a short video. These diagnostics are not a cursor fix.
+
+Key-item next boundary: `06016ADA` looks up an item in the 22-entry COMMON
+table at `0020DDC8`; the inventory stores that index at task offset `0x18`.
+`06018388` suppresses two text planes, finishes both cursor child tasks,
+unloads the inventory font and enters state 4. Restoration must include the
+native key-item screen and return sequence, not merely call a generic item
+effect or enable an unfinished constructor.
+
 Consumable healing: `0600FAB8` uses the nine-entry table at COMMON.DAT
 `00208A20`. The adapter reads that table directly, refuses an empty inventory
 or an effect that cannot benefit HP/BP, consumes one only on success, and caps

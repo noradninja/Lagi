@@ -2591,6 +2591,14 @@ void inventoryPrintBerserk(s32 row, eItems item, s32 contextFlags)
    endif()
   elseif(relative_path STREQUAL "kernel/menuCursor.cpp")
    string(REPLACE
+    "    if (pWorkArea->m0_selectedEntry < 0)\n        return;"
+    "    if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 0x37)\n        PDS_Log(\"[MenuCursor] entry=%d blink=%d pressed=%04X\\n\", pWorkArea->m0_selectedEntry, pWorkArea->mC, graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown);\n    if (pWorkArea->m0_selectedEntry < 0)\n        return;"
+    source_text "${source_text}")
+   string(REPLACE
+    "    if (pThis->m0 < 0)\n        return;"
+    "    if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 0x37)\n        PDS_Log(\"[MenuCursor2] entry=%d frame=%d countdown=%d vsync=%d pressed=%04X\\n\", pThis->m0, pThis->m8, pThis->mC, vblankData.m14_numVsyncPerFrame, graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown);\n    if (pThis->m0 < 0)\n        return;"
+    source_text "${source_text}")
+   string(REPLACE
     "    pThis->m4 = pMenuData->m0;\n    pThis->m8 = pMenuData->m4;"
     "    // LAGI_MENU_CURSOR_ZERO_INIT\n    pThis->m0_selectedEntry = -1;\n    pThis->m4 = pMenuData->m0;\n    pThis->m8 = pMenuData->m4;\n    pThis->mC = 0;"
     source_text "${source_text}")
