@@ -2155,6 +2155,28 @@ s32 getBupStatus(s32 slotIndex)
         return;
     }]=]
     source_text "${source_text}")
+   string(REPLACE
+    [=[            case 1:
+                displaySaveLocation(pThis, saveStrings);
+                break;
+            default:
+                assert(0);]=]
+    [=[            case 1:
+                displaySaveLocation(pThis, saveStrings);
+                break;
+            case 2: // LAGI_SAVE_WRITE_FAILURE_RECOVERY
+                // Keep the native failure message and slot selector usable.
+                playSystemSoundEffect(5);
+                break;
+            default:
+                assert(0);]=]
+    source_text "${source_text}")
+   string(REGEX MATCHALL "LAGI_SAVE_WRITE_FAILURE_RECOVERY"
+    lagi_save_failure_matches "${source_text}")
+   list(LENGTH lagi_save_failure_matches lagi_save_failure_count)
+   if(NOT lagi_save_failure_count EQUAL 1)
+    message(FATAL_ERROR "Save failure recovery patch did not apply exactly once")
+   endif()
    string(REGEX MATCHALL "LAGI_SAVE_OVERWRITE_CONFIRM"
     lagi_save_confirm_matches "${source_text}")
    list(LENGTH lagi_save_confirm_matches lagi_save_confirm_count)

@@ -35,6 +35,9 @@ without reaching saveData. Empty slots proceed without an overwrite question.
 This uses the native message plane/input mapping and save state machine; it
 does not claim to reconstruct the original Saturn yes/no cursor dialog.
 Hardware gates include readable prompt text and parent-task recovery on cancel.
+The parent now also handles native write-failure result 2 without asserting:
+the failure message stays visible and slot selection remains usable for retry
+or cancel. No disk-full or device-write failure has been exercised on Vita.
 
 Remaining gates: verify save-layout detection from native registers, VDP2
 map/font/scroll interpretation, visible VDP1 selectors, title-to-Continue

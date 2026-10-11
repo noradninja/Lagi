@@ -39,6 +39,15 @@ foreach ($buttons in 0..7) {
 Write-Output 'PASS: native patch matches once; extracted confirmation code waits, confirms and cancels for all 8 button combinations (no save writes)'
 if ($VitaCompiler) {
     $patched = $native.Replace($old,$new).Replace('#include "PDS.h"','#include "lagi/lagi_azel_upstream_prelude.h"')
+    $failureMarker = $cmake.IndexOf('            case 2: // LAGI_SAVE_WRITE_FAILURE_RECOVERY')
+    $failureStart = $cmake.LastIndexOf('   string(REPLACE', $failureMarker)
+    $failureBlock = $cmake.Substring($failureStart,$cmake.IndexOf('source_text "${source_text}")',$failureMarker)-$failureStart)
+    $failureLiterals = [regex]::Matches($failureBlock,'(?s)\[=\[(.*?)\]=\]')
+    if ($failureLiterals.Count -ne 2) { throw 'Expected two failure patch literals' }
+    $failureOld = $failureLiterals[0].Groups[1].Value.Replace("`r`n","`n")
+    $failureNew = $failureLiterals[1].Groups[1].Value.Replace("`r`n","`n")
+    if (($patched.Split(@($failureOld),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Failure recovery target must occur once' }
+    $patched = $patched.Replace($failureOld,$failureNew)
     $repo = Split-Path $PSScriptRoot -Parent
     $patched | & $VitaCompiler -std=c++20 -fsyntax-only -DLAGI_PLATFORM_VITA=1 -DLAGI_NEPTUNE_RENDERER=1 -I "$repo/include" -I "$repo/src/integration" -I $AzelSourceRoot -I "$AzelSourceRoot/kernel" -x c++ -
     if ($LASTEXITCODE -ne 0) { throw 'Patched native save/load source syntax check failed' }
