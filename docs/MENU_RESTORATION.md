@@ -204,6 +204,19 @@ metadata/evidence, not an occlusion fix: key semantics and conversion to the
 world depth convention must be established before enabling depth tests.
 Runtime and fullres/dither renderer Vita syntax checks pass; hardware pending.
 
+Latest hardware screenshots: layering is now reported correct, but external
+device covers remain corrupted. Original `0601906C` writes PMOD `0xA0`
+(literal `06019196`); the adapter incorrectly called the `0x80` menu-sprite
+helper. It now uses `drawMenuSprite2`, preserving the native 8bpp format.
+Coordinates remain `0020F764`; Save/Load syntax and helper source guard pass.
+New cover graphics still need a hardware check.
+
+The user also reports missing level/time details and a garbled load fade-out.
+Reconstructed `saveScreenDisplaySlotData` prints only the player name;
+`saveScreenDisplaySlotData2` remains unimplemented. Restore the native preview
+fields and read their original save-layout offsets before enabling them.
+Loading itself is hardware-confirmed, but fade-out/layout handoff is not.
+
 Scope includes opening menu/Continue, load selection and transitions, native
 in-game menu pages, system Save/Load/Return, visible slot selection and
 confirmation/cancellation, and save persistence. The user reports saving a

@@ -60,6 +60,7 @@ if ($VitaCompiler) {
     $saveFontOld = '        //clearSaveText(pThis->m10); // TODO: unload SAVE.FNT'
     if (($patched.Split(@($saveFontOld),[StringSplitOptions]::None).Length-1) -ne 1 -or $cmake -notmatch 'lagiAzelUnloadFontByIndex\(pThis->m10\)') { throw 'Save font cleanup target changed' }
     $patched = $patched.Replace($saveFontOld,'        lagiAzelUnloadFontByIndex(pThis->m10);')
+    if ($cmake -notmatch 'drawMenuSprite2\(&sprite, readSaturnS16\(position\)') { throw 'Unavailable cover must use native PMOD=0xA0 helper' }
     $deviceMarker = $cmake.IndexOf('// LAGI_UNAVAILABLE_BACKUP_DEVICE:')
     $deviceStart = $cmake.LastIndexOf('   string(REPLACE', $deviceMarker)
     $deviceBlock = $cmake.Substring($deviceStart,$cmake.IndexOf('source_text "${source_text}")',$deviceMarker)-$deviceStart)

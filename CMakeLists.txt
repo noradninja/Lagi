@@ -2237,7 +2237,7 @@ struct sLagiUnavailableBackupDevice : s_workAreaTemplate<sLagiUnavailableBackupD
             readSaturnS16(spriteData + 4), readSaturnS16(spriteData + 6)};
         const auto position = gCommonFile->getSaturnPtr(0x20F764) + pThis->device * 4;
         const auto& layer = graphicEngineStatus.m40BC_layersConfig[0];
-        drawMenuSprite(&sprite, readSaturnS16(position) - layer.scrollX,
+        drawMenuSprite2(&sprite, readSaturnS16(position) - layer.scrollX,
             readSaturnS16(position + 2) - layer.scrollY, 0x500);
     }
     static TypedTaskDefinition* getTypedTaskDefinition()
