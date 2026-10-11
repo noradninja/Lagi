@@ -751,6 +751,19 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
 
  file(READ "${input_path}" source_text)
  set(original_text "${source_text}")
+ if(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  string(REPLACE
+   "void s_FieldSubTaskWorkArea::Init(s_FieldSubTaskWorkArea* pFieldSubTaskWorkArea)\n{"
+   "void s_FieldSubTaskWorkArea::Init(s_FieldSubTaskWorkArea* pFieldSubTaskWorkArea)\n{\n    pFieldSubTaskWorkArea->fieldSubTaskStatus = 0; // LAGI_FIELD_ENTRY_ZERO_STATE"
+   source_text "${source_text}")
+  string(REPLACE
+   "            if (!isSoundLoadingFinished())\n            {\n                g_fadeControls.m_4D = 6;"
+   "            if (isSoundLoadingFinished()) // LAGI_FIELD_ENTRY_AUDIO_READY: Vita completion is true\n            {\n                g_fadeControls.m_4D = 6;"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "LAGI_FIELD_ENTRY_ZERO_STATE" OR NOT source_text MATCHES "LAGI_FIELD_ENTRY_AUDIO_READY")
+   message(FATAL_ERROR "Native field entry anchors changed")
+  endif()
+ endif()
  if(relative_path STREQUAL "field/fieldRadar.cpp")
   set(radar_begin "void fieldRadar_draw(s_FieldRadar* pThis)\n{")
   set(radar_end "    // Frame counter\n    pThis->m44++;")

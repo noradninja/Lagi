@@ -22,3 +22,12 @@ capture/log and inspect the incoming field's fade behavior if it persists.
 No forced fade-in, no navigator disabling, and no invented radar markers are
 added. Native destination indicator and palette-fade stubs still require actual
 reconstruction before their visual behavior can be called restored.
+
+Incoming-area mismatch: s_FieldSubTaskWorkArea::Update state 0 requested its
+existing 30-frame fade only under !isSoundLoadingFinished(). The Vita audio
+service returns true when ready, so completed audio prevented that fade. The
+generated adapter uses the positive readiness gate (not a forced renderer
+fade), while preserving the file-list wait, priority 6, channel targets
+m_48/m_4A and one-shot state advance. Init now clears fieldSubTaskStatus under
+the original cleared-task contract. Source/CPU checks are not native runtime
+or hardware validation. Verify white -> load -> neutral on the same tunnel.
