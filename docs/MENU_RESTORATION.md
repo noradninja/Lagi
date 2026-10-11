@@ -80,3 +80,12 @@ against the populated count and array capacity before printing a page row.
 The upstream `i < totalCount` test could expose stale tail entries on a partial
 last page. Model/source checks cover counts 0..100 and pages -1..20. This is
 an entry-bound correction only, not implementation of item use or Berserks.
+
+Continue crash triage: a user reports crashing when entering the save-slot
+list from Internal storage. The supplied older gameplay log does not capture
+that failure, so its cause is not established. Raw slot-preview reads now
+validate native checksum/version before metadata is consumed, and the location
+display bounds its six-bit save value against the 32-entry location table.
+Out-of-table locations get a display-only fallback; save bytes are not changed.
+`[SavePlatform] read begin` records slot/size before IO. Obtain a fresh crash log
+and matching dump before treating these safeguards as proof of a crash fix.

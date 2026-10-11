@@ -2103,6 +2103,16 @@ s32 getBupStatus(s32 slotIndex)
     "        Unimplemented();\n    }\n\n    // 06019bd4"
     "    }\n\n    // 06019bd4"
     source_text "${source_text}")
+   string(REPLACE
+    "            drawObjectName(locationTable[pSaveSlotInfo->m4_miniData.m2_location].c_str());"
+    "            // LAGI_SAVE_LOCATION_BOUND\n            {\n                const auto location = static_cast<unsigned int>(pSaveSlotInfo->m4_miniData.m2_location);\n                drawObjectName(location < locationTable.size() ? locationTable[location].c_str() : \"Unknown location\");\n            }"
+    source_text "${source_text}")
+   string(REGEX MATCHALL "LAGI_SAVE_LOCATION_BOUND"
+    lagi_save_location_matches "${source_text}")
+   list(LENGTH lagi_save_location_matches lagi_save_location_count)
+   if(NOT lagi_save_location_count EQUAL 1)
+    message(FATAL_ERROR "Save location bound patch did not apply exactly once")
+   endif()
    # Upstream's overwrite dialog is a stub that immediately proceeds to the
    # write. Restore the pending confirmation state without replacing the
    # native save task or touching existing files during startup/diagnostics.

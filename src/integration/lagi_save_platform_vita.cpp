@@ -171,6 +171,9 @@ extern "C" int lagiAzelSaveRead(
     if (!buildPath(path, sizeof(path), deviceId, fileName))
         return -1;
 
+    lagi::platform::logging::writef(
+        "[SavePlatform] read begin device=%d slot=%s size=%u\n",
+        deviceId, fileName, static_cast<unsigned>(size));
     const SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
     if (fd < 0)
         return -1;
@@ -182,6 +185,17 @@ extern "C" int lagiAzelSaveRead(
             "[SavePlatform] read failed device=%d slot=%s size=%u\n",
             deviceId, fileName, static_cast<unsigned>(size));
         return -1;
+    }
+
+    // Slot preview reads this same raw structure before readSave performs its
+    // own checks. Reject invalid metadata before it can reach menu indexing.
+    const auto* bytes = static_cast<const std::uint8_t*>(destination);
+    if (readU32(bytes + 4) != kSaveVersion ||
+        readU32(bytes) != computeChecksum(bytes, size)) {
+        lagi::platform::logging::writef(
+            "[SavePlatform] invalid metadata device=%d slot=%s size=%u\n",
+            deviceId, fileName, static_cast<unsigned>(size));
+        return -2;
     }
 
     lagi::platform::logging::writef(

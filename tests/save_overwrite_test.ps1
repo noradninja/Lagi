@@ -48,6 +48,11 @@ if ($VitaCompiler) {
     $failureNew = $failureLiterals[1].Groups[1].Value.Replace("`r`n","`n")
     if (($patched.Split(@($failureOld),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Failure recovery target must occur once' }
     $patched = $patched.Replace($failureOld,$failureNew)
+    $locationOld = '            drawObjectName(locationTable[pSaveSlotInfo->m4_miniData.m2_location].c_str());'
+    $locationLiteral = [regex]::Match($cmake,'"(            // LAGI_SAVE_LOCATION_BOUND(?:\\.|[^"\r\n])*)"')
+    if (!$locationLiteral.Success -or ($patched.Split(@($locationOld),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Location patch target must occur once' }
+    $locationNew = $locationLiteral.Groups[1].Value.Replace('\n',"`n").Replace('\"','"')
+    $patched = $patched.Replace($locationOld,$locationNew)
     $repo = Split-Path $PSScriptRoot -Parent
     $patched | & $VitaCompiler -std=c++20 -fsyntax-only -DLAGI_PLATFORM_VITA=1 -DLAGI_NEPTUNE_RENDERER=1 -I "$repo/include" -I "$repo/src/integration" -I $AzelSourceRoot -I "$AzelSourceRoot/kernel" -x c++ -
     if ($LASTEXITCODE -ne 0) { throw 'Patched native save/load source syntax check failed' }
