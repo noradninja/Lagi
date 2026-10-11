@@ -6,7 +6,7 @@ $native = (Get-Content -Raw (Join-Path $AzelSourceRoot 'VDP2.cpp')).Replace("`r`
 function Get-Literal($name) {
     $match = [regex]::Match($cmake, 'set\(' + $name + ' "((?:\\.|[^"\r\n])*)"\)')
     if (!$match.Success) { throw "Missing production literal $name" }
-    return $match.Groups[1].Value.Replace('\n',"`n")
+    return $match.Groups[1].Value.Replace('\n',"`n").Replace('\"','"')
 }
 $old = Get-Literal 'font_link_old'
 $new = Get-Literal 'font_link_new'
@@ -27,8 +27,24 @@ foreach ($index in 0..32) {
     if ($null -eq $node) { throw "Font $index cannot be restored" }
 }
 Write-Output 'PASS: production font patch matches once; 33-node append/lookup model (not runtime execution)'
+$rectOld = Get-Literal 'font_rect_old'
+$rectNew = Get-Literal 'font_rect_new'
+if (($native.Split(@($rectOld),[StringSplitOptions]::None).Length-1) -ne 1 -or $rectNew -notmatch '\(r5 \+ row\) \* 64 \+ r4' -or $rectNew -notmatch 'r6 \* 2') { throw 'Native rectangle stride/width changed' }
+# The production caller clears 44 by 32 cells; preserve the other 20 cells
+# of each row and all text-map rows outside the rectangle.
+$cells = New-Object byte[] (64*64*2)
+[Array]::Fill[byte]($cells, 0xA5)
+foreach ($row in 0..31) { [Array]::Clear($cells,$row*128,44*2) }
+for ($row=0;$row -lt 64;++$row) {
+    for ($column=0;$column -lt 64;++$column) {
+        $expected = if ($row -lt 32 -and $column -lt 44) {0} else {0xA5}
+        if ($cells[($row*64+$column)*2] -ne $expected -or $cells[($row*64+$column)*2+1] -ne $expected) { throw 'Rectangle model changed adjacent cells' }
+    }
+}
+Write-Output 'PASS: native rectangle source guard and 4096-cell preservation model (not runtime execution)'
 if ($VitaCompiler) {
     $patched = $native.Replace($old,$new).Replace('#include "PDS.h"','#include "lagi/lagi_azel_upstream_prelude.h"')
+    $patched = $patched.Replace($rectOld,$rectNew)
     $unload = [regex]::Match($cmake,'(?s)\[=\[(// LAGI_NATIVE_FONT_UNLOAD:.*?)\]=\]').Groups[1].Value.Replace("`r`n","`n")
     if (!$unload -or ($patched.Split(@('s32 resetVdp2StringsSub1(u16* pData)'),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Font unload insertion target changed' }
     $patched = $patched.Replace('s32 resetVdp2StringsSub1(u16* pData)',$unload)

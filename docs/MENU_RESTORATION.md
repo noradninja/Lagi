@@ -4,6 +4,14 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Font-switch text clearing: native `06025166` clears `width` 16-bit cells
+per row, starting at `0x25E06000 + 2*(y*64+x)`, advancing `0x80` bytes per
+row. The generated adapter now replaces the `clearVdp2TextMemoryRect` stub
+with this operation. `setActiveFont`'s existing call clears 44 by 32 cells;
+the model test checks that the remaining 20 columns and following rows stay
+untouched. Patched native VDP2 syntax compilation passes. This restores text
+tile clearing, not cursor animation, and requires visual hardware checks.
+
 Inventory font cleanup: original Delete at `06018B4C` reads the font ID from
 task offset `0xC` and tail-calls `060250E6` (literal `06018B8C`). The generated
 inventory Delete now calls the restored ID-based cleanup rather than the
@@ -129,11 +137,15 @@ The upstream `i < totalCount` test could expose stale tail entries on a partial
 last page. Model/source checks cover counts 0..100 and pages -1..20. This is
 an entry-bound correction only, not implementation of item use or Berserks.
 
-Continue crash triage: a user reports crashing when entering the save-slot
-list from Internal storage. The supplied older gameplay log does not capture
-that failure, so its cause is not established. Raw slot-preview reads now
+Continue crash triage: the supplied complete gzip-wrapped Vita dump's
+embedded TTY reports a `std::array<std::string,32>::operator[]` bounds
+assertion. The matching user build at `1482528` has the unguarded
+`locationTable[miniData.m2_location]` access. That establishes this failure
+path; it does not establish that every reported crash has the same cause.
+Raw slot-preview reads now
 validate native checksum/version before metadata is consumed, and the location
 display bounds its six-bit save value against the 32-entry location table.
 Out-of-table locations get a display-only fallback; save bytes are not changed.
 `[SavePlatform] read begin` records slot/size before IO. Obtain a fresh crash log
-and matching dump before treating these safeguards as proof of a crash fix.
+and matching dump from the updated build before treating these safeguards
+as hardware proof that the crash is resolved.

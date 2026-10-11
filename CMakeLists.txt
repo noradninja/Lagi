@@ -879,6 +879,13 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    message(FATAL_ERROR "Native VDP2 font-list adapter target changed")
   endif()
   string(REPLACE "${font_link_old}" "${font_link_new}" source_text "${source_text}")
+  set(font_rect_old "    PDS_unimplemented(\"clearVdp2TextMemoryRect\");")
+  set(font_rect_new "    // LAGI_NATIVE_FONT_RECT: native 06025166, 64 cells/row, 16-bit cells.\n    if (r6 <= 0 || r7 <= 0) return;\n    for (s32 row = 0; row < r7; ++row)\n        memset(getVdp2Vram(0x6000 + ((r5 + row) * 64 + r4) * 2), 0, r6 * 2);")
+  string(FIND "${source_text}" "${font_rect_old}" font_rect_position)
+  if(font_rect_position LESS 0)
+   message(FATAL_ERROR "Native font rectangle-clear target changed")
+  endif()
+  string(REPLACE "${font_rect_old}" "${font_rect_new}" source_text "${source_text}")
   string(REPLACE
    "s32 resetVdp2StringsSub1(u16* pData)"
    [=[// LAGI_NATIVE_FONT_UNLOAD: 0602502C, 060250E0 and 060250E6.
