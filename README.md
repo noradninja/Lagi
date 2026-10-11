@@ -48,7 +48,7 @@ Working systems include:
 - hardware-accepted screen-space 2x2 coordinate dithering for final Cinepak presentation
 - Edge's original textured/stippled VDP1 mesh shadow
 - Saturn-accurate Azel-driven black/white fade direction, timing, and color-offset presentation bridged through Neptune
-- 480x272 gameplay presentation with MSAA disabled
+- native 980x544 gameplay presentation with MSAA disabled
 - native 720x408 high-resolution title presentation
 - stable 30 Hz presentation through the supported 3D sequence
 
