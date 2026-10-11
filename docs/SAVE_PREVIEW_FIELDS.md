@@ -12,8 +12,12 @@ time divides frames by 3600 to get minutes, caps at 5999, then splits hours
 and minutes. Rider level is the saved zero-based level plus one. Dragon name
 remains empty if its native named flag is unset.
 
-The separate dragon-rank sprite routine 060192C2 remains unfinished; rider
-`LV` should not be mistaken for a claim that every rank graphic is restored.
+The separate dragon-rank sprite routine 060192C2 is restored from disassembly:
+it draws dragonLevel descriptors (not dragonLevel+1), each 8 bytes from COMMON
+0020F734, with native position and palette 0760. Helper 06015BFC emits PMOD 0080,
+matching drawMenuSprite, not the 8-bit drawMenuSprite2 helper. Valid level range
+is 0..7; malformed negative/out-of-range values draw no marks. Rider `LV` is
+distinct from these dragon-rank marks. Hardware appearance remains unverified.
 
 Validation: patched native source passes Vita compiler syntax checks, with
 time boundary/cap tests. No package build or device visual validation here.

@@ -2123,6 +2123,30 @@ void pauseCutscene]=]
     "            outputData->m4_playFrames = loadedGameState->mC_mainGameState.gameStats.m3C_frameCounter;"
     source_text "${source_text}")
    # Native 060191C4, including the US executable's exact format strings.
+   # Native 060192C2: pre-tested count loop, COMMON F734, helper 06015BFC.
+   string(REPLACE
+    [=[    static void saveScreenDisplaySlotData2(s16*, s32)
+    {
+        Unimplemented();
+    }]=]
+    [=[    static void saveScreenDisplaySlotData2(s16* position, s32 dragonLevel)
+    {
+        // LAGI_SAVE_PREVIEW_RANK: valid native range 0..7; reject corrupt data.
+        if (dragonLevel < 0 || dragonLevel > 7) return;
+        auto data = gCommonFile->getSaturnPtr(0x20F734);
+        for (s32 i = 0; i < dragonLevel; ++i, data = data + 8)
+        {
+            const s_menuSprite sprite = {
+                readSaturnS16(data), readSaturnS16(data + 2),
+                readSaturnS16(data + 4), readSaturnS16(data + 6)};
+            drawMenuSprite(&sprite, position[0], position[1], 0x760);
+        }
+    }]=]
+    source_text "${source_text}")
+   if(NOT source_text MATCHES "LAGI_SAVE_PREVIEW_RANK")
+    message(FATAL_ERROR "Native save rank anchor changed")
+   endif()
+   # Native slot strings follow the rank routine's generated-source patch.
    string(REPLACE
     [=[            drawObjectName(pSaveData->m4_miniData.m8_playerName.c_str());
             break;]=]
