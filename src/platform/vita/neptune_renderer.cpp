@@ -2975,6 +2975,21 @@ static void freeMovieResources()
     g_movieRenderLogged = false;
 }
 
+// Caller owns the movie render slot. Do not read Azel memory on LagiRender
+// or publish the scene's entire state merely to update movie subtitles.
+static void publishMovieOverlaySnapshot()
+{
+    g_vdp2TextValid = g_pendingVdp2TextValid;
+    if (!g_vdp2TextValid)
+        return;
+    std::memcpy(g_vdp2TextVram, g_pendingVdp2TextVram, sizeof(g_vdp2TextVram));
+    std::memcpy(g_vdp2Cram, g_pendingVdp2Cram, sizeof(g_vdp2Cram));
+    std::memcpy(g_vdp2LineScroll, g_pendingVdp2LineScroll, sizeof(g_vdp2LineScroll));
+    std::memcpy(g_vdp2MenuScroll, g_pendingVdp2MenuScroll, sizeof(g_vdp2MenuScroll));
+    g_vdp2MenuId = 0u;
+    g_vdp2SaveLayout = false;
+}
+
 bool movie_present_frame(
     const std::uint32_t* rgba,
     unsigned int width,
@@ -3066,8 +3081,9 @@ bool movie_present_frame(
         const float sourceAspect =
             static_cast<float>(width) /
             static_cast<float>(height);
-        const float xExtent = sourceAspect / displayAspect;
-        const float yExtent = 1.0f;
+        // Software-decoded Cinepak uses the same width-fit presentation.
+        const float xExtent = 1.0f;
+        const float yExtent = displayAspect / sourceAspect;
         g_movieVertices[0] = {-xExtent,  yExtent, 0.5f, 0.0f, 0.0f};
         g_movieVertices[1] = { xExtent,  yExtent, 0.5f, 1.0f, 0.0f};
         g_movieVertices[2] = {-xExtent, -yExtent, 0.5f, 0.0f, 1.0f};
@@ -3099,6 +3115,8 @@ bool movie_present_frame(
             width, height, pitchPixels, g_movieStridePixels);
         g_movieUploadLogged = true;
     }
+
+    publishMovieOverlaySnapshot();
 
     if (!renderSlot.publish()) {
         logging::writef("[MovieRender] FAIL publish render slot\n");
@@ -3221,11 +3239,9 @@ bool movie_present_cinepak_payload(
             static_cast<float>(sourceWidth) /
             static_cast<float>(sourceHeight);
 
-        // Cinepak movies use the same horizontal presentation width as the
-        // normal Saturn 4:3 image on Vita. Preserve the movie's own aspect
-        // ratio inside that width, leaving black above/below for widescreen
-        // sources instead of filling vertically and cropping the sides.
-        const float xExtent = (4.0f / 3.0f) / displayAspect;
+        // Fill the output width without stretching. The viewport clips
+        // vertically if the source is taller than the display aspect.
+        const float xExtent = 1.0f;
         const float yExtent =
             xExtent * displayAspect / sourceAspect;
         g_movieVertices[0] = {-xExtent,  yExtent, 0.5f, 0.0f, 0.0f};
@@ -3258,6 +3274,7 @@ bool movie_present_cinepak_payload(
         g_movieUploadLogged = true;
     }
 
+    publishMovieOverlaySnapshot();
     if (!renderSlot.publish()) {
         logging::writef("[MovieRender] FAIL publish SGX Cinepak slot\n");
         return false;
@@ -3275,6 +3292,8 @@ bool movie_republish_frame()
     if (!guard || !g_movieFrameVisible || !g_movieTextureData)
         return false;
 
+    if (!g_movieUsesVdp2Title)
+        publishMovieOverlaySnapshot();
     return renderSlot.publish();
 }
 
@@ -12653,11 +12672,15 @@ static bool renderMovieFrame()
         }
     }
 
-    // Front-end text is decoded from Azel's NBG1/NBG3 VRAM/CRAM snapshot
+    // Movie matte is above video and below text. Front-end text is decoded
+    // from Azel's NBG1/NBG3 VRAM/CRAM snapshot
     // into an ordinary RGBA texture. Draw it after the VDP2 backgrounds and
     // use the same screen-space dither as the other scaled presentation art.
     // VDP1 selectors/arrows remain above the text layer.
-    if (submitted && g_movieUsesVdp2Title)
+    if (submitted && !g_movieUsesVdp2Title)
+        drawAzelVdp2CinematicBarsGpu();
+
+    if (submitted)
         drawAzelVdp2TextLayerGpu();
 
     if (submitted && g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f)
@@ -12704,6 +12727,11 @@ static bool renderMovieFrame()
     }
 
     if (!g_movieRenderLogged) {
+        if (!g_movieUsesVdp2Title) {
+            logging::writef(
+                "[MoviePresentation] fit=width crop=vertical overlays=matte,text snapshot=%u\n",
+                static_cast<unsigned int>(g_vdp2TextValid));
+        }
         logging::writef(
             "[MovieRender] first GXM frame submitted %ux%u output=%dx%d backend=%s msaa=OFF\n",
             g_movieWidth, g_movieHeight,

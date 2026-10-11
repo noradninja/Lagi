@@ -302,6 +302,8 @@ Lighting is captured with each submission from Azel's active light state. Geomet
 
 ## VDP2 display framebuffer modes
 
+Cinepak final presentation fills the selected framebuffer width while preserving source aspect; the viewport clips excess height rather than stretching. SGX and software-decoded movie output share this policy. Movie mode stages Azel's VDP2 text/line-scroll snapshot after DMA, and the movie render-slot owner copies it before publication. Final composition is video, native cinematic matte, decoded subtitle text, then fade; the source-resolution reconstruction target is unchanged. This follow-up is CPU/source and renderer-syntax checked, not yet hardware validated.
+
 Front-end presentation follows Azel's live VDP2 TVMD state. Gameplay/movie output is 480x272 by default or 960x544 with `LAGI_FULLRES=ON`. The title screen enters Azel's 704-dot high-resolution mode and is presented through a 720x408 Vita framebuffer. Cinepak reconstruction retains its dedicated source-sized 480x272 target regardless of output selection.
 
 Neptune renders directly into the active framebuffer size and passes that same width, height, pitch, and buffer to `sceDisplaySetFrameBuf()`.

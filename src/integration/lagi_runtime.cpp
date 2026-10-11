@@ -473,6 +473,20 @@ void runtime_frame()
     // movie backend at the same host-frame boundary used by the existing
     // native runtime integration.
     interruptVDP2Update();
+    if (gGameStatus.m0_gameMode == 0) {
+        // Movie subtitles and matte are native VDP2 layers too. Stage them
+        // after DMA, before lastUpdateFunction submits the next movie frame.
+        // The movie renderer copies staging state only while owning its slot.
+        lagi::platform::renderer::presentation_set_vdp2_text(
+            getVdp2Vram(0), getVdp2Cram(0), getVdp2Vram(0x3E000),
+            0u, false,
+            graphicEngineStatus.m40BC_layersConfig[0].scrollX,
+            graphicEngineStatus.m40BC_layersConfig[0].scrollY,
+            graphicEngineStatus.m40BC_layersConfig[1].scrollX,
+            graphicEngineStatus.m40BC_layersConfig[1].scrollY,
+            graphicEngineStatus.m40BC_layersConfig[3].scrollX,
+            graphicEngineStatus.m40BC_layersConfig[3].scrollY);
+    }
     lastUpdateFunction();
 
     // Tasks above can start a new fade and change CLOFEN/CLOFSL as part of

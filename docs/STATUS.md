@@ -8,6 +8,8 @@ Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Re
 
 ## Current development stage
 
+Cinepak width-fit/overlay follow-up: movie output fills the Vita width without stretching, cropping vertically only if needed. Native cinematic matte and subtitle snapshots are now composed above video, before fade. Source reconstruction, title sizing and the accepted dither filter are unchanged. Renderer syntax and CPU/source tests pass; the new package still needs Vita playback/overlay confirmation.
+
 The screen-space dither checkpoint `508bf75` was accepted by the user on Vita on 2026-10-10. The supplied log identifies `enabled=1 ... sampling=lookup-point-v1`; the user reports effectively no dither-specific gameplay penalty compared with hardware bilinear. Full-screen menus still drop below 30 fps in both modes and remain an accepted limitation of this merge, not a solved performance target. The final merged main package has not been rebuilt/retested here. See `docs/DITHER_PERFORMANCE.md`.
 
 Current main extends the earlier public v0.3.0alpha hardware milestone through native FLD_A3 flight, E006 cinematic and Excavation arrival. Native audio and Cinepak remain integrated; this merge is a development checkpoint, not a new packaged release.
