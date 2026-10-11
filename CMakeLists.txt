@@ -2356,6 +2356,24 @@ u16 saveMenuData_[]{]=]
     "void useInventoryItem(s_inventoryMenu* pThis)\n{\n    Unimplemented();\n}"
     [=[void inventoryMenuTaskDrawSub1(s_inventoryMenu* pThis);
 void inventoryMenuTaskDrawSub2(s_inventoryMenu* pThis, s32 item);
+static s16 lagiInventoryBerserkBPCost(s16 baseCost);
+
+static s16 lagiInventoryBerserkHeal(eItems item)
+{
+    // Native 06007432 table at 06042E3C; 060073F8 fixed-point scaling.
+    s16 base = 0;
+    switch (item)
+    {
+    case 0xAA: base = 400; break;
+    case 0xAB: base = 900; break;
+    case 0xAC: base = 20000; break;
+    default: return 0;
+    }
+    const fixedPoint spr = FP_Div((s32)mainGameState.gameStats.mC2_dragonSpr, 200);
+    const fixedPoint scale = fixedPoint(0xCCCC) + MTH_Mul(fixedPoint(0x6666), spr);
+    const fixedPoint result = MTH_Mul(fixedPoint::fromInteger(base), scale);
+    return static_cast<s16>((result.asS32() + 0x8000) >> 16);
+}
 
 void useInventoryItem(s_inventoryMenu* pThis)
 {
@@ -2379,7 +2397,30 @@ void useInventoryItem(s_inventoryMenu* pThis)
         inventoryMenuTaskDrawSub2(pThis, item);
         return;
     }
-    // Consumable, key-item and healing-Berserk native handlers remain to port.
+    if (pThis->m1C_selectedCategory == 2)
+    {
+        // Native 06018634..06018694: no BP spent unless healing succeeds.
+        auto& stats = mainGameState.gameStats;
+        if (stats.m10_currentHP >= stats.mB8_maxHP)
+        {
+            playSystemSoundEffect(5);
+            return;
+        }
+        const s16 heal = lagiInventoryBerserkHeal(item);
+        const s16 cost = lagiInventoryBerserkBPCost(readSaturnS16(
+            gCommonFile->getSaturnPtr(0x20C3F4) + 12 * item + 2));
+        if (!heal || cost > stats.m14_currentBP)
+        {
+            playSystemSoundEffect(5);
+            return;
+        }
+        stats.m14_currentBP -= cost;
+        const s32 hp = stats.m10_currentHP + heal;
+        stats.m10_currentHP = static_cast<s16>(hp > stats.mB8_maxHP ? stats.mB8_maxHP : hp);
+        playSystemSoundEffect(stats.m1_dragonLevel == 8 ? 0x21 : 0x1A);
+        return;
+    }
+    // Consumable and key-item native handlers remain to port.
     Unimplemented();
 }]=]
     source_text "${source_text}")

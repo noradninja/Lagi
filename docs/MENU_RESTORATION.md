@@ -4,6 +4,15 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Healing Berserk action: native table `06042E3C` contains IDs AA/AB/AC with
+base heals 400/900/20000. The adapter follows `060073F8`'s fixed-point SPR
+scaling and `06018634`'s full-HP, nonzero-heal and sufficient-BP gates. BP is
+deducted only on success, HP capped at maximum, and sound selected by the
+native dragon-level rule. It uses the same cost helper as the Berserk rows.
+Patched inventory Vita syntax checking passes; actual HP/BP change, refusal,
+sound and save persistence still require hardware tests. Consumable and
+key-item handlers remain unfinished.
+
 Inventory weapon confirmation: native `06018570` checks the item's context
 flags before dispatch. Its category-3 branch at `0601869E` toggles the selected
 weapon against `mA_weaponType`, plays sound 7, then redraws rows and details.

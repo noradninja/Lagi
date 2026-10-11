@@ -53,6 +53,23 @@ foreach ($equipped in @(0,0x3A,0x3B,0x41)) {
     }
 }
 Write-Output 'PASS: 12 weapon equip/unequip toggle models; not hardware execution'
+$healCases = 0
+foreach ($hp in @(0,999,1000)) {
+    foreach ($bp in @(0,49,50,51)) {
+        foreach ($heal in @(0,400,900,20000)) {
+            $newHp = $hp; $newBp = $bp
+            if ($hp -lt 1000 -and $heal -ne 0 -and $bp -ge 50) {
+                $newBp -= 50
+                $newHp = [math]::Min($hp+$heal,1000)
+            }
+            if ($hp -ge 1000 -or $heal -eq 0 -or $bp -lt 50) {
+                if ($newHp -ne $hp -or $newBp -ne $bp) { throw 'Refused Berserk must preserve HP/BP' }
+            } elseif ($newHp -gt 1000 -or $newHp -lt $hp -or $newBp -ne $bp-50) { throw 'Healing Berserk cap/cost changed' }
+            ++$healCases
+        }
+    }
+}
+Write-Output "PASS: $healCases healing gate/cap/BP models; not hardware execution"
 if ($VitaCompiler) {
     $replacement = [regex]::Match($cmake,'"(        // LAGI_INVENTORY_PAGE_BOUND[^"\r\n]*)"')
     if (!$replacement.Success) { throw 'Production inventory replacement missing' }
