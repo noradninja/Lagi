@@ -1,4 +1,92 @@
+## Accepted screen-space lookup dithering (2026-10-10)
+
+The user accepted source checkpoint `508bf7544f4847726d2b758a5872c7c25077ee3c` after Vita testing. The supplied log identifies `[DitherFilter] enabled=1 pattern=screen-2x2 sampling=lookup-point-v1`. Large sprites no longer produce the dither-specific slowdown seen in the earlier arithmetic implementation; the user reports that lookup dithering is effectively free versus hardware bilinear on the tested route. Full-screen menus still fall below 30 fps with both modes. This merge accepts the filter result without claiming the menu performance target is solved or every frame has identical A/B timings.
+
+The Unreal-inspired ordered 2x2 coordinate pattern uses true rasterizer `WPOS`, not `uv * outputDimensions`. A repeating, point-sampled 2x2 FP16 texture provides the exact prebiased quarter-texel offsets, replacing parity arithmetic with a cached texture read. The source RGBA texture is point-sampled separately, so this is two total texture fetches in lookup mode, not the original one-fetch hash experiment. CPU-computed reciprocal source dimensions scale the offsets. Both `LAGI_STOCHASTIC_FILTER` and `LAGI_DITHER_LOOKUP` default ON.
+
+Scope includes decoded title artwork, text, VDP1 UI sprites, Gouraud particle sprites, UI tiles/window atlas and backgrounds, and final resolved Cinepak RGBA presentation. Radar-map sprites retain point-filtered checker transparency; world polygon shaders, Azel ownership, palette/source decode and Cinepak reconstruction are preserved. `LAGI_FULLRES=ON` selects 960x544 gameplay/movie output; default OFF retains 480x272. Title output remains 720x408 and Cinepak reconstruction has a dedicated 480x272 target. Raw VRAM title fallback retains exact palette decode and arithmetic coordinate dithering.
+
+Both shader modes compile with PSP2CGC; renderer syntax checks pass for lookup, arithmetic and disabled configurations; the FP16/layout/parity test passes with 72,000 randomized texel selections. These checks do not replace Vita testing. User hardware acceptance applies to the source checkpoint above; the final merged main package has not been rebuilt/retested in this session. See `docs/DITHER_PERFORMANCE.md` and `docs/BUILDING.md` for update/build commands and A/B switches.
+
+## Full-resolution Cinepak correction (2026-10-10; implementation history)
+
+The first full-resolution checkpoint changed the movie presentation render target to 960x544 but left the Cinepak resolve pass using that target with its source-sized 480x272 color surface. This mismatch can prevent movie frames from being presented. Neptune now creates a dedicated 480x272 Cinepak resolve render target and uses it only for reconstruction; the final movie presentation target, pitch, dimensions and `sceDisplaySetFrameBuf` dimensions follow the 960x544 build-time selection. The existing title remains 720x408. Verify `sceDisplaySetFrameBuf` return codes and hardware capture before marking this resolved. `sceDisplaySetFrameBuf` is the existing native panel scanout path, not a texture upscale; any remaining perceived resolution mismatch needs capture of the active scanout and display output.
+
+## Full-resolution presentation option (2026-10-10; implementation history)
+
+Branch `feature/fullres-dithered-filtering` adds `-DLAGI_FULLRES=ON` (OFF by default). The existing half-resolution gameplay and movie render targets use native 960x544 when enabled, including matching color-surface dimensions and pitch; the 720x408 title mode remains separate. Cinepak source decode/resolve remains at source dimensions and retains the existing centered 4:3 presentation geometry. This is a GPU-fill and memory-bandwidth stress test, not a claim of improved performance or hardware validation. Compare matched scenes and movies against an OFF build in separate build directories; preserve logs and check for presentation/crop and mode-switch regressions. Do not change the radar point-filtered sampling or Azel scene decisions.
+
 # Flight Mode Bring-Up
+
+## Native collection color recovery in progress (2026-10-10)
+
+Latest user screenshot still shows grayscale collection orb and image trail,
+with cyan save-station dots intact. The latest log reports shaded=1 and
+non-neutral Gouraud words for sources 3998/39F8, but the first-eight-draw
+diagnostic cannot establish the visible orb's values. Treat the color fix as
+unvalidated, not successful. Sprite diagnostics now report the first draw of
+each distinct shaded texture source (bounded to 64 sources), so recurring
+early effects cannot exhaust the budget before collection. This changes
+observation only; it does not alter colors, shaders or gameplay.
+
+New work branch: feature/native-point-lights-effects, based on merged main.
+Point lighting and grayscale image particles/orbs remain separate open goals.
+Native point-light argument recovery: FLD_A3 06074026 loads R7=00014000;
+0607402E loads helper 0601E200 and 06074030 calls it. The reconstructed
+dragon collection setup omits R7 and therefore uses zero. A generated-source
+adapter restores 0x14000 without editing extern/Azel. Existing preprocessing
+then produces params[3]=0x14000000 and params[4]=0x19000. This restores
+input only: activation, evaluation and reset are still unimplemented and
+no visible point-light restoration is claimed.
+
+Read-only original 1ST_READ.PRG trace (logical sector 58, load 06006000):
+activation 0601E124 calls master push helper 0601FDF8 and queues slave
+0601F07C; restore 0601E1C8 calls master pop 0601FE14 and queues slave
+0601F098. Master push saves the word at 0601FA9E on the stack addressed
+by 0601FE64, then enters the dispatch reset; pop restores the saved word.
+The native selector word is modified executable code, not a modern light
+object. Do not emulate this with executable memory writes on Vita.
+Point setup 0601E200 stores XYZ/parameter in lightSetup at 06052B2C
+offsets 1C/20/24/28, calls 0601FE32 to preprocess five values at 0601FE50,
+and queues corresponding slave setup 0601F0B6. Full disassembly corrects the
+initial inference about the following routine: 0601FE78 builds the ordinary
+32-entry falloff table (constants 8421/84210 and three second differences),
+not a point-light vector. The point-light branch begins at 0601FCDC and
+calls 0601FD52. The latter subtracts model translation at matrix offsets
+2C/1C/0C from point Z/Y/X at 0601FE50+8/+4/+0, pushes those three deltas,
+and computes their squared length using three MAC.L operations. Thus this
+path derives a model-relative light vector, not a separate light at every
+polygon vertex. The branch then multiplies that vector through the model
+matrix before publishing the three light components at 0601FBC0.
+At 0601FD76, the squared-distance high word is compared with 1000; the
+larger-distance route computes an integer square root in 16 iterations and
+shifts it by 16. The following threshold is 04000000. The divide route uses
+SH-2 division registers at FFFFFF00 with numerator pointParams[3]; the
+out-of-range route clears the output vector. Recover zero-distance behavior,
+division overflow and the exact selector/coordinate-space contract before
+translating this into the shared renderer. In particular do not substitute
+an arbitrary per-vertex inverse-square lamp or guess the parameter's units.
+Current Neptune submission capture contains direction,
+color and distance falloff only, so the restored argument alone cannot reach
+the lighting evaluator. The upstream push stub also does not advance its
+stack pointer; simply calling that stub is not a faithful activation fix.
+Original Disc 1 FLD_A3.PRG (logical sector 244544, 268888 bytes) confirms
+0607AC3C passes the trail Gouraud pointer plus animationFrame*4 to shared helper
+0602D0DC. That helper copies four big-endian words at offsets 0/2/4/6 into the
+Gouraud table. Thus trail entries overlap: a four-byte stride selects an
+eight-byte window, not a fixed block or a synthesized item tint.
+Original orb draw at 0607AD44 selects the separate inline table at 06094F64
+with colorIndex*8 and calls the same helper. The reconstructed calls omit
+these arguments. Local generated-source adapters restore both contracts using
+a generic Lagi color-table service and existing Gouraud sprite output.
+extern/Azel is unchanged; no gameplay color selection or projection change.
+Configuration and Vita syntax checks pass after correcting the adapter header's
+type include. The actual adapter passes 384 host color-window cases across
+strides 0/4/8, including endian order, argument forwarding and null handling.
+Memory access and the downstream draw are controlled test doubles; this does
+not validate GXM output or native task/color selection. Hardware validation is
+still pending; this is not a completed color fix. Other image emitters and point-light
+activation/evaluation/reset semantics still need reconstruction.
 
 ## User acceptance and main merge authorization (2026-10-10)
 

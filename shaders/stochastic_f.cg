@@ -1,0 +1,39 @@
+// Unreal-inspired 2x2 ordered coordinate-dithered nearest sampling.
+// Uses the published four coordinated U/V offsets, not independent hashes.
+// textureSize = source width/height and their CPU-computed reciprocals.
+// WPOS is the rasterizer-provided destination pixel position.  Deriving the
+// pattern from UVs makes its spacing follow/distort with sprite coordinates.
+// Source sampler state must be POINT. Lookup mode trades parity ALU for a
+// cache-resident 2x2 FP16 fetch; the source texture still needs one fetch.
+float4 main(float2 uv : TEXCOORD0, float4 fragCoord : WPOS,
+            uniform sampler2D tex : TEXUNIT0,
+#if LAGI_DITHER_LOOKUP
+            uniform sampler2D ditherOffsets : TEXUNIT1,
+#endif
+            uniform float4 textureSize)
+{
+#if LAGI_DITHER_LOOKUP
+    // REPEAT + POINT chooses floor(WPOS.xy) modulo two. FP16 stores the
+    // exact quarter-texel offsets already biased by -0.5.
+    float2 offset = tex2D(ditherOffsets, fragCoord.xy * 0.5f).rg;
+#else
+    float2 pixel = floor(fragCoord.xy);
+    float2 parity = pixel - 2.0f * floor(pixel * 0.5f);
+    // Screen parity: (0,0)=(.25,0), (1,0)=(.50,.75),
+    //                (0,1)=(.75,.50), (1,1)=(0,.25).
+    float both = parity.x * parity.y;
+    float du = 0.25f + 0.25f * parity.x + 0.50f * parity.y - both;
+    float dv = 0.75f * parity.x + 0.50f * parity.y - both;
+    float2 offset = float2(du, dv) - 0.5f;
+#endif
+    // POINT selects floor(sampleUv * size) itself. Keep edge coordinates
+    // inside the first/last texel, independently of sampler address mode.
+    // This removes the source-space floor and normalize round trip.
+    float2 halfTexel = 0.5f * textureSize.zw;
+    float2 sampleUv = clamp(
+        saturate(uv) + offset * textureSize.zw,
+        halfTexel, 1.0f - halfTexel);
+    float4 color = tex2D(tex, sampleUv);
+    if (color.a < 0.5f) discard;
+    return color;
+}

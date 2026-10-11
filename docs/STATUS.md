@@ -8,6 +8,8 @@ Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Re
 
 ## Current development stage
 
+The screen-space dither checkpoint `508bf75` was accepted by the user on Vita on 2026-10-10. The supplied log identifies `enabled=1 ... sampling=lookup-point-v1`; the user reports effectively no dither-specific gameplay penalty compared with hardware bilinear. Full-screen menus still drop below 30 fps in both modes and remain an accepted limitation of this merge, not a solved performance target. The final merged main package has not been rebuilt/retested here. See `docs/DITHER_PERFORMANCE.md`.
+
 Current main extends the earlier public v0.3.0alpha hardware milestone through native FLD_A3 flight, E006 cinematic and Excavation arrival. Native audio and Cinepak remain integrated; this merge is a development checkpoint, not a new packaged release.
 
 The current hardware path reaches:
@@ -156,7 +158,7 @@ Verified on real Vita/Vita TV hardware:
 - Vita-to-Saturn physical controller bridge
 - Sega FILM demux
 - Cinepak playback through the post-elevator movie pair
-- source-resolution SGX Cinepak reconstruction with hardware-linear final presentation
+- source-resolution SGX Cinepak reconstruction with screen-space lookup-dithered final presentation
 - native SceAudio output
 - native BGM and sound-effect playback
 - runtime ARM SCSP DSP translation
@@ -167,7 +169,7 @@ Verified on real Vita/Vita TV hardware:
 - title NBG presentation
 - D5 NBG0 keyboard presentation
 - D5 NBG3 subtitle/text presentation
-- hardware-linear front-end/menu/name-entry text presentation
+- screen-space lookup-dithered front-end/menu/name-entry text presentation
 - D5 VDP1 cursor data/CRAM decoding
 - RBG0 SGX program registration after register-pressure reduction
 - native RBG0 parameter/coefficient state capture
@@ -181,7 +183,7 @@ The title screen now follows Azel's live TVMD state into a native 720x408 Vita f
 
 Raw VRAM/CRAM reads remain point-exact. The title artwork's reduction into the Vita framebuffer filters only after palette lookup / RGB555 decode, so packed Saturn memory and palette indices are never interpolated.
 
-The live title/menu text layer (PRESS START, CONTINUE, NEW GAME and related prompts) is decoded separately to RGBA and composited through SGX with hardware linear filtering. The high-resolution title artwork path itself is not modified by that text filtering pass.
+The live title/menu text layer (PRESS START, CONTINUE, NEW GAME and related prompts) is decoded separately to RGBA and composited through SGX with screen-space lookup dithering. The high-resolution title artwork is independently decoded and dithered; palette interpretation remains exact.
 
 ### D5 name-entry sequence
 
@@ -244,8 +246,8 @@ Current RBG0 strategy:
 - line-window visibility is handled at the compositor level rather than inside the heavy RBG0 fragment shader.
 
 All additional VDP2 work follows the same SGX-first design rule. In-game
-background and world layers use point filtering; bilinear filtering is reserved
-for UI/text presentation until explicitly changed. ARM NEON is reserved for
+rotation-background and world layers use point filtering; decoded UI/text/title
+and Cinepak presentation use screen-space dithering by default. ARM NEON is reserved for
 measured CPU-bound preparation or decode stages where it is the best exact
 implementation; GPU-bound work is not moved to the CPU merely to use NEON.
 
@@ -327,13 +329,13 @@ Those renderer/platform capabilities are being reconnected to the authentic boot
 Current gameplay/front-end target:
 
 ```text
-3D gameplay framebuffer:              480x272
+3D gameplay/movie framebuffer:        480x272 default; 960x544 with LAGI_FULLRES=ON
 high-resolution title framebuffer:    720x408
 title source VDP2 raster:             704x448
 target presentation:                  30 Hz
 ```
 
-The active front-end framebuffer mode follows Azel's VDP2 TVMD state. The title path scans out 720x408 directly; gameplay retains the established 480x272 path.
+The active front-end framebuffer mode follows Azel's VDP2 TVMD state. The title path scans out 720x408 directly; gameplay/movie output follows `LAGI_FULLRES` without changing source-resolution Cinepak reconstruction.
 
 Saturn-authored content is presented at its intended aspect rather than stretched to match a 16:9 capture device.
 
@@ -428,12 +430,13 @@ They are no longer the intended normal execution path.
 
 ### 2D filtering
 
-Decoded 2D presentation resources now use SGX linear filtering when scaled:
+Decoded 2D presentation resources now use accepted screen-space 2x2 lookup dithering when scaled (`LAGI_STOCHASTIC_FILTER=ON`, `LAGI_DITHER_LOOKUP=ON`, both default ON):
 
-- VDP1 UI sprites, including Lock-On/LCS cursors and menu selectors
+- VDP1 UI and Gouraud particle sprites, including Lock-On/LCS cursors and menu selectors; the field radar map remains point-filtered
 - NBG1 menu/window atlas
 - VDP2 subtitle, interaction, item, title-menu, and name-entry text through a 352x224 logical text layer
+- decoded title artwork and resolved Cinepak final presentation
 
 Raw Saturn memory fetches remain point-exact. VDP2 image-plane filtering is tracked separately because those backgrounds are still decoded directly from VRAM/CRAM during composition.
 
-Frontend timing reports `[VDP2Perf]` with framebuffer dimensions, total front-end render time, and GPU wait time. The high-resolution title background now uses a decode-once RGBA layer surface followed by SGX hardware-linear presentation, removing the earlier repeated raw VDP2 decode cost from every output fragment.
+Frontend timing reports `[VDP2Perf]` with framebuffer dimensions, total front-end render time, and GPU wait time. The high-resolution title background uses a decode-once RGBA layer surface followed by SGX lookup-dithered presentation, removing repeated raw VDP2 decode cost from the normal output path. Hardware bilinear remains available with `LAGI_STOCHASTIC_FILTER=OFF`; the raw title fallback retains arithmetic dithering.

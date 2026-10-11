@@ -215,9 +215,9 @@ or unavailable on SGX. ARM NEON is used only for measured CPU-bound stages where
 vectorization preserves exact Saturn-visible results; it is not a substitute
 for moving scalable raster work to SGX.
 
-In-game VDP2 backgrounds and world presentation use point filtering. Bilinear
-filtering is reserved for UI and text presentation until that policy is
-explicitly revised.
+In-game VDP2 rotation backgrounds and world presentation use point filtering.
+Decoded UI/text/title and Cinepak presentation use screen-space coordinate
+dithering by default; hardware bilinear remains an A/B fallback.
 
 The native-scene RBG0 path follows these rules explicitly: the coefficient,
 map, character, and palette program resolves one sample per 352x224 Saturn
@@ -302,18 +302,22 @@ Lighting is captured with each submission from Azel's active light state. Geomet
 
 ## VDP2 display framebuffer modes
 
-Front-end presentation follows Azel's live VDP2 TVMD state. The normal gameplay path uses the established 480x272 framebuffer. The title screen enters Azel's 704-dot high-resolution mode and is presented through a 720x408 Vita framebuffer.
+Front-end presentation follows Azel's live VDP2 TVMD state. Gameplay/movie output is 480x272 by default or 960x544 with `LAGI_FULLRES=ON`. The title screen enters Azel's 704-dot high-resolution mode and is presented through a 720x408 Vita framebuffer. Cinepak reconstruction retains its dedicated source-sized 480x272 target regardless of output selection.
 
 Neptune renders directly into the active framebuffer size and passes that same width, height, pitch, and buffer to `sceDisplaySetFrameBuf()`.
 
-The title path addresses the 704x448 VDP2 source raster, decodes the Saturn tile/palette data into an RGBA presentation surface, then uses SGX hardware-linear filtering into the 720x408 framebuffer. Raw VRAM and CRAM interpretation remains point-exact; filtering occurs only after palette lookup on decoded RGB pixels.
+The title path addresses the 704x448 VDP2 source raster, decodes the Saturn tile/palette data into an RGBA presentation surface, then uses screen-space lookup dithering into the 720x408 framebuffer. Raw VRAM and CRAM interpretation remains point-exact; filtering occurs only after palette lookup on decoded RGB pixels.
 
 
 ## 2D presentation filtering
 
-Neptune keeps Saturn memory interpretation separate from presentation filtering. Raw VDP1/VDP2 VRAM, CRAM, pattern names, palette indices, and command data are addressed without texture filtering. Once a 2D asset has been decoded into an ordinary RGBA texture, SGX linear filtering is used when that asset is rescaled into the active Vita framebuffer.
+Neptune keeps Saturn memory interpretation separate from presentation filtering. Raw VDP1/VDP2 VRAM, CRAM, pattern names, palette indices, and command data are addressed without texture filtering. Decoded 2D RGBA assets use Unreal-inspired ordered 2x2 coordinate dithering when rescaled into the active Vita framebuffer. The pattern comes from native fragment `WPOS`, never UV multiplied by output dimensions.
 
-Current decoded linear-filtered paths include VDP1 UI sprites such as Lock-On/LCS cursors and menu selectors, the decoded NBG1 UI/window atlas, and the logical 352x224 VDP2 text layer used by subtitles, interaction text, item text, title-menu prompts, and D5 name-entry text.
+Filtered paths include decoded title artwork, VDP1 UI sprites such as Lock-On/LCS cursors and menu selectors, Gouraud particle sprites, the decoded NBG1 UI/window atlas and backgrounds, logical 352x224 VDP2 text, and final resolved Cinepak presentation. The field radar map remains point-filtered at its original 48x48 size; world polygon shaders are unchanged.
+
+The default `LAGI_DITHER_LOOKUP=ON` implementation point-samples a repeating 2x2 FP16 texture at `WPOS.xy * 0.5`. Its exact quarter-texel offsets are prebiased by -0.5 and scaled by CPU-computed reciprocal source dimensions. Texture unit 1 owns the immutable offset lookup; unit 0 point-samples the source RGBA texture. This replaces parity ALU with a cached lookup, not a reduction to one total texture fetch. Gouraud RGB555 correction and alpha discard remain intact. The arithmetic path is available with `LAGI_DITHER_LOOKUP=OFF`; decoded bilinear presentation with `LAGI_STOCHASTIC_FILTER=OFF`. Raw title fallback retains exact palette decode plus arithmetic dithering.
+
+The user accepted Vita-tested `508bf75` as effectively free relative to bilinear in tested gameplay. Full-screen menus remain below 30 fps with both modes; no universal zero-cost or 30 fps menu claim is made. See `docs/DITHER_PERFORMANCE.md`.
 
 The text layer is reconstructed at Saturn logical resolution and composited by SGX rather than expanded directly into the final framebuffer by the CPU.
 

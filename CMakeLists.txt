@@ -15,6 +15,9 @@ set(VITA_VERSION "00.40")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(LAGI_STOCHASTIC_FILTER "Use SGX stochastic filter for UI and Cinepak" ON)
+option(LAGI_DITHER_LOOKUP "Use a repeating FP16 offset texture instead of screen parity arithmetic" ON)
+option(LAGI_FULLRES "Render native Vita gameplay/movie modes at 960x544 (test only)" OFF)
 option(LAGI_AZEL_PROBE "Compile an Azel source portability probe" ON)
 option(LAGI_AZEL_RUINS_LINK_TRIM "Temporarily discard unreachable Azel code for Ruins bring-up" ON)
 
@@ -103,6 +106,10 @@ set(LAGI_TEXTURE_V_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v.gxp")
 set(LAGI_TEXTURE_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f.gxp")
 set(LAGI_TEXTURE_V_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_v_gxp.o")
 set(LAGI_TEXTURE_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_texture_f_gxp.o")
+set(LAGI_STOCHASTIC_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_stochastic_f.gxp")
+set(LAGI_STOCHASTIC_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_stochastic_f_gxp.o")
+set(LAGI_STOCHASTIC_GOURAUD_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_stochastic_gouraud_f.gxp")
+set(LAGI_STOCHASTIC_GOURAUD_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_stochastic_gouraud_f_gxp.o")
 set(LAGI_MESH_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_mesh_f.gxp")
 set(LAGI_MESH_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_mesh_f_gxp.o")
 set(LAGI_CINEPAK_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_cinepak_f.gxp")
@@ -551,6 +558,34 @@ add_custom_command(
 )
 
 add_custom_command(
+ OUTPUT "${LAGI_STOCHASTIC_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_f.cg" -DLAGI_DITHER_LOOKUP=$<BOOL:${LAGI_DITHER_LOOKUP}> -Wperf -fastprecision -O3 -o "${LAGI_STOCHASTIC_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_f.cg"
+ VERBATIM
+)
+add_custom_command(
+ OUTPUT "${LAGI_STOCHASTIC_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm "lagi_stochastic_f.gxp" "${LAGI_STOCHASTIC_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_STOCHASTIC_F_GXP}"
+ VERBATIM
+)
+add_custom_command(
+ OUTPUT "${LAGI_STOCHASTIC_GOURAUD_F_GXP}"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_gouraud_f.cg" -DLAGI_DITHER_LOOKUP=$<BOOL:${LAGI_DITHER_LOOKUP}> -Wperf -fastprecision -O3 -o "${LAGI_STOCHASTIC_GOURAUD_F_GXP}"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_gouraud_f.cg"
+ VERBATIM
+)
+add_custom_command(
+ OUTPUT "${LAGI_STOCHASTIC_GOURAUD_F_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm "lagi_stochastic_gouraud_f.gxp" "${LAGI_STOCHASTIC_GOURAUD_F_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${LAGI_STOCHASTIC_GOURAUD_F_GXP}"
+ VERBATIM
+)
+add_custom_command(
  OUTPUT "${LAGI_MESH_F_GXP}"
  COMMAND "${PSP2CGC_EXECUTABLE}"
   -profile sce_fp_psp2
@@ -688,7 +723,8 @@ set_source_files_properties(
  "${LAGI_GOURAUD_SUBDIV_V_OBJ}"
  "${LAGI_TEXTURED_GOURAUD_SUBDIV_F_OBJ}"
  "${LAGI_GOURAUD_SUBDIV_GRAY_F_OBJ}"
- "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}"
+ "${LAGI_TEXTURE_V_OBJ}" "${LAGI_TEXTURE_F_OBJ}" "${LAGI_STOCHASTIC_F_OBJ}"
+ "${LAGI_STOCHASTIC_GOURAUD_F_OBJ}"
  "${LAGI_MESH_F_OBJ}"
  "${LAGI_CINEPAK_F_OBJ}"
  "${LAGI_VDP2_NBG_F_OBJ}" "${LAGI_VDP2_RBG0_F_OBJ}"
@@ -1215,6 +1251,18 @@ void modelDrawFunction3(s_3dModel* pModel)
    "p_workArea startSegaLogoModule(p_workArea workArea)\n{\n    return startTitleScreenVideo(workArea);\n}"
    source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "field/fieldDragon.cpp")
+  # Original FLD_A3 06074026 loads R7=00014000 before calling
+  # point-light setup at 0601E200. The reconstruction omitted R7.
+  set(lagi_point_setup_original "dragonFieldTaskDrawSub1Sub1(lightLocation[0], lightLocation[1], lightLocation[2]);")
+  set(lagi_point_setup_restored "dragonFieldTaskDrawSub1Sub1(lightLocation[0], lightLocation[1], lightLocation[2], 0x14000u);")
+  string(FIND "${source_text}" "${lagi_point_setup_original}" lagi_point_setup_offset)
+  if(lagi_point_setup_offset EQUAL -1)
+   message(FATAL_ERROR "Native collection point-light argument adapter did not apply")
+  endif()
+  string(REPLACE "${lagi_point_setup_original}" "${lagi_point_setup_restored}"
+   source_text "${source_text}")
+
  elseif(relative_path STREQUAL "field/fieldCamera.cpp")
   # Field Phase 4: capture Azel's exact active view matrix after it has been
   # applied to pCurrentMatrix. The bridge removes it from field submissions
@@ -1229,6 +1277,23 @@ void modelDrawFunction3(s_3dModel* pModel)
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  string(PREPEND source_text "#include \"lagi/lagi_particle_color_adapter.h\"\n")
+  # Native FLD_A3: 0607AC3C indexes the trail table by frame*4 and
+  # 0607AD44 selects an eight-byte orb block at 06094F64 by color type.
+  # Restore omitted arguments, not renderer-side item color guesses.
+  string(REPLACE
+   "drawProjectedParticleWithGouraud(&pThis->m8_animQuad, &pThis->m10_position);"
+   "lagiDrawParticleWithColorTable(&pThis->m8_animQuad, &pThis->m10_position, pThis->m1C_gouraudData, 4u);"
+   source_text "${source_text}")
+  string(REPLACE
+   "drawProjectedParticleWithGouraud(&pThis->m58, &drawPos);"
+   "lagiDrawParticleWithColorTable(&pThis->m58, &drawPos, gFLD_A3->getSaturnPtr(0x06094F64) + static_cast<unsigned>(pThis->m27) * 8u, 0u);"
+   source_text "${source_text}")
+  string(REGEX MATCHALL "lagiDrawParticleWithColorTable" lagi_collection_color_calls "${source_text}")
+  list(LENGTH lagi_collection_color_calls lagi_collection_color_count)
+  if(NOT lagi_collection_color_count EQUAL 2)
+   message(FATAL_ERROR "Native collection color argument adapters did not apply")
+  endif()
   string(PREPEND source_text "#include \"lagi/lagi_render_bridge.h\"\n")
   string(REPLACE
    "    r5->m14_index = index;"
@@ -2272,6 +2337,8 @@ add_executable(lagi
  ${LAGI_GOURAUD_SUBDIV_GRAY_F_OBJ}
  ${LAGI_TEXTURE_V_OBJ}
  ${LAGI_TEXTURE_F_OBJ}
+ ${LAGI_STOCHASTIC_F_OBJ}
+ ${LAGI_STOCHASTIC_GOURAUD_F_OBJ}
  ${LAGI_MESH_F_OBJ}
  ${LAGI_CINEPAK_F_OBJ}
  ${LAGI_VDP2_NBG_F_OBJ}
@@ -2386,7 +2453,7 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/menu"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
 )
-target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1)
+target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1 LAGI_FULLRES=$<BOOL:${LAGI_FULLRES}> LAGI_STOCHASTIC_FILTER=$<BOOL:${LAGI_STOCHASTIC_FILTER}> LAGI_DITHER_LOOKUP=$<BOOL:${LAGI_DITHER_LOOKUP}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without

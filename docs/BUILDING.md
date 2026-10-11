@@ -21,6 +21,23 @@ Preserve local edits and untracked assets; do not clean/reset the checkout to pe
 
 Useful diagnostics include `[FieldStream]` validate/refresh/refreshed counters, `[NativeTextureUploadStages]`, `[NativeTextureArena]`, `[ScenePerf]`, `[FlightTimingWindow]` and `[FlightPresentOutlier]`. Analyze a copied hardware log with `tools/analyze-flight-log.ps1 -LogPath <path>`. Ordinary-frame timing is not proof that first-use resource spikes are eliminated; the two latest cold-frame spikes are explicitly accepted for now. See `docs/FLIGHT_MODE_BRINGUP.md` for exact validation boundaries.
 
+## Accepted dither/full-resolution checkpoint
+
+The user accepted Vita-tested lookup dithering at `508bf75` on 2026-10-10. Main includes that implementation; the final merged package has not been rebuilt or retested in this session. Update without removing build artifacts:
+
+```powershell
+Set-Location E:\dev\Lagi
+git switch main
+git pull --ff-only origin main
+$env:PSP2CGC = 'E:\PSVITA\sdk\host_tools\bin\psp2cgc.exe'
+cmake -S . -B build-fullres -DLAGI_FULLRES=ON -DLAGI_STOCHASTIC_FILTER=ON -DLAGI_DITHER_LOOKUP=ON
+cmake --build build-fullres --parallel 32
+```
+
+Use the existing `build-fullres` directory to retain its other options. `LAGI_FULLRES` defaults OFF (480x272 gameplay/movie output); ON selects 960x544. High-resolution title output remains 720x408, and Cinepak reconstruction remains source-sized 480x272. Both filter switches default ON. Startup should report `[DitherFilter] enabled=1 pattern=screen-2x2 sampling=lookup-point-v1`.
+
+For A/B comparison, set only `LAGI_DITHER_LOOKUP=OFF` for the arithmetic dither path or `LAGI_STOCHASTIC_FILTER=OFF` for decoded hardware-bilinear presentation. The raw-memory title fallback is separate and remains coordinate-dithered. Preserve radar point filtering and do not change resolution between captures. Full-screen-menu drops also occur with bilinear and remain unresolved. See `docs/DITHER_PERFORMANCE.md`.
+
 ## Requirements
 
 The current Vita build uses:
@@ -200,7 +217,7 @@ high-resolution title:  720x408, no MSAA
 presentation cadence:   30 Hz
 ```
 
-Cinepak payload data remains point-sampled while it is decoded by the SGX reconstruction pass. The reconstructed source-resolution RGBA image is then presented through the normal hardware-linear texture path into the active Vita framebuffer.
+Cinepak payload data remains point-sampled while it is decoded by the SGX reconstruction pass. The reconstructed source-resolution RGBA image is then presented through screen-space lookup dithering into the active Vita framebuffer, with hardware bilinear available when `LAGI_STOCHASTIC_FILTER=OFF`.
 
 The title framebuffer mode follows Azel's live VDP2 TVMD state. Neptune changes the GXM render target and the dimensions supplied to `sceDisplaySetFrameBuf()` when Azel enters or leaves the high-resolution title mode.
 

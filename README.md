@@ -45,7 +45,7 @@ Working systems include:
 - hardware-validated SCSP DSP execution, with ARM now the normal default backend
 - Sega FILM demuxing and Cinepak playback with native SceAudio
 - SGX-assisted Cinepak reconstruction at source resolution
-- hardware-linear filtering for final Cinepak presentation
+- hardware-accepted screen-space 2x2 coordinate dithering for final Cinepak presentation
 - Edge's original textured/stippled VDP1 mesh shadow
 - Saturn-accurate Azel-driven black/white fade direction, timing, and color-offset presentation bridged through Neptune
 - 480x272 gameplay presentation with MSAA disabled
@@ -55,6 +55,8 @@ Working systems include:
 The public **v0.3.0alpha** release is the current hardware milestone. Its main additions are native audio, the runtime ARM SCSP DSP translator, and the cleaned-up Cinepak presentation path. The renderer and platform layers continue to follow the same ownership rule: Azel decides game state and timing, Lagi provides Vita services, and Neptune renders the published Saturn-era presentation state.
 
 ## Architecture
+
+The 2026-10-10 development checkpoint adds optional native 960x544 gameplay/movie presentation (`LAGI_FULLRES=ON`; default OFF) and accepted lookup-based dithering (`LAGI_STOCHASTIC_FILTER=ON`, `LAGI_DITHER_LOOKUP=ON`; both default ON). The user accepted Vita build `508bf75` as effectively free versus hardware bilinear in tested gameplay. Full-screen menus still fall below 30 fps with either filter; that existing limitation is not resolved by this merge. See [dither performance](docs/DITHER_PERFORMANCE.md) for scope and evidence boundaries.
 
 ```text
 PDS disc data
@@ -145,7 +147,7 @@ Azel retains ownership of town LCS and menu state and emits its original VDP1 co
 - independent white free cursor and selected target marker
 - original shrinking selection rectangle during target acquisition
 - animated selector for the elevator multi-choice menu
-- hardware-linear filtering for decoded VDP1 UI sprites, menu/window graphics, and VDP2 text presentation
+- screen-space 2x2 lookup dithering for decoded title, text, VDP1 UI/particle sprites, menu/window graphics and UI backgrounds; radar remains point-filtered
 
 The current authentic-boot path no longer depends on a direct-Ruins loader to establish scene ownership. The bridge translates Azel's commands rather than recreating lock-on gameplay or UI behavior in Vita-specific code.
 
