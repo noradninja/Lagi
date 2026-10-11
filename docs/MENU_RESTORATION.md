@@ -4,6 +4,13 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Extended string glyph map: native `06025DA0..06025DB0` records the bottom-left
+tile at `(x,y+1)`. Upstream incorrectly overwrote `(x,y)`, losing the top-left
+reference. The generated adapter restores the missing Y increment. Tests
+check the exact patch, 3969 non-overlapping 2x2 map placements and compile
+the corrected native VDP2 source for Vita. Text clear/redraw behavior still
+needs on-device verification; this is not a cursor-motion fix.
+
 Cursor investigation: input-triggered `[MenuCursor]`/`[MenuCursor2]` logs now
 record selected entry, blink counter or spinning frame/countdown, vsync count
 and pressed buttons. No per-frame logging, animation speed changes or forced

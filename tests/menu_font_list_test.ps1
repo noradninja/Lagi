@@ -34,6 +34,16 @@ foreach ($index in 0..32) {
 Write-Output 'PASS: production font patch matches once; 33-node append/lookup model (not runtime execution)'
 $rectOld = Get-Literal 'font_rect_old'
 $rectNew = Get-Literal 'font_rect_new'
+$bottomLeftOld = Get-Literal 'font_bottom_left_old'
+$bottomLeftNew = Get-Literal 'font_bottom_left_new'
+if (($native.Split(@($bottomLeftOld),[StringSplitOptions]::None).Length-1) -ne 1 -or $bottomLeftNew -notmatch 'm4_cursorY \+ 1\] = characterSprite \+ 2') { throw 'Native bottom-left glyph map target changed' }
+foreach ($x in 0..62) {
+    foreach ($y in 0..62) {
+        $indices = @(($x*64+$y),(($x+1)*64+$y),($x*64+$y+1),(($x+1)*64+$y+1))
+        if (($indices | Sort-Object -Unique).Count -ne 4 -or ($indices | Measure-Object -Maximum).Maximum -ge 4096) { throw '2x2 glyph map cells overlap or exceed map' }
+    }
+}
+Write-Output 'PASS: bottom-left native patch and 3969 distinct 2x2 glyph-map layouts (model only)'
 if (($native.Split(@($rectOld),[StringSplitOptions]::None).Length-1) -ne 1 -or $rectNew -notmatch '\(r5 \+ row\) \* 64 \+ r4' -or $rectNew -notmatch 'r6 \* 2') { throw 'Native rectangle stride/width changed' }
 # The production caller clears 44 by 32 cells; preserve the other 20 cells
 # of each row and all text-map rows outside the rectangle.
@@ -75,6 +85,7 @@ Write-Output "PASS: $numberCases encoded-number format models including signed l
 if ($VitaCompiler) {
     $patched = $native.Replace($old,$new).Replace('#include "PDS.h"','#include "lagi/lagi_azel_upstream_prelude.h"')
     $patched = $patched.Replace($rectOld,$rectNew)
+    $patched = $patched.Replace($bottomLeftOld,$bottomLeftNew)
     $numberOld = "void printVdp2Number3(s_stringStatusQuery* vars, int value, int length)`n{`n    Unimplemented();`n}"
     $numberNew = [regex]::Match($cmake,'(?s)\[=\[(int loadExtendedCharacter\(u16 character\);.*?)\]=\]').Groups[1].Value.Replace("`r`n","`n")
     if (!$numberNew -or ($patched.Split(@($numberOld),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Native number printer target changed' }

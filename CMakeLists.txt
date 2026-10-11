@@ -886,6 +886,13 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    message(FATAL_ERROR "Native font rectangle-clear target changed")
   endif()
   string(REPLACE "${font_rect_old}" "${font_rect_new}" source_text "${source_text}")
+  set(font_bottom_left_old "                characterMap2[vars->m0_cursorX * 0x40 + vars->m4_cursorY] = characterSprite + 2;")
+  set(font_bottom_left_new "                characterMap2[vars->m0_cursorX * 0x40 + vars->m4_cursorY + 1] = characterSprite + 2; // LAGI_NATIVE_FONT_BOTTOM_LEFT: 06025DA0.")
+  string(FIND "${source_text}" "${font_bottom_left_old}" font_bottom_left_position)
+  if(font_bottom_left_position LESS 0)
+   message(FATAL_ERROR "Native font bottom-left map target changed")
+  endif()
+  string(REPLACE "${font_bottom_left_old}" "${font_bottom_left_new}" source_text "${source_text}")
   string(REPLACE
    "void printVdp2Number3(s_stringStatusQuery* vars, int value, int length)\n{\n    Unimplemented();\n}"
    [=[int loadExtendedCharacter(u16 character);
