@@ -192,6 +192,9 @@ static SceGxmFragmentProgram* g_stochasticFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_stochasticGouraudFragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_stochasticTextureSizeParam = nullptr;
 static const SceGxmProgramParameter* g_stochasticGouraudTextureSizeParam = nullptr;
+static SceUID g_ditherOffsetsUid = -1;
+static void* g_ditherOffsetsPixels = nullptr;
+static SceGxmTexture g_ditherOffsetsTexture{};
 #if defined(LAGI_STOCHASTIC_FILTER) && LAGI_STOCHASTIC_FILTER
 static constexpr bool kStochastic = true;
 #else
@@ -203,6 +206,9 @@ static void setStochastic(unsigned w, unsigned h)
         !g_stochasticTextureSizeParam)
         return;
     sceGxmSetFragmentProgram(g_probeContext, g_stochasticFragmentProgram);
+#if LAGI_DITHER_LOOKUP
+    sceGxmSetFragmentTexture(g_probeContext, 1, &g_ditherOffsetsTexture);
+#endif
     void* ub = nullptr;
     if (sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext, &ub) >= 0 && ub) {
         const float size[4] = {float(w), float(h), 1.0f / float(w), 1.0f / float(h)};
@@ -218,6 +224,9 @@ static void setStochasticGouraud(unsigned w, unsigned h)
         return;
     sceGxmSetFragmentProgram(
         g_probeContext, g_stochasticGouraudFragmentProgram);
+#if LAGI_DITHER_LOOKUP
+    sceGxmSetFragmentTexture(g_probeContext, 1, &g_ditherOffsetsTexture);
+#endif
     void* ub = nullptr;
     if (sceGxmReserveFragmentDefaultUniformBuffer(
             g_probeContext, &ub) >= 0 && ub) {
@@ -1458,6 +1467,39 @@ static void* probeGpuAlloc(
     unsigned int attribs,
     SceUID* uid);
 static void freeMovieMappedBlock(SceUID& uid, void*& memory);
+
+static bool ensureDitherOffsetsTexture()
+{
+#if LAGI_DITHER_LOOKUP
+    if (!kStochastic || g_ditherOffsetsPixels)
+        return true;
+    // A power-of-two 2x2 swizzled texture has four Morton-ordered texels:
+    // (0,0), (1,0), (0,1), (1,1). No linear-row padding is needed.
+    g_ditherOffsetsPixels = probeGpuAlloc(
+        4u * sizeof(std::uint32_t), SCE_GXM_MEMORY_ATTRIB_READ,
+        &g_ditherOffsetsUid);
+    if (!g_ditherOffsetsPixels)
+        return false;
+    auto* offsets = static_cast<std::uint32_t*>(g_ditherOffsetsPixels);
+    // F16F16_GR: R is the low halfword, G is the high halfword. These encode
+    // (-.25,-.5), (0,.25), (.25,0), (-.5,-.25) without UNORM rounding.
+    offsets[0] = 0xB800B400u;
+    offsets[1] = 0x34000000u;
+    offsets[2] = 0x00003400u;
+    offsets[3] = 0xB400B800u;
+    if (sceGxmTextureInitSwizzled(
+            &g_ditherOffsetsTexture, g_ditherOffsetsPixels,
+            SCE_GXM_TEXTURE_FORMAT_F16F16_GR, 2, 2, 0) < 0) {
+        freeMovieMappedBlock(g_ditherOffsetsUid, g_ditherOffsetsPixels);
+        return false;
+    }
+    sceGxmTextureSetMinFilter(&g_ditherOffsetsTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+    sceGxmTextureSetMagFilter(&g_ditherOffsetsTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+    sceGxmTextureSetUAddrMode(&g_ditherOffsetsTexture, SCE_GXM_TEXTURE_ADDR_REPEAT);
+    sceGxmTextureSetVAddrMode(&g_ditherOffsetsTexture, SCE_GXM_TEXTURE_ADDR_REPEAT);
+#endif
+    return true;
+}
 static std::uint32_t vdp2Rgb555ToAbgr(std::uint16_t color);
 
 static std::uint16_t readVdp2Be16(
@@ -2146,8 +2188,13 @@ bool init()
         "rbg0NativeResolve=1 pooledFieldTextures=1\n",
         static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED));
     logging::writef(
-        "[DitherFilter] enabled=%u pattern=screen-2x2 sampling=direct-point-v1\n",
-        static_cast<unsigned int>(kStochastic));
+        "[DitherFilter] enabled=%u pattern=screen-2x2 sampling=%s\n",
+        static_cast<unsigned int>(kStochastic),
+#if LAGI_DITHER_LOOKUP
+        "lookup-point-v1");
+#else
+        "direct-point-v1");
+#endif
     const std::size_t allocSize = (kFrameBytes + 0x3FFFFu) & ~0x3FFFFu;
 
     for (int i = 0; i < 2; ++i) {
@@ -2286,6 +2333,7 @@ void shutdown()
     freeSimpleMappedProbe(g_fadeIndexUid, fadeIndexPtr);
     g_fadeIndices = nullptr;
     freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
+    freeSimpleMappedProbe(g_ditherOffsetsUid, g_ditherOffsetsPixels);
     g_sceneVdp2GpuRawInitialized = false;
     void* sceneVertices = g_sceneVdp2Vertices;
     freeSimpleMappedProbe(g_sceneVdp2VertexUid, sceneVertices);
@@ -9115,6 +9163,10 @@ void show_game_presentation()
         sceGxmProgramFindParameterByName(stochasticGxp, "textureSize");
     if (!g_stochasticTextureSizeParam) {
         failure("[FAIL] STOCHASTIC UNIFORM");
+        return;
+    }
+    if (!ensureDitherOffsetsTexture()) {
+        failure("[FAIL] DITHER OFFSET TEXTURE");
         return;
     }
 

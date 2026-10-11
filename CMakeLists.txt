@@ -16,6 +16,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(LAGI_STOCHASTIC_FILTER "Use SGX stochastic filter for UI and Cinepak" ON)
+option(LAGI_DITHER_LOOKUP "Use a repeating FP16 offset texture instead of screen parity arithmetic" ON)
 option(LAGI_FULLRES "Render native Vita gameplay/movie modes at 960x544 (test only)" OFF)
 option(LAGI_AZEL_PROBE "Compile an Azel source portability probe" ON)
 option(LAGI_AZEL_RUINS_LINK_TRIM "Temporarily discard unreachable Azel code for Ruins bring-up" ON)
@@ -559,7 +560,7 @@ add_custom_command(
 add_custom_command(
  OUTPUT "${LAGI_STOCHASTIC_F_GXP}"
  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
-  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_f.cg" -Wperf -fastprecision -O3 -o "${LAGI_STOCHASTIC_F_GXP}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_f.cg" -DLAGI_DITHER_LOOKUP=$<BOOL:${LAGI_DITHER_LOOKUP}> -Wperf -fastprecision -O3 -o "${LAGI_STOCHASTIC_F_GXP}"
  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_f.cg"
  VERBATIM
 )
@@ -573,7 +574,7 @@ add_custom_command(
 add_custom_command(
  OUTPUT "${LAGI_STOCHASTIC_GOURAUD_F_GXP}"
  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
-  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_gouraud_f.cg" -Wperf -fastprecision -O3 -o "${LAGI_STOCHASTIC_GOURAUD_F_GXP}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_gouraud_f.cg" -DLAGI_DITHER_LOOKUP=$<BOOL:${LAGI_DITHER_LOOKUP}> -Wperf -fastprecision -O3 -o "${LAGI_STOCHASTIC_GOURAUD_F_GXP}"
  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_gouraud_f.cg"
  VERBATIM
 )
@@ -2452,7 +2453,7 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/menu"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
 )
-target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1 LAGI_FULLRES=$<BOOL:${LAGI_FULLRES}> LAGI_STOCHASTIC_FILTER=$<BOOL:${LAGI_STOCHASTIC_FILTER}>)
+target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1 LAGI_FULLRES=$<BOOL:${LAGI_FULLRES}> LAGI_STOCHASTIC_FILTER=$<BOOL:${LAGI_STOCHASTIC_FILTER}> LAGI_DITHER_LOOKUP=$<BOOL:${LAGI_DITHER_LOOKUP}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without
