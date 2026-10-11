@@ -205,9 +205,9 @@ static void setStochastic(unsigned w, unsigned h)
     sceGxmSetFragmentProgram(g_probeContext, g_stochasticFragmentProgram);
     void* ub = nullptr;
     if (sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext, &ub) >= 0 && ub) {
-        const float size[2] = {float(w), float(h)};
+        const float size[4] = {float(w), float(h), 1.0f / float(w), 1.0f / float(h)};
         sceGxmSetUniformDataF(
-            ub, g_stochasticTextureSizeParam, 0, 2, size);
+            ub, g_stochasticTextureSizeParam, 0, 4, size);
     }
 }
 
@@ -221,9 +221,9 @@ static void setStochasticGouraud(unsigned w, unsigned h)
     void* ub = nullptr;
     if (sceGxmReserveFragmentDefaultUniformBuffer(
             g_probeContext, &ub) >= 0 && ub) {
-        const float size[2] = {float(w), float(h)};
+        const float size[4] = {float(w), float(h), 1.0f / float(w), 1.0f / float(h)};
         sceGxmSetUniformDataF(
-            ub, g_stochasticGouraudTextureSizeParam, 0, 2, size);
+            ub, g_stochasticGouraudTextureSizeParam, 0, 4, size);
     }
 }
 
