@@ -2151,6 +2151,13 @@ s32 getBupStatus(s32 slotIndex)
     "        lagiAzelUnloadFontByIndex(pThis->m10); // Native 06019BD4 calls 060250E6."
     source_text "${source_text}")
    string(REPLACE
+    "            DisplayMenuMsg(stringArray[pThis->m14_selectedDevice]);\n        }\n        if (loadDrawSub1Sub0"
+    "            DisplayMenuMsg(stringArray[pThis->m14_selectedDevice]);\n            return; // LAGI_SAVE_CANCEL_CURSOR: do not reactivate the hidden file cursor.\n        }\n        if (loadDrawSub1Sub0"
+    source_text "${source_text}")
+   if(NOT source_text MATCHES "LAGI_SAVE_CANCEL_CURSOR")
+    message(FATAL_ERROR "Save file-selector cancellation adapter did not apply")
+   endif()
+   string(REPLACE
     "u16 saveMenuData_[]{"
     [=[// LAGI_UNAVAILABLE_BACKUP_DEVICE: native 060190BE/060190C8 task.
 // COMMON.DAT 0020F724 supplies the covering sprite; 0020F770 supplies

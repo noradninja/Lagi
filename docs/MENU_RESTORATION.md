@@ -4,6 +4,14 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Save file-selection cancellation now returns after hiding the spinning file
+cursor and starting the slot close animation. Previously it fell through to
+navigation and reassigned the visible cursor index in the same frame. This
+matches the already-returning Load cancellation path and prevents that
+specific ghost-cursor state. The literal patch is checked and compiled by
+`tests/save_overwrite_test.ps1`. It does not prove the reported stationary
+or non-blinking cursor fixed; that still needs runtime investigation.
+
 Font restoration: the native font loader writes the new node into the old
 tail's `pNext` at `06024FB0`, after initializing ownership flags at
 `06024F88`. Upstream omitted both assignments. The generated Vita VDP2

@@ -53,6 +53,10 @@ if ($VitaCompiler) {
     if (!$locationLiteral.Success -or ($patched.Split(@($locationOld),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Location patch target must occur once' }
     $locationNew = $locationLiteral.Groups[1].Value.Replace('\n',"`n").Replace('\"','"')
     $patched = $patched.Replace($locationOld,$locationNew)
+    $cancelOld = "            DisplayMenuMsg(stringArray[pThis->m14_selectedDevice]);`n        }`n        if (loadDrawSub1Sub0"
+    $cancelNew = "            DisplayMenuMsg(stringArray[pThis->m14_selectedDevice]);`n            return; // LAGI_SAVE_CANCEL_CURSOR: do not reactivate the hidden file cursor.`n        }`n        if (loadDrawSub1Sub0"
+    if (($patched.Split(@($cancelOld),[StringSplitOptions]::None).Length-1) -ne 1 -or !$cmake.Contains($cancelNew.Replace("`n",'\n'))) { throw 'Save cancellation patch changed' }
+    $patched = $patched.Replace($cancelOld,$cancelNew)
     $saveFontOld = '        //clearSaveText(pThis->m10); // TODO: unload SAVE.FNT'
     if (($patched.Split(@($saveFontOld),[StringSplitOptions]::None).Length-1) -ne 1 -or $cmake -notmatch 'lagiAzelUnloadFontByIndex\(pThis->m10\)') { throw 'Save font cleanup target changed' }
     $patched = $patched.Replace($saveFontOld,'        lagiAzelUnloadFontByIndex(pThis->m10);')
