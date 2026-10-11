@@ -2193,6 +2193,17 @@ s32 getBupStatus(s32 slotIndex)
      "Save/load zero-init patches did not apply exactly four times: found "
      "${lagi_save_zero_init_match_count} matches")
    endif()
+  elseif(relative_path STREQUAL "menu/inventoryMenu.cpp")
+   string(REPLACE
+    "        if (i < pThis->m30_numItemsInCurrentCategory) {"
+    "        // LAGI_INVENTORY_PAGE_BOUND\n        const int itemIndex = 5 * pThis->m4_currentPageInItemList + i;\n        if (itemIndex >= 0 && itemIndex < pThis->m30_numItemsInCurrentCategory &&\n            itemIndex < static_cast<int>(pThis->m34_itemsInCurrentCategory.size())) {"
+    source_text "${source_text}")
+   string(REGEX MATCHALL "LAGI_INVENTORY_PAGE_BOUND"
+    lagi_inventory_page_matches "${source_text}")
+   list(LENGTH lagi_inventory_page_matches lagi_inventory_page_count)
+   if(NOT lagi_inventory_page_count EQUAL 1)
+    message(FATAL_ERROR "Inventory page bound patch did not apply exactly once")
+   endif()
   elseif(relative_path STREQUAL "kernel/menuCursor.cpp")
    string(REPLACE
     "    pThis->m4 = pMenuData->m0;\n    pThis->m8 = pMenuData->m4;"

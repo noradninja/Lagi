@@ -74,3 +74,9 @@ Do not remove the two stub safeguards before replacing their constructors.
 No invented menu data or generic item-effect guesses establish native fidelity.
 The user's requested all-functionality end state remains unachieved until these
 paths and the hardware gates above have evidence of completion.
+
+Inventory paging: the generated adapter now tests each absolute item index
+against the populated count and array capacity before printing a page row.
+The upstream `i < totalCount` test could expose stale tail entries on a partial
+last page. Model/source checks cover counts 0..100 and pages -1..20. This is
+an entry-bound correction only, not implementation of item use or Berserks.
