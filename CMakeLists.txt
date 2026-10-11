@@ -2308,6 +2308,47 @@ u16 saveMenuData_[]{]=]
      "${lagi_save_zero_init_match_count} matches")
    endif()
   elseif(relative_path STREQUAL "menu/inventoryMenu.cpp")
+   string(REPLACE
+    "    case 2: // berserks\n        assert(0);\n        break;"
+    [=[    case 2: // LAGI_NATIVE_BERSERK_ROWS: native 06017C62..06017C9E.
+        while (*currentCategoryItemList >= 0)
+        {
+            const auto item = static_cast<eItems>(*currentCategoryItemList++);
+            *psVar4++ = mainGameState.getItemCount(item) ? item : static_cast<eItems>(0);
+        }
+        break;]=]
+    source_text "${source_text}")
+   string(REPLACE
+    "void inventoryPrintBerserk(s32, eItems, s32)\n{\n    Unimplemented();\n}"
+    [=[// Native 06007378; same fixed-point implementation as battleCommandMenu.cpp.
+// That battle translation unit is not part of the Vita source set.
+static s16 lagiInventoryBerserkBPCost(s16 baseCost)
+{
+    const fixedPoint spr = FP_Div((s32)mainGameState.gameStats.mC2_dragonSpr, 200);
+    const fixedPoint reduction = MTH_Mul(fixedPoint(0x6666), spr);
+    const fixedPoint result = MTH_Mul(fixedPoint::fromInteger(baseCost), fixedPoint(0x13333) - reduction);
+    return (s16)((result.asS32() + 0x8000) >> 16);
+}
+
+void inventoryPrintBerserk(s32 row, eItems item, s32 contextFlags)
+{
+    // LAGI_NATIVE_BERSERK_PRINT: native 060181A0..06018284.
+    const auto data = gCommonFile->getSaturnPtr(0x20C3F4) + 12 * item;
+    const s16 cost = lagiInventoryBerserkBPCost(readSaturnS16(data + 2));
+    if (item == 0) return;
+    vdp2StringContext.m0 = 9;
+    if ((getObjectListEntry(item)->m0_flags & contextFlags) &&
+        mainGameState.gameStats.m1_dragonLevel < 8)
+        vdp2StringContext.m0 = 0;
+    displayObjectIcon(0, 0xC, row + 0x24, getObjectIcon(item));
+    drawObjectName(getObjectListEntry(item)->m4_name.c_str());
+    vdp2StringContext.m4_cursorX = vdp2StringContext.mC_X + 0x16;
+    vdp2StringContext.m8_cursorY = vdp2StringContext.m10_Y + row +
+        (row < 0 ? vdp2StringContext.m18_Height : 0);
+    printVdp2Number2(cost, 3);
+    printVdp2String2(readSaturnString(gCommonFile->getSaturnPtr(0x20D93C)).c_str());
+}]=]
+    source_text "${source_text}")
    set(inventory_delete_old "void inventoryMenuTaskDelete(s_inventoryMenu* pThis)\n{\n    Unimplemented();\n}")
    set(inventory_delete_new "void inventoryMenuTaskDelete(s_inventoryMenu* pThis)\n{\n    lagiAzelUnloadFontByIndex(pThis->mC); // LAGI_INVENTORY_FONT_DELETE: native 06018B4C.\n}")
    string(FIND "${source_text}" "${inventory_delete_old}" inventory_delete_position)

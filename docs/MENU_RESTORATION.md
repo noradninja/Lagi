@@ -4,6 +4,18 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Berserk browsing: original `06017C4A` keeps the category's fixed 30-row
+ordering, writing zero for unlearned abilities. The generated adapter now
+replaces the category-2 assertion accordingly. Native `060181A0` row display
+is restored with icon/name, context-dependent style and the `0x20D93C`
+encoded suffix. BP cost follows the exact `06007378` fixed-point routine
+already reconstructed in `battleCommandMenu.cpp`; a local helper avoids
+linking that omitted battle task translation unit. Tests cover native patch
+targets, 32 learned-entry patterns and patched inventory Vita syntax.
+The number printer beneath this display remains unfinished, as do inventory
+details and actual item use. This is not full Berserk/menu completion and
+requires hardware visual/navigation checks.
+
 Outer-menu lifecycle: original graphics task Delete at `0601579A` clears
 the menu task pointer and tail-calls font cleanup by the menu font ID. The
 reconstruction cleared the pointer but left font cleanup commented out.
