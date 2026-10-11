@@ -121,3 +121,28 @@ LagiAzelBooksIndexStep lagiAzelBooksStepIndex(std::int32_t& index,
     boundarySoundLatched = true;
     return {false, sound};
 }
+
+bool lagiAzelBooksCalculateWindow(std::int32_t scrollX, std::int32_t scrollY,
+    std::int32_t step, std::int32_t duration, LagiAzelBooksWindow& out)
+{
+    if (duration <= 0 || step < 0 || step > duration) return false;
+    // 06035686 performs signed 64-bit multiplication/division, truncating
+    // toward zero. Do not round the fractional reveal to nearest pixel.
+    const auto halfWidth = static_cast<std::int32_t>(std::int64_t(0x88) * step / duration);
+    const auto halfHeight = static_cast<std::int32_t>(std::int64_t(0x38) * step / duration);
+    const auto centerX = 0xB0 - scrollX;
+    const auto centerY = 0x1A8 - scrollY;
+    out.left = centerX - halfWidth;
+    out.right = centerX + halfWidth;
+    out.top = centerY - halfHeight;
+    out.bottom = centerY + halfHeight;
+    out.registerLeft = out.left * 2;
+    out.registerRight = out.right * 2 - 1;
+    out.registerTop = out.top;
+    out.registerBottom = out.bottom - 1;
+    out.quad = {out.left - 0xB4, 0x73 - out.top,
+        out.right - 0xAD, 0x73 - out.top,
+        out.right - 0xAD, 0x6E - out.bottom,
+        out.left - 0xB4, 0x6E - out.bottom};
+    return true;
+}

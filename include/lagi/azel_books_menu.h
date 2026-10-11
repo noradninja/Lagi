@@ -45,6 +45,16 @@ struct LagiAzelBooksIndexStep {
     bool accepted = false;
     int sound = -1;
 };
+
+struct LagiAzelBooksWindow {
+    std::int32_t left, top, right, bottom;
+    // Native register X is doubled; ending coordinates are inclusive.
+    std::int32_t registerLeft, registerTop, registerRight, registerBottom;
+    std::array<std::int32_t, 8> quad;
+};
+// Native 06016088 window/quad calculation; positive denominator required.
+bool lagiAzelBooksCalculateWindow(std::int32_t scrollX, std::int32_t scrollY,
+    std::int32_t step, std::int32_t duration, LagiAzelBooksWindow& out);
 // Native 06015D30 (left/right) and 06015DA4 (up/down). The caller supplies
 // the native repeat and held masks and retains a separate edge latch per axis.
 LagiAzelBooksIndexStep lagiAzelBooksStepIndex(std::int32_t& index,

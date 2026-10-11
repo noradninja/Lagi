@@ -120,6 +120,16 @@ and cursor reinitialization, before enabling key-item dispatch.
 
 ## Remaining implementation and acceptance
 
+`06016088` window calculation is now preserved in
+lagiAzelBooksCalculateWindow. Center is (176-scrollX,424-scrollY), half extents
+are truncating signed multiply/divides 136*step/duration and 56*step/duration.
+Both native register banks receive window-1 X endpoints doubled with inclusive
+right/bottom ends. The emitted solid quad uses native asymmetric X/Y offsets,
+not a guessed centered rectangle. Host checks cover the nine native reveal
+steps and invalid denominator/range rejection. Register writes, solid draw,
+window clipping and task integration remain to be connected; no Books screen
+or hardware reveal validation is claimed.
+
 Implemented support now includes graphics backup/restore, owned-list selection,
 validated MENUBK heading/body readers and body-to-heading association. Native
 06015D30/06015DA4 index input is available as lagiAzelBooksStepIndex: repeat masks

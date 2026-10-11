@@ -3,6 +3,19 @@
 
 int main()
 {
+    for (int step = 0; step <= 8; ++step) {
+        LagiAzelBooksWindow window{};
+        if (!lagiAzelBooksCalculateWindow(0, 0x100, step, 8, window)) return 2;
+        const int hw = 136 * step / 8, hh = 56 * step / 8;
+        if (window.left != 176 - hw || window.right != 176 + hw ||
+            window.top != 168 - hh || window.bottom != 168 + hh ||
+            window.registerRight != (176 + hw) * 2 - 1 ||
+            window.registerBottom != 168 + hh - 1 ||
+            window.quad[0] != -4 - hw || window.quad[2] != 3 + hw) return 3;
+    }
+    LagiAzelBooksWindow invalid{};
+    if (lagiAzelBooksCalculateWindow(0,0,1,0,invalid) ||
+        lagiAzelBooksCalculateWindow(0,0,9,8,invalid)) return 4;
     unsigned cases = 0;
     for (bool vertical : {false, true}) {
         const unsigned dec = vertical ? 0x10 : 0x40;
