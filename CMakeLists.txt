@@ -2093,7 +2093,35 @@ s32 getBupStatus(s32 slotIndex)
     source_text "${source_text}")
    string(REPLACE
     "                assert(0); //060196c4 this would create the icon for the disabled slot"
-    "                // Vita exposes only internal storage; unavailable Saturn backup devices stay disabled."
+    "                auto* unavailable = createSubTask<sLagiUnavailableBackupDevice>(pThis);\n                unavailable->device = i;"
+    source_text "${source_text}")
+   string(REPLACE
+    "u16 saveMenuData_[]{"
+    [=[// LAGI_UNAVAILABLE_BACKUP_DEVICE: native 060190BE/060190C8 task.
+// COMMON.DAT 0020F724 supplies the covering sprite; 0020F770 supplies
+// device positions. Keep the native palette and NBG0 scroll subtraction.
+struct sLagiUnavailableBackupDevice : s_workAreaTemplate<sLagiUnavailableBackupDevice>
+{
+    static void Draw(sLagiUnavailableBackupDevice* pThis)
+    {
+        const auto spriteData = gCommonFile->getSaturnPtr(0x20F724);
+        const s_menuSprite sprite = {
+            readSaturnS16(spriteData), readSaturnS16(spriteData + 2),
+            readSaturnS16(spriteData + 4), readSaturnS16(spriteData + 6)};
+        const auto position = gCommonFile->getSaturnPtr(0x20F770) + pThis->device * 4;
+        const auto& layer = graphicEngineStatus.m40BC_layersConfig[0];
+        drawMenuSprite(&sprite, readSaturnS16(position) - layer.scrollX,
+            readSaturnS16(position + 2) - layer.scrollY, 0x500);
+    }
+    static TypedTaskDefinition* getTypedTaskDefinition()
+    {
+        static TypedTaskDefinition definition = {nullptr, nullptr, &Draw, nullptr};
+        return &definition;
+    }
+    s32 device = 0;
+};
+
+u16 saveMenuData_[]{]=]
     source_text "${source_text}")
    string(REPLACE
     "                Unimplemented(); // TODO: setSoundOutputMode not yet implemented"

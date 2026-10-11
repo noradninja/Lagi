@@ -53,6 +53,13 @@ if ($VitaCompiler) {
     if (!$locationLiteral.Success -or ($patched.Split(@($locationOld),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Location patch target must occur once' }
     $locationNew = $locationLiteral.Groups[1].Value.Replace('\n',"`n").Replace('\"','"')
     $patched = $patched.Replace($locationOld,$locationNew)
+    $deviceMarker = $cmake.IndexOf('// LAGI_UNAVAILABLE_BACKUP_DEVICE:')
+    $deviceStart = $cmake.LastIndexOf('   string(REPLACE', $deviceMarker)
+    $deviceBlock = $cmake.Substring($deviceStart,$cmake.IndexOf('source_text "${source_text}")',$deviceMarker)-$deviceStart)
+    $deviceNew = [regex]::Match($deviceBlock,'(?s)\[=\[(.*?)\]=\]').Groups[1].Value.Replace("`r`n","`n")
+    if (!$deviceNew -or ($patched.Split(@('u16 saveMenuData_[]{'),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Unavailable device insertion target must occur once' }
+    $patched = $patched.Replace('u16 saveMenuData_[]{',$deviceNew)
+    $patched = $patched.Replace('                assert(0); //060196c4 this would create the icon for the disabled slot', "                auto* unavailable = createSubTask<sLagiUnavailableBackupDevice>(pThis);`n                unavailable->device = i;")
     $repo = Split-Path $PSScriptRoot -Parent
     $patched | & $VitaCompiler -std=c++20 -fsyntax-only -DLAGI_PLATFORM_VITA=1 -DLAGI_NEPTUNE_RENDERER=1 -I "$repo/include" -I "$repo/src/integration" -I $AzelSourceRoot -I "$AzelSourceRoot/kernel" -x c++ -
     if ($LASTEXITCODE -ne 0) { throw 'Patched native save/load source syntax check failed' }
