@@ -18,6 +18,14 @@ rendering or functionality is restored. The palette model/source test
 exercises all eight pattern palette fields and nontransparent dots, including
 cases where the old OR differs; existing out-of-range handling is unchanged.
 
+The shared 16-color CHSZ=1 decoder now also adds CAOS to the pattern/SCN
+palette address, following the same native rule. The address test covers all
+eight CAOS banks, sixteen pattern palette fields, eight supplemental palette
+fields and fifteen nontransparent dots (15,360 cases). Status-menu SCN=12
+does not itself overlap CAOS; this correction preserves those addresses while
+fixing shared-decoder configurations whose supplemental palette bank does.
+It is not evidence that the missing menu layers are fixed.
+
 Remaining gates: verify save-layout detection from native registers, VDP2
 map/font/scroll interpretation, visible VDP1 selectors, title-to-Continue
 handoff, zero-world-submission menu frames, all in-game pages and return,

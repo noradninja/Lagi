@@ -3920,7 +3920,7 @@ static std::uint32_t decodeVdp2Chsz1Pixel(
         ((patternName & 0xF000u) >> 8) |
         ((supplementalCharacterName & 0xE0u) << 3);
     const unsigned int paletteEntry =
-        caos * 0x100u |
+        caos * 0x100u +
         (paladdr | colorIndex);
     const std::size_t cramOffset =
         static_cast<std::size_t>(paletteEntry) * 2u;
