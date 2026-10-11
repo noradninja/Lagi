@@ -21,6 +21,15 @@ the eventual task must not dereference its selected position then. A 576-case
 selection model/source guard and actual helper Vita syntax compilation pass.
 These helpers are not connected to an implemented screen yet.
 
+Heading resource reader now follows `060164AC`, `060164EC`, `06016582` and
+`06016598`: first word is the book-record offset, each book record is 16
+bytes (title offset +0, page-table offset +4), each heading record is eight
+bytes (heading offset +0, first body page +4, body page count +6). All offsets
+are relative to the loaded resource base and big-endian. Returned strings
+borrow its lifetime. Range/terminator checks prevent out-of-image pointers;
+the caller still needs the native logical heading-count validation before
+selection. This reader does not implement body text/images or a Books task.
+
 Evidence: read-only inspection of the user-provided US Disc 1 MODE1/2352
 image. `1ST_READ.PRG` loads at `06006000`; COMMON.DAT at `00200000`.
 No game files or `extern/Azel` were modified or copied into the repository.
