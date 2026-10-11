@@ -144,9 +144,22 @@ void sync_presentation_state()
     // Every native scene consumes the same Azel-authored UI planes. Do not
     // gate subtitles, badges, LCS backing or cinematic bars on actor type.
     if (gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 2 || gGameStatus.m0_gameMode == 3) {
+        // The task sets menuId in entry state 0; setupVdp2ForMenu runs in
+        // state 1 on a later frame. Never decode the previous scene's VRAM
+        // with the specialized status-menu tile format during that gap.
+        const auto* regs = vdp2Controls.m4_pendingVdp2Regs;
+        const bool statusLayout = regs &&
+            ((regs->m28_CHCTLA & 0x3171u) == 0x0101u) &&
+            ((regs->m30_PNCN0 & 0xC000u) == 0x8000u) &&
+            ((regs->m32_PNCN1 & 0xC000u) == 0x8000u) &&
+            ((regs->mE4_CRAOFA & 0x77u) == 0x66u) &&
+            ((((regs->m3C_MPOFN & 7u) * 64u +
+                (regs->m40_MPABN0 & 63u)) * 0x800u) == 0x71800u) &&
+            (((((regs->m3C_MPOFN >> 4) & 7u) * 64u +
+                (regs->m44_MPABN1 & 63u)) * 0x800u) == 0x71000u);
         lagi::platform::renderer::presentation_set_vdp2_text(
             getVdp2Vram(0), getVdp2Cram(0), getVdp2Vram(0x3E000),
-            static_cast<unsigned int>(graphicEngineStatus.m40AC.m0_menuId),
+            statusLayout ? static_cast<unsigned int>(graphicEngineStatus.m40AC.m0_menuId) : 0u,
             false,
             graphicEngineStatus.m40BC_layersConfig[0].scrollX,
             graphicEngineStatus.m40BC_layersConfig[0].scrollY,

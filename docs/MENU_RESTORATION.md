@@ -172,6 +172,15 @@ disc image without modifying or copying assets into the repository.
 The definition has Init `0601AC2C`, no Update, Draw `0601AD2E`, and Delete
 `0601AE24`; these routines are the next implementation boundary.
 
+User reports a brief malformed-tile frame when opening the in-game menu.
+Source inspection finds menu ID is assigned in graphics-task state 0, while
+the matching VDP2 setup runs in state 1 on a later frame. Scene publication
+now enables the specialized status decoder only when native CHCN/CHSZ,
+PNB/CNSM, palette offsets and map addresses match that decoder's layout.
+This avoids interpreting the previous scene's VRAM as menu tiles. Save's
+separate format detection remains unchanged. Vita syntax passes; the video
+was supplied but not decoded frame-by-frame, and device retesting is needed.
+
 Scope includes opening menu/Continue, load selection and transitions, native
 in-game menu pages, system Save/Load/Return, visible slot selection and
 confirmation/cancellation, and save persistence. The user reports saving a
