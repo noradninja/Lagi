@@ -4,6 +4,16 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Font restoration: the native font loader writes the new node into the old
+tail's `pNext` at `06024FB0`, after initializing ownership flags at
+`06024F88`. Upstream omitted both assignments. The generated Vita VDP2
+adapter now restores these operations, allowing tail traversal to allocate
+distinct font IDs and `setActiveFont` to find older fonts. The regression
+test is `tests/menu_font_list_test.ps1` (source-target check, linked-list
+model, and patched native Vita syntax compilation). This is not hardware
+validation. Native font unloading remains incomplete and is a separate
+restoration item; cursor blinking/movement is not proven fixed.
+
 The original `1ST_READ.PRG` unavailable-device path at `060196BA` creates
 a child task using the definition at COMMON.DAT `0020F790`. Its Init
 (`060190BE`) retains layer/position configuration; Draw (`060190C8`)

@@ -870,6 +870,15 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # Vita copy. Saturn CLOFEN bit 0 is NBG0; m45_COEN must control that bit,
  # not the unrelated CCRNA ratio register.
  elseif(relative_path STREQUAL "VDP2.cpp")
+  # Native 06024FB0 links the old tail to the newly loaded font. Without
+  # that link, font indices are reused and setActiveFont cannot find them.
+  set(font_link_old "    pNew->pPrevious = pOld;\n    pNew->pNext = NULL;\n    pNew->m14 = pData[1];")
+  set(font_link_new "    pNew->pPrevious = pOld;\n    pNew->pNext = NULL;\n    pNew->m14 = pData[1];\n    pNew->m15 = 0; // Native 06024F88: no ownership flags on borrowed font data.\n    pOld->pNext = pNew; // LAGI_NATIVE_FONT_LINK: native 06024FB0.")
+  string(FIND "${source_text}" "${font_link_old}" font_link_position)
+  if(font_link_position LESS 0)
+   message(FATAL_ERROR "Native VDP2 font-list adapter target changed")
+  endif()
+  string(REPLACE "${font_link_old}" "${font_link_new}" source_text "${source_text}")
   # Azel owns a 512 KiB vdp2Ram buffer. Its reconstructed 2 MiB mask can
   # return pointers outside that allocation; wrap to the actual VRAM size.
   string(REPLACE
