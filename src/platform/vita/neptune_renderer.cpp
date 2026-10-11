@@ -3708,7 +3708,7 @@ static bool ensureVdp1UiBuffers()
             &g_vdp1UiIndexUid));
     g_vdp1UiLineVertices = static_cast<azel::DebugColorVertex*>(
         probeGpuAlloc(
-            4u * sizeof(azel::DebugColorVertex),
+            128u * 4u * sizeof(azel::DebugColorVertex),
             SCE_GXM_MEMORY_ATTRIB_READ,
             &g_vdp1UiLineVertexUid));
     g_vdp1UiLineIndices = static_cast<std::uint16_t*>(
@@ -4660,13 +4660,49 @@ static void drawPublishedVdp1Ui(
             static_cast<float>(viewerRenderHeight());
         const float saturnAspectCorrection =
             (4.0f / 3.0f) / renderAspect;
+        // Only native radar-owned commands use this right-anchored, square
+        // integer pixel grid. Keep animation offsets and all authored geometry.
+        const float radarScale = std::max(1, viewerRenderHeight() / 224);
+        const auto radarX = [&](float x) {
+            return 1.0f + 2.0f * (x - 176.0f) * radarScale / viewerRenderWidth();
+        };
+        const auto radarY = [&](float y) {
+            return 1.0f - 2.0f * (y + 112.0f) * radarScale / viewerRenderHeight();
+        };
+
+        // Native radar direction line (6) and altitude fill polygon (4).
+        // Do not infer HUD ownership from texture, color or screen position.
+        if (command.fieldRadar && (commandType == 4u || commandType == 6u)) {
+            if (spriteSlot >= 128u || !g_probeVertexProgram ||
+                !g_probeFragmentProgram || !g_probeWvpParam) continue;
+            auto* vertices = g_vdp1UiLineVertices + spriteSlot++ * 4u;
+            const auto c = command.cmdColr;
+            const auto expand = [](unsigned v) { return static_cast<std::uint8_t>((v << 3) | (v >> 2)); };
+            const std::int16_t xs[4] = {command.xa,command.xb,command.xc,command.xd};
+            const std::int16_t ys[4] = {command.ya,command.yb,command.yc,command.yd};
+            for (unsigned i = 0; i < 4; ++i)
+                vertices[i] = {radarX(xs[i]), radarY(ys[i]), 0.0f,
+                    expand(c & 31u), expand((c >> 5) & 31u), expand((c >> 10) & 31u), 255u};
+            sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
+            sceGxmSetFragmentProgram(g_probeContext, g_probeFragmentProgram);
+            void* colorUniforms = nullptr;
+            if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &colorUniforms) >= 0 && colorUniforms) {
+                sceGxmSetUniformDataF(colorUniforms, g_probeWvpParam, 0, 16, identity);
+                sceGxmSetVertexStream(g_probeContext, 0, vertices);
+                sceGxmDraw(g_probeContext, commandType == 4u ? SCE_GXM_PRIMITIVE_TRIANGLES : SCE_GXM_PRIMITIVE_LINES,
+                    SCE_GXM_INDEX_FORMAT_U16, commandType == 4u ? g_vdp1UiIndices : g_vdp1UiLineIndices,
+                    commandType == 4u ? 6u : 2u);
+            }
+            continue;
+        }
 
         // VDP1 polyline. Town LCS uses this for the shrinking white
         // selection rectangle before the steady-state cursor/target sprites.
         if (commandType == 0x0005u) {
             if (!g_probeVertexProgram || !g_probeFragmentProgram ||
-                !g_probeWvpParam)
+                !g_probeWvpParam || spriteSlot >= 128u)
                 continue;
+            auto* lineVertices = g_vdp1UiLineVertices + spriteSlot++ * 4u;
 
             const std::uint16_t c = command.cmdColr;
             const std::uint8_t r = static_cast<std::uint8_t>(
@@ -4693,7 +4729,7 @@ static void drawPublishedVdp1Ui(
                 -static_cast<float>(command.yd) / 112.0f
             };
             for (unsigned int i = 0; i < 4u; ++i)
-                g_vdp1UiLineVertices[i] = {
+                lineVertices[i] = {
                     x[i], y[i], 0.0f, r, g, b, 255u
                 };
 
@@ -4710,7 +4746,7 @@ static void drawPublishedVdp1Ui(
                 sceGxmSetUniformDataF(
                     lineUniforms, g_probeWvpParam, 0, 16, identity);
                 sceGxmSetVertexStream(
-                    g_probeContext, 0, g_vdp1UiLineVertices);
+                    g_probeContext, 0, lineVertices);
                 sceGxmDraw(
                     g_probeContext,
                     SCE_GXM_PRIMITIVE_LINES,
@@ -4794,7 +4830,7 @@ static void drawPublishedVdp1Ui(
         // pattern with point sampling. Its 48x48 reference size belongs to
         // the 480x272 layout, not to the selected output resolution.
         const bool fieldRadarMap =
-            g_sceneGameMode == 3u &&
+            command.fieldRadar &&
             commandType == 0x0000u &&
             command.cmdPmod == 0x0088u &&
             command.cmdSize == 0x0630u;
@@ -4857,13 +4893,13 @@ static void drawPublishedVdp1Ui(
             }
         }
 
-        const float u0 = 0.5f / static_cast<float>(texture->width);
-        const float v0 = 0.5f / static_cast<float>(texture->height);
+        const float u0 = fieldRadarMap ? 0.0f : 0.5f / static_cast<float>(texture->width);
+        const float v0 = fieldRadarMap ? 0.0f : 0.5f / static_cast<float>(texture->height);
         const float u1 =
-            (static_cast<float>(texture->width) - 0.5f) /
+            fieldRadarMap ? 1.0f : (static_cast<float>(texture->width) - 0.5f) /
             static_cast<float>(texture->width);
         const float v1 =
-            (static_cast<float>(texture->height) - 0.5f) /
+            fieldRadarMap ? 1.0f : (static_cast<float>(texture->height) - 0.5f) /
             static_cast<float>(texture->height);
         const float uv[4][2] = {
             {u0,v0}, {u1,v0}, {u1,v1}, {u0,v1}
@@ -4908,6 +4944,14 @@ static void drawPublishedVdp1Ui(
         float pos[4][2] = {
             {x0,y0}, {x1,y0}, {x1,y1}, {x0,y1}
         };
+        if (command.fieldRadar && commandType == 0u) {
+            const float width = ((command.cmdSize >> 8) & 0x3Fu) * 8u;
+            const float height = command.cmdSize & 0xFFu;
+            pos[0][0] = pos[3][0] = radarX(command.xa);
+            pos[1][0] = pos[2][0] = radarX(command.xa + width);
+            pos[0][1] = pos[1][1] = radarY(command.ya);
+            pos[2][1] = pos[3][1] = radarY(command.ya + height);
+        }
         if (commandType == 0x0002u) {
             // Distorted sprite: Azel supplies all four projected corners.
             // D5's native particles and name-entry exit sprite use this path.

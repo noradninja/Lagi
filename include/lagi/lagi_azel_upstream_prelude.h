@@ -26,6 +26,8 @@
 #include "task.h"
 #include "rootTask.h"
 #include "VDP1.h"
+// Presentation ownership only; the native radar still emits its own commands.
+void lagiMarkFieldRadarCommands(const void* begin, const void* end);
 #include "VDP2.h"
 #include "titleScreen.h"
 #include "common.h"

@@ -29,6 +29,8 @@ p_workArea createTitleMenuTask(p_workArea);
 
 namespace lagi::azel {
 
+static std::uintptr_t radarCommandBegin = 0, radarCommandEnd = 0;
+
 static void begin_azel_vdp1_frame()
 {
     // initVDP1() owns the first six setup commands in context 0. Gameplay/UI
@@ -43,6 +45,7 @@ static void begin_azel_vdp1_frame()
     // Extended metadata belongs to one frame: recycled slots used by HUD/LCS
     // commands must not inherit a previous background sprite's far depth.
     ++frameIndex;
+    radarCommandBegin = radarCommandEnd = 0;
     ctx.m0_currentVdp1WriteEA = mainContextVdp1[0].begin() + 6;
     ctx.m20_pCurrentVdp1Packet = ctx.m24_vdp1Packets;
     ctx.m1C = 0;
@@ -88,6 +91,9 @@ static void capture_azel_vdp1_frontend_commands()
         ui.cmdColr = cmd->m6_CMDCOLR;
         ui.cmdSrca = cmd->m8_CMDSRCA;
         ui.cmdSize = cmd->mA_CMDSIZE;
+        const auto commandAddress = reinterpret_cast<std::uintptr_t>(&*cmd);
+        ui.fieldRadar = radarCommandBegin && commandAddress >= radarCommandBegin &&
+            commandAddress < radarCommandEnd;
         const auto nativeIndex = static_cast<std::size_t>(cmd - mainContextVdp1[0].begin());
         if (nativeIndex < nativeSortKeys.size()) {
             ui.nativeSortKey = nativeSortKeys[nativeIndex];
@@ -1243,3 +1249,9 @@ void runtime_frame()
 }
 
 } // namespace lagi::azel
+
+void lagiMarkFieldRadarCommands(const void* begin, const void* end)
+{
+    lagi::azel::radarCommandBegin = reinterpret_cast<std::uintptr_t>(begin);
+    lagi::azel::radarCommandEnd = reinterpret_cast<std::uintptr_t>(end);
+}

@@ -751,6 +751,18 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
 
  file(READ "${input_path}" source_text)
  set(original_text "${source_text}")
+ if(relative_path STREQUAL "field/fieldRadar.cpp")
+  set(radar_begin "void fieldRadar_draw(s_FieldRadar* pThis)\n{")
+  set(radar_end "    // Frame counter\n    pThis->m44++;")
+  foreach(anchor IN ITEMS radar_begin radar_end)
+   string(FIND "${source_text}" "${${anchor}}" radar_match)
+   if(radar_match LESS 0)
+    message(FATAL_ERROR "Native radar command ownership anchor changed: ${anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "${radar_begin}" "${radar_begin}\n    const auto lagiRadarBegin = graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA;" source_text "${source_text}")
+  string(REPLACE "${radar_end}" "    lagiMarkFieldRadarCommands(&*lagiRadarBegin, &*graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA);\n${radar_end}" source_text "${source_text}")
+ endif()
  string(REPLACE
   "#include \"PDS.h\""
   "#include \"lagi/lagi_azel_upstream_prelude.h\""
