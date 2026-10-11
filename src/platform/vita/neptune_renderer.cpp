@@ -800,6 +800,10 @@ static constexpr unsigned int kVdp2TextLayerHeight = 224u;
 static SceUID g_vdp2TextLayerUid = -1;
 static std::uint32_t* g_vdp2TextLayerPixels = nullptr;
 static SceGxmTexture g_vdp2TextLayerTexture{};
+static SceUID g_vdp2MenuBackgroundUid = -1;
+static std::uint32_t* g_vdp2MenuBackgroundPixels = nullptr;
+static SceGxmTexture g_vdp2MenuBackgroundTexture{};
+static bool g_vdp2MenuBackgroundValid = false;
 static SceUID g_vdp2TextLayerVertexUid = -1;
 static SceUID g_vdp2TextLayerIndexUid = -1;
 static azel::DebugTextureVertex* g_vdp2TextLayerVertices = nullptr;
@@ -1731,7 +1735,7 @@ static std::uint32_t decodeSaveMenuNbgPixel(
     return vdp2Rgb555ToAbgr(readVdp2Be16(g_vdp2Cram, cramOffset));
 }
 
-static void overlayAzelTextPlane(int scrollX, int scrollY)
+static void overlayAzelTextPlane(int scrollX, int scrollY, std::uint32_t* pixels)
 {
     constexpr int kTileSize = 8;
     constexpr int kMapColumns = 64;
@@ -1772,13 +1776,13 @@ static void overlayAzelTextPlane(int scrollX, int scrollY)
                 static_cast<std::size_t>((palette * 16u + colorIndex) * 2u);
             if (cramOffset + 1u >= kVdp2CramSnapshotBytes)
                 continue;
-            g_vdp2TextLayerPixels[sy * kVdp2TextLayerWidth + sx] =
+            pixels[sy * kVdp2TextLayerWidth + sx] =
                 vdp2Rgb555ToAbgr(readVdp2Be16(g_vdp2Cram, cramOffset));
         }
     }
 }
 
-static void drawAzelMenuVdp2Gpu()
+static void drawAzelMenuVdp2Gpu(bool textOnly = false)
 {
     if (!g_vdp2TextValid ||
         (!g_vdp2MenuId && !g_vdp2SaveLayout) ||
@@ -1788,10 +1792,30 @@ static void drawAzelMenuVdp2Gpu()
         !ensureVdp2UiGpuBuffers())
         return;
 
+    if (!textOnly && !g_vdp2MenuBackgroundValid) {
+        if (!g_vdp2MenuBackgroundPixels)
+            g_vdp2MenuBackgroundPixels = static_cast<std::uint32_t*>(probeGpuAlloc(
+            kVdp2TextLayerWidth * kVdp2TextLayerHeight * sizeof(std::uint32_t),
+            SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2MenuBackgroundUid));
+        if (!g_vdp2MenuBackgroundPixels || sceGxmTextureInitLinear(
+                &g_vdp2MenuBackgroundTexture, g_vdp2MenuBackgroundPixels,
+                SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,
+                kVdp2TextLayerWidth, kVdp2TextLayerHeight, 0) < 0) return;
+        sceGxmTextureSetMinFilter(&g_vdp2MenuBackgroundTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+        sceGxmTextureSetMagFilter(&g_vdp2MenuBackgroundTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+        g_vdp2MenuBackgroundValid = true;
+    }
+    auto* pixels = textOnly ? g_vdp2TextLayerPixels : g_vdp2MenuBackgroundPixels;
+    auto* texture = textOnly ? &g_vdp2TextLayerTexture : &g_vdp2MenuBackgroundTexture;
+    if (textOnly) {
+        std::memset(pixels, 0, kVdp2TextLayerWidth * kVdp2TextLayerHeight * sizeof(std::uint32_t));
+        overlayAzelTextPlane(g_vdp2MenuScroll[4], g_vdp2MenuScroll[5], pixels);
+    }
+
     // Both native menu families give NBG0 the higher priority. Select the
     // original map/character format rather than interpreting SAVE.SCB as the
     // status menu's 4bpp tiles.
-    for (unsigned int y = 0; y < kVdp2TextLayerHeight; ++y) {
+    for (unsigned int y = 0; !textOnly && y < kVdp2TextLayerHeight; ++y) {
         for (unsigned int x = 0; x < kVdp2TextLayerWidth; ++x) {
             const std::size_t nbg1Map =
                 g_vdp2SaveLayout ? 0x20800u : 0x71000u;
@@ -1813,11 +1837,10 @@ static void drawAzelMenuVdp2Gpu()
                     g_vdp2MenuScroll[1]);
             if (nbg0)
                 color = nbg0;
-            g_vdp2TextLayerPixels[
+            pixels[
                 y * kVdp2TextLayerWidth + x] = color;
         }
     }
-    overlayAzelTextPlane(g_vdp2MenuScroll[4], g_vdp2MenuScroll[5]);
 
     const float renderAspect =
         static_cast<float>(viewerRenderWidth()) /
@@ -1839,9 +1862,9 @@ static void drawAzelMenuVdp2Gpu()
     if (kStochastic) {
         setStochastic(kVdp2TextLayerWidth, kVdp2TextLayerHeight);
         sceGxmTextureSetMinFilter(
-            &g_vdp2TextLayerTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+            texture, SCE_GXM_TEXTURE_FILTER_POINT);
         sceGxmTextureSetMagFilter(
-            &g_vdp2TextLayerTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+            texture, SCE_GXM_TEXTURE_FILTER_POINT);
     }
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
 
@@ -1860,7 +1883,7 @@ static void drawAzelMenuVdp2Gpu()
     sceGxmSetVertexStream(
         g_probeContext, 0, g_vdp2TextLayerVertices);
     sceGxmSetFragmentTexture(
-        g_probeContext, 0, &g_vdp2TextLayerTexture);
+        g_probeContext, 0, texture);
     sceGxmDraw(
         g_probeContext,
         SCE_GXM_PRIMITIVE_TRIANGLES,
@@ -2360,6 +2383,10 @@ void shutdown()
     void* vdp2TextLayerPtr = g_vdp2TextLayerPixels;
     freeSimpleMappedProbe(g_vdp2TextLayerUid, vdp2TextLayerPtr);
     g_vdp2TextLayerPixels = nullptr;
+    void* menuBackgroundPtr = g_vdp2MenuBackgroundPixels;
+    freeSimpleMappedProbe(g_vdp2MenuBackgroundUid, menuBackgroundPtr);
+    g_vdp2MenuBackgroundPixels = nullptr;
+    g_vdp2MenuBackgroundValid = false;
     void* vdp2TextVertexPtr = g_vdp2TextLayerVertices;
     freeSimpleMappedProbe(g_vdp2TextLayerVertexUid, vdp2TextVertexPtr);
     g_vdp2TextLayerVertices = nullptr;
@@ -13104,13 +13131,14 @@ static void renderBasicWingViewer()
         // Azel still owns the contents/state of every layer; Neptune only
         // translates their final presentation ordering to GXM.
         if (g_vdp2MenuId != 0u || g_vdp2SaveLayout) {
-            // setupVdp2ForMenu() replaces the town VDP2 layout. Do not run
-            // the legacy 0x6000 town text compositor here: it shares the same
-            // RGBA backing texture as the status-menu decode and clears that
-            // memory before GXM consumes the queued menu draw.
+            // Decode menu backing separately from glyphs: native priority
+            // is NBG1/0 (3/4), VDP1 decorations (5/6), then NBG3 text (7).
             drawAzelMenuVdp2Gpu();
             drawPublishedVdp1Ui(
                 Vdp1UiPass::Foreground, &vdp1UiSpriteSlot);
+            // Native menu NBG3 glyph priority 7 is above VDP1 priority 5/6.
+            // Separate storage keeps the queued background draw immutable.
+            drawAzelMenuVdp2Gpu(true);
         } else {
             drawAzelVdp2Nbg1Gpu();
             drawAzelVdp2CinematicBarsGpu();

@@ -181,6 +181,17 @@ This avoids interpreting the previous scene's VRAM as menu tiles. Save's
 separate format detection remains unchanged. Vita syntax passes; the video
 was supplied but not decoded frame-by-frame, and device retesting is needed.
 
+Menu composition now separates NBG0/1 backing from the glyph plane. Native
+setup assigns backing priorities 3/4, VDP1 decorations 5/6, and NBG3 text 7.
+Previously glyphs were baked into backing before sprites were drawn, so
+decorations covered text. The new sequence draws backing, sprites, then
+scrolled glyphs. Backing has separately allocated/released GPU storage so
+preparing glyphs cannot overwrite a queued background draw. Existing text
+filtering and Save palette decoding are retained. Fullres/dither Vita syntax
+and source guards pass; no full build, GPU execution or hardware acceptance
+is claimed. This does not replace the temporary System task or prove its
+cancel/return lifecycle fixed.
+
 Scope includes opening menu/Continue, load selection and transitions, native
 in-game menu pages, system Save/Load/Return, visible slot selection and
 confirmation/cancellation, and save persistence. The user reports saving a
