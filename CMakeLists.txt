@@ -2115,6 +2115,41 @@ void pauseCutscene]=]
     "        pWorkArea->m_menu[0].m_isEnabled = (azelCdNumber == 0); // new game enabled only is first disk\n        pWorkArea->m_menu[1].m_isEnabled = hasSaveGame();"
     source_text "${source_text}")
   elseif(relative_path STREQUAL "kernel/loadSavegameScreen.cpp")
+   string(REPLACE
+    [=[    static void DrawLoad(sSaveTask* pThis)
+    {]=]
+    [=[    static void DrawLoad(sSaveTask* pThis)
+    {
+        // LAGI_LOAD_TRANSITION_TRACE: bounded, read-only state-change evidence.
+        static s32 traceState = -1;
+        static s32 traceOperation = -1;
+        static unsigned traceBudget = 24;
+        if (traceBudget && (traceState != pThis->m4_status || traceOperation != pThis->m38_operationResult))
+        {
+            const auto& regs = vdp2Controls.m20_registers[0];
+            lagi::platform::logging::writef(
+                "[LoadTransition] state=%d operation=%d device=%d slot=%d version=%08X CLOFEN=%04X CLOFSL=%04X A=(%d,%d,%d) B=(%d,%d,%d) fadeCounter=%d stopped=%d\n",
+                int(pThis->m4_status), int(pThis->m38_operationResult), int(pThis->m14_selectedDevice),
+                int(pThis->m20_selectedFileInDevice), unsigned(gSaveGameStatus.m4_version),
+                unsigned(regs.m110_CLOFEN), unsigned(regs.m112_CLOFSL),
+                int(regs.m114_COAR), int(regs.m116_COAG), int(regs.m118_COAB),
+                int(regs.m11A_COBR), int(regs.m11C_COBG), int(regs.m11E_COBB),
+                int(g_fadeControls.m0_fade0.m1E_counter), int(g_fadeControls.m0_fade0.m20_stopped));
+            lagi::platform::logging::writef(
+                "[LoadTransitionMap] BGON=%04X CHCTLA=%04X CHCTLB=%04X MPOFN=%04X MPABN0=%04X MPABN1=%04X MPABN3=%04X\n",
+                unsigned(regs.m20_BGON), unsigned(regs.m28_CHCTLA), unsigned(regs.m2A_CHCTLB),
+                unsigned(regs.m3C_MPOFN), unsigned(regs.m40_MPABN0), unsigned(regs.m44_MPABN1), unsigned(regs.m4C_MPABN3));
+            traceState = pThis->m4_status;
+            traceOperation = pThis->m38_operationResult;
+            --traceBudget;
+        }]=]
+    source_text "${source_text}")
+   string(REPLACE "#include \"loadSavegameScreen.h\""
+    "#include \"loadSavegameScreen.h\"\n#include \"lagi/platform.h\""
+    source_text "${source_text}")
+   if(NOT source_text MATCHES "LAGI_LOAD_TRANSITION_TRACE")
+    message(FATAL_ERROR "Native load-transition trace anchor changed")
+   endif()
    # Native 06026DF8 mini-data +4 is saved play frames, not the device ID.
    string(REPLACE "    s32 m4_device;\n    std::string m8_playerName;"
     "    s32 m4_playFrames; // LAGI_SAVE_PREVIEW_TIME\n    std::string m8_playerName;"

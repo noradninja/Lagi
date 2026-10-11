@@ -8,6 +8,9 @@ $cmakeText = Get-Content -Raw (Join-Path $root 'CMakeLists.txt')
 $source = Get-Content -Raw (Join-Path $AzelSourceRoot 'kernel/loadSavegameScreen.cpp')
 $cmakeText = $cmakeText.Replace("`r`n", "`n")
 $source = $source.Replace("`r`n", "`n")
+$tracePatch = [regex]::Match($cmakeText,'(?s)elseif\(relative_path STREQUAL "kernel/loadSavegameScreen.cpp"\).*?\[=\[(.*?)\]=\]\s*\[=\[(.*?)\]=\]')
+if (!$tracePatch.Success -or !$source.Contains($tracePatch.Groups[1].Value)) {throw 'Trace anchor mismatch'}
+$source = $source.Replace($tracePatch.Groups[1].Value,$tracePatch.Groups[2].Value).Replace('#include "loadSavegameScreen.h"', "#include `"loadSavegameScreen.h`"`n#include `"lagi/platform.h`"")
 $source = $source.Replace('#include "PDS.h"','#include "lagi/lagi_azel_upstream_prelude.h"').Replace("    s32 m4_device;`n    std::string m8_playerName;", "    s32 m4_playFrames;`n    std::string m8_playerName;").Replace('            outputData->m4_device = device;', '            outputData->m4_playFrames = loadedGameState->mC_mainGameState.gameStats.m3C_frameCounter;')
 $rankPatch = [regex]::Match($cmakeText,'(?s)# Native 060192C2.*?\[=\[(.*?)\]=\]\s*\[=\[(.*?)\]=\]')
 if (!$rankPatch.Success -or !$source.Contains($rankPatch.Groups[1].Value)) {throw 'Rank anchor mismatch'}
