@@ -47,9 +47,38 @@ for ($row=0;$row -lt 64;++$row) {
     }
 }
 Write-Output 'PASS: native rectangle source guard and 4096-cell preservation model (not runtime execution)'
+$numberCases = 0
+foreach ($value in @(0,1,9,10,99,100,255,999,1000,-1,-99,[int]::MaxValue,[int]::MinValue)) {
+    foreach ($width in @(0,1,2,3,10,11,12)) {
+        $digits = New-Object int[] 11
+        $first = 11
+        $magnitude = [long]$value
+        if ($magnitude -lt 0) { $magnitude = -$magnitude }
+        do {
+            --$first
+            $digits[$first] = 0x8002 + ($magnitude % 10)
+            $magnitude = [long][math]::Floor($magnitude/10)
+        } while ($magnitude)
+        if ($value -lt 0) { --$first; $digits[$first] = 0x8041 }
+        $effectiveWidth = [math]::Min($width,11)
+        while ($effectiveWidth -gt 0 -and 11-$first -lt $effectiveWidth) { --$first; $digits[$first] = 0 }
+        $text = ''
+        foreach ($glyph in $digits[$first..10]) {
+            $text += $(if ($glyph -eq 0) {' '} elseif ($glyph -eq 0x8041) {'-'} else {[string]($glyph-0x8002)})
+        }
+        $expected = ([string]$value).PadLeft([math]::Max($effectiveWidth,([string]$value).Length))
+        if ($text -ne $expected) { throw "Number format model failed value=$value width=$width" }
+        ++$numberCases
+    }
+}
+Write-Output "PASS: $numberCases encoded-number format models including signed limits; not runtime execution"
 if ($VitaCompiler) {
     $patched = $native.Replace($old,$new).Replace('#include "PDS.h"','#include "lagi/lagi_azel_upstream_prelude.h"')
     $patched = $patched.Replace($rectOld,$rectNew)
+    $numberOld = "void printVdp2Number3(s_stringStatusQuery* vars, int value, int length)`n{`n    Unimplemented();`n}"
+    $numberNew = [regex]::Match($cmake,'(?s)\[=\[(int loadExtendedCharacter\(u16 character\);.*?)\]=\]').Groups[1].Value.Replace("`r`n","`n")
+    if (!$numberNew -or ($patched.Split(@($numberOld),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Native number printer target changed' }
+    $patched = $patched.Replace($numberOld,$numberNew)
     $unload = [regex]::Match($cmake,'(?s)\[=\[(// LAGI_NATIVE_FONT_UNLOAD:.*?)\]=\]').Groups[1].Value.Replace("`r`n","`n")
     if (!$unload -or ($patched.Split(@('s32 resetVdp2StringsSub1(u16* pData)'),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Font unload insertion target changed' }
     $patched = $patched.Replace('s32 resetVdp2StringsSub1(u16* pData)',$unload)

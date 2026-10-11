@@ -4,6 +4,17 @@ Branch: `feature/menu-save-load-restoration`, based on main `b6c7bfe`.
 
 ## Unavailable storage-device presentation
 
+Numeric display: native `060258C0` uses encoded digits `0x8002..0x800B`,
+minus `0x8041`, and padding glyph `0x8001`. The generated number printer
+now writes the native 2x2 tile ordering to VRAM and the column-major
+character map, advancing X by two per character. It handles zero, negative
+values and signed 32-bit limits without signed negation overflow. Widths
+above the native eleven-character buffer are bounded (actual inventory
+callers use 2/3). Font tests cover 91 formatting models and compile the
+actual patched VDP2 routine for Vita. This enables the underlying quantity/
+BP-cost rendering path; visual glyph/palette correctness needs hardware
+verification. Item use, details and other menu pages remain unfinished.
+
 Berserk browsing: original `06017C4A` keeps the category's fixed 30-row
 ordering, writing zero for unlearned abilities. The generated adapter now
 replaces the category-2 assertion accordingly. Native `060181A0` row display
@@ -12,8 +23,8 @@ encoded suffix. BP cost follows the exact `06007378` fixed-point routine
 already reconstructed in `battleCommandMenu.cpp`; a local helper avoids
 linking that omitted battle task translation unit. Tests cover native patch
 targets, 32 learned-entry patterns and patched inventory Vita syntax.
-The number printer beneath this display remains unfinished, as do inventory
-details and actual item use. This is not full Berserk/menu completion and
+The number printer beneath this display has now been restored; inventory
+details and actual item use remain unfinished. This is not full Berserk/menu completion and
 requires hardware visual/navigation checks.
 
 Outer-menu lifecycle: original graphics task Delete at `0601579A` clears

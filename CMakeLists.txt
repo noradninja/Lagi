@@ -887,6 +887,50 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   endif()
   string(REPLACE "${font_rect_old}" "${font_rect_new}" source_text "${source_text}")
   string(REPLACE
+   "void printVdp2Number3(s_stringStatusQuery* vars, int value, int length)\n{\n    Unimplemented();\n}"
+   [=[int loadExtendedCharacter(u16 character);
+
+void printVdp2Number3(s_stringStatusQuery* vars, int value, int length)
+{
+    // LAGI_NATIVE_NUMBER_PRINT: native 060258C0..06025AC4.
+    u16 digits[11]{};
+    int first = 11;
+    u32 magnitude = static_cast<u32>(value);
+    if (value < 0) magnitude = 0u - magnitude;
+    do
+    {
+        digits[--first] = static_cast<u16>(0x8002 + magnitude % 10);
+        magnitude /= 10;
+    } while (magnitude);
+    if (value < 0) digits[--first] = 0x8041;
+    // Native storage holds eleven characters; callers request widths 2/3.
+    if (length > 11) length = 11;
+    while (length > 0 && 11 - first < length) digits[--first] = 0;
+    const u32 palette = printVdp2StringTable[vars->m28] * 0x1000 + 0x400;
+    for (int i = first; i < 11; ++i)
+    {
+        const u16 glyph = static_cast<u16>(loadExtendedCharacter(digits[i] ? digits[i] : 0x8001));
+        const u16 tile = static_cast<u16>(palette + glyph * 4);
+        const u32 offset = vars->m24_vdp2MemoryOffset;
+        setVdp2VramU16(offset, tile);
+        setVdp2VramU16(offset + 2, tile + 1);
+        setVdp2VramU16(offset + 0x80, tile + 2);
+        setVdp2VramU16(offset + 0x82, tile + 3);
+        const int x = vars->m0_cursorX;
+        const int y = vars->m4_cursorY;
+        characterMap2[x * 64 + y] = tile;
+        characterMap2[(x + 1) * 64 + y] = tile + 1;
+        characterMap2[x * 64 + y + 1] = tile + 2;
+        characterMap2[(x + 1) * 64 + y + 1] = tile + 3;
+        vars->m24_vdp2MemoryOffset += 4;
+        vars->m0_cursorX += 2;
+    }
+}]=]
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "LAGI_NATIVE_NUMBER_PRINT")
+   message(FATAL_ERROR "Native VDP2 number printer target changed")
+  endif()
+  string(REPLACE
    "s32 resetVdp2StringsSub1(u16* pData)"
    [=[// LAGI_NATIVE_FONT_UNLOAD: 0602502C, 060250E0 and 060250E6.
 static void lagiAzelReleaseFont(sVdp2StringControl* font)
