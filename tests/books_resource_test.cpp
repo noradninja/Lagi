@@ -23,7 +23,10 @@ int main(int argc, char** argv)
         unsigned(data[2])*256 + data[3];
     if (table != 0x874C || table + 22*16 > data.size()) return 5;
     unsigned tested = 0;
+    unsigned bodyTested = 0;
+    unsigned illustrations = 0;
     LagiAzelBooksHeading heading;
+    LagiAzelBooksBodyPage body;
     for (unsigned book = 0; book < 22; ++book)
     {
         const unsigned count = be16(table + book*16 + 12);
@@ -36,10 +39,18 @@ int main(int argc, char** argv)
             ++tested;
         }
         if (lagiAzelBooksReadHeading(data.data(), data.size(), book, count, heading)) return 7;
+        for (unsigned page = 0; page < bodyCount; ++page) {
+            if (!lagiAzelBooksReadBodyPage(data.data(), data.size(), book, page, body) ||
+                ((body.nativeValue > 3) != (body.text != nullptr))) return 9;
+            ++bodyTested;
+            if (body.nativeValue == 1 || body.nativeValue == 2) ++illustrations;
+        }
+        if (lagiAzelBooksReadBodyPage(data.data(), data.size(), book, bodyCount, body)) return 10;
     }
     if (lagiAzelBooksReadHeading(data.data(), data.size(), 22, 0, heading) ||
         lagiAzelBooksReadHeading(data.data(), 4, 0, 0, heading) ||
         lagiAzelBooksReadHeading(nullptr, data.size(), 0, 0, heading)) return 8;
     printf("PASS: production reader, 22 real books / %u headings; invalid book, heading and truncated image rejected (host, not Vita)\n", tested);
+    printf("PASS: %u native body pages, including %u illustration commands (host, not renderer execution)\n", bodyTested, illustrations);
     return 0;
 }

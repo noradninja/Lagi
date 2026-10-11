@@ -38,6 +38,13 @@ resource is 34,988 bytes, with its book table at `0x874C`: the eventual loader
 must allocate the actual file size, not the reconstructed `0x7E80` allocation
 (32,384 bytes), which cannot hold this disc's resource.
 
+The body-page reader follows `060165D4`: book +8 points to the BE32 body
+table, and book +14 holds the logical page count. Values greater than 3
+are text offsets; 1 and 2 select native illustration setup, while 0 and 3
+disable it. The reader preserves these commands rather than treating them
+as strings. Host execution covers all 168 real body pages, including two
+illustration commands. It does not draw them or implement task navigation.
+
 Evidence: read-only inspection of the user-provided US Disc 1 MODE1/2352
 image. `1ST_READ.PRG` loads at `06006000`; COMMON.DAT at `00200000`.
 No game files or `extern/Azel` were modified or copied into the repository.

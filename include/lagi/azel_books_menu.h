@@ -28,3 +28,11 @@ struct LagiAzelBooksHeading {
 // lifetime; the caller must not retain them after releasing the resource.
 bool lagiAzelBooksReadHeading(const std::uint8_t* data, std::size_t bytes,
     std::uint32_t bookIndex, std::uint32_t headingIndex, LagiAzelBooksHeading& out);
+
+struct LagiAzelBooksBodyPage {
+    // Native values 0..3 are presentation commands, not string offsets.
+    std::uint32_t nativeValue = 0;
+    const char* text = nullptr;
+};
+bool lagiAzelBooksReadBodyPage(const std::uint8_t* data, std::size_t bytes,
+    std::uint32_t bookIndex, std::uint32_t bodyPageIndex, LagiAzelBooksBodyPage& out);
