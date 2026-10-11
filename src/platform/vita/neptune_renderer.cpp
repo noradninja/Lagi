@@ -4693,6 +4693,14 @@ static void drawPublishedVdp1Ui(
                     SCE_GXM_INDEX_FORMAT_U16, commandType == 4u ? g_vdp1UiIndices : g_vdp1UiLineIndices,
                     commandType == 4u ? 6u : 2u);
             }
+            // A normal radar frame follows the solid direction-line command.
+            // Restore both stages and its vertex uniforms, not just the
+            // fragment program: color and textured vertex layouts differ.
+            sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
+            sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
+            void* radarTextureUniforms = nullptr;
+            if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &radarTextureUniforms) >= 0 && radarTextureUniforms)
+                sceGxmSetUniformDataF(radarTextureUniforms, g_textureWvpParam, 0, 16, identity);
             continue;
         }
 

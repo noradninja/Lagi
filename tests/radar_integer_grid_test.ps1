@@ -2,6 +2,11 @@ $ErrorActionPreference = 'Stop'
 # CPU arithmetic/source checks only, not hardware validation.
 $root = Join-Path $PSScriptRoot '..'
 $source = Get-Content -Raw (Join-Path $root 'src/platform/vita/neptune_renderer.cpp')
+$source = $source.Replace("`r`n", "`n")
+$solidBranch = [regex]::Match($source, '(?s)if \(command.fieldRadar && \(commandType == 4u.*?\n\s*continue;\n\s*\}').Value
+foreach ($token in @('sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram)', 'sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram)', 'radarTextureUniforms, g_textureWvpParam, 0, 16, identity')) {
+    if (!$solidBranch.Contains($token)) { throw "Radar solid-to-texture state restoration missing: $token" }
+}
 foreach ($token in @('command.fieldRadar && commandType == 0u', 'commandType == 4u || commandType == 6u', 'viewerRenderHeight() / 224', 'fieldRadarMap ? 0.0f', 'fieldRadarMap ? 1.0f')) {
     if (!$source.Contains($token)) { throw "Missing radar guard: $token" }
 }

@@ -25,3 +25,12 @@ frame alignment, upper-right placement, hide/show, and fill at several altitudes
 
 User hardware acceptance: in-game saving and loading stations work correctly
 (2026-10-11). This does not mark all menu presentation/restoration work complete.
+
+Hardware regression after the first radar change: placement is accepted, but
+the frame disappears and L-button destination selection crashes. Source audit
+found the solid radar line/fill branch left the color vertex shader active for
+subsequent textured sprites. Restore both textured stages and the identity
+vertex uniform after each solid submission; regression guards cover that
+handoff. This corrects a proven state leak, not a proven complete explanation
+of the L-button crash. Retest frame visibility and L hide/show on hardware;
+if the crash persists, obtain the matching log and full dump.
