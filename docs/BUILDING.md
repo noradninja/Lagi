@@ -34,7 +34,7 @@ cmake -S . -B build-fullres -DLAGI_FULLRES=ON -DLAGI_STOCHASTIC_FILTER=ON -DLAGI
 cmake --build build-fullres --parallel 32
 ```
 
-Use the existing `build-fullres` directory to retain its other options. `LAGI_FULLRES` defaults OFF (480x272 gameplay/movie output); ON selects 960x544. High-resolution title output remains 720x408, and Cinepak reconstruction remains source-sized 480x272. Both filter switches default ON. Startup should report `[DitherFilter] enabled=1 pattern=screen-2x2 sampling=lookup-point-v1`.
+Use the existing `build-fullres` directory to retain its other options. `LAGI_FULLRES` defaults OFF (480x272 gameplay/low-resolution frontend output); ON selects 960x544 for those paths. Cinepak independently renders and scans out at 640x368, pitch 640, with exact centered 2x video scaling. High-resolution title output remains 720x408, and Cinepak reconstruction remains source-sized 480x272. Both filter switches default ON. Startup should report `[DitherFilter] enabled=1 pattern=screen-2x2 sampling=lookup-point-v1`; movie mode logs `[MovieScanout]` set/get results and the queried active dimensions. The new scanout switch needs Vita validation; it does not override physical display-system scaling.
 
 For A/B comparison, set only `LAGI_DITHER_LOOKUP=OFF` for the arithmetic dither path or `LAGI_STOCHASTIC_FILTER=OFF` for decoded hardware-bilinear presentation. The raw-memory title fallback is separate and remains coordinate-dithered. Preserve radar point filtering and do not change resolution between captures. Full-screen-menu drops also occur with bilinear and remain unresolved. See `docs/DITHER_PERFORMANCE.md`.
 

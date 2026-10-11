@@ -8,7 +8,7 @@ Lagi is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Re
 
 ## Current development stage
 
-Cinepak width-fit/overlay follow-up: movie output fills the Vita width without stretching, cropping vertically only if needed. Native cinematic matte and subtitle snapshots are now composed above video, before fade. Source reconstruction, title sizing and the accepted dither filter are unchanged. Renderer syntax and CPU/source tests pass; the new package still needs Vita playback/overlay confirmation.
+Cinepak 2026-10-11 follow-up supersedes width-fit presentation: direct 640x368 scanout with pitch 640 and exact centered 2x scaling. Native cinematic matte and subtitles remain above video, before fade. Source reconstruction, title sizing, keep-awake ticks and the accepted dither filter are unchanged. Renderer syntax and CPU/source tests pass; the new package still needs Vita scanout/mode-restoration/playback confirmation. Physical display-system scaling remains outside Lagi's shader.
 
 The screen-space dither checkpoint `508bf75` was accepted by the user on Vita on 2026-10-10. The supplied log identifies `enabled=1 ... sampling=lookup-point-v1`; the user reports effectively no dither-specific gameplay penalty compared with hardware bilinear. Full-screen menus still drop below 30 fps in both modes and remain an accepted limitation of this merge, not a solved performance target. The final merged main package has not been rebuilt/retested here. See `docs/DITHER_PERFORMANCE.md`.
 
@@ -331,13 +331,14 @@ Those renderer/platform capabilities are being reconnected to the authentic boot
 Current gameplay/front-end target:
 
 ```text
-3D gameplay/movie framebuffer:        480x272 default; 960x544 with LAGI_FULLRES=ON
+3D gameplay framebuffer:              480x272 default; 960x544 with LAGI_FULLRES=ON
+Cinepak presentation framebuffer:     640x368; video at exact 2x scale
 high-resolution title framebuffer:    720x408
 title source VDP2 raster:             704x448
 target presentation:                  30 Hz
 ```
 
-The active front-end framebuffer mode follows Azel's VDP2 TVMD state. The title path scans out 720x408 directly; gameplay/movie output follows `LAGI_FULLRES` without changing source-resolution Cinepak reconstruction.
+The active front-end framebuffer mode follows Azel's VDP2 TVMD state. The title path scans out 720x408 directly; gameplay output follows `LAGI_FULLRES`. Cinepak independently scans out 640x368 without changing source-resolution reconstruction.
 
 Saturn-authored content is presented at its intended aspect rather than stretched to match a 16:9 capture device.
 

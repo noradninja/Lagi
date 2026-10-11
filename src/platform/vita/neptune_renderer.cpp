@@ -118,10 +118,16 @@ static SceGxmContext* g_probeContext = nullptr;
 static void* g_probeContextHost = nullptr;
 static SceGxmRenderTarget* g_probeRenderTarget = nullptr;
 static SceGxmRenderTarget* g_probeRenderTargetHalf = nullptr;
-// Movie/front-end presentation uses the selected gameplay-sized single-sample target.
+// Front-end presentation uses its selected single-sample target. Cinepak
+// final presentation has a dedicated 640x368 render/scanout mode.
 // Cinepak is reconstructed at source resolution first, then sampled from an
 // ordinary RGBA texture for the final bilinear presentation pass.
 static SceGxmRenderTarget* g_movieRenderTarget = nullptr;
+static constexpr int kCinepakOutputWidth = 640;
+static constexpr int kCinepakOutputHeight = 368;
+static SceGxmRenderTarget* g_cinepakPresentationRenderTarget = nullptr;
+static SceGxmColorSurface g_cinepakPresentationColorSurface{};
+static SceGxmColorSurface g_cinepakPresentationColorSurface2{};
 // Cinepak reconstruction stays at its source-sized 480x272 resolve surface.
 static SceGxmRenderTarget* g_cinepakResolveRenderTarget = nullptr;
 static SceGxmRenderTarget* g_frontendHighRenderTarget = nullptr;
@@ -1863,7 +1869,7 @@ static void drawAzelMenuVdp2Gpu()
         6);
 }
 
-static void drawAzelVdp2TextLayerGpu()
+static void drawAzelVdp2TextLayerGpu(int outputWidth = 0, int outputHeight = 0)
 {
     if (!g_vdp2TextValid ||
         !g_textureVertexProgram ||
@@ -1953,8 +1959,8 @@ static void drawAzelVdp2TextLayerGpu()
         return;
 
     const float renderAspect =
-        static_cast<float>(viewerRenderWidth()) /
-        static_cast<float>(viewerRenderHeight());
+        static_cast<float>(outputWidth ? outputWidth : viewerRenderWidth()) /
+        static_cast<float>(outputHeight ? outputHeight : viewerRenderHeight());
     const float xExtent =
         (4.0f / 3.0f) / renderAspect;
     g_vdp2TextLayerVertices[0] =
@@ -2774,6 +2780,10 @@ void shutdown()
         sceGxmDestroyRenderTarget(g_movieRenderTarget);
         g_movieRenderTarget = nullptr;
     }
+    if (g_cinepakPresentationRenderTarget) {
+        sceGxmDestroyRenderTarget(g_cinepakPresentationRenderTarget);
+        g_cinepakPresentationRenderTarget = nullptr;
+    }
     if (g_probeRenderTargetHalf) {
         sceGxmDestroyRenderTarget(g_probeRenderTargetHalf);
         g_probeRenderTargetHalf = nullptr;
@@ -3075,15 +3085,9 @@ bool movie_present_frame(
         // Full-screen movie presentation preserves the source aspect while
         // filling the Vita output vertically. Wider-than-display movies are
         // clipped symmetrically at the left/right edges rather than distorted.
-        const float displayAspect =
-            static_cast<float>(viewerRenderWidth()) /
-            static_cast<float>(viewerRenderHeight());
-        const float sourceAspect =
-            static_cast<float>(width) /
-            static_cast<float>(height);
-        // Software-decoded Cinepak uses the same width-fit presentation.
-        const float xExtent = 1.0f;
-        const float yExtent = displayAspect / sourceAspect;
+        // Exactly two output pixels per source pixel, centered in scanout.
+        const float xExtent = 2.0f * float(width) / float(kCinepakOutputWidth);
+        const float yExtent = 2.0f * float(height) / float(kCinepakOutputHeight);
         g_movieVertices[0] = {-xExtent,  yExtent, 0.5f, 0.0f, 0.0f};
         g_movieVertices[1] = { xExtent,  yExtent, 0.5f, 1.0f, 0.0f};
         g_movieVertices[2] = {-xExtent, -yExtent, 0.5f, 0.0f, 1.0f};
@@ -3232,18 +3236,9 @@ bool movie_present_cinepak_payload(
         std::memcpy(
             g_cinepakResolveIndices, resolveIndices, sizeof(resolveIndices));
 
-        const float displayAspect =
-            static_cast<float>(viewerRenderWidth()) /
-            static_cast<float>(viewerRenderHeight());
-        const float sourceAspect =
-            static_cast<float>(sourceWidth) /
-            static_cast<float>(sourceHeight);
-
-        // Fill the output width without stretching. The viewport clips
-        // vertically if the source is taller than the display aspect.
-        const float xExtent = 1.0f;
-        const float yExtent =
-            xExtent * displayAspect / sourceAspect;
+        // Exact 2x geometry in the dedicated 640x368 display framebuffer.
+        const float xExtent = 2.0f * float(sourceWidth) / float(kCinepakOutputWidth);
+        const float yExtent = 2.0f * float(sourceHeight) / float(kCinepakOutputHeight);
         g_movieVertices[0] = {-xExtent,  yExtent, 0.5f, 0.0f, 0.0f};
         g_movieVertices[1] = { xExtent,  yExtent, 0.5f, 1.0f, 0.0f};
         g_movieVertices[2] = {-xExtent, -yExtent, 0.5f, 0.0f, 1.0f};
@@ -8560,6 +8555,15 @@ void show_game_presentation()
     }
     status("[PASS] GXM MOVIE TARGET NO-MSAA", 0xFF80E0FFu);
 
+    SceGxmRenderTargetParams cinepakPresentationParams = movieRtParams;
+    cinepakPresentationParams.width = kCinepakOutputWidth;
+    cinepakPresentationParams.height = kCinepakOutputHeight;
+    if (sceGxmCreateRenderTarget(
+            &cinepakPresentationParams, &g_cinepakPresentationRenderTarget) < 0) {
+        failure("[FAIL] GXM CINEPAK 640X368 TARGET");
+        return;
+    }
+
     SceGxmRenderTargetParams cinepakResolveRtParams = movieRtParams;
     cinepakResolveRtParams.width = kWidth / 2;
     cinepakResolveRtParams.height = kHeight / 2;
@@ -8656,6 +8660,16 @@ void show_game_presentation()
         return;
     }
 
+    if (sceGxmColorSurfaceInit(
+            &g_cinepakPresentationColorSurface,
+            SCE_GXM_COLOR_FORMAT_A8B8G8R8, SCE_GXM_COLOR_SURFACE_LINEAR,
+            SCE_GXM_COLOR_SURFACE_SCALE_NONE, SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+            kCinepakOutputWidth, kCinepakOutputHeight, kCinepakOutputWidth,
+            g_probeColorBuffer) < 0) {
+        failure("[FAIL] GXM CINEPAK 640X368 COLOR");
+        return;
+    }
+
     const int frontendHighColorResult = sceGxmColorSurfaceInit(
         &g_frontendHighColorSurface,
         SCE_GXM_COLOR_FORMAT_A8B8G8R8,
@@ -8733,6 +8747,16 @@ void show_game_presentation()
         std::snprintf(line, sizeof(line), "[FAIL] GXM MOVIE COLOR2 0X%08X",
                       static_cast<unsigned int>(movieColorResult2));
         failure(line);
+        return;
+    }
+
+    if (sceGxmColorSurfaceInit(
+            &g_cinepakPresentationColorSurface2,
+            SCE_GXM_COLOR_FORMAT_A8B8G8R8, SCE_GXM_COLOR_SURFACE_LINEAR,
+            SCE_GXM_COLOR_SURFACE_SCALE_NONE, SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+            kCinepakOutputWidth, kCinepakOutputHeight, kCinepakOutputWidth,
+            g_probeColorBuffer2) < 0) {
+        failure("[FAIL] GXM CINEPAK 640X368 COLOR2");
         return;
     }
 
@@ -12486,6 +12510,8 @@ static bool renderMovieFrame()
     if (g_movieUsesCinepakPayload &&
         (!g_cinepakFragmentProgram || !g_cinepakMovieInfoParam))
         return false;
+    if (!g_movieUsesVdp2Title && !g_cinepakPresentationRenderTarget)
+        return false;
     if (g_movieUsesVdp2Title &&
         (!g_vdp2NbgFragmentProgram || !g_vdp2InfoParam))
         return false;
@@ -12508,23 +12534,27 @@ static bool renderMovieFrame()
                  (g_halfResolution ? "480x272" : "960x544"));
         lastFrontendDisplayMode = frontendDisplayMode;
     }
-    const int pitch = highResolutionFrontend ? 1024 : viewerRenderPitch();
+    const bool cinepakPresentation = !g_movieUsesVdp2Title;
+    const int pitch = cinepakPresentation ? kCinepakOutputWidth :
+        (highResolutionFrontend ? 1024 : viewerRenderPitch());
     const int movieOutputWidth =
-        highResolutionFrontend ? 720 : viewerRenderWidth();
+        cinepakPresentation ? kCinepakOutputWidth :
+        (highResolutionFrontend ? 720 : viewerRenderWidth());
     const int movieOutputHeight =
-        highResolutionFrontend ? 408 : viewerRenderHeight();
+        cinepakPresentation ? kCinepakOutputHeight :
+        (highResolutionFrontend ? 408 : viewerRenderHeight());
     std::uint32_t* const colorBuffer =
         g_gxmDrawBuffer == 0 ? g_probeColorBuffer : g_probeColorBuffer2;
     SceGxmColorSurface* const colorSurface =
         g_gxmDrawBuffer == 0
-            ? (highResolutionFrontend
+            ? (cinepakPresentation ? &g_cinepakPresentationColorSurface : highResolutionFrontend
                 ? &g_frontendHighColorSurface
                 : &g_movieColorSurface)
-            : (highResolutionFrontend
+            : (cinepakPresentation ? &g_cinepakPresentationColorSurface2 : highResolutionFrontend
                 ? &g_frontendHighColorSurface2
                 : &g_movieColorSurface2);
     SceGxmRenderTarget* const activeRenderTarget =
-        highResolutionFrontend
+        cinepakPresentation ? g_cinepakPresentationRenderTarget : highResolutionFrontend
             ? g_frontendHighRenderTarget
             : g_movieRenderTarget;
     SceGxmSyncObject* const syncObject =
@@ -12656,12 +12686,14 @@ static bool renderMovieFrame()
             // one-tap dither used by the other scaled presentation assets.
             sceGxmSetFragmentProgram(
                 g_probeContext, g_movieTextureFragmentProgram);
-            if (kStochastic && g_movieUsesCinepakPayload) {
+            if (kStochastic) {
                 setStochastic(g_movieWidth, g_movieHeight);
+                SceGxmTexture* sourceTexture = g_movieUsesCinepakPayload
+                    ? &g_cinepakResolveTexture : &g_movieTexture;
                 sceGxmTextureSetMinFilter(
-                    &g_cinepakResolveTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+                    sourceTexture, SCE_GXM_TEXTURE_FILTER_POINT);
                 sceGxmTextureSetMagFilter(
-                    &g_cinepakResolveTexture, SCE_GXM_TEXTURE_FILTER_POINT);
+                    sourceTexture, SCE_GXM_TEXTURE_FILTER_POINT);
             }
             submitted = sceGxmDraw(
                 g_probeContext,
@@ -12681,7 +12713,7 @@ static bool renderMovieFrame()
         drawAzelVdp2CinematicBarsGpu();
 
     if (submitted)
-        drawAzelVdp2TextLayerGpu();
+        drawAzelVdp2TextLayerGpu(movieOutputWidth, movieOutputHeight);
 
     if (submitted && g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f)
         drawPublishedVdp1Ui();
@@ -12729,7 +12761,7 @@ static bool renderMovieFrame()
     if (!g_movieRenderLogged) {
         if (!g_movieUsesVdp2Title) {
             logging::writef(
-                "[MoviePresentation] fit=width crop=vertical overlays=matte,text snapshot=%u\n",
+                "[MoviePresentation] scanout=640x368 pitch=640 scale=2x overlays=matte,text snapshot=%u\n",
                 static_cast<unsigned int>(g_vdp2TextValid));
         }
         logging::writef(
@@ -12756,9 +12788,10 @@ static bool renderMovieFrame()
     frameBuffer.width = movieOutputWidth;
     frameBuffer.height = movieOutputHeight;
 
+    int displayResult = 0;
     if (!highResolutionFrontend) {
         waitFor30HzPresentSlot();
-        sceDisplaySetFrameBuf(
+        displayResult = sceDisplaySetFrameBuf(
             &frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
         sceDisplayWaitVblankStart();
         mark30HzPresented();
@@ -12769,13 +12802,31 @@ static bool renderMovieFrame()
         // title state for two scanouts before returning the render slot.
         // Re-queueing the same completed buffer gives two display presents
         // without advancing the game/task graph twice.
-        sceDisplaySetFrameBuf(
+        displayResult = sceDisplaySetFrameBuf(
             &frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
         sceDisplayWaitVblankStart();
         sceDisplaySetFrameBuf(
             &frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
         sceDisplayWaitVblankStart();
         mark30HzPresented();
+    }
+    static int lastMovieScanoutWidth = 0;
+    static int lastMovieScanoutHeight = 0;
+    if (displayResult < 0 || lastMovieScanoutWidth != movieOutputWidth ||
+        lastMovieScanoutHeight != movieOutputHeight) {
+        SceDisplayFrameBuf observed{};
+        observed.size = sizeof(observed);
+        const int queryResult = sceDisplayGetFrameBuf(
+            &observed, SCE_DISPLAY_SETBUF_IMMEDIATE);
+        logging::writef(
+            "[MovieScanout] requested=%dx%d pitch=%d set=0x%08X get=0x%08X actual=%ux%u pitch=%u\n",
+            movieOutputWidth, movieOutputHeight, pitch,
+            static_cast<unsigned int>(displayResult), static_cast<unsigned int>(queryResult),
+            observed.width, observed.height, observed.pitch);
+        if (displayResult >= 0) {
+            lastMovieScanoutWidth = movieOutputWidth;
+            lastMovieScanoutHeight = movieOutputHeight;
+        }
     }
     recordFlightPresentation(false, 0u);
     g_gxmDrawBuffer ^= 1;

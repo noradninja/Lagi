@@ -302,9 +302,9 @@ Lighting is captured with each submission from Azel's active light state. Geomet
 
 ## VDP2 display framebuffer modes
 
-Cinepak final presentation fills the selected framebuffer width while preserving source aspect; the viewport clips excess height rather than stretching. SGX and software-decoded movie output share this policy. Movie mode stages Azel's VDP2 text/line-scroll snapshot after DMA, and the movie render-slot owner copies it before publication. Final composition is video, native cinematic matte, decoded subtitle text, then fade; the source-resolution reconstruction target is unchanged. This follow-up is CPU/source and renderer-syntax checked, not yet hardware validated.
+Cinepak final presentation renders/scans out directly at 640x368, pitch 640, with centered exact 2x video geometry; there is no full-resolution intermediate. SGX and software-decoded output share this policy and retain lookup dithering. Movie mode stages Azel's VDP2 text/line-scroll snapshot after DMA, and the movie render-slot owner copies it before publication. Final composition is video, native cinematic matte, decoded subtitle text, then fade; the source-resolution reconstruction target is unchanged. Gameplay/title select their own display dimensions on the next presentation. This changes framebuffer scanout, not the physical panel's pixel grid or display-system scaling. The follow-up is CPU/source and renderer-syntax checked, not yet hardware validated.
 
-Front-end presentation follows Azel's live VDP2 TVMD state. Gameplay/movie output is 480x272 by default or 960x544 with `LAGI_FULLRES=ON`. The title screen enters Azel's 704-dot high-resolution mode and is presented through a 720x408 Vita framebuffer. Cinepak reconstruction retains its dedicated source-sized 480x272 target regardless of output selection.
+Front-end presentation follows Azel's live VDP2 TVMD state. Gameplay and low-resolution VDP2 frontend output is 480x272 by default or 960x544 with `LAGI_FULLRES=ON`. The title screen enters Azel's 704-dot high-resolution mode and is presented through a 720x408 Vita framebuffer. Cinepak final output is independently 640x368; reconstruction retains its dedicated source-sized 480x272 target.
 
 Neptune renders directly into the active framebuffer size and passes that same width, height, pitch, and buffer to `sceDisplaySetFrameBuf()`.
 

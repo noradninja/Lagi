@@ -56,6 +56,8 @@ The public **v0.3.0alpha** release is the current hardware milestone. Its main a
 
 ## Architecture
 
+The 2026-10-11 Cinepak follow-up uses direct 640x368 framebuffer scanout and centered exact 2x video scaling, superseding movie width-fit/full-resolution presentation. Gameplay/title modes are restored by their normal presentation paths. Lookup dithering, subtitles/matte and keep-awake ticks are retained. This scanout-mode change still needs Vita validation and does not replace physical display-system scaling.
+
 The 2026-10-10 development checkpoint adds optional native 960x544 gameplay/movie presentation (`LAGI_FULLRES=ON`; default OFF) and accepted lookup-based dithering (`LAGI_STOCHASTIC_FILTER=ON`, `LAGI_DITHER_LOOKUP=ON`; both default ON). The user accepted Vita build `508bf75` as effectively free versus hardware bilinear in tested gameplay. Full-screen menus still fall below 30 fps with either filter; that existing limitation is not resolved by this merge. See [dither performance](docs/DITHER_PERFORMANCE.md) for scope and evidence boundaries.
 
 ```text
