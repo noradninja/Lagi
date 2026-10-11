@@ -11,8 +11,14 @@ adapter now restores these operations, allowing tail traversal to allocate
 distinct font IDs and `setActiveFont` to find older fonts. The regression
 test is `tests/menu_font_list_test.ps1` (source-target check, linked-list
 model, and patched native Vita syntax compilation). This is not hardware
-validation. Native font unloading remains incomplete and is a separate
-restoration item; cursor blinking/movement is not proven fixed.
+validation. Native font unloading now follows `0602502C`: release font data
+only when ownership bit 0 is set, unlink/free non-base controls, restore the
+previous font when releasing the active control, then reset character maps.
+The current-font entry (`060250E0`) replaces `unloadFnt`'s stub; the ID-based
+entry (`060250E6`) restores the missing call in Save/Load Delete (`06019BD4`).
+Vita syntax checks cover the actual generated cleanup and Save/Delete call.
+Repeated screen entry/exit, subtitle and field transitions still require
+hardware testing. Cursor blinking/movement is not proven fixed.
 
 The original `1ST_READ.PRG` unavailable-device path at `060196BA` creates
 a child task using the definition at COMMON.DAT `0020F790`. Its Init

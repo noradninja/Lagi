@@ -140,3 +140,7 @@ s32 udivsi3(s32 r0, s32 r1);
 // compiles and can be removed by --gc-sections.
 void azelSdl_StartFrame();
 bool azelSdl_EndFrame();
+
+// Native font cleanup adapters (060250E0/current, 060250E6/by index).
+void lagiAzelUnloadCurrentFont();
+void lagiAzelUnloadFontByIndex(u32 index);

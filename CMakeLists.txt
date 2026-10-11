@@ -879,6 +879,44 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    message(FATAL_ERROR "Native VDP2 font-list adapter target changed")
   endif()
   string(REPLACE "${font_link_old}" "${font_link_new}" source_text "${source_text}")
+  string(REPLACE
+   "s32 resetVdp2StringsSub1(u16* pData)"
+   [=[// LAGI_NATIVE_FONT_UNLOAD: 0602502C, 060250E0 and 060250E6.
+static void lagiAzelReleaseFont(sVdp2StringControl* font)
+{
+    if (!font || !font->m8) return;
+    if (font->m15 & 1) freeHeap(font->m8);
+    if (font->pPrevious)
+    {
+        if (pVdp2StringControl == font)
+        {
+            pVdp2StringControl = font->pPrevious;
+            font->pPrevious->pNext = font->pNext;
+        }
+        else
+        {
+            if (font->pNext) font->pNext->pPrevious = font->pPrevious;
+            font->pPrevious->pNext = font->pNext;
+        }
+        freeHeap(font);
+    }
+    resetCharacterMaps();
+}
+
+void lagiAzelUnloadCurrentFont()
+{
+    lagiAzelReleaseFont(pVdp2StringControl);
+}
+
+void lagiAzelUnloadFontByIndex(u32 index)
+{
+    auto* font = &vdp2StringControlBuffer;
+    while (font && font->m0_index != index) font = font->pNext;
+    lagiAzelReleaseFont(font);
+}
+
+s32 resetVdp2StringsSub1(u16* pData)]=]
+   source_text "${source_text}")
   # Azel owns a 512 KiB vdp2Ram buffer. Its reconstructed 2 MiB mask can
   # return pointers outside that allocation; wrap to the actual VRAM size.
   string(REPLACE
@@ -1073,6 +1111,10 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
 } while (false)
 ]=])
  elseif(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  string(REPLACE
+   "    PDS_unimplemented(\"Unimplemented unloadFnt\");"
+   "    lagiAzelUnloadCurrentFont();"
+   source_text "${source_text}")
   # Report unsupported native actor variants rather than silently losing
   # their models in SHIPPING_BUILD. Do not substitute a different draw path.
   string(PREPEND source_text "#include \"lagi/platform.h\"\n")
@@ -2103,6 +2145,10 @@ s32 getBupStatus(s32 slotIndex)
    string(REPLACE
     "                assert(0); //060196c4 this would create the icon for the disabled slot"
     "                auto* unavailable = createSubTask<sLagiUnavailableBackupDevice>(pThis);\n                unavailable->device = i;"
+    source_text "${source_text}")
+   string(REPLACE
+    "        //clearSaveText(pThis->m10); // TODO: unload SAVE.FNT"
+    "        lagiAzelUnloadFontByIndex(pThis->m10); // Native 06019BD4 calls 060250E6."
     source_text "${source_text}")
    string(REPLACE
     "u16 saveMenuData_[]{"
