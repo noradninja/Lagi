@@ -88,3 +88,36 @@ bool lagiAzelBooksHeadingForBodyPage(const std::uint8_t* data, std::size_t bytes
     }
     return true;
 }
+
+LagiAzelBooksIndexStep lagiAzelBooksStepIndex(std::int32_t& index,
+    std::int32_t minimum, std::int32_t maximum, std::uint16_t repeated,
+    std::uint16_t held, bool vertical, bool& boundarySoundLatched)
+{
+    const std::uint16_t decrement = vertical ? 0x10 : 0x40;
+    const std::uint16_t increment = vertical ? 0x20 : 0x80;
+    const auto mask = decrement | increment;
+    if (!(repeated & mask)) {
+        if (!(held & mask)) boundarySoundLatched = false;
+        return {};
+    }
+    // Keep the native branch ordering: decrement wins if valid. If it
+    // underflows, the increment branch uses that decremented candidate.
+    std::int64_t candidate = index;
+    bool accepted = false;
+    if (repeated & decrement) {
+        --candidate;
+        accepted = candidate >= minimum;
+    }
+    if (!accepted && (repeated & increment)) {
+        ++candidate;
+        accepted = candidate <= maximum;
+    }
+    if (accepted) {
+        index = static_cast<std::int32_t>(candidate);
+        boundarySoundLatched = false;
+        return {true, 0xA};
+    }
+    const int sound = boundarySoundLatched ? -1 : 5;
+    boundarySoundLatched = true;
+    return {false, sound};
+}

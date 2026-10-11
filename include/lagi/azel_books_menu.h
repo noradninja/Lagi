@@ -40,3 +40,13 @@ bool lagiAzelBooksReadBodyPage(const std::uint8_t* data, std::size_t bytes,
 // pages select heading zero, as in the original routine.
 bool lagiAzelBooksHeadingForBodyPage(const std::uint8_t* data, std::size_t bytes,
     std::uint32_t bookIndex, std::uint32_t bodyPageIndex, std::uint32_t& headingIndex);
+
+struct LagiAzelBooksIndexStep {
+    bool accepted = false;
+    int sound = -1;
+};
+// Native 06015D30 (left/right) and 06015DA4 (up/down). The caller supplies
+// the native repeat and held masks and retains a separate edge latch per axis.
+LagiAzelBooksIndexStep lagiAzelBooksStepIndex(std::int32_t& index,
+    std::int32_t minimum, std::int32_t maximum, std::uint16_t repeated,
+    std::uint16_t held, bool vertical, bool& boundarySoundLatched);

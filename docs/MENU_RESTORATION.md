@@ -297,7 +297,20 @@ source and must not be mistaken for renderer failures or silently excluded:
 | Dragon menu | `menu_dragon.cpp` contains menu flow but several statistics/cursor/sound subtasks are unfinished | Audit and restore native subtask behavior, then verify navigation and changes |
 | Enemy List | `createEnemyListMenuTask` in `mainMenuDebugTasks.cpp` only asserts and returns null | Port the actual native page; current CMake disabling is a bring-up safeguard, not fulfillment |
 | Map | `createMapTask` in `mainMenuDebugTasks.cpp` only asserts and returns null | Port the actual native page; do not enable the null constructor or substitute the flight radar |
-| System return | Adapter snapshots presentation around Save/Load | Verify repeated nested opens/cancels and return to the paused scene |
+| System settings | Temporary SAVE/LOAD/RETURN replacement was removed; native settings entry is disabled | Restore actual controls/sound task and return lifecycle; no substitute text menu |
+| Books/key-item reader | Native data readers, ownership selection and index-input helper exist, but no complete page task | Connect native entry, page/image rendering, input and inventory return; verify on hardware |
+
+Current-state clarification (2026-10-11): the table above is a requirements
+checklist, not evidence that every named upstream stub is still unpatched.
+Generated-source inventory patches restore several details, Berserk/weapon and
+consumable handlers; actual device effects still need acceptance. Dragon source
+currently includes statistics and morph-cursor implementations, so audit its
+remaining behavior rather than assuming those routines are absent. User confirms
+in-game save/load stations work. Save-slot names/time/rider level/rank received
+source-faithful patches; their final visual acceptance remains pending. Load
+transition diagnostics are present, but the reported garbled fade is unresolved.
+The old System snapshot descriptions in this document are historical and no
+longer describe current code.
 
 Do not remove the two stub safeguards before replacing their constructors.
 No invented menu data or generic item-effect guesses establish native fidelity.

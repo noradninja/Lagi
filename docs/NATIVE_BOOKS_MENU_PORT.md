@@ -120,8 +120,19 @@ and cursor reinitialization, before enabling key-item dispatch.
 
 ## Remaining implementation and acceptance
 
-Reconstruct helpers `06016004`, `0601604E`, `06016088`, `06016194`,
-`06016328`, `06016396`, `060164AC`, `060164EC`, `0601653E`, `060165D4`,
+Implemented support now includes graphics backup/restore, owned-list selection,
+validated MENUBK heading/body readers and body-to-heading association. Native
+06015D30/06015DA4 index input is available as lagiAzelBooksStepIndex: repeat masks
+40/80 or 10/20, separate axis boundary-sound latches, movement sound 0A and
+one boundary sound 05 until release/movement. Both-direction handling preserves
+the original decremented candidate if decrement underflows. Disassembly was
+rechecked against the original executable; 16,192 host cases exercise the
+production helper. Host models and Vita syntax checks do not prove page input
+on hardware. The helper is not yet connected to a Books task: do not enable
+Books merely because these support routines pass tests.
+
+Finish task integration and presentation helpers `06016088`, `06016194`,
+`060164AC`, `060164EC`, `0601653E`, `060165D4`,
 `06016738`, the cursor task, and inventory return `060183D8`. Preserve the
 original data-driven book text/images, ownership and fades. Vita acceptance
 must cover Books entry, owned/unowned items, pages/images, cancel/reentry,
