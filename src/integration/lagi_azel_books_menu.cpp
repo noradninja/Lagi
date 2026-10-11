@@ -2,6 +2,7 @@
 #include "lagi/azel_books_menu.h"
 #include "mainMenuDebugTasks.h"
 #include "3dEngine_textureCache.h"
+#include "commonOverlay.h"
 #include <cstring>
 
 namespace {
@@ -34,4 +35,31 @@ void lagiAzelBooksRestoreGraphics(std::uint8_t* backup)
     // Notify the Vita renderer of restored source data; no visual substitute.
     invalidateVdp1TextureRange(0x12000, spriteBytes);
     invalidateCramRange(0x7E0, paletteBytes);
+}
+
+std::int32_t lagiAzelBooksLookupItem(std::int32_t item)
+{
+    for (int index = 0; index < 22; ++index)
+        if (readSaturnS16(gCommonFile->getSaturnPtr(0x20DDC8) + index * 2) == item)
+            return index;
+    return -1;
+}
+
+LagiAzelBooksSelection lagiAzelBooksBuildSelection(std::int32_t requestedIndex)
+{
+    LagiAzelBooksSelection result;
+    for (int index = 0; index < 22; ++index)
+    {
+        const int item = readSaturnS16(gCommonFile->getSaturnPtr(0x20DDC8) + index * 2);
+        if (!mainGameState.getBit(0xF3 + item)) continue;
+        result.ownedIndices[result.count++] = static_cast<std::uint8_t>(index);
+    }
+    if (requestedIndex >= 0)
+        for (int position = 0; position < result.count; ++position)
+            if (result.ownedIndices[position] == requestedIndex)
+            {
+                result.selected = position;
+                break;
+            }
+    return result;
 }

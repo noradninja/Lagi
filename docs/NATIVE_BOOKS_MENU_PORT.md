@@ -12,6 +12,15 @@ releases and invalidates renderer caches. The translation unit passes Vita
 C++ syntax checking. It is not yet invoked because the Books task is still
 unported; no screen or runtime ownership roundtrip is claimed validated.
 
+The same module now implements `06016ADA` item-to-table-index lookup and
+`06016328`/`06016396` owned-index list construction/initial selection. It reads
+COMMON `0020DDC8` and native ownership bits `0xF3+item`, stores compact table
+indices rather than item IDs, and defaults selection to zero for ordinary
+entry or an unmatched requested index. Empty ownership remains an empty list;
+the eventual task must not dereference its selected position then. A 576-case
+selection model/source guard and actual helper Vita syntax compilation pass.
+These helpers are not connected to an implemented screen yet.
+
 Evidence: read-only inspection of the user-provided US Disc 1 MODE1/2352
 image. `1ST_READ.PRG` loads at `06006000`; COMMON.DAT at `00200000`.
 No game files or `extern/Azel` were modified or copied into the repository.
