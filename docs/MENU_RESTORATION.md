@@ -53,3 +53,24 @@ map/font/scroll interpretation, visible VDP1 selectors, title-to-Continue
 handoff, zero-world-submission menu frames, all in-game pages and return,
 actual save write plus reload/Continue into the saved location, and failure/
 cancel behavior. Source-only tests cannot establish these Vita gates.
+
+## Full-scope source audit
+
+The current hardware capture checkpoint is `1482528`; that is a partial fix,
+not an all-menu-functionality release. These gaps remain in the pinned native
+source and must not be mistaken for renderer failures or silently excluded:
+
+| Requirement | Current authoritative source evidence | Remaining work |
+| --- | --- | --- |
+| Opening selection and Continue | Native title task and Continue dispatcher are present; Vita adapter checks save availability | Validate visible selection, disabled entries, cancel/reentry and successful saved-location handoff |
+| Save/load selection and persistence | Native slot tasks and Vita persistence adapter present; confirmation and failure recovery now patched | Hardware readability, existing-save preservation, new-slot write, reload and restart persistence |
+| Inventory browsing and item use | `menu/inventoryMenu.cpp` has browsing, but `useInventoryItem`, `inventoryMenuTaskDrawSub2` and `inventoryPrintBerserk` are unfinished; category 2 asserts | Restore original item-use/details/Berserk pipelines from native evidence, then validate actual state changes |
+| Dragon menu | `menu_dragon.cpp` contains menu flow but several statistics/cursor/sound subtasks are unfinished | Audit and restore native subtask behavior, then verify navigation and changes |
+| Enemy List | `createEnemyListMenuTask` in `mainMenuDebugTasks.cpp` only asserts and returns null | Port the actual native page; current CMake disabling is a bring-up safeguard, not fulfillment |
+| Map | `createMapTask` in `mainMenuDebugTasks.cpp` only asserts and returns null | Port the actual native page; do not enable the null constructor or substitute the flight radar |
+| System return | Adapter snapshots presentation around Save/Load | Verify repeated nested opens/cancels and return to the paused scene |
+
+Do not remove the two stub safeguards before replacing their constructors.
+No invented menu data or generic item-effect guesses establish native fidelity.
+The user's requested all-functionality end state remains unachieved until these
+paths and the hardware gates above have evidence of completion.
