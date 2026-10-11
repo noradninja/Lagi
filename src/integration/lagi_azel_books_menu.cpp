@@ -63,34 +63,3 @@ LagiAzelBooksSelection lagiAzelBooksBuildSelection(std::int32_t requestedIndex)
             }
     return result;
 }
-
-bool lagiAzelBooksReadHeading(const std::uint8_t* data, std::size_t bytes,
-    std::uint32_t bookIndex, std::uint32_t headingIndex, LagiAzelBooksHeading& out)
-{
-    out = {};
-    if (!data || bytes < 4 || bookIndex >= 22) return false;
-    auto be32 = [](const u8* p) -> u32 {
-        return (u32(p[0]) << 24) | (u32(p[1]) << 16) | (u32(p[2]) << 8) | p[3];
-    };
-    auto range = [bytes](std::size_t offset, std::size_t length) {
-        return offset <= bytes && length <= bytes - offset;
-    };
-    const std::size_t table = be32(data);
-    if (!range(table, 22 * 16)) return false;
-    const auto* book = data + table + bookIndex * 16;
-    const std::size_t pages = be32(book + 4);
-    // Check multiplication through the remaining image size, not wraparound.
-    if (!range(pages, 8) || headingIndex > (bytes - pages - 8) / 8) return false;
-    const auto* page = data + pages + std::size_t(headingIndex) * 8;
-    const std::size_t title = be32(book);
-    const std::size_t heading = be32(page);
-    if (!range(title, 1) || !range(heading, 1) ||
-        !std::memchr(data + title, 0, bytes - title) ||
-        !std::memchr(data + heading, 0, bytes - heading)) return false;
-    // Native 060164AC/060164EC offsets; 06016582/06016598 page metadata.
-    out.title = reinterpret_cast<const char*>(data + title);
-    out.heading = reinterpret_cast<const char*>(data + heading);
-    out.firstBodyPage = static_cast<u16>((u16(page[4]) << 8) | page[5]);
-    out.bodyPageCount = static_cast<u16>((u16(page[6]) << 8) | page[7]);
-    return true;
-}

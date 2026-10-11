@@ -22,3 +22,6 @@ Write-Output "PASS: $cases Books ownership/selection models; not native task or 
 & $VitaCompiler -std=c++20 -fsyntax-only -DLAGI_PLATFORM_VITA=1 -DLAGI_NEPTUNE_RENDERER=1 -I "$repo/include" -I "$repo/src/integration" -I $AzelSourceRoot (Join-Path $repo 'src/integration/lagi_azel_books_menu.cpp')
 if ($LASTEXITCODE -ne 0) { throw 'Books helper Vita syntax check failed' }
 Write-Output 'PASS: Books lifecycle/selection helper Vita syntax check'
+& $VitaCompiler -std=c++20 -fsyntax-only -I "$repo/include" (Join-Path $repo 'src/integration/lagi_azel_books_resource.cpp')
+if ($LASTEXITCODE -ne 0) { throw 'Books resource reader Vita syntax check failed' }
+Write-Output 'PASS: portable Books resource reader Vita syntax check'

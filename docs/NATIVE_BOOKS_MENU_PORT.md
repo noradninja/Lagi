@@ -27,8 +27,16 @@ bytes (title offset +0, page-table offset +4), each heading record is eight
 bytes (heading offset +0, first body page +4, body page count +6). All offsets
 are relative to the loaded resource base and big-endian. Returned strings
 borrow its lifetime. Range/terminator checks prevent out-of-image pointers;
-the caller still needs the native logical heading-count validation before
-selection. This reader does not implement body text/images or a Books task.
+the reader also rejects selections outside the native heading count at book
+record +12. This reader does not implement body text/images or a Books task.
+
+`tests/books_resource_test.cpp` executes the production portable reader against
+the original US Disc 1 resource directly, opening the image read-only. All 22
+books and 61 headings pass, as do invalid book/heading and truncated/null input
+rejection checks. This is host execution, not Vita screen validation. The
+resource is 34,988 bytes, with its book table at `0x874C`: the eventual loader
+must allocate the actual file size, not the reconstructed `0x7E80` allocation
+(32,384 bytes), which cannot hold this disc's resource.
 
 Evidence: read-only inspection of the user-provided US Disc 1 MODE1/2352
 image. `1ST_READ.PRG` loads at `06006000`; COMMON.DAT at `00200000`.
