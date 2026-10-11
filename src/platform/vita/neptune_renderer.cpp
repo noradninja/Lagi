@@ -1723,7 +1723,7 @@ static std::uint32_t decodeSaveMenuNbgPixel(
     const unsigned int paladdr =
         static_cast<unsigned int>(patternName & 0x7000u) >> 4;
     const unsigned int paletteEntry =
-        5u * 0x100u | (paladdr | colorIndex);
+        5u * 0x100u + (paladdr | colorIndex);
     const std::size_t cramOffset =
         static_cast<std::size_t>(paletteEntry) * 2u;
     if (cramOffset + 1u >= kVdp2CramSnapshotBytes)
