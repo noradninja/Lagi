@@ -5,6 +5,7 @@
 #include "audio/systemSounds.h"
 #include "kernel/loadSavegameScreen.h"
 #include "kernel/moduleManager.h"
+#include "kernel/fade.h"
 
 #include <cstdint>
 
@@ -76,6 +77,31 @@ struct LagiSystemMenuTask
         }
     }
 
+    void preservePresentation()
+    {
+        savedRegisters = *vdp2Controls.m4_pendingVdp2Regs;
+        for (int index = 0; index < 4; ++index)
+            savedLayers[index] = graphicEngineStatus.m40BC_layersConfig[index];
+        savedFade = g_fadeControls;
+        savedFont = pVdp2StringControl->m0_index;
+        presentationSaved = true;
+    }
+
+    void restorePresentation()
+    {
+        if (!presentationSaved)
+            return;
+        // Restore values into the current pending buffer; never restore an old
+        // double-buffer pointer. The child's Delete has restored its VRAM/CRAM.
+        *vdp2Controls.m4_pendingVdp2Regs = savedRegisters;
+        vdp2Controls.m_isDirty = 1;
+        for (int index = 0; index < 4; ++index)
+            graphicEngineStatus.m40BC_layersConfig[index] = savedLayers[index];
+        g_fadeControls = savedFade;
+        setActiveFont(savedFont);
+        presentationSaved = false;
+    }
+
     static int loadedTargetStatus()
     {
         const int savedDisc = mainGameState.readPackedBits(0xD4, 2);
@@ -107,6 +133,7 @@ struct LagiSystemMenuTask
                 return;
             }
             self->childMode = ChildMode::None;
+            self->restorePresentation();
             render(self);
             return;
         }
@@ -140,11 +167,13 @@ struct LagiSystemMenuTask
                 static_cast<unsigned>(gSaveGameStatus.mA_subFieldIndex),
                 static_cast<int>(gSaveGameStatus.mB_entryPointIndex));
             self->childMode = ChildMode::Save;
+            self->preservePresentation();
             self->child = createSaveTask(self);
         } else if (self->selection == 1) {
             lagi::platform::logging::writef("[SaveMenu] launch load\n");
             gSaveGameStatus.m4_version = 0;
             self->childMode = ChildMode::Load;
+            self->preservePresentation();
             self->child = createLoadTask(self);
         } else {
             self->getTask()->markFinished();
@@ -154,6 +183,11 @@ struct LagiSystemMenuTask
     int selection = 0;
     p_workArea child = nullptr;
     ChildMode childMode = ChildMode::None;
+    s_VDP2Regs savedRegisters{};
+    s_graphicEngineStatus_40BC savedLayers[4]{};
+    sFadeControls savedFade{};
+    u16 savedFont = 0;
+    bool presentationSaved = false;
 };
 
 } // namespace

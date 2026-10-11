@@ -39,6 +39,15 @@ The parent now also handles native write-failure result 2 without asserting:
 the failure message stays visible and slot selection remains usable for retry
 or cancel. No disk-full or device-write failure has been exercised on Vita.
 
+The System adapter now preserves its pending VDP2 register values, all four
+layer scroll/animation states, active font and fades before opening Save/Load.
+When that child finishes without a successful Load transition, these values
+are restored before redrawing System. Register values are copied into the
+current pending buffer, without resurrecting an old double-buffer pointer.
+This complements the native child's VRAM/CRAM restoration; it does not replace
+the outer native menu's scene backup. Successful Load still transitions to the
+saved scene. Repeated Save/Cancel/Load/Cancel/System/Return needs Vita testing.
+
 Remaining gates: verify save-layout detection from native registers, VDP2
 map/font/scroll interpretation, visible VDP1 selectors, title-to-Continue
 handoff, zero-world-submission menu frames, all in-game pages and return,
