@@ -1303,7 +1303,12 @@ void modelDrawFunction3(s_3dModel* pModel)
    ""
    source_text "${source_text}")
 
-  # Inventory and System are the currently backed native status-menu entries.
+  # Do not expose the removed temporary System menu as native functionality.
+  string(REPLACE
+   "    pWorkArea->m3_menuButtonStates[4] = 1; // setup"
+   "    pWorkArea->m3_menuButtonStates[4] = -1; // native System task not ported yet"
+   source_text "${source_text}")
+  # Inventory is backed; remaining constructors still need native ports.
   # Keep Azel's real inventory task, but do not advertise the two constructors
   # that are still assert-only stubs in the pinned upstream revision.
   string(REPLACE
@@ -2221,6 +2226,13 @@ s32 getBupStatus(s32 slotIndex)
     source_text "${source_text}")
    if(NOT source_text MATCHES "LAGI_SAVE_CANCEL_CURSOR")
     message(FATAL_ERROR "Save file-selector cancellation adapter did not apply")
+   endif()
+   string(REPLACE
+    "            pThis->m14 = 0;\n            pThis->m10_status++;\n        case 3:"
+    "            pThis->m14 = 9; // LAGI_SAVE_SLOT_EXIT: native 060193AE\n            pThis->m10_status++;\n        case 3:"
+    source_text "${source_text}")
+   if(NOT source_text MATCHES "LAGI_SAVE_SLOT_EXIT")
+    message(FATAL_ERROR "Save slot exit countdown adapter did not apply")
    endif()
    string(REPLACE
     "u16 saveMenuData_[]{"

@@ -61,6 +61,9 @@ if ($VitaCompiler) {
     if (($patched.Split(@($saveFontOld),[StringSplitOptions]::None).Length-1) -ne 1 -or $cmake -notmatch 'lagiAzelUnloadFontByIndex\(pThis->m10\)') { throw 'Save font cleanup target changed' }
     $patched = $patched.Replace($saveFontOld,'        lagiAzelUnloadFontByIndex(pThis->m10);')
     if ($cmake -notmatch 'drawMenuSprite2\(&sprite, readSaturnS16\(position\)') { throw 'Unavailable cover must use native PMOD=0xA0 helper' }
+    $exitOld = "            pThis->m14 = 0;`n            pThis->m10_status++;`n        case 3:"
+    if (($patched.Split(@($exitOld),[StringSplitOptions]::None).Length-1) -ne 1) { throw 'Slot slide-out target must occur once' }
+    $patched = $patched.Replace($exitOld, "            pThis->m14 = 9; // LAGI_SAVE_SLOT_EXIT: native 060193AE`n            pThis->m10_status++;`n        case 3:")
     $deviceMarker = $cmake.IndexOf('// LAGI_UNAVAILABLE_BACKUP_DEVICE:')
     $deviceStart = $cmake.LastIndexOf('   string(REPLACE', $deviceMarker)
     $deviceBlock = $cmake.Substring($deviceStart,$cmake.IndexOf('source_text "${source_text}")',$deviceMarker)-$deviceStart)

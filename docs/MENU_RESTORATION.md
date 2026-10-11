@@ -217,6 +217,20 @@ Reconstructed `saveScreenDisplaySlotData` prints only the player name;
 fields and read their original save-layout offsets before enabling them.
 Loading itself is hardware-confirmed, but fade-out/layout handoff is not.
 
+User explicitly rejected the temporary SAVE/LOAD/RETURN screen. It has now
+been removed from the System adapter. The settings entry is disabled while
+the real Controls/Sound task is unported; direct task calls finish safely
+without drawing substitute UI. Native Save/Load tasks and file persistence
+remain present; the removed adapter is no longer a way to launch them.
+The prior System snapshot/roundtrip notes above describe the removed code,
+not current functionality. Full native System restoration remains required.
+
+Stale slot labels after cancellation: native `060193AE` loads exit countdown
+9, whereas reconstructed slot Draw set `m14=0`, jumping to hidden state
+without moving/clearing text. The generated adapter restores 9 so existing
+per-position text cleanup runs through the native slide-out. Patched Save
+syntax and System removal source guards pass; hardware checks remain pending.
+
 Scope includes opening menu/Continue, load selection and transitions, native
 in-game menu pages, system Save/Load/Return, visible slot selection and
 confirmation/cancellation, and save persistence. The user reports saving a
