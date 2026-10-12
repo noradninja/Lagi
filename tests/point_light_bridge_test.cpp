@@ -39,5 +39,14 @@ int main()
     pCurrentMatrix=nullptr;
     capture_native_point_light(state);
     if (state.hasNativeModelLight) return 6;
+    // A direction-only camera transform leaves the world position far away,
+    // reproducing the hardware outside-range failure. A translated position
+    // lives beside the view/model origin and produces a nonzero local vector.
+    s32 viewModel[12]={65536,0,0,0,0,65536,0,0,0,0,65536,0};
+    s32 wrongPosition[5]={80*65536,0xA000,0,0x14000000,0x19000};
+    s32 translatedPosition[5]={0,0xA000,0,0x14000000,0x19000};
+    auto wrong=lagi::native_point_light(viewModel,wrongPosition);
+    auto corrected=lagi::native_point_light(viewModel,translatedPosition);
+    if (!wrong.outside || corrected.outside || !corrected.vector[1]) return 7;
     puts("PASS: actual point capture/renderer consumer, native versus world matrix, activation/reset and null matrix (host; not GPU rendering)");
 }

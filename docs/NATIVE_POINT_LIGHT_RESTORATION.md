@@ -149,3 +149,16 @@ a neutral RGB555 base of 16, clamped/quantized per channel. Legacy filenames
 and mode IDs remain stable. Full-mode texture sampling, light calculations
 and point-light scope are unchanged. All three compile with Vita psp2cgc
 sce_fp_psp2, fastprecision/O3. Device appearance still requires verification.
+
+2026-10-12 11:23 hardware log identifies the failed position transform:
+eight captures report distance 2Cxxxxxx, outside=1 and vector=0,0,0; light
+position 004C1008,FFA77D89,FF04F368 is incompatible with submitted origins
+near 0,0,0000BC4F. Color 23,20,6 and native range parameters are present.
+Original FLD_A3 06074020 calls 06036034, transformAndAddVecByCurrentMatrix,
+not the direction-only transform reconstructed in fieldDragon.cpp. Adapter
+now restores translation for the special point position only. Ordinary
+directional setup/cleanup retains transformVecByCurrentMatrix. No invented
+range increase, color tint or smooth-normal replacement is used.
+Regression checks verify both generated transform routes; production evaluator
+tests distinguish untranslated outside-range and translated nonzero cases.
+Vita syntax is checked; the corrected device appearance is still pending.

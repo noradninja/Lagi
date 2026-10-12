@@ -1645,6 +1645,16 @@ void modelDrawFunction3(s_3dModel* pModel)
   string(REPLACE "${point_activate_old}" "${point_activate_new}" source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/fieldDragon.cpp")
+  # Native 06074020 calls 06036034 (point transform with translation).
+  # The reconstructed vector-only transform left the light in a different
+  # space from submitted view/model origins, producing outside-range zeros.
+  set(point_position_old "transformVecByCurrentMatrix(varC, lightLocation);\n\n            dragonFieldTaskDrawSub1Sub1")
+  set(point_position_new "transformAndAddVecByCurrentMatrix(&varC, &lightLocation); // LAGI_NATIVE_POINT_POSITION\n\n            dragonFieldTaskDrawSub1Sub1")
+  string(FIND "${source_text}" "${point_position_old}" point_position_anchor)
+  if(point_position_anchor LESS 0)
+   message(FATAL_ERROR "Native point position transform anchor changed")
+  endif()
+  string(REPLACE "${point_position_old}" "${point_position_new}" source_text "${source_text}")
   # Original FLD_A3 06074026 loads R7=00014000 before calling
   # point-light setup at 0601E200. The reconstruction omitted R7.
   set(lagi_point_setup_original "dragonFieldTaskDrawSub1Sub1(lightLocation[0], lightLocation[1], lightLocation[2]);")
