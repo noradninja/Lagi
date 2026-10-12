@@ -3,6 +3,7 @@
 #include "commonOverlay.h"
 #include "field.h"
 #include "items.h"
+#include "kernel/menuSprite.h"
 
 bool lagiAzelCurrentFieldMapOwned()
 {
@@ -55,6 +56,40 @@ bool lagiAzelPresentMapPatterns(const std::uint8_t* first,std::size_t firstBytes
         owned,15,explored,&context)) return false;
     return lagiAzelConvertMapPatterns(second,secondBytes,getVdp2Vram(0x70800),0x800,
         owned,31,explored,&context);
+}
+
+unsigned lagiAzelDrawMapObjectMarkers(int subfield,unsigned subfieldCount,
+    std::int16_t scrollX,std::int16_t scrollY,std::int16_t verticalOffset)
+{
+    auto* field=getFieldTaskPtr();
+    if(!field || !gCommonFile || subfield<0 || unsigned(subfield)>=subfieldCount) return 0;
+    const int index=field->m2C_currentFieldIndex;
+    if(index<0 || index>=23) return 0;
+    auto table=readSaturnEA(gCommonFile->getSaturnPtr(0x20A388)+index*4);
+    if(!table.m_offset) return 0;
+    auto record=readSaturnEA(table+subfield*4);
+    if(!record.m_offset) return 0;
+    auto marker=readSaturnEA(record+4);
+    // Original MAIN 06043260/68. No invented sprite for reserved types2/3.
+    static const s_menuSprite sprites[2]={{0x23F4,0x0108,-4,-4},{0x23F0,0x0108,-4,-4}};
+    unsigned emitted=0;
+    while(marker.m_offset>=gCommonFile->m_base &&
+        marker.m_offset-gCommonFile->m_base<=gCommonFile->m_dataSize &&
+        gCommonFile->m_dataSize-(marker.m_offset-gCommonFile->m_base)>=16) {
+        const unsigned type=readSaturnU8(marker+0xE);
+        if(type&4) break;
+        const int flag=readSaturnS16(marker+0xC);
+        std::array<std::int16_t,2> screen;
+        if((type&3)<2 && flag>=0 && mainGameState.getBit566(static_cast<u32>(flag)) &&
+            lagiAzelMapMarkerScreenPosition(intDivide(0x10000,readSaturnS32(marker)),
+                intDivide(0x10000,readSaturnS32(marker+8))+0x400,
+                scrollX,scrollY,verticalOffset,screen)) {
+            drawMenuSprite(&sprites[type&3],screen[0],screen[1],0x760);
+            ++emitted;
+        }
+        marker=marker+16;
+    }
+    return emitted;
 }
 
 void lagiAzelRestoreMapViewPriorities()

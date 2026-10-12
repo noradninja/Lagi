@@ -10,6 +10,7 @@ struct {struct Layer {int scrollX=0,scrollY=0;} m40BC_layersConfig[4];} graphicE
 unsigned char common[0x21084], vram[0x80000];
 struct Common {
  unsigned char* m_data;
+ unsigned m_base=0x200000,m_dataSize=0x21084;
  unsigned char* getSaturnPtr(unsigned address){assert(address==0x20A650 || address==0x20A388);return m_data+address-0x200000;}
 } commonObject{common};
 Common* gCommonFile=&commonObject;
@@ -21,6 +22,15 @@ Pointer readSaturnEA(unsigned char* p){return {(unsigned(p[0])<<24)|(unsigned(p[
 Pointer readSaturnEA(Pointer p){return readSaturnEA(pointerData(p));}
 int readSaturnS8(Pointer p){return static_cast<signed char>(*pointerData(p));}
 int readSaturnS16(Pointer p){return readSaturnS16(pointerData(p));}
+unsigned readSaturnU8(Pointer p){return *pointerData(p);}
+int readSaturnS32(Pointer p){return static_cast<std::int32_t>(readSaturnEA(p).m_offset);}
+int intDivide(int divisor,int value){return value/divisor;}
+struct s_menuSprite {short SRCA,SIZE,X,Y;};
+unsigned markerDraws=0;int markerSource=0;
+void drawMenuSprite(const s_menuSprite* sprite,short x,short y,unsigned color){
+ assert(x==128 && y==124 && color==0x760 && sprite->SIZE==0x0108 && sprite->X==-4 && sprite->Y==-4);
+ markerSource=sprite->SRCA;++markerDraws;
+}
 void pointerWord(unsigned offset,unsigned address){for(unsigned i=0;i<4;++i)common[offset+i]=static_cast<unsigned char>(address>>(24-i*8));}
 struct Field {int m2C_currentFieldIndex=0;} fieldObject;
 Field* fieldPointer=&fieldObject;
@@ -47,6 +57,7 @@ void unpackGraphicsToVDP2(unsigned char* source,unsigned char* dest){assert(sour
 #include "map_entry_production.inc"
 #include "map_delete_production.inc"
 #include "map_ownership_production.inc"
+#include "map_markers_production.inc"
 int main(){
  graphicEngineStatus.m40BC_layersConfig[1].scrollX=-10;
  graphicEngineStatus.m40BC_layersConfig[1].scrollY=0x100;
@@ -58,6 +69,18 @@ int main(){
  pointerWord(0x1104,0x201300);
  common[0x1108]=3;common[0x1109]=0xE8;
  common[0x1200]=2;common[0x1201]=3;common[0x1202]=4;common[0x1203]=2;
+ pointerWord(0x1104,0x201300);pointerWord(0x1300,128*65536);
+ pointerWord(0x1308,static_cast<unsigned>(-900*65536));
+ common[0x130C]=3;common[0x130D]=0xEB;common[0x131E]=4;
+ assert(lagiAzelDrawMapObjectMarkers(0,1,0,0,0)==1 && markerDraws==1 && markerSource==0x23F4);
+ common[0x130E]=1;
+ assert(lagiAzelDrawMapObjectMarkers(0,1,0,0,0)==1 && markerSource==0x23F0);
+ common[0x130D]=0;
+ assert(lagiAzelDrawMapObjectMarkers(0,1,0,0,0)==0);
+ common[0x130D]=0xEB;common[0x130E]=2;
+ assert(lagiAzelDrawMapObjectMarkers(0,1,0,0,0)==0);
+ common[0x130E]=0;
+ assert(lagiAzelDrawMapObjectMarkers(0,1,100,0,0)==0);
  assert(lagiAzelMapCellExplored(0,1,5,3) && mainGameState.lastFlag==1003);
  assert(!lagiAzelMapCellExplored(0,1,5,4) && mainGameState.lastFlag==1007);
  int flags=mainGameState.flagCalls;

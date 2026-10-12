@@ -37,6 +37,17 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Map object markers now have a native drawing service: current-field/subfield
+record+4 supplies the16-byte list; getBit566 controls visibility; signed XYZ
+16.16 coordinates become map X/truncated world Z+400, then native viewport
+clipping and drawMenuSprite with palette760. Verified MAIN43260/68 definitions
+are SRCA23F4/23F0, SIZE0108, offsets(-4,-4). Types2/3 have no verified sprite
+definition and are deliberately unsupported, not assigned fabricated graphics.
+COMMON bounds and terminatorbit4 prevent overruns. Actual host service tests
+cover both emitted sprite types, saved-flag rejection, clipping and unsupported
+types; Vita syntax passes. Player/orientation marker is a separate routine,
+and the native view task must still call this service. Device output unverified.
+
 Shared field/subfield record layout is confirmed by both native consumers:
 record+0 is the exploration rectangle pointer, record+4 is the map marker
 list pointer (060125CE), and signed exploration base is at record+8.

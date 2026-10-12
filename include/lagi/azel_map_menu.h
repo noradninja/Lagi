@@ -136,6 +136,8 @@ inline LagiAzelMapStep lagiAzelAdvanceMapLifecycle(LagiAzelMapLifecycle& state)
 bool lagiAzelSetupMapEntry(bool standalone);
 // Native 06012554: current field's authored inventory item (COMMON A650).
 bool lagiAzelCurrentFieldMapOwned();
+unsigned lagiAzelDrawMapObjectMarkers(int subfield,unsigned subfieldCount,
+    std::int16_t scrollX,std::int16_t scrollY,std::int16_t verticalOffset);
 // Original 0601249C; caller supplies its authoritative subfield count.
 bool lagiAzelMapCellExplored(int subfield,unsigned subfieldCount,int x,int y);
 // Native 06017376..88: bind original exploration/ownership to both VRAM planes.
