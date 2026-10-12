@@ -205,3 +205,30 @@ one-based heading counter, encoded separator, scroll/publication calls, priority
 preservation and rejection without drawing for a truncated resource. Host
 execution and Vita helper syntax pass. Native image/font rendering and task
 ownership remain unverified; the Books constructor is still disabled.
+
+## Native graphics-setup window prerequisite
+
+Read-only MAIN inspection of `06016194` and data `06043178..0604322B`
+confirms three setup tables. The NBG1 table selects CHCN=1, CHSZ=1, PNB=1,
+CNSM=0, SCN=4, PLSZ=0 and CAOS=3. NBG2 has the same format with CAOS=5,
+plus window-1 enable/action commands 35=1 and 38=1. NBG3's table is
+33=1, 34=1, 37=0, 35=1, 38=1: combine windows, enable window 0 inside and
+window 1 outside. This is not a sprite WCTLD table. The original routine at
+`06033864` is NBG3 setup, and its dispatch table `060338C0` maps these commands
+to `06033A1A`, `06033A34`, `06033A7C`, `06033A4A` and `06033A90`.
+
+The reconstructed setupNBG3 omitted all window commands and would assert when
+executing this native setup. The generated VDP2 adapter now restores commands
+33..39 against the high byte of WCTLB: shifts 15/9/11/13/8/10/12. This preserves
+NBG2's low byte and unrelated NBG3 window bits; it uses the pending bank and
+existing dirty handoff. Upstream files remain unchanged. The shared production
+bit helper passes 917,504 exhaustive prior-register / command / binary-value
+cases and the actual MENUBK sequence on host. Actual generated VDP2 and helper
+Vita syntax pass. Renderer clipping is still not connected to Books, and no
+hardware window/page validation is claimed.
+
+Graphics loader evidence also establishes original filenames MENUBK2.BIN at
+`0604322C` and MENUBK.CGB at `06043238`, VDP1 destination 25C12000 and
+COMMON palette 0020DDF4 -> CRAM 07E0 for 0420 bytes. Retain these native
+resource boundaries when completing setup; do not replace the illustrations
+with generated images or import disc resources into the repository.

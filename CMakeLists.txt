@@ -1127,6 +1127,29 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
    "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN = (vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN & ~0x1) | (arg << 0);\n            break;"
    source_text "${source_text}")
 
+  # Original setupNBG3 also accepts all seven high-byte WCTLB controls.
+  # MENUBK setup uses 33/34/35/37/38; the reconstruction asserted on them.
+  string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_vdp2_window.h\""
+   source_text "${source_text}")
+  set(nbg3_window_old [=[        case m40_CAOS:
+            vdp2Controls.m4_pendingVdp2Regs->mE4_CRAOFA = (vdp2Controls.m4_pendingVdp2Regs->mE4_CRAOFA & 0x8FFF) | (arg << 12);
+            break;
+        default:]=])
+  set(nbg3_window_new [=[        case m40_CAOS:
+            vdp2Controls.m4_pendingVdp2Regs->mE4_CRAOFA = (vdp2Controls.m4_pendingVdp2Regs->mE4_CRAOFA & 0x8FFF) | (arg << 12);
+            break;
+        case 33: case 34: case 35: case 36: case 37: case 38: case 39:
+            vdp2Controls.m4_pendingVdp2Regs->mD2_WCTLB = lagi::native_nbg3_window(
+                vdp2Controls.m4_pendingVdp2Regs->mD2_WCTLB, command, arg);
+            break;
+        default:]=])
+  string(FIND "${source_text}" "${nbg3_window_old}" nbg3_window_offset)
+  if(nbg3_window_offset LESS 0)
+   message(FATAL_ERROR "Native NBG3 window adapter missing")
+  endif()
+  string(REPLACE "${nbg3_window_old}" "${nbg3_window_new}" source_text "${source_text}")
+
   # reinitVdp2() resets the register copies to zero, but the fade controller
   # intentionally survives across module/front-end setup. Republish the live
   # fade-channel colors immediately so newly constructed layers remain at the
