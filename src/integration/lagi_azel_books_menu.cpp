@@ -15,6 +15,42 @@ static_assert(backupBytes == 0x169A0);
 
 void drawGaugeVdp1(u16 mode, std::array<sVec2_S16, 4>& params, u16 color, fixedPoint depth);
 
+bool lagiAzelBooksPresentText(const std::uint8_t* data, std::size_t bytes,
+    std::uint32_t bookIndex, std::uint32_t headingIndex,
+    std::uint32_t bodyPageIndex, LagiAzelBooksBodyPage& body)
+{
+    LagiAzelBooksHeading heading;
+    body = {};
+    if (!lagiAzelBooksReadHeading(data, bytes, bookIndex, headingIndex, heading) ||
+        !lagiAzelBooksReadBodyPage(data, bytes, bookIndex, bodyPageIndex, body)) return false;
+    // 060164AC / 060164EC: native glyph coordinates, not output pixels.
+    setupVDP2StringRendering(7, 0x24, 0x1E, 2);
+    clearVdp2TextArea();
+    vdp2StringContext.m0 = 0;
+    drawObjectName(heading.title);
+    setupVDP2StringRendering(7, 0x27, 0x1E, 2);
+    clearVdp2TextArea();
+    vdp2StringContext.m0 = 0;
+    drawObjectName(heading.heading);
+    // 0601653E: one-based page within this heading / heading page count.
+    setupVDP2StringRendering(7, 0x2A, 6, 2);
+    clearVdp2TextArea();
+    vdp2StringContext.m0 = 0;
+    printVdp2Number2(static_cast<int>(bodyPageIndex) - heading.firstBodyPage + 1, 1);
+    // Original MAIN literal 06043244 is 80 82 00, an extended font glyph.
+    // ASCII '/' would bypass the native MENUBK font mapping.
+    printVdp2String2("\x80\x82");
+    printVdp2Number2(heading.bodyPageCount, 1);
+    // 060165D4 clears this region for text AND illustration commands.
+    setupVDP2StringRendering(5, 0x2E, 0x22, 0xE);
+    clearVdp2TextArea();
+    if (body.text) {
+        vdp2StringContext.m0 = 0;
+        drawObjectName(body.text);
+    }
+    return true;
+}
+
 bool lagiAzelBooksPresentWindow(std::int32_t scrollX, std::int32_t scrollY,
     std::int32_t step, std::int32_t duration)
 {

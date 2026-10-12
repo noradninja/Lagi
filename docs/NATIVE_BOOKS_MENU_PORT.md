@@ -174,3 +174,16 @@ ownership and truncated-resource rejection, alongside 16,192 index/latch cases.
 Vita C++ syntax passes. These are not on-device page/task validation. Remaining
 work still includes resource setup, text/illustration presentation, cursor task,
 window clipping, full task lifecycle and inventory font/cursor restoration.
+
+Text presentation support now implements `060164AC`, `060164EC`, `0601653E`
+and the text-region part of `060165D4` as `lagiAzelBooksPresentText`.
+It validates borrowed heading/body data before drawing, clears native regions
+`(7,36,30,2)`, `(7,39,30,2)`, `(7,42,6,2)` and `(5,46,34,14)`, and uses
+the existing VDP2 font services. Counter values are the one-based page within
+the current heading and that heading's page count. The original separator
+at MAIN `06043244` was read directly as `80 82 00 00`; the encoded glyph is
+retained rather than replacing it with an ASCII slash. Commands 0..3 still
+clear the body text region and are returned to the owning task for native
+illustration/register handling; this service does not implement those graphics
+changes. Its Vita syntax passes, but it is not connected to a Books task and
+neither font appearance nor hardware text-region behavior is validated.

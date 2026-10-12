@@ -36,6 +36,11 @@ struct LagiAzelBooksBodyPage {
 };
 bool lagiAzelBooksReadBodyPage(const std::uint8_t* data, std::size_t bytes,
     std::uint32_t bookIndex, std::uint32_t bodyPageIndex, LagiAzelBooksBodyPage& out);
+// Native title, heading, page counter and body text regions. Illustration
+// commands are returned to the owning task, not drawn as invented text.
+bool lagiAzelBooksPresentText(const std::uint8_t* data, std::size_t bytes,
+    std::uint32_t bookIndex, std::uint32_t headingIndex,
+    std::uint32_t bodyPageIndex, LagiAzelBooksBodyPage& body);
 // Native 060166C2 updates the heading after a body-page turn; unmatched
 // pages select heading zero, as in the original routine.
 bool lagiAzelBooksHeadingForBodyPage(const std::uint8_t* data, std::size_t bytes,
