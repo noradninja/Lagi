@@ -1,5 +1,32 @@
 # Field map collection and menu availability
 
+## Current map-only repair (2026-10-12)
+
+On c01bc89 the user confirms ordinary collection works again; only map pickups
+remain repeatable, with the correct uncollected particle presentation. The
+production adapter now redirects **only** type1 map-update `m20` accesses to
+its embedded target disable byte. Normal-box callback/status bytes and save
+stations are untouched. Original FLD_A3 Update 0607CDC2 confirms native box
++20 is target +18; 0607CEF4 reads visibility byte +8D, and 0607CEFE checks
+ownership using item word +88 plus F3. The reconstructed visibility test
+incorrectly checked whether the item ID was zero; this is corrected to the
+native nonzero visibility-byte test. Callback and delayed reward remain native.
+
+`tests/map_pickup_lifecycle_test.ps1` executes the actual generated callback
+and complete update with mocked matrix/collision/target services: collection
+advances state 0 -> 1 -> 2, stops rotation, ownership disables registration,
+and visibility disables registration without touching duplicate host bytes.
+Ownership delivery is mocked: this does not prove real laser reward, model
+rendering, area reentry, or save persistence. Actual map translation unit passes
+Vita syntax. No VPK build or device test was performed here.
+
+Hardware gate: collect a map once, confirm the collected presentation and no
+repeat targeting, then verify reentry/save-reload. If ownership is still absent,
+inspect actual target item/quantity and delayed laser reward rather than
+granting inventory from a map-specific callback. Actual Map page remains
+unfinished and disabled. The generic repair described below is historical
+and rejected, not the current implementation.
+
 ## Hardware regression invalidates the flag-alias repair
 
 2026-10-12: user reports adf29ee allows infinite item-box collection, permits

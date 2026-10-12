@@ -857,6 +857,19 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   "${source_text}"
  )
 
+ # Native map Update (0607CDC2): +20 is target +18, and the final
+ # visibility test reads byte +8D, not the received-item word +88.
+ # Scope this to maps: aliasing normal-box callback status changed its
+ # early-return behavior and was rejected by hardware testing.
+ if(relative_path STREQUAL "field/fieldItemBox_type1.cpp")
+  string(FIND "${source_text}" "(pThis->m88_poseIdx == 0)" map_visibility_anchor)
+  if(map_visibility_anchor LESS 0)
+   message(FATAL_ERROR "Native map visibility anchor changed")
+  endif()
+  string(REPLACE "pThis->m20" "pThis->m8_LCSTarget.m18_diableFlags" source_text "${source_text}")
+  string(REPLACE "(pThis->m88_poseIdx == 0)" "(pThis->m8D_visibilityFlag != 0)" source_text "${source_text}")
+ endif()
+
  # During Ruins-only bring-up, retain Azel's original module-manager state
  # machine and gameStatusTable, but do not make unintegrated overlays hard link
  # dependencies merely because they appear in overlayDispatchTable. The current
