@@ -39,9 +39,6 @@ float4 main(
 
     float3 light5 = clamp(shade * 31.0f + 16.0f, 0.0f, 31.0f);
     light5 = floor(light5 + 0.5f);
-    float gray5 = floor((light5.r + light5.g + light5.b) / 3.0f + 0.5f);
-    float gray = gray5 / 31.0f;
-
-    gray += (vTexcoord.x + edgeInverseDy.x) * 0.0f;
-    return float4(gray, gray, gray, 1.0f);
+    light5 += (vTexcoord.x + edgeInverseDy.x) * 0.0f;
+    return float4(light5 / 31.0f, 1.0f);
 }

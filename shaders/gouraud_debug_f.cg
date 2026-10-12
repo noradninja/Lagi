@@ -140,10 +140,8 @@ float4 main(
 
     float3 light5 = clamp(shade * 31.0f + 16.0f, 0.0f, 31.0f);
     light5 = floor(light5 + 0.5f);
-    float gray5 =
-        floor((light5.r + light5.g + light5.b) / 3.0f + 0.5f);
-    float value = gray5 / 31.0f;
-
-    value += vTexcoord.x * 0.0f;
-    return float4(value, value, value, 1.0f);
+    // Neutral RGB555 base 16 plus the full-mode Gouraud correction.
+    // Preserve channel differences so colored lights remain diagnosable.
+    light5 += vTexcoord.x * 0.0f;
+    return float4(light5 / 31.0f, 1.0f);
 }

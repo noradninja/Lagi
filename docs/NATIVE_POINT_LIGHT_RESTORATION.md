@@ -141,3 +141,11 @@ exists, not that actual dragon records or output colors vary on hardware.
 Next appearance checks must examine the actual submitted dragon normal modes
 and corner outputs, retaining native flat polygons where the original marks
 them flat, rather than forcing invented smooth normals globally.
+
+Lighting-only fragment paths now preserve RGB instead of averaging channels
+into grayscale: gouraud_debug_f, gouraud_scanline_gray_f and
+gouraud_subdiv_gray_f expose the same interpolated Gouraud correction over
+a neutral RGB555 base of 16, clamped/quantized per channel. Legacy filenames
+and mode IDs remain stable. Full-mode texture sampling, light calculations
+and point-light scope are unchanged. All three compile with Vita psp2cgc
+sce_fp_psp2, fastprecision/O3. Device appearance still requires verification.
