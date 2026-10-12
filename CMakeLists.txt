@@ -1510,6 +1510,38 @@ void modelDrawFunction3(s_3dModel* pModel)
    "p_workArea startSegaLogoModule(p_workArea workArea)\n{\n    return startTitleScreenVideo(workArea);\n}"
    source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "3dEngine.cpp")
+  # Native 0601FDF8/0601FE06 retain the stack pointer; 0601FE14 pops it.
+  set(point_push_old [=[    u16* r2 = projectionStackTop;
+    *(--r2) = loc_601FA9E;
+    projectionStack[0] = *r2;]=])
+  set(point_push_new [=[    assert(projectionStackTop > projectionStack);
+    *--projectionStackTop = loc_601FA9E; // LAGI_NATIVE_SELECTOR_PUSH]=])
+  string(FIND "${source_text}" "${point_push_old}" point_push_offset)
+  if(point_push_offset LESS 0)
+   message(FATAL_ERROR "Native projection selector push adapter missing")
+  endif()
+  string(REPLACE "${point_push_old}" "${point_push_new}" source_text "${source_text}")
+  set(point_pop_old [=[    // popProjectionStack + Saturn VDP slave sync (not applicable on PC)
+    Unimplemented();]=])
+  set(point_pop_new [=[    assert(projectionStackTop < projectionStack + 8);
+    loc_601FA9E = *projectionStackTop++; // LAGI_NATIVE_SELECTOR_POP]=])
+  string(FIND "${source_text}" "${point_pop_old}" point_pop_offset)
+  if(point_pop_offset LESS 0)
+   message(FATAL_ERROR "Native projection selector pop adapter missing")
+  endif()
+  string(REPLACE "${point_pop_old}" "${point_pop_new}" source_text "${source_text}")
+  set(point_activate_old [=[    PDS_unimplemented("dragonFieldTaskDrawSub1Sub0");]=])
+  set(point_activate_new [=[    assert(projectionStackTop > projectionStack);
+    *--projectionStackTop = loc_601FA9E;
+    // 0601FDD0: A000 | ((0601FCDC - 0601FAA2) >> 1).
+    loc_601FA9E = 0xA11D; // LAGI_NATIVE_POINT_SELECTOR]=])
+  string(FIND "${source_text}" "${point_activate_old}" point_activate_offset)
+  if(point_activate_offset LESS 0)
+   message(FATAL_ERROR "Native point selector activation adapter missing")
+  endif()
+  string(REPLACE "${point_activate_old}" "${point_activate_new}" source_text "${source_text}")
+
  elseif(relative_path STREQUAL "field/fieldDragon.cpp")
   # Original FLD_A3 06074026 loads R7=00014000 before calling
   # point-light setup at 0601E200. The reconstruction omitted R7.
@@ -1521,6 +1553,22 @@ void modelDrawFunction3(s_3dModel* pModel)
   endif()
   string(REPLACE "${lagi_point_setup_original}" "${lagi_point_setup_restored}"
    source_text "${source_text}")
+  # Original FLD_A3 060741CC..06074290 pops the selector and restores the
+  # ordinary directional vector/color after the dragon draw, under EC/EB.
+  set(point_restore_old [=[        PDS_unimplemented("dragonFieldTaskDrawSub3 for setup light during dragon rendering");]=])
+  set(point_restore_new [=[        dragonFieldTaskDrawSub3Sub1(); // LAGI_NATIVE_FIELD_LIGHT_RESTORE
+        sVec3_FP direction;
+        direction[0] = -MTH_Mul_5_6(fixedPoint(0x10000), getCos(pTypedWorkArea->mC0_lightRotationAroundDragon.getInteger()), getSin(pTypedWorkArea->mC4.getInteger()));
+        direction[1] = MTH_Mul(fixedPoint(0x10000), getSin(pTypedWorkArea->mC0_lightRotationAroundDragon.getInteger()));
+        direction[2] = -MTH_Mul_5_6(fixedPoint(0x10000), getCos(pTypedWorkArea->mC0_lightRotationAroundDragon.getInteger()), getCos(pTypedWorkArea->mC4.getInteger()));
+        sVec3_FP lightLocation;
+        transformVecByCurrentMatrix(direction, lightLocation);
+        setupLight(lightLocation[0], lightLocation[1], lightLocation[2], pTypedWorkArea->mC8_normalLightColor.toU32());]=])
+  string(FIND "${source_text}" "${point_restore_old}" point_restore_offset)
+  if(point_restore_offset LESS 0)
+   message(FATAL_ERROR "Native field light restoration adapter missing")
+  endif()
+  string(REPLACE "${point_restore_old}" "${point_restore_new}" source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/fieldCamera.cpp")
   # Field Phase 4: capture Azel's exact active view matrix after it has been

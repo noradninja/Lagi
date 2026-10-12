@@ -34,3 +34,19 @@ matrix and parameters at submission; consume signed model-space light once in
 all lit mesh paths; validate small nonzero/overflow cases; measure the final
 Vita collection route and visually compare local illumination and reset.
 The goal is not complete and this helper does not alter active rendering.
+
+Selector lifecycle now has generated-source restoration. Native `0601FE06`
+pushes the previous selector and selects directional 6103; `0601FDF8` pushes
+then selects A11D, the branch encoding from `0601FDD0`; `0601FE14` restores
+and advances the pointer. The reconstructed directional push wrote stack[0]
+without updating the pointer, and point activation/pop were stubs. The adapter
+restores all three with bounded eight-slot assertions. Original field cleanup
+`060741CC..06074290` calls pop under EC/EB, recomputes the ordinary directional
+vector and restores its normal color through setupLight. This cleanup is also
+restored, so activating point mode does not leave the stack growing each frame.
+
+Actual production-generated selector functions pass 1,000 nested activation /
+directional push / pop / reset lifecycles plus all eight stack slots on host.
+Generated 3dEngine and fieldDragon Vita syntax pass. No upstream or game files
+are edited. Renderer consumption remains unconnected; this is not a visible
+point-light fix and awaits complete division and submission-path integration.
