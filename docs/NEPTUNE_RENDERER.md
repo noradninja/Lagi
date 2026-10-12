@@ -1,10 +1,10 @@
 # Neptune — native Vita rendering architecture and feature map
 
-> Scope: `feature/menu-save-load-restoration`, 2026-10-12. This describes implemented paths and separates source-level support from hardware-validated visual accuracy. Neptune is a renderer, not a Saturn emulator or a replacement for Azel's task graph.
+This reference describes Neptune's rendering architecture and feature coverage as of October 12, 2026, on `feature/menu-save-load-restoration`. It distinguishes implemented functionality from hardware-validated results. Neptune provides native rendering services for Azel rather than emulating the Saturn or replacing Azel's task graph.
 
 ## Responsibility and frame flow
 
-**Azel decides. Lagi transports. Neptune renders.** Azel owns game tasks, cameras, model transforms, lighting selectors, VDP1 commands, VDP2 registers and VRAM/CRAM, animation, particle behavior, priorities and fades. Lagi captures and adapts native state without duplicating game decisions. Neptune consumes a published, stable frame and translates it to **SceGxm/SGX** draw and sampling operations; VitaGL is not used.
+The rendering pipeline separates game state, transport and presentation. **Azel** determines scene behavior and Saturn display state; **Lagi** captures and transports it; **Neptune** renders it. Azel owns game tasks, cameras, model transforms, lighting selectors, VDP1 commands, VDP2 registers and VRAM/CRAM, animation, particle behavior, priorities and fades. Lagi captures and adapts native state without duplicating game decisions. Neptune consumes a published, stable frame and translates it to **SceGxm/SGX** draw and sampling operations; VitaGL is not used.
 
 ```text
 Azel task graph / VDP1 commands / VDP2 state
@@ -19,7 +19,7 @@ Immutable presentation frame / model and UI submissions
 Neptune render thread -> SceGxm -> selected display framebuffer
 ```
 
-The producer/consumer presentation-slot boundary also serves movie and front-end presentation. Native model identity and texture generations are tracked separately; static and dynamic submissions share the rendering service. Do not introduce scene-specific texture IDs, hand-authored draw order or replacement cameras.
+The producer/consumer presentation-slot boundary also serves movie and front-end presentation. Native model identity and texture generations are tracked separately; static and dynamic submissions share the rendering service. Scene-specific texture identifiers, hand-authored draw order and replacement cameras are not part of this architecture.
 
 ## VDP1 — geometry, sprites, effects
 
@@ -29,9 +29,9 @@ The producer/consumer presentation-slot boundary also serves movie and front-end
 | Town and field geometry | Shared renderer; field and town have distinct established coordinate/winding conventions, not separate game renderers. |
 | Dynamic actors | Native task-owned model submissions, including Edge, dragon and rider, with captured transforms and resource identities. |
 | Normal and scaled sprites | Translates Azel VDP1 UI commands, coordinates, source addresses and color/pixel mode state. |
-| Distorted quads, polylines and cursor/effects | VDP1 command-oriented rendering, including HUD/LCS and line-based effects; coverage and exact command modes should be checked per path. |
+| Distorted quads, polylines and cursor/effects | VDP1 command-oriented rendering, including HUD/LCS and line-based effects; support varies by command path. |
 | Textures and palettes | Saturn VDP1 texture decode/cache, palette dependency and selective VRAM/CRAM invalidation; geometry-only changes need not force texture reupload. |
-| Gouraud | Four-corner RGB555 values and native lighting modes are retained; GXM shaders interpolate corner/scanline color. Flat-authored faces must remain flat. |
+| Gouraud | Four-corner RGB555 values and native lighting modes are retained; GXM shaders interpolate corner/scanline color. Flat-authored faces retain their unlit appearance. |
 | Directional lighting | Native per-submission vector, color and falloff captured from Azel and consumed by lit meshes; cached static lighting can refresh independently of geometry. |
 | Point lights | A11D selector capture, native matrix-relative point evaluation, signed model-space vector, native colors/falloff and single-consumption path; **recent point-light color and correction verified working on hardware**. |
 | Shadows and transparency | Existing mesh-shadow/stipple behavior, polygon opacity and native composition conventions. |
@@ -42,13 +42,13 @@ The producer/consumer presentation-slot boundary also serves movie and front-end
 
 ### Lighting detail
 
-The point-light implementation is **not** an invented modern inverse-square shader. It reconstructs native selector push/pop/reset and the SH7604-style distance, integer root, division and cutoff operations. The bridge captures light state at the actual `addObjectToDrawList()` boundary. `SubmissionState::nativeModelLight` is already transformed into model space; Neptune must **not** rotate it again. The field collection effect is intentionally scoped to dragon/rider on original Saturn hardware, not the environment. Town/environment lights require their own native task paths. The special light position must use the original *transform-and-add* matrix operation, unlike ordinary directional vectors.
+The point-light implementation is **not** an invented modern inverse-square shader. It reconstructs native selector push/pop/reset and the SH7604-style distance, integer root, division and cutoff operations. The bridge captures light state at the actual `addObjectToDrawList()` boundary. `SubmissionState::nativeModelLight` is already transformed into model space; Neptune consumes this model-space vector without a second rotation. The field collection effect is intentionally scoped to dragon/rider on original Saturn hardware, not the environment. Town and environment lighting originates from their respective native task paths. The special light position uses the original *transform-and-add* matrix operation, unlike ordinary directional vectors.
 
 **Validation status:** the recent point-light position correction and color output are confirmed working on hardware by the project maintainer. Earlier out-of-range zero-vector captures were resolved by restoring position translation. Host math tests and shader compilation remain additional implementation checks, not the basis for this visual acceptance. See [NATIVE_POINT_LIGHT_RESTORATION.md](NATIVE_POINT_LIGHT_RESTORATION.md).
 
 ### Particle ordering
 
-World-space particles, rays and pickup effects must sit behind the native pickup NBG1 panel and NBG3 glyphs, while late screen overlays (including radar) remain in front. The classification uses Azel's submitted world-depth metadata rather than texture names. The animated-quad adapter `lagiDrawParticleWithColorTable` preserves Saturn-authored Gouraud tables, including frame-indexed orb colors and overlapping trail windows. See [PICKUP_COMPOSITION.md](PICKUP_COMPOSITION.md).
+World-space particles, rays and pickup effects are composed behind the native pickup NBG1 panel and NBG3 glyphs. Late screen overlays, including the radar, are composed in front. The classification uses Azel's submitted world-depth metadata rather than texture names. The animated-quad adapter `lagiDrawParticleWithColorTable` preserves Saturn-authored Gouraud tables, including frame-indexed orb colors and overlapping trail windows. See [PICKUP_COMPOSITION.md](PICKUP_COMPOSITION.md).
 
 ## VDP2 — backgrounds and composition
 
@@ -81,10 +81,8 @@ Neptune composes 3D geometry, depth-aware VDP1 world effects, VDP2 background la
 - `shaders/` — texture, Gouraud, dithering, RBG/VDP2 and video programs.
 - [ARCHITECTURE.md](ARCHITECTURE.md), [DITHER_PERFORMANCE.md](DITHER_PERFORMANCE.md), [RADAR_PRESENTATION.md](RADAR_PRESENTATION.md), [NATIVE_POINT_LIGHT_RESTORATION.md](NATIVE_POINT_LIGHT_RESTORATION.md) — implementation context and validation limits.
 
-## Rules for extending Neptune
+## Architectural boundaries and implementation characteristics
 
-1. Keep Azel authoritative for command generation, scene/task state, light selectors and ordering.
-2. Capture original transforms and color/palette metadata at the native boundary; do not infer from scene names or texture IDs.
-3. Prefer SGX raster/sampling/composition to CPU reconstruction, but retain exact native math where required.
-4. Distinguish *implemented*, *host/syntax tested* and *visually validated on Vita* in documentation.
-5. Make improvements generic to field, town, menus and cinematics; preserve established point-filter exceptions and frame/resource ownership.
+Azel remains the source of VDP commands, scene and task state, lighting selectors and ordering. Lagi captures transforms, colors and palette metadata at the native submission boundary rather than reconstructing them from scene names or texture identifiers. Neptune uses SGX for rasterization, sampling and composition, with native integer math retained where Saturn behavior depends on it.
+
+The same rendering infrastructure serves fields, towns, menus and cinematics. Sampling exceptions, including point-filtered radar elements, follow the requirements of the original presentation. Frame ownership and resource lifetime are managed across the producer/consumer boundary. Feature descriptions distinguish source-level implementation, host-side verification and visual confirmation on Vita hardware.
