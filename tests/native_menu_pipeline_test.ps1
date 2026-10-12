@@ -16,8 +16,8 @@ try {
   & $VitaCompiler -std=c++20 -fsyntax-only -DLAGI_PLATFORM_VITA=1 "-I$root/include" "-I$AzelSourceRoot" "-I$AzelSourceRoot/field" "-I$AzelSourceRoot/field/field_a3" "-I$AzelSourceRoot/kernel" (Join-Path $generated $name)
   if ($LASTEXITCODE -ne 0) {throw "Generated Vita syntax failed: $name"}
  }
- foreach($source in @('lagi_azel_field_navigator.cpp','lagi_azel_field_radar.cpp','lagi_runtime.cpp','lagi_vdp1_animated_quad_vita.cpp')) {
-  & $VitaCompiler -std=c++20 -fsyntax-only -DLAGI_PLATFORM_VITA=1 "-I$root/include" "-I$AzelSourceRoot" (Join-Path $root "src/integration/$source")
+ foreach($source in @('lagi_azel_field_navigator.cpp','lagi_azel_field_radar.cpp','lagi_runtime.cpp','lagi_heap_vita.cpp','lagi_vdp1_animated_quad_vita.cpp')) {
+  & $VitaCompiler -std=c++20 -fsyntax-only -DSHIPPING_BUILD=1 -DLAGI_PLATFORM_VITA=1 "-I$root/include" "-I$AzelSourceRoot" (Join-Path $root "src/integration/$source")
   if ($LASTEXITCODE -ne 0) {throw "Native service Vita syntax failed: $source"}
  }
  $dispatcher=Get-Content -Raw (Join-Path $generated 'field_field_a3_o_fld_a3.cpp')

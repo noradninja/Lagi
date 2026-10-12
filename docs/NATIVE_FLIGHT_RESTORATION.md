@@ -21,6 +21,13 @@ dispatch `06073120`; the previous build only restored `06073172`.
 The constructor, cursor, wrapping input, box drawing and native task ordering
 remain Azel's. Nothing disables navigator or fakes a successful dispatch.
 
+Final cleanup audit also repairs the native task-heap service. The old Vita
+free helper deleted storage without unlinking its header; the next allocation
+walked a stale task-list node. Original `060151FE/06015234` searches ownership
+and updates that link before freeing. Restore this contract for head/middle/tail
+nodes. The lifecycle test now uses the actual heap service, retaining a radar
+destination allocation through repeated filtered-choice allocation/free cycles.
+
 ## Radar
 
 Original `0607281E` restores object-marker distance/range checks, negative-yaw
@@ -85,8 +92,9 @@ longer disappear through the texture-only fallback.
   not hand-recreated replacements, for FLD_A3, radar, LCS, dialog and VDP2;
   patched-source plus navigator/radar/runtime/particle-service Vita syntax.
 - `navigator_lifecycle_test.ps1`: execute actual navigator service bodies with
-  platform/task mocks; open/wait/select, 64 cancels/reopens, deactivate, forced
-  teardown, BE string rebasing and view/style/choice lifetime checks.
+  platform/task mocks and the actual production task heap; open/wait/select,
+  64 cancels/reopens, deactivate, forced teardown, BE string rebasing,
+  head/middle/tail unlinking and view/style/choice lifetime checks.
 - `collection_burst_service_test.ps1`: execute actual two-width service bodies
   with math/platform mocks; texture/size/mode/Gouraud/depth, nonzero radial
   geometry, near/far rejection and crossing-plane clipping. Its thin triangle

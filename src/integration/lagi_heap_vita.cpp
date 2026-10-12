@@ -34,10 +34,21 @@ void* allocateHeapForTask(s_workArea* workArea, u32 size)
 
 void freeHeap(void* data) { delete[] reinterpret_cast<u8*>(data); }
 
-void freeHeapForTask(s_workArea*, void* data)
+void freeHeapForTask(s_workArea* workArea, void* data)
 {
     if (!data) return;
-    s_heapNode* node = reinterpret_cast<s_heapNode*>(reinterpret_cast<u8*>(data) - sizeof(s_heapNode));
+    // Original 060151FE searches the owning list and unlinks at 06015234.
+    // Deleting only the storage leaves allocateHeapForTask walking freed nodes
+    // when a native menu is opened again.
+    assert(workArea && workArea->getTask());
+    auto** link = &workArea->getTask()->m_heapNode;
+    while (*link && (*link)->getUserData() != data) link = &(*link)->m_nextNode;
+    assert(*link); // Native 06015220..24 rejects a non-owned allocation.
+    if (!*link) return;
+    s_heapNode* node = *link;
     assert(node->m_magic == HEAP_MAGIC);
+    *link = node->m_nextNode;
+    node->m_magic = 0;
+    node->m_nextNode = nullptr;
     delete[] reinterpret_cast<u8*>(node);
 }
