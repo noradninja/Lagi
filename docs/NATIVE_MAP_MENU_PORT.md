@@ -37,6 +37,16 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Shared field/subfield record layout is confirmed by both native consumers:
+record+0 is the exploration rectangle pointer, record+4 is the map marker
+list pointer (060125CE), and signed exploration base is at record+8.
+MOV.W displacement4 at060124EA scales by two; an earlier interpretation
+mistook it for byte offset4. Exploration binding and fixture are corrected,
+with a distinct nonzero marker pointer proving it is not read as a flag base.
+Marker records themselves are16 bytes: XYZ fixed-point longs, flag word+C,
+icon/terminator byte+E. Native iteration tests bit4 after advancing to the
+next record. Full marker decoding/emission is still pending.
+
 View-origin calculation 06017228 uses the signed center low words and NBG1
 backing scroll: X=(centerX-2)*32+backingX-60,
 Y=(centerY-2)*32+backingY-20, stored as native signed16 values. The service

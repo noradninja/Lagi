@@ -55,7 +55,8 @@ int main(){
  assert(graphicEngineStatus.m40BC_layersConfig[2].scrollX==86 && graphicEngineStatus.m40BC_layersConfig[2].scrollY==352);
  assert(graphicEngineStatus.m40BC_layersConfig[1].scrollX==-10 && graphicEngineStatus.m40BC_layersConfig[1].scrollY==0x100);
  pointerWord(0xA388,0x201000);pointerWord(0x1000,0x201100);pointerWord(0x1100,0x201200);
- common[0x1104]=3;common[0x1105]=0xE8;
+ pointerWord(0x1104,0x201300);
+ common[0x1108]=3;common[0x1109]=0xE8;
  common[0x1200]=2;common[0x1201]=3;common[0x1202]=4;common[0x1203]=2;
  assert(lagiAzelMapCellExplored(0,1,5,3) && mainGameState.lastFlag==1003);
  assert(!lagiAzelMapCellExplored(0,1,5,4) && mainGameState.lastFlag==1007);

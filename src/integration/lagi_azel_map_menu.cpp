@@ -32,7 +32,9 @@ bool lagiAzelMapCellExplored(int subfield,unsigned subfieldCount,int x,int y)
     const int dx=x-readSaturnS8(rectangle),dy=y-readSaturnS8(rectangle+1);
     const int width=readSaturnS8(rectangle+2),height=readSaturnS8(rectangle+3);
     if(dx<0 || dy<0 || dx>=width || dy>=height) return false;
-    const int flag=dy*width+readSaturnS16(record+4)+dx;
+    // MOV.W displacement4 at 060124EA is byte offset8 (word scaled).
+    // Record+4 is the marker-list pointer, not the exploration bit base.
+    const int flag=dy*width+readSaturnS16(record+8)+dx;
     if(flag<0) return false;
     return mainGameState.getBit566(static_cast<u32>(flag));
 }
