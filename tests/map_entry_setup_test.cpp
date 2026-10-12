@@ -5,6 +5,8 @@
 #include "lagi/azel_map_menu.h"
 using u16=unsigned short;
 using u32=unsigned;
+using s16=short;
+struct {struct Layer {int scrollX=0,scrollY=0;} m40BC_layersConfig[4];} graphicEngineStatus;
 unsigned char common[0x21084], vram[0x80000];
 struct Common {
  unsigned char* m_data;
@@ -46,6 +48,12 @@ void unpackGraphicsToVDP2(unsigned char* source,unsigned char* dest){assert(sour
 #include "map_delete_production.inc"
 #include "map_ownership_production.inc"
 int main(){
+ graphicEngineStatus.m40BC_layersConfig[1].scrollX=-10;
+ graphicEngineStatus.m40BC_layersConfig[1].scrollY=0x100;
+ auto origin=lagiAzelSetMapViewCenter(8,6);
+ assert(origin[0]==86 && origin[1]==352);
+ assert(graphicEngineStatus.m40BC_layersConfig[2].scrollX==86 && graphicEngineStatus.m40BC_layersConfig[2].scrollY==352);
+ assert(graphicEngineStatus.m40BC_layersConfig[1].scrollX==-10 && graphicEngineStatus.m40BC_layersConfig[1].scrollY==0x100);
  pointerWord(0xA388,0x201000);pointerWord(0x1000,0x201100);pointerWord(0x1100,0x201200);
  common[0x1104]=3;common[0x1105]=0xE8;
  common[0x1200]=2;common[0x1201]=3;common[0x1202]=4;common[0x1203]=2;

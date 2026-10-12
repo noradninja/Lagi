@@ -13,6 +13,14 @@ struct LagiAzelMapDescriptor {
     std::array<std::uint8_t,4> presentation{};
 };
 
+// Original 06017228: 32-pixel cells relative to the native backing-layer scroll.
+inline std::array<std::int16_t,2> lagiAzelMapViewScrollOrigin(
+    std::int16_t centerX,std::int16_t centerY,std::int16_t backingX,std::int16_t backingY)
+{
+    return {static_cast<std::int16_t>((int(centerX)-2)*32+backingX-0x60),
+        static_cast<std::int16_t>((int(centerY)-2)*32+backingY-0x20)};
+}
+
 // Original 06016F90: marker viewport clipping in native coordinates.
 inline bool lagiAzelMapMarkerScreenPosition(std::int32_t x,std::int32_t y,
     std::int16_t scrollX,std::int16_t scrollY,std::int16_t verticalOffset,
@@ -137,6 +145,8 @@ bool lagiAzelPresentMapPatterns(const std::uint8_t* first,std::size_t firstBytes
 void lagiAzelRestoreMapViewPriorities();
 // Original 060173AA..06017406, using the native map-view scroll pair.
 void lagiAzelSetupMapViewWindow(std::int16_t scrollX,std::int16_t scrollY);
+// Native view setup copies the computed origin to NBG2's live scroll pair.
+std::array<std::int16_t,2> lagiAzelSetMapViewCenter(std::int16_t x,std::int16_t y);
 
 // Original 06016E64. Caller owns the pattern buffer and graphics rollback.
 // Returns the native SCB VRAM offset; no generated or substitute map image.

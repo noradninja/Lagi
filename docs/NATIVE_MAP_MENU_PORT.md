@@ -37,6 +37,14 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+View-origin calculation 06017228 uses the signed center low words and NBG1
+backing scroll: X=(centerX-2)*32+backingX-60,
+Y=(centerY-2)*32+backingY-20, stored as native signed16 values. The service
+lagiAzelSetMapViewCenter applies that pair to NBG2 live layer state, preserving
+the backing layer. Actual host service tests check calculation and target layer;
+Vita syntax passes. No output-resolution scaling or guessed center is inserted.
+Native child state still needs to drive this service and its eight-step pan.
+
 Source-half investigation resolved a loader error: literal06016EC8 is
 0024C5A4 for the short-PNB fill, but literal06016FE8 is0024BDA4 for the actual
 PNB load. Thus a PNB<=800 prefills the SECOND half with0238 and loads at the

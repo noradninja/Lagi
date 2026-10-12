@@ -84,6 +84,17 @@ void lagiAzelSetupMapViewWindow(std::int16_t scrollX,std::int16_t scrollY)
     vdp2Controls.m_isDirty=1;
 }
 
+std::array<std::int16_t,2> lagiAzelSetMapViewCenter(std::int16_t x,std::int16_t y)
+{
+    const auto& backing=graphicEngineStatus.m40BC_layersConfig[1];
+    const auto origin=lagiAzelMapViewScrollOrigin(x,y,
+        static_cast<s16>(backing.scrollX),static_cast<s16>(backing.scrollY));
+    auto& map=graphicEngineStatus.m40BC_layersConfig[2];
+    map.scrollX=origin[0];
+    map.scrollY=origin[1];
+    return origin;
+}
+
 bool lagiAzelSetupMapEntry(bool standalone)
 {
     if (!gCommonFile || !gCommonFile->m_data) return false;
