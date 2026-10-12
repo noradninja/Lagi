@@ -1,5 +1,26 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/azel_map_menu.h"
+#include "commonOverlay.h"
+
+bool lagiAzelSetupMapEntry(bool standalone)
+{
+    if (!gCommonFile || !gCommonFile->m_data) return false;
+    // Native 06016B04. Normal status-menu entry retains its animated scroll;
+    // standalone entry resets the four layers and both native fade channels.
+    if (standalone) {
+        setVdp2LayerScroll(0,0,0);
+        setVdp2LayerScroll(1,0,0);
+        setVdp2LayerScroll(2,0,0);
+        setVdp2LayerScroll(3,0,0x100);
+        resetVdp2LayersAutoScroll();
+        setupVDP2StringRendering(0,0x22,0x2C,0x1C);
+        clearVdp2TextArea();
+        fadePalette(&g_fadeControls.m0_fade0,0xC210,0xC210,1);
+        fadePalette(&g_fadeControls.m24_fade1,0xC210,0xC210,1);
+    }
+    unpackGraphicsToVDP2(gCommonFile->m_data+0xE3D4,getVdp2Vram(0x71000));
+    return true;
+}
 
 bool lagiAzelLoadFieldMapResources(const LagiAzelMapDescriptor& descriptor,
     std::uint8_t* patterns, std::size_t capacity, std::uint32_t& graphicsVramOffset)

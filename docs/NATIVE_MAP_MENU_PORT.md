@@ -37,6 +37,16 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+`lagiAzelSetupMapEntry` now implements 06016B04 through existing native
+services. 06015B8A/06015BB4 resolve to setVdp2LayerScroll and reset auto-scroll;
+06034AAA is fadePalette, not a copied palette backup; 0600FC14 is the existing
+compressed-graphics unpacker. Both modes unpack COMMON E3D4 to VDP2 71000;
+standalone additionally resets all four layers, clears the native text area
+and requests neutral C210 fades on both channels. Normal menu entry retains
+its animated layer state. Host execution verifies exact call order for both
+modes and null-resource guards with mocked services; Vita syntax and loader
+regressions pass. Constructor/task/display/navigation remain unconnected.
+
 Further original-code trace distinguishes entry setup from map image loading:
 060179DE calls 06016B04 with R4=0 on the normal menu-entry path; standalone
 06017A34 calls it with R4=1 before changing saved vsync. Nonzero setup invokes

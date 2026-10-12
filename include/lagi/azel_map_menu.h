@@ -13,6 +13,9 @@ struct LagiAzelMapDescriptor {
     std::array<std::uint8_t,4> presentation{};
 };
 
+// Original 06016B04, using the native COMMON compressed tile layout.
+bool lagiAzelSetupMapEntry(bool standalone);
+
 // Original 06016E64. Caller owns the pattern buffer and graphics rollback.
 // Returns the native SCB VRAM offset; no generated or substitute map image.
 bool lagiAzelLoadFieldMapResources(const LagiAzelMapDescriptor& descriptor,
