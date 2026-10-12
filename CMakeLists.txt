@@ -1608,6 +1608,18 @@ void modelDrawFunction3(s_3dModel* pModel)
   endif()
   string(REPLACE "${point_restore_old}" "${point_restore_new}" source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "field/fieldItemBox_type0.cpp" OR
+        relative_path STREQUAL "field/fieldItemBox_type1.cpp" OR
+        relative_path STREQUAL "field/fieldItemBox_type2.cpp")
+  # Native box target starts at +8; box +20/+21 are target +18/+19.
+  # The portable reconstruction duplicated these as unrelated member bytes.
+  string(FIND "${source_text}" "pThis->m20" item_target_flags_offset)
+  if(item_target_flags_offset LESS 0)
+   message(FATAL_ERROR "Native item target flags adapter missing")
+  endif()
+  string(REPLACE "pThis->m20" "pThis->m8_LCSTarget.m18_diableFlags" source_text "${source_text}")
+  string(REPLACE "pThis->m21" "pThis->m8_LCSTarget.m19" source_text "${source_text}")
+
  elseif(relative_path STREQUAL "field/fieldCamera.cpp")
   # Field Phase 4: capture Azel's exact active view matrix after it has been
   # applied to pCurrentMatrix. The bridge removes it from field submissions
