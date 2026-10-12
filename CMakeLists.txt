@@ -879,6 +879,20 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   string(REPLACE "(pThis->m88_poseIdx == 0)" "(pThis->m8D_visibilityFlag != 0)" source_text "${source_text}")
  endif()
 
+ # The shared particle task serves both map pickups and save stations.
+ # Maps emit only before their accepted collection transition; station
+ # activation retains its existing nonzero-state gate.
+ if(relative_path STREQUAL "field/fieldItemBox_type2.cpp")
+  string(REGEX MATCHALL "if \\(pParent->mEA_state == 0\\)" map_particle_gates "${source_text}")
+  list(LENGTH map_particle_gates map_particle_gate_count)
+  if(NOT map_particle_gate_count EQUAL 2)
+   message(FATAL_ERROR "Shared map/station particle Update/Draw gates changed")
+  endif()
+  string(REPLACE "if (pParent->mEA_state == 0)"
+   "if (pParent->m8B_LCSType == 1 ? pParent->mEA_state != 0 : pParent->mEA_state == 0) // LAGI_MAP_PARTICLE_GATE"
+   source_text "${source_text}")
+ endif()
+
  # During Ruins-only bring-up, retain Azel's original module-manager state
  # machine and gameStatusTable, but do not make unintegrated overlays hard link
  # dependencies merely because they appear in overlayDispatchTable. The current

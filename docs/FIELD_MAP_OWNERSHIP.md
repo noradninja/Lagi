@@ -2,6 +2,13 @@
 
 ## Current map-only repair (2026-10-12)
 
+Hardware follow-up confirms maps collect only once and the mesh changes
+correctly. Particles alone are reversed. The shared particle Update/Draw
+adapter now emits for map type1 only while collection state is zero; the
+non-map/save-station gate is unchanged. This is based on the user's required
+map presentation and confirmed mesh lifecycle, not a claim that the shared
+save-station native gate proves map-particle fidelity. Map page remains disabled.
+
 On c01bc89 the user confirms ordinary collection works again; only map pickups
 remain repeatable, with the correct uncollected particle presentation. The
 production adapter now redirects **only** type1 map-update `m20` accesses to
