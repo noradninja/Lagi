@@ -13,6 +13,11 @@ struct LagiAzelMapDescriptor {
     std::array<std::uint8_t,4> presentation{};
 };
 
+// Original 06016E64. Caller owns the pattern buffer and graphics rollback.
+// Returns the native SCB VRAM offset; no generated or substitute map image.
+bool lagiAzelLoadFieldMapResources(const LagiAzelMapDescriptor& descriptor,
+    std::uint8_t* patterns, std::size_t capacity, std::uint32_t& graphicsVramOffset);
+
 // Original 06016D36..46: COMMON table 0020E848, 23 field pointers, then
 // subfield pointers to 12-byte descriptors. Caller supplies the authoritative
 // current field's subfield count; never infer it from adjacent COMMON data.

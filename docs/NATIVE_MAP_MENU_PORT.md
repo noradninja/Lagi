@@ -37,6 +37,20 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Native loader service is now implemented as `lagiAzelLoadFieldMapResources`.
+Read-only MAIN 06016E64..06016F0C confirms SCB sizes strictly greater than
+4000 select VDP2 69000 (otherwise 6C000). PNB sizes at most 800 first fill
+800 bytes with big-endian 0238 words; then the PNB loads into the caller's
+pattern storage. The service preserves file order and native thresholds, adds
+bounds/missing-file checks, and returns the selected graphics VRAM offset.
+Failure does not promise rollback: the future task must restore backed-up
+graphics if a load fails after mutation. No constructor is enabled yet.
+
+Host execution tests the actual loader body with file/VRAM mocks across 20
+threshold/fill combinations plus invalid capacity, missing graphics, oversized
+graphics and failures of each load. Service Vita syntax passes. This does not
+verify packaged asset lookup, rendered maps, task lifetime or device input.
+
 Restore the actual setup/availability/context, resource loading and display,
 cursor task, all native mode-specific input functions (`06017762`, `06017882`,
 `06017964`), and return lifecycle before enabling the constructor. Preserve

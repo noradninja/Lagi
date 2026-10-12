@@ -3301,6 +3301,7 @@ add_executable(lagi
  src/integration/lagi_save_platform_vita.cpp
  src/integration/lagi_azel_books_menu.cpp
  src/integration/lagi_azel_books_resource.cpp
+ src/integration/lagi_azel_map_menu.cpp
  src/integration/lagi_azel_field_radar.cpp
  src/integration/lagi_azel_field_navigator.cpp
  src/integration/lagi_system_menu_vita.cpp
