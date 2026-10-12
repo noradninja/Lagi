@@ -1,5 +1,9 @@
 # Current flight UI/transition acceptance
 
+Additional user confirmation: scene sprite depth is correct on hardware.
+Retain the explicit producer-depth path; do not revert it while restoring
+radar line state or native point lighting.
+
 Hardware report on `cf82533`: user reports the combined fixes work except the
 radar orientation line and navigator direction line. Preserve that acceptance
 for navigator lifecycle, markers, scene depth and collection effects; it does
