@@ -37,6 +37,16 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Marker viewport clipping from 06016F90 now preserves native scroll subtraction
+and inclusive bounds X60..120, Y(20-offset)..(E0-offset). Rejected markers do
+not overwrite the output coordinates. More than one million host cases cover
+all four edges and signed scroll/vertical offsets; Vita syntax passes. Marker
+sprite emission and its actual source position/rotation still require task
+integration. Source-half initialization remains under investigation: original
+view setup uses separate DRAM halves, while the PNB loader targets only the
+second address; do not manufacture the first half from the second without
+tracing its producer.
+
 lagiAzelPresentMapPatterns now connects conversion to native current-field
 ownership and exploration services and writes both original planes at VDP2
 70000/70800, queried from Y15/Y31 respectively. Sources remain separate,

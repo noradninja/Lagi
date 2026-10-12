@@ -13,6 +13,19 @@ struct LagiAzelMapDescriptor {
     std::array<std::uint8_t,4> presentation{};
 };
 
+// Original 06016F90: marker viewport clipping in native coordinates.
+inline bool lagiAzelMapMarkerScreenPosition(std::int32_t x,std::int32_t y,
+    std::int16_t scrollX,std::int16_t scrollY,std::int16_t verticalOffset,
+    std::array<std::int16_t,2>& out)
+{
+    const std::int64_t screenX=std::int64_t(x)-scrollX;
+    const std::int64_t screenY=std::int64_t(y)-scrollY;
+    if(screenX<0x60 || screenX>0x120 ||
+        screenY<0x20-int(verticalOffset) || screenY>0xE0-int(verticalOffset)) return false;
+    out={static_cast<std::int16_t>(screenX),static_cast<std::int16_t>(screenY)};
+    return true;
+}
+
 // Native 060172B8: one 16x16 block half of a 32x32-word PNB plane.
 // The caller supplies original map-ownership and exploration services.
 inline bool lagiAzelConvertMapPatterns(const std::uint8_t* source,std::size_t sourceBytes,
