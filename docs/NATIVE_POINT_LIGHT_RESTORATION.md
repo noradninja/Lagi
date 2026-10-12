@@ -110,3 +110,15 @@ setLightVector_M reverses that packed word into its color array. Renderer
 consumption reverses it back, matching the reconstructed ComputeColorFromNormal.
 Actual original color computation still needs comparison; do not substitute
 an item-specific tint or claim that byte-order reasoning proves visual fidelity.
+
+Original sparkle update 0607BD9A stores the computed orbit angle into its own
+task +10. The reconstruction instead writes `pDragon->m_EC = rotation`,
+corrupting the byte tested for lighting enable at 06073FEC and 060741DC.
+The generated adapter removes that erroneous write; its local rotation still
+drives the orbit transform. This is a lighting-control preservation repair,
+not proof of environment scope, correct colors or smooth/Gouraud appearance.
+The pipeline regression check rejects the erroneous assignment.
+
+User additionally reports the previous point-light appearance looked flat,
+not Gouraud. Verification must cover original normal records, per-corner
+lighting mode, and interpolated GPU corner colors, not merely selector math.

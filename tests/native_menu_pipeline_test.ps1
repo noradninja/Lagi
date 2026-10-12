@@ -27,6 +27,7 @@ try {
  $dialog=Get-Content -Raw (Join-Path $generated 'kernel_dialogTask.cpp')
  if (!$dialog.Contains('*pThis->mC_result = -1; // LAGI_NATIVE_DIALOG_CANCEL') -or !$dialog.Contains('lagiReleaseFieldNavigatorDialog(pThis);')) {throw 'Native cancel/lifetime hooks missing'}
  $lcs=Get-Content -Raw (Join-Path $generated 'LCS.cpp')
+ if ($lcs.Contains('pDragon->m_EC = rotation;') -or !$lcs.Contains('LAGI_SPARKLE_FLAGS_PRESERVED')) {throw 'Sparkle orbit corrupts dragon lighting flags'}
  if (!$lcs.Contains('lagiDrawFieldRadarObjectMarkers(r4);')) {throw 'Object-marker traversal hook missing'}
  if (!$lcs.Contains('pThis->m2C_localOffset[2] = pThis->m34_randomizedLifetime;') -or
      !$lcs.Contains('displayRaySegment_2Width(radial, widths, base + 0x6B0, 0x031E, base + 0x1780, &colors, 8);')) {throw 'Native radial collection burst hooks missing'}

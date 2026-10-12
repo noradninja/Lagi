@@ -805,6 +805,15 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   string(REPLACE "${radar_end}" "    lagiMarkFieldRadarCommands(&*lagiRadarBegin, &*graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA);\n${radar_end}" source_text "${source_text}")
  endif()
  if(relative_path STREQUAL "LCS.cpp")
+  # 0607BD9A stores the orbit angle in the sparkle task (+10), NOT
+  # dragon +EC. The local rotation already services its only consumer here.
+  string(FIND "${source_text}" "pDragon->m_EC = rotation;" sparkle_flags_anchor)
+  if(sparkle_flags_anchor LESS 0)
+   message(FATAL_ERROR "Native sparkle lighting-control anchor changed")
+  endif()
+  string(REPLACE "pDragon->m_EC = rotation;"
+   "// LAGI_SPARKLE_FLAGS_PRESERVED: orbit angle is not dragon lighting flags."
+   source_text "${source_text}")
   set(collection_offset_old "pThis->m2C_localOffset[2] = 0;")
   set(collection_offset_new "pThis->m2C_localOffset[2] = pThis->m34_randomizedLifetime; // LAGI_NATIVE_COLLECTION_RADIUS: 0607BAE4")
   set(collection_draw_old [=[        // TODO: FUN_0602f610 — draw billboard sprite at cameraSpacePos with scaledOpacity
