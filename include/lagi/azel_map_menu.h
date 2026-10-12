@@ -115,6 +115,8 @@ inline LagiAzelMapStep lagiAzelAdvanceMapLifecycle(LagiAzelMapLifecycle& state)
 bool lagiAzelSetupMapEntry(bool standalone);
 // Native 06012554: current field's authored inventory item (COMMON A650).
 bool lagiAzelCurrentFieldMapOwned();
+// Original 0601249C; caller supplies its authoritative subfield count.
+bool lagiAzelMapCellExplored(int subfield,unsigned subfieldCount,int x,int y);
 // Original map-view child Delete 0601763C; parent-menu priority restoration.
 void lagiAzelRestoreMapViewPriorities();
 // Original 060173AA..06017406, using the native map-view scroll pair.

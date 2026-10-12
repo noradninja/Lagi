@@ -16,6 +16,27 @@ bool lagiAzelCurrentFieldMapOwned()
     return static_cast<int>(item)>=0 && mainGameState.getItemCount(item)!=0;
 }
 
+bool lagiAzelMapCellExplored(int subfield,unsigned subfieldCount,int x,int y)
+{
+    // Native 0601249C: current-field COMMON hierarchy and getBit566 mapping.
+    auto* field=getFieldTaskPtr();
+    if(!field || !gCommonFile || subfield<0 || unsigned(subfield)>=subfieldCount) return false;
+    const int index=field->m2C_currentFieldIndex;
+    if(index<0 || index>=23) return false;
+    auto table=readSaturnEA(gCommonFile->getSaturnPtr(0x20A388)+index*4);
+    if(!table.m_offset) return false;
+    auto record=readSaturnEA(table+subfield*4);
+    if(!record.m_offset) return false;
+    auto rectangle=readSaturnEA(record);
+    if(!rectangle.m_offset) return false;
+    const int dx=x-readSaturnS8(rectangle),dy=y-readSaturnS8(rectangle+1);
+    const int width=readSaturnS8(rectangle+2),height=readSaturnS8(rectangle+3);
+    if(dx<0 || dy<0 || dx>=width || dy>=height) return false;
+    const int flag=dy*width+readSaturnS16(record+4)+dx;
+    if(flag<0) return false;
+    return mainGameState.getBit566(static_cast<u32>(flag));
+}
+
 void lagiAzelRestoreMapViewPriorities()
 {
     // Native child Delete 0601763C..5A, before the parent selection returns.

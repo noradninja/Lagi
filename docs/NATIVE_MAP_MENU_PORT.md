@@ -37,6 +37,16 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Native exploration service 0601249C is now bound by lagiAzelMapCellExplored:
+current-field COMMON A388 -> caller-selected subfield -> exploration record
+and signed rectangle. It rejects points outside the authored width/height,
+computes dy*width + signed base + dx, then uses existing getBit566, preserving
+native threshold1000/subtract566 and saved MSB-first flags. Caller supplies
+authoritative subfield count; no new flags or radar-derived visibility exist.
+Actual service host tests cover hierarchy lookup, distinct rows, all rectangle
+edges and invalid subfield without flag reads. Vita syntax passes. The converter
+still needs its caller/context hookup in the unfinished native view task.
+
 Current-field ownership now binds native 06012554: read the signed item from
 COMMON 20A650 indexed by the actual field task's current field, reject negative
 entries, then call existing mainGameState.getItemCount. It does not assume every
