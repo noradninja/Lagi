@@ -7,6 +7,11 @@ int main()
     std::int32_t params[5]={0,0,0,0x14000000,0x19000};
     auto zero=lagi::native_point_light(matrix,params);
     if (!zero.divisionOverflow || zero.vector!=std::array<std::int16_t,3>{}) return 1;
+    params[0]=1;
+    const auto tiny=lagi::native_point_light(matrix,params);
+    if (!tiny.divisionOverflow || tiny.vector[0]!=32767) return 7;
+    params[0]=-1;
+    if (lagi::native_point_light(matrix,params).vector[0]!=-32768) return 8;
     unsigned cases=0;
     for (int distance=1;distance<0x600000;distance+=127) {
         params[0]=distance;

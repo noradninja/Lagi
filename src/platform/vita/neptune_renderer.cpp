@@ -6757,6 +6757,11 @@ static void transformLiveLightVectorToModelSpace(
     const azel_bridge::SubmissionState& state,
     std::int32_t outVector[3])
 {
+    if (state.hasNativeModelLight) {
+        for (unsigned axis = 0; axis < 3; ++axis)
+            outVector[axis] = state.nativeModelLight[axis];
+        return;
+    }
     // Azel publishes the light vector in camera/world space while each
     // model's stored lighting normals remain in model space. Rotate the light
     // back through the model basis once per submission so cached and freshly
@@ -6891,11 +6896,11 @@ static void appendLiveTownModel(
         // same dot product as rotating every model normal forward, but avoids
         // repeating a matrix transform for every lit polygon corner.
         std::int32_t modelSpaceLight[3]{};
-        if (!state.billboard)
+        if (!state.billboard || state.hasNativeModelLight)
             transformLiveLightVectorToModelSpace(state, modelSpaceLight);
 
         for (unsigned axis = 0; axis < 3; ++axis) {
-            if (state.billboard) {
+            if (state.billboard && !state.hasNativeModelLight) {
                 const float* basis =
                     axis == 0u ? billboardX :
                     (axis == 1u ? billboardY : billboardZ);

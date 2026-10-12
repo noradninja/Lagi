@@ -34,6 +34,10 @@ std::uint64_t published_resource_revision();
 struct SubmissionState {
     std::int32_t modelMatrix[12]{};
     std::int32_t lightVector[3]{};
+    // Original point evaluator has already transformed/quantized this light
+    // through the native view/model matrix; never rotate it a second time.
+    std::int16_t nativeModelLight[3]{};
+    bool hasNativeModelLight = false;
     std::uint16_t lightColor[3]{};
     std::uint32_t lightFalloff[3]{};
 

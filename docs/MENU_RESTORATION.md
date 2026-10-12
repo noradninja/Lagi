@@ -285,6 +285,12 @@ cancel behavior. Source-only tests cannot establish these Vita gates.
 
 ## Full-scope source audit
 
+Hardware note (2026-10-11): user confirms Dragon ability screen displays, but
+the dragon model is behind its UI. Inspect the renderer's menu backing / 3D
+model / decorations / glyph composition order. This does not authorize undoing
+the separately accepted gameplay sprite-depth fix, nor prove Dragon input or
+ability state changes are complete.
+
 The current hardware capture checkpoint is `1482528`; that is a partial fix,
 not an all-menu-functionality release. These gaps remain in the pinned native
 source and must not be mistaken for renderer failures or silently excluded:

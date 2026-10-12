@@ -2,6 +2,7 @@
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/lagi_live_model_adapter.h"
 #include "lagi/platform.h"
+#include "lagi/lagi_point_light.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -39,6 +40,8 @@ struct LagiLightSetup
 extern LagiMatrix4x3* pCurrentMatrix __attribute__((weak));
 extern LagiCurrentLightVector currentLightVector_M __attribute__((weak));
 extern LagiLightSetup lightSetup __attribute__((weak));
+extern u16 loc_601FA9E __attribute__((weak));
+extern s32 pointLightParams[5] __attribute__((weak));
 
 namespace lagi::azel_bridge {
 
@@ -361,6 +364,25 @@ std::uint32_t published_explicit_static_contexts_consumed()
     return g_publishedExplicitStaticContextsConsumed;
 }
 
+static void capture_native_point_light(SubmissionState& state)
+{
+    state.hasNativeModelLight = false;
+    if (!&loc_601FA9E || loc_601FA9E != 0xA11D ||
+        !&pointLightParams || !&pCurrentMatrix || !pCurrentMatrix) return;
+    std::int32_t nativeMatrix[12];
+    copyMatrixRaw(*pCurrentMatrix, nativeMatrix);
+    const auto light = lagi::native_point_light(nativeMatrix, pointLightParams);
+    std::copy(light.vector.begin(), light.vector.end(), state.nativeModelLight);
+    state.hasNativeModelLight = true;
+    static unsigned reports = 0;
+    if (reports < 8) {
+        lagi::platform::logging::writef("[NativePointLight] distance=%08X divisor=%08X outside=%u overflow=%u vector=%d,%d,%d\n",
+            light.distance, light.divisor, light.outside ? 1u : 0u,
+            light.divisionOverflow ? 1u : 0u, int(light.vector[0]), int(light.vector[1]), int(light.vector[2]));
+        ++reports;
+    }
+}
+
 void capture_current_light(SubmissionState& state)
 {
     if (&currentLightVector_M) {
@@ -400,6 +422,7 @@ void capture_current_light(SubmissionState& state)
         }
         state.hasLight = true;
     }
+    capture_native_point_light(state);
 }
 
 void begin_view_relative_submission_scope()
@@ -620,6 +643,9 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
 
         g_lastState = g_pendingTownSubmission.state;
         g_lastState.billboard = billboard;
+        // Explicit environment contexts carry world-space geometry, but the
+        // point evaluator needs the live original native matrix at this draw.
+        capture_native_point_light(g_lastState);
     } else {
         capture_runtime_state(billboard);
     }

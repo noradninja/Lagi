@@ -50,3 +50,31 @@ directional push / pop / reset lifecycles plus all eight stack slots on host.
 Generated 3dEngine and fieldDragon Vita syntax pass. No upstream or game files
 are edited. Renderer consumption remains unconnected; this is not a visible
 point-light fix and awaits complete division and submission-path integration.
+
+## Submission/consumer integration
+
+The earlier unconnected/overflow limitations above describe previous checkpoints.
+The bridge now checks the live A11D selector, evaluates against the original
+native view/model matrix and snapshots three signed model-light words per
+submission. Both ordinary runtime and explicit environment context paths capture
+it at the draw boundary. A separate `hasNativeModelLight` field prevents a second
+world/view/model transform. Fresh meshes, cached static lighting and billboard
+lighting consume that same native result while retaining native colors/falloff.
+Directional submissions retain the existing path, and reset clears the point
+flag. No gameplay sprite-depth, texture-filter or point-filter exceptions change.
+
+Overflow resolution uses the original Hitachi SH7604 Hardware Manual, sections
+10.3.3/10.4.2 (printed pages 293–294): with overflow interrupts disabled the
+quotient is clamped by sign. Positive/negative zero-divisor cases and the positive
+MIN/-1 overflow are modeled without C++ division UB. Source:
+https://antime.kapsi.fi/sega/files/sh7604.pdf
+The evaluator no longer leaves small nonzero deltas unresolved.
+
+Actual extracted production capture and renderer consumer pass host execution
+for selector activation/reset, original versus deliberately different world
+matrix, zero distance and null matrix. Math tests add positive/negative small
+nonzero deltas to 49,540 range/root cases. Bridge and renderer Vita syntax pass.
+Eight bounded `[NativePointLight]` messages expose distance/divisor, outside /
+overflow and signed result. No full link/VPK build, device appearance or timing
+is claimed. Final hardware gate is local collection illumination and normal
+lighting restoration on the same route; unfinished menus remain separate.

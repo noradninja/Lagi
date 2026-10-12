@@ -12,7 +12,6 @@ struct NativePointLightResult {
     std::uint32_t divisor = 0;
     bool outside = false;
     bool divisionOverflow = false;
-    bool resolved = true;
 };
 inline NativePointLightResult native_point_light(
     const std::int32_t matrix[12], const std::int32_t params[5])
@@ -50,11 +49,10 @@ inline NativePointLightResult native_point_light(
     std::int32_t factor;
     if (!divisor || (dividend==std::numeric_limits<std::int32_t>::min() && divisor==-1)) {
         result.divisionOverflow=true;
-        // The all-zero delta produces zero for any hardware quotient. Other
-        // overflowing inputs require the exact SH7604 DIVU result before this
-        // evaluator can be connected; do not invent saturation behavior.
-        result.resolved=delta[0]==0 && delta[1]==0 && delta[2]==0;
-        return result;
+        // SH7604 Hardware Manual 10.3.3/10.4.2: with OVF interrupt
+        // disabled, clamp to the signed quotient limit. MIN/-1 is positive.
+        factor=(!divisor && dividend<0) ? std::numeric_limits<std::int32_t>::min()
+            : std::numeric_limits<std::int32_t>::max();
     } else factor=dividend/divisor;
     for (auto& component:delta)
         component=static_cast<std::int32_t>(static_cast<std::uint64_t>(std::int64_t(component)*factor)>>16);
