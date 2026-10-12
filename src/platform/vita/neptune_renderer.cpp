@@ -813,6 +813,10 @@ static std::uint16_t* g_vdp2TextLayerIndices = nullptr;
 static SceUID g_vdp2BarVertexUid = -1;
 static SceUID g_vdp2BarIndexUid = -1;
 static azel::DebugColorVertex* g_vdp2BarVertices = nullptr;
+static azel::DebugColorVertex* g_menuCanvasMaskVertices = nullptr;
+static std::uint16_t* g_menuCanvasMaskIndices = nullptr;
+static SceUID g_menuCanvasMaskVertexUid = -1;
+static SceUID g_menuCanvasMaskIndexUid = -1;
 static std::uint16_t* g_vdp2BarIndices = nullptr;
 
 // Phase 1 movie presentation owns a separate dynamic RGBA texture. It does
@@ -2401,6 +2405,12 @@ void shutdown()
     void* vdp2BarIndexPtr = g_vdp2BarIndices;
     freeSimpleMappedProbe(g_vdp2BarIndexUid, vdp2BarIndexPtr);
     g_vdp2BarIndices = nullptr;
+    void* menuMaskVertices = g_menuCanvasMaskVertices;
+    freeSimpleMappedProbe(g_menuCanvasMaskVertexUid, menuMaskVertices);
+    g_menuCanvasMaskVertices = nullptr;
+    void* menuMaskIndices = g_menuCanvasMaskIndices;
+    freeSimpleMappedProbe(g_menuCanvasMaskIndexUid, menuMaskIndices);
+    g_menuCanvasMaskIndices = nullptr;
 
     void* basicWingVertexPtr = g_vdp1Vertices;
     freeSimpleMappedProbe(g_vdp1VertexUid, basicWingVertexPtr);
@@ -4591,6 +4601,52 @@ static bool isVdp1BackgroundCommand(
     // that normalized depth in s_vd1ExtendedCommand. Keep a small tolerance
     // for the fixed-point division without relying on FLD_A3 texture IDs.
     return command.hasDepth && command.depth >= 0.999f;
+}
+
+static float menuCanvasHalfWidth()
+{
+    const float aspect=float(viewerRenderWidth())/float(viewerRenderHeight());
+    return std::min(1.0f,(4.0f/3.0f)/aspect);
+}
+
+static void drawMenuCanvasMask()
+{
+    if((g_vdp2MenuId==0u && !g_vdp2SaveLayout) || !g_probeVertexProgram ||
+        !g_probeFragmentProgram || !g_probeWvpParam) return;
+    const float edge=menuCanvasHalfWidth();
+    if(edge>=1.0f) return;
+    // Dedicated storage: never overwrite queued glyph, sprite or bar vertices.
+    if(!g_menuCanvasMaskVertices)
+        g_menuCanvasMaskVertices=static_cast<azel::DebugColorVertex*>(probeGpuAlloc(
+            8u*sizeof(azel::DebugColorVertex),SCE_GXM_MEMORY_ATTRIB_READ,&g_menuCanvasMaskVertexUid));
+    if(!g_menuCanvasMaskIndices)
+        g_menuCanvasMaskIndices=static_cast<std::uint16_t*>(probeGpuAlloc(
+            12u*sizeof(std::uint16_t),SCE_GXM_MEMORY_ATTRIB_READ,&g_menuCanvasMaskIndexUid));
+    if(!g_menuCanvasMaskVertices || !g_menuCanvasMaskIndices) return;
+    const float bounds[2][2]={{-1.0f,-edge},{edge,1.0f}};
+    for(unsigned side=0;side<2;++side) {
+        auto* v=g_menuCanvasMaskVertices+side*4;
+        const float left=bounds[side][0],right=bounds[side][1];
+        v[0]={left,1,0,0,0,0,255};v[1]={right,1,0,0,0,0,255};
+        v[2]={right,-1,0,0,0,0,255};v[3]={left,-1,0,0,0,0,255};
+        const std::uint16_t indices[6]={0,1,2,0,2,3};
+        for(unsigned i=0;i<6;++i) g_menuCanvasMaskIndices[side*6+i]=indices[i]+side*4;
+    }
+    sceGxmSetCullMode(g_probeContext,SCE_GXM_CULL_NONE);
+    sceGxmSetFrontPolygonMode(g_probeContext,SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetBackPolygonMode(g_probeContext,SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetFrontDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetVertexProgram(g_probeContext,g_probeVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext,g_probeFragmentProgram);
+    void* uniforms=nullptr;
+    if(sceGxmReserveVertexDefaultUniformBuffer(g_probeContext,&uniforms)<0 || !uniforms) return;
+    static const float identity[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    sceGxmSetUniformDataF(uniforms,g_probeWvpParam,0,16,identity);
+    sceGxmSetVertexStream(g_probeContext,0,g_menuCanvasMaskVertices);
+    sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,SCE_GXM_INDEX_FORMAT_U16,g_menuCanvasMaskIndices,12);
 }
 
 static void drawPublishedVdp1Ui(
@@ -12870,6 +12926,7 @@ static bool renderMovieFrame()
 
     if (submitted && g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f)
         drawPublishedVdp1Ui();
+        drawMenuCanvasMask();
 
     if (submitted) {
         const bool d5FrontEnd =
@@ -13282,6 +13339,7 @@ static void renderBasicWingViewer()
             // Native menu NBG3 glyph priority 7 is above VDP1 priority 5/6.
             // Separate storage keeps the queued background draw immutable.
             drawAzelMenuVdp2Gpu(true);
+            drawMenuCanvasMask(); // LAGI_MENU_CANVAS_BOUNDARY
         } else {
             // LAGI_PICKUP_EFFECTS_BELOW_UI: keep projected collection effects
             // depth-tested against geometry, below all pickup tiles/glyphs.
