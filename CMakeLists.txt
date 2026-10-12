@@ -1511,6 +1511,13 @@ void modelDrawFunction3(s_3dModel* pModel)
    "__attribute__((weak)) p_workArea createSystemMenuTask(p_workArea workArea)"
    source_text "${source_text}")
 
+  # The Vita map child is linked at Azel\'s existing dispatch boundary.
+  # Keep upstream\'s assertion as a weak fallback, never rewrite Azel logic.
+  string(REPLACE
+   "p_workArea createMapTask(p_workArea workArea)"
+   "__attribute__((weak)) p_workArea createMapTask(p_workArea workArea)"
+   source_text "${source_text}")
+
   # Azel/Saturn work areas begin cleared. The Vita task host allocates C++
   # work areas with plain new, so explicitly establish the main status-menu
   # state before its first Draw() dispatch. Without this, m0 and child pointers
@@ -1553,7 +1560,7 @@ void modelDrawFunction3(s_3dModel* pModel)
   # that are still assert-only stubs in the pinned upstream revision.
   string(REPLACE
    "    if (mainGameState.gameStats.m20_XP) // defeated monsters menu\n    {\n        pWorkArea->m3_menuButtonStates[2] = 1;\n    }\n    else\n    {\n        pWorkArea->m3_menuButtonStates[2] = -1;\n    }\n    pWorkArea->m3_menuButtonStates[3] = 1; // map"
-   "    pWorkArea->m3_menuButtonStates[2] = -1; // enemy list is an upstream stub\n    pWorkArea->m3_menuButtonStates[3] = -1; // map is an upstream stub"
+   "    pWorkArea->m3_menuButtonStates[2] = -1; // enemy list is an upstream stub\n    pWorkArea->m3_menuButtonStates[3] = 1; // Vita map child supports native menu dispatch"
    source_text "${source_text}")
 
   # First-flight milestone: keep Azel's native FLD_A3 dispatcher entry.
@@ -3312,6 +3319,7 @@ add_executable(lagi
  src/integration/lagi_azel_books_menu.cpp
  src/integration/lagi_azel_books_resource.cpp
  src/integration/lagi_azel_map_menu.cpp
+ src/integration/lagi_map_menu_vita.cpp
  src/integration/lagi_azel_field_radar.cpp
  src/integration/lagi_azel_field_navigator.cpp
  src/integration/lagi_system_menu_vita.cpp
