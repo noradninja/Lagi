@@ -232,3 +232,27 @@ Graphics loader evidence also establishes original filenames MENUBK2.BIN at
 COMMON palette 0020DDF4 -> CRAM 07E0 for 0420 bytes. Retain these native
 resource boundaries when completing setup; do not replace the illustrations
 with generated images or import disc resources into the repository.
+
+## Graphics setup service
+
+`lagiAzelBooksSetupGraphics` now restores `06016194`: native cycle patterns,
+the three verified setup tables, NBG1/2 maps at 20000, priorities 0400/0705
+and four sprite priority words 0606, MENUBK2.BIN / MENUBK.CGB loading, COMMON
+palette copy, layers 1/2/3 scroll, scroll publication/reset, window 0 and the
+collapsed initial window 1, then full native text-region clearing. Window-0
+bottom retains the executable's un-decremented endpoint, unlike its X end.
+TVSTAT-dependent vertical offset remains owned by setVdp2LayerScroll rather
+than guessed by this service. File sizes are checked against the exact native
+backup spans before writes. Load failure returns false; the eventual task must
+restore its retained graphics/register backups before returning to inventory.
+
+NBG2's missing window-1 commands are also restored through the generated VDP2
+adapter. Its low-byte window controls and NBG3's high-byte controls each pass
+917,504 exhaustive production-helper bit preservation cases. Actual graphics
+setup host execution uses mocked platform services and validates the three
+tables, map/resource destinations, palette, priorities, scroll/window/clear
+calls, pre-write missing/oversize rejection and load-failure return. Vita helper
+syntax passes. This service remains uninvoked: Books task resource/font loading,
+backup ownership, cursor, fades, window clipping and inventory return are still
+required before the constructor can be enabled. No screen/device success is
+claimed from these tests.

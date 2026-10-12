@@ -7,6 +7,9 @@
 // returned DRAM block until restore; the Books task itself is not ported yet.
 std::uint8_t* lagiAzelBooksBackupGraphics();
 void lagiAzelBooksRestoreGraphics(std::uint8_t* backup);
+// Native 06016194. Caller must retain graphics/register backups for rollback
+// and normal task deletion; failure must not enable an incomplete page.
+bool lagiAzelBooksSetupGraphics();
 
 struct LagiAzelBooksSelection {
     std::array<std::uint8_t, 22> ownedIndices{};

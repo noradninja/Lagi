@@ -16,6 +16,54 @@ static_assert(backupBytes == 0x169A0);
 void drawGaugeVdp1(u16 mode, std::array<sVec2_S16, 4>& params, u16 color, fixedPoint depth);
 void scrollMenu();
 
+bool lagiAzelBooksSetupGraphics()
+{
+    const auto tilesSize = getFileSize("MENUBK2.BIN");
+    const auto spritesSize = getFileSize("MENUBK.CGB");
+    // These are exactly the native backup spans. Refuse an incompatible
+    // resource before writing outside the task's recoverable ownership.
+    if (!tilesSize || tilesSize > tileBytes || !spritesSize || spritesSize > spriteBytes) return false;
+    static const sLayerConfig nbg1[] = {
+        {m2_CHCN,1},{m5_CHSZ,1},{m6_PNB,1},{m7_CNSM,0},
+        {m11_SCN,4},{m12_PLSZ,0},{m40_CAOS,3},{m0_END,0}};
+    static const sLayerConfig nbg2[] = {
+        {m2_CHCN,1},{m5_CHSZ,1},{m6_PNB,1},{m7_CNSM,0},
+        {m11_SCN,4},{m12_PLSZ,0},{m40_CAOS,5},
+        {static_cast<eVdp2LayerConfig>(35),1},{static_cast<eVdp2LayerConfig>(38),1},{m0_END,0}};
+    static const sLayerConfig nbg3[] = {
+        {static_cast<eVdp2LayerConfig>(33),1},{m34_W0E,1},{m37_W0A,0},
+        {static_cast<eVdp2LayerConfig>(35),1},{static_cast<eVdp2LayerConfig>(38),1},{m0_END,0}};
+    auto* regs = vdp2Controls.m4_pendingVdp2Regs;
+    regs->m14_CYCA1 = 0x12FF5566;
+    regs->m1C_CYCB1 = 0xFFFFFFFF;
+    setupNBG1(nbg1); setupNBG2(nbg2); setupNBG3(nbg3);
+    initLayerMap(1,0x20000,0x20000,0x20000,0x20000);
+    initLayerMap(2,0x20000,0x20000,0x20000,0x20000);
+    regs->mF8_PRINA = 0x0400;
+    regs->mFA_PRINB = 0x0705;
+    regs->mFC_PRIR = 0;
+    regs->mF0_PRISA = regs->mF2_PRISB = regs->mF4_PRISC = regs->mF6_PRISD = 0x0606;
+    vdp2Controls.m_isDirty = 1;
+    if (loadFile("MENUBK2.BIN",getVdp2Vram(0x20000),0) < 0 ||
+        loadFile("MENUBK.CGB",getVdp1Pointer(0x25C12000),0) < 0) return false;
+    asyncDmaCopy(gCommonFile->getSaturnPtr(0x20DDF4),getVdp2Cram(0x7E0),0x420,0);
+    setVdp2LayerScroll(1,0,0);
+    setVdp2LayerScroll(2,0,0x100);
+    setVdp2LayerScroll(3,0,0x100);
+    scrollMenu(); resetVdp2LayersAutoScroll();
+    const auto& layer = graphicEngineStatus.m40BC_layersConfig[1];
+    const s32 x = 0x28 - static_cast<s16>(layer.scrollX);
+    const s32 y = 0x170 - static_cast<s16>(layer.scrollY);
+    regs->mC0_WPSX0 = static_cast<u16>(x * 2);
+    regs->mC2_WPSY0 = static_cast<u16>(y);
+    regs->mC4_WPEX0 = static_cast<u16>((x + 0x110) * 2 - 1);
+    regs->mC6_WPEY0 = static_cast<u16>(y + 0x70); // native end is not decremented
+    lagiAzelBooksPresentWindow(layer.scrollX,layer.scrollY,0,1);
+    setupVDP2StringRendering(0,0x22,0x2C,0x1C);
+    clearVdp2TextArea();
+    return true;
+}
+
 bool lagiAzelBooksPresentText(const std::uint8_t* data, std::size_t bytes,
     std::uint32_t bookIndex, std::uint32_t headingIndex,
     std::uint32_t bodyPageIndex, LagiAzelBooksBodyPage& body)

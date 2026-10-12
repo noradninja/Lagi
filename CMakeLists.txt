@@ -1149,6 +1149,21 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
    message(FATAL_ERROR "Native NBG3 window adapter missing")
   endif()
   string(REPLACE "${nbg3_window_old}" "${nbg3_window_new}" source_text "${source_text}")
+  set(nbg2_window_old [=[        case m34_W0E:
+            vdp2Controls.m4_pendingVdp2Regs->mD2_WCTLB = (vdp2Controls.m4_pendingVdp2Regs->mD2_WCTLB & 0xFFFD) | (arg << 1);
+            break;
+        case m37_W0A:
+            vdp2Controls.m4_pendingVdp2Regs->mD2_WCTLB = (vdp2Controls.m4_pendingVdp2Regs->mD2_WCTLB & 0xFFFE) | (arg << 0);
+            break;]=])
+  set(nbg2_window_new [=[        case 33: case 34: case 35: case 36: case 37: case 38: case 39:
+            vdp2Controls.m4_pendingVdp2Regs->mD2_WCTLB = lagi::native_nbg2_window(
+                vdp2Controls.m4_pendingVdp2Regs->mD2_WCTLB, command, arg);
+            break;]=])
+  string(FIND "${source_text}" "${nbg2_window_old}" nbg2_window_offset)
+  if(nbg2_window_offset LESS 0)
+   message(FATAL_ERROR "Native NBG2 window adapter missing")
+  endif()
+  string(REPLACE "${nbg2_window_old}" "${nbg2_window_new}" source_text "${source_text}")
 
   # reinitVdp2() resets the register copies to zero, but the fade controller
   # intentionally survives across module/front-end setup. Republish the live
