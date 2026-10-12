@@ -1,6 +1,20 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/azel_map_menu.h"
 #include "commonOverlay.h"
+#include "field.h"
+#include "items.h"
+
+bool lagiAzelCurrentFieldMapOwned()
+{
+    // Native 06012554: COMMON field->item table, not a universal B2 flag.
+    auto* field=getFieldTaskPtr();
+    if (!field || !gCommonFile) return false;
+    const int index=field->m2C_currentFieldIndex;
+    if(index<0 || index>=23) return false;
+    const auto item=static_cast<eItems>(readSaturnS16(
+        gCommonFile->getSaturnPtr(0x20A650)+index*2));
+    return static_cast<int>(item)>=0 && mainGameState.getItemCount(item)!=0;
+}
 
 void lagiAzelRestoreMapViewPriorities()
 {

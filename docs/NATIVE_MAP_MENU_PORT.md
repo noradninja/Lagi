@@ -37,9 +37,16 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Current-field ownership now binds native 06012554: read the signed item from
+COMMON 20A650 indexed by the actual field task's current field, reject negative
+entries, then call existing mainGameState.getItemCount. It does not assume every
+field uses B2 and does not grant ownership. Host tests execute the actual binding
+with all 23 field slots, owned/unowned counts, negative entries and invalid/null
+field guards; Vita syntax passes. Exploration-bit lookup remains separate.
+
 Original 060172B8 pattern conversion now operates on real PNB words: each
-half processes 16x16 2x2-word blocks, with 40-byte inner-row stride and
-80-byte block-row stride. Exploration queries use ascending X and descending
+half processes 16x16 2x2-word blocks, with 0x40-byte inner-row stride and
+0x80-byte block-row stride. Exploration queries use ascending X and descending
 Y (firstY15/31 for the two halves). Explored blocks add4000; unexplored owned
 map blocks add7000; unexplored unowned blocks fill0238. Additions wrap as
 native 16-bit words and output remains big-endian. Ownership/exploration

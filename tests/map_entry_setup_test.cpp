@@ -4,8 +4,17 @@
 #include <cstdint>
 using u16=unsigned short;
 unsigned char common[0x21084], vram[0x80000];
-struct Common {unsigned char* m_data;} commonObject{common};
+struct Common {
+ unsigned char* m_data;
+ unsigned char* getSaturnPtr(unsigned address){assert(address==0x20A650);return m_data+0xA650;}
+} commonObject{common};
 Common* gCommonFile=&commonObject;
+enum eItems:int {};
+int readSaturnS16(unsigned char* data){return std::int16_t((unsigned(data[0])<<8)|data[1]);}
+struct Field {int m2C_currentFieldIndex=0;} fieldObject;
+Field* fieldPointer=&fieldObject;
+Field* getFieldTaskPtr(){return fieldPointer;}
+struct {int calls=0,last=-1,value=0;int getItemCount(eItems item){++calls;last=int(item);return value;}} mainGameState;
 struct Registers {
  unsigned short mF8_PRINA=0xFFFF,mFA_PRINB=0xFFFF,mFC_PRIR=0xFFFF;
  unsigned short m10A_CCRNB=0xA580,mC0_WPSX0=0,mC2_WPSY0=0,mC4_WPEX0=0,mC6_WPEY0=0;
@@ -22,7 +31,19 @@ unsigned char* getVdp2Vram(int offset){assert(offset==0x71000);return vram+offse
 void unpackGraphicsToVDP2(unsigned char* source,unsigned char* dest){assert(source==common+0xE3D4 && dest==vram+0x71000);calls.push_back(9);}
 #include "map_entry_production.inc"
 #include "map_delete_production.inc"
+#include "map_ownership_production.inc"
 int main(){
+ for(int index=0;index<23;++index){
+  fieldObject.m2C_currentFieldIndex=index;
+  common[0xA650+index*2]=0;common[0xA651+index*2]=static_cast<unsigned char>(0xA0+index);
+  mainGameState.value=1;assert(lagiAzelCurrentFieldMapOwned() && mainGameState.last==0xA0+index);
+  mainGameState.value=0;assert(!lagiAzelCurrentFieldMapOwned());
+ }
+ fieldObject.m2C_currentFieldIndex=0;common[0xA650]=0xFF;common[0xA651]=0xFF;
+ int count=mainGameState.calls;assert(!lagiAzelCurrentFieldMapOwned() && mainGameState.calls==count);
+ fieldObject.m2C_currentFieldIndex=23;assert(!lagiAzelCurrentFieldMapOwned());
+ fieldPointer=nullptr;assert(!lagiAzelCurrentFieldMapOwned());
+ fieldPointer=&fieldObject;
  lagiAzelSetupMapViewWindow(-16,8);
  assert(registers.mC0_WPSX0==224 && registers.mC2_WPSY0==24 && registers.mC4_WPEX0==607 && registers.mC6_WPEY0==215);
  assert(registers.m10A_CCRNB==0xA59F && registers.mFA_PRINB==0x0705 && registers.mF8_PRINA==0x0304 && registers.mFC_PRIR==0 && vdp2Controls.m_isDirty==1);

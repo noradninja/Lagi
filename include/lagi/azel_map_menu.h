@@ -113,6 +113,8 @@ inline LagiAzelMapStep lagiAzelAdvanceMapLifecycle(LagiAzelMapLifecycle& state)
 
 // Original 06016B04, using the native COMMON compressed tile layout.
 bool lagiAzelSetupMapEntry(bool standalone);
+// Native 06012554: current field's authored inventory item (COMMON A650).
+bool lagiAzelCurrentFieldMapOwned();
 // Original map-view child Delete 0601763C; parent-menu priority restoration.
 void lagiAzelRestoreMapViewPriorities();
 // Original 060173AA..06017406, using the native map-view scroll pair.
