@@ -13,6 +13,30 @@ struct LagiAzelMapDescriptor {
     std::array<std::uint8_t,4> presentation{};
 };
 
+// Native 060172B8: one 16x16 block half of a 32x32-word PNB plane.
+// The caller supplies original map-ownership and exploration services.
+inline bool lagiAzelConvertMapPatterns(const std::uint8_t* source,std::size_t sourceBytes,
+    std::uint8_t* destination,std::size_t destinationBytes,bool mapOwned,
+    unsigned firstY,bool (*explored)(void*,unsigned,unsigned),void* context)
+{
+    if(!source || !destination || sourceBytes<0x800 || destinationBytes<0x800 ||
+        !explored || firstY<15) return false;
+    for(unsigned row=0;row<16;++row) for(unsigned x=0;x<16;++x) {
+        const bool visible=explored(context,x,firstY-row);
+        for(unsigned dy=0;dy<2;++dy) for(unsigned dx=0;dx<2;++dx) {
+            const unsigned offset=row*0x80+x*4+dy*0x40+dx*2;
+            std::uint16_t pattern=0x0238;
+            if(visible || mapOwned) {
+                pattern=std::uint16_t((std::uint16_t(source[offset])<<8)|source[offset+1]);
+                pattern=std::uint16_t(pattern+(visible?0x4000:0x7000));
+            }
+            destination[offset]=std::uint8_t(pattern>>8);
+            destination[offset+1]=std::uint8_t(pattern);
+        }
+    }
+    return true;
+}
+
 // Native 06017A68: task fields +0/+8/+C/+10/+1C. Actions identify the
 // original service to run; this does not enable the unfinished constructor.
 enum class LagiAzelMapAction {

@@ -37,6 +37,17 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Original 060172B8 pattern conversion now operates on real PNB words: each
+half processes 16x16 2x2-word blocks, with 40-byte inner-row stride and
+80-byte block-row stride. Exploration queries use ascending X and descending
+Y (firstY15/31 for the two halves). Explored blocks add4000; unexplored owned
+map blocks add7000; unexplored unowned blocks fill0238. Additions wrap as
+native 16-bit words and output remains big-endian. Ownership/exploration
+callbacks must be bound to original game state, not invented visibility.
+Host tests cover 4096 output words across both halves and ownership states,
+callback order, word wrap, blanking and buffer guards; Vita syntax passes.
+Map task hookup, exploration service binding and rendered output remain pending.
+
 Map-view window setup 060173AA..06017406 now has a native service:
 signed caller-owned scroll coordinates derive window0 start (60-x,20-y),
 horizontal doubled endpoints with inclusive end and 192-line vertical span.
