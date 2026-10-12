@@ -37,6 +37,16 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Map-view child definition COMMON 20E8E4 has null Init/Update, Draw 060174C8
+and Delete 0601763C, allocated size28. Its own phases0..7 include setup,
+16-frame NBG2 calculation-ratio transition, active draw/input, closing,
+eight-step scrolling and return. The parent mode1 follows child completion,
+not a direct parent button shortcut. Full child implementation remains required.
+Delete is now implemented as lagiAzelRestoreMapViewPriorities: pending PRINA
+0304, PRINB0700, PRIR0, dirty1. Actual production cleanup executes in the entry
+host fixture and handles absent pending registers safely; Vita syntax passes.
+This service is not connected to a native child task yet.
+
 Selection decisions from 06017762..060178A2 now live in lagiAzelMapSelect:
 native input bit1 cancels before confirm bits6; confirm rejects availability0
 with sound5, otherwise selects original mode1/2 with sound0. Vertical bits30

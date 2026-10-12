@@ -89,6 +89,8 @@ inline LagiAzelMapStep lagiAzelAdvanceMapLifecycle(LagiAzelMapLifecycle& state)
 
 // Original 06016B04, using the native COMMON compressed tile layout.
 bool lagiAzelSetupMapEntry(bool standalone);
+// Original map-view child Delete 0601763C; parent-menu priority restoration.
+void lagiAzelRestoreMapViewPriorities();
 
 // Original 06016E64. Caller owns the pattern buffer and graphics rollback.
 // Returns the native SCB VRAM offset; no generated or substitute map image.

@@ -2,6 +2,17 @@
 #include "lagi/azel_map_menu.h"
 #include "commonOverlay.h"
 
+void lagiAzelRestoreMapViewPriorities()
+{
+    // Native child Delete 0601763C..5A, before the parent selection returns.
+    auto* regs=vdp2Controls.m4_pendingVdp2Regs;
+    if (!regs) return;
+    regs->mF8_PRINA=0x0304;
+    regs->mFA_PRINB=0x0700;
+    regs->mFC_PRIR=0;
+    vdp2Controls.m_isDirty=1;
+}
+
 bool lagiAzelSetupMapEntry(bool standalone)
 {
     if (!gCommonFile || !gCommonFile->m_data) return false;

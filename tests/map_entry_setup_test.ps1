@@ -4,6 +4,10 @@ $repo=Split-Path $PSScriptRoot -Parent
 $scratch=[IO.Path]::GetFullPath((Join-Path $repo $ScratchRoot))
 New-Item -ItemType Directory -Force -Path $scratch | Out-Null
 $source=Get-Content -Raw (Join-Path $repo 'src/integration/lagi_azel_map_menu.cpp')
+$deleteBegin=$source.IndexOf('void lagiAzelRestoreMapViewPriorities(')
+$deleteEnd=$source.IndexOf('bool lagiAzelSetupMapEntry(', $deleteBegin)
+if($deleteBegin -lt 0 -or $deleteEnd -le $deleteBegin){throw 'Map child cleanup missing'}
+Set-Content -LiteralPath (Join-Path $scratch 'map_delete_production.inc') -Value $source.Substring($deleteBegin,$deleteEnd-$deleteBegin)
 $begin=$source.IndexOf('bool lagiAzelSetupMapEntry(')
 $end=$source.IndexOf('bool lagiAzelLoadFieldMapResources(', $begin)
 if($begin -lt 0 -or $end -le $begin){throw 'Map entry function missing'}
