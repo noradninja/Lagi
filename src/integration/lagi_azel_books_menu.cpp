@@ -14,6 +14,7 @@ static_assert(backupBytes == 0x169A0);
 }
 
 void drawGaugeVdp1(u16 mode, std::array<sVec2_S16, 4>& params, u16 color, fixedPoint depth);
+void scrollMenu();
 
 bool lagiAzelBooksPresentText(const std::uint8_t* data, std::size_t bytes,
     std::uint32_t bookIndex, std::uint32_t headingIndex,
@@ -44,6 +45,18 @@ bool lagiAzelBooksPresentText(const std::uint8_t* data, std::size_t bytes,
     // 060165D4 clears this region for text AND illustration commands.
     setupVDP2StringRendering(5, 0x2E, 0x22, 0xE);
     clearVdp2TextArea();
+    // Original 060165D4 clears only NBG2's priority bits for text/commands
+    // 0 and 3; commands 1/2 select the two existing NBG2 illustrations.
+    // Keep the pending bank/dirty handoff, rather than forcing both banks.
+    auto* regs = vdp2Controls.m4_pendingVdp2Regs;
+    if (body.nativeValue == 1 || body.nativeValue == 2) {
+        setVdp2LayerScroll(2, body.nativeValue == 1 ? -0x68 : 0x98, 0x100);
+        scrollMenu(); // native 06015B08 publishes all four configured layers
+        regs->mFA_PRINB = (regs->mFA_PRINB & 0xFFF8) | 5;
+    } else {
+        regs->mFA_PRINB &= 0xFFF8;
+    }
+    vdp2Controls.m_isDirty = 1;
     if (body.text) {
         vdp2StringContext.m0 = 0;
         drawObjectName(body.text);

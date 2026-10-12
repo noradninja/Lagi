@@ -187,3 +187,21 @@ clear the body text region and are returned to the owning task for native
 illustration/register handling; this service does not implement those graphics
 changes. Its Vita syntax passes, but it is not connected to a Books task and
 neither font appearance nor hardware text-region behavior is validated.
+
+The subsequent illustration switch completes the register/scroll portion of
+`060165D4`: values 1/2 call native `setVdp2LayerScroll(2,-104,256)` /
+`setVdp2LayerScroll(2,152,256)` and `scrollMenu` (`06015B08`), then set
+NBG2 priority to 5. Text and commands 0/3 clear that priority. All paths retain
+the other `PRINB` bits and mark the pending VDP2 bank dirty, rather than changing
+both banks or disabling other layers. The body text region is cleared first,
+as in the executable; text is then drawn only for values greater than 3.
+This supersedes the previous paragraph's unimplemented-switch limitation, but
+does not load either illustration or implement the task's graphics setup.
+
+`tests/books_presentation_test.ps1` mechanically extracts the actual production
+service and executes it against production resource readers with mocked VDP2
+calls. It checks all four command values and text, exact four native regions,
+one-based heading counter, encoded separator, scroll/publication calls, priority
+preservation and rejection without drawing for a truncated resource. Host
+execution and Vita helper syntax pass. Native image/font rendering and task
+ownership remain unverified; the Books constructor is still disabled.

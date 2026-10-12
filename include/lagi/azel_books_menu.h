@@ -36,8 +36,8 @@ struct LagiAzelBooksBodyPage {
 };
 bool lagiAzelBooksReadBodyPage(const std::uint8_t* data, std::size_t bytes,
     std::uint32_t bookIndex, std::uint32_t bodyPageIndex, LagiAzelBooksBodyPage& out);
-// Native title, heading, page counter and body text regions. Illustration
-// commands are returned to the owning task, not drawn as invented text.
+// Native title, heading, page counter, body text and NBG2 illustration switch.
+// Requires the task's native graphics setup/resources to have been loaded.
 bool lagiAzelBooksPresentText(const std::uint8_t* data, std::size_t bytes,
     std::uint32_t bookIndex, std::uint32_t headingIndex,
     std::uint32_t bodyPageIndex, LagiAzelBooksBodyPage& body);
