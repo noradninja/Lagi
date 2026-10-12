@@ -4569,8 +4569,20 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
 enum class Vdp1UiPass {
     All,
     Background,
+    WorldEffects,
     Foreground
 };
+
+static bool vdp1UiPassAccepts(Vdp1UiPass pass, bool background, bool worldDepth)
+{
+    switch (pass) {
+    case Vdp1UiPass::All: return true;
+    case Vdp1UiPass::Background: return background;
+    case Vdp1UiPass::WorldEffects: return !background && worldDepth;
+    case Vdp1UiPass::Foreground: return !background && !worldDepth;
+    }
+    return false;
+}
 
 static bool isVdp1BackgroundCommand(
     const azel_bridge::Vdp1UiCommand& command)
@@ -4636,16 +4648,14 @@ static void drawPublishedVdp1Ui(
         : localSpriteSlot;
     for (const auto& command : commands) {
         const bool background = isVdp1BackgroundCommand(command);
-        if ((pass == Vdp1UiPass::Background && !background) ||
-            (pass == Vdp1UiPass::Foreground && background))
-            continue;
-
         const unsigned int commandType = command.cmdCtrl & 0x000Fu;
         // Projected scene sprites retain their producer's real endpoint Z.
         // Saturn packet buckets are priority keys, not GXM depth values.
         const bool worldDepth = command.hasWorldDepth && !command.fieldRadar &&
             g_sceneGameMode == 3u && !g_vdp2MenuId && !g_vdp2SaveLayout &&
             g_nativeSceneNearPlane > 0.0f && g_nativeSceneFarPlane > g_nativeSceneNearPlane;
+        if (!vdp1UiPassAccepts(pass, background, worldDepth))
+            continue;
         const auto commandZ = [&](unsigned i) {
             return worldDepth ? lagi::native_screen_depth(command.viewZ[i],
                 g_nativeSceneNearPlane, g_nativeSceneFarPlane) : 0.0f;
@@ -13273,6 +13283,11 @@ static void renderBasicWingViewer()
             // Separate storage keeps the queued background draw immutable.
             drawAzelMenuVdp2Gpu(true);
         } else {
+            // LAGI_PICKUP_EFFECTS_BELOW_UI: keep projected collection effects
+            // depth-tested against geometry, below all pickup tiles/glyphs.
+            // Share slots so later overlay draws cannot overwrite queued data.
+            drawPublishedVdp1Ui(
+                Vdp1UiPass::WorldEffects, &vdp1UiSpriteSlot);
             drawAzelVdp2Nbg1Gpu();
             drawAzelVdp2CinematicBarsGpu();
             drawAzelVdp2TextLayerGpu();
