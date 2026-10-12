@@ -13228,6 +13228,23 @@ static void renderBasicWingViewer()
             ? staticRoomVdp1Source(false)
             : basicWingVdp1Source());
 
+    // Menu NBG1/0 priorities 3/4 are behind BOTH VDP1 model polygons and
+    // decorations (5/6). Draw backing before model submission, not afterward.
+    unsigned int menuBackingUs = 0u;
+    if (roomAuthenticCameraMode && (g_vdp2MenuId != 0u || g_vdp2SaveLayout)) {
+        const auto menuBackingStartUs = sceKernelGetProcessTimeWide();
+        // A 2D backing layer must not occlude the following 3D menu model in
+        // the depth buffer. submit_vdp1_model restores all model raster state.
+        sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+        sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+        sceGxmSetFrontDepthWriteEnable(g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+        sceGxmSetBackDepthWriteEnable(g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+        sceGxmSetFrontPolygonMode(g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+        sceGxmSetBackPolygonMode(g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+        drawAzelMenuVdp2Gpu(); // LAGI_MENU_BACKING_BEFORE_MODELS
+        menuBackingUs = static_cast<unsigned int>(sceKernelGetProcessTimeWide() - menuBackingStartUs);
+    }
+
     const std::uint64_t submitStartUs = sceKernelGetProcessTimeWide();
     const bool submitted = nativeSceneContext && !nativeSceneMode
         ? true : submit_vdp1_model(model, drawState);
@@ -13249,7 +13266,7 @@ static void renderBasicWingViewer()
         if (g_vdp2MenuId != 0u || g_vdp2SaveLayout) {
             // Decode menu backing separately from glyphs: native priority
             // is NBG1/0 (3/4), VDP1 decorations (5/6), then NBG3 text (7).
-            drawAzelMenuVdp2Gpu();
+            // The backing was already drawn before native model polygons.
             drawPublishedVdp1Ui(
                 Vdp1UiPass::Foreground, &vdp1UiSpriteSlot);
             // Native menu NBG3 glyph priority 7 is above VDP1 priority 5/6.
@@ -13276,7 +13293,7 @@ static void renderBasicWingViewer()
             std::clamp(-g_sceneColorOffset[1] * 2, 0, 255),
             std::clamp(-g_sceneColorOffset[2] * 2, 0, 255));
     }
-    g_profileComposeUs = static_cast<unsigned int>(
+    g_profileComposeUs = menuBackingUs + static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - composeStartUs);
 
     const std::uint64_t gxmWaitStartUs = sceKernelGetProcessTimeWide();

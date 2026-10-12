@@ -291,6 +291,15 @@ model / decorations / glyph composition order. This does not authorize undoing
 the separately accepted gameplay sprite-depth fix, nor prove Dragon input or
 ability state changes are complete.
 
+Renderer correction: NBG1/0 backing priorities 3/4 now draw before VDP1 model
+submission, not after it. Backing uses ALWAYS with depth writes disabled; the
+model submission restores its full depth/raster/program state. Decorations and
+NBG3 glyphs remain afterward at priorities 5/6 and 7. The early backing cost is
+included in composition profiling. This applies only to native menu/save layout
+frames, so the accepted gameplay sprite-depth path is unchanged. Source order /
+state guards and renderer Vita syntax pass; Dragon ability/morph appearance,
+menu return and save/load layering still require the combined device check.
+
 The current hardware capture checkpoint is `1482528`; that is a partial fix,
 not an all-menu-functionality release. These gaps remain in the pinned native
 source and must not be mistaken for renderer failures or silently excluded:
