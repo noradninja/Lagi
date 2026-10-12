@@ -1,5 +1,19 @@
 # Field map collection and menu availability
 
+## Hardware regression invalidates the flag-alias repair
+
+2026-10-12: user reports adf29ee allows infinite item-box collection, permits
+two map pickups, and displays map models opposite to the expected uncollected
+particle model / collected non-particle model. The generic flag redirection is
+removed from production for all three item-box types. The earlier explanation
+below is a rejected source hypothesis, not a verified fix. Its host-tail test
+did not execute the full callback/laser/model lifecycle and must not be treated
+as proof of native flag aliasing or correct collection behavior.
+
+User explicitly requests restoring and enabling the actual Map page, alongside
+the map-specific pickup/model lifecycle. Finish its native task and presentation
+before removing the disabled entry; do not enable the existing null constructor.
+
 User reports map pickup can be collected repeatedly and Map menu cannot be
 accessed. These have distinct current source causes, not one proven missing
 inventory flag.
