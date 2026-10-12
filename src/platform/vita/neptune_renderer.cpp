@@ -5,6 +5,8 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/vdp1_renderer.h"
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_render_bridge.h"
+#include "lagi/lagi_screen_depth.h"
+#include "lagi/lagi_vdp1_quad_geometry.h"
 #include "lagi/lagi_live_model_adapter.h"
 #include "neptune_texture_pool.h"
 #include "neptune_texture_pixels.h"
@@ -4639,6 +4641,21 @@ static void drawPublishedVdp1Ui(
             continue;
 
         const unsigned int commandType = command.cmdCtrl & 0x000Fu;
+        // Projected scene sprites retain their producer's real endpoint Z.
+        // Saturn packet buckets are priority keys, not GXM depth values.
+        const bool worldDepth = command.hasWorldDepth && !command.fieldRadar &&
+            g_sceneGameMode == 3u && !g_vdp2MenuId && !g_vdp2SaveLayout &&
+            g_nativeSceneNearPlane > 0.0f && g_nativeSceneFarPlane > g_nativeSceneNearPlane;
+        const auto commandZ = [&](unsigned i) {
+            return worldDepth ? lagi::native_screen_depth(command.viewZ[i],
+                g_nativeSceneNearPlane, g_nativeSceneFarPlane) : 0.0f;
+        };
+        const auto commandDepthFunc = worldDepth ? SCE_GXM_DEPTH_FUNC_LESS_EQUAL : SCE_GXM_DEPTH_FUNC_ALWAYS;
+        sceGxmSetFrontDepthFunc(g_probeContext, commandDepthFunc);
+        sceGxmSetBackDepthFunc(g_probeContext, commandDepthFunc);
+        const auto commandDepthWrite = worldDepth ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED;
+        sceGxmSetFrontDepthWriteEnable(g_probeContext, commandDepthWrite);
+        sceGxmSetBackDepthWriteEnable(g_probeContext, commandDepthWrite);
 
         if (g_sceneGameMode == 3u && !g_vdp2MenuId && !g_vdp2SaveLayout &&
             command.hasNativeSortKey && command.nativeSortKey != 0) {
@@ -4672,7 +4689,7 @@ static void drawPublishedVdp1Ui(
 
         // Native radar direction line (6) and altitude fill polygon (4).
         // Do not infer HUD ownership from texture, color or screen position.
-        if (command.fieldRadar && (commandType == 4u || commandType == 6u)) {
+        if ((command.fieldRadar && commandType == 4u) || commandType == 6u) {
             if (spriteSlot >= 128u || !g_probeVertexProgram ||
                 !g_probeFragmentProgram || !g_probeWvpParam) continue;
             auto* vertices = g_vdp1UiLineVertices + spriteSlot++ * 4u;
@@ -4681,7 +4698,8 @@ static void drawPublishedVdp1Ui(
             const std::int16_t xs[4] = {command.xa,command.xb,command.xc,command.xd};
             const std::int16_t ys[4] = {command.ya,command.yb,command.yc,command.yd};
             for (unsigned i = 0; i < 4; ++i)
-                vertices[i] = {radarX(xs[i]), radarY(ys[i]), 0.0f,
+                vertices[i] = {command.fieldRadar ? radarX(xs[i]) : xs[i] / 176.0f * saturnAspectCorrection,
+                    command.fieldRadar ? radarY(ys[i]) : -ys[i] / 112.0f, commandZ(i),
                     expand(c & 31u), expand((c >> 5) & 31u), expand((c >> 10) & 31u), 255u};
             sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
             sceGxmSetFragmentProgram(g_probeContext, g_probeFragmentProgram);
@@ -4975,6 +4993,25 @@ static void drawPublishedVdp1Ui(
             pos[3][0] = (static_cast<float>(command.xd) / 176.0f) *
                 saturnAspectCorrection;
             pos[3][1] = -static_cast<float>(command.yd) / 112.0f;
+            if (worldDepth) {
+                lagi::NativeScreenQuad nativeQuad = {{{float(command.xa),float(command.ya)},
+                    {float(command.xb),float(command.yb)}, {float(command.xc),float(command.yc)},
+                    {float(command.xd),float(command.yd)}}};
+                if (lagi::expand_native_collapsed_quad(nativeQuad)) {
+                    for (unsigned i=0;i<4;++i) {
+                        pos[i][0]=nativeQuad[i][0]/176.0f*saturnAspectCorrection;
+                        pos[i][1]=-nativeQuad[i][1]/112.0f;
+                    }
+                    static unsigned collapsedRayBudget=8;
+                    if (collapsedRayBudget) {
+                        --collapsedRayBudget;
+                        logging::writef("[NativeRayCoverage] src=%04X A=%d,%d B=%d,%d C=%d,%d D=%d,%d z=%.4f,%.4f\n",
+                            command.cmdSrca,command.xa,command.ya,command.xb,command.yb,
+                            command.xc,command.yc,command.xd,command.yd,
+                            double(command.viewZ[0]),double(command.viewZ[1]));
+                    }
+                }
+            }
         }
         // Identify oversized late-composed sprites without suppressing or
         // reordering native commands. Limit to eight unique field rectangles.
@@ -5004,7 +5041,7 @@ static void drawPublishedVdp1Ui(
         }
         for (unsigned int i = 0; i < 4u; ++i) {
             spriteVertices[i] = {
-                pos[i][0], pos[i][1], 0.0f,
+                pos[i][0], pos[i][1], commandZ(i),
                 uv[order[i]][0], uv[order[i]][1]
             };
         }
@@ -5040,7 +5077,7 @@ static void drawPublishedVdp1Ui(
         if (shaded) {
             for (unsigned i = 0; i < 4u; ++i) {
                 const unsigned c = command.gouraud[i];
-                gouraudVertices[i] = {pos[i][0], pos[i][1], 0.0f,
+                gouraudVertices[i] = {pos[i][0], pos[i][1], commandZ(i),
                     uv[order[i]][0], uv[order[i]][1],
                     (static_cast<int>(c & 31u) - 16) / 31.0f,
                     (static_cast<int>((c >> 5) & 31u) - 16) / 31.0f,
@@ -10873,23 +10910,24 @@ bool submit_vdp1_model(
                             mesh ? 1u : 0u);
                         --orderedShadowTraceBudget;
                     }
-                    // Saturn VDP1 mesh mode is ordered overdraw, not a z-buffered
-                    // material. Preserve this Azel-authored command phase
-                    // explicitly rather than allowing texture batching/depth
-                    // testing to reorder or reject it.
+                    // Preserve the native mesh phase, but field meshes are
+                    // scene geometry (including waterfalls), not unconditional
+                    // HUD overdraw. Field meshes compare/write scene depth;
+                    // discarded stipple texels still leave holes. Keep town
+                    // shadow overdraw semantics unchanged.
                     sceGxmSetFrontPolygonMode(
                         g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
                     sceGxmSetBackPolygonMode(
                         g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
                     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
                     sceGxmSetFrontDepthFunc(
-                        g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+                        g_probeContext, g_sceneGameMode == 3u ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
                     sceGxmSetBackDepthFunc(
-                        g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+                        g_probeContext, g_sceneGameMode == 3u ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
                     sceGxmSetFrontDepthWriteEnable(
-                        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+                        g_probeContext, g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                     sceGxmSetBackDepthWriteEnable(
-                        g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+                        g_probeContext, g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                 }
 
                 sceGxmSetFragmentProgram(
@@ -11243,15 +11281,15 @@ bool submit_vdp1_model(
                         sceGxmSetCullMode(
                             g_probeContext, SCE_GXM_CULL_NONE);
                         sceGxmSetFrontDepthFunc(
-                            g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+                            g_probeContext, g_sceneGameMode == 3u ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
                         sceGxmSetBackDepthFunc(
-                            g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+                            g_probeContext, g_sceneGameMode == 3u ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
                         sceGxmSetFrontDepthWriteEnable(
                             g_probeContext,
-                            SCE_GXM_DEPTH_WRITE_DISABLED);
+                            g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                         sceGxmSetBackDepthWriteEnable(
                             g_probeContext,
-                            SCE_GXM_DEPTH_WRITE_DISABLED);
+                            g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                     }
                     sceGxmSetFragmentProgram(
                         g_probeContext,

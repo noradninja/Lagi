@@ -1,9 +1,11 @@
 # Current flight UI/transition acceptance
 
-User confirms radar frame/orb positioning and drawing corrected after f3d0cd4.
-Navigator release still crashes. Missing orientation line/object markers and
-encounter-risk color behavior remain unaccepted. Tunnel exit can leave output
-white while game/audio continues. These requirements remain in scope.
+User confirms radar frame/orb positioning and drawing corrected after f3d0cd4,
+and tunnel traversal/fade-in corrected after f1ca85c. Latest hardware 8b9cf45
+still crashes on navigator release. Orientation/object markers, encounter-risk
+color, scene sprite/mesh occlusion and collection radial burst remain visually
+unaccepted. See NATIVE_FLIGHT_RESTORATION.md for the combined source repairs
+and their actual checks; do not treat this historical audit as device PASS.
 
 Dump 1791750699 is gzip-compressed and expands to a complete 5,858,872-byte ELF
 core (all 64 declared segments fit). The available Downloads/lagi.log predates
@@ -19,9 +21,10 @@ fade requests, wait, destination replacement and unlock order. Syntax/source
 checks do not prove this resolves the white screen: collect a fresh tunnel
 capture/log and inspect the incoming field's fade behavior if it persists.
 
-No forced fade-in, no navigator disabling, and no invented radar markers are
-added. Native destination indicator and palette-fade stubs still require actual
-reconstruction before their visual behavior can be called restored.
+No forced fade-in, navigator disabling, or invented radar markers were added
+at that checkpoint. Destination-indicator and palette-fade stubs then remained
+unrestored. The combined restoration below supersedes the destination stub;
+palette-fade and visual acceptance remain separate requirements.
 
 Incoming-area mismatch: s_FieldSubTaskWorkArea::Update state 0 requested its
 existing 30-frame fade only under !isSoundLoadingFinished(). The Vita audio
@@ -70,3 +73,71 @@ are syntax checks only; release-R behavior requires a new device test. The
 user's report that this worked before radar placement changes remains recorded;
 the dump establishes the failing path, not that historical regression's cause.
 Load-transition video and black fade still require separate diagnosis.
+
+Hardware 8b9cf45 still crashes on R-release. Dump 1791752192 is complete
+(5,858,872 bytes, 64 segments); lagi RX base 8107F000 requires subtracting
+7F000 from runtime RX addresses against the matching raw ELF. Stack return
+81161D49 resolves to executeNative default assert at raw 810E2D48, now with
+native argument 06073120 (not the previous 06073172). Thus the prior repair
+did not complete navigator restoration. Original 06073120 obtains radar and
+script tasks, checks script +44 multiChoiceData, then calls 0601DD66 with
+parent script, output task +3C, result choice +4, radar filtered count +24,
+radar choice-pointer array +20, per-choice color table, and selected index.
+Existing updateMultiChoice has that seven-argument native role, but expects a
+sSaturnPtr table rather than the reconstructed host s32* array. That ownership
+and address translation must be repaired faithfully before wiring the call.
+Do not merely add an empty case or suppress the default assertion.
+
+Navigator continuation audit (user requests following the whole line before
+another test): script 06080FAD..0608106E calls 060730BC (filter/build),
+06073172 (selected-text branch), 06073120 (open dialog), and waits on
+06072F3C (commit selection/free choice array). Both dialog branches contain
+the open/wait calls. 06072F3C is also missing from the portable dispatcher.
+Native 06072E78 maps filtered dialog index back to destination index; negative
+means no change, exhausting destinations returns index 0 (deactivate).
+06072EE8 updates global string slot 2 and selection, preserving cancellation.
+
+Additional connected defects: createMultiChoice asserts on a nonnegative
+default index. Original 06079234 stores that index, clears all color entries,
+then 060792BA sets selected entry color to 9. Current parseDestinations leaves
+entry 0's text as a null placeholder, and filtered selection text casts raw
+Saturn addresses to host char pointers. A native address table cannot simply
+be wrapped in a small memory-file view: readSaturnEA preserves the table's
+m_file, so target strings must remain valid in that same view or be translated
+through an explicit host-address dialog adapter. Audit allocation/free and
+dialog lifetime for first use, reopen, selection, cancel and deactivate.
+
+The nonnegative createMultiChoice default branch is now locally restored to
+store the native index, clear styles, and mark the selected entry color 9.
+Patched-source Vita syntax passed; it is uncommitted and not a standalone
+hardware handoff. User additionally requires missing radar direction line and
+item/object dots repaired before the next build. Treat initializer repair as
+insufficient without auditing draw/submission and marker ownership routines.
+
+Radar continuation audit: renderer CMD6 uses indices 0,1 and a draw count of
+2; capture copies both endpoints and radar ownership, so the index buffer
+does not explain the missing line. Direction trigonometry uses native 12-bit
+table indices, not full shifted angles. The direction command is authored
+between the orb and frame. These source checks are not visual acceptance.
+
+Nearby object dots are a separate missing path, not just the stub destination
+indicator at 06071EC4. Original LCSTaskDrawSub5 at 0606E750 calls 0607281E
+through literal 0606E7E0 for each pending target and each active-list target.
+The reconstructed LCSTaskDrawSub5 contains only cursor/selected-task drawing.
+Native marker input is position, target flags & 3 as color index, and flags 1;
+targets with flag 0100 first transform through the matrix at 0604B088.
+0607281E performs strict X/Z range and squared horizontal distance checks,
+rotates by negative dragon yaw, scales X by 0013CCCC and Z by FFEE0000
+relative to radar encounter distance, and selects colors from 06093F54:
+C3F0, C3FF, FE1F, FFF0. Vertical offsets above m5C/below -m60 add flags
+4/8. Quad shaping is native 060726DC, followed by polygon emission at
+0602CAF4. Object marker commands are emitted outside fieldRadar_draw's
+current ownership range; restoration must extend explicit ownership rather
+than infer HUD membership from colors, texture IDs or positions. Destination
+indicator also calls this routine with color 4 and flags 12 after its bearing
+line. No marker implementation or new hardware handoff is claimed yet.
+
+The audit above preceded the combined implementation. Native navigator open,
+wait/commit, address translation, cancel semantics and dialog-owned string view
+are now restored, as are object-list markers and destination bearing/marker
+emission. Read NATIVE_FLIGHT_RESTORATION.md for tests and device limitations.

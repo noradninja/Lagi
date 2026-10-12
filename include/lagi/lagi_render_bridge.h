@@ -64,6 +64,10 @@ struct Vdp1UiCommand {
     // without classifying commands by field/texture identity.
     float depth = 0.0f;
     bool hasDepth = false;
+    // Explicit scene depth from the native producer, in engine world units.
+    // Do not derive it from the lossy Saturn bucket key or texture identity.
+    float viewZ[4]{};
+    bool hasWorldDepth = false;
     // Native packet ordering metadata is distinct from desktop normalized
     // depth. Preserve it without guessing a world/HUD class from texture IDs.
     std::uint16_t nativeSortKey = 0;

@@ -29,7 +29,9 @@ p_workArea createTitleMenuTask(p_workArea);
 
 namespace lagi::azel {
 
-static std::uintptr_t radarCommandBegin = 0, radarCommandEnd = 0;
+static std::array<bool, 1024> radarCommandOwned{};
+static std::array<std::array<float, 4>, 1024> worldCommandViewZ{};
+static std::array<bool, 1024> worldCommandDepthValid{};
 
 static void begin_azel_vdp1_frame()
 {
@@ -45,7 +47,8 @@ static void begin_azel_vdp1_frame()
     // Extended metadata belongs to one frame: recycled slots used by HUD/LCS
     // commands must not inherit a previous background sprite's far depth.
     ++frameIndex;
-    radarCommandBegin = radarCommandEnd = 0;
+    radarCommandOwned.fill(false);
+    worldCommandDepthValid.fill(false);
     ctx.m0_currentVdp1WriteEA = mainContextVdp1[0].begin() + 6;
     ctx.m20_pCurrentVdp1Packet = ctx.m24_vdp1Packets;
     ctx.m1C = 0;
@@ -91,10 +94,12 @@ static void capture_azel_vdp1_frontend_commands()
         ui.cmdColr = cmd->m6_CMDCOLR;
         ui.cmdSrca = cmd->m8_CMDSRCA;
         ui.cmdSize = cmd->mA_CMDSIZE;
-        const auto commandAddress = reinterpret_cast<std::uintptr_t>(&*cmd);
-        ui.fieldRadar = radarCommandBegin && commandAddress >= radarCommandBegin &&
-            commandAddress < radarCommandEnd;
         const auto nativeIndex = static_cast<std::size_t>(cmd - mainContextVdp1[0].begin());
+        ui.fieldRadar = nativeIndex < radarCommandOwned.size() && radarCommandOwned[nativeIndex];
+        if (nativeIndex < worldCommandDepthValid.size() && worldCommandDepthValid[nativeIndex]) {
+            ui.hasWorldDepth = true;
+            std::copy(worldCommandViewZ[nativeIndex].begin(), worldCommandViewZ[nativeIndex].end(), ui.viewZ);
+        }
         if (nativeIndex < nativeSortKeys.size()) {
             ui.nativeSortKey = nativeSortKeys[nativeIndex];
             ui.hasNativeSortKey = nativeSortKeyValid[nativeIndex];
@@ -1252,6 +1257,28 @@ void runtime_frame()
 
 void lagiMarkFieldRadarCommands(const void* begin, const void* end)
 {
-    lagi::azel::radarCommandBegin = reinterpret_cast<std::uintptr_t>(begin);
-    lagi::azel::radarCommandEnd = reinterpret_cast<std::uintptr_t>(end);
+    // Radar task and LCS task emit separate ranges in the same frame.
+    // Accumulate ownership by command slot; never overwrite the earlier range.
+    const auto base = reinterpret_cast<std::uintptr_t>(mainContextVdp1[0].data());
+    const auto first = reinterpret_cast<std::uintptr_t>(begin);
+    const auto last = reinterpret_cast<std::uintptr_t>(end);
+    const auto limit = base + mainContextVdp1[0].size() * sizeof(s_vdp1Command);
+    if (first < base || last < first || last > limit ||
+        (first - base) % sizeof(s_vdp1Command) ||
+        (last - base) % sizeof(s_vdp1Command)) return;
+    for (auto i = (first - base) / sizeof(s_vdp1Command);
+         i < (last - base) / sizeof(s_vdp1Command) && i < lagi::azel::radarCommandOwned.size(); ++i)
+        lagi::azel::radarCommandOwned[i] = true;
+}
+
+void lagiRecordVdp1WorldDepth(const void* command, const float viewZ[4])
+{
+    const auto base = reinterpret_cast<std::uintptr_t>(mainContextVdp1[0].data());
+    const auto address = reinterpret_cast<std::uintptr_t>(command);
+    const auto limit = base + mainContextVdp1[0].size() * sizeof(s_vdp1Command);
+    if (address < base || address >= limit || (address - base) % sizeof(s_vdp1Command)) return;
+    const auto index = (address - base) / sizeof(s_vdp1Command);
+    if (index >= lagi::azel::worldCommandDepthValid.size()) return;
+    std::copy(viewZ, viewZ + 4, lagi::azel::worldCommandViewZ[index].begin());
+    lagi::azel::worldCommandDepthValid[index] = true;
 }

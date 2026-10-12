@@ -28,6 +28,8 @@
 #include "VDP1.h"
 // Presentation ownership only; the native radar still emits its own commands.
 void lagiMarkFieldRadarCommands(const void* begin, const void* end);
+// Exact view-space endpoint depth for projected native scene commands.
+void lagiRecordVdp1WorldDepth(const void* command, const float viewZ[4]);
 // Read the existing native text-substitution table; ownership stays in VDP2.
 bool lagiGlobalStringTableEntryHasText(int index);
 #include "VDP2.h"
@@ -38,6 +40,14 @@ bool lagiGlobalStringTableEntryHasText(int index);
 #include "mainMenuDebugTasks.h"
 #include "field.h"
 #include "LCS.h"
+// Native FLD_A3 0607281E / 0606E750 radar services.
+void lagiDrawFieldRadarObjectMarkers(s_LCSTask* task);
+void lagiDrawFieldRadarDestination(struct s_FieldRadar* radar, const s32* position);
+const char* lagiFieldNavigatorText(u32 address);
+u32 lagiFieldNavigatorDefaultTextEA();
+s32 lagiOpenFieldNavigatorDialog();
+s32 lagiFinishFieldNavigatorDialog();
+void lagiReleaseFieldNavigatorDialog(const void* task);
 #include "kernel/receiveItemTask.h"
 #include "menu_dragon.h"
 #include "menu_dragonMorph.h"

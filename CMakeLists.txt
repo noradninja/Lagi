@@ -765,6 +765,19 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   endif()
  endif()
  if(relative_path STREQUAL "field/fieldRadar.cpp")
+  set(radar_destination_old [=[static void fieldRadar_drawDestinationIndicator(s_FieldRadar* pThis, s32* pDestPosition)
+{
+    Unimplemented();
+}]=])
+  set(radar_destination_new [=[static void fieldRadar_drawDestinationIndicator(s_FieldRadar* pThis, s32* pDestPosition)
+{
+    lagiDrawFieldRadarDestination(pThis, pDestPosition); // LAGI_NATIVE_RADAR_DESTINATION: 06071EC4
+}]=])
+  string(FIND "${source_text}" "${radar_destination_old}" radar_destination_match)
+  if(radar_destination_match LESS 0)
+   message(FATAL_ERROR "Native radar destination anchor changed")
+  endif()
+  string(REPLACE "${radar_destination_old}" "${radar_destination_new}" source_text "${source_text}")
   # FLD_A3 06071E3E initializer: 06071E7C, 06071E76/8C, 06071E8E/98.
   # Preserve the native 24 -> 10 direction segment and positive center offset.
   foreach(radar_init_pair IN ITEMS
@@ -790,6 +803,52 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   endforeach()
   string(REPLACE "${radar_begin}" "${radar_begin}\n    const auto lagiRadarBegin = graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA;" source_text "${source_text}")
   string(REPLACE "${radar_end}" "    lagiMarkFieldRadarCommands(&*lagiRadarBegin, &*graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA);\n${radar_end}" source_text "${source_text}")
+ endif()
+ if(relative_path STREQUAL "LCS.cpp")
+  set(collection_offset_old "pThis->m2C_localOffset[2] = 0;")
+  set(collection_offset_new "pThis->m2C_localOffset[2] = pThis->m34_randomizedLifetime; // LAGI_NATIVE_COLLECTION_RADIUS: 0607BAE4")
+  set(collection_draw_old [=[        // TODO: FUN_0602f610 — draw billboard sprite at cameraSpacePos with scaledOpacity
+        Unimplemented();]=])
+  set(collection_draw_new [=[        // LAGI_NATIVE_COLLECTION_BURST: 0607BC06..52 -> 0602F610.
+        std::array<sVec3_FP, 2> radial = {*pThis->m8_pPosition, cameraSpacePos};
+        std::array<fixedPoint, 2> widths = {0, scaledOpacity};
+        const u16 base = (pThis->m0_memoryArea.m4_characterArea - 0x25C00000) >> 3;
+        quadColor colors;
+        const auto colorData = gFLD_A3->getSaturnPtr(0x06094F64) + pThis->m1E_colorIndex * 8;
+        for (unsigned corner = 0; corner < 4; ++corner)
+            colors[corner] = readSaturnU16(colorData + corner * 2);
+        displayRaySegment_2Width(radial, widths, base + 0x6B0, 0x031E, base + 0x1780, &colors, 8);]=])
+  foreach(anchor IN ITEMS collection_offset_old collection_draw_old)
+   string(FIND "${source_text}" "${${anchor}}" collection_match)
+   if(collection_match LESS 0)
+    message(FATAL_ERROR "Native collection burst anchor changed: ${anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "${collection_offset_old}" "${collection_offset_new}" source_text "${source_text}")
+  string(REPLACE "${collection_draw_old}" "${collection_draw_new}" source_text "${source_text}")
+  string(REPLACE "#include \"PDS.h\"" "#include \"PDS.h\"\n#include \"kernel/rayDisplay.h\"" source_text "${source_text}")
+  set(radar_objects_anchor "void LCSTaskDrawSub5(s_LCSTask* r4)\n{")
+  string(FIND "${source_text}" "${radar_objects_anchor}" radar_objects_match)
+  if(radar_objects_match LESS 0)
+   message(FATAL_ERROR "Native LCS radar marker anchor changed")
+  endif()
+  string(REPLACE "${radar_objects_anchor}"
+   "${radar_objects_anchor}\n    lagiDrawFieldRadarObjectMarkers(r4); // LAGI_NATIVE_RADAR_OBJECTS: 0606E750"
+   source_text "${source_text}")
+ endif()
+ if(relative_path STREQUAL "kernel/dialogTask.cpp")
+  set(navigator_cancel_old "*pThis->mC_result = pThis->m2_defaultResult - 1;")
+  set(navigator_cancel_new "*pThis->mC_result = -1; // LAGI_NATIVE_DIALOG_CANCEL: 0601DCA2/6")
+  set(navigator_delete_old "void s_multiChoiceTask2_Delete(s_multiChoiceTask* pThis)\n{\n    clearMultiChoiceBox(pThis);")
+  set(navigator_delete_new "${navigator_delete_old}\n    lagiReleaseFieldNavigatorDialog(pThis);")
+  foreach(anchor IN ITEMS navigator_cancel_old navigator_delete_old)
+   string(FIND "${source_text}" "${${anchor}}" navigator_dialog_match)
+   if(navigator_dialog_match LESS 0)
+    message(FATAL_ERROR "Native navigator dialog anchor changed: ${anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "${navigator_cancel_old}" "${navigator_cancel_new}" source_text "${source_text}")
+  string(REPLACE "${navigator_delete_old}" "${navigator_delete_new}" source_text "${source_text}")
  endif()
  string(REPLACE
   "#include \"PDS.h\""
@@ -1477,6 +1536,17 @@ void modelDrawFunction3(s_3dModel* pModel)
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  set(navigator_default_old [=[        //06079234
+        assert(0);]=])
+  set(navigator_default_new [=[        // LAGI_NATIVE_NAVIGATOR_DEFAULT: 06079234, 060792BA.
+        r14->m4_currentChoice = r5;
+        createMultiChoiceSub1();
+        r14->m0_choiceTable[r5] = 9;]=])
+  string(FIND "${source_text}" "${navigator_default_old}" navigator_default_match)
+  if(navigator_default_match LESS 0)
+   message(FATAL_ERROR "Native navigator default-choice anchor changed")
+  endif()
+  string(REPLACE "${navigator_default_old}" "${navigator_default_new}" source_text "${source_text}")
   # Native 06073172: table at 060525D8 -> slot 2 -> first byte != 0.
   set(navigator_dispatch_anchor "    case 0x060730bc: // 060730bc — destination multichoice dialog")
   string(FIND "${source_text}" "${navigator_dispatch_anchor}" navigator_dispatch_match)
@@ -1484,8 +1554,20 @@ void modelDrawFunction3(s_3dModel* pModel)
    message(FATAL_ERROR "Native navigator selected-text dispatch anchor changed")
   endif()
   string(REPLACE "${navigator_dispatch_anchor}"
-   "    case 0x06073172: // LAGI_NATIVE_NAVIGATOR_SELECTED_TEXT\n        return lagiGlobalStringTableEntryHasText(2) ? 1 : 0;\n${navigator_dispatch_anchor}"
+   "    case 0x06073172: // LAGI_NATIVE_NAVIGATOR_SELECTED_TEXT\n        return lagiGlobalStringTableEntryHasText(2) ? 1 : 0;\n    case 0x06073120: // LAGI_NATIVE_NAVIGATOR_OPEN\n        return lagiOpenFieldNavigatorDialog();\n    case 0x06072f3c: // LAGI_NATIVE_NAVIGATOR_FINISH\n        return lagiFinishFieldNavigatorDialog();\n${navigator_dispatch_anchor}"
    source_text "${source_text}")
+  set(navigator_text_old "selText = *(const char**)((u8*)pRadar->m1C_encounterList + pRadar->m18_currentSelection * 0x14);")
+  set(navigator_text_new "selText = lagiFieldNavigatorText(*(u32*)((u8*)pRadar->m1C_encounterList + pRadar->m18_currentSelection * 0x14));")
+  set(navigator_back_old "pAlloc[0] = 0; // placeholder for string pointer")
+  set(navigator_back_new "pAlloc[0] = lagiFieldNavigatorDefaultTextEA(); // 06069214..1E")
+  foreach(anchor IN ITEMS navigator_text_old navigator_back_old)
+   string(FIND "${source_text}" "${${anchor}}" navigator_text_match)
+   if(navigator_text_match LESS 0)
+    message(FATAL_ERROR "Native navigator address anchor changed: ${anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "${navigator_text_old}" "${navigator_text_new}" source_text "${source_text}")
+  string(REPLACE "${navigator_back_old}" "${navigator_back_new}" source_text "${source_text}")
   string(PREPEND source_text "#include \"lagi/lagi_particle_color_adapter.h\"\n")
   # Native FLD_A3: 0607AC3C indexes the trail table by frame*4 and
   # 0607AD44 selects an eight-byte orb block at 06094F64 by color type.
@@ -3069,6 +3151,8 @@ add_executable(lagi
  src/integration/lagi_save_platform_vita.cpp
  src/integration/lagi_azel_books_menu.cpp
  src/integration/lagi_azel_books_resource.cpp
+ src/integration/lagi_azel_field_radar.cpp
+ src/integration/lagi_azel_field_navigator.cpp
  src/integration/lagi_system_menu_vita.cpp
  src/integration/lagi_common_overlay_vita.cpp
  src/integration/lagi_sound_table_vita.cpp

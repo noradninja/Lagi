@@ -147,6 +147,9 @@ static int drawQuadInternal(
     cmd.m16_CMDYC = clamp16(-(cy - hh));
     cmd.m18_CMDXD = clamp16(cx - hw);
     cmd.m1A_CMDYD = clamp16(-(cy - hh));
+    const float sceneZ = static_cast<float>(z) / 65536.0f;
+    const float viewZ[4] = {sceneZ, sceneZ, sceneZ, sceneZ};
+    lagiRecordVdp1WorldDepth(&cmd, viewZ);
 
     auto& ctx = graphicEngineStatus.m14_vdp1Context[0];
     ctx.m20_pCurrentVdp1Packet->m4_bucketTypes =
@@ -255,6 +258,10 @@ void displayRaySegmentFromViewSpace(std::array<sVec3_FP, 2>& points,
     cmd.m16_CMDYC = coord(-(y[1] - hh[1] * cs));
     cmd.m18_CMDXD = coord(x[0] + hw[0] * sn);
     cmd.m1A_CMDYD = coord(-(y[0] - hh[0] * cs));
+    const float za = static_cast<float>(points[0][2].asS32()) / 65536.0f;
+    const float zb = static_cast<float>(points[1][2].asS32()) / 65536.0f;
+    const float viewZ[4] = {za, zb, zb, za};
+    lagiRecordVdp1WorldDepth(&cmd, viewZ);
     if (colors) {
         cmd.m1C_CMDGRA = ctx.m10 - ctx.m14[0].begin();
         *ctx.m10++ = *colors;
@@ -269,10 +276,92 @@ void displayRaySegmentFromViewSpace(std::array<sVec3_FP, 2>& points,
 }
 
 int drawImmediateBillboardSprite(
-    const sVec3_FP*,
-    const sBillboardSpriteParams*)
+    const sVec3_FP* points,
+    const sBillboardSpriteParams* params)
 {
+    // Native 0602F610: two independently sized ends, rotated by view-space
+    // direction. This is the collection radial-burst service, not a reticle.
+    std::array<sVec3_FP, 2> view;
+    transformAndAddVecByCurrentMatrix(&points[0], &view[0]);
+    transformAndAddVecByCurrentMatrix(&points[1], &view[1]);
+    const auto& clip = graphicEngineStatus.m405C;
+    const auto clipEnd = [&](unsigned end, s32 plane) {
+        const unsigned other = end ^ 1u;
+        const s32 dz = view[end][2].asS32() - view[other][2].asS32();
+        if (dz) for (unsigned axis = 0; axis < 2; ++axis)
+            view[end][axis] = setDividend(view[end][axis].asS32() - view[other][axis].asS32(),
+                plane - view[other][2].asS32(), dz) + view[other][axis].asS32();
+        view[end][2] = plane;
+    };
+    const s32 nearZ = clip.m10_nearClipDistance.asS32();
+    const s32 farZ = clip.m14_farClipDistance.asS32();
+    if (view[0][2] < nearZ && view[1][2] < nearZ) return 2;
+    if (view[0][2] < nearZ) clipEnd(0,nearZ);
+    else if (view[1][2] < nearZ) clipEnd(1,nearZ);
+    if (view[0][2] > farZ && view[1][2] > farZ) return 2;
+    if (view[0][2] > farZ) clipEnd(0,farZ);
+    else if (view[1][2] > farZ) clipEnd(1,farZ);
+    const s32 angle = atan2(view[0][1].asS32() - view[1][1].asS32(),
+                           view[0][0].asS32() - view[1][0].asS32()) & 0xfff;
+    const fixedPoint sine = getSin(angle), cosine = getCos(angle);
+    const fixedPoint a = MTH_Mul(params->m0_halfWidth, sine - cosine);
+    const fixedPoint b = MTH_Mul(params->m0_halfWidth, sine + cosine);
+    const fixedPoint c = MTH_Mul(params->m4_halfHeight, sine - cosine);
+    const fixedPoint d = MTH_Mul(params->m4_halfHeight, sine + cosine);
+    const fixedPoint inv0 = FP_Div(0x10000, view[0][2]);
+    const fixedPoint inv1 = FP_Div(0x10000, view[1][2]);
+    const s32 x[4] = {
+        MTH_Mul_5_6(clip.m18_widthScale, view[0][0]-a, inv0).asS32(),
+        MTH_Mul_5_6(clip.m18_widthScale, view[0][0]+b, inv0).asS32(),
+        MTH_Mul_5_6(clip.m18_widthScale, view[1][0]+c, inv1).asS32(),
+        MTH_Mul_5_6(clip.m18_widthScale, view[1][0]-d, inv1).asS32()};
+    const s32 y[4] = {
+        MTH_Mul_5_6(clip.m1C_heightScale, view[0][1]+b, inv0).asS32(),
+        MTH_Mul_5_6(clip.m1C_heightScale, view[0][1]+a, inv0).asS32(),
+        MTH_Mul_5_6(clip.m1C_heightScale, view[1][1]-d, inv1).asS32(),
+        MTH_Mul_5_6(clip.m1C_heightScale, view[1][1]-c, inv1).asS32()};
+    auto& ctx = graphicEngineStatus.m14_vdp1Context[0];
+    if (ctx.mC >= 1018 || ctx.m10 == ctx.m14[0].end()) return 2;
+    auto& cmd = *ctx.m0_currentVdp1WriteEA;
+    cmd = {};
+    cmd.m0_CMDCTRL = 0x1002;
+    cmd.m4_CMDPMOD = params->m8_CMDPMOD | 0x84;
+    cmd.m6_CMDCOLR = params->mA_CMDCOLR;
+    cmd.m8_CMDSRCA = params->mC_CMDSRCA;
+    cmd.mA_CMDSIZE = params->mE_CMDSIZE;
+    const auto coordinate = [](s32 value) {return static_cast<s16>(std::clamp<s32>(value,-32768,32767));};
+    cmd.mC_CMDXA = coordinate(x[0]); cmd.mE_CMDYA = coordinate(-y[0]);
+    cmd.m10_CMDXB = coordinate(x[1]); cmd.m12_CMDYB = coordinate(-y[1]);
+    cmd.m14_CMDXC = coordinate(x[2]); cmd.m16_CMDYC = coordinate(-y[2]);
+    cmd.m18_CMDXD = coordinate(x[3]); cmd.m1A_CMDYD = coordinate(-y[3]);
+    cmd.m1C_CMDGRA = ctx.m10 - ctx.m14[0].begin();
+    for (unsigned i = 0; i < 4; ++i) (*ctx.m10)[i] = params->m10_gouraud[i];
+    ++ctx.m10;
+    // First two corners belong to end 0; last two belong to end 1.
+    const float z0 = static_cast<float>(view[0][2].asS32()) / 65536.0f;
+    const float z1 = static_cast<float>(view[1][2].asS32()) / 65536.0f;
+    const float viewZ[4] = {z0,z0,z1,z1};
+    lagiRecordVdp1WorldDepth(&cmd,viewZ);
+    ctx.m20_pCurrentVdp1Packet->m4_bucketTypes =
+        fixedPoint(static_cast<s32>(static_cast<u32>(view[1][2].asS32()) *
+            static_cast<u32>(clip.m38_oneOverFarClip.asS32()))).getInteger();
+    ctx.m20_pCurrentVdp1Packet->m6_vdp1EA = &cmd;
+    ++ctx.m20_pCurrentVdp1Packet;
+    ++ctx.m1C; ++ctx.mC; ++ctx.m0_currentVdp1WriteEA;
     return 0;
+}
+
+void displayRaySegment_2Width(std::array<sVec3_FP, 2>& points,
+    std::array<fixedPoint, 2>& widths, u16 characterAddress, s16 characterSize,
+    u16 characterColor, const quadColor* colors, s32 colorMode)
+{
+    sBillboardSpriteParams params{};
+    params.m0_halfWidth = widths[0]; params.m4_halfHeight = widths[1];
+    params.m8_CMDPMOD = static_cast<u16>(colorMode);
+    params.mA_CMDCOLR = characterColor; params.mC_CMDSRCA = characterAddress;
+    params.mE_CMDSIZE = characterSize;
+    for (unsigned i = 0; i < 4; ++i) params.m10_gouraud[i] = colors ? (*colors)[i] : 0x4210;
+    drawImmediateBillboardSprite(points.data(), &params);
 }
 
 void flushParticleBillboards()
