@@ -1,5 +1,16 @@
 # Current flight UI/transition acceptance
 
+2026-10-12: user confirms both radar orientation and navigator direction lines
+and navigator operation. The destination confirmation displays "Set to ,".
+The navigator already writes selected text to global string slot 2; the ASCII
+printer's `%a<digit>` helper was an Unimplemented stub. Generated VDP2 source
+now substitutes the shared table entry at the current query cursor, restores
+the outer string pointer and suppresses duplicate centering of the fragment.
+Actual generated parser host execution covers destination plus suffix, multiple
+substitutions, null/empty/out-of-range and nested values. Vita syntax passes.
+No navigator-specific label is invented. Visible glyph confirmation remains
+a device gate; this does not claim the other reported regressions are fixed.
+
 Additional user confirmation: scene sprite depth is correct on hardware.
 Retain the explicit producer-depth path; do not revert it while restoring
 radar line state or native point lighting.

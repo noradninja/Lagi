@@ -998,6 +998,34 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   string(REPLACE "${glyph_clear_read}" "    u16 var0 = characterMap2[x * 64 + y];" source_text "${source_text}")
   string(REPLACE "${glyph_clear_old}" "${glyph_clear_new}" source_text "${source_text}")
   # 06025780 identifies context base 060525D0; +8 is global string table.
+  set(global_substitution_old [=[void printVdp2StringSub2(s32 r4)
+{
+    Unimplemented();
+}]=])
+  set(global_substitution_new [=[void printVdp2String(s_stringStatusQuery* vars);
+void printVdp2StringSub2(s_stringStatusQuery* vars, s32 index)
+{
+    if (index < 0 || index >= vdp2StringContext2.m0_numEntries ||
+        !vdp2StringContext2.m8_globalStrings) return;
+    const char* text = vdp2StringContext2.m8_globalStrings[index];
+    if (!text || !*text) return;
+    const char* outer = vars->m20_string;
+    const auto alignment = vars->m2C;
+    vars->m20_string = text;
+    // Substitute at the live cursor; do not center the inserted fragment again.
+    vars->m2C &= ~1;
+    printVdp2String(vars); // LAGI_NATIVE_GLOBAL_STRING_SUBSTITUTION
+    vars->m20_string = outer;
+    vars->m2C = alignment;
+}]=])
+  string(FIND "${source_text}" "${global_substitution_old}" global_substitution_offset)
+  if(global_substitution_offset LESS 0)
+   message(FATAL_ERROR "Native global-string substitution adapter missing")
+  endif()
+  string(REPLACE "${global_substitution_old}" "${global_substitution_new}" source_text "${source_text}")
+  string(REPLACE "printVdp2StringSub2(*(vars->m20_string++) - 0x30);"
+   "printVdp2StringSub2(vars, *(vars->m20_string++) - 0x30);\n                r11 = (printVdp2StringTable[vars->m28] << 12) + 0x63;"
+   source_text "${source_text}")
   string(APPEND source_text [=[
 
 bool lagiGlobalStringTableEntryHasText(int index)
