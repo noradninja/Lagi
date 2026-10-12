@@ -78,3 +78,35 @@ Eight bounded `[NativePointLight]` messages expose distance/divisor, outside /
 overflow and signed result. No full link/VPK build, device appearance or timing
 is claimed. Final hardware gate is local collection illumination and normal
 lighting restoration on the same route; unfinished menus remain separate.
+
+## Hardware rejection and scope investigation (2026-10-12)
+
+User recording `2026-10-12 10-11-44.mp4` rejects this integration: collection
+lighting affects the dragon/riders, not the environment, and does not match
+the original colored light. Previous host/syntax passes do not establish a
+working point-light restoration. Point lighting is the user's next priority.
+
+Current source trace: dragon Draw activates A11D in DrawSub1, draws its models,
+then DrawSub3 pops the selector and restores ordinary vector/color. Field
+initialization in o_fld_a3 creates the dragon task before the visibility-grid
+task; processTasks calls each task's Update/Draw before visiting later siblings.
+The environment bridge captures the live selector, so later environment
+submissions cannot inherit the dragon's point mode. This explains the scope
+of the current implementation, but does not establish the intended native
+environment scope or authorize moving restoration to a guessed frame boundary.
+
+Read-only original disc inspection confirms FLD_A3 060741EA calls 0601E1C8
+and 0607428C calls 0601DF14. MAIN 0601E1C8 invokes local pop 0601FE14 and
+queues the slave-side routine 0601F098; 0601E200 invokes local parameter setup
+0601FE32 and queues slave setup 0601F0B6. MAIN 0601DF14 sets the local light
+and also queues the slave light command. The port collapses these two native
+rendering paths into a single live submission capture. Next investigation must
+follow original master/slave object submission and lighting command ordering,
+including which path draws environment objects, before changing scope.
+
+The native packed-color convention is not a generic RGB byte-order defect:
+s_RGB8 packs member0 into the low byte and member2 into the high byte;
+setLightVector_M reverses that packed word into its color array. Renderer
+consumption reverses it back, matching the reconstructed ComputeColorFromNormal.
+Actual original color computation still needs comparison; do not substitute
+an item-specific tint or claim that byte-order reasoning proves visual fidelity.
