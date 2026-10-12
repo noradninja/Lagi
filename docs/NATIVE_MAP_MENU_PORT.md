@@ -37,6 +37,16 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Source-half investigation resolved a loader error: literal06016EC8 is
+0024C5A4 for the short-PNB fill, but literal06016FE8 is0024BDA4 for the actual
+PNB load. Thus a PNB<=800 prefills the SECOND half with0238 and loads at the
+FIRST half. A longer PNB spans both. The service now requires capacity1000
+for short PNB, fills offsets800..FFF and preserves untouched first-half bytes.
+Earlier loader notes implying first-half padding/fill are superseded. All20
+threshold/fill cases now verify the distinct halves, including capacity rejection
+before mutation; Vita syntax passes. The task can own one contiguous1000-byte
+source allocation and pass its two authored halves to pattern presentation.
+
 Marker viewport clipping from 06016F90 now preserves native scroll subtraction
 and inclusive bounds X60..120, Y(20-offset)..(E0-offset). Rejected markers do
 not overwrite the output coordinates. More than one million host cases cover

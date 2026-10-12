@@ -30,7 +30,7 @@ int main(){
   const auto expected=graphics>0x4000?0x69000u:0x6C000u;
   if(offset!=expected || loads!=std::vector<std::string>{"map.SCB","map.PNB"} || destinations[0]!=vram.data()+expected || destinations[1]!=patterns.data())return 2;
   for(unsigned i=0;i<patterns.size();++i){
-   const unsigned expectedByte=i<pnb?0xAB:((pnb<=0x800 && i<0x800)?((i&1)?0x38:2):0xCD);
+   const unsigned expectedByte=i<pnb?0xAB:((pnb<=0x800 && i>=0x800)?((i&1)?0x38:2):0xCD);
    if(patterns[i]!=expectedByte)return 3;
   }
   ++cases;
@@ -41,7 +41,7 @@ int main(){
  graphicBytes=0x17001;
  if(lagiAzelLoadFieldMapResources(descriptor,patterns.data(),patterns.size(),offset) || !loads.empty())return 5;
  graphicBytes=0x4000;patternBytes=1;
- if(lagiAzelLoadFieldMapResources(descriptor,patterns.data(),0x7FF,offset) || !loads.empty())return 6;
+ if(lagiAzelLoadFieldMapResources(descriptor,patterns.data(),0xFFF,offset) || !loads.empty())return 6;
  for(int failure:{1,2}){
   loads.clear();failAt=failure;
   if(lagiAzelLoadFieldMapResources(descriptor,patterns.data(),patterns.size(),offset) || offset || int(loads.size())!=failure)return 7;
