@@ -37,6 +37,18 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Lifecycle routing from 06017A68..06017B72 is now modeled by
+lagiAzelAdvanceMapLifecycle for later task integration. Opening waits 16 draws
+before selection setup; phase2 routes modes 0/1/2 to 06017762/060178A4/06017978.
+Standalone selection setup chooses 06017718 only when availability slot0 is 1,
+otherwise 0601770A. Menu close requests 16-frame scrolling and decrements on
+the same draw (first remaining count 15); standalone close requests fade/finish
+immediately. Mode-specific native services still own input/state mutation.
+Host tests verify these timings/routes and Vita syntax passes; the helper is
+not a replacement page and is not connected to the still-disabled constructor.
+Earlier input addresses 06017882/06017964 are superseded by direct tail-branch
+targets verified above. Delete restores saved vsync only in standalone mode.
+
 `lagiAzelSetupMapEntry` now implements 06016B04 through existing native
 services. 06015B8A/06015BB4 resolve to setVdp2LayerScroll and reset auto-scroll;
 06034AAA is fadePalette, not a copied palette backup; 0600FC14 is the existing

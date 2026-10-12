@@ -13,6 +13,51 @@ struct LagiAzelMapDescriptor {
     std::array<std::uint8_t,4> presentation{};
 };
 
+// Native 06017A68: task fields +0/+8/+C/+10/+1C. Actions identify the
+// original service to run; this does not enable the unfinished constructor.
+enum class LagiAzelMapAction {
+    None, SetupSelection, SetupStandaloneMode1, InputSelection,
+    InputMode1, InputMode2, CloseMenu, CloseStandalone, Finish
+};
+struct LagiAzelMapLifecycle {
+    bool standalone=false;
+    std::int32_t phase=0, countdown=16, mode=0, availabilitySlot0=0;
+};
+struct LagiAzelMapStep {
+    LagiAzelMapAction action=LagiAzelMapAction::None;
+    bool finished=false;
+};
+inline LagiAzelMapStep lagiAzelAdvanceMapLifecycle(LagiAzelMapLifecycle& state)
+{
+    switch(state.phase) {
+    case 0:
+        if (--state.countdown==0) ++state.phase;
+        return {};
+    case 1:
+        ++state.phase;
+        return {state.standalone && state.availabilitySlot0==1
+            ? LagiAzelMapAction::SetupStandaloneMode1 : LagiAzelMapAction::SetupSelection,false};
+    case 2:
+        switch(state.mode) {
+        case 0: return {LagiAzelMapAction::InputSelection,false}; // 06017762
+        case 1: return {LagiAzelMapAction::InputMode1,false}; // 060178A4
+        case 2: return {LagiAzelMapAction::InputMode2,false}; // 06017978
+        default: return {};
+        }
+    case 3:
+        if(state.standalone) return {LagiAzelMapAction::CloseStandalone,true};
+        state.countdown=16;
+        ++state.phase;
+        // Native closing setup falls through to the first wait tick.
+        --state.countdown;
+        return {LagiAzelMapAction::CloseMenu,false};
+    case 4:
+        if(--state.countdown==0) return {LagiAzelMapAction::Finish,true};
+        return {};
+    default: return {};
+    }
+}
+
 // Original 06016B04, using the native COMMON compressed tile layout.
 bool lagiAzelSetupMapEntry(bool standalone);
 
