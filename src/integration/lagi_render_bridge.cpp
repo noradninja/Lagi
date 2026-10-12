@@ -376,9 +376,13 @@ static void capture_native_point_light(SubmissionState& state)
     state.hasNativeModelLight = true;
     static unsigned reports = 0;
     if (reports < 8) {
-        lagi::platform::logging::writef("[NativePointLight] distance=%08X divisor=%08X outside=%u overflow=%u vector=%d,%d,%d\n",
+        lagi::platform::logging::writef("[NativePointLight] distance=%08X divisor=%08X outside=%u overflow=%u vector=%d,%d,%d position=%08X,%08X,%08X rangeParams=%08X,%08X color=%u,%u,%u origin=%08X,%08X,%08X\n",
             light.distance, light.divisor, light.outside ? 1u : 0u,
-            light.divisionOverflow ? 1u : 0u, int(light.vector[0]), int(light.vector[1]), int(light.vector[2]));
+            light.divisionOverflow ? 1u : 0u, int(light.vector[0]), int(light.vector[1]), int(light.vector[2]),
+            unsigned(pointLightParams[0]), unsigned(pointLightParams[1]), unsigned(pointLightParams[2]),
+            unsigned(pointLightParams[3]), unsigned(pointLightParams[4]),
+            unsigned(state.lightColor[2]), unsigned(state.lightColor[1]), unsigned(state.lightColor[0]),
+            unsigned(nativeMatrix[3]), unsigned(nativeMatrix[7]), unsigned(nativeMatrix[11]));
         ++reports;
     }
 }
