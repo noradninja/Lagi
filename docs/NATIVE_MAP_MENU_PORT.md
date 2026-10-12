@@ -37,6 +37,23 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Further original-code trace distinguishes entry setup from map image loading:
+060179DE calls 06016B04 with R4=0 on the normal menu-entry path; standalone
+06017A34 calls it with R4=1 before changing saved vsync. Nonzero setup invokes
+06015B8A for four layers (last scrollY=100), 06015BB4, clears text rectangle
+(0,22,2C,1C), and performs two palette operations through 06034AAA with C210.
+Both entry paths finally pass COMMON 0020E3D4 and destination 25E71000 to
+0600FC14. These dependencies must be resolved before implementing this setup;
+do not mistake 06016B04 for a self-contained graphics backup or copy the Books
+backup spans into Map without native evidence.
+
+Map message helper 06016B6C configures rectangle (8,38,1C,4), clears it,
+selects the existing native palette value at 0604FD5A, resets string-context
+flags only for nonnull text, then invokes 06025334. 06016BAA chooses authored
+COMMON text at 20D9B9/20D9CF/20D9DE/20D9EE based on mode and availability,
+including live text cursor placement. Preserve those choices rather than
+inventing labels. This trace does not enable rendering or prove page behavior.
+
 Native loader service is now implemented as `lagiAzelLoadFieldMapResources`.
 Read-only MAIN 06016E64..06016F0C confirms SCB sizes strictly greater than
 4000 select VDP2 69000 (otherwise 6C000). PNB sizes at most 800 first fill
