@@ -23,6 +23,35 @@ struct LagiAzelMapLifecycle {
     bool standalone=false;
     std::int32_t phase=0, countdown=16, mode=0, availabilitySlot0=0;
 };
+struct LagiAzelMapSelectionResult {
+    enum Action {None,Cancel,Rejected,EnterMode1,EnterMode2,Moved} action=None;
+    int sound=-1;
+    int oldHighlight=-1,newHighlight=-1;
+};
+// Original 06017762..060178A2, native pressed/repeat word. Slot -1 is absent,
+// 0 remains selectable but rejects confirm; slot 1 receives highlight updates.
+inline LagiAzelMapSelectionResult lagiAzelMapSelect(
+    std::int32_t& selected,const std::array<std::int32_t,2>& availability,
+    std::uint16_t input)
+{
+    using Result=LagiAzelMapSelectionResult;
+    if(input&1) return {Result::Cancel,1};
+    if(selected<0 || selected>1) return {};
+    if(input&6) {
+        if(availability[selected]==0) return {Result::Rejected,5};
+        return {selected==0?Result::EnterMode1:Result::EnterMode2,0};
+    }
+    if(!(input&0x30)) return {};
+    const int old=selected;
+    // Two-slot wrapping has the same result for up/down. Bound the native
+    // skip loop defensively if malformed input marks both slots absent.
+    int next=1-selected;
+    if(availability[next]==-1) next=selected;
+    if(availability[next]==-1) return {};
+    selected=next;
+    return {Result::Moved,10,availability[old]==1?old:-1,
+        availability[next]==1?next:-1};
+}
 struct LagiAzelMapStep {
     LagiAzelMapAction action=LagiAzelMapAction::None;
     bool finished=false;

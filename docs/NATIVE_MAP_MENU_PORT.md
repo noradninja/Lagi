@@ -37,6 +37,16 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Selection decisions from 06017762..060178A2 now live in lagiAzelMapSelect:
+native input bit1 cancels before confirm bits6; confirm rejects availability0
+with sound5, otherwise selects original mode1/2 with sound0. Vertical bits30
+wrap two slots, skip absent -1, retain disabled0 for rejection, and request
+sound10 plus old/new highlights only for availability1. The future native task
+must apply sound/cursor/message/highlight services and mode constructors;
+this helper is not yet hooked up. A bounded fallback prevents an infinite
+skip loop only for malformed both-absent state. Tests execute specific native
+branches plus 1728 cursor/availability/input cases. Vita syntax passes.
+
 Lifecycle routing from 06017A68..06017B72 is now modeled by
 lagiAzelAdvanceMapLifecycle for later task integration. Opening waits 16 draws
 before selection setup; phase2 routes modes 0/1/2 to 06017762/060178A4/06017978.
