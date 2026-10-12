@@ -17,7 +17,7 @@ $end=$source.IndexOf('bool lagiAzelLoadFieldMapResources(', $begin)
 if($begin -lt 0 -or $end -le $begin){throw 'Map entry function missing'}
 Set-Content -LiteralPath (Join-Path $scratch 'map_entry_production.inc') -Value $source.Substring($begin,$end-$begin)
 $exe=Join-Path $scratch 'map_entry_test.exe'
-& cl /nologo /std:c++20 /EHsc "/I$scratch" (Join-Path $PSScriptRoot 'map_entry_setup_test.cpp') "/Fe:$exe" "/Fo:$scratch/"
+& cl /nologo /std:c++20 /EHsc "/I$scratch" "/I$repo/include" (Join-Path $PSScriptRoot 'map_entry_setup_test.cpp') "/Fe:$exe" "/Fo:$scratch/"
 if($LASTEXITCODE -ne 0){throw 'Map entry compile failed'}
 & $exe
 if($LASTEXITCODE -ne 0){throw 'Map entry execution failed'}

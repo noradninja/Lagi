@@ -2,6 +2,7 @@
 #include <vector>
 #include <cstdio>
 #include <cstdint>
+#include "lagi/azel_map_menu.h"
 using u16=unsigned short;
 using u32=unsigned;
 unsigned char common[0x21084], vram[0x80000];
@@ -39,7 +40,7 @@ void resetVdp2LayersAutoScroll(){calls.push_back(4);}
 void setupVDP2StringRendering(int x,int y,int w,int h){assert(!x && y==0x22 && w==0x2C && h==0x1C);calls.push_back(5);}
 void clearVdp2TextArea(){calls.push_back(6);}
 void fadePalette(int* channel,int from,int to,int duration){assert(from==0xC210 && to==from && duration==1);calls.push_back(7+*channel);}
-unsigned char* getVdp2Vram(int offset){assert(offset==0x71000);return vram+offset;}
+unsigned char* getVdp2Vram(int offset){assert(offset==0x71000 || offset==0x70000 || offset==0x70800);return vram+offset;}
 void unpackGraphicsToVDP2(unsigned char* source,unsigned char* dest){assert(source==common+0xE3D4 && dest==vram+0x71000);calls.push_back(9);}
 #include "map_entry_production.inc"
 #include "map_delete_production.inc"
@@ -54,6 +55,18 @@ int main(){
  assert(!lagiAzelMapCellExplored(0,1,1,3) && !lagiAzelMapCellExplored(0,1,6,3));
  assert(!lagiAzelMapCellExplored(0,1,2,2) && !lagiAzelMapCellExplored(0,1,2,5));
  assert(!lagiAzelMapCellExplored(1,1,5,3) && mainGameState.flagCalls==flags);
+ std::array<std::uint8_t,0x800> first{},second{};
+ for(unsigned i=1;i<0x800;i+=2){first[i]=1;second[i]=2;}
+ vram[0x6FFFF]=0xCD;vram[0x71000]=0xCD;
+ assert(lagiAzelPresentMapPatterns(first.data(),first.size(),second.data(),second.size(),0,1));
+ assert(vram[0x70000]==2 && vram[0x70001]==0x38);
+ assert(vram[0x70614]==0x40 && vram[0x70615]==1);
+ assert(vram[0x70800]==2 && vram[0x70801]==0x38 && vram[0x6FFFF]==0xCD && vram[0x71000]==0xCD);
+ mainGameState.value=1;
+ assert(lagiAzelPresentMapPatterns(first.data(),first.size(),second.data(),second.size(),0,1));
+ assert(vram[0x70000]==0x70 && vram[0x70001]==1 && vram[0x70800]==0x70 && vram[0x70801]==2);
+ vram[0x70000]=0xCD;
+ assert(!lagiAzelPresentMapPatterns(first.data(),0x7FF,second.data(),second.size(),0,1) && vram[0x70000]==0xCD);
  for(int index=0;index<23;++index){
   fieldObject.m2C_currentFieldIndex=index;
   common[0xA650+index*2]=0;common[0xA651+index*2]=static_cast<unsigned char>(0xA0+index);

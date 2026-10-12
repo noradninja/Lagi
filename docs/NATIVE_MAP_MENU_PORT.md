@@ -37,6 +37,17 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+lagiAzelPresentMapPatterns now connects conversion to native current-field
+ownership and exploration services and writes both original planes at VDP2
+70000/70800, queried from Y15/Y31 respectively. Sources remain separate,
+caller-owned authored halves; do not assume one PNB load initializes both.
+Both input spans and context are validated before writes. Host tests execute
+the complete service/converter/COMMON-lookup chain with mocked inventory and
+flag storage, checking explored words, owned/unowned hidden words, distinct
+source halves, outside guards and rejected short spans. Vita syntax passes.
+Native view task must still supply the actual source buffers and context,
+advance draw/input/fade states and render its marker; this is not an enabled page.
+
 Native exploration service 0601249C is now bound by lagiAzelMapCellExplored:
 current-field COMMON A388 -> caller-selected subfield -> exploration record
 and signed rectangle. It rejects points outside the authored width/height,

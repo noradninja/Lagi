@@ -117,6 +117,9 @@ bool lagiAzelSetupMapEntry(bool standalone);
 bool lagiAzelCurrentFieldMapOwned();
 // Original 0601249C; caller supplies its authoritative subfield count.
 bool lagiAzelMapCellExplored(int subfield,unsigned subfieldCount,int x,int y);
+// Native 06017376..88: bind original exploration/ownership to both VRAM planes.
+bool lagiAzelPresentMapPatterns(const std::uint8_t* first,std::size_t firstBytes,
+    const std::uint8_t* second,std::size_t secondBytes,int subfield,unsigned subfieldCount);
 // Original map-view child Delete 0601763C; parent-menu priority restoration.
 void lagiAzelRestoreMapViewPriorities();
 // Original 060173AA..06017406, using the native map-view scroll pair.

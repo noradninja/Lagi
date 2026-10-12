@@ -37,6 +37,24 @@ bool lagiAzelMapCellExplored(int subfield,unsigned subfieldCount,int x,int y)
     return mainGameState.getBit566(static_cast<u32>(flag));
 }
 
+bool lagiAzelPresentMapPatterns(const std::uint8_t* first,std::size_t firstBytes,
+    const std::uint8_t* second,std::size_t secondBytes,int subfield,unsigned subfieldCount)
+{
+    if(!first || !second || firstBytes<0x800 || secondBytes<0x800 ||
+        subfield<0 || unsigned(subfield)>=subfieldCount || !getFieldTaskPtr() || !gCommonFile) return false;
+    struct Context {int subfield;unsigned count;} context{subfield,subfieldCount};
+    const auto explored=[](void* opaque,unsigned x,unsigned y) {
+        const auto& state=*static_cast<const Context*>(opaque);
+        return lagiAzelMapCellExplored(state.subfield,state.count,int(x),int(y));
+    };
+    const bool owned=lagiAzelCurrentFieldMapOwned();
+    // Native 06017376..88: separate authored source halves, native planes.
+    if(!lagiAzelConvertMapPatterns(first,firstBytes,getVdp2Vram(0x70000),0x800,
+        owned,15,explored,&context)) return false;
+    return lagiAzelConvertMapPatterns(second,secondBytes,getVdp2Vram(0x70800),0x800,
+        owned,31,explored,&context);
+}
+
 void lagiAzelRestoreMapViewPriorities()
 {
     // Native child Delete 0601763C..5A, before the parent selection returns.
