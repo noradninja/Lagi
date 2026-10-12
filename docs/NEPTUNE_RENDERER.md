@@ -33,7 +33,7 @@ The producer/consumer presentation-slot boundary also serves movie and front-end
 | Textures and palettes | Saturn VDP1 texture decode/cache, palette dependency and selective VRAM/CRAM invalidation; geometry-only changes need not force texture reupload. |
 | Gouraud | Four-corner RGB555 values and native lighting modes are retained; GXM shaders interpolate corner/scanline color. Flat-authored faces must remain flat. |
 | Directional lighting | Native per-submission vector, color and falloff captured from Azel and consumed by lit meshes; cached static lighting can refresh independently of geometry. |
-| Point lights | A11D selector capture, native matrix-relative point evaluation, signed model-space vector, native colors/falloff and single-consumption path; **visual correctness still under hardware validation**. |
+| Point lights | A11D selector capture, native matrix-relative point evaluation, signed model-space vector, native colors/falloff and single-consumption path; **recent point-light color and correction verified working on hardware**. |
 | Shadows and transparency | Existing mesh-shadow/stipple behavior, polygon opacity and native composition conventions. |
 | Particles | Azel owns animation, orbits and lifetimes. Neptune draws native animated-quad sprites, sparkle/orb and trail Gouraud color tables, rays and other world effects. |
 | Depth and ordering | Preserves producer world depth, normalized sprite depth and native sort metadata; separates background/world effects/screen overlays without hard-coded item identity. |
@@ -44,7 +44,7 @@ The producer/consumer presentation-slot boundary also serves movie and front-end
 
 The point-light implementation is **not** an invented modern inverse-square shader. It reconstructs native selector push/pop/reset and the SH7604-style distance, integer root, division and cutoff operations. The bridge captures light state at the actual `addObjectToDrawList()` boundary. `SubmissionState::nativeModelLight` is already transformed into model space; Neptune must **not** rotate it again. The field collection effect is intentionally scoped to dragon/rider on original Saturn hardware, not the environment. Town/environment lights require their own native task paths. The special light position must use the original *transform-and-add* matrix operation, unlike ordinary directional vectors.
 
-**Validation status:** selector and math host tests, shader compilation and syntax checks do not prove on-device color or Gouraud fidelity. Recent capture found out-of-range zero vectors caused by missing position translation; the correction exists, but corrected hardware appearance remains pending. See [NATIVE_POINT_LIGHT_RESTORATION.md](NATIVE_POINT_LIGHT_RESTORATION.md).
+**Validation status:** the recent point-light position correction and color output are confirmed working on hardware by the project maintainer. Earlier out-of-range zero-vector captures were resolved by restoring position translation. Host math tests and shader compilation remain additional implementation checks, not the basis for this visual acceptance. See [NATIVE_POINT_LIGHT_RESTORATION.md](NATIVE_POINT_LIGHT_RESTORATION.md).
 
 ### Particle ordering
 
