@@ -4703,6 +4703,10 @@ static void drawPublishedVdp1Ui(
                     expand(c & 31u), expand((c >> 5) & 31u), expand((c >> 10) & 31u), 255u};
             sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
             sceGxmSetFragmentProgram(g_probeContext, g_probeFragmentProgram);
+            const auto solidPolygonMode = commandType == 6u
+                ? SCE_GXM_POLYGON_MODE_LINE : SCE_GXM_POLYGON_MODE_TRIANGLE_FILL;
+            sceGxmSetFrontPolygonMode(g_probeContext, solidPolygonMode);
+            sceGxmSetBackPolygonMode(g_probeContext, solidPolygonMode);
             void* colorUniforms = nullptr;
             if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &colorUniforms) >= 0 && colorUniforms) {
                 sceGxmSetUniformDataF(colorUniforms, g_probeWvpParam, 0, 16, identity);
@@ -4714,6 +4718,8 @@ static void drawPublishedVdp1Ui(
             // A normal radar frame follows the solid direction-line command.
             // Restore both stages and its vertex uniforms, not just the
             // fragment program: color and textured vertex layouts differ.
+            sceGxmSetFrontPolygonMode(g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+            sceGxmSetBackPolygonMode(g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
             sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
             sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
             void* radarTextureUniforms = nullptr;

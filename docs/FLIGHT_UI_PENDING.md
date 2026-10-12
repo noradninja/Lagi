@@ -1,5 +1,15 @@
 # Current flight UI/transition acceptance
 
+Hardware report on `cf82533`: user reports the combined fixes work except the
+radar orientation line and navigator direction line. Preserve that acceptance
+for navigator lifecycle, markers, scene depth and collection effects; it does
+not establish completion of unfinished menu pages or native point lighting.
+The renderer CMD6 branch lacked front/back line polygon mode, unlike CMD5.
+It now selects LINE for CMD6 and restores TRIANGLE_FILL before subsequent
+sprites; altitude polygons retain fill mode. Native endpoints/ownership/order
+are unchanged. Source state-order guard and Vita syntax are the checks; actual
+visibility of the two lines remains a device gate.
+
 User confirms radar frame/orb positioning and drawing corrected after f3d0cd4,
 and tunnel traversal/fade-in corrected after f1ca85c. Latest hardware 8b9cf45
 still crashes on navigator release. Orientation/object markers, encounter-risk
