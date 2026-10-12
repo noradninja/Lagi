@@ -910,6 +910,34 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # Vita copy. Saturn CLOFEN bit 0 is NBG0; m45_COEN must control that bit,
  # not the unrelated CCRNA ratio register.
  elseif(relative_path STREQUAL "VDP2.cpp")
+  # Native 06025EB8 uses column-major ownership (x*64+y), unlike row-major
+  # VRAM. 06025F06/0E normalize both coordinates to the glyph origin.
+  set(glyph_clear_read "    u16 var0 = characterMap2[(y << 6) + x];")
+  set(glyph_clear_old [=[    u16* var_14 = characterMap2 + ((x - (r13 & 1)) << 7);
+    y -= (2 & r13) >> 1;
+    var0 = (y << 1);
+    *(var_14 + (var0 >> 1)) = 0;
+
+    u16* var_10 = characterMap2 + ((x + 1) << 7);
+    *(var_10 + (var0 >> 1)) = 0;
+    *(var_14 + (y + 1)) = 0;
+
+    *(var_10 + (y + 1)) = 0;]=])
+  set(glyph_clear_new [=[    // LAGI_NATIVE_GLYPH_CLEAR: 06025F00..06025F6E.
+    x -= r13 & 1;
+    y -= (r13 & 2) >> 1;
+    characterMap2[x * 64 + y] = 0;
+    characterMap2[(x + 1) * 64 + y] = 0;
+    characterMap2[x * 64 + y + 1] = 0;
+    characterMap2[(x + 1) * 64 + y + 1] = 0;]=])
+  foreach(glyph_clear_anchor IN ITEMS glyph_clear_read glyph_clear_old)
+   string(FIND "${source_text}" "${${glyph_clear_anchor}}" glyph_clear_match)
+   if(glyph_clear_match LESS 0)
+    message(FATAL_ERROR "Native glyph-clear anchor changed: ${glyph_clear_anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "${glyph_clear_read}" "    u16 var0 = characterMap2[x * 64 + y];" source_text "${source_text}")
+  string(REPLACE "${glyph_clear_old}" "${glyph_clear_new}" source_text "${source_text}")
   # 06025780 identifies context base 060525D0; +8 is global string table.
   string(APPEND source_text [=[
 
