@@ -154,3 +154,23 @@ Finish task integration and presentation helpers `06016088`, `06016194`,
 original data-driven book text/images, ownership and fades. Vita acceptance
 must cover Books entry, owned/unowned items, pages/images, cancel/reentry,
 key-item launch and inventory return without lost fonts or cursor tasks.
+
+## Coupled input restoration (2026-10-11)
+
+`lagiAzelBooksNavigate` now preserves the complete `06016738` input relationship:
+cancel wins before all input, vertical repeat selects focus 0..2, horizontal
+repeat operates on owned-list position/heading/global body page, a book change
+resets heading zero, book/heading changes select that heading's first body page,
+and body changes recover the containing heading. Accepted horizontal changes
+request native reveal state 5. Cursor decrease/increase flags retain the native
+pre-change logical maximum and empty lists return before cursor updates.
+The task will map these results to its state and cursor child; this helper does
+not invent a substitute page or enable the unfinished constructor.
+
+Original instructions were rechecked at `06016738..0601683A` in the read-only
+US executable. Host execution of the production helper passes coupled book,
+heading and body changes, simultaneous axis movement, cancel priority, empty
+ownership and truncated-resource rejection, alongside 16,192 index/latch cases.
+Vita C++ syntax passes. These are not on-device page/task validation. Remaining
+work still includes resource setup, text/illustration presentation, cursor task,
+window clipping, full task lifecycle and inventory font/cursor restoration.

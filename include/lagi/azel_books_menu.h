@@ -63,3 +63,24 @@ bool lagiAzelBooksPresentWindow(std::int32_t scrollX, std::int32_t scrollY,
 LagiAzelBooksIndexStep lagiAzelBooksStepIndex(std::int32_t& index,
     std::int32_t minimum, std::int32_t maximum, std::uint16_t repeated,
     std::uint16_t held, bool vertical, bool& boundarySoundLatched);
+
+struct LagiAzelBooksNavigation {
+    std::int32_t focus = 0;
+    std::array<std::int32_t, 3> indices{}; // owned-list position, heading, body
+    bool verticalBoundary = false;
+    bool horizontalBoundary = false;
+};
+struct LagiAzelBooksNavigationResult {
+    bool valid = false;
+    bool cancel = false;
+    bool reveal = false;
+    bool updateCursor = false;
+    bool canDecrease = false;
+    bool canIncrease = false;
+    std::array<int, 2> sounds{-1, -1};
+};
+// Original 06016738. Resource and ownership are borrowed for this call.
+LagiAzelBooksNavigationResult lagiAzelBooksNavigate(
+    const std::uint8_t* data, std::size_t bytes,
+    const LagiAzelBooksSelection& owned, LagiAzelBooksNavigation& navigation,
+    std::uint16_t pressed, std::uint16_t repeated, std::uint16_t held);

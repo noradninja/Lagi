@@ -122,6 +122,64 @@ LagiAzelBooksIndexStep lagiAzelBooksStepIndex(std::int32_t& index,
     return {false, sound};
 }
 
+LagiAzelBooksNavigationResult lagiAzelBooksNavigate(
+    const std::uint8_t* data, std::size_t bytes,
+    const LagiAzelBooksSelection& owned, LagiAzelBooksNavigation& navigation,
+    std::uint16_t pressed, std::uint16_t repeated, std::uint16_t held)
+{
+    LagiAzelBooksNavigationResult result;
+    // 06016740..4E: cancel precedes all focus/index processing.
+    if (pressed & 1) { result.valid = true; result.cancel = true; return result; }
+    if (!data || bytes < 4 || owned.count > owned.ownedIndices.size() ||
+        navigation.focus < 0 || navigation.focus > 2) return result;
+    const std::size_t table = (std::uint32_t(data[0]) << 24) |
+        (std::uint32_t(data[1]) << 16) | (std::uint32_t(data[2]) << 8) | data[3];
+    if (table > bytes || bytes - table < 22 * 16) return result;
+    auto countFor = [&](int focus) -> int {
+        if (focus == 0) return owned.count;
+        const int position = navigation.indices[0];
+        if (position < 0 || position >= owned.count) return -1;
+        const unsigned book = owned.ownedIndices[position];
+        if (book >= 22) return -1;
+        const auto* record = data + table + book * 16;
+        const int offset = focus == 1 ? 12 : 14;
+        return (unsigned(record[offset]) << 8) | record[offset + 1];
+    };
+    // Work on a copy: malformed resources must not partially mutate input.
+    auto next = navigation;
+    result.sounds[0] = lagiAzelBooksStepIndex(next.focus, 0, 2, repeated,
+        held, true, next.verticalBoundary).sound;
+    const int count = countFor(next.focus);
+    if (count < 0) return {};
+    result.valid = true;
+    if (!count) { navigation = next; return result; } // native 060167A4
+    auto& index = next.indices[next.focus];
+    if (index < 0 || index >= count) return {};
+    const auto step = lagiAzelBooksStepIndex(index, 0, count - 1, repeated,
+        held, false, next.horizontalBoundary);
+    result.sounds[1] = step.sound;
+    if (step.accepted) {
+        result.reveal = true; // state 5, even for accepted two-direction no-op
+        const unsigned book = owned.ownedIndices[next.indices[0]];
+        if (next.focus == 0) next.indices[1] = 0;
+        if (next.focus < 2) {
+            LagiAzelBooksHeading heading;
+            if (!lagiAzelBooksReadHeading(data, bytes, book, next.indices[1], heading)) return {};
+            next.indices[2] = heading.firstBodyPage;
+        } else {
+            std::uint32_t heading;
+            if (!lagiAzelBooksHeadingForBodyPage(data, bytes, book, next.indices[2], heading)) return {};
+            next.indices[1] = static_cast<std::int32_t>(heading);
+        }
+    }
+    // 06016806..3A uses the pre-change logical maximum, preserving native order.
+    result.updateCursor = true;
+    result.canDecrease = index != 0;
+    result.canIncrease = index < count - 1;
+    navigation = next;
+    return result;
+}
+
 bool lagiAzelBooksCalculateWindow(std::int32_t scrollX, std::int32_t scrollY,
     std::int32_t step, std::int32_t duration, LagiAzelBooksWindow& out)
 {
