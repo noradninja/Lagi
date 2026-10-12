@@ -1,10 +1,15 @@
 #include <cassert>
 #include <vector>
 #include <cstdio>
+#include <cstdint>
+using u16=unsigned short;
 unsigned char common[0x21084], vram[0x80000];
 struct Common {unsigned char* m_data;} commonObject{common};
 Common* gCommonFile=&commonObject;
-struct Registers {unsigned short mF8_PRINA=0xFFFF,mFA_PRINB=0xFFFF,mFC_PRIR=0xFFFF;} registers;
+struct Registers {
+ unsigned short mF8_PRINA=0xFFFF,mFA_PRINB=0xFFFF,mFC_PRIR=0xFFFF;
+ unsigned short m10A_CCRNB=0xA580,mC0_WPSX0=0,mC2_WPSY0=0,mC4_WPEX0=0,mC6_WPEY0=0;
+} registers;
 struct {Registers* m4_pendingVdp2Regs=&registers;int m_isDirty=0;} vdp2Controls;
 struct {int m0_fade0=0,m24_fade1=1;} g_fadeControls;
 std::vector<int> calls;
@@ -18,6 +23,9 @@ void unpackGraphicsToVDP2(unsigned char* source,unsigned char* dest){assert(sour
 #include "map_entry_production.inc"
 #include "map_delete_production.inc"
 int main(){
+ lagiAzelSetupMapViewWindow(-16,8);
+ assert(registers.mC0_WPSX0==224 && registers.mC2_WPSY0==24 && registers.mC4_WPEX0==607 && registers.mC6_WPEY0==215);
+ assert(registers.m10A_CCRNB==0xA59F && registers.mFA_PRINB==0x0705 && registers.mF8_PRINA==0x0304 && registers.mFC_PRIR==0 && vdp2Controls.m_isDirty==1);
  lagiAzelRestoreMapViewPriorities();
  assert(registers.mF8_PRINA==0x0304 && registers.mFA_PRINB==0x0700 && registers.mFC_PRIR==0 && vdp2Controls.m_isDirty==1);
  vdp2Controls.m_isDirty=0;vdp2Controls.m4_pendingVdp2Regs=nullptr;lagiAzelRestoreMapViewPriorities();assert(vdp2Controls.m_isDirty==0);

@@ -91,6 +91,8 @@ inline LagiAzelMapStep lagiAzelAdvanceMapLifecycle(LagiAzelMapLifecycle& state)
 bool lagiAzelSetupMapEntry(bool standalone);
 // Original map-view child Delete 0601763C; parent-menu priority restoration.
 void lagiAzelRestoreMapViewPriorities();
+// Original 060173AA..06017406, using the native map-view scroll pair.
+void lagiAzelSetupMapViewWindow(std::int16_t scrollX,std::int16_t scrollY);
 
 // Original 06016E64. Caller owns the pattern buffer and graphics rollback.
 // Returns the native SCB VRAM offset; no generated or substitute map image.

@@ -37,6 +37,16 @@ syntax passes. No game assets or upstream sources are copied/modified.
 
 ## Remaining required work
 
+Map-view window setup 060173AA..06017406 now has a native service:
+signed caller-owned scroll coordinates derive window0 start (60-x,20-y),
+horizontal doubled endpoints with inclusive end and 192-line vertical span.
+CCRNB preserves upper bits and sets low ratio31; map priorities become
+PRINA0304/PRINB0705/PRIR0 and pending registers are marked dirty. Host execution
+checks signed scroll, exact inclusive endpoints, preserved ratio bits and
+priorities using the actual service body. Vita syntax passes. Caller scroll
+ownership, pattern conversion and child task integration are still required;
+this does not establish a rendered or accessible Map page.
+
 Map-view child definition COMMON 20E8E4 has null Init/Update, Draw 060174C8
 and Delete 0601763C, allocated size28. Its own phases0..7 include setup,
 16-frame NBG2 calculation-ratio transition, active draw/input, closing,

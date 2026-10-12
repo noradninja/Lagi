@@ -13,6 +13,24 @@ void lagiAzelRestoreMapViewPriorities()
     vdp2Controls.m_isDirty=1;
 }
 
+void lagiAzelSetupMapViewWindow(std::int16_t scrollX,std::int16_t scrollY)
+{
+    // Native 060173AA..06017406: signed map scroll, window0 endpoints,
+    // initial NBG2 ratio, and map-view priorities.
+    auto* regs=vdp2Controls.m4_pendingVdp2Regs;
+    if (!regs) return;
+    const int x=0x60-int(scrollX), y=0x20-int(scrollY);
+    regs->m10A_CCRNB=(regs->m10A_CCRNB&0xFFE0)|0x1F;
+    regs->mC0_WPSX0=static_cast<u16>(x*2);
+    regs->mC2_WPSY0=static_cast<u16>(y);
+    regs->mC4_WPEX0=static_cast<u16>((x+0xC0)*2-1);
+    regs->mC6_WPEY0=static_cast<u16>(y+0xBF);
+    regs->mF8_PRINA=0x0304;
+    regs->mFA_PRINB=0x0705;
+    regs->mFC_PRIR=0;
+    vdp2Controls.m_isDirty=1;
+}
+
 bool lagiAzelSetupMapEntry(bool standalone)
 {
     if (!gCommonFile || !gCommonFile->m_data) return false;
