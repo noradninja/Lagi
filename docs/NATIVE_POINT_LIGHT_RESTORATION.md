@@ -122,3 +122,22 @@ The pipeline regression check rejects the erroneous assignment.
 User additionally reports the previous point-light appearance looked flat,
 not Gouraud. Verification must cover original normal records, per-corner
 lighting mode, and interpolated GPU corner colors, not merely selector math.
+
+## Original-hardware scope clarification
+
+User subsequently checked original Saturn hardware and confirms this collection
+light affects only dragon/riders. The environment scope complaint is withdrawn
+for this effect; do not extend its selector lifetime across environment draws.
+Later town/environment point lights are a distinct required path, not a reason
+to widen the collection effect. Color and Gouraud appearance remain unaccepted.
+
+Shader/source trace: lagi_live_model_adapter preserves four normal records for
+lighting modes 2/3 and one for mode 1. updateLiveTownAzelLighting selects the
+matching corner normal, writes all four gouraud555 corner colors, and the draw
+payload copies those four values for every RGB channel. gouraud_payload_v
+passes them to the fragment program; textured_gouraud_scanline_f interpolates
+edge colors and then across each scanline. This proves an interpolation path
+exists, not that actual dragon records or output colors vary on hardware.
+Next appearance checks must examine the actual submitted dragon normal modes
+and corner outputs, retaining native flat polygons where the original marks
+them flat, rather than forcing invented smooth normals globally.
