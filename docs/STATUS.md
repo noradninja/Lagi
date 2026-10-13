@@ -405,6 +405,16 @@ Native textures now have generation-aware CPU/GPU residency and bounded write-ra
 
 The current live 3D renderer still flattens active work into shared buffers with 16-bit indices. Larger scenes are expected to require multiple resident batches while preserving Azel draw ordering, visibility, materials, and dynamic updates.
 
+## Audio affinity profiling
+
+The first post-0.3.0 audio optimization pass keeps emulation semantics unchanged and measures CPU placement before attempting a parallel DSP pipeline.
+
+`LagiSCSPWorker` still owns the 68K, SCSP slots, DSP state, and final sample generation in one serialized worker. The worker defaults to user CPU 2, matching the established hardware path, but a diagnostic affinity file can place it on user CPU 0, user CPU 1, or allow scheduling across all three user cores.
+
+Sparse `[AzelAudioPerf]` samples now record the CPU at the start and end of each profiled 256-frame quantum and count observed CPU changes. This provides a controlled baseline for deciding whether a dedicated ARM DSP worker is worth the synchronization cost.
+
+No DSP work is split across threads in this phase.
+
 ## Current development focus
 
 The user accepted the flight/rendering milestone on 2026-10-10 and authorized merging the rendering branch to main. Hardware confirms native field entry, correct field orientation, cinematic/Excavation actor placement, LCS layering and visible collection/save/destructible effects. Native field has no additional Saturn-to-GXM X mirror or winding XOR; town retains its historical mirror. The radar map stays point-filtered. A follow-up corrects its fixed-output-pixel sizing: 48x48 in the 480x272 reference layout becomes 96x96 at 960x544. That follow-up is CPU/syntax-checked; hardware alignment and checker appearance still need confirmation.

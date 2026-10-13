@@ -15,6 +15,7 @@
 #include <cstring>
 #include <vector>
 
+#include <psp2/io/fcntl.h>
 #include <psp2/kernel/cpu.h>
 #include <psp2/kernel/threadmgr.h>
 
@@ -197,6 +198,8 @@ std::atomic<bool> g_audioWorkerRunning{false};
 std::atomic<bool> g_loadingFinished{true};
 std::array<std::atomic<s32>, 8> g_activeSoundIds{};
 SceUID g_audioWorkerThread = -1;
+int g_audioWorkerCpuMask = SCE_KERNEL_CPU_MASK_USER_2;
+const char* g_audioWorkerAffinityName = "cpu2";
 bool g_gameplayRenderEnabled = false;
 std::atomic<unsigned> g_updateSoundCalls{0};
 unsigned g_driverServiceCalls = 0;
@@ -213,6 +216,39 @@ unsigned g_lastDspMixSerial = 0;
 unsigned long long next_audio_trace()
 {
     return g_audioTraceSerial.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+
+int load_audio_worker_affinity()
+{
+    char config[16]{};
+    const SceUID fd = sceIoOpen(
+        "ux0:data/lagi/audio_worker_cpu.txt", SCE_O_RDONLY, 0);
+    if (fd >= 0) {
+        sceIoRead(fd, config, sizeof(config) - 1);
+        sceIoClose(fd);
+    }
+    config[std::strcspn(config, "\r\n \t")] = 0;
+
+    g_audioWorkerAffinityName = "cpu2";
+    if (!config[0] || !std::strcmp(config, "2")) {
+        return SCE_KERNEL_CPU_MASK_USER_2;
+    }
+    if (!std::strcmp(config, "0")) {
+        g_audioWorkerAffinityName = "cpu0";
+        return SCE_KERNEL_CPU_MASK_USER_0;
+    }
+    if (!std::strcmp(config, "1")) {
+        g_audioWorkerAffinityName = "cpu1";
+        return SCE_KERNEL_CPU_MASK_USER_1;
+    }
+    if (!std::strcmp(config, "all")) {
+        g_audioWorkerAffinityName = "all";
+        return SCE_KERNEL_CPU_MASK_USER_ALL;
+    }
+
+    lagi::platform::logging::writef(
+        "[AzelAudioAffinity] invalid setting=%s; using cpu2\n", config);
+    return SCE_KERNEL_CPU_MASK_USER_2;
 }
 
 void log_dsp_program_profile_if_changed()
@@ -684,8 +720,14 @@ void render_scsp_audio()
         ScspSlotProfile slotProfile{};
         unsigned sampledFrames = 0;
         unsigned sampledDspBackends[4]{};
-        if (profileChunk)
+        int profileCpuStart = -1;
+        int profileCpuLast = -1;
+        unsigned profileCpuChanges = 0;
+        if (profileChunk) {
             renderStartUs = sceKernelGetSystemTimeWide();
+            profileCpuStart = sceKernelGetCpuId();
+            profileCpuLast = profileCpuStart;
+        }
 
         const unsigned queuedBefore =
             static_cast<unsigned>(
@@ -698,8 +740,13 @@ void render_scsp_audio()
             const bool profileSample =
                 profileChunk && ((i & 7u) == 0u);
             std::uint64_t t = 0;
-            if (profileSample)
+            if (profileSample) {
+                const int currentCpu = sceKernelGetCpuId();
+                if (profileCpuLast >= 0 && currentCpu != profileCpuLast)
+                    ++profileCpuChanges;
+                profileCpuLast = currentCpu;
                 t = sceKernelGetSystemTimeWide();
+            }
 
             m68k_execute(kM68kCyclesPerSample);
 
@@ -739,6 +786,10 @@ void render_scsp_audio()
         }
 
         if (profileChunk) {
+            const int profileCpuEnd = sceKernelGetCpuId();
+            if (profileCpuLast >= 0 && profileCpuEnd != profileCpuLast)
+                ++profileCpuChanges;
+            profileCpuLast = profileCpuEnd;
             const std::uint64_t renderUs =
                 sceKernelGetSystemTimeWide() - renderStartUs;
             const std::uint64_t scale =
@@ -765,6 +816,7 @@ void render_scsp_audio()
                 "samples=%u activeAvg=%u activeMax=%u "
                 "pcm8=%u pcm16=%u nonPcm=%u plfo=%u alfo=%u mod=%u "
                 "ring=%u dspSend=%u direct=%u efReturn=%u "
+                "cpuStart=%d cpuEnd=%d cpuChanges=%u affinity=%s "
                 "emptyChunks=%llu shortWrites=%llu\n",
                 static_cast<int>(g_sequenceNumber),
                 g_audioRenderChunks,
@@ -798,6 +850,10 @@ void render_scsp_audio()
                 sampled_average(slotProfile.dspSends, slotProfile.samples),
                 sampled_average(slotProfile.directSends, slotProfile.samples),
                 sampled_average(slotProfile.effectReturns, slotProfile.samples),
+                profileCpuStart,
+                profileCpuLast,
+                profileCpuChanges,
+                g_audioWorkerAffinityName,
                 g_audioQueueEmptyChunks,
                 g_audioShortWrites);
         }
@@ -970,13 +1026,19 @@ bool start_audio_worker()
         return true;
 
     g_audioWorkerStop.store(false, std::memory_order_release);
+    g_audioWorkerCpuMask = load_audio_worker_affinity();
+    lagi::platform::logging::writef(
+        "[AzelAudioAffinity] worker=%s mask=%08X config=ux0:data/lagi/audio_worker_cpu.txt\n",
+        g_audioWorkerAffinityName,
+        static_cast<unsigned>(g_audioWorkerCpuMask));
+
     g_audioWorkerThread = sceKernelCreateThread(
         "LagiSCSPWorker",
         audio_worker_thread,
         0x10000100,
         128u * 1024u,
         0,
-        SCE_KERNEL_CPU_MASK_USER_2,
+        g_audioWorkerCpuMask,
         nullptr);
     if (g_audioWorkerThread < 0) {
         lagi::platform::logging::writef(
@@ -1075,8 +1137,10 @@ void initSoundDriver()
     }
 
     lagi::platform::logging::writef(
-        "[AzelAudio:%llu] SCSP core initialized cyclesPerSample=%d worker=CPU2\n",
-        next_audio_trace(), kM68kCyclesPerSample);
+        "[AzelAudio:%llu] SCSP core initialized cyclesPerSample=%d workerAffinity=%s mask=%08X\n",
+        next_audio_trace(), kM68kCyclesPerSample,
+        g_audioWorkerAffinityName,
+        static_cast<unsigned>(g_audioWorkerCpuMask));
     lagi::platform::logging::writef(
         "[AzelAudioPerf] profiler=outer-sampled sampleStride=8 "
         "steadyInterval=256 dspSplit=inner-sampled "
