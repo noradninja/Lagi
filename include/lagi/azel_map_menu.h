@@ -37,6 +37,74 @@ void lagiAzelClearMapMessage();
 bool lagiAzelPresentMapMessage(int selected,const std::array<std::int32_t,2>& availability);
 
 struct s_workArea;
+// Inputs to MAIN06016D88. fieldRoute is the result of0601243A, not map
+// ownership; the original0024B89C gate must be bound before live use.
+struct LagiAzelMapAvailabilityInputs {
+    bool worldMapStoryBit=false; // native game-state bit193
+    int sceneClass=0;
+    std::uint32_t fieldRoute=0;
+    std::int8_t currentTown=0;
+    std::int32_t returnTown=0;
+    bool hasFieldContext=false;
+};
+struct LagiAzelMapAvailability {
+    std::array<std::int32_t,2> slots{0,-1};
+    int selected=0;
+    bool worldCover=true;
+};
+inline LagiAzelMapAvailability lagiAzelMapAvailabilityFromNative(
+    const LagiAzelMapAvailabilityInputs& input)
+{
+    LagiAzelMapAvailability result;
+    if(input.worldMapStoryBit) {
+        result.worldCover=false;
+        result.slots[1]=0;
+        if((input.sceneClass==0 && input.fieldRoute!=0) ||
+           (input.sceneClass==2 && input.currentTown!=input.returnTown)) {
+            result.slots[1]=1;
+            result.selected=1;
+        }
+    }
+    // The native field-context resolver runs after the world-route test and
+    // overrides the initial selection, regardless of field-map ownership.
+    if(input.hasFieldContext) {result.slots[0]=1;result.selected=0;}
+    return result;
+}
+
+// MAIN0601243A: read the authored per-subfield world-route value. The caller
+// supplies the original0024B89C byte explicitly; do not invent its live binding.
+// Null table means no route. False reports malformed input, not a game rule.
+inline bool lagiAzelReadFieldWorldMapRoute(const std::uint8_t* common,
+    std::size_t bytes,int field,int subfield,bool nativeGate,bool storyBit,
+    std::uint32_t& route)
+{
+    route=0;
+    if(!nativeGate) return true;
+    if(field<0 || field>=23 || subfield<0) return false;
+    if(field==1 && !storyBit) return true;
+    const auto range=[&](std::uint64_t offset,std::size_t count) {
+        return common && offset<=bytes && count<=bytes-static_cast<std::size_t>(offset);
+    };
+    const auto be32=[&](std::size_t offset) {
+        const auto* p=common+offset;
+        return (std::uint32_t(p[0])<<24)|(std::uint32_t(p[1])<<16)|
+            (std::uint32_t(p[2])<<8)|p[3];
+    };
+    std::uint64_t table=0xA3E4;
+    if(field!=1) {
+        const auto root=std::uint64_t(0xA4D4)+std::uint64_t(field)*4;
+        if(!range(root,4)) return false;
+        const auto address=be32(static_cast<std::size_t>(root));
+        if(!address) return true;
+        if(address<0x200000 || (address&3)) return false;
+        table=address-0x200000;
+    }
+    const auto offset=table+std::uint64_t(subfield)*4;
+    if(!range(offset,4)) return false;
+    route=be32(static_cast<std::size_t>(offset));
+    return true;
+}
+
 struct LagiAzelMapCursorState {
     std::int32_t selected=-1;
     bool ready=false,finished=false;
