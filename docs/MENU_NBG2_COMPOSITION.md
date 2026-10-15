@@ -50,6 +50,9 @@ movie reset and save exclusion have source guards, not runtime/GPU proof.
 Vita syntax checks cover the renderer and scene bridge.
 
 This is a display service dependency, not a completed Map page. The active
-Map child still needs its real native parent/view lifecycle, resource loading
-and restoration, pan/selection/fade input and player/orientation marker.
+Map parent still needs its real selection/mode lifecycle and resource-to-view
+handoff. The compiled view child now contains pan/fade and player-marker code
+(`NATIVE_MAP_VIEW_TASK.md`), and a parent resource owner now loads/restores
+the original sources (`NATIVE_MAP_RESOURCE_OWNERSHIP.md`). They are not yet
+connected into an accessible native Map viewer.
 No VPK build, hardware rendering, timing or menu acceptance is claimed.

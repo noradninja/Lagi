@@ -33,15 +33,18 @@ copies that cannot cover native subfields17/1A.
 
 The Map child owns the captured context and emits one `[FieldMapContext]`
 entry with descriptor, selected slot, coordinates, heading and SCB/PNB names.
-It does not yet load those resources or promise an image. Normal/absent context,
+The newer resource owner loads those real sources with rollback
+(`NATIVE_MAP_RESOURCE_OWNERSHIP.md`); a Map image is not yet promised. Normal/absent context,
 36 special routes, conversion direction/truncation, rotation/atan binding and
 invalid-state guards execute in `tests/map_context_test.ps1` against the actual
 service with mocked native services. Existing entry/ownership/pattern/marker
 and loader tests pass, as do Vita syntax checks of the service and Map child.
 No full linking, VPK or hardware result is claimed.
 
-Next required integration remains real resource lifetime/restore, viewport
-composition, native selection/pan/fade lifecycle and the player marker. The
+Next required integration remains the native parent selection/mode flow and
+owned resource handoff to the compiled view child and NBG2 compositor. The
+view child now contains pan/fade and player-marker services, but is not called
+by the placeholder parent (`NATIVE_MAP_VIEW_TASK.md`). The
 existing placeholder is not the requested final menu, and this checkpoint does
 not count the Map viewer as complete.
 

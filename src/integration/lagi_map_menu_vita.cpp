@@ -15,6 +15,7 @@ struct LagiFieldMapMenuTask : s_workAreaTemplate<LagiFieldMapMenuTask>
     bool mapOwned = false;
     LagiAzelMapContext context{};
     bool hasMapContext = false;
+    LagiAzelMapResources resources;
 
     static void Init(LagiFieldMapMenuTask* self)
     {
@@ -35,6 +36,15 @@ struct LagiFieldMapMenuTask : s_workAreaTemplate<LagiFieldMapMenuTask>
         if (!lagiAzelSetupMapEntry(false)) {
             self->getTask()->markFinished();
             return;
+        }
+
+        // Original parent Init loads the descriptor's real SCB/PNB before
+        // selection/view entry. Keep its buffers and rollback with this task.
+        if (self->hasMapContext) {
+            const bool loaded=self->resources.load(self->context.descriptor);
+            lagi::platform::logging::writef(
+                "[FieldMapResources] ready=%u graphicsVram=%05X patterns=1000\n",
+                static_cast<unsigned>(loaded),self->resources.graphicsVramOffset());
         }
 
         // Map entry art and text stay in Azel's native VDP2 memory.
@@ -62,8 +72,9 @@ struct LagiFieldMapMenuTask : s_workAreaTemplate<LagiFieldMapMenuTask>
         drawObjectName(self->mapOwned ? "Map acquired" : "Map not acquired");
     }
 
-    static void Delete(LagiFieldMapMenuTask*)
+    static void Delete(LagiFieldMapMenuTask* self)
     {
+        self->resources.restore();
         lagiAzelRestoreMapViewPriorities();
         initVdp2ForStatusMenu();
     }

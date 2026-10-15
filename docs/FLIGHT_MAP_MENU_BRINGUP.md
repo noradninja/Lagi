@@ -11,8 +11,10 @@ constructor is an assertion-only stub; the CMake source adaptation marks
 it weak without editing `extern/Azel`.
 
 The child invokes the existing native COMMON-derived map ownership check
-and Azel VDP2 map-menu backing setup. B exits the child; its Delete
-restores the original status-menu VDP2 priorities and background setup.
+and Azel VDP2 map-menu backing setup. With a valid native context it now
+loads/owns the actual SCB/PNB through `LagiAzelMapResources`. B exits the
+child; its Delete restores overwritten resource spans before the original
+status-menu VDP2 priorities and background setup.
 The flight radar remains point-filtered and untouched.
 
 ## Current coverage
@@ -25,7 +27,9 @@ pattern conversion, marker locations, map centering, and NBG2 window
 register setup. Their task-level lifecycle is not yet connected, and
 navigation is not yet enabled. Neptune now has the native-register-driven
 NBG2 menu composition dependency (`MENU_NBG2_COMPOSITION.md`), but the
-current entry child does not yet load/present the map planes to it.
+current entry child loads the source files but does not yet convert/present
+the map planes to it. See `NATIVE_MAP_RESOURCE_OWNERSHIP.md` for the parent
+resource lifetime/partial-failure rollback checkpoint.
 
 The current implementation does not fabricate a map from the flight
 radar or import the separate world-map overlay.
@@ -36,7 +40,8 @@ The child now calls `lagiAzelResolveCurrentMapContext` at entry and owns its
 result. This recovers the original current-field/dragon coordinates, native
 multi-area zone transforms for fields0F/12, map slot, heading and SCB/PNB
 descriptor. One `[FieldMapContext]` log records the resolved state. It does
-not yet load/display the map or enable navigation. The existing placeholder
+not by itself display the map or enable navigation. The resource owner now
+loads the real SCB/PNB sources, but the existing placeholder
 text remains temporary, not an accepted replacement for the native viewer.
 
 Host tests exercise the production context service with mocked native

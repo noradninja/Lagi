@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 struct LagiAzelMapDescriptor {
     std::uint32_t nativeAddress = 0;
@@ -183,6 +184,28 @@ std::array<std::int16_t,2> lagiAzelSetMapViewCenter(std::int16_t x,std::int16_t 
 // Returns the native SCB VRAM offset; no generated or substitute map image.
 bool lagiAzelLoadFieldMapResources(const LagiAzelMapDescriptor& descriptor,
     std::uint8_t* patterns, std::size_t capacity, std::uint32_t& graphicsVramOffset);
+
+// Vita ownership around the native loader: retain exactly the overwritten
+// graphics span and both pattern planes until all view children are gone.
+// This is rollback/lifetime compatibility, not an alternative map producer.
+class LagiAzelMapResources {
+public:
+    LagiAzelMapResources()=default;
+    ~LagiAzelMapResources();
+    LagiAzelMapResources(const LagiAzelMapResources&)=delete;
+    LagiAzelMapResources& operator=(const LagiAzelMapResources&)=delete;
+    bool load(const LagiAzelMapDescriptor& descriptor);
+    void restore();
+    bool ready() const {return ready_;}
+    std::uint32_t graphicsVramOffset() const {return graphicsOffset_;}
+    const std::array<std::uint8_t,0x1000>& patterns() const {return patterns_;}
+private:
+    std::array<std::uint8_t,0x1000> patterns_{};
+    std::array<std::uint8_t,0x1000> planeBackup_{};
+    std::vector<std::uint8_t> graphicsBackup_;
+    std::uint32_t graphicsOffset_=0;
+    bool active_=false,ready_=false;
+};
 
 // Original 06016D36..46: COMMON table 0020E848, 23 field pointers, then
 // subfield pointers to 12-byte descriptors. Never infer a subfield count from
