@@ -1518,6 +1518,17 @@ void modelDrawFunction3(s_3dModel* pModel)
    "__attribute__((weak)) p_workArea createMapTask(p_workArea workArea)"
    source_text "${source_text}")
 
+  # Native MAIN 06019F18 / COMMON task definition20FA0C restores the saved
+  # cadence byte. The pinned upstream Delete remains an assertion-only stub.
+  string(REPLACE
+   "void s_mainMenuWorkArea::Delete(s_mainMenuWorkArea*)\n{\n    PDS_unimplemented(\"mainMenuTaskDelete\");\n}"
+   "void s_mainMenuWorkArea::Delete(s_mainMenuWorkArea* pWorkArea)\n{\n    // LAGI_STATUS_MENU_RESTORE_CADENCE\n    vblankData.m14_numVsyncPerFrame = static_cast<u8>(pWorkArea->m1);\n}"
+   source_text "${source_text}")
+  string(FIND "${source_text}" "LAGI_STATUS_MENU_RESTORE_CADENCE" lagi_menu_cadence_restore)
+  if(lagi_menu_cadence_restore LESS 0)
+   message(FATAL_ERROR "Native status-menu cadence restore adapter no longer matches")
+  endif()
+
   # Azel/Saturn work areas begin cleared. The Vita task host allocates C++
   # work areas with plain new, so explicitly establish the main status-menu
   # state before its first Draw() dispatch. Without this, m0 and child pointers

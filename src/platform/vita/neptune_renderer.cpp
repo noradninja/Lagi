@@ -1056,6 +1056,8 @@ static unsigned int g_pendingTownEdgePreviousFrame = 0;
 static float g_pendingTownEdgeTransition = 1.0f;
 static bool g_pendingTownPresentationValid = false;
 static unsigned int g_pendingSceneGameMode = 0u;
+static unsigned int g_pendingNativeFrameVblanks = 2u;
+static unsigned int g_nativeFrameVblanks = 2u;
 static int g_pendingViewMode = 7;
 static unsigned int g_pendingProfileTasksUs = 0u;
 static unsigned int g_pendingProfileGameWaitUs = 0u;
@@ -1158,15 +1160,13 @@ static int viewerRenderWidth();
 static int viewerRenderHeight();
 static int viewerRenderPitch();
 
-static void waitFor30HzPresentSlot()
+static void waitForPresentSlot(unsigned int intervalVblanks)
 {
     // The Vita display scans at 60 Hz. Queueing with NEXTFRAME makes the
-    // buffer become front on the following vblank, so wait until at least
-    // one vblank has elapsed since the previous presentation before queueing.
-    // The queued buffer then lands on the second vblank: a stable 30 Hz cap.
-    //
-    // If rendering itself already consumed one or more vblanks, this does
-    // not add an unnecessary fixed two-vblank delay.
+    // buffer become front on the following vblank. Pre-wait only N-1 ticks
+    // since the previous scanout. Native menus request1; gameplay requests2.
+    // Rendering time already consumed counts toward that interval.
+    const unsigned int preQueueVblanks=intervalVblanks>0u ? intervalVblanks-1u : 1u;
     unsigned int now =
         static_cast<unsigned int>(sceDisplayGetVcount());
 
@@ -1176,14 +1176,19 @@ static void waitFor30HzPresentSlot()
     }
 
     while (static_cast<unsigned int>(
-               now - g_lastPresentVcount) < 1u) {
+               now - g_lastPresentVcount) < preQueueVblanks) {
         sceDisplayWaitVblankStart();
         now = static_cast<unsigned int>(
             sceDisplayGetVcount());
     }
 }
 
-static void mark30HzPresented()
+static void waitFor30HzPresentSlot()
+{
+    waitForPresentSlot(2u);
+}
+
+static void markPresented()
 {
     g_lastPresentVcount =
         static_cast<unsigned int>(sceDisplayGetVcount());
@@ -13042,7 +13047,7 @@ static bool renderMovieFrame()
         displayResult = sceDisplaySetFrameBuf(
             &frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
         sceDisplayWaitVblankStart();
-        mark30HzPresented();
+        markPresented();
     } else {
         // Saturn's high-resolution title advances its animation state at the
         // lower cadence even though the display is scanned more frequently.
@@ -13056,7 +13061,7 @@ static bool renderMovieFrame()
         sceDisplaySetFrameBuf(
             &frameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
         sceDisplayWaitVblankStart();
-        mark30HzPresented();
+        markPresented();
     }
     static int lastMovieScanoutWidth = 0;
     static int lastMovieScanoutHeight = 0;
@@ -13730,10 +13735,10 @@ static void renderBasicWingViewer()
     fb.height = viewerRenderHeight();
 
     const std::uint64_t presentStartUs = sceKernelGetProcessTimeWide();
-    waitFor30HzPresentSlot();
+    waitForPresentSlot(nativeSceneMode ? g_nativeFrameVblanks : 2u);
     sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
     sceDisplayWaitVblankStart();
-    mark30HzPresented();
+    markPresented();
     g_profilePresentUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - presentStartUs);
     recordFlightPresentation(
@@ -14085,6 +14090,7 @@ void presentation_publish_frame()
             1u, std::memory_order_release);
     }
     g_sceneGameMode = g_pendingSceneGameMode;
+    g_nativeFrameVblanks = g_pendingNativeFrameVblanks;
     g_scenePlayerPresent = g_pendingScenePlayerPresent;
     g_sceneRbg0Enabled = g_pendingSceneRbg0Enabled;
     if (g_sceneRbg0Enabled) {
@@ -14405,6 +14411,19 @@ void presentation_set_vdp2_text(
 void presentation_set_menu_nbg2(const lagi::MenuNbg2State& state)
 {
     g_pendingMenuNbg2 = state;
+}
+
+void presentation_set_native_frame_vblanks(unsigned int count)
+{
+    // The native paths currently request1/2. An unset/corrupt source must
+    // not create a zero-tick spin or an unbounded display wait.
+    g_pendingNativeFrameVblanks = count==1u ? 1u : 2u;
+    static unsigned int lastRequested=0xFFFFFFFFu;
+    if(count!=lastRequested) {
+        logging::writef("[NativeFrameCadence] requested=%u intervalVblanks=%u\n",
+            count,g_pendingNativeFrameVblanks);
+        lastRequested=count;
+    }
 }
 
 } // namespace lagi::platform::renderer

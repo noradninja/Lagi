@@ -147,6 +147,8 @@ void sync_field_presentation_state()
 
 void sync_presentation_state()
 {
+    lagi::platform::renderer::presentation_set_native_frame_vblanks(
+        vblankData.m14_numVsyncPerFrame);
     // Every native scene consumes the same Azel-authored UI planes. Do not
     // gate subtitles, badges, LCS backing or cinematic bars on actor type.
     if (gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 2 || gGameStatus.m0_gameMode == 3) {
