@@ -13,6 +13,18 @@ struct LagiAzelMapDescriptor {
     std::array<std::uint8_t,4> presentation{};
 };
 
+struct LagiAzelMapContext {
+    LagiAzelMapDescriptor descriptor{};
+    int field = -1;
+    int subfield = -1;
+    std::int16_t x = 0, y = 0;
+    std::int32_t heading = 0;
+};
+
+// Native 06016C54: live field/dragon context, including special-field zones.
+// False means no native field map is available; never substitute radar data.
+bool lagiAzelResolveCurrentMapContext(LagiAzelMapContext& out);
+
 // Original 06017228: 32-pixel cells relative to the native backing-layer scroll.
 inline std::array<std::int16_t,2> lagiAzelMapViewScrollOrigin(
     std::int16_t centerX,std::int16_t centerY,std::int16_t backingX,std::int16_t backingY)
@@ -156,16 +168,18 @@ bool lagiAzelLoadFieldMapResources(const LagiAzelMapDescriptor& descriptor,
     std::uint8_t* patterns, std::size_t capacity, std::uint32_t& graphicsVramOffset);
 
 // Original 06016D36..46: COMMON table 0020E848, 23 field pointers, then
-// subfield pointers to 12-byte descriptors. Caller supplies the authoritative
-// current field's subfield count; never infer it from adjacent COMMON data.
+// subfield pointers to 12-byte descriptors. Never infer a subfield count from
+// adjacent COMMON data; the wrapper below requires the caller's real count.
 // Returned strings borrow COMMON's lifetime. No disc resources are copied.
-inline bool lagiAzelReadFieldMapDescriptor(const std::uint8_t* common,
+// For a slot already selected by native field/zone state. Arbitrary UI indices
+// must use the count-checked wrapper below. Both readers bound image accesses.
+inline bool lagiAzelReadFieldMapDescriptorSlot(const std::uint8_t* common,
     std::size_t bytes, std::uint32_t field, std::uint32_t subfield,
-    std::uint32_t subfieldCount, LagiAzelMapDescriptor& out)
+    LagiAzelMapDescriptor& out)
 {
     out = {};
     constexpr std::uint32_t base=0x200000, table=0xE848;
-    if (!common || field>=23 || subfield>=subfieldCount ||
+    if (!common || field>=23 ||
         bytes<table || bytes-table<23*4) return false;
     const auto be32=[](const std::uint8_t* p) {
         return (std::uint32_t(p[0])<<24)|(std::uint32_t(p[1])<<16)|
@@ -189,4 +203,13 @@ inline bool lagiAzelReadFieldMapDescriptor(const std::uint8_t* common,
     out.patternFile=reinterpret_cast<const char*>(common+(pattern-base));
     std::copy(record+8,record+12,out.presentation.begin());
     return true;
+}
+
+inline bool lagiAzelReadFieldMapDescriptor(const std::uint8_t* common,
+    std::size_t bytes, std::uint32_t field, std::uint32_t subfield,
+    std::uint32_t subfieldCount, LagiAzelMapDescriptor& out)
+{
+    out = {};
+    return subfield < subfieldCount && lagiAzelReadFieldMapDescriptorSlot(
+        common,bytes,field,subfield,out);
 }

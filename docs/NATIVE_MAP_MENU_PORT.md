@@ -1,7 +1,49 @@
 # Native Map menu restoration — in progress
 
-Map entry must remain disabled until its real task/render/return pipeline exists.
+Current status: the newer Vita child enables entry/exit only, not a finished
+map viewer. See `FLIGHT_MAP_MENU_BRINGUP.md`. Historical checkpoints below
+that say the constructor is disabled describe the earlier state.
 This work is distinct from fixed pickup target flags and shared item ownership.
+
+## Live map context checkpoint
+
+`lagiAzelResolveCurrentMapContext` now implements MAIN `06016C54..06016D56`
+and binds the result at Map child entry. It reads the native scene-class bits
+`readPackedBits(0,2)`, current field/subfield and dragon position/yaw. Ordinary
+fields retain their actual subfield and XYZ. Fields `0F` and `12` use the live
+COMMON zone lookup `2161F4`, zone offsets `216218`, and subfield offsets
+`216290`, matching native `0602F87C`/`0602F8E4`. The transformed zone, not the
+raw subfield, selects the descriptor. Zone values at least15 use the native
+X translation and `Z=-Y-subfieldOffsetZ`, returning slot15. Other zones add
+both native X/Z offset pairs with 32-bit wrap.
+
+Original subfields `0/6/9/17/1A` derive heading through identity,
+Y(yaw), X(pitch), then native `atan2_FP(m02,m12)`; other subfields retain
+yaw. This order is verified from MAIN `06035E68` (Y, columns0/2) and
+`06035DC8` (X, columns1/2), not inferred from filenames or screenshot shape.
+The service reuses existing native matrix/trigonometry services. Map X/Z
+conversion uses signed division by65536 (truncation toward zero), Z adds400hex,
+and final map coordinates are signed16 like the original work area.
+
+The COMMON slot reader is separately bounded for addresses/strings; native
+field/zone state supplies its selected index. UI callers still use the existing
+count-checked wrapper. The special-field byte lookup is bounded at its adjacent
+zone-offset table (24hex entries), avoiding upstream's truncated sixteen-entry
+copies that cannot cover native subfields17/1A.
+
+The Map child owns the captured context and emits one `[FieldMapContext]`
+entry with descriptor, selected slot, coordinates, heading and SCB/PNB names.
+It does not yet load those resources or promise an image. Normal/absent context,
+36 special routes, conversion direction/truncation, rotation/atan binding and
+invalid-state guards execute in `tests/map_context_test.ps1` against the actual
+service with mocked native services. Existing entry/ownership/pattern/marker
+and loader tests pass, as do Vita syntax checks of the service and Map child.
+No full linking, VPK or hardware result is claimed.
+
+Next required integration remains real resource lifetime/restore, viewport
+composition, native selection/pan/fade lifecycle and the player marker. The
+existing placeholder is not the requested final menu, and this checkpoint does
+not count the Map viewer as complete.
 
 ## Verified original task and data
 

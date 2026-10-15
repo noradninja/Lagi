@@ -28,6 +28,20 @@ composition are not yet connected, and navigation is not yet enabled.
 The current implementation does not fabricate a map from the flight
 radar or import the separate world-map overlay.
 
+## Live context integration
+
+The child now calls `lagiAzelResolveCurrentMapContext` at entry and owns its
+result. This recovers the original current-field/dragon coordinates, native
+multi-area zone transforms for fields0F/12, map slot, heading and SCB/PNB
+descriptor. One `[FieldMapContext]` log records the resolved state. It does
+not yet load/display the map or enable navigation. The existing placeholder
+text remains temporary, not an accepted replacement for the native viewer.
+
+Host tests exercise the production context service with mocked native
+services across36 special-field routes plus normal/invalid state. Vita syntax
+checks pass; neither full linking nor a hardware Map test has run here.
+See `NATIVE_MAP_MENU_PORT.md` for source addresses and remaining dependencies.
+
 ## Hardware validation
 
 Build and test on a Vita after collecting the area's field-map item.
