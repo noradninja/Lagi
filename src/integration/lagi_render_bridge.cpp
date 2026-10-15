@@ -3,6 +3,7 @@
 #include "lagi/lagi_live_model_adapter.h"
 #include "lagi/platform.h"
 #include "lagi/lagi_point_light.h"
+#include "lagi/lagi_scene_bridge.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -653,6 +654,14 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
     } else {
         capture_runtime_state(billboard);
     }
+
+    lagi::scene_bridge::capture_local_coordinates(
+        g_lastState.localCoordinatesX, g_lastState.localCoordinatesY);
+    // A post-projection offset depends on the current view, not a static
+    // world mesh cache. Normal centered environment submissions stay cached.
+    if (g_lastState.localCoordinatesX != 176 ||
+        g_lastState.localCoordinatesY != 112)
+        g_lastState.dynamic = true;
 
     std::int32_t adaptedIndex = -1;
     auto cached = g_modelCache.find(model);

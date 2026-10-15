@@ -13,6 +13,12 @@
 
 namespace lagi::scene_bridge {
 
+void capture_local_coordinates(std::int16_t& x, std::int16_t& y)
+{
+    x = graphicEngineStatus.m405C.m44_localCoordinatesX;
+    y = graphicEngineStatus.m405C.m46_localCoordinatesY;
+}
+
 namespace {
 
 void sync_field_presentation_state()

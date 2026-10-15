@@ -32,6 +32,9 @@ std::uint64_t native_texture_write_epoch();
 std::uint64_t published_resource_revision();
 
 struct SubmissionState {
+    // VDP1 local origin at the draw boundary, not the restored end-frame state.
+    std::int16_t localCoordinatesX = 176;
+    std::int16_t localCoordinatesY = 112;
     std::int32_t modelMatrix[12]{};
     std::int32_t lightVector[3]{};
     // Original point evaluator has already transformed/quantized this light

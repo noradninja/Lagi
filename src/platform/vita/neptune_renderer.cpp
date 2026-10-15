@@ -6,6 +6,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/lagi_screen_depth.h"
+#include "lagi/lagi_projection_offset.h"
 #include "lagi/lagi_vdp1_quad_geometry.h"
 #include "lagi/lagi_live_model_adapter.h"
 #include "neptune_texture_pool.h"
@@ -6901,6 +6902,20 @@ static void appendLiveTownModel(
         polygonBase + model.polygons.size());
     g_liveTownPolygonLights.resize(polygonBase + model.polygons.size());
 
+    float projectionOffset[3]{};
+    if (g_nativeSceneViewValid &&
+        (state.localCoordinatesX != 176 || state.localCoordinatesY != 112)) {
+        float projectionX, projectionY;
+        azelProjectionScales(g_azelProjectionFovDegrees, 0u, projectionX, projectionY);
+        const float canvasWidth = (4.0f / 3.0f) /
+            (static_cast<float>(kWidth) / static_cast<float>(kHeight));
+        lagi::nativeProjectionOffset(state.localCoordinatesX,
+            state.localCoordinatesY, canvasWidth, projectionX, projectionY,
+            g_nativeSceneViewMatrix, projectionOffset);
+    }
+    const bool shiftedProjection = projectionOffset[0] != 0 ||
+        projectionOffset[1] != 0 || projectionOffset[2] != 0;
+
     const auto transformVertex = [&](const azel::DebugColorVertex& source) {
         azel::DebugColorVertex v = source;
         if (state.billboard) {
@@ -6914,6 +6929,14 @@ static void appendLiveTownModel(
             v.x = source.x*m[0] + source.y*m[1] + source.z*m[2] + m[3];
             v.y = source.x*m[4] + source.y*m[5] + source.z*m[6] + m[7];
             v.z = source.x*m[8] + source.y*m[9] + source.z*m[10] + m[11];
+        }
+        if (shiftedProjection) {
+            const float viewZ = v.x*g_nativeSceneViewMatrix[8] +
+                v.y*g_nativeSceneViewMatrix[9] +
+                v.z*g_nativeSceneViewMatrix[10] + g_nativeSceneViewMatrix[11];
+            v.x += projectionOffset[0]*viewZ;
+            v.y += projectionOffset[1]*viewZ;
+            v.z += projectionOffset[2]*viewZ;
         }
         return v;
     };
