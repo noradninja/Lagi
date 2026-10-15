@@ -73,7 +73,7 @@ struct LagiFieldMapViewTask : s_workAreaTemplateWithArg<LagiFieldMapViewTask,con
         const int maxX=static_cast<std::int8_t>(descriptor[2])-3;
         const int maxY=static_cast<std::int8_t>(descriptor[3])-3;
         if(!input->resourcesReady || !input->status || minX>maxX || minY>maxY ||
-            input->context.subfield<0 || unsigned(input->context.subfield)>=input->subfieldCount) {
+            input->context.subfield<0 || !lagiAzelMapContextIsCurrent(input->context)) {
             self->getTask()->markFinished();return;
         }
         self->centerX=std::clamp(intDivide(32,input->context.x).asS32(),minX,maxX);
@@ -97,8 +97,8 @@ struct LagiFieldMapViewTask : s_workAreaTemplateWithArg<LagiFieldMapViewTask,con
 
     bool setup()
     {
-        if(!lagiAzelPresentMapPatterns(source.patterns.data(),0x800,
-            source.patterns.data()+0x800,0x800,source.context.subfield,source.subfieldCount)) return false;
+        if(!lagiAzelPresentMapContextPatterns(source.context,source.patterns.data(),0x800,
+            source.patterns.data()+0x800,0x800)) return false;
         savedScroll=lagiAzelSetMapViewCenter(static_cast<s16>(centerX),static_cast<s16>(centerY));
         const auto& backing=graphicEngineStatus.m40BC_layersConfig[1];
         lagiAzelSetupMapViewWindow(backing.scrollX,backing.scrollY);
@@ -148,7 +148,7 @@ struct LagiFieldMapViewTask : s_workAreaTemplateWithArg<LagiFieldMapViewTask,con
                 readSaturnU16(definition+2),0x760,corners);
         }
         const auto& map=graphicEngineStatus.m40BC_layersConfig[2];
-        lagiAzelDrawMapObjectMarkers(source.context.subfield,source.subfieldCount,
+        lagiAzelDrawMapContextObjectMarkers(source.context,
             map.scrollX,map.scrollY,graphicEngineStatus.m40BC_layersConfig[0].scrollY);
     }
 

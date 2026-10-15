@@ -8,7 +8,7 @@ task adapter and VDP1/VDP2 service consumer; no radar mesh, replacement map
 or approximate page is generated. The task is compiled into the Vita target.
 
 `lagiAzelCreateFieldMapView` requires a parent and explicitly ready source:
-native context, both authored PNB halves, the authoritative subfield count
+native context, both authored PNB halves
 and a retained completion object. It copies context/patterns at Init. Thus
 the original source buffers cannot become dangling when a loader releases
 its temporary memory. The parent must retain resource/graphics ownership
@@ -63,7 +63,7 @@ performance measurement is claimed.
 **The existing top-level Map entry remains a temporary placeholder.** It
 does not yet call this factory. It must still be replaced by the original
 Map parent's selection/mode/cursor/scroll lifecycle, with an owned resource
-handoff, a valid subfield-count source and both native field-map
+handoff and both native field-map
 and world-map routes. Connecting this child through an automatic field-only
 shortcut would not complete that original parent workflow. The map viewer
 and the broader in-game menu goal therefore remain incomplete.
@@ -71,3 +71,7 @@ and the broader in-game menu goal therefore remain incomplete.
 The newer parent resource owner now loads the descriptor's SCB/PNB and
 restores overwritten spans on failure/exit (`NATIVE_MAP_RESOURCE_OWNERSHIP.md`).
 It does not yet construct this view child or replace the placeholder parent.
+
+The view now binds to validated live native field/slot/descriptor state rather
+than requiring a fabricated subfield count (`NATIVE_MAP_CONTEXT_BINDING.md`).
+Arbitrary indexed service callers retain their original count checks.

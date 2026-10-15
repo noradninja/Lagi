@@ -26,6 +26,11 @@ struct LagiAzelMapContext {
 // Native 06016C54: live field/dragon context, including special-field zones.
 // False means no native field map is available; never substitute radar data.
 bool lagiAzelResolveCurrentMapContext(LagiAzelMapContext& out);
+bool lagiAzelMapContextIsCurrent(const LagiAzelMapContext& context);
+bool lagiAzelPresentMapContextPatterns(const LagiAzelMapContext& context,
+    const std::uint8_t* first,std::size_t firstBytes,const std::uint8_t* second,std::size_t secondBytes);
+unsigned lagiAzelDrawMapContextObjectMarkers(const LagiAzelMapContext& context,
+    std::int16_t scrollX,std::int16_t scrollY,std::int16_t verticalOffset);
 // Native 06016B6C/06016BAA. Text comes from COMMON, with the menu font and
 // original message rectangle/cursor placement. Availability is not ownership.
 void lagiAzelClearMapMessage();
@@ -39,7 +44,6 @@ struct LagiAzelMapViewStatus {
 struct LagiAzelMapViewSource {
     LagiAzelMapContext context{};
     std::array<std::uint8_t,0x1000> patterns{};
-    unsigned subfieldCount=0;
     bool resourcesReady=false;
     std::shared_ptr<LagiAzelMapViewStatus> status;
 };

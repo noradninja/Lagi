@@ -14,6 +14,9 @@ struct Common {
  unsigned char* getSaturnPtr(unsigned address){assert(address==0x20A650 || address==0x20A388);return m_data+address-0x200000;}
 } commonObject{common};
 Common* gCommonFile=&commonObject;
+LagiAzelMapContext liveContext;
+bool liveContextAvailable=true;
+bool lagiAzelResolveCurrentMapContext(LagiAzelMapContext& out){out=liveContext;return liveContextAvailable;}
 enum eItems:int {};
 int readSaturnS16(unsigned char* data){return std::int16_t((unsigned(data[0])<<8)|data[1]);}
 struct Pointer {unsigned m_offset;Pointer operator+(int n)const{return {m_offset+unsigned(n)};}};
@@ -73,6 +76,16 @@ int main(){
  pointerWord(0x1308,static_cast<unsigned>(-900*65536));
  common[0x130C]=3;common[0x130D]=0xEB;common[0x131E]=4;
  assert(lagiAzelDrawMapObjectMarkers(0,1,0,0,0)==1 && markerDraws==1 && markerSource==0x23F4);
+ liveContext.field=0;liveContext.subfield=0;liveContext.descriptor.nativeAddress=0x201100;
+ auto captured=liveContext;
+ assert(lagiAzelMapContextIsCurrent(captured));
+ assert(lagiAzelDrawMapContextObjectMarkers(captured,0,0,0)==1);
+ const auto emitted=markerDraws;
+ captured.subfield=1;assert(!lagiAzelMapContextIsCurrent(captured));
+ assert(lagiAzelDrawMapContextObjectMarkers(captured,0,0,0)==0 && markerDraws==emitted);
+ captured=liveContext;captured.field=1;assert(!lagiAzelMapContextIsCurrent(captured));
+ captured=liveContext;captured.descriptor.nativeAddress=0x201200;assert(!lagiAzelMapContextIsCurrent(captured));
+ captured=liveContext;
  common[0x130E]=1;
  assert(lagiAzelDrawMapObjectMarkers(0,1,0,0,0)==1 && markerSource==0x23F0);
  common[0x130D]=0;
@@ -97,6 +110,20 @@ int main(){
  mainGameState.value=1;
  assert(lagiAzelPresentMapPatterns(first.data(),first.size(),second.data(),second.size(),0,1));
  assert(vram[0x70000]==0x70 && vram[0x70001]==1 && vram[0x70800]==0x70 && vram[0x70801]==2);
+ assert(lagiAzelPresentMapContextPatterns(captured,first.data(),first.size(),second.data(),second.size()));
+ const auto published=std::vector<unsigned char>(vram,vram+sizeof(vram));
+ liveContext.subfield=1;
+ assert(!lagiAzelPresentMapContextPatterns(captured,first.data(),first.size(),second.data(),second.size()));
+ assert(!std::memcmp(vram,published.data(),sizeof(vram)));liveContext.subfield=0;
+ liveContextAvailable=false;
+ assert(!lagiAzelPresentMapContextPatterns(captured,first.data(),first.size(),second.data(),second.size()));
+ assert(!std::memcmp(vram,published.data(),sizeof(vram)));liveContextAvailable=true;
+ // Invalid EA hierarchy is rejected before any out-of-image mock dereference.
+ pointerWord(0xA388,0xFFFFFFFC);
+ assert(!lagiAzelMapCellExplored(0,1,5,3) && lagiAzelDrawMapObjectMarkers(0,1,0,0,0)==0);
+ pointerWord(0xA388,0x201000);pointerWord(0x1000,0x221080);
+ assert(!lagiAzelMapCellExplored(0,1,5,3) && lagiAzelDrawMapObjectMarkers(0,1,0,0,0)==0);
+ pointerWord(0x1000,0x201100);
  vram[0x70000]=0xCD;
  assert(!lagiAzelPresentMapPatterns(first.data(),0x7FF,second.data(),second.size(),0,1) && vram[0x70000]==0xCD);
  for(int index=0;index<23;++index){
@@ -120,5 +147,5 @@ int main(){
  assert(lagiAzelSetupMapEntry(true));assert((calls==std::vector<int>{0,1,2,3,4,5,6,7,8,9}));calls.clear();
  gCommonFile=nullptr;assert(!lagiAzelSetupMapEntry(true) && calls.empty());
  gCommonFile=&commonObject;commonObject.m_data=nullptr;assert(!lagiAzelSetupMapEntry(false) && calls.empty());
- puts("PASS: actual Map normal/standalone entry setup call order, native layout and null resource guards; mocked services");
+ puts("PASS: production Map entry/window/ownership, live-context pattern/marker bindings, stale-context no-write guards and malformed EA hierarchy (host mocks)");
 }

@@ -9,7 +9,8 @@ bool lagiAzelCurrentFieldMapOwned()
 {
     // Native 06012554: COMMON field->item table, not a universal B2 flag.
     auto* field=getFieldTaskPtr();
-    if (!field || !gCommonFile) return false;
+    if (!field || !gCommonFile || !gCommonFile->m_data || gCommonFile->m_base!=0x200000 ||
+        gCommonFile->m_dataSize<0xA650+23*2) return false;
     const int index=field->m2C_currentFieldIndex;
     if(index<0 || index>=23) return false;
     const auto item=static_cast<eItems>(readSaturnS16(
@@ -17,19 +18,30 @@ bool lagiAzelCurrentFieldMapOwned()
     return static_cast<int>(item)>=0 && mainGameState.getItemCount(item)!=0;
 }
 
-bool lagiAzelMapCellExplored(int subfield,unsigned subfieldCount,int x,int y)
+static bool mapCommonRange(const auto& pointer,std::size_t length)
+{
+    return gCommonFile && pointer.m_offset>=gCommonFile->m_base &&
+        std::size_t(pointer.m_offset-gCommonFile->m_base)<=gCommonFile->m_dataSize &&
+        length<=gCommonFile->m_dataSize-std::size_t(pointer.m_offset-gCommonFile->m_base);
+}
+
+static bool mapCellExploredSlot(int subfield,int x,int y)
 {
     // Native 0601249C: current-field COMMON hierarchy and getBit566 mapping.
     auto* field=getFieldTaskPtr();
-    if(!field || !gCommonFile || subfield<0 || unsigned(subfield)>=subfieldCount) return false;
+    if(!field || !gCommonFile || !gCommonFile->m_data || gCommonFile->m_base!=0x200000 ||
+        gCommonFile->m_dataSize<0xA388+23*4 || subfield<0 ||
+        std::uint64_t(subfield)*4+4>gCommonFile->m_dataSize) return false;
     const int index=field->m2C_currentFieldIndex;
     if(index<0 || index>=23) return false;
     auto table=readSaturnEA(gCommonFile->getSaturnPtr(0x20A388)+index*4);
-    if(!table.m_offset) return false;
-    auto record=readSaturnEA(table+subfield*4);
-    if(!record.m_offset) return false;
+    if(!mapCommonRange(table,4)) return false;
+    const auto slot=table+static_cast<u32>(subfield)*4u;
+    if(!mapCommonRange(slot,4)) return false;
+    auto record=readSaturnEA(slot);
+    if(!mapCommonRange(record,10)) return false;
     auto rectangle=readSaturnEA(record);
-    if(!rectangle.m_offset) return false;
+    if(!mapCommonRange(rectangle,4)) return false;
     const int dx=x-readSaturnS8(rectangle),dy=y-readSaturnS8(rectangle+1);
     const int width=readSaturnS8(rectangle+2),height=readSaturnS8(rectangle+3);
     if(dx<0 || dy<0 || dx>=width || dy>=height) return false;
@@ -40,15 +52,20 @@ bool lagiAzelMapCellExplored(int subfield,unsigned subfieldCount,int x,int y)
     return mainGameState.getBit566(static_cast<u32>(flag));
 }
 
-bool lagiAzelPresentMapPatterns(const std::uint8_t* first,std::size_t firstBytes,
-    const std::uint8_t* second,std::size_t secondBytes,int subfield,unsigned subfieldCount)
+bool lagiAzelMapCellExplored(int subfield,unsigned subfieldCount,int x,int y)
+{
+    return subfield>=0 && unsigned(subfield)<subfieldCount && mapCellExploredSlot(subfield,x,y);
+}
+
+static bool presentMapPatternsSlot(const std::uint8_t* first,std::size_t firstBytes,
+    const std::uint8_t* second,std::size_t secondBytes,int subfield)
 {
     if(!first || !second || firstBytes<0x800 || secondBytes<0x800 ||
-        subfield<0 || unsigned(subfield)>=subfieldCount || !getFieldTaskPtr() || !gCommonFile) return false;
-    struct Context {int subfield;unsigned count;} context{subfield,subfieldCount};
+        subfield<0 || !getFieldTaskPtr() || !gCommonFile) return false;
+    struct Context {int subfield;} context{subfield};
     const auto explored=[](void* opaque,unsigned x,unsigned y) {
         const auto& state=*static_cast<const Context*>(opaque);
-        return lagiAzelMapCellExplored(state.subfield,state.count,int(x),int(y));
+        return mapCellExploredSlot(state.subfield,int(x),int(y));
     };
     const bool owned=lagiAzelCurrentFieldMapOwned();
     // Native 06017376..88: separate authored source halves, native planes.
@@ -58,17 +75,42 @@ bool lagiAzelPresentMapPatterns(const std::uint8_t* first,std::size_t firstBytes
         owned,31,explored,&context);
 }
 
-unsigned lagiAzelDrawMapObjectMarkers(int subfield,unsigned subfieldCount,
+bool lagiAzelPresentMapPatterns(const std::uint8_t* first,std::size_t firstBytes,
+    const std::uint8_t* second,std::size_t secondBytes,int subfield,unsigned subfieldCount)
+{
+    return subfield>=0 && unsigned(subfield)<subfieldCount &&
+        presentMapPatternsSlot(first,firstBytes,second,secondBytes,subfield);
+}
+
+bool lagiAzelMapContextIsCurrent(const LagiAzelMapContext& context)
+{
+    LagiAzelMapContext live;
+    return lagiAzelResolveCurrentMapContext(live) && live.field==context.field &&
+        live.subfield==context.subfield && live.descriptor.nativeAddress==context.descriptor.nativeAddress;
+}
+
+bool lagiAzelPresentMapContextPatterns(const LagiAzelMapContext& context,
+    const std::uint8_t* first,std::size_t firstBytes,const std::uint8_t* second,std::size_t secondBytes)
+{
+    return lagiAzelMapContextIsCurrent(context) &&
+        presentMapPatternsSlot(first,firstBytes,second,secondBytes,context.subfield);
+}
+
+static unsigned drawMapObjectMarkersSlot(int subfield,
     std::int16_t scrollX,std::int16_t scrollY,std::int16_t verticalOffset)
 {
     auto* field=getFieldTaskPtr();
-    if(!field || !gCommonFile || subfield<0 || unsigned(subfield)>=subfieldCount) return 0;
+    if(!field || !gCommonFile || !gCommonFile->m_data || gCommonFile->m_base!=0x200000 ||
+        gCommonFile->m_dataSize<0xA388+23*4 || subfield<0 ||
+        std::uint64_t(subfield)*4+4>gCommonFile->m_dataSize) return 0;
     const int index=field->m2C_currentFieldIndex;
     if(index<0 || index>=23) return 0;
     auto table=readSaturnEA(gCommonFile->getSaturnPtr(0x20A388)+index*4);
-    if(!table.m_offset) return 0;
-    auto record=readSaturnEA(table+subfield*4);
-    if(!record.m_offset) return 0;
+    if(!mapCommonRange(table,4)) return 0;
+    const auto slot=table+static_cast<u32>(subfield)*4u;
+    if(!mapCommonRange(slot,4)) return 0;
+    auto record=readSaturnEA(slot);
+    if(!mapCommonRange(record,8)) return 0;
     auto marker=readSaturnEA(record+4);
     // Original MAIN 06043260/68. No invented sprite for reserved types2/3.
     static const s_menuSprite sprites[2]={{0x23F4,0x0108,-4,-4},{0x23F0,0x0108,-4,-4}};
@@ -90,6 +132,20 @@ unsigned lagiAzelDrawMapObjectMarkers(int subfield,unsigned subfieldCount,
         marker=marker+16;
     }
     return emitted;
+}
+
+unsigned lagiAzelDrawMapObjectMarkers(int subfield,unsigned subfieldCount,
+    std::int16_t scrollX,std::int16_t scrollY,std::int16_t verticalOffset)
+{
+    return subfield>=0 && unsigned(subfield)<subfieldCount
+        ? drawMapObjectMarkersSlot(subfield,scrollX,scrollY,verticalOffset) : 0;
+}
+
+unsigned lagiAzelDrawMapContextObjectMarkers(const LagiAzelMapContext& context,
+    std::int16_t scrollX,std::int16_t scrollY,std::int16_t verticalOffset)
+{
+    return lagiAzelMapContextIsCurrent(context)
+        ? drawMapObjectMarkersSlot(context.subfield,scrollX,scrollY,verticalOffset) : 0;
 }
 
 void lagiAzelRestoreMapViewPriorities()

@@ -53,5 +53,6 @@ No VPK, real packaged-file load, on-device rollback, rendered Map image or
 timing result is claimed. The top-level Map page still shows a placeholder;
 its native selection/mode/cursor lifecycle and resource-to-view handoff are
 not connected. Both field/world choices must be preserved, and the viewer's
-context/count contract must be satisfied without inventing subfield counts.
+context contract must match the live native resolver; the view no longer
+requires a separate subfield count (`NATIVE_MAP_CONTEXT_BINDING.md`).
 This resource checkpoint is not completion of Map or the broader menu goal.

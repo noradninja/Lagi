@@ -5,7 +5,7 @@ $scratch=[IO.Path]::GetFullPath((Join-Path $repo $ScratchRoot))
 New-Item -ItemType Directory -Force -Path $scratch | Out-Null
 $source=Get-Content -Raw (Join-Path $repo 'src/integration/lagi_azel_map_menu.cpp')
 $ownershipBegin=$source.IndexOf('bool lagiAzelCurrentFieldMapOwned(')
-$ownershipEnd=$source.IndexOf('unsigned lagiAzelDrawMapObjectMarkers(', $ownershipBegin)
+$ownershipEnd=$source.IndexOf('static unsigned drawMapObjectMarkersSlot(', $ownershipBegin)
 if($ownershipBegin -lt 0 -or $ownershipEnd -le $ownershipBegin){throw 'Map ownership binding missing'}
 Set-Content -LiteralPath (Join-Path $scratch 'map_ownership_production.inc') -Value $source.Substring($ownershipBegin,$ownershipEnd-$ownershipBegin)
 $markerEnd=$source.IndexOf('void lagiAzelRestoreMapViewPriorities(', $ownershipEnd)

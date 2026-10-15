@@ -39,9 +39,11 @@ void put(unsigned offset,unsigned value){common.definitions[offset]=value>>8;com
 std::vector<int> sounds;
 void playSystemSoundEffect(int sound){sounds.push_back(sound);}
 bool presentationReady=true;unsigned setupCalls=0,markerCalls=0,restores=0;
+bool contextCurrent=true;
+bool lagiAzelMapContextIsCurrent(const LagiAzelMapContext& context){return contextCurrent && context.field==0 && context.subfield==0;}
 std::array<s16,2> markerScroll{};
-bool lagiAzelPresentMapPatterns(const u8* first,std::size_t a,const u8* second,std::size_t b,int slot,unsigned count){
-    assert(a==0x800 && b==0x800 && first[0]==0x4A && second[0]==0x5B && slot==0 && count==1);
+bool lagiAzelPresentMapContextPatterns(const LagiAzelMapContext& context,const u8* first,std::size_t a,const u8* second,std::size_t b){
+    assert(a==0x800 && b==0x800 && first[0]==0x4A && second[0]==0x5B && context.subfield==0);
     ++setupCalls;return presentationReady;
 }
 std::array<s16,2> lagiAzelSetMapViewCenter(s16 x,s16 y){
@@ -50,7 +52,7 @@ std::array<s16,2> lagiAzelSetMapViewCenter(s16 x,s16 y){
     auto& map=graphicEngineStatus.m40BC_layersConfig[2];map.scrollX=result[0];map.scrollY=result[1];return result;
 }
 void lagiAzelSetupMapViewWindow(s16 x,s16 y){assert(x==0 && y==0);regs.m10A_CCRNB=(regs.m10A_CCRNB&0xFFE0)|31;}
-unsigned lagiAzelDrawMapObjectMarkers(int slot,unsigned count,s16 x,s16 y,s16 offset){assert(slot==0 && count==1 && offset==0);++markerCalls;markerScroll={x,y};return 0;}
+unsigned lagiAzelDrawMapContextObjectMarkers(const LagiAzelMapContext& context,s16 x,s16 y,s16 offset){assert(context.subfield==0 && offset==0);++markerCalls;markerScroll={x,y};return 0;}
 void lagiAzelRestoreMapViewPriorities(){++restores;}
 #include "map_view_index_production.inc"
 #include "map_view_task_production.inc"
@@ -69,7 +71,7 @@ int main()
     for(unsigned i=0;i<4;++i)for(unsigned word=0;word<5;++word)put(i*10+word*2,definitions[i][word]);
     LagiAzelMapViewSource source;
     source.resourcesReady=true;source.status=std::make_shared<LagiAzelMapViewStatus>();
-    source.subfieldCount=1;source.context.subfield=0;source.context.x=256;source.context.y=256;
+    source.context.field=0;source.context.subfield=0;source.context.x=256;source.context.y=256;
     source.context.descriptor.presentation={0,0,20,20};source.patterns[0]=0x4A;source.patterns[0x800]=0x5B;
     s_workArea parent;
     assert(!lagiAzelCreateFieldMapView(nullptr,source));
@@ -123,6 +125,11 @@ int main()
     source.resourcesReady=false;assert(!lagiAzelCreateFieldMapView(&parent,source));
     source.resourcesReady=true;source.patterns[0]=0x4A;source.status=std::make_shared<LagiAzelMapViewStatus>();
     source.context.descriptor.presentation={10,0,0,20};
+    raw=lagiAzelCreateFieldMapView(&parent,source);assert(raw && raw->getTask()->finished);
+    LagiFieldMapViewTask::Delete(static_cast<LagiFieldMapViewTask*>(raw));delete raw;
+    assert(source.status->finished && !source.status->setupSucceeded);
+    source.context.descriptor.presentation={0,0,20,20};
+    source.status=std::make_shared<LagiAzelMapViewStatus>();contextCurrent=false;
     raw=lagiAzelCreateFieldMapView(&parent,source);assert(raw && raw->getTask()->finished);
     LagiFieldMapViewTask::Delete(static_cast<LagiFieldMapViewTask*>(raw));delete raw;
     assert(source.status->finished && !source.status->setupSucceeded);
