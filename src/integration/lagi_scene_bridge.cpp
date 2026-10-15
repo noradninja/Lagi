@@ -173,6 +173,29 @@ void sync_presentation_state()
             graphicEngineStatus.m40BC_layersConfig[1].scrollY,
             graphicEngineStatus.m40BC_layersConfig[3].scrollX,
             graphicEngineStatus.m40BC_layersConfig[3].scrollY);
+        if (statusLayout) {
+            lagi::MenuNbg2State map;
+            map.bgon=regs->m20_BGON;
+            map.chctlb=regs->m2A_CHCTLB;
+            map.pncn=regs->m34_PNCN2;
+            map.plsz=regs->m3A_PLSZ;
+            map.mpofn=regs->m3C_MPOFN;
+            map.mpab=regs->m48_MPABN2;
+            map.mpcd=regs->m4A_MPCDN2;
+            map.craofa=regs->mE4_CRAOFA;
+            map.prina=regs->mF8_PRINA;
+            map.prinb=regs->mFA_PRINB;
+            map.wctlb=regs->mD2_WCTLB;
+            map.ccctl=regs->mEC_CCCTL;
+            map.ccrnb=regs->m10A_CCRNB;
+            map.window[0]=regs->mC0_WPSX0;
+            map.window[1]=regs->mC2_WPSY0;
+            map.window[2]=regs->mC4_WPEX0;
+            map.window[3]=regs->mC6_WPEY0;
+            map.scrollX=static_cast<std::int16_t>(graphicEngineStatus.m40BC_layersConfig[2].scrollX);
+            map.scrollY=static_cast<std::int16_t>(graphicEngineStatus.m40BC_layersConfig[2].scrollY);
+            lagi::platform::renderer::presentation_set_menu_nbg2(map);
+        }
     }
     switch (gGameStatus.m0_gameMode) {
     case 1:

@@ -1067,6 +1067,7 @@ static std::uint8_t g_pendingVdp2Cram[kVdp2CramSnapshotBytes]{};
 static std::uint8_t g_vdp2TextVram[kVdp2TextSnapshotBytes]{};
 static std::uint8_t g_vdp2Cram[kVdp2CramSnapshotBytes]{};
 static bool g_pendingVdp2TextValid = false;
+static lagi::MenuNbg2State g_pendingMenuNbg2{},g_menuNbg2{};
 static bool g_vdp2TextValid = false;
 static unsigned int g_pendingVdp2MenuId = 0u;
 static unsigned int g_vdp2MenuId = 0u;
@@ -1789,6 +1790,16 @@ static void overlayAzelTextPlane(int scrollX, int scrollY, std::uint32_t* pixels
     }
 }
 
+static std::uint32_t decodeMenuNbg2Pixel(int x,int y)
+{
+    if (!lagi::menuNbg2VisibleAt(g_menuNbg2,x,y)) return 0;
+    const auto address=lagi::menuNbg2PatternAddress(g_menuNbg2,x,y);
+    if (address+1>=kVdp2TextSnapshotBytes) return 0;
+    return decodeVdp2Chsz1Pixel(readVdp2Be16(g_vdp2TextVram,address),
+        (x+int(g_menuNbg2.scrollX))&15,(y+int(g_menuNbg2.scrollY))&15,
+        (g_menuNbg2.craofa>>8)&7,g_menuNbg2.pncn&31);
+}
+
 static void drawAzelMenuVdp2Gpu(bool textOnly = false)
 {
     if (!g_vdp2TextValid ||
@@ -1822,13 +1833,14 @@ static void drawAzelMenuVdp2Gpu(bool textOnly = false)
     // Both native menu families give NBG0 the higher priority. Select the
     // original map/character format rather than interpreting SAVE.SCB as the
     // status menu's 4bpp tiles.
+    const bool mapPlane=!g_vdp2SaveLayout && lagi::menuNbg2Supported(g_menuNbg2);
     for (unsigned int y = 0; !textOnly && y < kVdp2TextLayerHeight; ++y) {
         for (unsigned int x = 0; x < kVdp2TextLayerWidth; ++x) {
             const std::size_t nbg1Map =
                 g_vdp2SaveLayout ? 0x20800u : 0x71000u;
             const std::size_t nbg0Map =
                 g_vdp2SaveLayout ? 0x20000u : 0x71800u;
-            std::uint32_t color = g_vdp2SaveLayout
+            const std::uint32_t nbg1 = g_vdp2SaveLayout
                 ? decodeSaveMenuNbgPixel(nbg1Map, static_cast<int>(x),
                     static_cast<int>(y), g_vdp2MenuScroll[2],
                     g_vdp2MenuScroll[3])
@@ -1842,8 +1854,10 @@ static void drawAzelMenuVdp2Gpu(bool textOnly = false)
                 : decodeStatusMenuNbgPixel(nbg0Map, static_cast<int>(x),
                     static_cast<int>(y), g_vdp2MenuScroll[0],
                     g_vdp2MenuScroll[1]);
-            if (nbg0)
-                color = nbg0;
+            const std::uint32_t color = mapPlane
+                ? lagi::menuNbg2Compose(g_menuNbg2,nbg0,nbg1,
+                    decodeMenuNbg2Pixel(static_cast<int>(x),static_cast<int>(y)))
+                : (nbg0 ? nbg0 : nbg1);
             pixels[
                 y * kVdp2TextLayerWidth + x] = color;
         }
@@ -3038,6 +3052,7 @@ static void publishMovieOverlaySnapshot()
     std::memcpy(g_vdp2MenuScroll, g_pendingVdp2MenuScroll, sizeof(g_vdp2MenuScroll));
     g_vdp2MenuId = 0u;
     g_vdp2SaveLayout = false;
+    g_menuNbg2 = {};
 }
 
 bool movie_present_frame(
@@ -14126,6 +14141,7 @@ void presentation_publish_frame()
     g_profileTasksUs = g_pendingProfileTasksUs;
     g_profileGameWaitUs = g_pendingProfileGameWaitUs;
     std::memcpy(g_sceneColorOffset, g_pendingSceneColorOffset, sizeof(g_sceneColorOffset));
+    g_menuNbg2 = g_pendingMenuNbg2;
     if (g_pendingVdp2TextValid) {
         std::memcpy(
             g_vdp2TextVram,
@@ -14346,6 +14362,9 @@ void presentation_set_vdp2_text(
     int nbg3ScrollX,
     int nbg3ScrollY)
 {
+    // Each VRAM/text publication starts without an NBG2 plane. Only its
+    // native scene capture can attach matching register/scroll state after it.
+    g_pendingMenuNbg2 = {};
     if (!vram || !cram || !lineScroll) {
         g_pendingVdp2TextValid = false;
         return;
@@ -14381,6 +14400,11 @@ void presentation_set_vdp2_text(
             static_cast<unsigned int>(sizeof(g_pendingVdp2Cram)),
             static_cast<unsigned int>(sizeof(g_pendingVdp2LineScroll)));
     }
+}
+
+void presentation_set_menu_nbg2(const lagi::MenuNbg2State& state)
+{
+    g_pendingMenuNbg2 = state;
 }
 
 } // namespace lagi::platform::renderer

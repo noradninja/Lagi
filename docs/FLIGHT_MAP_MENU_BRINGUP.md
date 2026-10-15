@@ -22,8 +22,10 @@ a temporary text status, not the field's actual map image. This is not a
 completed map viewer. The available map helpers already recover native
 field-map descriptors, source pattern names, exploration ownership,
 pattern conversion, marker locations, map centering, and NBG2 window
-register setup. Their task-level lifecycle and Neptune's NBG2 map-plane
-composition are not yet connected, and navigation is not yet enabled.
+register setup. Their task-level lifecycle is not yet connected, and
+navigation is not yet enabled. Neptune now has the native-register-driven
+NBG2 menu composition dependency (`MENU_NBG2_COMPOSITION.md`), but the
+current entry child does not yet load/present the map planes to it.
 
 The current implementation does not fabricate a map from the flight
 radar or import the separate world-map overlay.
