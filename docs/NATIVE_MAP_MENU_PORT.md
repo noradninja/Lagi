@@ -232,12 +232,14 @@ Both entry paths finally pass COMMON 0020E3D4 and destination 25E71000 to
 do not mistake 06016B04 for a self-contained graphics backup or copy the Books
 backup spans into Map without native evidence.
 
-Map message helper 06016B6C configures rectangle (8,38,1C,4), clears it,
-selects the existing native palette value at 0604FD5A, resets string-context
+Map message helper 06016B6C is now implemented (`NATIVE_MAP_MESSAGES.md`):
+it configures rectangle (8,38,1C,4), clears it, selects the native menu
+fontIndex at0604FD5A through setActiveFont (not a palette change), resets string-context
 flags only for nonnull text, then invokes 06025334. 06016BAA chooses authored
 COMMON text at 20D9B9/20D9CF/20D9DE/20D9EE based on mode and availability,
 including live text cursor placement. Preserve those choices rather than
-inventing labels. This trace does not enable rendering or prove page behavior.
+inventing labels. Message restoration does not enable the full Map viewer
+or prove page behavior on hardware.
 
 Native loader service is now implemented as `lagiAzelLoadFieldMapResources`.
 Read-only MAIN 06016E64..06016F0C confirms SCB sizes strictly greater than

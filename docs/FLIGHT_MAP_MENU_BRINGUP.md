@@ -20,7 +20,7 @@ The flight radar remains point-filtered and untouched.
 ## Current coverage
 
 **Entry and exit only.** The screen shows native map-menu backing and
-a temporary text status, not the field's actual map image. This is not a
+the original current-area prompt, not the field's actual map image. This is not a
 completed map viewer. The available map helpers already recover native
 field-map descriptors, source pattern names, exploration ownership,
 pattern conversion, marker locations, map centering, and NBG2 window
@@ -41,8 +41,9 @@ result. This recovers the original current-field/dragon coordinates, native
 multi-area zone transforms for fields0F/12, map slot, heading and SCB/PNB
 descriptor. One `[FieldMapContext]` log records the resolved state. It does
 not by itself display the map or enable navigation. The resource owner now
-loads the real SCB/PNB sources, but the existing placeholder
-text remains temporary, not an accepted replacement for the native viewer.
+loads the real SCB/PNB sources. The provisional English labels have been
+replaced by the native message/font/cursor service (`NATIVE_MAP_MESSAGES.md`),
+but the incomplete entry shell is not an accepted replacement for the viewer.
 
 Host tests exercise the production context service with mocked native
 services across36 special-field routes plus normal/invalid state. Vita syntax

@@ -26,6 +26,10 @@ struct LagiAzelMapContext {
 // Native 06016C54: live field/dragon context, including special-field zones.
 // False means no native field map is available; never substitute radar data.
 bool lagiAzelResolveCurrentMapContext(LagiAzelMapContext& out);
+// Native 06016B6C/06016BAA. Text comes from COMMON, with the menu font and
+// original message rectangle/cursor placement. Availability is not ownership.
+void lagiAzelClearMapMessage();
+bool lagiAzelPresentMapMessage(int selected,const std::array<std::int32_t,2>& availability);
 
 struct s_workArea;
 struct LagiAzelMapViewStatus {

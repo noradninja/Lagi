@@ -15,6 +15,7 @@ struct LagiFieldMapMenuTask : s_workAreaTemplate<LagiFieldMapMenuTask>
     bool mapOwned = false;
     LagiAzelMapContext context{};
     bool hasMapContext = false;
+    bool selectionMessageShown = false;
     LagiAzelMapResources resources;
 
     static void Init(LagiFieldMapMenuTask* self)
@@ -61,15 +62,12 @@ struct LagiFieldMapMenuTask : s_workAreaTemplate<LagiFieldMapMenuTask>
             return;
         }
 
-        // Retain native text output until the VDP2 map viewport is active.
-        // Do not synthesize a map or use the separate world-map overlay.
-        vdp2StringContext.m0 = 0;
-        vdp2StringContext.m4_cursorX = vdp2StringContext.mC_X + 3;
-        vdp2StringContext.m8_cursorY = vdp2StringContext.m10_Y + 3;
-        drawObjectName("FIELD MAP");
-        vdp2StringContext.m4_cursorX = vdp2StringContext.mC_X + 3;
-        vdp2StringContext.m8_cursorY = vdp2StringContext.m10_Y + 6;
-        drawObjectName(self->mapOwned ? "Map acquired" : "Map not acquired");
+        // The full native parent selector remains unfinished. Its current
+        // area prompt must nevertheless use the authored message and actual
+        // descriptor availability, not map-item ownership or replacement text.
+        if(!self->selectionMessageShown)
+            self->selectionMessageShown=lagiAzelPresentMapMessage(0,
+                {self->hasMapContext?1:0,-1});
     }
 
     static void Delete(LagiFieldMapMenuTask* self)
