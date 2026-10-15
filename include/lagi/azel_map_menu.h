@@ -37,6 +37,49 @@ void lagiAzelClearMapMessage();
 bool lagiAzelPresentMapMessage(int selected,const std::array<std::int32_t,2>& availability);
 
 struct s_workArea;
+struct LagiAzelMapCursorState {
+    std::int32_t selected=-1;
+    bool ready=false,finished=false;
+};
+s_workArea* lagiAzelCreateMapSelectionCursor(s_workArea* parent,
+    std::shared_ptr<LagiAzelMapCursorState> state);
+bool lagiAzelHighlightMapSelection(int slot,bool selected);
+
+struct LagiAzelMapSelectionData {
+    unsigned layerIndex=0;
+    std::array<std::uint16_t,4> positions{};
+    std::array<std::uint32_t,2> highlightVram{};
+};
+// COMMON20E8A4 highlight addresses and20E8B4 native cursor configuration.
+inline bool lagiAzelReadMapSelectionData(const std::uint8_t* common,std::size_t bytes,
+    LagiAzelMapSelectionData& out)
+{
+    out={};
+    if(!common || bytes<0xE8BC) return false;
+    const auto be32=[](const std::uint8_t* p) {
+        return (std::uint32_t(p[0])<<24)|(std::uint32_t(p[1])<<16)|
+            (std::uint32_t(p[2])<<8)|p[3];
+    };
+    const auto layer=be32(common+0xE8B4);
+    // Original native scroll-layer array0604FD60 has four ten-byte entries.
+    if(layer<0x0604FD60 || layer>=0x0604FD88 || (layer-0x0604FD60)%10) return false;
+    const auto positions=be32(common+0xE8B8);
+    if(positions<0x200000 || positions-0x200000>bytes || bytes-(positions-0x200000)<8) return false;
+    LagiAzelMapSelectionData data;
+    data.layerIndex=(layer-0x0604FD60)/10;
+    for(unsigned i=0;i<2;++i) {
+        const auto address=be32(common+0xE8A4+i*4);
+        // Native highlight helper touches3x3 words with a40hex-byte row stride.
+        if(address<0x25E00000 || address>0x25E80000-0x86 || (address&1)) return false;
+        data.highlightVram[i]=address-0x25E00000;
+    }
+    const auto* coordinates=common+(positions-0x200000);
+    for(unsigned i=0;i<4;++i)
+        data.positions[i]=static_cast<std::uint16_t>((std::uint16_t(coordinates[i*2])<<8)|coordinates[i*2+1]);
+    out=data;
+    return true;
+}
+
 struct LagiAzelMapViewStatus {
     bool setupSucceeded=false;
     bool finished=false;
