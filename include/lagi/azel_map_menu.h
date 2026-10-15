@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 
 struct LagiAzelMapDescriptor {
     std::uint32_t nativeAddress = 0;
@@ -24,6 +25,22 @@ struct LagiAzelMapContext {
 // Native 06016C54: live field/dragon context, including special-field zones.
 // False means no native field map is available; never substitute radar data.
 bool lagiAzelResolveCurrentMapContext(LagiAzelMapContext& out);
+
+struct s_workArea;
+struct LagiAzelMapViewStatus {
+    bool setupSucceeded=false;
+    bool finished=false;
+};
+struct LagiAzelMapViewSource {
+    LagiAzelMapContext context{};
+    std::array<std::uint8_t,0x1000> patterns{};
+    unsigned subfieldCount=0;
+    bool resourcesReady=false;
+    std::shared_ptr<LagiAzelMapViewStatus> status;
+};
+// Original field-map view child 06017670/060174C8. Source is copied at Init;
+// parent owns resource loading/restoration and retains status, not a raw child.
+s_workArea* lagiAzelCreateFieldMapView(s_workArea* parent,const LagiAzelMapViewSource& source);
 
 // Original 06017228: 32-pixel cells relative to the native backing-layer scroll.
 inline std::array<std::int16_t,2> lagiAzelMapViewScrollOrigin(

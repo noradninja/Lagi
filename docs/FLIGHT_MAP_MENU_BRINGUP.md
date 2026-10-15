@@ -46,6 +46,11 @@ See `NATIVE_MAP_MENU_PORT.md` for source addresses and remaining dependencies.
 
 ## Hardware validation
 
+The original field-view child and player-arrow command now have a compiled
+task adapter (`NATIVE_MAP_VIEW_TASK.md`) with host lifecycle/packet checks.
+The placeholder parent does not call it yet: parent selection, resource
+lifetime/restore and the separate world-map route still require integration.
+
 Build and test on a Vita after collecting the area's field-map item.
 From flight mode, open Start, select Display Map, verify the map child
 appears without a crash, and press B to return. Close Start and verify
