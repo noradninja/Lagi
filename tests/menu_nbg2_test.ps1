@@ -6,7 +6,7 @@ New-Item -ItemType Directory -Force -Path $scratch | Out-Null
 $source=Get-Content -Raw (Join-Path $repo 'src/platform/vita/neptune_renderer.cpp')
 foreach($entry in @(
  @('static std::uint32_t vdp2Rgb555ToAbgr(std::uint16_t color)','static std::uint32_t decodeVdp2Chsz1Pixel(','menu_nbg2_rgb_production.inc'),
- @('static std::uint32_t decodeMenuNbg2Pixel(','static void drawAzelMenuVdp2Gpu(','menu_nbg2_decode_production.inc'))) {
+ @('static std::uint32_t decodeMenuNbg2Pixel(','// Per-published-snapshot palette expansion','menu_nbg2_decode_production.inc'))) {
  $begin=$source.LastIndexOf($entry[0]);$end=$source.IndexOf($entry[1],$begin)
  if($begin -lt 0 -or $end -le $begin){throw 'Menu plane production boundary missing'}
  Set-Content -LiteralPath (Join-Path $scratch $entry[2]) -Value $source.Substring($begin,$end-$begin)

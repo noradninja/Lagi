@@ -1,5 +1,44 @@
 # Menu tile decode cost and animation rate
 
+## Row raster optimization (2026-10-16, device test pending)
+
+The fresh 153,386-byte capture confirms the GXM selector at 60 FPS, including
+selection changes. The user still observes ordinary/save menus at 20 FPS and
+Map/Dragon at 15 FPS. Its two heavy ScenePerf samples show backing decode
+30.540/30.771 ms, text decode 4.211/4.297 ms, transfer 1.474/1.442 ms and total
+render 48.900/48.779 ms. These nested costs must not be summed with composition
+or renderer again. Both have 247 polygons; without explicit menu state labels
+the samples do not individually identify every menu tested.
+
+`MenuRowRaster` expands the immutable snapshot's 2,048 CRAM entries once per
+backing/text pass and resolves map/character/palette metadata once per run of
+up to eight pixels. The inner dot loop only reads source dots and expanded
+palette entries. It handles status 4bpp flip-capable names, save 8bpp no-flip
+names, NBG2's four planes/SCN/CAOS/window, and the separate 8x8 text plane.
+Original NBG2 priority and RGB555 color calculation remain unchanged.
+
+This is a CPU raster optimization, not a GPU tile decoder. Existing GXM
+surface submission, dithering and source-raster dimensions remain unchanged.
+Every pixel is rebuilt from the current published snapshot: no tile hashing,
+cross-frame decoded cache, stale-resource assumptions, skipped animation or
+counter multiplier. Additional stack storage is about 12 KiB (palette and
+three rows), without heap allocation. The cached scratch-to-GPU copy remains.
+
+Production-body host tests compare 8,110,080 pixels with the original decoder,
+including all 65,536 pattern words for both backing formats, unaligned runs,
+signed wrapping, changed VRAM/CRAM, NBG2 window/blend/SCN/CAOS combinations,
+and backing/text independence. Existing NBG2 tests additionally cover 32,768
+RGB555 blends and 3,584 priority cases. These prove tested output equivalence,
+not Vita speed. The final full-resolution VPK build and the accepted selector/
+font regression checks pass with both dithering flags enabled. The next device
+test must compare the same menu screens and
+panel/Map scrolling with no configuration changes.
+
+ScenePerf now appends `menuId`, `saveLayout`, `menuNbg2` and
+`menuRaster=rows-v1` to the existing heartbeat (no additional logging loop).
+Capture at least 10 seconds each of ordinary menu, save menu, Dragon and Map,
+including movement, to obtain several timing samples per screen.
+
 ## Current hardware report (2026-10-16)
 
 The user confirms that field-map viewing, scrolling and exiting work. The

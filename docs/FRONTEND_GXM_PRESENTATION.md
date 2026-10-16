@@ -58,13 +58,20 @@ game glyphs/art. Menu surface/cadence regression tests pass.
 The final full Vita VPK build passes with full resolution and both existing
 dithering flags enabled; existing native array-comparison/GCC ABI notes remain.
 
-These checks do not execute GXM or establish device FPS. Validate all four
+The user subsequently confirmed the selection menu stays at 60 FPS throughout
+selection changes. The fresh log reports approximately 16,661..16,669 us per
+selection render/present, including VBlank wait; one-time preparation took
+1,879,937 us. That is hardware acceptance of the exercised selector path, not
+an in-game menu improvement. Ordinary/save menus remain 20 FPS, Map/Dragon 15.
+
+The host checks themselves do not execute GXM or establish device FPS. Validate all four
 directions repeatedly, idle/selection FPS, artwork/font alignment, music, the
 half-second fade and Disc 1 boot. `[DiscSelectorGXM] ready` reports preparation
 time and `selectionCompose=0`; selection logs report render/present duration,
 including VBlank wait. A fresh same-session log should also include several
 seconds each in ordinary menus, Dragon and field Map for the next performance
-pass. The currently available Downloads log stops at the selector.
+pass. The new capture includes two CPU-heavy menu ScenePerf samples, detailed
+in `MENU_TILE_DECODE_PERFORMANCE.md`.
 
 ```powershell
 cd E:\dev\Lagi

@@ -1,5 +1,6 @@
 #include "lagi/lagi_menu_nbg2.h"
 #include <array>
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -28,7 +29,7 @@ int main() {
  std::uint32_t random=0x12345678;
  auto next=[&](){random^=random<<13;random^=random>>17;random^=random<<5;return random;};
  unsigned compared=0;
- for(unsigned frame=0;frame<8;++frame) {
+ for(unsigned frame=0;frame<24;++frame) {
   for(auto& byte:g_vdp2TextVram) byte=next();
   for(auto& byte:g_vdp2Cram) byte=next();
   for(auto& scroll:g_vdp2MenuScroll) scroll=int(next()%2048)-1024;
@@ -38,6 +39,13 @@ int main() {
    g_menuNbg2.bgon=7;g_menuNbg2.chctlb=1;g_menuNbg2.pncn=0x800C;
    g_menuNbg2.mpofn=0x300;g_menuNbg2.mpab=0xE0E1;g_menuNbg2.mpcd=0xE1E0;
    g_menuNbg2.prina=0x304;g_menuNbg2.prinb=0x705;g_menuNbg2.craofa=0x666;
+   if(frame>=8) {
+    g_menuNbg2.scrollX=int(next()%4096)-2048;g_menuNbg2.scrollY=int(next()%4096)-2048;
+    g_menuNbg2.pncn=0x8000|(next()&31);g_menuNbg2.craofa=next()&0x777;
+    g_menuNbg2.wctlb=2|((frame>>2)&1);g_menuNbg2.window[0]=64;g_menuNbg2.window[2]=480;
+    g_menuNbg2.window[1]=20;g_menuNbg2.window[3]=180;
+    g_menuNbg2.ccctl=4;g_menuNbg2.ccrnb=next()&31;
+   }
   }
   Surface expected{};
   // Reference the original direct-to-texture composition, with the actual
@@ -59,6 +67,25 @@ int main() {
   productionCompose(true);
   assert(text==expected && backing==savedBacking);
   compared+=2*kVdp2TextLayerWidth*kVdp2TextLayerHeight;
+ }
+ // Every 16-bit pattern word, including blank status names, all flips,
+ // out-of-range character/palette banks and unaligned run boundaries.
+ const MenuRowRaster raster;
+ std::uint32_t row[33];
+ for(unsigned pattern=0;pattern<65536;++pattern) {
+  for(unsigned tile=0;tile<3;++tile) {
+   const auto address=0x71000+tile*2;
+   g_vdp2TextVram[address]=pattern>>8;g_vdp2TextVram[address+1]=pattern;
+  }
+  for(bool save:{false,true}) {
+   const int y=(pattern>>8)&15,scroll=pattern&15;
+   raster.backing(row,33,y,0x71000,scroll,0,save);
+   for(int x=0;x<33;++x) {
+    const auto expected=save?decodeSaveMenuNbgPixel(0x71000,x,y,scroll,0)
+      :decodeStatusMenuNbgPixel(0x71000,x,y,scroll,0);
+    assert(row[x]==expected);++compared;
+   }
+  }
  }
  std::printf("PASS: %u staged/reference pixels, status/save/Map layers, signed scroll, mutation and backing/text isolation; no Vita performance claim\n",compared);
 }

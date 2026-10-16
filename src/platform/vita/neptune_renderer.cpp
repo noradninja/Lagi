@@ -1839,6 +1839,82 @@ static std::uint32_t decodeMenuNbg2Pixel(int x,int y)
         (g_menuNbg2.craofa>>8)&7,g_menuNbg2.pncn&31);
 }
 
+// Per-published-snapshot palette expansion, not a cross-frame tile cache.
+// Resolve map/character/palette metadata once per eight-pixel run, not per dot.
+struct MenuRowRaster {
+    std::uint32_t palette[kVdp2CramSnapshotBytes / 2];
+    MenuRowRaster() {
+        for (std::size_t i=0;i<kVdp2CramSnapshotBytes/2;++i)
+            palette[i]=vdp2Rgb555ToAbgr(readVdp2Be16(g_vdp2Cram,i*2));
+    }
+    void backing(std::uint32_t* out,unsigned width,int logicalY,
+        std::size_t mapBase,int scrollX,int scrollY,bool save,
+        const lagi::MenuNbg2State* map=nullptr) const {
+        const unsigned wrap=map?1023u:511u;
+        const unsigned my=(unsigned(logicalY)+unsigned(scrollY))&wrap;
+        for(unsigned sx=0;sx<width;) {
+            const unsigned mx=(sx+unsigned(scrollX))&wrap;
+            const unsigned count=std::min(width-sx,8u-(mx&7u));
+            const auto address=map ? lagi::menuNbg2PatternAddress(*map,int(sx),logicalY)
+                : mapBase+(((my>>4)*32+(mx>>4))*2);
+            if(address+1>=kVdp2TextSnapshotBytes) {
+                std::fill_n(out+sx,count,0u);sx+=count;continue;
+            }
+            const auto pattern=readVdp2Be16(g_vdp2TextVram,address);
+            if(!save && !map && !pattern) {
+                std::fill_n(out+sx,count,0u);sx+=count;continue;
+            }
+            unsigned x=mx&15u,y=my&15u;
+            if(!save) {
+                if(pattern&0x400u)x=15-x;
+                if(pattern&0x800u)y=15-y;
+            }
+            const unsigned cell=(y>>3)*2+(x>>3);
+            const unsigned scn=map?map->pncn&31u:12u;
+            const unsigned character=save ? ((pattern&0xFFFu)<<2)
+                : (((pattern&0x3FFu)<<2)|(scn&3u)|((scn&0x1Cu)<<10));
+            const auto row=std::size_t(character)*32+cell*(save?64u:32u)+(y&7u)*(save?8u:4u);
+            const unsigned pal=save ? 5u*256+((pattern&0x7000u)>>4)
+                : (map?((map->craofa>>8)&7u):6u)*256+((pattern&0xF000u)>>8);
+            const bool reverse=!save && (pattern&0x400u);
+            for(unsigned dot=0;dot<count;++dot) {
+                const unsigned px=reverse ? (x&7u)-dot : (x&7u)+dot;
+                const auto offset=row+(save?px:px/2);
+                unsigned index=0;
+                if(offset<kVdp2TextSnapshotBytes) {
+                    const unsigned packed=g_vdp2TextVram[offset];
+                    index=save ? packed : (px&1u?packed&15u:packed>>4);
+                }
+                const bool visible=!map || lagi::menuNbg2VisibleAt(*map,int(sx+dot),logicalY);
+                out[sx+dot]=visible && index && pal+index<kVdp2CramSnapshotBytes/2 ? palette[pal+index] : 0;
+            }
+            sx+=count;
+        }
+    }
+    void text(std::uint32_t* out,int scrollX,int scrollY) const {
+        for(unsigned sy=0;sy<kVdp2TextLayerHeight;++sy) {
+            const unsigned my=(sy+unsigned(scrollY))&511u;
+            for(unsigned sx=0;sx<kVdp2TextLayerWidth;) {
+                const unsigned mx=(sx+unsigned(scrollX))&511u;
+                const unsigned count=std::min(kVdp2TextLayerWidth-sx,8u-(mx&7u));
+                const auto address=0x6000u+(((my>>3)*64+(mx>>3))*2);
+                const auto pattern=readVdp2Be16(g_vdp2TextVram,address);
+                if(pattern) {
+                    const auto row=std::size_t(pattern&0xFFFu)*32+(my&7u)*4;
+                    const unsigned pal=0x700u+((pattern>>12)&15u)*16;
+                    for(unsigned dot=0;dot<count;++dot) {
+                        const unsigned px=(mx&7u)+dot;
+                        const unsigned packed=g_vdp2TextVram[row+px/2];
+                        const unsigned index=px&1u?packed&15u:packed>>4;
+                        if(index)out[sy*kVdp2TextLayerWidth+sx+dot]=palette[pal+index];
+                    }
+                }
+                sx+=count;
+            }
+        }
+    }
+};
+
 static void drawAzelMenuVdp2Gpu(bool textOnly = false)
 {
     if (!g_vdp2TextValid ||
@@ -1866,38 +1942,28 @@ static void drawAzelMenuVdp2Gpu(bool textOnly = false)
     auto* pixels = g_menuCompositionPixels.data();
     auto* texture = textOnly ? &g_vdp2TextLayerTexture : &g_vdp2MenuBackgroundTexture;
     const auto menuDecodeStartUs = sceKernelGetProcessTimeWide();
+    const MenuRowRaster raster;
     if (textOnly) {
         std::memset(pixels, 0, kVdp2TextLayerWidth * kVdp2TextLayerHeight * sizeof(std::uint32_t));
-        overlayAzelTextPlane(g_vdp2MenuScroll[4], g_vdp2MenuScroll[5], pixels);
+        raster.text(pixels,g_vdp2MenuScroll[4],g_vdp2MenuScroll[5]);
     }
 
     // Both native menu families give NBG0 the higher priority. Select the
     // original map/character format rather than interpreting SAVE.SCB as the
     // status menu's 4bpp tiles.
     const bool mapPlane=!g_vdp2SaveLayout && lagi::menuNbg2Supported(g_menuNbg2);
+    std::uint32_t row0[kVdp2TextLayerWidth],row1[kVdp2TextLayerWidth],row2[kVdp2TextLayerWidth];
     for (unsigned int y = 0; !textOnly && y < kVdp2TextLayerHeight; ++y) {
+        raster.backing(row0,kVdp2TextLayerWidth,y,g_vdp2SaveLayout?0x20000u:0x71800u,
+            g_vdp2MenuScroll[0],g_vdp2MenuScroll[1],g_vdp2SaveLayout);
+        raster.backing(row1,kVdp2TextLayerWidth,y,g_vdp2SaveLayout?0x20800u:0x71000u,
+            g_vdp2MenuScroll[2],g_vdp2MenuScroll[3],g_vdp2SaveLayout);
+        if(mapPlane)raster.backing(row2,kVdp2TextLayerWidth,y,0,g_menuNbg2.scrollX,
+            g_menuNbg2.scrollY,false,&g_menuNbg2);
         for (unsigned int x = 0; x < kVdp2TextLayerWidth; ++x) {
-            const std::size_t nbg1Map =
-                g_vdp2SaveLayout ? 0x20800u : 0x71000u;
-            const std::size_t nbg0Map =
-                g_vdp2SaveLayout ? 0x20000u : 0x71800u;
-            const std::uint32_t nbg1 = g_vdp2SaveLayout
-                ? decodeSaveMenuNbgPixel(nbg1Map, static_cast<int>(x),
-                    static_cast<int>(y), g_vdp2MenuScroll[2],
-                    g_vdp2MenuScroll[3])
-                : decodeStatusMenuNbgPixel(nbg1Map, static_cast<int>(x),
-                    static_cast<int>(y), g_vdp2MenuScroll[2],
-                    g_vdp2MenuScroll[3]);
-            const std::uint32_t nbg0 = g_vdp2SaveLayout
-                ? decodeSaveMenuNbgPixel(nbg0Map, static_cast<int>(x),
-                    static_cast<int>(y), g_vdp2MenuScroll[0],
-                    g_vdp2MenuScroll[1])
-                : decodeStatusMenuNbgPixel(nbg0Map, static_cast<int>(x),
-                    static_cast<int>(y), g_vdp2MenuScroll[0],
-                    g_vdp2MenuScroll[1]);
+            const std::uint32_t nbg0 = row0[x],nbg1 = row1[x];
             const std::uint32_t color = mapPlane
-                ? lagi::menuNbg2Compose(g_menuNbg2,nbg0,nbg1,
-                    decodeMenuNbg2Pixel(static_cast<int>(x),static_cast<int>(y)))
+                ? lagi::menuNbg2Compose(g_menuNbg2,nbg0,nbg1,row2[x])
                 : (nbg0 ? nbg0 : nbg1);
             pixels[
                 y * kVdp2TextLayerWidth + x] = color;
@@ -13560,7 +13626,8 @@ static void renderBasicWingViewer()
             "cpuprep=%u gxmwait=%u gxmend=%u gxmfinish=%u "
             "render=%u polys=%u verts=%u "
             "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u "
-            "menuBackingDecode=%u menuTextDecode=%u menuSubmit=%u menuTransfer=%u\n",
+            "menuBackingDecode=%u menuTextDecode=%u menuSubmit=%u menuTransfer=%u "
+            "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -13592,7 +13659,10 @@ static void renderBasicWingViewer()
             g_profileMenuBackingDecodeUs,
             g_profileMenuTextDecodeUs,
             g_profileMenuSubmitUs,
-            g_profileMenuTransferUs);
+            g_profileMenuTransferUs,
+            static_cast<unsigned>(g_vdp2MenuId),
+            g_vdp2SaveLayout ? 1u : 0u,
+            lagi::menuNbg2Supported(g_menuNbg2) ? 1u : 0u);
     }
 
     if (g_showThreadTimingOsd) {
