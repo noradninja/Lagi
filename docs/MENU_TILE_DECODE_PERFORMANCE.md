@@ -37,6 +37,21 @@ The change is a measured-path optimization hypothesis, not an accepted
 performance result. A new same-menu hardware capture must compare decode
 plus transfer, total renderer cost and actual presentation intervals.
 
+Full package verification subsequently passed for source commit `b6ccf07`:
+359-step clean local Ninja build, GNU VitaSDK15.2.0 and Sony psp2cgc,
+`LAGI_FULLRES=ON`, `LAGI_STOCHASTIC_FILTER=ON`, `LAGI_DITHER_LOOKUP=ON`.
+The pinned Azel commit remains `c52329fb257561abff05531a8335e34137d67098`,
+with no tracked source differences. Output `build-menu-verify/Lagi.vpk` is
+1,485,991 bytes, SHA256
+`2782779ADAB843F313AA23F794D62E8A1919B24EEEFB9E3309A611A5DF50B9C5`.
+Packaged `sce_sys/param.sfo` was read from the VPK: TITLE=STITLE=`Lagi`,
+TITLE_ID=`LAGI00001`, APP_VER=`00.40`. Existing shader-shadowing and native
+array-comparison warnings remain; no compiler/link/package error occurred.
+This verification build has zero locally captured DSP AOT programs, so it
+is not a substitute for the user's existing audio/performance setup. It was
+not installed, deployed or run on hardware. The verification directory is
+retained locally as an untracked build artifact, not committed.
+
 `tests/menu_surface_staging_test.ps1` compiles the production composition and
 copy block against the original direct-output algorithm. It compares1,261,568
 pixels over status/save/Map configurations, signed scrolling and changing
