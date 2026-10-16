@@ -45,16 +45,16 @@ int main()
         lagi::platform::input::update();
         const unsigned short pressed =
             lagi::platform::input::saturn_buttons_pressed();
-        if (selection >= 0 && (pressed & (0x0010u | 0x0020u))) {
-            const int step = (pressed & 0x0020u) ? 1 : -1;
-            for (int offset = 1; offset < 4; ++offset) {
-                const int candidate = (selection + 4 + step * offset) % 4;
-                if (discAvailable[candidate]) {
-                    selection = candidate;
-                    break;
-                }
-            }
-        }
+        // The selector positions correspond to physical directions:
+        // 0=top (Disc 1), 1=right (Disc 2), 2=bottom (Disc 3),
+        // 3=left (Disc 4). Missing images cannot be selected.
+        int direction = lagi::platform::input::launcher_stick_direction();
+        if (pressed & 0x0010u) direction = 0;      // D-pad up
+        else if (pressed & 0x0080u) direction = 1; // D-pad right
+        else if (pressed & 0x0020u) direction = 2; // D-pad down
+        else if (pressed & 0x0040u) direction = 3; // D-pad left
+        if (direction >= 0 && discAvailable[direction])
+            selection = direction;
         if (selection >= 0 && (pressed & 0x0002u)) {
             selectedDiscMounted = lagi::disc::mount_disc(selection + 1);
             if (!selectedDiscMounted) {
