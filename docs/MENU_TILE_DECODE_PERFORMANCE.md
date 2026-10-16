@@ -1,5 +1,22 @@
 # Menu tile decode cost and animation rate
 
+## Current hardware report (2026-10-16)
+
+The user confirms that field-map viewing, scrolling and exiting work. The
+current map and Dragon screens run at 15 FPS; other menus run at 20 FPS.
+These are device observations, not host-test estimates. The accepted pre-Azel
+disc selector/font/layout work is independent and remains approximately
+60 FPS. Do not alter native animation counters to conceal menu rendering cost.
+
+The current Downloads log is only 592 bytes and stops at the disc selector;
+it contains no ScenePerf samples from these menus. A fresh same-session log
+must include ordinary menus, Dragon and field Map (including scrolling),
+with several seconds in each. Compare menuBackingDecode, menuTextDecode,
+menuTransfer, compose, cpuprep, renderer and presentation intervals. The
+older CPU-composition measurements below remain historical evidence, not
+measurements of the accepted final tree. Map's additional NBG2 composition
+and Dragon's actor rendering require separate attribution.
+
 ## Hardware rejection and rollback — 2026-10-16
 
 The user reports menus dropped from 20 FPS to 15 FPS with this cache; Dragon

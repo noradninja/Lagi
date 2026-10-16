@@ -80,6 +80,11 @@ than requiring a fabricated subfield count (`NATIVE_MAP_CONTEXT_BINDING.md`).
 Arbitrary indexed service callers retain their original count checks.
 # Parent completion observation (2026-10-16)
 
+Hardware follow-up: the user confirms field-map viewing, scrolling and exiting
+work on the current build. This accepts that exercised field-map route, not
+every world-map/parent case. The map screen remains slow at 15 FPS; rendering
+performance is tracked in `MENU_TILE_DECODE_PERFORMANCE.md`.
+
 MAIN060178B6..060178C4 reads the child task header's finished bit, not
 completion of its Delete callback. The portable view status now becomes
 finished at the same point as `markFinished`, including invalid-init paths.
