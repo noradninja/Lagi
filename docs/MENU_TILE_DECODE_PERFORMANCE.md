@@ -13,6 +13,25 @@ verification. No animation-counter multiplier is added.
 
 ## Historical investigation (cache now reverted)
 
+Follow-up log received at14:07 (403,723 bytes) contains the cache's
+`menuTiles` field, so it is a cache-enabled build, not proof of rollback
+performance. Seven menu-like ScenePerf samples (compose>20ms) average
+36.651ms composition,48.735ms renderer,42.852ms CPU preparation and4.098ms
+GXM finish. Every one reports52 decoded tiles. Presentation outliers show
+four VBlanks (~66.733ms), confirming15FPS. Compared with the earlier capture,
+the renderer costs about1.3ms more; scenes/captures are not a controlled
+benchmark. Extra CPU cost near a presentation boundary is consistent with
+the discrete FPS drop, not proof of a doubled animation counter.
+
+Added bounded ScenePerf fields (microseconds): `menuBackingDecode`,
+`menuTextDecode`, `menuSubmit`. They time only the two CPU pixel-composition
+sections and their GXM submission, reset each renderer frame, and reuse the
+existing60-frame log heartbeat. No per-pixel clocks/logs or new upload/pass
+are introduced. `menuSubmit` is CPU submission cost, not GPU duration; the
+menu texture uses shared GPU-visible storage, not a separately timed upload.
+Allocation/initialization is outside the decode sections. These nested costs
+must not be added again to `compose` or `cpuprep`.
+
 The2026-10-16 hardware report shows20FPS menus, slow panel navigation and a
 miscentered Dragon preview. The updated Downloads lagi.log (13:41 local,
 1,317,479 bytes) contains55 ScenePerf rows with compose>20ms: mean compose

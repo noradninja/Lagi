@@ -655,6 +655,9 @@ static unsigned int g_profileGouraudPrepUs = 0;
 static unsigned int g_profileClearUs = 0;
 static unsigned int g_profileBeginSceneUs = 0;
 static unsigned int g_profileComposeUs = 0;
+static unsigned int g_profileMenuBackingDecodeUs = 0;
+static unsigned int g_profileMenuTextDecodeUs = 0;
+static unsigned int g_profileMenuSubmitUs = 0;
 static unsigned int g_profileGxmWaitUs = 0;
 static unsigned int g_profileGxmEndSceneUs = 0;
 static unsigned int g_profileGxmFinishUs = 0;
@@ -1831,6 +1834,7 @@ static void drawAzelMenuVdp2Gpu(bool textOnly = false)
     }
     auto* pixels = textOnly ? g_vdp2TextLayerPixels : g_vdp2MenuBackgroundPixels;
     auto* texture = textOnly ? &g_vdp2TextLayerTexture : &g_vdp2MenuBackgroundTexture;
+    const auto menuDecodeStartUs = sceKernelGetProcessTimeWide();
     if (textOnly) {
         std::memset(pixels, 0, kVdp2TextLayerWidth * kVdp2TextLayerHeight * sizeof(std::uint32_t));
         overlayAzelTextPlane(g_vdp2MenuScroll[4], g_vdp2MenuScroll[5], pixels);
@@ -1869,6 +1873,11 @@ static void drawAzelMenuVdp2Gpu(bool textOnly = false)
         }
     }
 
+    const auto menuDecodedUs = static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - menuDecodeStartUs);
+    if(textOnly) g_profileMenuTextDecodeUs += menuDecodedUs;
+    else g_profileMenuBackingDecodeUs += menuDecodedUs;
+    const auto menuSubmitStartUs = sceKernelGetProcessTimeWide();
     const float renderAspect =
         static_cast<float>(viewerRenderWidth()) /
         static_cast<float>(viewerRenderHeight());
@@ -1917,6 +1926,8 @@ static void drawAzelMenuVdp2Gpu(bool textOnly = false)
         SCE_GXM_INDEX_FORMAT_U16,
         g_vdp2TextLayerIndices,
         6);
+    g_profileMenuSubmitUs += static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - menuSubmitStartUs);
 }
 
 static void drawAzelVdp2TextLayerGpu(int outputWidth = 0, int outputHeight = 0)
@@ -13115,6 +13126,9 @@ static void renderBasicWingViewer()
     }
 
     const std::uint64_t renderStartUs = sceKernelGetProcessTimeWide();
+    g_profileMenuBackingDecodeUs = 0u;
+    g_profileMenuTextDecodeUs = 0u;
+    g_profileMenuSubmitUs = 0u;
     g_profileBuildUs = 0u;
     g_profileLightingUs = 0u;
     g_profileSubmitUs = 0u;
@@ -13515,7 +13529,8 @@ static void renderBasicWingViewer()
             "gourIndex=%u gourDraw=%u clear=%u begin=%u submit=%u compose=%u "
             "cpuprep=%u gxmwait=%u gxmend=%u gxmfinish=%u "
             "render=%u polys=%u verts=%u "
-            "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u\n",
+            "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u "
+            "menuBackingDecode=%u menuTextDecode=%u menuSubmit=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -13543,7 +13558,10 @@ static void renderBasicWingViewer()
             g_sceneRbg0Enabled ? 1u : 0u,
             g_profileRbgPrepareUs,
             g_profileRbgResolveUs,
-            g_profileRbgRawUpdatedBytes);
+            g_profileRbgRawUpdatedBytes,
+            g_profileMenuBackingDecodeUs,
+            g_profileMenuTextDecodeUs,
+            g_profileMenuSubmitUs);
     }
 
     if (g_showThreadTimingOsd) {
