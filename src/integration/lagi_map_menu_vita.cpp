@@ -89,5 +89,21 @@ struct LagiFieldMapMenuTask : s_workAreaTemplate<LagiFieldMapMenuTask>
 // Override the pinned Azel assertion at the existing native dispatch site.
 p_workArea createMapTask(p_workArea parent)
 {
+    LagiAzelMapParentSource source;
+    if(lagiAzelResolveMapParentSource(source)) {
+        const bool backendReady=source.availability.slots[1]!=1 || lagiAzelMapWorldDispatchAvailable();
+        if(!backendReady) lagi::platform::logging::writef(
+            "[MapParent] enabled world route deferred: overlayDispatchTable[5] is null\n");
+        if(auto* task=backendReady ? lagiAzelCreateMapParent(parent,source) : nullptr) {
+            lagi::platform::logging::writef(
+                "[MapParent] native=1 standalone=%u field=%d slots=(%d,%d) selected=%d\n",
+                unsigned(source.standalone),source.hasContext?source.context.field:-1,
+                int(source.availability.slots[0]),int(source.availability.slots[1]),
+                source.availability.selected);
+            return task;
+        }
+    }
+    lagi::platform::logging::writef(
+        "[MapParent] native=0 unresolved availability, unavailable overlay or invalid source; retaining placeholder\n");
     return createSubTask<LagiFieldMapMenuTask>(parent);
 }

@@ -61,19 +61,19 @@ differential testing, real task scheduling or rendered-image evidence.
 Vita syntax checks pass. No full link, VPK, deployment, hardware image or
 performance measurement is claimed.
 
-**The existing top-level Map entry remains a temporary placeholder.** It
-does not yet call this factory. It must still be replaced by the original
-Map parent with authoritative live availability and both native field-map
-and world-map routes. The assembled parent now constructs the view through
-an explicit-source factory (`NATIVE_MAP_PARENT_TASK.md`), but live dispatch
-remains unhooked. Connecting this child through an automatic field-only
+**Top-level Map dispatch is now partially integrated.** The assembled parent
+constructs this viewer when availability is provable and every enabled route
+has a registered overlay (`NATIVE_MAP_PARENT_TASK.md`). The placeholder is
+retained for unresolved field-gate results or enabled world routes whose
+overlay is absent. Full coverage still requires authoritative live availability
+and both native field-map and world-map routes. An automatic field-only
 shortcut would not complete that original parent workflow. The map viewer
 and the broader in-game menu goal therefore remain incomplete.
 
 The newer parent resource owner now loads the descriptor's SCB/PNB and
 restores overwritten spans on failure/exit (`NATIVE_MAP_RESOURCE_OWNERSHIP.md`).
-The assembled parent constructs this view child; the active placeholder does
-not yet dispatch to that parent.
+The assembled parent constructs this view child in its supported live cases;
+the fallback placeholder still does not construct it.
 
 The view now binds to validated live native field/slot/descriptor state rather
 than requiring a fabricated subfield count (`NATIVE_MAP_CONTEXT_BINDING.md`).
@@ -89,5 +89,5 @@ finished status for external teardown. This prevents a future parent hookup
 from adding a frame solely because it waits for deletion instead of the native
 task flag. Production-body host tests verify close completion is visible
 before priority restoration and invalid context/bounds finish immediately.
-Vita syntax passes. The full parent hookup and on-device Map validation
-remain unfinished; this does not alter the current menu performance-test path.
+Vita syntax passes. Full live-route coverage and on-device Map validation
+remain unfinished; this does not change the menu composition performance path.

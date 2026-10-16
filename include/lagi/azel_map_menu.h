@@ -352,6 +352,10 @@ struct LagiAzelMapParentSource {
     bool standalone=false;
 };
 s_workArea* lagiAzelCreateMapParent(s_workArea* parent,const LagiAzelMapParentSource& source);
+// False when the unresolved field gate can change the native result, or when
+// required live state is malformed. Never normalize unknown to unavailable.
+bool lagiAzelResolveMapParentSource(LagiAzelMapParentSource& source);
+bool lagiAzelMapWorldDispatchAvailable();
 
 // Original 06016D36..46: COMMON table 0020E848, 23 field pointers, then
 // subfield pointers to 12-byte descriptors. Never infer a subfield count from

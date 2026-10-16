@@ -3411,6 +3411,7 @@ add_executable(lagi
  src/integration/lagi_azel_map_context.cpp
  src/integration/lagi_map_menu_vita.cpp
  src/integration/lagi_map_parent_vita.cpp
+ src/integration/lagi_map_parent_source_vita.cpp
  src/integration/lagi_map_message_vita.cpp
  src/integration/lagi_map_selection_vita.cpp
  src/integration/lagi_map_confirmation_vita.cpp

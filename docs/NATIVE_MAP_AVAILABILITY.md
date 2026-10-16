@@ -1,5 +1,15 @@
 # Native Map availability
 
+Live integration update: `lagiAzelResolveMapParentSource` and `createMapTask`
+now use the native parent when the availability result is provable. Story
+bit193 unset bypasses the field-route test; an authored zero route yields zero
+for either value of0024B89C. A nonzero route still returns unresolved, never
+a forced0/1. Town availability uses its independent established branch. An
+enabled world route additionally requires the actual module-manager overlay
+entry5 to be non-null; the current trimmed build leaves it null and retains
+the placeholder rather than altering availability. See
+`NATIVE_MAP_PARENT_TASK.md` for supported cases and remaining limitations.
+
 Read-only Disc 1 MAIN06016D88..06016E62 establishes the selector rules:
 
 | Condition | Field slot | World slot | Initial selection |
@@ -34,18 +44,20 @@ port safety checks, not additional authored progression rules.
 
 ## Unresolved live binding
 
-The meaning and live owner of0024B89C are **not established**. The current
-adapter requires its value explicitly and is not connected to the Map parent.
+The meaning and live owner of0024B89C are **not established**. The route
+adapter still requires its value explicitly. Live source resolution only
+bypasses that unknown when both gate values yield the same native result.
 Do not replace it with map ownership, fieldTaskVar3, a guessed progress bit,
 or a forced true/false value. The town branch is now bound separately by
 `lagiAzelResolveTownMapAvailability`: native06030060 writes npcData0.m5C at
 0604A284+5C, and060300CC(0) reads signed COMMON2166E4[0]. The production
 service passes65536 signed-byte comparisons plus native story/scene and
-malformed-COMMON guards, and Vita syntax. It remains unconnected to the
-parent, and does not resolve the separate field gate. Native unavailable-slot covers
-and world-map confirmation/transition still require integration.
+malformed-COMMON guards, and Vita syntax. It is now connected to the parent
+source resolver, but does not resolve the separate field gate. World travel
+remains unavailable while its actual overlay-table entry is null.
 
-No visible Map-menu change or complete viewer is claimed by this checkpoint.
+The earlier availability-only checkpoint made no visible change. The later
+partial live parent integration is not a claim of complete Map-menu coverage.
 
 ## Checks
 
