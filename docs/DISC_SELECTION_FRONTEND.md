@@ -92,3 +92,33 @@ startup/Loading... text with the authentic PDS font, and repairing the bottom pl
 source geometry rather than only adjusting placement. These are independent follow-up
 integration steps. The current CPU caching is a temporary performance mitigation, **not**
 a substitute for native GXM. Hardware testing is required for this checkpoint.
+
+
+## Radial layout checkpoint after hardware run (2026-10-16)
+
+Hardware measurements show ~59 FPS with static framebuffer caching and the
+30-vblank fade works and mounts Disc 1 correctly. The renderer is still
+CPU-backed (cached), not native GXM.
+
+The four radial directions are now physically mapped: Disc 1 top, Disc 2
+right, Disc 3 bottom, Disc 4 left. D-pad and right stick both target the
+corresponding disc directly; missing discs reject selection. The right stick
+requires a return to center before a new input edge is registered.
+
+The left legend plaque and its text have been removed. Right rows show only
+available discs, with highlighted text for the selected disc. Hollow plaque
+icon apertures receive a dark fill. Radial medallions and selection rings are
+centered using their visible alpha bounds instead of the source image canvas,
+to counter transparent padding discrepancies.
+
+Unique artwork requires four independent sprite images; only generic gold
+and ivory sprites were in the initial pack. The menu can optionally load
+`ux0:data/lagi/frontend/disc_1.rgba` through `disc_4.rgba`, preserving the
+same RGBA header/payload format as the existing assets. Missing optional
+icons use the previously provided sprites. A selected ivory emblem is tinted
+gold rather than replaced with another emblem. This is a temporary asset
+fallback, and does not itself create new unique symbols. These optional
+assets are not required to boot or pass initial visual tests.
+
+Pending: authentic PDS font for launcher and Loading...; native SGX/GXM
+launcher composition; hardware-check of the new alpha-centered alignment.
