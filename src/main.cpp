@@ -1,5 +1,6 @@
 #include <psp2/kernel/processmgr.h>
 #include <cstdio>
+#include <psp2/display.h>
 #include "lagi/platform.h"
 #include "lagi/lagi_runtime.h"
 #include "lagi/disc_image.h"
@@ -35,7 +36,7 @@ int main()
         if (selection < 0 && discAvailable[i])
             selection = i;
         lagi::platform::logging::writef(
-            "[DiscSelector] Disc %d: %s\\n",
+            "[DiscSelector] Disc %d: %s\n",
             i + 1, discAvailable[i] ? "available" : "missing");
     }
 
@@ -47,8 +48,7 @@ int main()
         if (selection >= 0 && (pressed & (0x0010u | 0x0020u))) {
             const int step = (pressed & 0x0020u) ? 1 : -1;
             for (int offset = 1; offset < 4; ++offset) {
-                const int candidate = (selection + 4 + step * offset * 4 +
-                                       step * offset) % 4;
+                const int candidate = (selection + 4 + step * offset) % 4;
                 if (discAvailable[candidate]) {
                     selection = candidate;
                     break;
@@ -76,8 +76,17 @@ int main()
         return 0;
     }
     lagi::platform::logging::writef(
-        "[DiscSelector] mounted Disc %d: %s\\n",
+        "[DiscSelector] mounted Disc %d: %s\n",
         lagi::disc::selected_disc(), lagi::disc::image_path());
+
+    // A 30-vblank fade (~0.5 seconds at 60 Hz) masks the launcher-to-
+    // native-loading-screen handoff. No Azel simulation occurs during it.
+    lagi::platform::logging::writef("[DiscSelector] fade start (30 vblanks)\\n");
+    for (int frame = 0; frame <= 30; ++frame) {
+        lagi::platform::renderer::launcher_fade(frame, 30);
+        lagi::platform::end_frame();
+    }
+    lagi::platform::logging::writef("[DiscSelector] fade complete; initialize Azel\\n");
 
     if (!lagi::azel::runtime_init()) {
         lagi::platform::logging::writef(
