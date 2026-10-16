@@ -48,9 +48,11 @@ check all Boolean guard combinations, native call order, both target addresses,
 and the null-backup path. Vita syntax passes; parent hookup and device
 validation remain pending.
 
-Remaining integration includes the original availability gate0024B89C,
-town parameter binding, parent selection/open/close flow, field-child hookup
-and world confirmation result handling (status4F, black fades, menu exit flag).
+The assembled parent now consumes this confirmation and transition service
+(`NATIVE_MAP_PARENT_TASK.md`). Remaining live integration includes the original
+field availability gate0024B89C and dispatch from `createMapTask` to that
+parent. Town availability is already bound separately; this is not proof
+that either live menu route is enabled or hardware validated.
 Do not replace the world route with another field viewer or pass39 as a fake
 string pointer to the generic vertical `startDialogTask` constructor.
 

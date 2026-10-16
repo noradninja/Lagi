@@ -342,6 +342,17 @@ private:
     bool active_=false,ready_=false;
 };
 
+// Parent constructor input must be resolved from native state, including the
+// field world-route gate. This explicit boundary prevents an unverified live
+// gate from becoming a forced availability value during parent bring-up.
+struct LagiAzelMapParentSource {
+    LagiAzelMapAvailability availability{};
+    LagiAzelMapContext context{};
+    bool hasContext=false;
+    bool standalone=false;
+};
+s_workArea* lagiAzelCreateMapParent(s_workArea* parent,const LagiAzelMapParentSource& source);
+
 // Original 06016D36..46: COMMON table 0020E848, 23 field pointers, then
 // subfield pointers to 12-byte descriptors. Never infer a subfield count from
 // adjacent COMMON data; the wrapper below requires the caller's real count.

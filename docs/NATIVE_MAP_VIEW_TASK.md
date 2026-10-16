@@ -63,15 +63,17 @@ performance measurement is claimed.
 
 **The existing top-level Map entry remains a temporary placeholder.** It
 does not yet call this factory. It must still be replaced by the original
-Map parent's selection/mode/cursor/scroll lifecycle, with an owned resource
-handoff and both native field-map
-and world-map routes. Connecting this child through an automatic field-only
+Map parent with authoritative live availability and both native field-map
+and world-map routes. The assembled parent now constructs the view through
+an explicit-source factory (`NATIVE_MAP_PARENT_TASK.md`), but live dispatch
+remains unhooked. Connecting this child through an automatic field-only
 shortcut would not complete that original parent workflow. The map viewer
 and the broader in-game menu goal therefore remain incomplete.
 
 The newer parent resource owner now loads the descriptor's SCB/PNB and
 restores overwritten spans on failure/exit (`NATIVE_MAP_RESOURCE_OWNERSHIP.md`).
-It does not yet construct this view child or replace the placeholder parent.
+The assembled parent constructs this view child; the active placeholder does
+not yet dispatch to that parent.
 
 The view now binds to validated live native field/slot/descriptor state rather
 than requiring a fabricated subfield count (`NATIVE_MAP_CONTEXT_BINDING.md`).
