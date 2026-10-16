@@ -58,6 +58,9 @@ struct LagiAzelMapAvailability {
     int selected=0;
     bool worldCover=true;
 };
+// Complete native town branch of06016D88. Does not use the unresolved field
+// gate0024B89C. False means wrong scene class or malformed required COMMON.
+bool lagiAzelResolveTownMapAvailability(LagiAzelMapAvailability& out);
 inline LagiAzelMapAvailability lagiAzelMapAvailabilityFromNative(
     const LagiAzelMapAvailabilityInputs& input)
 {

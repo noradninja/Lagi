@@ -37,8 +37,12 @@ port safety checks, not additional authored progression rules.
 The meaning and live owner of0024B89C are **not established**. The current
 adapter requires its value explicitly and is not connected to the Map parent.
 Do not replace it with map ownership, fieldTaskVar3, a guessed progress bit,
-or a forced true/false value. Likewise, the current-town parameter service
-must be bound before connecting the town route. Native unavailable-slot covers
+or a forced true/false value. The town branch is now bound separately by
+`lagiAzelResolveTownMapAvailability`: native06030060 writes npcData0.m5C at
+0604A284+5C, and060300CC(0) reads signed COMMON2166E4[0]. The production
+service passes65536 signed-byte comparisons plus native story/scene and
+malformed-COMMON guards, and Vita syntax. It remains unconnected to the
+parent, and does not resolve the separate field gate. Native unavailable-slot covers
 and world-map confirmation/transition still require integration.
 
 No visible Map-menu change or complete viewer is claimed by this checkpoint.
