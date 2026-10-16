@@ -1,4 +1,7 @@
 #include "lagi/platform.h"
+// Native Azel default 8x16 character source table (256 glyphs, 16 rows each).
+// This compiled game table is available before azel::runtime_init().
+extern std::uint16_t resetVdp2StringsData[4106];
 
 unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/debug_mesh.h"
@@ -1386,6 +1389,43 @@ static void drawCharSmall(int x, int y, char c, std::uint32_t color)
     }
 }
 
+// Draw the default PDS font from Azel's own 2-bit-per-pixel glyph source.
+// The first 10 words are font metadata; each ASCII entry contains 16 rows.
+static constexpr int kPdsFontAdvance = 9;
+static void drawPdsText(int x, int y, const char* text, std::uint32_t color)
+{
+    if (!text || !g_frameBuffer[g_drawBuffer]) return;
+    for (const unsigned char* p =
+             reinterpret_cast<const unsigned char*>(text); *p; ++p) {
+        const unsigned code = *p;
+        if (code != ' ') {
+            const std::uint16_t* glyphRows = resetVdp2StringsData + 10 + code * 16;
+            for (int row = 0; row < 16; ++row) {
+                const int py = y + row;
+                if (py < 0 || py >= kHeight) continue;
+                const unsigned bits = glyphRows[row];
+                for (int col = 0; col < 8; ++col) {
+                    const int px = x + col;
+                    if (px < 0 || px >= kWidth) continue;
+                    const unsigned coverage = (bits >> (14 - col * 2)) & 3u;
+                    if (!coverage) continue;
+                    std::uint32_t& out = g_frameBuffer[g_drawBuffer][py * kPitch + px];
+                    const unsigned alpha = coverage * 85u;
+                    const unsigned inv = 255u - alpha;
+                    const unsigned red = ((color & 255u) * alpha + (out & 255u) * inv) / 255u;
+                    const unsigned green = (((color >> 8) & 255u) * alpha +
+                                            ((out >> 8) & 255u) * inv) / 255u;
+                    const unsigned blue = (((color >> 16) & 255u) * alpha +
+                                           ((out >> 16) & 255u) * inv) / 255u;
+                    out = 0xFF000000u | (blue << 16) | (green << 8) | red;
+                }
+            }
+        }
+        x += kPdsFontAdvance;
+        if (x >= kWidth) break;
+    }
+}
+
 static void drawTextSmall(int x, int y, const char* text, std::uint32_t color)
 {
     if (!text) return;
@@ -2298,14 +2338,14 @@ bool init()
         g_drawBuffer = i;
         fill(0xFF000000u);
         static constexpr const char* kLoadingText = "Loading...";
-        static constexpr int kLoadingAdvance = 6;
+        static constexpr int kLoadingAdvance = kPdsFontAdvance;
         static constexpr int kLoadingMarginX = 16;
         static constexpr int kLoadingMarginY = 14;
         const int loadingLength =
             static_cast<int>(std::strlen(kLoadingText));
-        drawTextSmall(
+        drawPdsText(
             kWidth - kLoadingMarginX - loadingLength * kLoadingAdvance,
-            kHeight - kLoadingMarginY,
+            kHeight - 23,
             kLoadingText,
             0xFFFFFFFFu);
     }
@@ -14181,7 +14221,7 @@ static void launcherTextured(const bool available[4], int selected)
             launcherBlitShortRow(rowX, rowY[i], 260);
             char label[] = "DISC 1";
             label[5] = static_cast<char>('1' + i);
-            drawTextSmall(rowX + 96, rowY[i] + 29, label,
+            drawPdsText(rowX + 96, rowY[i] + 21, label,
                 selected == i ? 0xFF61DFFFu : 0xFFD4CEC0u);
         }
         // The same disc artwork is used for both states. Selected artwork
@@ -14193,16 +14233,16 @@ static void launcherTextured(const bool available[4], int selected)
                             available[i] && selected == i && icon != 3);
     }
     launcherBlit(8, 548, 395);
-    drawTextSmall(641, 428, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
+    drawPdsText(641, 421, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
         0xFFFFFFFFu);
     if (selected >= 0) {
         char digit[] = "1";
         digit[0] = static_cast<char>('1' + selected);
-        drawTextSmall(780, 428, digit, 0xFFFFFFFFu);
+        drawPdsText(843, 421, digit, 0xFFFFFFFFu);
     }
-    drawTextSmall(641, 465, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
+    drawPdsText(641, 457, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
         0xFFE1DDD2u);
-    drawTextSmall(641, 481, "DPAD / L STICK: SELECT", 0xFFE1DDD2u);
+    drawPdsText(641, 477, "DPAD / L STICK: SELECT", 0xFFE1DDD2u);
     composed.assign(g_frameBuffer[g_drawBuffer],
                     g_frameBuffer[g_drawBuffer] + kWidth * kHeight);
     previousSelection = selected;
