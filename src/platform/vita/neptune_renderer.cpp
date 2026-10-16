@@ -1390,7 +1390,7 @@ static void drawCharSmall(int x, int y, char c, std::uint32_t color)
 }
 
 // Draw the default PDS font from Azel's own 2-bit-per-pixel glyph source.
-// The first 10 words are font metadata; each ASCII entry contains 16 rows.
+// The first 8 words are font metadata; each ASCII entry contains 16 rows.
 static constexpr int kPdsFontAdvance = 9;
 static void drawPdsText(int x, int y, const char* text, std::uint32_t color)
 {
@@ -1399,7 +1399,7 @@ static void drawPdsText(int x, int y, const char* text, std::uint32_t color)
              reinterpret_cast<const unsigned char*>(text); *p; ++p) {
         const unsigned code = *p;
         if (code != ' ') {
-            const std::uint16_t* glyphRows = resetVdp2StringsData + 10 + code * 16;
+            const std::uint16_t* glyphRows = resetVdp2StringsData + 8 + code * 16;
             for (int row = 0; row < 16; ++row) {
                 const int py = y + row;
                 if (py < 0 || py >= kHeight) continue;
