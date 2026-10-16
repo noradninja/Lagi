@@ -13998,6 +13998,68 @@ static void launcherBlit(int asset, int dstX, int dstY)
     }
 }
 
+
+static void launcherBlitCentered(int asset, int centerX, int centerY,
+                                int drawSize, bool goldTint = false)
+{
+    // Center on visible content, not the source file's padded canvas.
+    const LauncherSprite& s = g_launcherSprites[asset];
+    if (s.rgba.empty() || !s.width || !s.height) return;
+    unsigned x0 = s.width, y0 = s.height, x1 = 0, y1 = 0;
+    for (unsigned y = 0; y < s.height; ++y)
+        for (unsigned x = 0; x < s.width; ++x)
+            if ((s.rgba[y * s.width + x] >> 24) >= 20) {
+                x0 = std::min(x0, x); y0 = std::min(y0, y);
+                x1 = std::max(x1, x); y1 = std::max(y1, y);
+            }
+    if (x0 > x1 || y0 > y1) return;
+    const unsigned extent = std::max(x1 - x0 + 1u, y1 - y0 + 1u);
+    if (!extent) return;
+    const int size = std::max(1, drawSize);
+    std::uint32_t* dest = g_frameBuffer[g_drawBuffer];
+    if (!dest) return;
+    const int dx0 = centerX - size / 2;
+    const int dy0 = centerY - size / 2;
+    const int contentX = static_cast<int>((extent - (x1 - x0 + 1u)) / 2);
+    const int contentY = static_cast<int>((extent - (y1 - y0 + 1u)) / 2);
+    for (int y = 0; y < size; ++y) {
+        const int py = dy0 + y;
+        if (py < 0 || py >= kHeight) continue;
+        for (int x = 0; x < size; ++x) {
+            const int px = dx0 + x;
+            if (px < 0 || px >= kWidth) continue;
+            const int sx = static_cast<int>(x0) +
+                (x + 1) * static_cast<int>(extent) / size - 1 - contentX;
+            const int sy = static_cast<int>(y0) +
+                (y + 1) * static_cast<int>(extent) / size - 1 - contentY;
+            if (sx < static_cast<int>(x0) || sy < static_cast<int>(y0) ||
+                sx > static_cast<int>(x1) || sy > static_cast<int>(y1))
+                continue;
+            std::uint32_t pixel = s.rgba[sy * s.width + sx];
+            const unsigned a = pixel >> 24;
+            if (!a) continue;
+            if (goldTint) {
+                const unsigned r0 = pixel & 255u;
+                const unsigned g0 = (pixel >> 8) & 255u;
+                const unsigned b0 = (pixel >> 16) & 255u;
+                const unsigned intensity = (r0 * 3u + g0 * 5u + b0 * 2u) / 10u;
+                const unsigned r = std::min(255u, intensity * 13u / 10u + 30u);
+                const unsigned g = std::min(255u, intensity * 9u / 10u + 8u);
+                const unsigned b = intensity / 5u;
+                pixel = (a << 24) | (b << 16) | (g << 8) | r;
+            }
+            std::uint32_t& dst = dest[py * kPitch + px];
+            const unsigned inv = 255u - a;
+            const unsigned r = ((pixel & 255u) * a + (dst & 255u) * inv) / 255u;
+            const unsigned g = (((pixel >> 8) & 255u) * a +
+                                ((dst >> 8) & 255u) * inv) / 255u;
+            const unsigned b = (((pixel >> 16) & 255u) * a +
+                                ((dst >> 16) & 255u) * inv) / 255u;
+            dst = 0xFF000000u | (b << 16) | (g << 8) | r;
+        }
+    }
+}
+
 static void launcherTextured(const bool available[4], int selected)
 {
     // Static screens are identical until selection/availability changes.
@@ -14017,27 +14079,32 @@ static void launcherTextured(const bool available[4], int selected)
     launcherBlit(0, 0, 0);   // wallpaper
     launcherBlit(2, 0, 0); // radial mechanism aligned to the full canvas
     launcherBlit(1, 0, 0);   // outer carved frame
-    const int nodeX[4] = {276, 438, 276, 112};
-    const int nodeY[4] = {80, 267, 456, 267};
+    // Positions measured from the actual mechanical sockets at native 960x544.
+    static constexpr int nodeX[4] = {275, 431, 277, 112};
+    static constexpr int nodeY[4] = {82, 266, 449, 265};
     const int rowX = 548;
-    const int rowY[4] = {51, 138, 225, 312};
+    static constexpr int rowY[4] = {51, 138, 225, 312};
+    // Populate only available entries; the radial nodes show locked state.
     for (int i = 0; i < 4; ++i) {
-        launcherBlit(7, rowX, rowY[i]);
-        const int icon = !available[i] ? 5 : (selected == i ? 3 : 4);
-        launcherBlit(icon, nodeX[i] - 40, nodeY[i] - 40);
-        // Right-hand plaques are status labels, not a second selector.
-        if (available[i] && selected == i) {
-            launcherBlit(6, nodeX[i] - 49, nodeY[i] - 49);
-
+        if (available[i]) {
+            // Fill the plaque's hollow medallion inset before drawing it:
+            // otherwise the busy patterned wallpaper shows through the opening.
+            launcherRect(rowX + 6, rowY[i] + 8, 75, 60, 0xFF15130Fu);
+            launcherBlit(7, rowX, rowY[i]);
+            char label[] = "DISC 1";
+            label[5] = static_cast<char>('1' + i);
+            drawTextSmall(rowX + 96, rowY[i] + 29, label,
+                selected == i ? 0xFF61DFFFu : 0xFFD4CEC0u);
         }
-        char label[] = "DISC 1";
-        label[5] = static_cast<char>('1' + i);
-        drawTextSmall(rowX + 96, rowY[i] + 29, label,
-            !available[i] ? 0xFF777673u :
-            selected == i ? 0xFFFFFFFFu : 0xFFD4CEC0u);
+        // The same disc artwork is used for both states. Selected artwork
+        // receives a gold tint, rather than swapping to a different emblem.
+        const int icon = available[i] ? (i == 0 ? 3 : 4) : 5;
+        launcherBlitCentered(icon, nodeX[i], nodeY[i], 71,
+                            available[i] && selected == i && i != 0);
+        if (available[i] && selected == i)
+            launcherBlitCentered(6, nodeX[i], nodeY[i], 87);
     }
     launcherBlit(8, 548, 395);
-    launcherBlit(9, 16, 476);
     drawTextSmall(641, 428, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
         0xFFFFFFFFu);
     if (selected >= 0) {
@@ -14047,8 +14114,7 @@ static void launcherTextured(const bool available[4], int selected)
     }
     drawTextSmall(641, 465, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
         0xFFE1DDD2u);
-    drawTextSmall(641, 481, "DPAD: SELECT", 0xFFE1DDD2u);
-    drawTextSmall(140, 508, "DIMMED: DISC NOT FOUND", 0xFFC3BEB4u);
+    drawTextSmall(641, 481, "DPAD / R STICK: SELECT", 0xFFE1DDD2u);
     composed.assign(g_frameBuffer[g_drawBuffer],
                     g_frameBuffer[g_drawBuffer] + kWidth * kHeight);
     previousSelection = selected;
