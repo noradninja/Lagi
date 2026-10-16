@@ -13,7 +13,7 @@ namespace lagi::platform::frontend_music {
 namespace {
 std::atomic<bool> stopRequested{false};
 SceUID worker = -1;
-constexpr const char* kPath = "ux0:data/lagi/frontend/menu.mp3";
+constexpr const char* kPath = "ux0:data/lagi/frontend/bgm.mp3";
 constexpr int kBufferCapacity = 16384;
 
 int run(SceSize, void*)
