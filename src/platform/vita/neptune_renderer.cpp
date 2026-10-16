@@ -14087,7 +14087,7 @@ static void launcherTextured(const bool available[4], int selected)
     launcherBlit(1, 0, 0);   // outer carved frame
     // Positions measured from the actual mechanical sockets at native 960x544.
     static constexpr int nodeX[4] = {245, 411, 247, 74};
-    static constexpr int nodeY[4] = {71, 266, 410, 265};
+    static constexpr int nodeY[4] = {71, 261, 399, 254};
     const int rowX = 548;
     static constexpr int rowY[4] = {51, 138, 225, 312};
     // Populate only available entries; the radial nodes show locked state.
@@ -14109,8 +14109,6 @@ static void launcherTextured(const bool available[4], int selected)
              (i == 0 && selected == 0 ? 3 : 4));
         launcherBlitCentered(icon, nodeX[i], nodeY[i], 71,
                             available[i] && selected == i && icon != 3);
-        if (available[i] && selected == i)
-            launcherBlitCentered(6, nodeX[i], nodeY[i], 87);
     }
     launcherBlit(8, 548, 395);
     drawTextSmall(641, 428, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
@@ -14186,7 +14184,7 @@ void launcher_present(const bool available[4], int selected)
         const bool enabled = available[i];
         const bool active = enabled && selected == i;
         launcherRing(nodeX[i], nodeY[i], 41, 6,
-                     active ? green : (enabled ? bone : dim));
+                     enabled ? bone : dim);
         launcherRing(nodeX[i], nodeY[i], 31, 4,
                      active ? 0xFFB88B3Cu : bronze);
         char digit[2] = {static_cast<char>('1' + i), 0};
