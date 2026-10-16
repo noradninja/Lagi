@@ -122,3 +122,20 @@ assets are not required to boot or pass initial visual tests.
 
 Pending: authentic PDS font for launcher and Loading...; native SGX/GXM
 launcher composition; hardware-check of the new alpha-centered alignment.
+
+
+## Optional selection-screen background music
+
+Place `bgm.mp3` in `ux0:data/lagi/frontend/`. The track is optional and
+intentionally not bundled inside the VPK or mounted game disc. The frontend
+MP3 worker decodes frames through the public-domain `minimp3` decoder and
+streams PCM through Lagi's existing SceAudio output service. The track loops
+while the disc selector is active. The worker and audio port are stopped and
+released after disc selection **before** Azel audio initialization, so
+Cinepak/SCSP retain their normal audio ownership. A missing track simply
+leaves the selector silent. Diagnostics start with `[FrontendMusic]`.
+
+Repository copy convention: `assets/frontend/bgm.mp3` (user-supplied;
+optional). VPK rebuild is necessary for the new decoder code, but changing
+only the MP3 later requires no rebuild. The audio implementation has not
+been Vita hardware-tested yet.
