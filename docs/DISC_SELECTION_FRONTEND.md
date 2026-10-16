@@ -183,3 +183,7 @@ glyph source path, with a 9-pixel advance. The existing debug 5x7 renderer
 remains intact. The precise palette, spacing, and outline treatment require
 Vita visual validation; do not describe this stage as byte-for-byte native
 font rendering. All other VDP2 font ownership remains with Azel.
+
+## Font validation failure and rollback (2026-10-16)
+
+Hardware testing showed corrupted text from the experimental `resetVdp2StringsData` glyph path. That type-5 table represents extended character sprites, **not** the ordinary ASCII font. Azel loads the regular character graphics from `ASCII.CGZ` using `loadFont()` and `unpackGraphicsToVDP2()`. The incorrect preboot glyph renderer was removed, and the prior readable text plus its baseline coordinates were restored. Implement the real `ASCII.CGZ` decoding path and confirm mapping on Vita before enabling it for either selector or `Loading...`. The left and right portrait centers were independently adjusted 2 pixels left and 2 pixels up per hardware feedback.
