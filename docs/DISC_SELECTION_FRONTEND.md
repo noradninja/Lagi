@@ -7,10 +7,15 @@ Lagi's disc selection is a platform frontend that runs **before** native Azel in
 The existing layout, four medallions, controls, looping music, 0.5-second fade
 and Disc 1 boot are user-accepted at approximately 60 FPS in full resolution.
 The new authentic ASCII.CGZ frontend font preserves that layout and uses the
-same implementation for selector labels and initial Loading text. Its host
-checks and full Vita package build pass; this font revision still needs Vita
-visual/performance validation. See [Frontend PDS font](FRONTEND_PDS_FONT.md).
+same implementation for selector labels and initial Loading text. The user
+confirmed that the font works and accepted the subsequent label/plaque layout
+adjustments. See [Frontend PDS font](FRONTEND_PDS_FONT.md).
 The font sections below describe historical experiments, not the current path.
+
+Selection changes were subsequently reported at 13 FPS despite 60 FPS idle.
+The performance branch adds GXM presentation of immutable prepared states;
+see [GXM presentation](FRONTEND_GXM_PRESENTATION.md) for resource ownership,
+startup preparation cost and the pending hardware acceptance gate.
 
 ## Disc image layout
 

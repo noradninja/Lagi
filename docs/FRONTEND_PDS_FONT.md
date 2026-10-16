@@ -43,8 +43,8 @@ are unchanged. Following hardware font acceptance, upper row labels have a
 14-pixel additional inset after the oval fittings. The lower-right plaque uses
 a 3:2 vertical aspect correction (400x180 at 548,330) to restore its round
 fittings; its text is independently placed at y=389,427,443 without scaling
-the glyphs. The revised layout was host-preview checked; device validation is
-pending. The existing selector frame cache still handles idle frames;
+the glyphs. The user confirmed the font and accepted the final revised layout.
+The CPU selector frame cache handles idle fallback frames;
 no per-frame font loading or allocations are introduced. Label anchors remain
 unchanged except for the requested row/plaque spacing; the selected-disc digit follows the measured prefix without overlap
 (the diagnostic fallback retains its old digit position). Loading uses the same
@@ -65,8 +65,10 @@ measured font with a 16-pixel right margin and 14-pixel bottom margin.
   for loose, disc-backed, missing and malformed resources.
 - Vita syntax checks and full VPK build pass with all three flags below ON.
 
-These are not Vita execution results. Confirm font appearance, startup,
-approximately 60 FPS idle selection, music, navigation, fade and boot on device.
+The user subsequently confirmed the font on Vita and accepted the final layout.
+Idle selection is approximately 60 FPS, but selection changes were reported at
+13 FPS. The new GXM presentation path has its own pending device gate documented
+in `FRONTEND_GXM_PRESENTATION.md`; host tests do not prove its frame rate.
 Successful loading logs `[FrontendFont]` with compressed/decoded sizes and
 `nativeTextUntouched=1`; missing/invalid data logs the diagnostic fallback.
 

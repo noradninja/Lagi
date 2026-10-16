@@ -13,7 +13,7 @@ $renderer=Get-Content -Raw "$repo/src/platform/vita/neptune_renderer.cpp"
 foreach($part in @(
  @('static int measureFrontendText(','static void drawCharSmallToBuffer(','frontend_text.inc'),
  @('static void launcherPixel(','static void launcherRing(','frontend_rect.inc'),
- @('static void launcherBlit(int asset','void launcher_fade(','frontend_launcher.inc'))) {
+ @('static void launcherBlit(int asset','// GPU launcher presentation.','frontend_launcher.inc'))) {
  $begin=$renderer.IndexOf($part[0]);$end=$renderer.IndexOf($part[1],$begin)
  if($begin -lt 0 -or $end -le $begin){throw 'Frontend production composition boundary changed'}
  [IO.File]::WriteAllText("$scratch/$($part[2])",$renderer.Substring($begin,$end-$begin))

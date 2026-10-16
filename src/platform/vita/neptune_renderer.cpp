@@ -72,6 +72,7 @@ extern const unsigned char _binary_lagi_gouraud_scanline_gray_f_gxp_start[];
 static constexpr int kWidth = 960;
 static constexpr int kHeight = 544;
 static constexpr int kPitch = 960;
+static constexpr int kGxmPitch = 1024;
 // Lagi presents Saturn-era content directly; MSAA only adds bandwidth and
 // fragment cost here, so keep every Neptune render path single-sampled.
 static constexpr SceGxmMultisampleMode kMultisampleMode =
@@ -108,6 +109,8 @@ static bool g_debugVisible = true;
 static StatusLine g_status[kMaxStatus]{};
 static int g_statusCount = 0;
 static bool g_suppressGxmInitPassStatus = false;
+static void launcherReleaseGpu();
+static bool g_launcherPresentedGxm = false;
 static bool g_gxmProbeAttempted = false;
 static bool g_gxmInitialized = false;
 static SceUID g_probeVdmUid = -1;
@@ -2407,6 +2410,7 @@ void shutdown()
         g_movieFrameSema = -1;
     }
 
+    launcherReleaseGpu();
     auto freeSimpleMappedProbe = [](SceUID& uid, void*& ptr) {
         if (uid >= 0) {
             void* mem = nullptr;
@@ -8889,7 +8893,7 @@ void show_game_presentation()
     }
     status("[PASS] GXM RBG0 352X224 TARGET", 0xFF80E0FFu);
 
-    constexpr int gxmPitch = 1024;
+    constexpr int gxmPitch = kGxmPitch;
     constexpr unsigned int colorBytes =
         static_cast<unsigned int>(gxmPitch * kHeight * sizeof(std::uint32_t));
 
@@ -14217,10 +14221,211 @@ static void launcherTextured(const bool available[4], int selected)
     previousMask = mask;
 }
 
+// GPU launcher presentation. Accepted CPU artwork composition is preparation
+// only: immutable state textures eliminate selection-time rasterization.
+struct LauncherGpuState {
+    SceUID uid = -1;
+    void* pixels = nullptr;
+    SceGxmTexture texture{};
+};
+static LauncherGpuState g_launcherGpuStates[5]; // -1 (no selection), then 0..3
+static azel::DebugTextureVertex* g_launcherGpuVertices = nullptr;
+static std::uint16_t* g_launcherGpuIndices = nullptr;
+static SceUID g_launcherGpuVertexUid = -1, g_launcherGpuIndexUid = -1;
+static unsigned g_launcherGpuMask = ~0u;
+static bool g_launcherGpuReady = false, g_launcherGpuFailed = false;
+static int g_launcherGpuSelection = -1;
+
+static void launcherReleaseGpu()
+{
+    if (g_probeContext) sceGxmFinish(g_probeContext);
+    auto release = [](SceUID& uid, void*& pixels) {
+        if (uid >= 0) {
+            if (pixels) sceGxmUnmapMemory(pixels);
+            sceKernelFreeMemBlock(uid);
+        }
+        uid = -1;
+        pixels = nullptr;
+    };
+    for (auto& state : g_launcherGpuStates) {
+        release(state.uid, state.pixels);
+        state = {};
+    }
+    void* vertices = g_launcherGpuVertices;
+    release(g_launcherGpuVertexUid, vertices);
+    g_launcherGpuVertices = nullptr;
+    void* indices = g_launcherGpuIndices;
+    release(g_launcherGpuIndexUid, indices);
+    g_launcherGpuIndices = nullptr;
+    g_launcherGpuReady = false;
+    g_launcherGpuMask = ~0u;
+}
+
+static bool launcherPrepareGpu(const bool available[4])
+{
+    if (g_launcherGpuFailed) return false;
+    unsigned mask = 0;
+    for (unsigned i = 0; i < 4; ++i) if (available[i]) mask |= 1u << i;
+    if (g_launcherGpuReady && mask == g_launcherGpuMask) return true;
+    const auto start = sceKernelGetProcessTimeWide();
+    // Reuse Neptune's backend. No Azel task or native simulation is started.
+    show_game_presentation();
+    if (!g_viewerReady || !g_probeContext || !g_textureVertexProgram ||
+        !g_textureFragmentProgram || !g_textureWvpParam ||
+        !g_fadeFragmentProgram || !g_fadeVertices || !g_fadeIndices) {
+        g_launcherGpuFailed = true;
+        g_debugVisible = true;
+        g_probeDisplayingGxm = false;
+        return false;
+    }
+    launcherReleaseGpu();
+    g_launcherGpuVertices = static_cast<azel::DebugTextureVertex*>(probeGpuAlloc(
+        4 * sizeof(azel::DebugTextureVertex), SCE_GXM_MEMORY_ATTRIB_READ,
+        &g_launcherGpuVertexUid));
+    g_launcherGpuIndices = static_cast<std::uint16_t*>(probeGpuAlloc(
+        6 * sizeof(std::uint16_t), SCE_GXM_MEMORY_ATTRIB_READ,
+        &g_launcherGpuIndexUid));
+    bool ok = g_launcherGpuVertices && g_launcherGpuIndices;
+    if (ok) {
+        const azel::DebugTextureVertex vertices[4] = {
+            {-1,1,0,0,0}, {1,1,0,1,0}, {1,-1,0,1,1}, {-1,-1,0,0,1}};
+        const std::uint16_t indices[6] = {0,1,2,0,2,3};
+        std::memcpy(g_launcherGpuVertices, vertices, sizeof(vertices));
+        std::memcpy(g_launcherGpuIndices, indices, sizeof(indices));
+    }
+    for (int selection = -1; ok && selection < 4; ++selection) {
+        if (selection == -1 && mask) continue;
+        if (selection >= 0 && !available[selection]) continue;
+        auto& state = g_launcherGpuStates[selection + 1];
+        state.pixels = probeGpuAlloc(kFrameBytes, SCE_GXM_MEMORY_ATTRIB_READ, &state.uid);
+        ok = state.pixels != nullptr;
+        if (!ok) break;
+        launcherTextured(available, selection);
+        std::memcpy(state.pixels, g_frameBuffer[g_drawBuffer], kFrameBytes);
+        ok = sceGxmTextureInitLinear(&state.texture, state.pixels,
+            SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, kWidth, kHeight, 0) >= 0;
+        if (ok) {
+            sceGxmTextureSetMinFilter(&state.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+            sceGxmTextureSetMagFilter(&state.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+            sceGxmTextureSetUAddrMode(&state.texture, SCE_GXM_TEXTURE_ADDR_CLAMP);
+            sceGxmTextureSetVAddrMode(&state.texture, SCE_GXM_TEXTURE_ADDR_CLAMP);
+        }
+    }
+    if (!ok) {
+        launcherReleaseGpu();
+        g_launcherGpuFailed = true;
+        g_debugVisible = true;
+        g_probeDisplayingGxm = false;
+        logging::writef("[DiscSelectorGXM] allocation failed; CPU fallback\n");
+        return false;
+    }
+    g_launcherGpuMask = mask;
+    g_launcherGpuReady = true;
+    logging::writef("[DiscSelectorGXM] ready mask=%u prepareUs=%llu selectionCompose=0\n",
+        mask, static_cast<unsigned long long>(sceKernelGetProcessTimeWide() - start));
+    return true;
+}
+
+static bool launcherDrawGpu(int selected, unsigned brightness)
+{
+    if (!g_launcherGpuReady || selected < -1 || selected > 3 ||
+        !g_launcherGpuStates[selected + 1].pixels) return false;
+    const auto start = sceKernelGetProcessTimeWide();
+    auto* surface = g_gxmDrawBuffer ? &g_probeColorSurface2 : &g_probeColorSurface;
+    auto* sync = g_gxmDrawBuffer ? g_probeSync2 : g_probeSync;
+    if (sceGxmBeginScene(g_probeContext, 0, g_probeRenderTarget,
+            nullptr, nullptr, sync, surface, nullptr) < 0) return false;
+    sceGxmSetDefaultRegionClipAndViewport(g_probeContext, kWidth - 1, kHeight - 1);
+    sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
+    sceGxmSetFrontPolygonMode(g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetBackPolygonMode(g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+    sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
+    sceGxmSetFrontDepthWriteEnable(g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    sceGxmSetBackDepthWriteEnable(g_probeContext, SCE_GXM_DEPTH_WRITE_DISABLED);
+    const ViewerMat4 identity = viewerIdentity();
+    sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
+    sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
+    void* uniforms = nullptr;
+    bool ok = sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &uniforms) >= 0 && uniforms;
+    if (ok) {
+        sceGxmSetUniformDataF(uniforms, g_textureWvpParam, 0, 16, identity.m);
+        sceGxmSetFragmentTexture(g_probeContext, 0, &g_launcherGpuStates[selected + 1].texture);
+        sceGxmSetVertexStream(g_probeContext, 0, g_launcherGpuVertices);
+        ok = sceGxmDraw(g_probeContext, SCE_GXM_PRIMITIVE_TRIANGLES,
+            SCE_GXM_INDEX_FORMAT_U16, g_launcherGpuIndices, 6) >= 0;
+    }
+    if (ok && brightness < 255) {
+        for (unsigned i = 0; i < 6; ++i) {
+            g_fadeVertices[i].r = g_fadeVertices[i].g = g_fadeVertices[i].b = 0;
+            g_fadeVertices[i].a = static_cast<unsigned char>(255 - brightness);
+        }
+        sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
+        sceGxmSetFragmentProgram(g_probeContext, g_fadeFragmentProgram);
+        uniforms = nullptr;
+        ok = sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &uniforms) >= 0 && uniforms;
+        if (ok) {
+            sceGxmSetUniformDataF(uniforms, g_probeWvpParam, 0, 16, identity.m);
+            sceGxmSetVertexStream(g_probeContext, 0, g_fadeVertices);
+            ok = sceGxmDraw(g_probeContext, SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16, g_fadeIndices, 6) >= 0;
+        }
+    }
+    sceGxmEndScene(g_probeContext, nullptr, nullptr);
+    // Explicit completion before scanout also protects shared fade vertices.
+    sceGxmFinish(g_probeContext);
+    if (!ok) return false;
+    SceDisplayFrameBuf fb{};
+    fb.size = sizeof(fb);
+    fb.base = g_gxmDrawBuffer ? g_probeColorBuffer2 : g_probeColorBuffer;
+    // GXM surfaces have padded rows, unlike the 960-pixel CPU/font surfaces.
+    fb.pitch = kGxmPitch;
+    fb.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
+    fb.width = kWidth; fb.height = kHeight;
+    const int set = sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
+    sceDisplayWaitVblankStart();
+    g_gxmDrawBuffer ^= 1;
+    if (set < 0) return false;
+    if (selected != g_launcherGpuSelection) {
+        logging::writef("[DiscSelectorGXM] selection=%d renderPresentUs=%llu\n", selected + 1,
+            static_cast<unsigned long long>(sceKernelGetProcessTimeWide() - start));
+    }
+    g_launcherGpuSelection = selected;
+    g_launcherPresentedGxm = true;
+    g_debugVisible = false; // launcher owns this present, end_frame must not queue CPU pixels
+    return true;
+}
+
 // Capture the last presented launcher frame once, then darken it over thirty
 // vblanks. Avoid re-compositing the large art textures during the fade.
 void launcher_fade(int frame, int frames)
 {
+    if (g_launcherGpuReady && frames > 0) {
+        const unsigned brightness = static_cast<unsigned>(
+            std::max(0, frames - std::clamp(frame, 0, frames)) * 255 / frames);
+        if (launcherDrawGpu(g_launcherGpuSelection, brightness)) {
+            if (frame >= frames) {
+                launcherReleaseGpu();
+                // Return to the ordinary loading framebuffer until Azel asks
+                // Neptune to present its first native scene/movie.
+                g_probeDisplayingGxm = false;
+                g_debugVisible = true;
+                fill(0xFF000000u);
+            }
+            return;
+        }
+        // A failed GPU present must not strand the boot flow or leave the
+        // CPU fade reading the last state prepared rather than the selection.
+        bool available[4]{};
+        for (unsigned i = 0; i < 4; ++i) available[i] = (g_launcherGpuMask & (1u << i)) != 0;
+        launcherTextured(available, g_launcherGpuSelection);
+        std::memcpy(g_frameBuffer[g_drawBuffer ^ 1], g_frameBuffer[g_drawBuffer], kFrameBytes);
+        launcherReleaseGpu();
+        g_launcherGpuFailed = true;
+        g_probeDisplayingGxm = false;
+        g_debugVisible = true;
+        logging::writef("[DiscSelectorGXM] fade present failed; CPU fallback\n");
+    }
     static std::vector<std::uint32_t> frozen;
     if (frames <= 0 || !g_frameBuffer[g_drawBuffer]) return;
     if (frame == 0 || frozen.size() != static_cast<std::size_t>(kWidth * kHeight)) {
@@ -14243,6 +14448,11 @@ void launcher_fade(int frame, int frames)
 void launcher_present(const bool available[4], int selected)
 {
     if (launcherLoadAssets()) {
+        if (launcherPrepareGpu(available) && launcherDrawGpu(selected, 255)) return;
+        launcherReleaseGpu();
+        g_launcherGpuFailed = true;
+        g_debugVisible = true;
+        g_probeDisplayingGxm = false;
         launcherTextured(available, selected);
         return;
     }
@@ -14304,6 +14514,10 @@ void launcher_present(const bool available[4], int selected)
 
 void end_frame()
 {
+    if (g_launcherPresentedGxm) {
+        g_launcherPresentedGxm = false;
+        return;
+    }
     if (!g_debugVisible)
         return;
 
