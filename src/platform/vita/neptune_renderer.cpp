@@ -13964,7 +13964,16 @@ static bool launcherLoadAssets()
             for (int i = 0; i < 4; ++i) {
                 char name[16];
                 std::snprintf(name, sizeof(name), "disc_%d", i + 1);
-                launcherLoadSprite(g_launcherSprites[10 + i], name);
+                if (launcherLoadSprite(g_launcherSprites[10 + i], name)) {
+                    logging::writef("[DiscSelector] %s loaded %ux%u\\n", name,
+                        g_launcherSprites[10 + i].width,
+                        g_launcherSprites[10 + i].height);
+                } else {
+                    logging::writef(
+                        "[DiscSelector] %s missing/invalid (expected frontend/%s.rgba, "
+                        "8-byte LE width/height + RGBA8888; maximum 960x544); "
+                        "using fallback\\n", name, name);
+                }
             }
             logging::writef("[DiscSelector] textured launcher assets loaded\\n");
         }
