@@ -2,6 +2,7 @@
 #include <cstdio>
 #include "lagi/platform.h"
 #include "lagi/lagi_runtime.h"
+#include "lagi/disc_image.h"
 
 int main()
 {
@@ -25,6 +26,58 @@ int main()
 
     lagi::platform::renderer::status(
         "[PASS] VITA FRAMEBUFFER / PLATFORM", 0xFF30E030u);
+
+    // The disc decision happens before Azel creates its native task graph.
+    bool discAvailable[4]{};
+    int selection = -1;
+    for (int i = 0; i < 4; ++i) {
+        discAvailable[i] = lagi::disc::disc_available(i + 1);
+        if (selection < 0 && discAvailable[i])
+            selection = i;
+        lagi::platform::logging::writef(
+            "[DiscSelector] Disc %d: %s\\n",
+            i + 1, discAvailable[i] ? "available" : "missing");
+    }
+
+    bool selectedDiscMounted = false;
+    while (lagi::platform::running() && !selectedDiscMounted) {
+        lagi::platform::input::update();
+        const unsigned short pressed =
+            lagi::platform::input::saturn_buttons_pressed();
+        if (selection >= 0 && (pressed & (0x0010u | 0x0020u))) {
+            const int step = (pressed & 0x0020u) ? 1 : -1;
+            for (int offset = 1; offset < 4; ++offset) {
+                const int candidate = (selection + 4 + step * offset * 4 +
+                                       step * offset) % 4;
+                if (discAvailable[candidate]) {
+                    selection = candidate;
+                    break;
+                }
+            }
+        }
+        if (selection >= 0 && (pressed & 0x0002u)) {
+            selectedDiscMounted = lagi::disc::mount_disc(selection + 1);
+            if (!selectedDiscMounted) {
+                discAvailable[selection] = false;
+                selection = -1;
+                for (int i = 0; i < 4; ++i)
+                    if (discAvailable[i]) { selection = i; break; }
+            }
+        }
+        if (!selectedDiscMounted) {
+            lagi::platform::renderer::launcher_present(discAvailable, selection);
+            lagi::platform::end_frame();
+        }
+    }
+
+    if (!selectedDiscMounted) {
+        lagi::platform::shutdown();
+        sceKernelExitProcess(0);
+        return 0;
+    }
+    lagi::platform::logging::writef(
+        "[DiscSelector] mounted Disc %d: %s\\n",
+        lagi::disc::selected_disc(), lagi::disc::image_path());
 
     if (!lagi::azel::runtime_init()) {
         lagi::platform::logging::writef(
