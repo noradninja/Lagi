@@ -14171,7 +14171,7 @@ static void launcherTextured(const bool available[4], int selected)
     static constexpr int nodeX[4] = {250, 397, 250, 104};
     static constexpr int nodeY[4] = {108, 249, 385, 249};
     const int rowX = 548;
-    static constexpr int rowY[4] = {51, 138, 225, 312};
+    static constexpr int rowY[4] = {67, 141, 215, 289};
     // Populate only available entries; the radial nodes show locked state.
     for (int i = 0; i < 4; ++i) {
         if (available[i]) {
