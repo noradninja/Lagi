@@ -13883,6 +13883,91 @@ void begin_frame()
         0xFFFFFFFFu);
 }
 
+
+static void launcherPixel(int x, int y, std::uint32_t color)
+{
+    if (x < 0 || y < 0 || x >= kWidth || y >= kHeight) return;
+    if (g_frameBuffer[g_drawBuffer])
+        g_frameBuffer[g_drawBuffer][y * kPitch + x] = color;
+}
+
+static void launcherRect(int x, int y, int w, int h, std::uint32_t color)
+{
+    for (int yy = std::max(0, y); yy < std::min(kHeight, y + h); ++yy)
+        for (int xx = std::max(0, x); xx < std::min(kWidth, x + w); ++xx)
+            launcherPixel(xx, yy, color);
+}
+
+static void launcherRing(int cx, int cy, int r, int thickness,
+                         std::uint32_t color)
+{
+    const int outer = r * r;
+    const int inner = (r - thickness) * (r - thickness);
+    for (int dy = -r; dy <= r; ++dy)
+        for (int dx = -r; dx <= r; ++dx) {
+            const int d2 = dx * dx + dy * dy;
+            if (d2 <= outer && d2 >= inner)
+                launcherPixel(cx + dx, cy + dy, color);
+        }
+}
+
+void launcher_present(const bool available[4], int selected)
+{
+    // Standalone pre-Azel presentation, in native 960x544 scanout space.
+    // The eventual texture atlas can replace these fallback primitives.
+    fill(0xFF080B0Du);
+    const std::uint32_t bone = 0xFF9A9990u;
+    const std::uint32_t bronze = 0xFF48403Au;
+    const std::uint32_t dim = 0xFF484A49u;
+    const std::uint32_t white = 0xFFE8E6DCu;
+    const std::uint32_t green = 0xFF41DF52u;
+
+    launcherRect(28, 26, 904, 4, bone);
+    launcherRect(28, 514, 904, 4, bone);
+    launcherRect(28, 42, 3, 458, bone);
+    launcherRect(929, 42, 3, 458, bone);
+    drawTextSmall(52, 55, "LAGI    SELECT DISC", white);
+
+    // Radial mechanism: four disc positions around the central hub.
+    launcherRing(268, 289, 170, 4, bronze);
+    launcherRing(268, 289, 118, 5, bronze);
+    launcherRing(268, 289, 74, 12, bone);
+    launcherRing(268, 289, 48, 4, bronze);
+    drawTextSmall(225, 284, "AZEL", white);
+    const int nodeX[4] = {268, 418, 268, 118};
+    const int nodeY[4] = {125, 289, 453, 289};
+    for (int i = 0; i < 4; ++i) {
+        const bool enabled = available[i];
+        const bool active = enabled && selected == i;
+        launcherRing(nodeX[i], nodeY[i], 41, 6,
+                     active ? green : (enabled ? bone : dim));
+        launcherRing(nodeX[i], nodeY[i], 31, 4,
+                     active ? 0xFFB88B3Cu : bronze);
+        char digit[2] = {static_cast<char>('1' + i), 0};
+        drawTextSmall(nodeX[i] - 3, nodeY[i] - 3, digit,
+                      active ? white : (enabled ? bone : dim));
+    }
+
+    launcherRect(530, 88, 370, 3, bone);
+    for (int i = 0; i < 4; ++i) {
+        const int y = 110 + i * 79;
+        const bool enabled = available[i];
+        const bool active = enabled && selected == i;
+        launcherRect(535, y, 355, 62, active ? 0xFF41382Bu : bronze);
+        launcherRect(535, y, 5, 62, active ? green : (enabled ? bone : dim));
+        char name[] = "DISC 1";
+        name[5] = static_cast<char>('1' + i);
+        drawTextSmall(562, y + 14, name, active ? white : (enabled ? bone : dim));
+        drawTextSmall(562, y + 35, enabled ? "AVAILABLE" : "NOT FOUND",
+                      active ? green : dim);
+    }
+
+    launcherRect(530, 443, 370, 2, bone);
+    drawTextSmall(540, 462, selected >= 0
+        ? "CROSS: LOAD SELECTED DISC" : "NO VALID DISC IMAGES", white);
+    drawTextSmall(540, 484, "DPAD: SELECT AVAILABLE DISC", bone);
+}
+
 void end_frame()
 {
     if (!g_debugVisible)
