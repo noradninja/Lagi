@@ -53,10 +53,10 @@ void update()
     g_analogZoom = axis(pad.ry);
     g_analogCameraX = axis(pad.rx);
     g_analogCameraY = axis(pad.ry);
-    // Launcher-only edge events: right stick maps directly to four compass
+    // Launcher-only edge events: left stick maps directly to four compass
     // positions. Hysteresis prevents drift/repeats while held in a direction.
-    const int stickX = static_cast<int>(pad.rx) - 128;
-    const int stickY = static_cast<int>(pad.ry) - 128;
+    const int stickX = static_cast<int>(pad.lx) - 128;
+    const int stickY = static_cast<int>(pad.ly) - 128;
     int dir = -1; // indices are top, right, bottom, left
     if (stickX * stickX + stickY * stickY >= 65 * 65) {
         if (stickX >= 0 && stickX >= std::abs(stickY)) dir = 1;
