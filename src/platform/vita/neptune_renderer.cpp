@@ -14107,7 +14107,7 @@ static void launcherTextured(const bool available[4], int selected)
         const int icon = !available[i] ? 5 :
             (!g_launcherSprites[10 + i].rgba.empty() ? 10 + i :
              (i == 0 && selected == 0 ? 3 : 4));
-        launcherBlitCentered(icon, nodeX[i], nodeY[i], 71,
+        launcherBlitCentered(icon, nodeX[i], nodeY[i], 54,
                             available[i] && selected == i && icon != 3);
     }
     launcherBlit(8, 548, 395);
