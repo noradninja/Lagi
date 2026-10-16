@@ -9,7 +9,7 @@ endif()
 project(Lagi LANGUAGES C CXX)
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
-set(VITA_APP_NAME "Lagi 0.040-alpha")
+set(VITA_APP_NAME "Lagi")
 set(VITA_TITLEID "LAGI00001")
 set(VITA_VERSION "00.40")
 set(CMAKE_CXX_STANDARD 20)
