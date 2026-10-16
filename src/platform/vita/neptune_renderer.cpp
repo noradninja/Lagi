@@ -14000,6 +14000,20 @@ static void launcherBlit(int asset, int dstX, int dstY)
 
 static void launcherTextured(const bool available[4], int selected)
 {
+    // Static screens are identical until selection/availability changes.
+    // Cache a completed frame so idle menu frames only copy one framebuffer
+    // instead of repeatedly alpha-compositing all ten large RGBA assets.
+    static std::vector<std::uint32_t> composed;
+    static int previousSelection = -2;
+    static unsigned previousMask = ~0u;
+    unsigned mask = 0;
+    for (int i = 0; i < 4; ++i)
+        if (available[i]) mask |= 1u << i;
+    if (selected == previousSelection && mask == previousMask &&
+        composed.size() == static_cast<std::size_t>(kWidth * kHeight)) {
+        std::memcpy(g_frameBuffer[g_drawBuffer], composed.data(), kFrameBytes);
+        return;
+    }
     launcherBlit(0, 0, 0);   // wallpaper
     launcherBlit(2, 0, 0); // radial mechanism aligned to the full canvas
     launcherBlit(1, 0, 0);   // outer carved frame
@@ -14035,6 +14049,10 @@ static void launcherTextured(const bool available[4], int selected)
         0xFFE1DDD2u);
     drawTextSmall(641, 481, "DPAD: SELECT", 0xFFE1DDD2u);
     drawTextSmall(140, 508, "DIMMED: DISC NOT FOUND", 0xFFC3BEB4u);
+    composed.assign(g_frameBuffer[g_drawBuffer],
+                    g_frameBuffer[g_drawBuffer] + kWidth * kHeight);
+    previousSelection = selected;
+    previousMask = mask;
 }
 
 // Capture the last presented launcher frame once, then darken it over thirty
