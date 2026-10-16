@@ -11,6 +11,39 @@ regressed build was not yet available at rollback time, so collision thrashing
 or lookup overhead remain hypotheses. Rollback performance needs hardware
 verification. No animation-counter multiplier is added.
 
+## Cached CPU staging (2026-10-16, hardware pending)
+
+The14:15 log (136,487 bytes) and user report confirm rollback menus at20FPS.
+Its one menu ScenePerf sample reports background decode30.678ms, text
+decode4.702ms, CPU submission0.034ms, total composition35.492ms and renderer
+47.341ms. This sample locates the cost in CPU pixel composition, not GXM
+command submission; it does not isolate decoder arithmetic from memory writes.
+
+Both pixel surfaces came from `probeGpuAlloc`, which allocates
+`SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE`. The menu compositor now writes
+the same pixels into one aligned, module-owned CPU scratch surface, then
+copies315,392 bytes contiguously into the selected GPU allocation before
+submission. Scratch costs308KiB, is never GPU-mapped or sampled, and is fully
+written/cleared on every use. There is no decoded-tile cache, source hashing,
+reuse key, skipped frame, animation-rate change or added GPU draw. Backing and
+text retain separate GPU allocations, so reusing scratch for glyphs cannot
+overwrite the queued background. The existing uncached GPU destination needs
+no new CPU-cache flush; cached scratch is only read by the CPU copy.
+
+`menuTransfer` reports the summed CPU copy cost separately, in microseconds.
+`menuBackingDecode`/`menuTextDecode` now measure composition into scratch.
+All remain nested in `compose`/`cpuprep`; do not add them a second time.
+The change is a measured-path optimization hypothesis, not an accepted
+performance result. A new same-menu hardware capture must compare decode
+plus transfer, total renderer cost and actual presentation intervals.
+
+`tests/menu_surface_staging_test.ps1` compiles the production composition and
+copy block against the original direct-output algorithm. It compares1,261,568
+pixels over status/save/Map configurations, signed scrolling and changing
+VRAM/CRAM, including transparent text clearing and independence of the two
+GPU destinations. These host checks and Vita renderer syntax pass; they do
+not model Vita cache/bus performance or GPU execution.
+
 ## Historical investigation (cache now reverted)
 
 Follow-up log received at14:07 (403,723 bytes) contains the cache's

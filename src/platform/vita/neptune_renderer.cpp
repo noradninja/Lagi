@@ -658,6 +658,7 @@ static unsigned int g_profileComposeUs = 0;
 static unsigned int g_profileMenuBackingDecodeUs = 0;
 static unsigned int g_profileMenuTextDecodeUs = 0;
 static unsigned int g_profileMenuSubmitUs = 0;
+static unsigned int g_profileMenuTransferUs = 0;
 static unsigned int g_profileGxmWaitUs = 0;
 static unsigned int g_profileGxmEndSceneUs = 0;
 static unsigned int g_profileGxmFinishUs = 0;
@@ -804,6 +805,10 @@ static std::uint16_t* g_vdp2Nbg1Indices = nullptr;
 
 static constexpr unsigned int kVdp2TextLayerWidth = 352u;
 static constexpr unsigned int kVdp2TextLayerHeight = 224u;
+// CPU-only cached scratch. GPU textures retain their independent uncached
+// allocations; reuse scratch only after publishing the completed surface.
+alignas(64) static std::array<std::uint32_t,
+    kVdp2TextLayerWidth * kVdp2TextLayerHeight> g_menuCompositionPixels{};
 static SceUID g_vdp2TextLayerUid = -1;
 static std::uint32_t* g_vdp2TextLayerPixels = nullptr;
 static SceGxmTexture g_vdp2TextLayerTexture{};
@@ -1832,7 +1837,8 @@ static void drawAzelMenuVdp2Gpu(bool textOnly = false)
         sceGxmTextureSetMagFilter(&g_vdp2MenuBackgroundTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
         g_vdp2MenuBackgroundValid = true;
     }
-    auto* pixels = textOnly ? g_vdp2TextLayerPixels : g_vdp2MenuBackgroundPixels;
+    auto* gpuPixels = textOnly ? g_vdp2TextLayerPixels : g_vdp2MenuBackgroundPixels;
+    auto* pixels = g_menuCompositionPixels.data();
     auto* texture = textOnly ? &g_vdp2TextLayerTexture : &g_vdp2MenuBackgroundTexture;
     const auto menuDecodeStartUs = sceKernelGetProcessTimeWide();
     if (textOnly) {
@@ -1877,6 +1883,12 @@ static void drawAzelMenuVdp2Gpu(bool textOnly = false)
         sceKernelGetProcessTimeWide() - menuDecodeStartUs);
     if(textOnly) g_profileMenuTextDecodeUs += menuDecodedUs;
     else g_profileMenuBackingDecodeUs += menuDecodedUs;
+    // One contiguous transfer instead of per-pixel uncached writes. The GPU
+    // never samples scratch, and text cannot overwrite the backing texture.
+    const auto menuTransferStartUs = sceKernelGetProcessTimeWide();
+    std::memcpy(gpuPixels,pixels,g_menuCompositionPixels.size()*sizeof(std::uint32_t));
+    g_profileMenuTransferUs += static_cast<unsigned int>(
+        sceKernelGetProcessTimeWide() - menuTransferStartUs);
     const auto menuSubmitStartUs = sceKernelGetProcessTimeWide();
     const float renderAspect =
         static_cast<float>(viewerRenderWidth()) /
@@ -13129,6 +13141,7 @@ static void renderBasicWingViewer()
     g_profileMenuBackingDecodeUs = 0u;
     g_profileMenuTextDecodeUs = 0u;
     g_profileMenuSubmitUs = 0u;
+    g_profileMenuTransferUs = 0u;
     g_profileBuildUs = 0u;
     g_profileLightingUs = 0u;
     g_profileSubmitUs = 0u;
@@ -13530,7 +13543,7 @@ static void renderBasicWingViewer()
             "cpuprep=%u gxmwait=%u gxmend=%u gxmfinish=%u "
             "render=%u polys=%u verts=%u "
             "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u "
-            "menuBackingDecode=%u menuTextDecode=%u menuSubmit=%u\n",
+            "menuBackingDecode=%u menuTextDecode=%u menuSubmit=%u menuTransfer=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -13561,7 +13574,8 @@ static void renderBasicWingViewer()
             g_profileRbgRawUpdatedBytes,
             g_profileMenuBackingDecodeUs,
             g_profileMenuTextDecodeUs,
-            g_profileMenuSubmitUs);
+            g_profileMenuSubmitUs,
+            g_profileMenuTransferUs);
     }
 
     if (g_showThreadTimingOsd) {
