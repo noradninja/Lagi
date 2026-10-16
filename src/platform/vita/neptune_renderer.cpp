@@ -14066,6 +14066,38 @@ static void launcherBlitCentered(int asset, int centerX, int centerY,
     }
 }
 
+// Uniformly scale the *whole* radial artwork about its socket center.
+// Unlike shrinking individual medallions this keeps the four sockets and
+// their connecting ring in register while clearing the upper/lower frame.
+static void launcherBlitRadialFitted()
+{
+    const LauncherSprite& s = g_launcherSprites[2];
+    std::uint32_t* dst = g_frameBuffer[g_drawBuffer];
+    if (!dst || s.rgba.empty()) return;
+    constexpr int cx = 266, cy = 255;
+    constexpr int scalePercent = 87;
+    for (unsigned y = 0; y < s.height; ++y) {
+        const int dy = cy + (static_cast<int>(y) - cy) * scalePercent / 100;
+        if (dy < 0 || dy >= kHeight) continue;
+        for (unsigned x = 0; x < s.width; ++x) {
+            const int dx = cx + (static_cast<int>(x) - cx) * scalePercent / 100;
+            if (dx < 0 || dx >= kWidth) continue;
+            const std::uint32_t color = s.rgba[y * s.width + x];
+            const unsigned a = color >> 24;
+            if (!a) continue;
+            std::uint32_t& pixel = dst[dy * kPitch + dx];
+            if (a == 255) { pixel = color; continue; }
+            const unsigned inv = 255u - a;
+            const unsigned r = ((color & 255u) * a + (pixel & 255u) * inv) / 255u;
+            const unsigned g = (((color >> 8) & 255u) * a +
+                                ((pixel >> 8) & 255u) * inv) / 255u;
+            const unsigned b = (((color >> 16) & 255u) * a +
+                                ((pixel >> 16) & 255u) * inv) / 255u;
+            pixel = 0xFF000000u | (b << 16) | (g << 8) | r;
+        }
+    }
+}
+
 static void launcherTextured(const bool available[4], int selected)
 {
     // Static screens are identical until selection/availability changes.
@@ -14084,10 +14116,10 @@ static void launcherTextured(const bool available[4], int selected)
     }
     launcherBlit(0, 0, 0);   // wallpaper
     launcherBlit(1, 0, 0);   // carved frame behind the radial socket rings
-    launcherBlit(2, 0, 0);   // radial mechanism above frame ornament
+    launcherBlitRadialFitted(); // complete circle fits between frame borders
     // Positions measured from the actual mechanical sockets at native 960x544.
-    static constexpr int nodeX[4] = {266, 416, 266, 89};
-    static constexpr int nodeY[4] = {78, 265, 392, 265};
+    static constexpr int nodeX[4] = {266, 397, 266, 112};
+    static constexpr int nodeY[4] = {101, 264, 374, 264};
     const int rowX = 548;
     static constexpr int rowY[4] = {51, 138, 225, 312};
     // Populate only available entries; the radial nodes show locked state.
@@ -14107,7 +14139,7 @@ static void launcherTextured(const bool available[4], int selected)
         const int icon = !available[i] ? 5 :
             (!g_launcherSprites[10 + i].rgba.empty() ? 10 + i :
              (i == 0 && selected == 0 ? 3 : 4));
-        launcherBlitCentered(icon, nodeX[i], nodeY[i], 54,
+        launcherBlitCentered(icon, nodeX[i], nodeY[i], 71,
                             available[i] && selected == i && icon != 3);
     }
     launcherBlit(8, 548, 395);
