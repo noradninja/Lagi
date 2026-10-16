@@ -509,7 +509,7 @@ void capture_current_light(SubmissionState& state)
     capture_native_point_light(state);
 }
 
-void begin_view_relative_submission_scope()
+void begin_view_relative_submission_scope(bool replaceSceneView)
 {
     g_viewRelativeScope = false;
     if (&pCurrentMatrix && pCurrentMatrix) {
@@ -519,7 +519,7 @@ void begin_view_relative_submission_scope()
         // town actors can precede this frame's camera Draw task; retain that
         // native root for presentation as well as removing it at submission.
         // A later authored camera capture remains free to replace this view.
-        if (!g_nativeSceneViewValid) {
+        if (!g_nativeSceneViewValid || replaceSceneView) {
             std::memcpy(g_nativeSceneViewMatrix, g_viewScopeMatrix,
                 sizeof(g_nativeSceneViewMatrix));
             g_nativeSceneViewValid = true;

@@ -1652,6 +1652,28 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "p_workArea startSegaLogoModule(p_workArea workArea)\n{\n    return startTitleScreenVideo(workArea);\n}"
    source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "menu_dragonMorph.cpp")
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\""
+   source_text "${source_text}")
+  set(preview_draw_old [=[void s_dragonMenuDragonWorkArea::dragonMenuDragonDraw(s_dragonMenuDragonWorkArea* pWorkArea)
+{
+    submitModelAndShadowModelToRendering(&gDragonState->m28_dragon3dModel, gDragonState->m14_modelIndex, gDragonState->m18_shadowModelIndex, &pWorkArea->modelTranslation, &pWorkArea->modelRotation, 0);
+}]=])
+  set(preview_draw_new [=[void s_dragonMenuDragonWorkArea::dragonMenuDragonDraw(s_dragonMenuDragonWorkArea* pWorkArea)
+{
+    // LAGI_MENU_PREVIEW_NATIVE_VIEW: this draw owns its native root view.
+    lagi::azel_bridge::begin_view_relative_submission_scope(true);
+    submitModelAndShadowModelToRendering(&gDragonState->m28_dragon3dModel, gDragonState->m14_modelIndex, gDragonState->m18_shadowModelIndex, &pWorkArea->modelTranslation, &pWorkArea->modelRotation, 0);
+    lagi::azel_bridge::end_view_relative_submission_scope();
+}]=])
+  string(FIND "${source_text}" "${preview_draw_old}" preview_draw_offset)
+  if(preview_draw_offset LESS 0)
+   message(FATAL_ERROR "Native menu preview view-scope adapter no longer matches")
+  endif()
+  string(REPLACE "${preview_draw_old}" "${preview_draw_new}" source_text "${source_text}")
+
  elseif(relative_path STREQUAL "3dEngine.cpp")
   # Native 0601FDF8/0601FE06 retain the stack pointer; 0601FE14 pops it.
   set(point_push_old [=[    u16* r2 = projectionStackTop;

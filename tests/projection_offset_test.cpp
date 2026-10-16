@@ -3,12 +3,21 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 #ifdef LAGI_TEST_CAPTURE
 struct { struct { std::int16_t m44_localCoordinatesX, m46_localCoordinatesY; } m405C; }
     graphicEngineStatus;
 namespace lagi::scene_bridge {
 #include "projection_capture_production.inc"
+}
+namespace lagi::azel_bridge {
+struct TestMatrix {std::int32_t raw[12];};
+TestMatrix* pCurrentMatrix=nullptr;
+bool g_viewRelativeScope=false,g_nativeSceneViewValid=false;
+std::int32_t g_viewScopeMatrix[12]{},g_nativeSceneViewMatrix[12]{};
+void copyMatrixRaw(const TestMatrix& m,std::int32_t out[12]){std::memcpy(out,m.raw,sizeof(m.raw));}
+#include "projection_scope_production.inc"
 }
 #endif
 
@@ -19,6 +28,16 @@ int main()
     lagi::azel_bridge::SubmissionState defaults;
     assert(defaults.localCoordinatesX == 176 && defaults.localCoordinatesY == 112);
 #ifdef LAGI_TEST_CAPTURE
+    using namespace lagi::azel_bridge;
+    TestMatrix root{{65536,0,0,0,0,65536,0,0,0,0,65536,0}};
+    pCurrentMatrix=&root;g_nativeSceneViewValid=false;
+    begin_view_relative_submission_scope(true);
+    assert(g_nativeSceneViewValid && g_viewRelativeScope && g_nativeSceneViewMatrix[0]==65536);
+    end_view_relative_submission_scope();assert(!g_viewRelativeScope);
+    root.raw[3]=77;begin_view_relative_submission_scope(false);
+    assert(g_nativeSceneViewMatrix[3]==0 && g_viewScopeMatrix[3]==77);
+    begin_view_relative_submission_scope(true);assert(g_nativeSceneViewMatrix[3]==77);
+    pCurrentMatrix=nullptr;begin_view_relative_submission_scope(true);assert(!g_viewRelativeScope);
     graphicEngineStatus.m405C = {120,112};
     lagi::scene_bridge::capture_local_coordinates(defaults.localCoordinatesX, defaults.localCoordinatesY);
     graphicEngineStatus.m405C = {176,112}; // Native cleanup after submission.

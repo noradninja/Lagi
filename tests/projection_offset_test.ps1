@@ -4,6 +4,17 @@ $repo=Split-Path $PSScriptRoot -Parent
 $scratch=[IO.Path]::GetFullPath((Join-Path $repo $ScratchRoot))
 New-Item -ItemType Directory -Force -Path $scratch | Out-Null
 $bridge=Get-Content -Raw (Join-Path $repo 'src/integration/lagi_render_bridge.cpp')
+$scopeBegin=$bridge.IndexOf('void begin_view_relative_submission_scope(')
+$scopeEnd=$bridge.IndexOf('void capture_native_scene_view_matrix()',$scopeBegin)
+if($scopeBegin -lt 0 -or $scopeEnd -le $scopeBegin){throw 'Native preview scope missing'}
+Set-Content (Join-Path $scratch 'projection_scope_production.inc') $bridge.Substring($scopeBegin,$scopeEnd-$scopeBegin)
+Push-Location $scratch
+try {
+ & cmake "-DREPO_ROOT=$repo" -DLAGI_AZEL_SOURCE_ROOT=E:/dev/Lagi/extern/Azel/AzelLib -P "$PSScriptRoot/generate_native_menu_sources.cmake"
+ if($LASTEXITCODE -ne 0){throw 'Native preview generation failed'}
+} finally {Pop-Location}
+$preview=Get-Content -Raw (Join-Path $scratch 'azel_upstream/menu_dragonMorph.cpp')
+if(!$preview.Contains('begin_view_relative_submission_scope(true);') -or !$preview.Contains('LAGI_MENU_PREVIEW_NATIVE_VIEW')){throw 'Preview native root capture not hooked'}
 $capture=$bridge.IndexOf('lagi::scene_bridge::capture_local_coordinates(')
 $publish=$bridge.IndexOf('std::int32_t adaptedIndex = -1;', $capture)
 if($capture -lt 0 -or $publish -le $capture -or

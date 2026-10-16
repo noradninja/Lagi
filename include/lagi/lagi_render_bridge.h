@@ -165,7 +165,7 @@ void capture_current_light(SubmissionState& state);
 // Begin/end a draw scope where Azel's pCurrentMatrix is already view-space.
 // Submissions inside the scope are converted back to world space before they
 // are published to Neptune.
-void begin_view_relative_submission_scope();
+void begin_view_relative_submission_scope(bool replaceSceneView = false);
 void end_view_relative_submission_scope();
 
 // Field mode publishes Azel's native view matrix explicitly. The camera task

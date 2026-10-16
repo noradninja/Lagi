@@ -1,5 +1,20 @@
 # Native model projection center
 
+## Follow-up: missing preview-root capture (2026-10-16)
+
+The latest hardware screenshot still shows the preview right of its circle.
+The previous correction only runs when a native scene view was captured.
+`dragonMenuDragonDraw` had no view-capture scope, so an otherwise valid local
+origin could reach the fallback camera path without that correction. The menu
+draw now opens an explicit native view-relative scope at its actual root,
+before submitting model and shadow, and publishes that root even if a prior
+scene view was captured. Normal actor scopes retain their existing behavior.
+This supplies the missing integration dependency; it is not a guessed extra
+screen-space shift. Host checks now execute the scope with absent/stale views,
+explicit replacement, ordinary scope retention and null matrices in addition
+to the324 projection cases. Generated preview and bridge Vita syntax pass.
+The new root-scope change still requires hardware centering verification.
+
 ## Report and source boundary
 
 The Dragon ability preview appeared down/right of its circular backdrop.

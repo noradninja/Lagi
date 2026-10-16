@@ -26,3 +26,5 @@ foreach(source IN ITEMS "field/field_a3/o_fld_a3.cpp" "field/fieldRadar.cpp" "LC
  lagi_prepare_upstream_azel_source("${source}" generated)
  message(STATUS "Generated actual native adapter: ${generated}")
 endforeach()
+lagi_prepare_upstream_azel_source("menu_dragonMorph.cpp" generated_preview)
+message(STATUS "Generated actual native preview adapter: ${generated_preview}")
