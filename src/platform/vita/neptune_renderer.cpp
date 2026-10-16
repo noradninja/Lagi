@@ -13985,8 +13985,6 @@ static void launcherBlit(int asset, int dstX, int dstY)
                 pixel = color;
             } else {
                 const unsigned inv = 255 - a;
-                const unsigned rb = ((color & 0x00FF00FFu) * a +
-                    (pixel & 0x00FF00FFu) * inv) >> 8;
                 const unsigned g = (((color >> 8) & 255u) * a +
                     ((pixel >> 8) & 255u) * inv) / 255u;
                 // Separate 8-bit channels: no carry between neighboring channels.
@@ -13994,7 +13992,6 @@ static void launcherBlit(int asset, int dstX, int dstY)
                     ((pixel) & 255u) * inv) / 255u;
                 const unsigned b = (((color >> 16) & 255u) * a +
                     ((pixel >> 16) & 255u) * inv) / 255u;
-                (void)rb;
                 pixel = 0xFF000000u | (b << 16) | (g << 8) | r;
             }
         }
@@ -14006,8 +14003,8 @@ static void launcherTextured(const bool available[4], int selected)
     launcherBlit(0, 0, 0);   // wallpaper
     launcherBlit(2, 16, 18); // complete circular mechanism
     launcherBlit(1, 0, 0);   // outer carved frame
-    const int nodeX[4] = {262, 433, 262, 91};
-    const int nodeY[4] = {61, 232, 403, 232};
+    const int nodeX[4] = {262, 436, 262, 75};
+    const int nodeY[4] = {73, 260, 438, 260};
     const int rowX = 550;
     const int rowY[4] = {48, 133, 218, 303};
     for (int i = 0; i < 4; ++i) {
