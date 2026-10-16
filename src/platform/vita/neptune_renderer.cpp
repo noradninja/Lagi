@@ -14083,11 +14083,11 @@ static void launcherTextured(const bool available[4], int selected)
         return;
     }
     launcherBlit(0, 0, 0);   // wallpaper
-    launcherBlit(2, 0, 0); // radial mechanism aligned to the full canvas
-    launcherBlit(1, 0, 0);   // outer carved frame
+    launcherBlit(1, 0, 0);   // carved frame behind the radial socket rings
+    launcherBlit(2, 0, 0);   // radial mechanism above frame ornament
     // Positions measured from the actual mechanical sockets at native 960x544.
-    static constexpr int nodeX[4] = {245, 411, 247, 74};
-    static constexpr int nodeY[4] = {71, 261, 399, 254};
+    static constexpr int nodeX[4] = {266, 416, 266, 89};
+    static constexpr int nodeY[4] = {78, 265, 392, 265};
     const int rowX = 548;
     static constexpr int rowY[4] = {51, 138, 225, 312};
     // Populate only available entries; the radial nodes show locked state.
