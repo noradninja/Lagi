@@ -42,7 +42,7 @@ Medallion positions, row positions, input, music, fade and boot flow
 are unchanged. Following hardware font acceptance, upper row labels have a
 14-pixel additional inset after the oval fittings. The lower-right plaque uses
 a 3:2 vertical aspect correction (400x180 at 548,330) to restore its round
-fittings; its text is independently placed at y=389,435,455 without scaling
+fittings; its text is independently placed at y=389,427,443 without scaling
 the glyphs. The revised layout was host-preview checked; device validation is
 pending. The existing selector frame cache still handles idle frames;
 no per-frame font loading or allocations are introduced. Label anchors remain

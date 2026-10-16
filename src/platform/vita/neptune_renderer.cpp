@@ -14208,9 +14208,9 @@ static void launcherTextured(const bool available[4], int selected)
         const int digitX=std::max(780,641+measureFrontendText("CONTINUE FROM DISC "));
         drawFrontendText(digitX, 389, digit, 0xFFFFFFFFu);
     }
-    drawFrontendText(641, 435, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
+    drawFrontendText(641, 427, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
         0xFFE1DDD2u);
-    drawFrontendText(641, 455, "DPAD / L STICK: SELECT", 0xFFE1DDD2u);
+    drawFrontendText(641, 443, "DPAD / L STICK: SELECT", 0xFFE1DDD2u);
     composed.assign(g_frameBuffer[g_drawBuffer],
                     g_frameBuffer[g_drawBuffer] + kWidth * kHeight);
     previousSelection = selected;
