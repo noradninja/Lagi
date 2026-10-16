@@ -14181,7 +14181,7 @@ static void launcherTextured(const bool available[4], int selected)
             launcherBlitShortRow(rowX, rowY[i], 260);
             char label[] = "DISC 1";
             label[5] = static_cast<char>('1' + i);
-            drawPdsText(rowX + 96, rowY[i] + 29, label,
+            drawTextSmall(rowX + 96, rowY[i] + 29, label,
                 selected == i ? 0xFF61DFFFu : 0xFFD4CEC0u);
         }
         // The same disc artwork is used for both states. Selected artwork
@@ -14193,16 +14193,16 @@ static void launcherTextured(const bool available[4], int selected)
                             available[i] && selected == i && icon != 3);
     }
     launcherBlit(8, 548, 395);
-    drawPdsText(641, 428, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
+    drawTextSmall(641, 428, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
         0xFFFFFFFFu);
     if (selected >= 0) {
         char digit[] = "1";
         digit[0] = static_cast<char>('1' + selected);
-        drawPdsText(780, 428, digit, 0xFFFFFFFFu);
+        drawTextSmall(780, 428, digit, 0xFFFFFFFFu);
     }
-    drawPdsText(641, 465, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
+    drawTextSmall(641, 465, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
         0xFFE1DDD2u);
-    drawPdsText(641, 481, "DPAD / L STICK: SELECT", 0xFFE1DDD2u);
+    drawTextSmall(641, 481, "DPAD / L STICK: SELECT", 0xFFE1DDD2u);
     composed.assign(g_frameBuffer[g_drawBuffer],
                     g_frameBuffer[g_drawBuffer] + kWidth * kHeight);
     previousSelection = selected;
