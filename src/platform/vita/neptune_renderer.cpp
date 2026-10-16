@@ -14168,7 +14168,7 @@ static void launcherTextured(const bool available[4], int selected)
     launcherBlit(1, 0, 0);   // carved frame behind the radial socket rings
     launcherBlitRadialFitted(); // complete circle fits between frame borders
     // Positions measured from the actual mechanical sockets at native 960x544.
-    static constexpr int nodeX[4] = {266, 397, 266, 104};
+    static constexpr int nodeX[4] = {250, 397, 250, 104};
     static constexpr int nodeY[4] = {108, 249, 385, 249};
     const int rowX = 548;
     static constexpr int rowY[4] = {51, 138, 225, 312};
@@ -14178,7 +14178,7 @@ static void launcherTextured(const bool available[4], int selected)
             // Fill the plaque's hollow medallion inset before drawing it:
             // otherwise the busy patterned wallpaper shows through the opening.
             launcherRect(rowX + 6, rowY[i] + 8, 75, 60, 0xFF15130Fu);
-            launcherBlitShortRow(rowX, rowY[i], 290);
+            launcherBlitShortRow(rowX, rowY[i], 260);
             char label[] = "DISC 1";
             label[5] = static_cast<char>('1' + i);
             drawTextSmall(rowX + 96, rowY[i] + 29, label,
