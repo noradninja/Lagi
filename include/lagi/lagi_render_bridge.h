@@ -108,6 +108,10 @@ void begin_frame(bool forceDynamicSubmissions = false);
 // Called after native point setup/color/falloff, before its normal cleanup.
 // Frame-owned: begin_frame clears it, leaving menus/towns and later frames alone.
 void capture_field_environment_point_light();
+// Native setupLight inputs for the ordinary actor directional light. Preserve
+// its direction and packed RGB while the point selector is temporarily active.
+void capture_field_actor_base_light(std::int32_t x,std::int32_t y,
+    std::int32_t z,std::uint32_t packedColor);
 
 // Number of model submissions observed through Azel's native render boundary
 // during the current frame.

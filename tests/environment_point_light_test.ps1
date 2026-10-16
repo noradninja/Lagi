@@ -7,6 +7,8 @@ $source=Get-Content -Raw "$repo/src/integration/lagi_render_bridge.cpp"
 foreach($entry in @(
  @('struct FieldEnvironmentPointLight','// Bounded FLD_A3 diagnostic:','environment_state.inc'),
  @('void begin_frame(bool forceDynamicSubmissions)','std::uint32_t submission_count()','environment_begin.inc'),
+ @('static void capture_native_point_light(','void capture_field_environment_point_light()','actor_point_capture.inc'),
+ @('void capture_current_light(','void begin_view_relative_submission_scope()','actor_current_capture.inc'),
  @('void capture_field_environment_point_light()','void capture_current_light(','environment_capture.inc'))){
  $start=$source.IndexOf($entry[0]);$end=$source.IndexOf($entry[1],$start)
  if($start -lt 0 -or $end -lt 0){throw "Production environment boundary missing: $($entry[0])"}
@@ -37,6 +39,8 @@ try {
 $dragon=Get-Content -Raw "$scratch/azel_upstream/field_fieldDragon.cpp"
 $grid=Get-Content -Raw "$scratch/azel_upstream/field_field_a3_o_fld_a3.cpp"
 if([regex]::Matches($dragon,'capture_field_environment_point_light\(\)').Count -ne 1 -or
+ !$dragon.Contains('LAGI_FIELD_ACTOR_ADDITIVE_BASE') -or
+ !$dragon.Contains('pTypedWorkArea->mC8_normalLightColor.toU32());') -or
  !$dragon.Contains('if (pTypedWorkArea->m_EB_useSpecialColor)') -or
  !$dragon.Contains('LAGI_NATIVE_FIELD_LIGHT_RESTORE') -or
  !$grid.Contains('lagiState.fieldEnvironment = true; // LAGI_FIELD_ENVIRONMENT_POINT_TARGET')){throw 'Generated source/target/cleanup hooks missing'}

@@ -1685,6 +1685,20 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${point_activate_old}" "${point_activate_new}" source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/fieldDragon.cpp")
+  set(actor_base_anchor "            dragonFieldTaskDrawSub1Sub0();")
+  string(FIND "${source_text}" "${actor_base_anchor}" actor_base_offset)
+  if(actor_base_offset LESS 0)
+   message(FATAL_ERROR "Field actor additive base-light anchor no longer matches")
+  endif()
+  string(REPLACE "${actor_base_anchor}" [=[            dragonFieldTaskDrawSub1Sub0();
+            // LAGI_FIELD_ACTOR_ADDITIVE_BASE: same ordinary light as cleanup.
+            sVec3_FP baseDirection, baseLight;
+            baseDirection[0] = -MTH_Mul_5_6(fixedPoint(0x10000), getCos(pTypedWorkArea->mC0_lightRotationAroundDragon.getInteger()), getSin(pTypedWorkArea->mC4.getInteger()));
+            baseDirection[1] = MTH_Mul(fixedPoint(0x10000), getSin(pTypedWorkArea->mC0_lightRotationAroundDragon.getInteger()));
+            baseDirection[2] = -MTH_Mul_5_6(fixedPoint(0x10000), getCos(pTypedWorkArea->mC0_lightRotationAroundDragon.getInteger()), getCos(pTypedWorkArea->mC4.getInteger()));
+            transformVecByCurrentMatrix(baseDirection, baseLight);
+            lagi::azel_bridge::capture_field_actor_base_light(baseLight[0].asS32(),baseLight[1].asS32(),baseLight[2].asS32(),pTypedWorkArea->mC8_normalLightColor.toU32());]=]
+   source_text "${source_text}")
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
    "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\""

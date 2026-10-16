@@ -4,6 +4,7 @@ $repo=Split-Path $PSScriptRoot -Parent
 $scratch=[IO.Path]::GetFullPath((Join-Path $repo $ScratchRoot))
 New-Item -ItemType Directory -Force -Path $scratch | Out-Null
 foreach($entry in @(
+ @('src/integration/lagi_render_bridge.cpp','struct FieldEnvironmentPointLight','// Bounded FLD_A3 diagnostic:','point_state_production.inc'),
  @('src/integration/lagi_render_bridge.cpp','static void capture_native_point_light(','void capture_field_environment_point_light(','point_capture_production.inc'),
  @('src/platform/vita/neptune_renderer.cpp','static void transformLiveLightVectorToModelSpace(','static void appendLiveTownModel(','point_consumer_production.inc'))) {
  $source=Get-Content -Raw (Join-Path $repo $entry[0])

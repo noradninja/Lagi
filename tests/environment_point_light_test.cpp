@@ -12,10 +12,12 @@ struct LagiMatrix4x3 {s32 raw[12];} matrix{{65536,0,0,0,0,65536,0,0,0,0,65536,0}
 LagiMatrix4x3* pCurrentMatrix=&matrix;
 u16 loc_601FA9E=0x6103;
 s32 pointLightParams[5]={65536,0,0,0x14000000,0x19000};
-struct {u16 color[3]={6,20,23};} currentLightVector_M;
+struct RawFixed {s32 raw=700;s32 asS32()const{return raw;}};
+struct {RawFixed lightVector[3];u16 color[3]={6,20,23};} currentLightVector_M;
 struct {std::uint32_t falloff[3]={0x010203,0x040506,0x070809};} lightSetup;
 void copyMatrixRaw(const LagiMatrix4x3& in,s32 out[12]){std::memcpy(out,in.raw,sizeof(in.raw));}
 bool g_forceDynamicSubmissions,g_nativeSceneViewValid,g_viewRelativeScope,g_hasPendingTownSubmission;
+s32 g_nativeSceneViewMatrix[12]={65536,0,0,0,0,65536,0,0,0,0,65536,0};
 unsigned g_submissionCount,g_modelCacheMisses,g_explicitStaticContextsSet,g_explicitStaticContextsConsumed;
 void* g_lastModel;void* g_lastAdaptedModel;
 SubmissionState g_lastState;
@@ -23,7 +25,9 @@ std::vector<int> g_adaptedModels,g_submissions,g_vdp1UiCommands;
 RenderSubmission g_pendingTownSubmission;
 #include "environment_state.inc"
 #include "environment_begin.inc"
+#include "actor_point_capture.inc"
 #include "environment_capture.inc"
+#include "actor_current_capture.inc"
 #include "environment_polygon_type.inc"
 #include "environment_consumer.inc"
 LivePolygonLightState cachedPayload(const SubmissionState& state){
@@ -77,5 +81,30 @@ int main(){
  assert(maxed[0]==2147483647 && maxed[1]==2147483647 && maxed[2]==2147483647);
  loc_601FA9E=0xA11D;capture_field_environment_point_light();assert(g_fieldEnvironmentPointLight.active);
  loc_601FA9E=0x6103;capture_field_environment_point_light();assert(!g_fieldEnvironmentPointLight.active);
+ // Actor path: preserve the authored normal-light RGB/direction while the
+ // live native globals hold special point parameters and their own color.
+ begin_frame(false);matrix={{65536,0,0,0,0,65536,0,0,0,0,65536,0}};
+ pointLightParams[0]=65536;currentLightVector_M.color[0]=6;
+ capture_field_actor_base_light(-65536,0,0,0x112233);
+ assert(g_fieldActorBaseLight.active);
+ loc_601FA9E=0xA11D;SubmissionState actor;actor.dynamic=true;
+ std::copy(matrix.raw,matrix.raw+12,actor.modelMatrix);::capture_current_light(actor);
+ assert(actor.hasLight && !actor.hasNativeModelLight && actor.additionalLight.active);
+ assert(actor.lightVector[0]==4096 && actor.lightColor[0]==0x11 && actor.lightColor[1]==0x22 && actor.lightColor[2]==0x33);
+ assert(actor.additionalLight.vector[0]==4096 && actor.additionalLight.color[0]==6 && actor.additionalLight.color[2]==23);
+ cached=cachedPayload(actor);assert(cached.vector[0]==4096 && cached.color[2]==0x33 && cached.additionalLight.active);
+ int actorCombined[3]={0x33*1024,0x22*1024,0x11*1024};
+ lagi::accumulate_additional_model_light(cached.additionalLight,facing,actorCombined);
+ assert(actorCombined[0]==(0x33+23)*1024 && actorCombined[1]==(0x22+20)*1024 && actorCombined[2]==(0x11+6)*1024);
+ g_nativeSceneViewValid=true;
+ const s32 rotatedView[12]={0,0,65536,0,0,65536,0,0,-65536,0,0,0};
+ std::copy(rotatedView,rotatedView+12,g_nativeSceneViewMatrix);actor={};::capture_current_light(actor);
+ assert(actor.lightVector[0]==0 && actor.lightVector[2]==4096 && actor.lightColor[2]==0x33 && actor.additionalLight.vector[0]==4096);
+ g_nativeSceneViewValid=false;
+ pointLightParams[0]=100*65536;actor={};::capture_current_light(actor);
+ assert(!actor.additionalLight.active && actor.lightVector[0]==4096 && actor.lightColor[2]==0x33);
+ loc_601FA9E=0x6103;actor={};::capture_current_light(actor);
+ assert(actor.lightVector[0]==700 && actor.lightColor[0]==6 && !actor.additionalLight.active);
+ begin_frame(false);assert(!g_fieldActorBaseLight.active);
  puts("PASS: production environment snapshot/application/frame reset, copied color/range, native matrix, outside-range preservation and actor/UI exclusion; GPU/device untested");
 }

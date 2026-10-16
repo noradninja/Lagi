@@ -12,6 +12,8 @@ LagiMatrix4x3* pCurrentMatrix=&matrix;
 u16 loc_601FA9E=0x6103;
 s32 pointLightParams[5]={65536,0,0,0x14000000,0x19000};
 void copyMatrixRaw(const LagiMatrix4x3& in,s32 out[12]) { std::memcpy(out,in.raw,sizeof(in.raw)); }
+struct {u16 color[3]={6,20,23};} currentLightVector_M;
+#include "point_state_production.inc"
 #include "point_capture_production.inc"
 #include "point_consumer_production.inc"
 int main()

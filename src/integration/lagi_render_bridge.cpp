@@ -89,6 +89,12 @@ struct FieldEnvironmentPointLight {
     bool active=false;
 };
 static FieldEnvironmentPointLight g_fieldEnvironmentPointLight{};
+struct FieldActorBaseLight {
+    std::int32_t vector[3]{};
+    std::uint16_t color[3]{};
+    bool active=false;
+};
+static FieldActorBaseLight g_fieldActorBaseLight{};
 
 // Bounded FLD_A3 diagnostic: compare the static-grid state synthesized by the
 // generated hook with Azel's actual pCurrentMatrix/currentLightVector_M at the
@@ -147,6 +153,7 @@ static void removeViewTransform(
 void begin_frame(bool forceDynamicSubmissions)
 {
     g_fieldEnvironmentPointLight={};
+    g_fieldActorBaseLight={};
     g_forceDynamicSubmissions = forceDynamicSubmissions;
     g_nativeSceneViewValid = false;
     g_viewRelativeScope = false;
@@ -380,8 +387,20 @@ static void capture_native_point_light(SubmissionState& state)
     std::int32_t nativeMatrix[12];
     copyMatrixRaw(*pCurrentMatrix, nativeMatrix);
     const auto light = lagi::native_point_light(nativeMatrix, pointLightParams);
-    std::copy(light.vector.begin(), light.vector.end(), state.nativeModelLight);
-    state.hasNativeModelLight = true;
+    const auto* pointColor=&currentLightVector_M ? currentLightVector_M.color : state.lightColor;
+    if(g_fieldActorBaseLight.active && !state.fieldEnvironment) {
+        state.additionalLight={};
+        if(!light.outside) {
+            std::copy(light.vector.begin(),light.vector.end(),state.additionalLight.vector);
+            // Point color comes from the live native setup, not the base
+            // directional color selected by capture_current_light below.
+            std::copy(pointColor,pointColor+3,state.additionalLight.color);
+            state.additionalLight.active=true;
+        }
+    } else {
+        std::copy(light.vector.begin(), light.vector.end(), state.nativeModelLight);
+        state.hasNativeModelLight = true;
+    }
     static unsigned reports = 0;
     if (reports < 8) {
         lagi::platform::logging::writef("[NativePointLight] distance=%08X divisor=%08X outside=%u overflow=%u vector=%d,%d,%d position=%08X,%08X,%08X rangeParams=%08X,%08X color=%u,%u,%u origin=%08X,%08X,%08X\n",
@@ -389,7 +408,7 @@ static void capture_native_point_light(SubmissionState& state)
             light.divisionOverflow ? 1u : 0u, int(light.vector[0]), int(light.vector[1]), int(light.vector[2]),
             unsigned(pointLightParams[0]), unsigned(pointLightParams[1]), unsigned(pointLightParams[2]),
             unsigned(pointLightParams[3]), unsigned(pointLightParams[4]),
-            unsigned(state.lightColor[2]), unsigned(state.lightColor[1]), unsigned(state.lightColor[0]),
+            unsigned(pointColor[2]), unsigned(pointColor[1]), unsigned(pointColor[0]),
             unsigned(nativeMatrix[3]), unsigned(nativeMatrix[7]), unsigned(nativeMatrix[11]));
         ++reports;
     }
@@ -434,14 +453,28 @@ static void apply_field_environment_point_light(SubmissionState& state)
     }
 }
 
+void capture_field_actor_base_light(std::int32_t x,std::int32_t y,
+    std::int32_t z,std::uint32_t packedColor)
+{
+    const std::int32_t direction[3]={x,y,z};
+    for(unsigned axis=0;axis<3;++axis) {
+        // Match setupLight -> setLightVector_M, including native RGB order.
+        g_fieldActorBaseLight.vector[axis]=static_cast<std::int32_t>((-std::int64_t(direction[axis]))>>4);
+        g_fieldActorBaseLight.color[axis]=(packedColor>>((2-axis)*8))&0xFF;
+    }
+    g_fieldActorBaseLight.active=true;
+}
+
 void capture_current_light(SubmissionState& state)
 {
     if (&currentLightVector_M) {
+        const bool actorBase=g_fieldActorBaseLight.active && !state.fieldEnvironment &&
+            &loc_601FA9E && loc_601FA9E==0xA11D;
         for (unsigned int i = 0; i < 3; ++i) {
             state.lightVector[i] =
-                currentLightVector_M.lightVector[i].asS32();
+                actorBase ? g_fieldActorBaseLight.vector[i] : currentLightVector_M.lightVector[i].asS32();
             state.lightColor[i] =
-                currentLightVector_M.color[i];
+                actorBase ? g_fieldActorBaseLight.color[i] : currentLightVector_M.color[i];
         }
 
         // Native scene currentLightVector_M is paired with view-relative

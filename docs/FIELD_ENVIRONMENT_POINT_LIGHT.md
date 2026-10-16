@@ -12,7 +12,7 @@ After Azel sets the special point position, range and color, the field
 dragon adapter captures those values by value. Native selector push/pop and
 ordinary directional restoration remain unchanged. The environment does not
 read stale point parameters after that cleanup, and the accepted actor path is
-not changed.
+preserved; actor lighting combination is described below.
 
 The existing FLD_A3 native visibility-grid submission explicitly marks its
 environment context. At the normal model draw boundary, that context uses the
@@ -33,7 +33,18 @@ Gouraud interpolation. Following the user's combined-lighting request, the
 environment point light is additive, not a replacement for directional light.
 `AdditionalModelLight` and `accumulate_additional_model_light` provide the shared
 contribution path for future extra lights; only this field source is wired now.
-The accepted native dragon/rider lighting behavior is unchanged.
+The subsequent actor-combination request also opts the field dragon/rider
+point-light scope into this additional-light path. Before special setup, the
+adapter computes the same ordinary directional vector used by native cleanup
+and captures its normal-light packed RGB. Its bridge conversion matches
+`setupLight`/`setLightVector_M` (negate/shift4 and reversed RGB array order).
+Actor submission retains that directional vector/color and adds the live point
+vector/color separately; inverse-view conversion applies only to the base vector.
+Ambient/depth falloff and material color remain single contributions. The
+accepted replacement-light appearance is a baseline, not hardware acceptance
+of this intentionally brighter combined result. Other native point sources
+without a captured ordinary base retain their existing behavior; this does
+not fabricate a normal light for unported town/actor sources.
 
 The frame snapshot is cleared in `begin_frame`. Menus, billboards, task actors,
 town geometry and unmarked contexts are not opted in. This covers the current
@@ -54,15 +65,17 @@ Gouraud shaders consume the same colors; no shader variant is added.
 application and frame-reset code, and the actual renderer cached-light payload
 consumer. It verifies copied parameters surviving native cleanup, preserved base lighting,
 native versus world matrix, rotated normals, outside-range preservation,
-frame-to-frame restoration, actor/UI exclusion and null matrices. Shared helper
+frame-to-frame restoration, environment/UI exclusion and null matrices. Actor
+checks execute actual current-light capture with distinct directional/point RGB,
+range rejection and inverse-view rotation, plus frame-owned base reset. Shared helper
 checks cover RGB addition, back-facing rejection and overflow saturation. It also
 generates the real source adapters and checks source/target/cleanup hooks.
 The existing point capture/math/selector regressions and Vita syntax checks
 are separate checks, not device appearance or performance evidence.
 
 On-device: collect beside a wall/floor; confirm nearby marked environment
-models receive the colored effect, the accepted dragon/rider appearance stays
-unchanged, distant geometry keeps ordinary lighting, and all lighting returns
+models receive the colored effect, dragon/rider retain their colored normal
+directional shading beneath the point contribution, distant geometry keeps ordinary lighting, and all lighting returns
 to normal when the effect ends. Repeat while moving/rotating the camera, then
 enter/exit a menu and traverse a tunnel. Compare the same route's frame times.
 The first eight eligible models log `[EnvironmentPointLight] applied=0/1`,
