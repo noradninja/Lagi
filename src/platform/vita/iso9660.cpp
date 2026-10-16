@@ -18,6 +18,7 @@ static std::uint32_t g_physicalSectorSize = 2048;
 static std::uint32_t g_userDataOffset = 0;
 static std::uint32_t g_trackStartLba = 0;
 static bool g_mounted = false;
+static int g_selectedDisc = 0;
 
 static std::uint32_t le32(const std::uint8_t* p)
 {
@@ -57,9 +58,11 @@ static bool parse_msf(const char* s, std::uint32_t& lba)
     return true;
 }
 
-static bool parse_cue()
+static bool parse_cue(int discNumber)
 {
-    const char* dirPath = "ux0:data/lagi/Disc 1";
+    if (discNumber < 1 || discNumber > 4) return false;
+    char dirPath[64];
+    std::snprintf(dirPath, sizeof(dirPath), "ux0:data/lagi/Disc %d", discNumber);
     DIR* dir = opendir(dirPath);
     if (!dir) return false;
 
@@ -199,9 +202,11 @@ static Entry find_root_file(FILE* f, const char* wanted)
     return result;
 }
 
-bool init()
+bool mount_disc(int discNumber)
 {
+    if (discNumber < 1 || discNumber > 4) return false;
     g_mounted = false;
+    g_selectedDisc = 0;
     g_imagePath.clear();
     g_rootExtent = 0;
     g_rootSize = 0;
@@ -209,7 +214,7 @@ bool init()
     g_userDataOffset = 0;
     g_trackStartLba = 0;
 
-    if (!parse_cue())
+    if (!parse_cue(discNumber))
         return false;
 
     FILE* f = std::fopen(g_imagePath.c_str(), "rb");
@@ -234,8 +239,39 @@ bool init()
     std::fclose(f);
 
     g_mounted = g_rootExtent != 0 && g_rootSize != 0;
+    if (g_mounted) g_selectedDisc = discNumber;
     return g_mounted;
 }
+
+// The probe restores the previous mount, so checking other discs never changes
+// the image that Azel's file requests will read.
+bool disc_available(int discNumber)
+{
+    if (discNumber < 1 || discNumber > 4) return false;
+    const std::string oldPath = g_imagePath;
+    const auto oldRootExtent = g_rootExtent;
+    const auto oldRootSize = g_rootSize;
+    const auto oldPhysicalSectorSize = g_physicalSectorSize;
+    const auto oldUserDataOffset = g_userDataOffset;
+    const auto oldTrackStartLba = g_trackStartLba;
+    const bool oldMounted = g_mounted;
+    const int oldSelectedDisc = g_selectedDisc;
+
+    const bool available = mount_disc(discNumber);
+
+    g_imagePath = oldPath;
+    g_rootExtent = oldRootExtent;
+    g_rootSize = oldRootSize;
+    g_physicalSectorSize = oldPhysicalSectorSize;
+    g_userDataOffset = oldUserDataOffset;
+    g_trackStartLba = oldTrackStartLba;
+    g_mounted = oldMounted;
+    g_selectedDisc = oldSelectedDisc;
+    return available;
+}
+
+int selected_disc() { return g_selectedDisc; }
+bool init() { return mount_disc(1); }
 
 bool mounted() { return g_mounted; }
 const char* image_path() { return g_imagePath.c_str(); }
