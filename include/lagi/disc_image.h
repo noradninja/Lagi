@@ -11,6 +11,10 @@ struct FileHandle {
 };
 
 bool init();
+// Disc selection is a pre-Azel platform operation; valid numbers are 1-4.
+bool mount_disc(int discNumber);
+bool disc_available(int discNumber);
+int selected_disc();
 bool mounted();
 const char* image_path();
 bool has_file(const char* name);
