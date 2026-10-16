@@ -1,5 +1,9 @@
 # Native model projection center
 
+Hardware acceptance, 2026-10-16: the user confirms Dragon positioning is
+correct after the preview-root capture fix. This correction is retained when
+rolling back the separate tile cache, which regressed menu frame rate.
+
 ## Follow-up: missing preview-root capture (2026-10-16)
 
 The latest hardware screenshot still shows the preview right of its circle.

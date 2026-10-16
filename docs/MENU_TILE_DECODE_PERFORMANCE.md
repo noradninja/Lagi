@@ -1,5 +1,18 @@
 # Menu tile decode cost and animation rate
 
+## Hardware rejection and rollback — 2026-10-16
+
+The user reports menus dropped from 20 FPS to 15 FPS with this cache; Dragon
+positioning is now confirmed correct. The cache implementation and its tests
+are removed. The renderer is restored exactly to its pre-cache code, while
+the independent preview-root fix is preserved. The historical design and host
+results below are not evidence of a Vita performance win. A fresh log of the
+regressed build was not yet available at rollback time, so collision thrashing
+or lookup overhead remain hypotheses. Rollback performance needs hardware
+verification. No animation-counter multiplier is added.
+
+## Historical investigation (cache now reverted)
+
 The2026-10-16 hardware report shows20FPS menus, slow panel navigation and a
 miscentered Dragon preview. The updated Downloads lagi.log (13:41 local,
 1,317,479 bytes) contains55 ScenePerf rows with compose>20ms: mean compose
