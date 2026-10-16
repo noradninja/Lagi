@@ -49,6 +49,31 @@ No visible Map-menu change or complete viewer is claimed by this checkpoint.
 
 ## Checks
 
+### Whole-disc literal-owner investigation (2026-10-16)
+
+The read-only `tools/map_gate_literal_scan.cpp` scans every user-data byte
+of the663,518,016-byte Disc1 MODE1/2352 image for nearby low-RAM literals,
+including SH2 address aliases. The sole exact0024B89C hit is LBA82,
+user offset530hex: MAIN offsetC530hex at native06012530, the literal
+loaded by the already traced availability read06012440. No second direct
+literal owner was found anywhere in this image. This does **not** prove the
+flag is constant or uninitialized: an indirect/computed writer or external
+resident initialization may exist. Compressed resources, cross-sector words
+and runtime-generated addresses are not resolved by this scan. Nearby and
+unaligned hits must not be mistaken for executable cross-references.
+
+This narrows the next trace to indirect ownership/initialization rather than
+repeating exact-pointer searches; it does not authorize forcing the gate on.
+The active Map parent remains incomplete. Its field-view child, selector and
+confirmation services are not yet a complete working Map-menu integration.
+
+PowerShell after entering the VS developer environment described below:
+
+```powershell
+cl /nologo /O2 /EHsc tools/map_gate_literal_scan.cpp /Fe:../map_gate_literal_scan.exe /Fo:../map_gate_literal_scan.obj
+& ../map_gate_literal_scan.exe 'D:\Users\Noradninja\Desktop\Panzer Dragoon Saga Disc 1 of 4 (U)(Saturn)\042 Panzer Dragoon Saga Disc 1 of 4 (U).bin'
+```
+
 The host test executes the production inline logic over432 combinations of
 story bit, scene class, route, signed town comparison and field context. It
 checks route short-circuiting, null tables, native longs and malformed spans,
