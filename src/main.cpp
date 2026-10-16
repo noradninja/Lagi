@@ -40,6 +40,7 @@ int main()
             i + 1, discAvailable[i] ? "available" : "missing");
     }
 
+    lagi::platform::frontend_music::start();
     bool selectedDiscMounted = false;
     while (lagi::platform::running() && !selectedDiscMounted) {
         lagi::platform::input::update();
@@ -70,6 +71,7 @@ int main()
         }
     }
 
+    lagi::platform::frontend_music::stop();
     if (!selectedDiscMounted) {
         lagi::platform::shutdown();
         sceKernelExitProcess(0);
