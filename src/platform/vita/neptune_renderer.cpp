@@ -13911,8 +13911,142 @@ static void launcherRing(int cx, int cy, int r, int thickness,
         }
 }
 
+
+struct LauncherSprite {
+    unsigned width = 0, height = 0;
+    std::vector<std::uint32_t> rgba;
+};
+
+static LauncherSprite g_launcherSprites[10];
+static bool g_launcherAssetsChecked = false;
+static bool g_launcherAssetsReady = false;
+static constexpr const char* kLauncherSpriteNames[10] = {
+    "background", "outer_frame", "radial", "gold", "ivory",
+    "missing", "highlight", "row", "info", "legend"
+};
+
+static bool launcherLoadSprite(LauncherSprite& sprite, const char* name)
+{
+    char path[160];
+    std::snprintf(path, sizeof(path), "ux0:data/lagi/frontend/%s.rgba", name);
+    FILE* f = std::fopen(path, "rb");
+    if (!f) return false;
+    std::uint32_t dimensions[2]{};
+    const bool headerOk = std::fread(dimensions, sizeof(dimensions), 1, f) == 1;
+    if (!headerOk || dimensions[0] == 0 || dimensions[1] == 0 ||
+        dimensions[0] > 960 || dimensions[1] > 544) {
+        std::fclose(f);
+        return false;
+    }
+    sprite.width = dimensions[0];
+    sprite.height = dimensions[1];
+    const std::size_t count = static_cast<std::size_t>(sprite.width) * sprite.height;
+    sprite.rgba.resize(count);
+    const bool readOk = std::fread(sprite.rgba.data(), sizeof(std::uint32_t), count, f) == count;
+    std::fclose(f);
+    if (!readOk) sprite.rgba.clear();
+    return readOk;
+}
+
+static bool launcherLoadAssets()
+{
+    if (!g_launcherAssetsChecked) {
+        g_launcherAssetsChecked = true;
+        g_launcherAssetsReady = true;
+        for (int i = 0; i < 10; ++i) {
+            if (!launcherLoadSprite(g_launcherSprites[i], kLauncherSpriteNames[i])) {
+                logging::writef("[DiscSelector] missing/bad launcher asset %s\\n", kLauncherSpriteNames[i]);
+                g_launcherAssetsReady = false;
+                break;
+            }
+        }
+        if (g_launcherAssetsReady)
+            logging::writef("[DiscSelector] textured launcher assets loaded\\n");
+    }
+    return g_launcherAssetsReady;
+}
+
+static void launcherBlit(int asset, int dstX, int dstY)
+{
+    const LauncherSprite& s = g_launcherSprites[asset];
+    std::uint32_t* dst = g_frameBuffer[g_drawBuffer];
+    if (!dst || s.rgba.empty()) return;
+    for (int y = 0; y < static_cast<int>(s.height); ++y) {
+        const int dy = dstY + y;
+        if (dy < 0 || dy >= kHeight) continue;
+        for (int x = 0; x < static_cast<int>(s.width); ++x) {
+            const int dx = dstX + x;
+            if (dx < 0 || dx >= kWidth) continue;
+            const std::uint32_t color = s.rgba[y * s.width + x];
+            const unsigned a = color >> 24;
+            if (!a) continue;
+            std::uint32_t& pixel = dst[dy * kPitch + dx];
+            if (a == 255) {
+                pixel = color;
+            } else {
+                const unsigned inv = 255 - a;
+                const unsigned rb = ((color & 0x00FF00FFu) * a +
+                    (pixel & 0x00FF00FFu) * inv) >> 8;
+                const unsigned g = (((color >> 8) & 255u) * a +
+                    ((pixel >> 8) & 255u) * inv) / 255u;
+                // Separate 8-bit channels: no carry between neighboring channels.
+                const unsigned r = (((color) & 255u) * a +
+                    ((pixel) & 255u) * inv) / 255u;
+                const unsigned b = (((color >> 16) & 255u) * a +
+                    ((pixel >> 16) & 255u) * inv) / 255u;
+                (void)rb;
+                pixel = 0xFF000000u | (b << 16) | (g << 8) | r;
+            }
+        }
+    }
+}
+
+static void launcherTextured(const bool available[4], int selected)
+{
+    launcherBlit(0, 0, 0);   // wallpaper
+    launcherBlit(2, 16, 18); // complete circular mechanism
+    launcherBlit(1, 0, 0);   // outer carved frame
+    const int nodeX[4] = {262, 433, 262, 91};
+    const int nodeY[4] = {61, 232, 403, 232};
+    const int rowX = 550;
+    const int rowY[4] = {48, 133, 218, 303};
+    for (int i = 0; i < 4; ++i) {
+        launcherBlit(7, rowX, rowY[i]);
+        const int icon = available[i] ? (i == 0 ? 3 : 4) : 5;
+        launcherBlit(icon, nodeX[i] - 40, nodeY[i] - 40);
+        launcherBlit(icon, rowX + 6, rowY[i]);
+        if (available[i] && selected == i) {
+            launcherBlit(6, nodeX[i] - 49, nodeY[i] - 49);
+            launcherBlit(6, rowX - 3, rowY[i] - 9);
+        }
+        char label[] = "DISC 1";
+        label[5] = static_cast<char>('1' + i);
+        drawTextSmall(rowX + 100, rowY[i] + 29, label,
+            !available[i] ? 0xFF777673u :
+            selected == i ? 0xFFFFFFFFu : 0xFFD4CEC0u);
+    }
+    launcherBlit(8, 542, 386);
+    launcherBlit(9, 15, 472);
+    drawTextSmall(608, 413, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
+        0xFFFFFFFFu);
+    if (selected >= 0) {
+        char digit[] = "1";
+        digit[0] = static_cast<char>('1' + selected);
+        drawTextSmall(747, 413, digit, 0xFFFFFFFFu);
+    }
+    drawTextSmall(610, 457, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
+        0xFFE1DDD2u);
+    drawTextSmall(610, 473, "DPAD: SELECT", 0xFFE1DDD2u);
+    drawTextSmall(119, 500, "DIMMED: DISC NOT FOUND", 0xFFC3BEB4u);
+}
+
 void launcher_present(const bool available[4], int selected)
 {
+    if (launcherLoadAssets()) {
+        launcherTextured(available, selected);
+        return;
+    }
+
     // Standalone pre-Azel presentation, in native 960x544 scanout space.
     // The eventual texture atlas can replace these fallback primitives.
     fill(0xFF080B0Du);
