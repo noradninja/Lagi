@@ -37,6 +37,12 @@ void lagiAzelClearMapMessage();
 bool lagiAzelPresentMapMessage(int selected,const std::array<std::int32_t,2>& availability);
 
 struct s_workArea;
+struct LagiAzelMapConfirmationState {
+    bool ready=false,finished=false,running=false;
+    std::int32_t result=0;
+};
+s_workArea* lagiAzelCreateMapWorldConfirmation(s_workArea* parent,
+    std::shared_ptr<LagiAzelMapConfirmationState> state);
 // Inputs to MAIN06016D88. fieldRoute is the result of0601243A, not map
 // ownership; the original0024B89C gate must be bound before live use.
 struct LagiAzelMapAvailabilityInputs {

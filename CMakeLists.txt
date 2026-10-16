@@ -3390,6 +3390,7 @@ add_executable(lagi
  src/integration/lagi_map_menu_vita.cpp
  src/integration/lagi_map_message_vita.cpp
  src/integration/lagi_map_selection_vita.cpp
+ src/integration/lagi_map_confirmation_vita.cpp
  src/integration/lagi_map_resources_vita.cpp
  src/integration/lagi_map_view_vita.cpp
  src/integration/lagi_azel_field_radar.cpp
