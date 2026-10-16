@@ -3371,6 +3371,8 @@ add_executable(lagi
  ${LAGI_VDP2_RBG0_F_OBJ}
  src/platform/vita/vita_audio.cpp
  src/platform/vita/frontend_music.cpp
+ src/frontend_font.cpp
+ src/platform/vita/frontend_font_vita.cpp
  extern/Azel/ThirdParty/aosdk/eng_ssf/m68kcpu.c
  extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopac.c
  extern/Azel/ThirdParty/aosdk/eng_ssf/m68kopdm.c

@@ -2,6 +2,16 @@
 
 Lagi's disc selection is a platform frontend that runs **before** native Azel initialization. It does not reproduce Saturn disc-swap tasks or replace Azel's save/load logic.
 
+## Current status (2026-10-16)
+
+The existing layout, four medallions, controls, looping music, 0.5-second fade
+and Disc 1 boot are user-accepted at approximately 60 FPS in full resolution.
+The new authentic ASCII.CGZ frontend font preserves that layout and uses the
+same implementation for selector labels and initial Loading text. Its host
+checks and full Vita package build pass; this font revision still needs Vita
+visual/performance validation. See [Frontend PDS font](FRONTEND_PDS_FONT.md).
+The font sections below describe historical experiments, not the current path.
+
 ## Disc image layout
 
 The disc loader looks in `ux0:data/lagi/Disc 1` through `Disc 4`. Each directory contains a CUE sheet and its referenced BIN file. Folder numbering, rather than arbitrary filename ordering, determines the disc number. The runtime uses the existing lowercase `ux0:data/lagi` root; place the folders there exactly as shown.
@@ -137,11 +147,11 @@ leaves the selector silent. Diagnostics start with `[FrontendMusic]`.
 
 Repository copy convention: `assets/frontend/bgm.mp3` (user-supplied;
 optional). VPK rebuild is necessary for the new decoder code, but changing
-only the MP3 later requires no rebuild. The audio implementation has not
-been Vita hardware-tested yet.
+only the MP3 later requires no rebuild. Looping audio has since been confirmed
+on hardware by the user.
 
 
-## Authentic PDS font: source validation and preboot integration plan
+## Historical font investigation (superseded)
 
 Azel's upstream `AzelLib/VDP2.cpp` implements `loadFont()`, which reads
 `ASCII.CGZ` from the mounted disc and calls `unpackGraphicsToVDP2()` to
@@ -166,7 +176,7 @@ font behavior after Azel initializes. Do not claim that a generic substitute
 font is an authentic PDS extraction.
 
 
-## Native glyph-source text checkpoint (2026-10-16)
+## Rejected glyph-source text checkpoint (2026-10-16)
 
 The default glyph source data is already linked into Lagi from Azel's
 `common_generated.cpp` as `resetVdp2StringsData[4106]`. Azel's

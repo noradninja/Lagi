@@ -271,6 +271,32 @@ bool disc_available(int discNumber)
 }
 
 int selected_disc() { return g_selectedDisc; }
+bool read_file_from_disc(int discNumber,const char* name,
+    std::vector<std::uint8_t>& out,std::size_t maximumBytes)
+{
+    out.clear();
+    if(discNumber<1 || discNumber>4 || !name || !*name || !maximumBytes)return false;
+    struct RestoreMount {
+        std::string path=g_imagePath;
+        std::uint32_t root=g_rootExtent,size=g_rootSize,sector=g_physicalSectorSize;
+        std::uint32_t offset=g_userDataOffset,track=g_trackStartLba;
+        bool mounted=g_mounted;
+        int selected=g_selectedDisc;
+        ~RestoreMount() {
+            g_imagePath.swap(path);g_rootExtent=root;g_rootSize=size;
+            g_physicalSectorSize=sector;g_userDataOffset=offset;g_trackStartLba=track;
+            g_mounted=mounted;g_selectedDisc=selected;
+        }
+    } restore;
+    if(!mount_disc(discNumber))return false;
+    FileHandle handle;
+    if(!open_file(name,handle))return false;
+    struct Close {FileHandle& handle;~Close(){close_file(handle);}} close{handle};
+    if(!handle.size || handle.size>maximumBytes)return false;
+    out.resize(handle.size);
+    if(!read_file_at(handle,0,out.data(),out.size())) {out.clear();return false;}
+    return true;
+}
 bool init() { return mount_disc(1); }
 
 bool mounted() { return g_mounted; }

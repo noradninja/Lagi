@@ -27,4 +27,7 @@ bool read_file_at(
     void* destination,
     std::size_t bytes);
 bool read_file(const char* name, std::vector<std::uint8_t>& out);
+// Frontend-only bounded probe. Restore every mount/selection field on return.
+bool read_file_from_disc(int discNumber,const char* name,
+    std::vector<std::uint8_t>& out,std::size_t maximumBytes);
 }

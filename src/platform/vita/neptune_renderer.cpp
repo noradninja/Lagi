@@ -1,4 +1,5 @@
 #include "lagi/platform.h"
+#include "lagi/frontend_font.h"
 
 unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/debug_mesh.h"
@@ -1398,6 +1399,27 @@ static void drawTextSmall(int x, int y, const char* text, std::uint32_t color)
     }
 }
 
+static int measureFrontendText(const char* text)
+{
+    return lagi::frontend::font().ready() ? lagi::frontend::font().measure(text) :
+        (text ? static_cast<int>(std::strlen(text))*6 : 0);
+}
+
+static void drawFrontendText(int x,int y,const char* text,std::uint32_t color)
+{
+    const auto& font=lagi::frontend::font();
+    if(font.ready())font.draw(g_frameBuffer[g_drawBuffer],kWidth,kHeight,kPitch,x,y,text,color);
+    else drawTextSmall(x,y,text,color);
+}
+
+static void drawFrontendLoading()
+{
+    const auto& font=lagi::frontend::font();
+    const int height=font.ready()?lagi::frontend::LatinFont::height:7;
+    drawFrontendText(kWidth-16-measureFrontendText("Loading..."),kHeight-14-height,
+        "Loading...",0xFFFFFFFFu);
+}
+
 static void drawCharSmallToBuffer(
     std::uint32_t* buffer,
     int pitch,
@@ -2294,20 +2316,11 @@ bool init()
         g_frameBuffer[i] = static_cast<std::uint32_t*>(base);
     }
 
+    lagi::frontend::initializeFont();
     for (int i = 0; i < 2; ++i) {
         g_drawBuffer = i;
         fill(0xFF000000u);
-        static constexpr const char* kLoadingText = "Loading...";
-        static constexpr int kLoadingAdvance = 6;
-        static constexpr int kLoadingMarginX = 16;
-        static constexpr int kLoadingMarginY = 14;
-        const int loadingLength =
-            static_cast<int>(std::strlen(kLoadingText));
-        drawTextSmall(
-            kWidth - kLoadingMarginX - loadingLength * kLoadingAdvance,
-            kHeight - 23,
-            kLoadingText,
-            0xFFFFFFFFu);
+        drawFrontendLoading();
     }
     g_drawBuffer = 0;
 
@@ -13870,17 +13883,7 @@ void begin_frame()
     // status is still collected/logged, but the user sees only a black screen
     // with a small loading indicator until the first completed town frame is
     // handed to GXM. That first frame is itself held black by TwnFadeIn state.
-    static constexpr const char* kLoadingText = "Loading...";
-    static constexpr int kLoadingAdvance = 6;
-    static constexpr int kLoadingMarginX = 16;
-    static constexpr int kLoadingMarginY = 14;
-    const int loadingLength =
-        static_cast<int>(std::strlen(kLoadingText));
-    drawTextSmall(
-        kWidth - kLoadingMarginX - loadingLength * kLoadingAdvance,
-        kHeight - kLoadingMarginY,
-        kLoadingText,
-        0xFFFFFFFFu);
+    drawFrontendLoading();
 }
 
 
@@ -14181,7 +14184,7 @@ static void launcherTextured(const bool available[4], int selected)
             launcherBlitShortRow(rowX, rowY[i], 260);
             char label[] = "DISC 1";
             label[5] = static_cast<char>('1' + i);
-            drawTextSmall(rowX + 96, rowY[i] + 29, label,
+            drawFrontendText(rowX + 96, rowY[i] + 29, label,
                 selected == i ? 0xFF61DFFFu : 0xFFD4CEC0u);
         }
         // The same disc artwork is used for both states. Selected artwork
@@ -14193,16 +14196,17 @@ static void launcherTextured(const bool available[4], int selected)
                             available[i] && selected == i && icon != 3);
     }
     launcherBlit(8, 548, 395);
-    drawTextSmall(641, 428, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
+    drawFrontendText(641, 428, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
         0xFFFFFFFFu);
     if (selected >= 0) {
         char digit[] = "1";
         digit[0] = static_cast<char>('1' + selected);
-        drawTextSmall(780, 428, digit, 0xFFFFFFFFu);
+        const int digitX=std::max(780,641+measureFrontendText("CONTINUE FROM DISC "));
+        drawFrontendText(digitX, 428, digit, 0xFFFFFFFFu);
     }
-    drawTextSmall(641, 465, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
+    drawFrontendText(641, 465, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
         0xFFE1DDD2u);
-    drawTextSmall(641, 481, "DPAD / L STICK: SELECT", 0xFFE1DDD2u);
+    drawFrontendText(641, 481, "DPAD / L STICK: SELECT", 0xFFE1DDD2u);
     composed.assign(g_frameBuffer[g_drawBuffer],
                     g_frameBuffer[g_drawBuffer] + kWidth * kHeight);
     previousSelection = selected;
@@ -14252,14 +14256,14 @@ void launcher_present(const bool available[4], int selected)
     launcherRect(28, 514, 904, 4, bone);
     launcherRect(28, 42, 3, 458, bone);
     launcherRect(929, 42, 3, 458, bone);
-    drawTextSmall(52, 55, "LAGI    SELECT DISC", white);
+    drawFrontendText(52, 55, "LAGI    SELECT DISC", white);
 
     // Radial mechanism: four disc positions around the central hub.
     launcherRing(268, 289, 170, 4, bronze);
     launcherRing(268, 289, 118, 5, bronze);
     launcherRing(268, 289, 74, 12, bone);
     launcherRing(268, 289, 48, 4, bronze);
-    drawTextSmall(225, 284, "AZEL", white);
+    drawFrontendText(225, 284, "AZEL", white);
     const int nodeX[4] = {268, 418, 268, 118};
     const int nodeY[4] = {125, 289, 453, 289};
     for (int i = 0; i < 4; ++i) {
@@ -14270,7 +14274,7 @@ void launcher_present(const bool available[4], int selected)
         launcherRing(nodeX[i], nodeY[i], 31, 4,
                      active ? 0xFFB88B3Cu : bronze);
         char digit[2] = {static_cast<char>('1' + i), 0};
-        drawTextSmall(nodeX[i] - 3, nodeY[i] - 3, digit,
+        drawFrontendText(nodeX[i] - 3, nodeY[i] - 3, digit,
                       active ? white : (enabled ? bone : dim));
     }
 
@@ -14283,15 +14287,15 @@ void launcher_present(const bool available[4], int selected)
         launcherRect(535, y, 5, 62, active ? green : (enabled ? bone : dim));
         char name[] = "DISC 1";
         name[5] = static_cast<char>('1' + i);
-        drawTextSmall(562, y + 14, name, active ? white : (enabled ? bone : dim));
-        drawTextSmall(562, y + 35, enabled ? "AVAILABLE" : "NOT FOUND",
+        drawFrontendText(562, y + 14, name, active ? white : (enabled ? bone : dim));
+        drawFrontendText(562, y + 35, enabled ? "AVAILABLE" : "NOT FOUND",
                       active ? green : dim);
     }
 
     launcherRect(530, 443, 370, 2, bone);
-    drawTextSmall(540, 462, selected >= 0
+    drawFrontendText(540, 462, selected >= 0
         ? "CROSS: LOAD SELECTED DISC" : "NO VALID DISC IMAGES", white);
-    drawTextSmall(540, 484, "DPAD: SELECT AVAILABLE DISC", bone);
+    drawFrontendText(540, 484, "DPAD: SELECT AVAILABLE DISC", bone);
 }
 
 void end_frame()
