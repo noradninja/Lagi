@@ -1,5 +1,6 @@
 #include "lagi/platform.h"
 #include <psp2/ctrl.h>
+#include <cstdlib>
 
 namespace lagi::platform::input {
 
@@ -19,6 +20,8 @@ static bool g_cameraHeld = false;
 static bool g_resetScene = false;
 static bool g_prevMode = false;
 static bool g_nextMode = false;
+static int g_launcherStickDirection = -1;
+static int g_launcherStickLatch = -1;
 
 static float axis(unsigned char v)
 {
@@ -50,6 +53,19 @@ void update()
     g_analogZoom = axis(pad.ry);
     g_analogCameraX = axis(pad.rx);
     g_analogCameraY = axis(pad.ry);
+    // Launcher-only edge events: right stick maps directly to four compass
+    // positions. Hysteresis prevents drift/repeats while held in a direction.
+    const int stickX = static_cast<int>(pad.rx) - 128;
+    const int stickY = static_cast<int>(pad.ry) - 128;
+    int dir = -1; // indices are top, right, bottom, left
+    if (stickX * stickX + stickY * stickY >= 65 * 65) {
+        if (stickX >= 0 && stickX >= std::abs(stickY)) dir = 1;
+        else if (stickX < 0 && -stickX >= std::abs(stickY)) dir = 3;
+        else if (stickY < 0) dir = 0;
+        else dir = 2;
+    }
+    g_launcherStickDirection = (dir >= 0 && dir != g_launcherStickLatch) ? dir : -1;
+    g_launcherStickLatch = dir;
     g_digitalX =
         (buttons & SCE_CTRL_RIGHT ? 1 : 0) -
         (buttons & SCE_CTRL_LEFT ? 1 : 0);
@@ -91,6 +107,7 @@ void update()
     g_previousButtons = buttons;
 }
 
+int launcher_stick_direction() { return g_launcherStickDirection; }
 bool exit_requested() { return g_exit; }
 unsigned short saturn_buttons_down() { return g_saturnButtonsDown; }
 unsigned short saturn_buttons_pressed() { return g_saturnButtonsPressed; }
