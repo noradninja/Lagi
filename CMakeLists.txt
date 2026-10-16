@@ -1685,6 +1685,21 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${point_activate_old}" "${point_activate_new}" source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/fieldDragon.cpp")
+  string(REPLACE
+   "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\""
+   source_text "${source_text}")
+  # User-requested extension: retain this frame's accepted special point
+  # parameters for field environment consumers, without widening the native
+  # projection-selector lifetime or changing dragon/rider rendering.
+  set(environment_point_anchor [=[        generateLightFalloffMap(pTypedWorkArea->mCB_falloffColor0.toU32(), pTypedWorkArea->mCE_falloffColor1.toU32(), pTypedWorkArea->mD1_falloffColor2.toU32());]=])
+  string(FIND "${source_text}" "${environment_point_anchor}" environment_point_offset)
+  if(environment_point_offset LESS 0)
+   message(FATAL_ERROR "Field environment point capture setup no longer matches")
+  endif()
+  string(REPLACE "${environment_point_anchor}"
+   "${environment_point_anchor}\n        if (pTypedWorkArea->m_EB_useSpecialColor)\n            lagi::azel_bridge::capture_field_environment_point_light(); // LAGI_FIELD_ENVIRONMENT_POINT_SOURCE"
+   source_text "${source_text}")
   # Native 06074020 calls 06036034 (point transform with translation).
   # The reconstructed vector-only transform left the light in a different
   # space from submitted view/model origins, producing outside-range zeros.
@@ -1848,6 +1863,11 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE
    "                if (r14->m0_modelsOffets[depthRangeIndex])\n                {\n                    sProcessed3dModel* pModel = pTypedWorkAread->m0_memoryLayout.m0_mainMemoryBundle->get3DModel(r14->m0_modelsOffets[depthRangeIndex]);\n                    addObjectToDrawList(pModel);\n                }"
    "                if (r14->m0_modelsOffets[depthRangeIndex])\n                {\n                    const u32 lagiModelOffset = r14->m0_modelsOffets[depthRangeIndex];\n                    sProcessed3dModel* pModel = pTypedWorkAread->m0_memoryLayout.m0_mainMemoryBundle->get3DModel(lagiModelOffset);\n\n                    sMatrix4x3 lagiWorldMatrix;\n                    initMatrixToIdentity(&lagiWorldMatrix);\n                    translateMatrix(&r14->m4, &lagiWorldMatrix);\n                    rotateMatrixZYX_s16(r14->m10, &lagiWorldMatrix);\n\n                    lagi::azel_bridge::SubmissionState lagiState{};\n                    for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n                    {\n                        for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n                        {\n                            lagiState.modelMatrix[lagiRow * 4u + lagiCol] = lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n                        }\n                    }\n                    lagiState.hasModelMatrix = true;\n                    lagiState.dynamic = false;\n                    lagi::azel_bridge::capture_current_light(lagiState);\n                    // LAGI_FLD_A3_STATIC_IDENTITY\n                    lagi::azel_bridge::set_town_submission_context(\n                        -1,\n                        static_cast<std::uint32_t>(pTypedWorkAread->m14_index),\n                        static_cast<std::uint32_t>(r14->EA.m_offset),\n                        static_cast<std::uint32_t>(lagiModelOffset),\n                        lagiState);\n\n                    addObjectToDrawList(pModel);\n                }"
+   source_text "${source_text}")
+
+  string(REPLACE
+   "// LAGI_FLD_A3_STATIC_IDENTITY"
+   "lagiState.fieldEnvironment = true; // LAGI_FIELD_ENVIRONMENT_POINT_TARGET\n                    // LAGI_FLD_A3_STATIC_IDENTITY"
    source_text "${source_text}")
 
   # o_fld_a3.cpp receives several independent generated-source patches. The

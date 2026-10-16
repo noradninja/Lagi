@@ -56,6 +56,9 @@ struct SubmissionState {
     // Task-owned objects can move independently of the cell/static cache.
     // The backend still consumes the same normal Azel model submission.
     bool dynamic = false;
+    // Explicit native field-grid geometry, not inferred from texture/model IDs.
+    // May receive the frame's field special point light after native cleanup.
+    bool fieldEnvironment = false;
 };
 
 struct Vdp1UiCommand {
@@ -98,6 +101,11 @@ struct RenderSubmission {
 
 // Reset per-frame submission diagnostics before Azel task draw execution.
 void begin_frame(bool forceDynamicSubmissions = false);
+
+// User-requested environment extension of the accepted field special light.
+// Called after native point setup/color/falloff, before its normal cleanup.
+// Frame-owned: begin_frame clears it, leaving menus/towns and later frames alone.
+void capture_field_environment_point_light();
 
 // Number of model submissions observed through Azel's native render boundary
 // during the current frame.

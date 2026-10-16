@@ -1,7 +1,10 @@
-# Native point-light restoration — in progress
+# Native point-light restoration
 
-Current renderer integration remains directional-only. The portable evaluator
-is a prerequisite, not a working point-light release or hardware result.
+The user has accepted the dragon/rider point-light appearance after the
+position-transform correction, most recently on2026-10-16. Earlier rejection
+and investigation notes below are historical, not the current acceptance state.
+The newly requested environment extension is implemented but hardware-unverified;
+see `FIELD_ENVIRONMENT_POINT_LIGHT.md` for its distinct scope and checks.
 
 Original MAIN `0601FD52` subtracts view/model translation (0C/1C/2C) from
 preprocessed point XYZ, performs wrapping 64-bit squared-distance accumulation,

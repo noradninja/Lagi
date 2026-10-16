@@ -83,6 +83,13 @@ static bool g_forceDynamicSubmissions = false;
 static std::int32_t g_viewScopeMatrix[12]{};
 static bool g_nativeSceneViewValid = false;
 static std::int32_t g_nativeSceneViewMatrix[12]{};
+struct FieldEnvironmentPointLight {
+    std::int32_t params[5]{};
+    std::uint16_t color[3]{};
+    std::uint32_t falloff[3]{};
+    bool active=false;
+};
+static FieldEnvironmentPointLight g_fieldEnvironmentPointLight{};
 
 // Bounded FLD_A3 diagnostic: compare the static-grid state synthesized by the
 // generated hook with Azel's actual pCurrentMatrix/currentLightVector_M at the
@@ -140,6 +147,7 @@ static void removeViewTransform(
 
 void begin_frame(bool forceDynamicSubmissions)
 {
+    g_fieldEnvironmentPointLight={};
     g_forceDynamicSubmissions = forceDynamicSubmissions;
     g_nativeSceneViewValid = false;
     g_viewRelativeScope = false;
@@ -384,6 +392,49 @@ static void capture_native_point_light(SubmissionState& state)
             unsigned(pointLightParams[3]), unsigned(pointLightParams[4]),
             unsigned(state.lightColor[2]), unsigned(state.lightColor[1]), unsigned(state.lightColor[0]),
             unsigned(nativeMatrix[3]), unsigned(nativeMatrix[7]), unsigned(nativeMatrix[11]));
+        ++reports;
+    }
+}
+
+void capture_field_environment_point_light()
+{
+    g_fieldEnvironmentPointLight={};
+    if(!&loc_601FA9E || loc_601FA9E!=0xA11D || !&pointLightParams ||
+       !&currentLightVector_M || !&lightSetup) return;
+    std::copy(pointLightParams,pointLightParams+5,g_fieldEnvironmentPointLight.params);
+    for(unsigned axis=0;axis<3;++axis) {
+        g_fieldEnvironmentPointLight.color[axis]=currentLightVector_M.color[axis];
+        g_fieldEnvironmentPointLight.falloff[axis]=lightSetup.falloff[axis];
+    }
+    g_fieldEnvironmentPointLight.active=true;
+}
+
+static void apply_field_environment_point_light(SubmissionState& state)
+{
+    if(!state.fieldEnvironment || state.billboard || state.hasNativeModelLight ||
+       !g_fieldEnvironmentPointLight.active || !&pCurrentMatrix || !pCurrentMatrix)
+        return;
+    std::int32_t nativeMatrix[12];
+    copyMatrixRaw(*pCurrentMatrix,nativeMatrix);
+    const auto light=lagi::native_point_light(nativeMatrix,g_fieldEnvironmentPointLight.params);
+    // Unlike the dragon's authored replacement, this requested extension must
+    // not remove ordinary directional lighting from the rest of the landscape.
+    // Preserve the existing evaluator's range, quantization and model normals.
+    if(!light.outside) {
+        std::copy(light.vector.begin(),light.vector.end(),state.nativeModelLight);
+        for(unsigned axis=0;axis<3;++axis) {
+            state.lightColor[axis]=g_fieldEnvironmentPointLight.color[axis];
+            state.lightFalloff[axis]=g_fieldEnvironmentPointLight.falloff[axis];
+        }
+        state.hasNativeModelLight=true;
+        state.hasLight=true;
+    }
+    static unsigned reports=0;
+    if(reports<8) {
+        lagi::platform::logging::writef(
+            "[EnvironmentPointLight] applied=%u distance=%08X vector=%d,%d,%d\n",
+            light.outside?0u:1u,light.distance,
+            int(light.vector[0]),int(light.vector[1]),int(light.vector[2]));
         ++reports;
     }
 }
@@ -651,6 +702,7 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
         // Explicit environment contexts carry world-space geometry, but the
         // point evaluator needs the live original native matrix at this draw.
         capture_native_point_light(g_lastState);
+        apply_field_environment_point_light(g_lastState);
     } else {
         capture_runtime_state(billboard);
     }
