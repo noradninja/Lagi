@@ -14086,8 +14086,8 @@ static void launcherTextured(const bool available[4], int selected)
     launcherBlit(2, 0, 0); // radial mechanism aligned to the full canvas
     launcherBlit(1, 0, 0);   // outer carved frame
     // Positions measured from the actual mechanical sockets at native 960x544.
-    static constexpr int nodeX[4] = {275, 431, 277, 112};
-    static constexpr int nodeY[4] = {82, 266, 449, 265};
+    static constexpr int nodeX[4] = {245, 411, 247, 74};
+    static constexpr int nodeY[4] = {71, 266, 410, 265};
     const int rowX = 548;
     static constexpr int rowY[4] = {51, 138, 225, 312};
     // Populate only available entries; the radial nodes show locked state.
@@ -14106,7 +14106,7 @@ static void launcherTextured(const bool available[4], int selected)
         // receives a gold tint, rather than swapping to a different emblem.
         const int icon = !available[i] ? 5 :
             (!g_launcherSprites[10 + i].rgba.empty() ? 10 + i :
-             (i == 0 ? 3 : 4));
+             (i == 0 && selected == 0 ? 3 : 4));
         launcherBlitCentered(icon, nodeX[i], nodeY[i], 71,
                             available[i] && selected == i && icon != 3);
         if (available[i] && selected == i)
@@ -14122,7 +14122,7 @@ static void launcherTextured(const bool available[4], int selected)
     }
     drawTextSmall(641, 465, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
         0xFFE1DDD2u);
-    drawTextSmall(641, 481, "DPAD / R STICK: SELECT", 0xFFE1DDD2u);
+    drawTextSmall(641, 481, "DPAD / L STICK: SELECT", 0xFFE1DDD2u);
     composed.assign(g_frameBuffer[g_drawBuffer],
                     g_frameBuffer[g_drawBuffer] + kWidth * kHeight);
     previousSelection = selected;
