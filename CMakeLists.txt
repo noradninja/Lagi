@@ -1518,6 +1518,28 @@ void modelDrawFunction3(s_3dModel* pModel)
    "__attribute__((weak)) p_workArea createMapTask(p_workArea workArea)"
    source_text "${source_text}")
 
+  # Expose the actual native unavailable-slot task without mirroring its
+  # private C++ work-area layout in a platform adapter. The caller owns the
+  # coordinate storage until this child is destroyed.
+  string(FIND "${source_text}" "mainMenuTaskInitSub2TaskWorkArea* mainMenuTaskInitSub2(p_workArea typelessWorkArea, sMainMenuTaskInitData2* r5, u32 r6)" lagi_native_cover_factory)
+  if(lagi_native_cover_factory LESS 0)
+   message(FATAL_ERROR "Native menu unavailable-cover factory no longer matches")
+  endif()
+  string(APPEND source_text [=[
+
+// LAGI_NATIVE_MENU_COVER_BRIDGE_BEGIN
+p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
+    sMainMenuTaskInitData2* config,u32 slot,u32 style)
+{
+    if(!parent || !config || !config->m0 || !config->m4 || slot>=2 || style>=2)
+        return nullptr;
+    auto* child=mainMenuTaskInitSub2(parent,config,style);
+    if(child) child->spriteIndex=slot;
+    return child;
+}
+// LAGI_NATIVE_MENU_COVER_BRIDGE_END
+]=])
+
   # Native MAIN 06019F18 / COMMON task definition20FA0C restores the saved
   # cadence byte. The pinned upstream Delete remains an assertion-only stub.
   string(REPLACE

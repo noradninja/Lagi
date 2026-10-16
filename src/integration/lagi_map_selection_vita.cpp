@@ -4,6 +4,8 @@
 #include "kernel/menuCursor.h"
 
 void switchVdp2MenuTileToHightlighted(u32 offset,u32 width,u32 height,u32 palette);
+p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
+    sMainMenuTaskInitData2* config,u32 slot,u32 style);
 
 namespace {
 bool readSelectionData(LagiAzelMapSelectionData& data)
@@ -11,6 +13,29 @@ bool readSelectionData(LagiAzelMapSelectionData& data)
     return gCommonFile && gCommonFile->m_base==0x200000 &&
         lagiAzelReadMapSelectionData(gCommonFile->m_data,gCommonFile->m_dataSize,data);
 }
+
+struct LagiMapSelectionCoverTask : s_workAreaTemplate<LagiMapSelectionCoverTask>
+{
+    LagiAzelMapSelectionData data{};
+    sMainMenuTaskInitData2 config{};
+
+    static void Init(LagiMapSelectionCoverTask* self)
+    {
+        if(!readSelectionData(self->data)) {self->getTask()->markFinished();return;}
+        self->config.m0=&graphicEngineStatus.m40BC_layersConfig[self->data.layerIndex];
+        self->config.m4=self->data.positions.data();
+        // Native task Draw owns the artwork/palette/scroll behavior. Keep
+        // its config and coordinate storage alive until its owner is freed.
+        if(!lagiAzelCreateNativeMenuCover(self,&self->config,1,0))
+            self->getTask()->markFinished();
+    }
+
+    static const TypedTaskDefinition* getTypedTaskDefinition()
+    {
+        static const TypedTaskDefinition definition={&Init,nullptr,nullptr,nullptr};
+        return &definition;
+    }
+};
 
 struct LagiMapSelectionCursorTask : s_workAreaTemplateWithArg<LagiMapSelectionCursorTask,
     std::shared_ptr<LagiAzelMapCursorState>>
@@ -60,6 +85,11 @@ struct LagiMapSelectionCursorTask : s_workAreaTemplateWithArg<LagiMapSelectionCu
     }
 };
 } // namespace
+
+s_workArea* lagiAzelCreateMapWorldUnavailableCover(s_workArea* parent)
+{
+    return parent ? createSubTask<LagiMapSelectionCoverTask>(parent) : nullptr;
+}
 
 s_workArea* lagiAzelCreateMapSelectionCursor(s_workArea* parent,
     std::shared_ptr<LagiAzelMapCursorState> state)

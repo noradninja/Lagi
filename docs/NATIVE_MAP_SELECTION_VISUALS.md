@@ -12,6 +12,15 @@ The native layer pointer is decoded into a checked layer index; highlight
 addresses and their complete 3x3, 0x40-row-stride spans must lie in VDP2 VRAM.
 Malformed configuration refuses initialization/highlight writes.
 
+The world-choice cover service now owns a decoded configuration in a parent
+task and creates Azel's actual `mainMenuTaskInitSub2` child through a checked
+generated-source bridge. Native style0, slot1, artwork2118 and palette630 are
+retained. No private work-area layout is mirrored in the adapter. The host
+test extracts the bridge and native Init/Draw/factory from actual production
+CMake output and checks owned coordinates, scrolling and rejected inputs.
+The current Map parent still does not call this service; no visible change
+or hardware lifetime/rendering result is claimed by this dependency alone.
+
 ## Integration boundary
 
 This service is compiled but **not yet connected to the incomplete Map parent**.

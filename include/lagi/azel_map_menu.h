@@ -112,6 +112,9 @@ struct LagiAzelMapCursorState {
 s_workArea* lagiAzelCreateMapSelectionCursor(s_workArea* parent,
     std::shared_ptr<LagiAzelMapCursorState> state);
 bool lagiAzelHighlightMapSelection(int slot,bool selected);
+// MAIN06016E10: absent world choice uses native cover style0 in slot1.
+// Coordinates are copied into a parent task that owns the native child.
+s_workArea* lagiAzelCreateMapWorldUnavailableCover(s_workArea* parent);
 
 struct LagiAzelMapSelectionData {
     unsigned layerIndex=0;
