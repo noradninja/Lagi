@@ -164,3 +164,22 @@ separate from native VDP2 glyph rendering:
 No proprietary font data should be checked into Git. Preserve game-owned
 font behavior after Azel initializes. Do not claim that a generic substitute
 font is an authentic PDS extraction.
+
+
+## Native glyph-source text checkpoint (2026-10-16)
+
+The default glyph source data is already linked into Lagi from Azel's
+`common_generated.cpp` as `resetVdp2StringsData[4106]`. Azel's
+`resetVdp2StringsSub1()` chooses the 16-bit glyph rows at `pData + 8`
+when the default font type is 5. Each of the 256 character entries contains
+16 rows of 8 two-bit coverage values. The preboot renderer now reads these
+rows directly, without asking Azel to initialize VDP2 or mount a new disc.
+This preserves the **source character shapes** of the native font, but uses
+a simple coverage presentation rather than Azel's full neighboring-pixel
+outline expansion in `loadCharacterToVdp2()`.
+
+The launcher labels and initial `Loading...` text use the new 8x16
+glyph source path, with a 9-pixel advance. The existing debug 5x7 renderer
+remains intact. The precise palette, spacing, and outline treatment require
+Vita visual validation; do not describe this stage as byte-for-byte native
+font rendering. All other VDP2 font ownership remains with Azel.
