@@ -14168,7 +14168,7 @@ static void launcherTextured(const bool available[4], int selected)
     launcherBlit(1, 0, 0);   // carved frame behind the radial socket rings
     launcherBlitRadialFitted(); // complete circle fits between frame borders
     // Positions measured from the actual mechanical sockets at native 960x544.
-    static constexpr int nodeX[4] = {249, 397, 248, 104};
+    static constexpr int nodeX[4] = {248, 397, 248, 104};
     static constexpr int nodeY[4] = {98, 249, 381, 249};
     const int rowX = 548;
     static constexpr int rowY[4] = {58, 123, 188, 253};
