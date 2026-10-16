@@ -86,7 +86,6 @@ static std::int32_t g_nativeSceneViewMatrix[12]{};
 struct FieldEnvironmentPointLight {
     std::int32_t params[5]{};
     std::uint16_t color[3]{};
-    std::uint32_t falloff[3]{};
     bool active=false;
 };
 static FieldEnvironmentPointLight g_fieldEnvironmentPointLight{};
@@ -400,11 +399,10 @@ void capture_field_environment_point_light()
 {
     g_fieldEnvironmentPointLight={};
     if(!&loc_601FA9E || loc_601FA9E!=0xA11D || !&pointLightParams ||
-       !&currentLightVector_M || !&lightSetup) return;
+       !&currentLightVector_M) return;
     std::copy(pointLightParams,pointLightParams+5,g_fieldEnvironmentPointLight.params);
     for(unsigned axis=0;axis<3;++axis) {
         g_fieldEnvironmentPointLight.color[axis]=currentLightVector_M.color[axis];
-        g_fieldEnvironmentPointLight.falloff[axis]=lightSetup.falloff[axis];
     }
     g_fieldEnvironmentPointLight.active=true;
 }
@@ -417,17 +415,14 @@ static void apply_field_environment_point_light(SubmissionState& state)
     std::int32_t nativeMatrix[12];
     copyMatrixRaw(*pCurrentMatrix,nativeMatrix);
     const auto light=lagi::native_point_light(nativeMatrix,g_fieldEnvironmentPointLight.params);
-    // Unlike the dragon's authored replacement, this requested extension must
-    // not remove ordinary directional lighting from the rest of the landscape.
-    // Preserve the existing evaluator's range, quantization and model normals.
+    // Keep ordinary directional/ambient/material lighting. The additional
+    // point contributes only positive diffuse light, before final quantization.
     if(!light.outside) {
-        std::copy(light.vector.begin(),light.vector.end(),state.nativeModelLight);
+        std::copy(light.vector.begin(),light.vector.end(),state.additionalLight.vector);
         for(unsigned axis=0;axis<3;++axis) {
-            state.lightColor[axis]=g_fieldEnvironmentPointLight.color[axis];
-            state.lightFalloff[axis]=g_fieldEnvironmentPointLight.falloff[axis];
+            state.additionalLight.color[axis]=g_fieldEnvironmentPointLight.color[axis];
         }
-        state.hasNativeModelLight=true;
-        state.hasLight=true;
+        state.additionalLight.active=true;
     }
     static unsigned reports=0;
     if(reports<8) {

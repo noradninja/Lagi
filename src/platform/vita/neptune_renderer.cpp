@@ -345,6 +345,7 @@ static std::vector<std::uint16_t> g_edgeShadowTownTextureIndices;
 static azel::BasicWingDebugMesh g_liveTownCpuMesh{};
 
 struct LivePolygonLightState {
+    lagi::AdditionalModelLight additionalLight{};
     std::int32_t vector[3]{};
     std::uint16_t color[3]{};
     std::uint32_t falloff[3]{};
@@ -6999,6 +7000,7 @@ static void appendLiveTownModel(
     }
 
     LivePolygonLightState polygonLight{};
+    polygonLight.additionalLight=state.additionalLight;
     if (state.hasLight) {
         // Match Azel's renderer: rotate the captured camera/world-space light
         // into model space once per submission. This is algebraically the
@@ -7340,6 +7342,7 @@ static void refreshLiveTownStaticLighting()
         }
 
         LivePolygonLightState light{};
+        light.additionalLight=submission.state.additionalLight;
         if (submission.state.hasLight) {
             // Static geometry keeps model-space normals across cache hits.
             // Refresh the current Azel light in that same model space instead
@@ -14025,6 +14028,8 @@ static void updateLiveTownAzelLighting()
                 accum[1] += light.color[1] * dotHi;
                 accum[2] += light.color[0] * dotHi;
             }
+
+            lagi::accumulate_additional_model_light(light.additionalLight,lighting.normal,accum);
 
             for (unsigned channel = 0; channel < 3; ++channel) {
                 const int gouraud5 =

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include <memory>
+#include "lagi/lagi_additive_light.h"
 
 struct sProcessed3dModel;
 
@@ -41,6 +42,7 @@ struct SubmissionState {
     // through the native view/model matrix; never rotate it a second time.
     std::int16_t nativeModelLight[3]{};
     bool hasNativeModelLight = false;
+    AdditionalModelLight additionalLight{};
     std::uint16_t lightColor[3]{};
     std::uint32_t lightFalloff[3]{};
 

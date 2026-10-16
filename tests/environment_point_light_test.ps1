@@ -15,6 +15,8 @@ foreach($entry in @(
 if(!$source.Contains('capture_native_point_light(g_lastState);'+"`r`n"+'        apply_field_environment_point_light(g_lastState);') -and
  !$source.Contains('capture_native_point_light(g_lastState);'+"`n"+'        apply_field_environment_point_light(g_lastState);')){throw 'Explicit environment submission hook missing'}
 $renderer=Get-Content -Raw "$repo/src/platform/vita/neptune_renderer.cpp"
+if(!$renderer.Contains('lagi::accumulate_additional_model_light(light.additionalLight,lighting.normal,accum);') -or
+ !$renderer.Contains('polygonLight.additionalLight=state.additionalLight;')){throw 'Shared additive corner shading or dynamic payload hook missing'}
 foreach($entry in @(
  @('struct LivePolygonLightState {','static std::vector<LivePolygonLightState>','environment_polygon_type.inc'),
  @('static void transformLiveLightVectorToModelSpace(','static void appendLiveTownModel(','environment_consumer.inc'))){
