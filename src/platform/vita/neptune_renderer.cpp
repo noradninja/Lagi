@@ -14168,10 +14168,10 @@ static void launcherTextured(const bool available[4], int selected)
     launcherBlit(1, 0, 0);   // carved frame behind the radial socket rings
     launcherBlitRadialFitted(); // complete circle fits between frame borders
     // Positions measured from the actual mechanical sockets at native 960x544.
-    static constexpr int nodeX[4] = {250, 397, 250, 104};
-    static constexpr int nodeY[4] = {108, 249, 385, 249};
+    static constexpr int nodeX[4] = {247, 397, 247, 104};
+    static constexpr int nodeY[4] = {104, 249, 382, 249};
     const int rowX = 548;
-    static constexpr int rowY[4] = {67, 141, 215, 289};
+    static constexpr int rowY[4] = {67, 132, 197, 262};
     // Populate only available entries; the radial nodes show locked state.
     for (int i = 0; i < 4; ++i) {
         if (available[i]) {
