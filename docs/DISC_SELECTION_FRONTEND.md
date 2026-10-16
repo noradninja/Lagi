@@ -68,3 +68,27 @@ Suggested acceptance tests: verify all assets load; inspect alignment and
 visual legibility; test only Disc 1 present; test multiple discs and selection;
 confirm Cross mounts the chosen disc and transitions to native Azel; record
 launcher FPS for a later GXM optimization pass.
+
+
+## 2026-10-16 visual and handoff checkpoint
+
+The first textured hardware run showed correct image loading and successful Disc 1 boot, but
+around 3 FPS in the CPU alpha-composited selector. The right-side plaque icons were
+redundant, the radial selected medallion did not reliably turn gold, and the legend and
+info text need further optical alignment.
+
+The next source revision:
+- moves the golden medallion and green ring exclusively to the selected **radial** node;
+- keeps right-hand rows as informational text, with bright selected labels and muted
+  missing labels;
+- corrects the navigation wrap formula;
+- caches the static composed launcher until selection or availability changes, reducing
+  idle CPU work;
+- introduces a 30-vblank fade of the last presented launcher image before Azel starts;
+- adds line-separated selection and fade logs.
+
+**Not yet complete:** moving the launcher to native GXM textured quads, replacing the
+startup/Loading... text with the authentic PDS font, and repairing the bottom plaque
+source geometry rather than only adjusting placement. These are independent follow-up
+integration steps. The current CPU caching is a temporary performance mitigation, **not**
+a substitute for native GXM. Hardware testing is required for this checkpoint.
