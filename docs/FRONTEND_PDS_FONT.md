@@ -38,10 +38,15 @@ the first Loading frame; repeated calls, including failure, perform no I/O.
 No compressed font, decoded glyph atlas or game-derived preview is committed
 or packaged. Users must supply their own game data.
 
-Artwork, medallion positions, row positions, input, music, fade and boot flow
-are unchanged. The existing selector frame cache still handles idle frames;
+Medallion positions, row positions, input, music, fade and boot flow
+are unchanged. Following hardware font acceptance, upper row labels have a
+14-pixel additional inset after the oval fittings. The lower-right plaque uses
+a 3:2 vertical aspect correction (400x180 at 548,330) to restore its round
+fittings; its text is independently placed at y=389,435,455 without scaling
+the glyphs. The revised layout was host-preview checked; device validation is
+pending. The existing selector frame cache still handles idle frames;
 no per-frame font loading or allocations are introduced. Label anchors remain
-unchanged; the selected-disc digit follows the measured prefix without overlap
+unchanged except for the requested row/plaque spacing; the selected-disc digit follows the measured prefix without overlap
 (the diagnostic fallback retains its old digit position). Loading uses the same
 measured font with a 16-pixel right margin and 14-pixel bottom margin.
 

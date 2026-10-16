@@ -13984,18 +13984,20 @@ static bool launcherLoadAssets()
     return g_launcherAssetsReady;
 }
 
-static void launcherBlit(int asset, int dstX, int dstY)
+static void launcherBlit(int asset, int dstX, int dstY, int drawHeight = 0)
 {
     const LauncherSprite& s = g_launcherSprites[asset];
     std::uint32_t* dst = g_frameBuffer[g_drawBuffer];
     if (!dst || s.rgba.empty()) return;
-    for (int y = 0; y < static_cast<int>(s.height); ++y) {
+    if (drawHeight <= 0) drawHeight = static_cast<int>(s.height);
+    for (int y = 0; y < drawHeight; ++y) {
+        const int sourceY = y * static_cast<int>(s.height) / drawHeight;
         const int dy = dstY + y;
         if (dy < 0 || dy >= kHeight) continue;
         for (int x = 0; x < static_cast<int>(s.width); ++x) {
             const int dx = dstX + x;
             if (dx < 0 || dx >= kWidth) continue;
-            const std::uint32_t color = s.rgba[y * s.width + x];
+            const std::uint32_t color = s.rgba[sourceY * s.width + x];
             const unsigned a = color >> 24;
             if (!a) continue;
             std::uint32_t& pixel = dst[dy * kPitch + dx];
@@ -14184,7 +14186,7 @@ static void launcherTextured(const bool available[4], int selected)
             launcherBlitShortRow(rowX, rowY[i], 260);
             char label[] = "DISC 1";
             label[5] = static_cast<char>('1' + i);
-            drawFrontendText(rowX + 96, rowY[i] + 29, label,
+            drawFrontendText(rowX + 110, rowY[i] + 29, label,
                 selected == i ? 0xFF61DFFFu : 0xFFD4CEC0u);
         }
         // The same disc artwork is used for both states. Selected artwork
@@ -14195,18 +14197,20 @@ static void launcherTextured(const bool available[4], int selected)
         launcherBlitCentered(icon, nodeX[i], nodeY[i], 71,
                             available[i] && selected == i && icon != 3);
     }
-    launcherBlit(8, 548, 395);
-    drawFrontendText(641, 428, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
+    // The source plaque is vertically compressed: restore its round fittings
+    // with a 3:2 vertical correction, independently of the unscaled font.
+    launcherBlit(8, 548, 330, 180);
+    drawFrontendText(641, 389, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
         0xFFFFFFFFu);
     if (selected >= 0) {
         char digit[] = "1";
         digit[0] = static_cast<char>('1' + selected);
         const int digitX=std::max(780,641+measureFrontendText("CONTINUE FROM DISC "));
-        drawFrontendText(digitX, 428, digit, 0xFFFFFFFFu);
+        drawFrontendText(digitX, 389, digit, 0xFFFFFFFFu);
     }
-    drawFrontendText(641, 465, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
+    drawFrontendText(641, 435, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
         0xFFE1DDD2u);
-    drawFrontendText(641, 481, "DPAD / L STICK: SELECT", 0xFFE1DDD2u);
+    drawFrontendText(641, 455, "DPAD / L STICK: SELECT", 0xFFE1DDD2u);
     composed.assign(g_frameBuffer[g_drawBuffer],
                     g_frameBuffer[g_drawBuffer] + kWidth * kHeight);
     previousSelection = selected;
