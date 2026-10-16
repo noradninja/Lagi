@@ -81,12 +81,12 @@ int main()
 
     // A 30-vblank fade (~0.5 seconds at 60 Hz) masks the launcher-to-
     // native-loading-screen handoff. No Azel simulation occurs during it.
-    lagi::platform::logging::writef("[DiscSelector] fade start (30 vblanks)\\n");
+    lagi::platform::logging::writef("[DiscSelector] fade start (30 vblanks)\n");
     for (int frame = 0; frame <= 30; ++frame) {
         lagi::platform::renderer::launcher_fade(frame, 30);
         lagi::platform::end_frame();
     }
-    lagi::platform::logging::writef("[DiscSelector] fade complete; initialize Azel\\n");
+    lagi::platform::logging::writef("[DiscSelector] fade complete; initialize Azel\n");
 
     if (!lagi::azel::runtime_init()) {
         lagi::platform::logging::writef(
