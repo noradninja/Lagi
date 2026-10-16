@@ -14001,40 +14001,63 @@ static void launcherBlit(int asset, int dstX, int dstY)
 static void launcherTextured(const bool available[4], int selected)
 {
     launcherBlit(0, 0, 0);   // wallpaper
-    launcherBlit(2, 16, 18); // complete circular mechanism
+    launcherBlit(2, 0, 0); // radial mechanism aligned to the full canvas
     launcherBlit(1, 0, 0);   // outer carved frame
-    const int nodeX[4] = {262, 436, 262, 75};
-    const int nodeY[4] = {73, 260, 438, 260};
-    const int rowX = 550;
-    const int rowY[4] = {48, 133, 218, 303};
+    const int nodeX[4] = {276, 438, 276, 112};
+    const int nodeY[4] = {80, 267, 456, 267};
+    const int rowX = 548;
+    const int rowY[4] = {51, 138, 225, 312};
     for (int i = 0; i < 4; ++i) {
         launcherBlit(7, rowX, rowY[i]);
-        const int icon = available[i] ? (i == 0 ? 3 : 4) : 5;
+        const int icon = !available[i] ? 5 : (selected == i ? 3 : 4);
         launcherBlit(icon, nodeX[i] - 40, nodeY[i] - 40);
-        launcherBlit(icon, rowX + 6, rowY[i]);
+        // Right-hand plaques are status labels, not a second selector.
         if (available[i] && selected == i) {
             launcherBlit(6, nodeX[i] - 49, nodeY[i] - 49);
-            launcherBlit(6, rowX - 3, rowY[i] - 9);
+
         }
         char label[] = "DISC 1";
         label[5] = static_cast<char>('1' + i);
-        drawTextSmall(rowX + 100, rowY[i] + 29, label,
+        drawTextSmall(rowX + 96, rowY[i] + 29, label,
             !available[i] ? 0xFF777673u :
             selected == i ? 0xFFFFFFFFu : 0xFFD4CEC0u);
     }
-    launcherBlit(8, 542, 386);
-    launcherBlit(9, 15, 472);
-    drawTextSmall(608, 413, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
+    launcherBlit(8, 548, 395);
+    launcherBlit(9, 16, 476);
+    drawTextSmall(641, 428, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
         0xFFFFFFFFu);
     if (selected >= 0) {
         char digit[] = "1";
         digit[0] = static_cast<char>('1' + selected);
-        drawTextSmall(747, 413, digit, 0xFFFFFFFFu);
+        drawTextSmall(780, 428, digit, 0xFFFFFFFFu);
     }
-    drawTextSmall(610, 457, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
+    drawTextSmall(641, 465, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
         0xFFE1DDD2u);
-    drawTextSmall(610, 473, "DPAD: SELECT", 0xFFE1DDD2u);
-    drawTextSmall(119, 500, "DIMMED: DISC NOT FOUND", 0xFFC3BEB4u);
+    drawTextSmall(641, 481, "DPAD: SELECT", 0xFFE1DDD2u);
+    drawTextSmall(140, 508, "DIMMED: DISC NOT FOUND", 0xFFC3BEB4u);
+}
+
+// Capture the last presented launcher frame once, then darken it over thirty
+// vblanks. Avoid re-compositing the large art textures during the fade.
+void launcher_fade(int frame, int frames)
+{
+    static std::vector<std::uint32_t> frozen;
+    if (frames <= 0 || !g_frameBuffer[g_drawBuffer]) return;
+    if (frame == 0 || frozen.size() != static_cast<std::size_t>(kWidth * kHeight)) {
+        frozen.assign(g_frameBuffer[g_drawBuffer ^ 1],
+                      g_frameBuffer[g_drawBuffer ^ 1] + kWidth * kHeight);
+    }
+    const unsigned brightness = static_cast<unsigned>(
+        std::max(0, frames - std::min(frame, frames)) * 255 / frames);
+    std::uint32_t* out = g_frameBuffer[g_drawBuffer];
+    for (std::size_t i = 0; i < frozen.size(); ++i) {
+        const std::uint32_t px = frozen[i];
+        const unsigned r = (px & 255u) * brightness / 255u;
+        const unsigned g = ((px >> 8) & 255u) * brightness / 255u;
+        const unsigned b = ((px >> 16) & 255u) * brightness / 255u;
+        out[i] = 0xFF000000u | r | (g << 8) | (b << 16);
+    }
+    if (frame == frames) frozen.clear();
 }
 
 void launcher_present(const bool available[4], int selected)
