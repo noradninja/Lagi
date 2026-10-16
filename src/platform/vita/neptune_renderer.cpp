@@ -13917,7 +13917,7 @@ struct LauncherSprite {
     std::vector<std::uint32_t> rgba;
 };
 
-static LauncherSprite g_launcherSprites[10];
+static LauncherSprite g_launcherSprites[14];
 static bool g_launcherAssetsChecked = false;
 static bool g_launcherAssetsReady = false;
 static constexpr const char* kLauncherSpriteNames[10] = {
@@ -13960,8 +13960,14 @@ static bool launcherLoadAssets()
                 break;
             }
         }
-        if (g_launcherAssetsReady)
+        if (g_launcherAssetsReady) {
+            for (int i = 0; i < 4; ++i) {
+                char name[16];
+                std::snprintf(name, sizeof(name), "disc_%d", i + 1);
+                launcherLoadSprite(g_launcherSprites[10 + i], name);
+            }
             logging::writef("[DiscSelector] textured launcher assets loaded\\n");
+        }
     }
     return g_launcherAssetsReady;
 }
@@ -14098,9 +14104,11 @@ static void launcherTextured(const bool available[4], int selected)
         }
         // The same disc artwork is used for both states. Selected artwork
         // receives a gold tint, rather than swapping to a different emblem.
-        const int icon = available[i] ? (i == 0 ? 3 : 4) : 5;
+        const int icon = !available[i] ? 5 :
+            (!g_launcherSprites[10 + i].rgba.empty() ? 10 + i :
+             (i == 0 ? 3 : 4));
         launcherBlitCentered(icon, nodeX[i], nodeY[i], 71,
-                            available[i] && selected == i && i != 0);
+                            available[i] && selected == i && icon != 3);
         if (available[i] && selected == i)
             launcherBlitCentered(6, nodeX[i], nodeY[i], 87);
     }
