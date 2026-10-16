@@ -7,6 +7,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/lagi_screen_depth.h"
 #include "lagi/lagi_projection_offset.h"
+#include "lagi/lagi_menu_tile_cache.h"
 #include "lagi/lagi_vdp1_quad_geometry.h"
 #include "lagi/lagi_live_model_adapter.h"
 #include "neptune_texture_pool.h"
@@ -1657,6 +1658,31 @@ static std::uint32_t decodeVdp2Chsz1Pixel(
     unsigned int caos,
     unsigned int supplementalCharacterName);
 
+static std::uint32_t decodeSaveMenuCharacter(std::uint16_t patternName,int x,int y);
+static lagi::MenuTileCache<> g_menuTileCache;
+
+static std::uint32_t cachedMenuCharacter(std::uint16_t pattern,int x,int y,bool save)
+{
+    const auto* tile=g_menuTileCache.tile(std::uint32_t(pattern)|(save?0x10000u:0u),[&]() {
+        const unsigned character=save ? (pattern&0xFFFu)*4 : ((pattern&0x3FFu)*4)|(12u<<10);
+        const unsigned palette=save ? 5u*256+((pattern&0x7000u)>>4) : 6u*256+((pattern&0xF000u)>>8);
+        const std::size_t chars=std::size_t(character)*32,pal=std::size_t(palette)*2;
+        lagi::MenuTileSources sources;
+        if(chars<kVdp2TextSnapshotBytes) {
+            sources.characters=g_vdp2TextVram+chars;
+            sources.characterBytes=std::min<std::size_t>(save?256:128,kVdp2TextSnapshotBytes-chars);
+        }
+        if(pal<kVdp2CramSnapshotBytes) {
+            sources.palette=g_vdp2Cram+pal;
+            sources.paletteBytes=std::min<std::size_t>(save?512:32,kVdp2CramSnapshotBytes-pal);
+        }
+        return sources;
+    },[&](unsigned px,unsigned py) {
+        return save ? decodeSaveMenuCharacter(pattern,px,py) : decodeVdp2Chsz1Pixel(pattern,px,py,6u,12u);
+    });
+    return tile ? tile[(y&15)*16+(x&15)] : 0;
+}
+
 static std::uint32_t decodeStatusMenuNbgPixel(
     std::size_t mapBase,
     int logicalX,
@@ -1685,12 +1711,7 @@ static std::uint32_t decodeStatusMenuNbgPixel(
     // setupVdp2ForMenu(): CHCN=0, CHSZ=1, PNB=1, CNSM=0,
     // SCN=12, CAOS=6.
     // Use the same proven 16x16 character/flip decoder as Town NBG1.
-    return decodeVdp2Chsz1Pixel(
-        patternName,
-        mapX & 15,
-        mapY & 15,
-        6u,
-        12u);
+    return cachedMenuCharacter(patternName,mapX&15,mapY&15,false);
 }
 
 static std::uint32_t decodeSaveMenuNbgPixel(
@@ -1714,8 +1735,11 @@ static std::uint32_t decodeSaveMenuNbgPixel(
 
     const std::uint16_t patternName =
         readVdp2Be16(g_vdp2TextVram, mapAddress);
-    int x = mapX & 15;
-    int y = mapY & 15;
+    return cachedMenuCharacter(patternName,mapX&15,mapY&15,true);
+}
+
+static std::uint32_t decodeSaveMenuCharacter(std::uint16_t patternName,int x,int y)
+{
 
     // loadSaveBackground(): CHCN=1, CHSZ=1, PNB=1, CNSM=1,
     // SCN=0, CAOS=5. This mirrors sampleTileAtCoordinate()'s native
@@ -1831,6 +1855,7 @@ static void drawAzelMenuVdp2Gpu(bool textOnly = false)
     }
     auto* pixels = textOnly ? g_vdp2TextLayerPixels : g_vdp2MenuBackgroundPixels;
     auto* texture = textOnly ? &g_vdp2TextLayerTexture : &g_vdp2MenuBackgroundTexture;
+    if(!textOnly)g_menuTileCache.beginFrame();
     if (textOnly) {
         std::memset(pixels, 0, kVdp2TextLayerWidth * kVdp2TextLayerHeight * sizeof(std::uint32_t));
         overlayAzelTextPlane(g_vdp2MenuScroll[4], g_vdp2MenuScroll[5], pixels);
@@ -13515,7 +13540,7 @@ static void renderBasicWingViewer()
             "gourIndex=%u gourDraw=%u clear=%u begin=%u submit=%u compose=%u "
             "cpuprep=%u gxmwait=%u gxmend=%u gxmfinish=%u "
             "render=%u polys=%u verts=%u "
-            "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u\n",
+            "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u menuTiles=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -13543,7 +13568,8 @@ static void renderBasicWingViewer()
             g_sceneRbg0Enabled ? 1u : 0u,
             g_profileRbgPrepareUs,
             g_profileRbgResolveUs,
-            g_profileRbgRawUpdatedBytes);
+            g_profileRbgRawUpdatedBytes,
+            (g_vdp2MenuId || g_vdp2SaveLayout) ? g_menuTileCache.decodedTiles() : 0u);
     }
 
     if (g_showThreadTimingOsd) {
