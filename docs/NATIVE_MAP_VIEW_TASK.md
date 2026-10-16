@@ -13,7 +13,8 @@ and a retained completion object. It copies context/patterns at Init. Thus
 the original source buffers cannot become dangling when a loader releases
 its temporary memory. The parent must retain resource/graphics ownership
 until its view child has been deleted. A shared status object reports setup
-and completed cleanup without requiring parent dereference of a freed task.
+and the native task-finished observation without requiring parent dereference
+of a freed task. A finished status does not prove Delete has already run.
 
 The task implements all original phases0..7:
 
@@ -34,7 +35,7 @@ The task implements all original phases0..7:
   eight-Draw wait followed by an extra snap.
 - B initiates the native16-Draw close, hides the marker on close setup,
   reaches ratio31, then finishes. Delete restores native menu priorities
-  before reporting completed cleanup to the parent.
+  after the finished state has already become visible to the parent.
 
 Boundary arrows read the original four ten-byte COMMON records at20E8BC,
 including their CMDCTRL texture-flip bits. Object markers use the existing
@@ -88,4 +89,3 @@ task flag. Production-body host tests verify close completion is visible
 before priority restoration and invalid context/bounds finish immediately.
 Vita syntax passes. The full parent hookup and on-device Map validation
 remain unfinished; this does not alter the current menu performance-test path.
-
