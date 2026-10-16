@@ -287,9 +287,9 @@ bool runtime_init()
     }
     std::printf("[Azel] Saturn memory reader smoke test passed\n");
 
-    if (!lagi::disc::init()) {
-        std::printf("[Disc] no valid ISO9660 image found in ux0:data/lagi\n");
-        lagi::platform::renderer::failure("[FAIL] DISC 1 CUE/BIN MOUNT");
+    if (!lagi::disc::mounted()) {
+        std::printf("[Disc] no selected ISO9660 image mounted\n");
+        lagi::platform::renderer::failure("[FAIL] SELECTED CUE/BIN MOUNT");
         return false;
     }
 
