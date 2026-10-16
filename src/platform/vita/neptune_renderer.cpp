@@ -14098,6 +14098,47 @@ static void launcherBlitRadialFitted()
     }
 }
 
+// Narrow right-hand plaques without squashing their rounded end caps.
+// The left ornamental ring and the right tapered terminus retain original
+// pixel dimensions; only the center bar is shortened.
+static void launcherBlitShortRow(int dstX, int dstY, int maxWidth)
+{
+    const LauncherSprite& sprite = g_launcherSprites[7];
+    if (sprite.rgba.empty() || !sprite.width || !sprite.height) return;
+    const int sourceWidth = static_cast<int>(sprite.width);
+    const int width = std::min(sourceWidth, maxWidth);
+    if (width <= 0) return;
+    const int leftCap = std::min(92, sourceWidth / 3);
+    const int rightCap = std::min(66, sourceWidth / 4);
+    const int srcMiddle = std::max(1, sourceWidth - leftCap - rightCap);
+    const int dstMiddle = std::max(1, width - leftCap - rightCap);
+    std::uint32_t* output = g_frameBuffer[g_drawBuffer];
+    if (!output) return;
+    for (unsigned y = 0; y < sprite.height; ++y) {
+        const int py = dstY + static_cast<int>(y);
+        if (py < 0 || py >= kHeight) continue;
+        for (int x = 0; x < width; ++x) {
+            const int px = dstX + x;
+            if (px < 0 || px >= kWidth) continue;
+            const int sx = x < leftCap ? x :
+                (x >= width - rightCap ? sourceWidth - (width - x) :
+                 leftCap + (x - leftCap) * srcMiddle / dstMiddle);
+            const std::uint32_t color = sprite.rgba[y * sprite.width + sx];
+            const unsigned alpha = color >> 24;
+            if (!alpha) continue;
+            std::uint32_t& dst = output[py * kPitch + px];
+            if (alpha == 255) { dst = color; continue; }
+            const unsigned inv = 255u - alpha;
+            const unsigned r = ((color & 255u) * alpha + (dst & 255u) * inv) / 255u;
+            const unsigned g = (((color >> 8) & 255u) * alpha +
+                                ((dst >> 8) & 255u) * inv) / 255u;
+            const unsigned b = (((color >> 16) & 255u) * alpha +
+                                ((dst >> 16) & 255u) * inv) / 255u;
+            dst = 0xFF000000u | (b << 16) | (g << 8) | r;
+        }
+    }
+}
+
 static void launcherTextured(const bool available[4], int selected)
 {
     // Static screens are identical until selection/availability changes.
@@ -14128,7 +14169,7 @@ static void launcherTextured(const bool available[4], int selected)
             // Fill the plaque's hollow medallion inset before drawing it:
             // otherwise the busy patterned wallpaper shows through the opening.
             launcherRect(rowX + 6, rowY[i] + 8, 75, 60, 0xFF15130Fu);
-            launcherBlit(7, rowX, rowY[i]);
+            launcherBlitShortRow(rowX, rowY[i], 325);
             char label[] = "DISC 1";
             label[5] = static_cast<char>('1' + i);
             drawTextSmall(rowX + 96, rowY[i] + 29, label,
