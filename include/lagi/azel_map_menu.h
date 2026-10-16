@@ -165,6 +165,7 @@ inline bool lagiAzelReadMapSelectionData(const std::uint8_t* common,std::size_t 
 
 struct LagiAzelMapViewStatus {
     bool setupSucceeded=false;
+    // Mirrors task-finished visibility, not proof that Delete already ran.
     bool finished=false;
 };
 struct LagiAzelMapViewSource {

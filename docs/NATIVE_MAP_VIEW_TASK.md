@@ -75,3 +75,17 @@ It does not yet construct this view child or replace the placeholder parent.
 The view now binds to validated live native field/slot/descriptor state rather
 than requiring a fabricated subfield count (`NATIVE_MAP_CONTEXT_BINDING.md`).
 Arbitrary indexed service callers retain their original count checks.
+# Parent completion observation (2026-10-16)
+
+MAIN060178B6..060178C4 reads the child task header's finished bit, not
+completion of its Delete callback. The portable view status now becomes
+finished at the same point as `markFinished`, including invalid-init paths.
+Priority restoration and task cleanup remain in Delete; `finished` does not
+mean those side effects have already occurred. Delete still publishes a
+finished status for external teardown. This prevents a future parent hookup
+from adding a frame solely because it waits for deletion instead of the native
+task flag. Production-body host tests verify close completion is visible
+before priority restoration and invalid context/bounds finish immediately.
+Vita syntax passes. The full parent hookup and on-device Map validation
+remain unfinished; this does not alter the current menu performance-test path.
+

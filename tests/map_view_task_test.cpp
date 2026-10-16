@@ -120,17 +120,19 @@ int main()
     const auto before=task.centerX;draw(task);assert(task.phase==3 && task.centerX==before && sounds.back()==1);
     input={};
     for(int remaining=15;remaining>=0;--remaining){assert(draw(task)==0);assert((regs.m10A_CCRNB&31)==31-remaining*2);}
-    assert(task.getTask()->finished && !source.status->finished);
+    assert(task.getTask()->finished && source.status->finished && restores==0);
     LagiFieldMapViewTask::Delete(&task);assert(source.status->finished && restores==1);delete raw;
     source.resourcesReady=false;assert(!lagiAzelCreateFieldMapView(&parent,source));
     source.resourcesReady=true;source.patterns[0]=0x4A;source.status=std::make_shared<LagiAzelMapViewStatus>();
     source.context.descriptor.presentation={10,0,0,20};
     raw=lagiAzelCreateFieldMapView(&parent,source);assert(raw && raw->getTask()->finished);
+    assert(source.status->finished && !source.status->setupSucceeded);
     LagiFieldMapViewTask::Delete(static_cast<LagiFieldMapViewTask*>(raw));delete raw;
     assert(source.status->finished && !source.status->setupSucceeded);
     source.context.descriptor.presentation={0,0,20,20};
     source.status=std::make_shared<LagiAzelMapViewStatus>();contextCurrent=false;
     raw=lagiAzelCreateFieldMapView(&parent,source);assert(raw && raw->getTask()->finished);
+    assert(source.status->finished && !source.status->setupSucceeded);
     LagiFieldMapViewTask::Delete(static_cast<LagiFieldMapViewTask*>(raw));delete raw;
     assert(source.status->finished && !source.status->setupSucceeded);
     std::puts("PASS: production Map view task reveal/pan/cancel/close, native arrow packets, owned buffers, shared input feedback and completion lifetime (host mocks; not Vita rendering)");

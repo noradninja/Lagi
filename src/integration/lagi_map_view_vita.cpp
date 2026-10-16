@@ -64,7 +64,7 @@ struct LagiFieldMapViewTask : s_workAreaTemplateWithArg<LagiFieldMapViewTask,con
 
     static void Init(LagiFieldMapViewTask* self,const LagiAzelMapViewSource* input)
     {
-        if(!input) {self->getTask()->markFinished();return;}
+        if(!input) {self->finish();return;}
         self->source=*input;
         if(self->source.status) *self->source.status={};
         const auto& descriptor=self->source.context.descriptor.presentation;
@@ -74,11 +74,20 @@ struct LagiFieldMapViewTask : s_workAreaTemplateWithArg<LagiFieldMapViewTask,con
         const int maxY=static_cast<std::int8_t>(descriptor[3])-3;
         if(!input->resourcesReady || !input->status || minX>maxX || minY>maxY ||
             input->context.subfield<0 || !lagiAzelMapContextIsCurrent(input->context)) {
-            self->getTask()->markFinished();return;
+            self->finish();return;
         }
         self->centerX=std::clamp(intDivide(32,input->context.x).asS32(),minX,maxX);
         self->centerY=std::clamp(intDivide(32,input->context.y).asS32(),minY,maxY);
         self->previousX=self->centerX;self->previousY=self->centerY;
+    }
+
+    void finish()
+    {
+        // MAIN060178B6..C4 polls the child's task-finished bit, before its
+        // Delete callback. Preserve that observation point without retaining
+        // a raw child pointer in the parent's portable state.
+        if(source.status) source.status->finished=true;
+        getTask()->markFinished();
     }
 
     void writeScroll(std::array<s16,2> value)
@@ -170,7 +179,7 @@ struct LagiFieldMapViewTask : s_workAreaTemplateWithArg<LagiFieldMapViewTask,con
             [[fallthrough]];
         case 4:
             self->setRatio(unsigned(31-2*--self->count));
-            if(self->count<=0) self->getTask()->markFinished();
+            if(self->count<=0) self->finish();
             break;
         case 5:
             self->count=1;self->phase=6;
