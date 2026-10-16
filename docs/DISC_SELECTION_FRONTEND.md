@@ -26,3 +26,45 @@ At launch: initialize the platform, scan all four slots, draw the selector, proc
 ## Status
 
 The four-disc adapter, pre-Azel selector loop, D-pad navigation, Cross confirmation, mount handoff, and a procedural **960x544 radial-layout prototype** are implemented. The pregame prototype is drawn into Neptune's existing startup scanout framebuffer, not via a new GPU shader. It deliberately does not touch Azel's renderer or game logic. It is not the finished textured Saga-style artwork; converting the radial mockup to actual GXM-backed atlas assets remains a separate art/rendering task. **Building and Vita hardware verification remain pending.**
+
+
+## Textured launcher hardware test (October 2026)
+
+The launcher now supports layered visual assets before Azel startup. The native
+resolution is 960x544. The source implementation is committed, but the actual
+binary art pack is delivered separately because the connected repository write
+interface does not accept binary uploads from this workspace.
+
+Extract `lagi_disc_selector_vita_assets.zip` into `ux0:data/lagi` to create:
+
+```
+ux0:data/lagi/frontend/background.rgba
+ux0:data/lagi/frontend/outer_frame.rgba
+ux0:data/lagi/frontend/radial.rgba
+ux0:data/lagi/frontend/gold.rgba
+ux0:data/lagi/frontend/ivory.rgba
+ux0:data/lagi/frontend/missing.rgba
+ux0:data/lagi/frontend/highlight.rgba
+ux0:data/lagi/frontend/row.rgba
+ux0:data/lagi/frontend/info.rgba
+ux0:data/lagi/frontend/legend.rgba
+```
+
+The files use a simple test-only format: two little-endian unsigned 32-bit
+integers for width and height, followed by width*height tightly packed RGBA8888
+pixels. The launcher loads and caches all ten assets on first presentation.
+If one is missing or invalid, it retains the proven procedural prototype.
+The composed artwork is blitted into the existing startup scanout buffer; this
+is **not yet a Neptune GXM textured path**, and is not the long-term renderer
+architecture. It does not affect the gameplay Neptune renderer or Azel tasks.
+
+The graphics are newly generated design assets intended for testing. Right
+list labels, missing-disc behavior, and the green selected-medallion overlays
+remain live. The art pack includes a background, frame, radial mechanism,
+available and missing medallions, selection ring, row plaque, information panel,
+and legend panel. The text uses the existing startup font for now.
+
+Suggested acceptance tests: verify all assets load; inspect alignment and
+visual legibility; test only Disc 1 present; test multiple discs and selection;
+confirm Cross mounts the chosen disc and transitions to native Azel; record
+launcher FPS for a later GXM optimization pass.
