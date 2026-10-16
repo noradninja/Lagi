@@ -38,6 +38,16 @@ cursor frame wrap/local-origin offsets, cleanup and invalid COMMON. Vita
 C++20 syntax passes. These checks do not prove full linking, rendered cursor,
 font/layout, task-tree cleanup or device behavior.
 
+The transition service `lagiAzelCommitMapWorldConfirmation` now restores
+MAIN06017978's accepted-result path: set game status0x4F, reset both saved
+gameplay fade channels through `m40E4->m2B0` when a backup exists, then set
+the menu exit byte `m40AC.m2`. It does not touch the live menu fades.
+The parent must call this once, after the confirmation task has finished;
+unfinished, running and NO results are rejected. Production-body host tests
+check all Boolean guard combinations, native call order, both target addresses,
+and the null-backup path. Vita syntax passes; parent hookup and device
+validation remain pending.
+
 Remaining integration includes the original availability gate0024B89C,
 town parameter binding, parent selection/open/close flow, field-child hookup
 and world confirmation result handling (status4F, black fades, menu exit flag).

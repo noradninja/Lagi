@@ -43,6 +43,9 @@ struct LagiAzelMapConfirmationState {
 };
 s_workArea* lagiAzelCreateMapWorldConfirmation(s_workArea* parent,
     std::shared_ptr<LagiAzelMapConfirmationState> state);
+// MAIN06017978: only after the confirmation child has finished with YES.
+// Preserve the saved gameplay fades, not the currently displayed menu fades.
+bool lagiAzelCommitMapWorldConfirmation(const LagiAzelMapConfirmationState& state);
 // Inputs to MAIN06016D88. fieldRoute is the result of0601243A, not map
 // ownership; the original0024B89C gate must be bound before live use.
 struct LagiAzelMapAvailabilityInputs {
