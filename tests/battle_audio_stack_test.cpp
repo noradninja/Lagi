@@ -53,6 +53,11 @@ int sceKernelGetCpuId(){return 2;}
 unsigned next_audio_trace(){return 0;}
 namespace lagi::platform::logging{template<class... T>void writef(const char*,T...){}}
 void submit_sound_request(const PendingSound& sound){submitted.push_back(sound);}
+struct RecordedCommand{int command,slot,bank,sound;};
+std::vector<RecordedCommand> requestCommands;
+void queue_command(u8 command,u8 slot,u8 bank,u8 sound=0){requestCommands.push_back({command,slot,bank,sound});}
+Ptr sound_config_for(s16 sound){return g_sequence->m4_soundConfigs+unsigned(sound-100)*4;}
+#include "request.inc"
 #include "load.inc"
 #include "pop.inc"
 #include "replay.inc"
@@ -133,5 +138,24 @@ int main(){
     submitted.clear();g_resumeAfterLoad=true;g_stoppedBankMask=2;replay_restored_sequence();
     assert(submitted.size()==1 && submitted[0].soundIndex==101);
     for(unsigned word=0;word<65536;++word)assert(lagi::native_audio_bank_playing(u16(word))==(word>=256));
+    // Tunnel transition: simultaneous ambience uses one data bank but
+    // distinct playback slots. Status/stop must follow those control slots.
+    reset_active_sounds();requestCommands.clear();configs[0]=3;configs[1]=5;configs[3]=4;
+    configs[4]=3;configs[5]=6;configs[7]=5;
+    native_submit_sound_request({100,1,100,0});
+    native_submit_sound_request({101,1,110,0});
+    assert(g_activeSounds[4].soundIndex==100 && g_activeSounds[5].soundIndex==101);
+    assert(g_activeSoundIds[4].load()==100 && g_activeSoundIds[5].load()==101);
+    assert(g_activeSounds[3].soundIndex==-1);
+    assert(requestCommands.size()==4 && requestCommands[1].command==1 && requestCommands[1].slot==4 && requestCommands[1].bank==3);
+    native_submit_sound_request({100,5,60,2});
+    assert(requestCommands.back().command==5 && requestCommands.back().slot==4 && g_activeSounds[4].volume==60);
+    native_submit_sound_request({101,2,0,0});assert(stops.back()==5);
+    g_transitionSounds=g_activeSounds;g_previousSequence=g_sequence;
+    g_bankResidency.files.clear();put(108,8);g_stoppedBankMask=0;status={};status[4]=status[5]=0x100;stops.clear();
+    stop_changed_sequence_banks();assert(g_stoppedBankMask==8 && stops==std::vector<int>({4,5}));
+    assert(!changed_sequence_banks_stopped());status[4]=0;assert(!changed_sequence_banks_stopped());status[5]=0;
+    assert(changed_sequence_banks_stopped());
+    puts("PASS: production sound requests retain distinct playback-slot ownership for a shared data bank; volume/stop commands and transition stop/wait target the actual driver slots.");
     puts("PASS: production audio stack/queue/readiness plus native loader choice, residency mask, selective stop, driver-status wait and transfer-failure retention; mocked SCSP/worker scheduling");
 }

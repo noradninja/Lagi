@@ -323,6 +323,24 @@ cmake --build build-battle
 
 ## Required progression and acceptance
 
+Flight/tunnel audio regression: active sounds were stored by shared data-bank
+number (config +0), while native stop/wait/status operates on eight playback
+control slots (config +3). Multiple ambient sounds in one bank overwrite each
+other in that bookkeeping and transitions can stop/wait on the wrong driver
+slot. Sound requests now preserve control-slot ownership, including volumes,
+sound-ID lookup and stack snapshots. Data-bank selection for actual playback
+and residency masks remains independent. The production-request test covers
+two sounds in bank 3 on controls 4/5, volume/stop routing and selective stop/wait
+until both driver slots finish. This shared request fix applies in both builds;
+the experimental same-area loader remains opt-in. Device tunnel audio retest
+is still required.
+
+Missing flight speech is a separate service gap: `fieldPlayPCM` routes script
+filenames to `lagiAzelFieldPlayPCM`, which currently logs only, whereas the
+desktop original plays big-endian signed 16-bit mono PCM at 22050 Hz. The slot
+repair does not implement that raw-file playback/mixing path. Do not treat it
+as restored voice or replace it with a sound-bank/channel guess.
+
 Floating-digit checkpoint: restored the stubbed `damageDisplay_draw` through
 a native VDP1 emitter port of BTL_A3 `0605BCDC..0605BDA8`, called at
 `0605C0DE`. It reads runtime sprite tables `060B1F7C`/`060B1F04` and Gouraud

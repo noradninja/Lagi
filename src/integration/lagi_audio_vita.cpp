@@ -667,9 +667,14 @@ void submit_sound_request(const PendingSound& request)
         const s8 soundControlId = readSaturnS8(config + 3);
         if (sequenceDataBank < 0 || sequenceDataBank >= 8)
             return;
+        if (soundControlId < 0 || soundControlId >= 8)
+            return;
 
+        // Native sequence state and 0x780 status words are indexed by the
+        // playback control slot (config +3), not the shared data bank (+0).
+        // Multiple simultaneous sounds can use the same data bank.
         ActiveSound& active =
-            g_activeSounds[static_cast<unsigned>(sequenceDataBank)];
+            g_activeSounds[static_cast<unsigned>(soundControlId)];
         if (request.volume != active.volume) {
             queue_command(
                 0x05,
@@ -685,7 +690,7 @@ void submit_sound_request(const PendingSound& request)
             static_cast<u8>(sequenceDataBank),
             static_cast<u8>(soundNumber));
         active.soundIndex = static_cast<s16>(request.soundIndex);
-        g_activeSoundIds[static_cast<unsigned>(sequenceDataBank)].store(
+        g_activeSoundIds[static_cast<unsigned>(soundControlId)].store(
             request.soundIndex, std::memory_order_release);
 
         lagi::platform::logging::writef(
