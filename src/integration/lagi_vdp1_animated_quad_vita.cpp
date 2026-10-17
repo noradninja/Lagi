@@ -102,16 +102,25 @@ static int drawQuadInternal(
 
     // initVDP1Projection stores integer-pixel scales in the raw fixedPoint
     // payload. These products are already pixels, not 16.16 coordinates.
-    const s32 cx = MTH_Mul_5_6(
-        graphicEngineStatus.m405C.m18_widthScale, viewPos[0], invZ).asS32();
-    const s32 cy = MTH_Mul_5_6(
-        graphicEngineStatus.m405C.m1C_heightScale, viewPos[1], invZ).asS32();
-    const s32 hw = std::max<s32>(1, MTH_Mul_5_6(
+    // MAIN 0602D12C..0602D186 (scaled: 0602E47A..0602E4E6) projects
+    // the authored origin, then adds the independently projected dimensions.
+    // The frame need not be centered on its position; offsets can animate.
+    const fixedPoint originX = viewPos[0] + MTH_Mul(q.m14_X, scale);
+    const fixedPoint originY = viewPos[1] + MTH_Mul(q.m18_Y, scale);
+    const s32 x0 = MTH_Mul_5_6(
+        graphicEngineStatus.m405C.m18_widthScale, originX, invZ).asS32();
+    const s32 y0 = MTH_Mul_5_6(
+        graphicEngineStatus.m405C.m1C_heightScale, originY, invZ).asS32();
+    const s32 width = MTH_Mul_5_6(
         graphicEngineStatus.m405C.m18_widthScale,
-        scaledW / 2, invZ).asS32());
-    const s32 hh = std::max<s32>(1, MTH_Mul_5_6(
+        scaledW, invZ).asS32();
+    const s32 height = MTH_Mul_5_6(
         graphicEngineStatus.m405C.m1C_heightScale,
-        scaledH / 2, invZ).asS32());
+        scaledH, invZ).asS32();
+    const s32 x1 = x0 + width;
+    const s32 y1 = y0 - height;
+    const s32 cx = x0 + width / 2, cy = y0 - height / 2;
+    const s32 hw = width / 2, hh = height / 2;
 
     auto clamp16 = [](s32 v) -> s16 {
         return static_cast<s16>(std::clamp<s32>(v, -32768, 32767));
@@ -139,14 +148,14 @@ static int drawQuadInternal(
         static_cast<u16>(pThis->m4_vdp1Memory + q.m6_CMDSRCA);
     cmd.mA_CMDSIZE = q.m8_CMDSIZE;
 
-    cmd.mC_CMDXA  = clamp16(cx - hw);
-    cmd.mE_CMDYA  = clamp16(-(cy + hh));
-    cmd.m10_CMDXB = clamp16(cx + hw);
-    cmd.m12_CMDYB = clamp16(-(cy + hh));
-    cmd.m14_CMDXC = clamp16(cx + hw);
-    cmd.m16_CMDYC = clamp16(-(cy - hh));
-    cmd.m18_CMDXD = clamp16(cx - hw);
-    cmd.m1A_CMDYD = clamp16(-(cy - hh));
+    cmd.mC_CMDXA  = clamp16(x0);
+    cmd.mE_CMDYA  = clamp16(-y0);
+    cmd.m10_CMDXB = clamp16(x1);
+    cmd.m12_CMDYB = clamp16(-y0);
+    cmd.m14_CMDXC = clamp16(x1);
+    cmd.m16_CMDYC = clamp16(-y1);
+    cmd.m18_CMDXD = clamp16(x0);
+    cmd.m1A_CMDYD = clamp16(-y1);
     const float sceneZ = static_cast<float>(z) / 65536.0f;
     const float viewZ[4] = {sceneZ, sceneZ, sceneZ, sceneZ};
     lagiRecordVdp1WorldDepth(&cmd, viewZ);

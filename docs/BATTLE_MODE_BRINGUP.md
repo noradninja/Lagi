@@ -403,6 +403,22 @@ both phases, all 31 countdown values and the inactive path. Vita fullres/dither
 VPK compilation passes. This restores status/damage modulation only; it does
 not complete the missing healing/berserk particle producers or establish a
 point-light source for the charge rays. Visual acceptance remains pending.
+
+Shared animated particle geometry now honors each frame's m14_X/m18_Y origin.
+MAIN 0602D12C..0602D186 adds those authored offsets to the transformed
+position, projects that origin, and independently projects full width/height
+for the opposite corner. The scaled service at 0602E47A..0602E4E6 first scales
+the same offsets and dimensions. Lagi previously discarded the offsets and
+projected two half-extents around an assumed center, also forcing a minimum
+extent absent from these native calculations. Ordinary, scaled and Gouraud
+particle emission now share the corrected calculation; per-command world
+depth, source/LUT addressing and Gouraud ownership remain unchanged.
+`particle_origin_service_test.ps1` executes the production emitter for two
+distinct frame origins, two scales and shaded/unshaded variants, plus clipping.
+Existing collection burst and 384 particle color-window tests still pass.
+Both experimental battle and ordinary fullres/dither Vita VPK builds pass.
+This is a shared service correction, not a replacement for missing effect
+task state/particle-array producers. Hardware geometry remains unverified.
 `native_color_clear_test.ps1` checks production API arguments, completion order,
 padding bounds, rejected-transfer fallback and failed-completion behavior with
 a mocked transfer engine. Builds are not hardware API or performance proof;
