@@ -2009,6 +2009,22 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   endif()
   set(source_text "#include \"lagi/lagi_render_bridge.h\"\n${source_text}")
   string(REPLACE "${battle_camera_anchor}" "${battle_camera_anchor}\n    lagi::azel_bridge::capture_native_scene_view_matrix();" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A3/BTL_A3_data.cpp")
+  set(animation_reader_old "            for (int j=0; j<1; j++)\n            {\n                sGenericFormationPerTypeDataSub1C subData1C;")
+  string(FIND "${source_text}" "${animation_reader_old}" animation_reader_found)
+  if(animation_reader_found LESS 0)
+   message(FATAL_ERROR "Native A3 animation reader boundary changed")
+  endif()
+  set(source_text "#include \"lagi/battle_animation_states.h\"\n${source_text}")
+  set(animation_reader_new [=[            const sSaturnPtr animationTable = ptrTo1C;
+            const int animationCount = lagi::battle_animation_state_count(
+                animationTable, readSaturnEA(subEntry + 0x20), readSaturnEA(subEntry + 0x24),
+                [](sSaturnPtr address) { return readSaturnS8(address); });
+            for (int j=0; j<animationCount; j++)
+            {
+                ptrTo1C = animationTable + j * 0x24;
+                sGenericFormationPerTypeDataSub1C subData1C;]=])
+  string(REPLACE "${animation_reader_old}" "${animation_reader_new}" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleGenericData.cpp")
   # A failed synchronous read must not feed uninitialized storage into the
   # native table readers. The execution preflight reports/retries this case.

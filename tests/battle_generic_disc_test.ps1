@@ -3,6 +3,8 @@ $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
 $scratch=[IO.Path]::GetFullPath((Join-Path $repo $ScratchRoot))
 New-Item -ItemType Directory -Force $scratch | Out-Null
+$a3=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/battle_BTL_A3_BTL_A3_data.cpp"
+if(!$a3.Contains('j<animationCount') -or !$a3.Contains('ptrTo1C = animationTable + j * 0x24;')){throw 'Generated A3 animation reader missing count/stride adapter'}
 $generic=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/battle_battleGenericData.cpp"
 $begin=$generic.IndexOf('const std::vector<quadColor> BTL_GenericData::m60AE424')
 if($begin -lt 0){throw 'Native generic-data boundary changed'}

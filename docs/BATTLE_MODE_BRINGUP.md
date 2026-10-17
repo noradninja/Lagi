@@ -323,6 +323,23 @@ cmake --build build-battle
 
 ## Required progression and acceptance
 
+A3 enemy-animation checkpoint: the original table reader loaded exactly one
+record and never advanced its source pointer. Actual Disc 1 beam-response
+records at per-type parameters `060A8A04+20` and `060A7CF8+24` select state 1;
+the latter's subsequent transitions also reach state 2. The four distinct
+Urchin-family parameter sets require 1, 2, 1 and 3 records respectively.
+The generated A3 reader now follows signed next-state indices from state zero
+and both beam overrides, preserving -1 (keep current), and reads each record
+at the native 0x24 stride. Original BTL_A3 instructions `06076234..06076244`
+compute this stride before loading animation offset +1C. No upstream or game
+data is modified or committed.
+
+`battle_generic_disc_test.ps1` checks generated count/stride hooks, executes
+the production reachability helper against real disc records with bounded
+reads, and tests sentinel, recursive transition, cycle and signed-index limits.
+This is data coverage, not enemy AI or beam-hit execution on Vita; full combat
+and repeated returns remain unverified.
+
 Allocator return checkpoint: original MAIN `060315B4` pops the allocator and
 restores the parent's inline file table at +18. Upstream's C++ vector conversion
 only clears the vector at the root and otherwise leaves the child table active.

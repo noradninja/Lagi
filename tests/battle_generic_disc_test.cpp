@@ -1,4 +1,5 @@
 #include "lagi/battle_startup.h"
+#include "lagi/battle_animation_states.h"
 #include <array>
 #include <vector>
 #include <string>
@@ -43,6 +44,7 @@ struct sSaturnPtr{
     sSaturnMemoryFile* file;u32 address;
     sSaturnPtr operator+(u32 n)const{return {file,address+n};}
     sSaturnPtr& operator+=(u32 n){address+=n;return *this;}
+    bool isNull()const{return address==0;}
 };
 struct sSaturnMemoryFile{
     std::vector<u8> storage;u8* m_data;u32 m_dataSize;u32 m_base=0x06054000;
@@ -106,6 +108,45 @@ void checkA3Dispatch(){
     }
     std::printf("PASS: native COMMON remapper reaches %zu A3 subbattles and %u formation records; all map/formation functions match native dispatch cases. Data coverage only, not callback execution.\n",subbattles.size(),formations);
 }
+void checkA3Animations(){
+    // Signed sentinel, recursive discovery, cycles and the largest s8 index.
+    std::array<std::int8_t,128*0x24+4> synthetic;
+    synthetic.fill(-1);
+    const auto origin=g_BTL_GenericData->getSaturnPtr(1);
+    const auto null=g_BTL_GenericData->getSaturnPtr(0);
+    const auto next=[&](sSaturnPtr p){return synthetic.at(p.address-1);};
+    if(lagi::battle_animation_state_count(origin,null,null,next)!=1)
+        throw std::runtime_error("-1 animation sentinel became an index");
+    synthetic[0x18]=1;synthetic[0x24+0x18]=2;synthetic[2*0x24+0x18]=0;
+    if(lagi::battle_animation_state_count(origin,null,null,next)!=3)
+        throw std::runtime_error("Animation transition closure/cycle failed");
+    synthetic.fill(-1);synthetic[127*0x24+0x18]=127;
+    if(lagi::battle_animation_state_count(origin,origin+127*0x24,null,next)!=128)
+        throw std::runtime_error("Beam override/highest signed index failed");
+    const u32 parameters[]={0x060A8A88,0x060A8A04,0x060A7C08,0x060A7CF8};
+    const int expected[]={1,2,1,3};
+    for(unsigned i=0;i<4;++i){
+        const auto params=g_BTL_GenericData->getSaturnPtr(parameters[i]);
+        const auto table=readSaturnEA(params+0x1C);
+        const int count=lagi::battle_animation_state_count(table,
+            readSaturnEA(params+0x20),readSaturnEA(params+0x24),
+            [](sSaturnPtr p){return static_cast<std::int8_t>(read(p,1));});
+        if(count!=expected[i]){
+            std::fprintf(stderr,"params=%08X states=%d expected=%d\n",parameters[i],count,expected[i]);
+            throw std::runtime_error("Unexpected authored A3 animation reachability");
+        }
+        for(int state=0;state<count;++state){
+            const auto record=table+state*0x24;
+            // Exercise all native record fields, including pointers, within the file.
+            read(record+0x20,2);
+            for(unsigned q=0;q<4;++q){
+                const auto command=readSaturnEA(record+4+q*4);
+                if(!command.isNull())read(command+0xA,1);
+            }
+        }
+    }
+    std::puts("PASS: A3 authored animation counts 1,2,1,3; beam-hit transitions, subsequent state 2 and 0x24-stride records are readable. Not combat execution.");
+}
 int main(int argc,char** argv){
     if(argc!=2 || fopen_s(&disc,argv[1],"rb") || !disc)return 2;
     try{
@@ -117,6 +158,7 @@ int main(int argc,char** argv){
             BTL_GenericData::mBoltLaserData0.m20_numLaserNodes,BTL_GenericData::mBoltLaserData1.m20_numLaserNodes,
             BTL_GenericData::m_0x60abef4_animatedQuads.size());
         checkA3Dispatch();
+        checkA3Animations();
         delete g_BTL_GenericData;fclose(disc);return 0;
     }catch(const std::exception& error){std::fprintf(stderr,"FAIL: %s\n",error.what());fclose(disc);return 1;}
 }
