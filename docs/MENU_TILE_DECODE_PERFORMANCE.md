@@ -1,5 +1,30 @@
 # Menu tile decode cost and animation rate
 
+## Map mixer hardware acceptance and remaining transition dips
+
+The user confirms Map scrolling now runs at 30 FPS; remaining dips occur
+during menu transitions. Preserve this accepted steady-state rendering path.
+The latest log has ordinary-menu renderer samples around 26.7..26.9 ms,
+backing 12.0 ms and text 0.74 ms. A non-startup outlier is 35.461 ms renderer,
+21.781 ms composition, 3.287 ms build and 5.133 ms GXM finish. It does not
+establish the cause of every transition dip or prove that resource I/O is
+responsible. The separate 94.569 ms startup sample is not a menu transition.
+
+Inspection found the missing Map telemetry: ScenePerf required world
+submissions (`nativeSceneMode`), whereas presentation deliberately accepts
+valid UI-only menus (`nativeMenuFrame`) with zero world submissions. ScenePerf
+now accepts either condition. Its existing heartbeat/state-change samples
+are supplemented by at most four >33.333 ms menu-render samples per observed
+menu-state transition. `tasks`, `uiOnly` and `slowSample` fields distinguish
+published game-task time, UI-only rendering and these bounded extra samples.
+No simulation, composition, allocation, filtering or presentation behavior is
+changed by this diagnostic revision. A new capture should include opening,
+switching between pages, entering/exiting Map and returning to flight.
+The production gate host test verifies UI-only heartbeat/entry sampling,
+Map/save/world transitions, the four-sample overrun bound and rejection of
+invalid frames. The full-resolution/dither-enabled VPK build passes. Neither
+check establishes an explanation or fix for the remaining transition dips.
+
 ## Row raster hardware follow-up and Map mixer
 
 The next 124,844-byte hardware log contains three ordinary-menu samples

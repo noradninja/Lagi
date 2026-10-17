@@ -13639,7 +13639,14 @@ static void renderBasicWingViewer()
         (lagi::menuNbg2Supported(g_menuNbg2) ? 0x20000u : 0u);
     const bool perfMenuChanged = perfMenu != previousPerfMenu;
     previousPerfMenu = perfMenu;
-    if (nativeSceneMode && (((scenePerfHeartbeat++ % 60u) == 0u) || perfMenuChanged)) {
+    static unsigned slowMenuSampleBudget = 4;
+    if (perfMenuChanged) slowMenuSampleBudget = 4;
+    const bool slowMenuSample = nativeMenuFrame && g_profileRenderUs > 33333u && slowMenuSampleBudget;
+    if (slowMenuSample) --slowMenuSampleBudget;
+    // UI-only Map/status frames legitimately publish no world submissions.
+    // Profiling must follow the same menu validity rule as presentation.
+    if ((nativeSceneMode || nativeMenuFrame) &&
+        (((scenePerfHeartbeat++ % 60u) == 0u) || perfMenuChanged || slowMenuSample)) {
         logging::writef(
             "[ScenePerf] build=%uus scan=%u cache=%u obj=%u edge=%u upload=%u "
             "light=%u gourPrep=%u gourPayload=%u gourBucket=%u "
@@ -13648,7 +13655,7 @@ static void renderBasicWingViewer()
             "render=%u polys=%u verts=%u "
             "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u "
             "menuBackingDecode=%u menuTextDecode=%u menuSubmit=%u menuTransfer=%u "
-            "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1\n",
+            "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1 tasks=%u uiOnly=%u slowSample=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -13683,7 +13690,10 @@ static void renderBasicWingViewer()
             g_profileMenuTransferUs,
             static_cast<unsigned>(g_vdp2MenuId),
             g_vdp2SaveLayout ? 1u : 0u,
-            lagi::menuNbg2Supported(g_menuNbg2) ? 1u : 0u);
+            lagi::menuNbg2Supported(g_menuNbg2) ? 1u : 0u,
+            g_profileTasksUs,
+            nativeMenuFrame && !nativeSceneMode ? 1u : 0u,
+            slowMenuSample ? 1u : 0u);
     }
 
     if (g_showThreadTimingOsd) {
