@@ -337,6 +337,14 @@ executes the generated resume case with mocked services and checks audio wait,
 both independent targets, 30-frame duration and one-shot state advance.
 On-device corrected transition appearance remains pending.
 
+Gauge-fill repair: native `drawGaugeVdp1` emits RGB555 VDP1 command 4 for
+HP/BP/power/enemy life fills. These packets appear in the hardware log, but
+Neptune accepted command 4 only when marked as radar-owned. It now draws all
+command-4 solid polygons through the existing GPU solid pipeline, retaining
+the separate radar-only transform and depth/pass ownership. This does not
+implement the stubbed damage-display draw routine or missing healing effects.
+Compilation is verified; actual gauge appearance remains a device check.
+
 Task heap checkpoint: native-battle builds now drain task-owned allocations
 on the scheduler's disposal pass, after child/parent Delete callbacks. The
 production free service receives user data (not allocation headers) and unlinks

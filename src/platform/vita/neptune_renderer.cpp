@@ -4895,9 +4895,10 @@ static void drawPublishedVdp1Ui(
             return 1.0f - 2.0f * (y + 112.0f) * radarScale / viewerRenderHeight();
         };
 
-        // Native radar direction line (6) and altitude fill polygon (4).
-        // Do not infer HUD ownership from texture, color or screen position.
-        if ((command.fieldRadar && commandType == 4u) || commandType == 6u) {
+        // Native solid polygons (4) include battle HP/BP/power/enemy gauges,
+        // not just the radar altitude fill. Only radar ownership changes the
+        // coordinate transform; it must not gate primitive support.
+        if (commandType == 4u || commandType == 6u) {
             if (spriteSlot >= 128u || !g_probeVertexProgram ||
                 !g_probeFragmentProgram || !g_probeWvpParam) continue;
             auto* vertices = g_vdp1UiLineVertices + spriteSlot++ * 4u;
