@@ -752,6 +752,26 @@ set(LAGI_AZEL_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib")
 set(LAGI_AZEL_GENERATED_ROOT "${CMAKE_CURRENT_BINARY_DIR}/azel_upstream")
 file(MAKE_DIRECTORY "${LAGI_AZEL_GENERATED_ROOT}")
 
+if(LAGI_BATTLE_NATIVE_BUILD)
+ file(READ "${LAGI_AZEL_SOURCE_ROOT}/battle/BTL_A3/BTL_A3_UrchinFormation.h" enemy_header)
+ set(enemy_fields_old "    std::array<s8, 4> m28;\n    s8 m38;")
+ string(FIND "${enemy_header}" "${enemy_fields_old}" enemy_fields_found)
+ if(enemy_fields_found LESS 0)
+  message(FATAL_ERROR "Native A3 enemy parameter header boundary changed")
+ endif()
+ string(REPLACE "${enemy_fields_old}"
+  "    std::array<s8, 4> m28; // quadrant colors, not death/sound parameters\n    u8 m2C_deathMode;\n    u8 m2D_hitSound;\n    u8 m2E_deathSound;\n    s8 m38;"
+  enemy_header "${enemy_header}")
+ set(enemy_header_path "${LAGI_AZEL_GENERATED_ROOT}/BTL_A3_UrchinFormation_native.h")
+ set(existing_enemy_header "")
+ if(EXISTS "${enemy_header_path}")
+  file(READ "${enemy_header_path}" existing_enemy_header)
+ endif()
+ if(NOT enemy_header STREQUAL existing_enemy_header)
+  file(WRITE "${enemy_header_path}" "${enemy_header}")
+ endif()
+endif()
+
 function(lagi_prepare_upstream_azel_source relative_path out_var)
  set(input_path "${LAGI_AZEL_SOURCE_ROOT}/${relative_path}")
  if(NOT EXISTS "${input_path}")
@@ -760,6 +780,12 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
 
  file(READ "${input_path}" source_text)
  set(original_text "${source_text}")
+ if(LAGI_BATTLE_NATIVE_BUILD)
+  # All generated consumers must share the same expanded native layout.
+  foreach(enemy_include "BTL_A3_UrchinFormation.h" "BTL_A3/BTL_A3_UrchinFormation.h" "battle/BTL_A3/BTL_A3_UrchinFormation.h")
+   string(REPLACE "#include \"${enemy_include}\"" "#include \"BTL_A3_UrchinFormation_native.h\"" source_text "${source_text}")
+  endforeach()
+ endif()
  if(relative_path STREQUAL "mainMenuDebugTasks.cpp")
   string(REPLACE
    "void s_FieldSubTaskWorkArea::Init(s_FieldSubTaskWorkArea* pFieldSubTaskWorkArea)\n{"
@@ -2025,6 +2051,27 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
                 ptrTo1C = animationTable + j * 0x24;
                 sGenericFormationPerTypeDataSub1C subData1C;]=])
   string(REPLACE "${animation_reader_old}" "${animation_reader_new}" source_text "${source_text}")
+  set(enemy_parse_anchor "            pSubEntry->m38 = readSaturnS8(subEntry + 0x38);")
+  string(FIND "${source_text}" "${enemy_parse_anchor}" enemy_parse_found)
+  if(enemy_parse_found LESS 0)
+   message(FATAL_ERROR "Native A3 enemy parameter reader boundary changed")
+  endif()
+  string(REPLACE "${enemy_parse_anchor}"
+   "            pSubEntry->m2C_deathMode = readSaturnU8(subEntry + 0x2C);\n            pSubEntry->m2D_hitSound = readSaturnU8(subEntry + 0x2D);\n            pSubEntry->m2E_deathSound = readSaturnU8(subEntry + 0x2E);\n${enemy_parse_anchor}"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A3/urchin.cpp")
+  foreach(enemy_anchor "pThis->mCC->m28[4] == 4" "s8 deathMode = pThis->mCC->m28[0];" "pThis->mCC->m28[1] != -1" "pThis->mCC->m28[2] != -1")
+   string(FIND "${source_text}" "${enemy_anchor}" enemy_anchor_found)
+   if(enemy_anchor_found LESS 0)
+    message(FATAL_ERROR "Native A3 enemy parameter consumer changed: ${enemy_anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "pThis->mCC->m28[4] == 4" "pThis->mCC->m2C_deathMode == 4" source_text "${source_text}")
+  string(REPLACE "s8 deathMode = pThis->mCC->m28[0];" "u8 deathMode = pThis->mCC->m2C_deathMode;" source_text "${source_text}")
+  string(REPLACE "pThis->mCC->m28[1] != -1" "pThis->mCC->m2D_hitSound != 0xFF" source_text "${source_text}")
+  string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[1]);" "playSystemSoundEffect(pThis->mCC->m2D_hitSound);" source_text "${source_text}")
+  string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
+  string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleGenericData.cpp")
   # A failed synchronous read must not feed uninitialized storage into the
   # native table readers. The execution preflight reports/retries this case.

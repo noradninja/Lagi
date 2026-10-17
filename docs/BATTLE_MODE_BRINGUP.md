@@ -323,6 +323,25 @@ cmake --build build-battle
 
 ## Required progression and acceptance
 
+A3 enemy death/sound checkpoint: original BTL_A3 escape and death routines
+read death mode at parameter +2C (`060763CE..060763F6`,
+`06076C5A..06076C60`), hit sound at +2D (`0607750E..06077528`),
+and death sound at +2E (`06076C16..06076C32`). Sound bytes are unsigned
+with FF meaning no sound. Upstream incorrectly reused the +28 quadrant-color
+array for death and sound, including an out-of-bounds index 4. The native
+build generates an expanded formation header shared by all generated consumers,
+parses the three distinct fields and routes only death/sound reads to them.
+Quadrant color consumers and authored gameplay decisions are retained.
+
+The real-disc test verifies original instruction anchors and executes the actual
+generated formation parser for all four formation roots: seven per-type entries
+and ten animation records, including both beam-triggered transitions. Parsed
+death/sound bytes, independent quadrant colors, record counts, animation offsets
+and timers are checked against their source fields. Model/hotspot loading is
+mocked in this host data test. Enemy movement, death effects, sound playback and
+resource lifetime still require device combat validation. No upstream header
+or copyrighted data is edited/committed.
+
 A3 enemy-animation checkpoint: the original table reader loaded exactly one
 record and never advanced its source pointer. Actual Disc 1 beam-response
 records at per-type parameters `060A8A04+20` and `060A7CF8+24` select state 1;

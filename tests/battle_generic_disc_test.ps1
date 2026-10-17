@@ -5,6 +5,19 @@ $scratch=[IO.Path]::GetFullPath((Join-Path $repo $ScratchRoot))
 New-Item -ItemType Directory -Force $scratch | Out-Null
 $a3=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/battle_BTL_A3_BTL_A3_data.cpp"
 if(!$a3.Contains('j<animationCount') -or !$a3.Contains('ptrTo1C = animationTable + j * 0x24;')){throw 'Generated A3 animation reader missing count/stride adapter'}
+$begin=$a3.IndexOf('sGenericFormationData* readUrchinFormation(')
+$end=$a3.IndexOf('p_workArea BTL_A3_data::invokeCreateEffect(',$begin)
+if($begin -lt 0 -or $end -le $begin){throw 'Native A3 formation reader boundary changed'}
+[IO.File]::WriteAllText("$scratch/formation.inc",$a3.Substring($begin,$end-$begin))
+$header=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/BTL_A3_UrchinFormation_native.h"
+$end=$header.IndexOf('struct BTL_A3_UrchinFormation :')
+if($end -lt 0){throw 'Native A3 formation header boundary changed'}
+[IO.File]::WriteAllText("$scratch/formation_types.inc",$header.Substring(0,$end))
+$enemy=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/battle_BTL_A3_urchin.cpp"
+foreach($required in @('m2C_deathMode == 4','u8 deathMode = pThis->mCC->m2C_deathMode;','m2D_hitSound != 0xFF','m2E_deathSound != 0xFF','playSystemSoundEffect(pThis->mCC->m2D_hitSound);','playSystemSoundEffect(pThis->mCC->m2E_deathSound);')){
+ if(!$enemy.Contains($required)){throw "Missing generated enemy parameter consumer: $required"}
+}
+if($enemy.Contains('m28[4]') -or $enemy.Contains('m28[1] != -1') -or $enemy.Contains('m28[2] != -1')){throw 'Enemy death/sound still reads quadrant colors'}
 $generic=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/battle_battleGenericData.cpp"
 $begin=$generic.IndexOf('const std::vector<quadColor> BTL_GenericData::m60AE424')
 if($begin -lt 0){throw 'Native generic-data boundary changed'}
