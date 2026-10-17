@@ -9,6 +9,7 @@ if($battleCache -notmatch 'LAGI_BATTLE_NATIVE_BUILD:BOOL=ON'){throw 'Battle conf
 if($normalCache -notmatch 'LAGI_BATTLE_NATIVE_BUILD:BOOL=OFF'){throw 'Normal configuration must retain encounters-disabled default'}
 $battleNinja=Get-Content -Raw "$battle/build.ninja"
 $normalNinja=Get-Content -Raw "$normal/build.ninja"
+if($normalNinja.Contains('lagi_battle_rays_vita.cpp.obj')){throw 'Battle-only ray service leaked into ordinary build'}
 $objects=@('battle_battleEngine','battle_battleEngineSub0','battle_battleEngineSub1',
  'battle_battleMainTask','battle_battleGenericData','battle_battleDragon','battle_battleGrid',
  'battle_BTL_A3_BTL_A3','battle_BTL_A3_BTL_A3_data')

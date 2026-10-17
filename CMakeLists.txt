@@ -3322,6 +3322,22 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
 )
 
 if(LAGI_BATTLE_NATIVE_BUILD)
+ file(READ "${LAGI_AZEL_SOURCE_ROOT}/kernel/rayDisplay.cpp" battle_ray_source)
+ string(FIND "${battle_ray_source}" "s32 rayComputeDisplayMatrix_fixedWidth(" battle_ray_begin)
+ string(FIND "${battle_ray_source}" "s32 rayComputeDisplayMatrix_2Width(" battle_ray_end)
+ if(battle_ray_begin LESS 0 OR battle_ray_end LESS battle_ray_begin)
+  message(FATAL_ERROR "Native battle ray projection boundary changed")
+ endif()
+ math(EXPR battle_ray_length "${battle_ray_end}-${battle_ray_begin}")
+ string(SUBSTRING "${battle_ray_source}" ${battle_ray_begin} ${battle_ray_length} battle_ray_projection)
+ set(battle_ray_include "${CMAKE_CURRENT_BINARY_DIR}/lagi_battle_ray_projection.inc")
+ set(battle_ray_existing "")
+ if(EXISTS "${battle_ray_include}")
+  file(READ "${battle_ray_include}" battle_ray_existing)
+ endif()
+ if(NOT battle_ray_existing STREQUAL battle_ray_projection)
+  file(WRITE "${battle_ray_include}" "${battle_ray_projection}")
+ endif()
  # Real native dependencies, generated through the same Vita adapter boundary.
  # Dispatch remains disabled until the engine/overlay lifecycle is complete.
  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
@@ -3572,6 +3588,9 @@ endif()
 set_property(TARGET lagi APPEND PROPERTY LINK_DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
 target_include_directories(lagi PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}/src/integration")
 target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceProcessmgr_stub SceSysmem_stub SceSysmodule_stub)
+if(LAGI_BATTLE_NATIVE_BUILD)
+ target_sources(lagi PRIVATE src/integration/lagi_battle_rays_vita.cpp)
+endif()
 
 if(LAGI_AZEL_PROBE)
  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib")

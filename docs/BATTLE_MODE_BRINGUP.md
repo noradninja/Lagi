@@ -39,7 +39,40 @@ uses `g_BTL_GenericData`; its native constructor reads `BTL_A3.PRG`.
 Task allocation already zeroes work areas through
 the native task base; audit that contract before inventing extra state resets.
 
-## Expanded shared/A3 graph and retained-root audit
+## Ray/resource services: retained-root link now passes
+
+The three initial link gaps listed below are restored. The full-resolution,
+dither-enabled retained-root build now produces a VPK. The ELF test checks
+actual retained A3 entry, engine, HUD, radar, commands, results and service
+functions. This is link evidence, not battle execution.
+The default battle-disabled full-resolution VPK was also rebuilt successfully
+after the shared file-service change; both dithering flags remain enabled.
+
+The ray service uses the pinned native fixed-point projection body copied
+mechanically into a generated include. Verification normalizes line endings
+only. Native distorted-sprite/Gouraud packet fields and zero bucket are
+preserved, with capacity guards and separate Neptune depth metadata. World
+endpoints use the actual current matrix; existing flight ray helpers are
+unchanged. Tests compare 1,024 packet cases with upstream and reject full
+buffers/null colors. Source equality and Vita compilation do not prove native
+projection results or battle occlusion on hardware.
+Visibility still uses the existing shared near/far guard; upstream's
+`isGunShotVisible` is an unimplemented always-visible stub. Original-game
+ray clipping/visibility fidelity remains an explicit runtime validation task.
+
+`isSoundFileLoaded` is a synchronous file-service completion query, not audio.
+It becomes true after raw copy or bundle publication, false during reads,
+failed retries, unknown/null requests, and after selected-disc changes.
+Filename keys are case-insensitive. Production-body tests cover these paths
+with mocked I/O. This tracks the last load's completion, not ownership of a
+destination after later overwrites; callers still own lifetime/error recovery.
+The upstream unconditional-true stub is not used.
+
+Overlay dispatch/startup remain disabled. Generic-data initialization, manager
+lifetime, original field encounter handoff and battle camera/presentation
+routing still require restoration before on-device combat testing.
+
+## Expanded shared/A3 graph and initial retained-root audit
 
 The opt-in source graph now contains all 49 shared battle `.cpp` modules and
 all 14 A3 modules, including formations, enemy bodies, HUD/radar, commands,
@@ -53,8 +86,8 @@ compiled `_Z19overlayStart_BTL_A3P10s_workArea` entry through the linker. It doe
 not execute that entry or enable overlay dispatch. Unlike a trimmed compile
 build, this follows its real function/vtable dependency graph.
 
-The compile-only VPK succeeds with the audit OFF. The retained-root link
-currently **fails**, exposing three unfinished boundaries:
+The initial compile-only VPK succeeded with the audit OFF. Its first retained
+root link failed, exposing these boundaries (now restored above):
 
 - `displayRaySegment`: native fixed-point world-to-view/projection and VDP1 ray
   packet path, not the upstream BGFX immediate-render branch.
@@ -66,8 +99,8 @@ currently **fails**, exposing three unfinished boundaries:
   query or accept an always-ready stub as a faithful restoration; establish
   the actual resource-completion contract.
 
-This failure is an active dependency list, not a blocked goal or successful
-reachable-combat link. Keep the audit enabled when evaluating link readiness:
+Keep the audit enabled when evaluating link readiness; disabling it can hide
+missing services through link trimming:
 
 ```powershell
 cmake -S . -B build-battle -DLAGI_FULLRES=ON -DLAGI_STOCHASTIC_FILTER=ON -DLAGI_DITHER_LOOKUP=ON -DLAGI_BATTLE_NATIVE_BUILD=ON -DLAGI_BATTLE_LINK_AUDIT=ON
