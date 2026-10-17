@@ -20,6 +20,7 @@ option(LAGI_DITHER_LOOKUP "Use a repeating FP16 offset texture instead of screen
 option(LAGI_FULLRES "Render native Vita gameplay/movie modes at 960x544 (test only)" OFF)
 option(LAGI_AZEL_PROBE "Compile an Azel source portability probe" ON)
 option(LAGI_AZEL_RUINS_LINK_TRIM "Temporarily discard unreachable Azel code for Ruins bring-up" ON)
+option(LAGI_BATTLE_NATIVE_BUILD "Compile native battle engine/A3 bring-up dependencies (does not enable encounters)" OFF)
 
 # GXM viewer shaders are compiled from readable Cg source using Sony's
 # psp2cgc so color/debug and texture paths share the same compiler/toolchain.
@@ -1949,6 +1950,17 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "u32 getFileSizeFromFileId(const char* fileName)"
    "__attribute__((weak)) u32 getFileSizeFromFileId(const char* fileName)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleGenericData.cpp")
+  # Animated-quad parsing already belongs to the shared native Vita service.
+  # Reuse that identical reader rather than link a second global definition.
+  string(FIND "${source_text}" "std::vector<sVdp1Quad> initVdp1Quad(sSaturnPtr ptr) {" quad_begin)
+  string(FIND "${source_text}" "// Parse a sLaserData from Saturn overlay address" quad_end)
+  if(quad_begin LESS 0 OR quad_end LESS quad_begin)
+   message(FATAL_ERROR "Native battle animated-quad reader boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${quad_begin} quad_prefix)
+  string(SUBSTRING "${source_text}" ${quad_end} -1 quad_suffix)
+  set(source_text "${quad_prefix}std::vector<sVdp1Quad> initVdp1Quad(sSaturnPtr ptr); // shared native service\n\n${quad_suffix}")
  elseif(relative_path STREQUAL "battle/battleOverlay.cpp")
   # Battle manager stays authentic, but no battle is reachable before the
   # first-flight milestone. Remove only executable battle-overlay references;
@@ -3292,6 +3304,22 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  town/ruin/twn_ruin.cpp
  town/ruin/twn_ruin_lock.cpp
 )
+
+if(LAGI_BATTLE_NATIVE_BUILD)
+ # Real native dependencies, generated through the same Vita adapter boundary.
+ # Dispatch remains disabled until the engine/overlay lifecycle is complete.
+ list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
+  battle/battleEngine.cpp
+  battle/battleEngineSub0.cpp
+  battle/battleEngineSub1.cpp
+  battle/battleMainTask.cpp
+  battle/battleGenericData.cpp
+  battle/battleDragon.cpp
+  battle/battleGrid.cpp
+  battle/BTL_A3/BTL_A3.cpp
+  battle/BTL_A3/BTL_A3_data.cpp
+ )
+endif()
 
 set(LAGI_AZEL_UPSTREAM_SOURCES)
 foreach(relative_source IN LISTS LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES)
