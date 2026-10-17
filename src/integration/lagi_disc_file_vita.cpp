@@ -6,8 +6,22 @@
 
 #include <cstring>
 #include <vector>
+#include <unordered_map>
 
 namespace {
+
+// Engine-thread file service: completion means the synchronous destination
+// copy finished, not merely that a filename exists on disc.
+std::unordered_map<std::string,bool> completedLoads;
+int completionDisc = -1;
+std::string completionKey(const char* name)
+{
+    const int disc=lagi::disc::selected_disc();
+    if(disc!=completionDisc){completedLoads.clear();completionDisc=disc;}
+    std::string key=name?name:"";
+    for(auto& c:key)if(c>='a' && c<='z')c=static_cast<char>(c-'a'+'A');
+    return key;
+}
 
 bool readDiscFile(const char* fileName, std::vector<u8>& data)
 {
@@ -49,6 +63,8 @@ u32 getFileSizeFromFileId(const char* fileName)
 
 int loadFile(const char* fileName, u8* destination, u16)
 {
+    const auto key=completionKey(fileName);
+    completedLoads[key]=false;
     if (!destination)
         return -1;
 
@@ -58,7 +74,18 @@ int loadFile(const char* fileName, u8* destination, u16)
 
     std::memcpy(destination, data.data(), data.size());
     fileInfoStruct.m0 = 0;
+    completedLoads[key]=true;
     return 0;
+}
+
+bool isSoundFileLoaded(sSaturnPtr filename)
+{
+    // Historical upstream name. Berserk scrolls pass SCB/PNB filename strings,
+    // not sound-bank configuration records or a request to start a transfer.
+    if(filename.isNull())return false;
+    const auto key=completionKey(readSaturnString(filename).c_str());
+    const auto found=completedLoads.find(key);
+    return found!=completedLoads.end() && found->second;
 }
 
 int loadFile2(const char* fileName, u8* destination, u16 vdp1Pointer)
@@ -71,6 +98,8 @@ int loadFile(
     s_fileBundle** destination,
     u16 vdp1Pointer)
 {
+    const auto key=completionKey(fileName);
+    completedLoads[key]=false;
     if (!destination)
         return -1;
 
@@ -87,6 +116,7 @@ int loadFile(
 
     *destination = bundle;
     fileInfoStruct.m0 = 0;
+    completedLoads[key]=true;
     return 0;
 }
 
