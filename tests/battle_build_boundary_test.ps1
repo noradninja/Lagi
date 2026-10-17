@@ -9,6 +9,7 @@ if($battleCache -notmatch 'LAGI_BATTLE_NATIVE_BUILD:BOOL=ON'){throw 'Battle conf
 if($normalCache -notmatch 'LAGI_BATTLE_NATIVE_BUILD:BOOL=OFF'){throw 'Normal configuration must retain encounters-disabled default'}
 $battleNinja=Get-Content -Raw "$battle/build.ninja"
 $normalNinja=Get-Content -Raw "$normal/build.ninja"
+if(!$battleNinja.Contains('LAGI_NATIVE_TASK_HEAP_CLEANUP=1') -or $normalNinja.Contains('LAGI_NATIVE_TASK_HEAP_CLEANUP=1')){throw 'Task heap disposal must remain native-battle opt-in'}
 if(!$battleNinja.Contains('LAGI_BATTLE_BUILD_NATIVE=1') -or !$normalNinja.Contains('LAGI_BATTLE_BUILD_NATIVE=0')){throw 'Battle build diagnostics must match compilation capability'}
 if(($battleCache -match 'LAGI_BATTLE_EXECUTE_A3:BOOL=ON') -ne $battleNinja.Contains('LAGI_BATTLE_BUILD_EXECUTE_A3=1')){throw 'Battle execution diagnostic must match the active option'}
 if($normalNinja.Contains('LAGI_BATTLE_AUDIO_STACK=1')){throw 'Experimental audio stack leaked into default build'}

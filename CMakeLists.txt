@@ -3759,6 +3759,7 @@ target_include_directories(lagi PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DI
 target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceProcessmgr_stub SceSysmem_stub SceSysmodule_stub)
 if(LAGI_BATTLE_NATIVE_BUILD)
  target_sources(lagi PRIVATE src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_battle_graphics_vita.cpp src/integration/lagi_resident_video_vita.cpp src/integration/lagi_allocator_tables_vita.cpp)
+ set_property(SOURCE src/integration/lagi_task_vita.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_NATIVE_TASK_HEAP_CLEANUP=1)
  set_property(SOURCE src/integration/lagi_disc_file_vita.cpp src/integration/lagi_map_resources_vita.cpp src/integration/lagi_azel_books_menu.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_TRACK_RESIDENT_VIDEO=1)
 endif()
 if(LAGI_BATTLE_EXECUTE_A3)

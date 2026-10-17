@@ -323,6 +323,16 @@ cmake --build build-battle
 
 ## Required progression and acceptance
 
+Task heap checkpoint: native-battle builds now drain task-owned allocations
+on the scheduler's disposal pass, after child/parent Delete callbacks. The
+production free service receives user data (not allocation headers) and unlinks
+each node. Default builds retain the accepted prior policy. Host coverage in
+`battle_task_heap_test.ps1` executes actual scheduler/heap bodies over 256 nested
+lifecycles, with explicit frees/reallocations, delayed disposal and a paused
+survivor. This fixes tracked raw heap leaks, not C++ work-area destruction,
+placement-object destructors or every resource lifetime. Device repeated-battle
+memory acceptance remains open.
+
 A3 enemy death/sound checkpoint: original BTL_A3 escape and death routines
 read death mode at parameter +2C (`060763CE..060763F6`,
 `06076C5A..06076C60`), hit sound at +2D (`0607750E..06077528`),
