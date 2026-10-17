@@ -35,9 +35,12 @@ is set. Only its debug branch creates `field/battleStart.cpp`'s loading task.
 Read-only original FLD_A3 inspection confirms that task really tests debug
 keyboard toggles; replacing it as the ordinary gameplay path would be wrong.
 
-Before enabling entry, restore the missing graphics/resource handback detailed
-in [BATTLE_GRAPHICS_HANDOFF.md](BATTLE_GRAPHICS_HANDOFF.md). The current upstream
-backup is incomplete and both post-battle restoration sites are TODOs.
+Before enabling entry, complete the graphics/resource handback detailed
+in [BATTLE_GRAPHICS_HANDOFF.md](BATTLE_GRAPHICS_HANDOFF.md). The generated battle
+build now uses typed graphics capture/restore at both return sites and discards
+storage on encounter teardown. Resident field-resource reload is still missing;
+upstream remains untouched. Host service tests and the retained-root Vita build
+pass, but neither proves native battle/field execution.
 
 `BTL_A3.cpp::overlayStart_BTL_A3()` loads its real overlay data, selects
 `gCurrentBattleOverlay`, and constructs `createBattleMainTask()`. That task

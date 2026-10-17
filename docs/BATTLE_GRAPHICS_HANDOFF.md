@@ -1,6 +1,6 @@
 # Native battle graphics handoff evidence
 
-This is an implementation map, not a completed restoration or runtime pass.
+This is an implementation map and partial restoration, not a runtime pass.
 Battle execution remains disabled. Original disc bytes are inspected read-only;
 no executable, font, texture or other game resource is included here.
 
@@ -47,11 +47,13 @@ semantics, not a raw copy of rotation state. Mapping original file IDs to the
 port's filename/bundle ownership still needs implementation. The synchronous
 Vita file service currently tracks completion, not resident destination ranges.
 
-The 0x120 VDP2 block is consistent in size with the original 14-entry transfer
-pool plus two heads (`14 * 0x14 + 8`). The current `vdpVar1`, `vdpVar2`, and
-`vdpVar3` have that conceptual structure, but address-to-symbol identity needs
-verification before wiring a typed snapshot. It is not the four menu scroll
-layers (those reconstructed entries are only 0xA bytes each).
+The 0x120 VDP2 block is the original 14-entry transfer pool plus two heads
+(`14 * 0x14 + 8`). Original initialization `06032574` clears 14 entries at
+`0604B4DC`, stride 0x14; `0603258C` sets both heads at `0604B4D4` to state +8
+and clears the first entry's next pointer. This matches `initVdp2Var1` and
+`initVdp2Var2`, establishing the mapping to `vdpVar1`, `vdpVar2`, `vdpVar3`.
+The disc audit now checks those initialization anchors as well. It is not
+the four menu scroll layers (those entries are only 0xA bytes each).
 
 Restore copies/releases each present block. Light restoration calls
 `0601DF14`, `0601DF8A`, `0601E200`, respectively matching `setupLight`,
@@ -59,20 +61,41 @@ Restore copies/releases each present block. Light restoration calls
 operations to regenerate derived lighting, not just assign `lightSetup`.
 The existing Dragon menu restoration uses the same three operations.
 
+## Implemented graphics storage/return
+
+`lagi_battle_graphics_vita.cpp` is compiled only with the native battle option.
+The generated encounter source uses its typed capture, both restore sites,
+and discard-on-delete. Capture failure unpauses the field/restores menu access
+without starting loading. Repeated restore/discard is harmless because the
+owner pointer is cleared. This does not enable encounters or reload files.
+
+Both complete VDP2 register buffers are saved; the pending pointer is rebuilt
+from its actual buffer identity, not assumed to match the double-buffer index.
+Transfer nodes and heads retain pointers into the permanent native pool, with
+owner validation on capture. Projection command pointers are excluded from
+the saved state: restored coordinates are written to the current command-list
+headers rather than resurrecting the old list's pointers. CRAM, the original
+VRAM spans, optional fade state and native lighting calls are restored.
+
+`tests/battle_graphics_test.ps1` executes the production service body against
+mock service types, checking both pending-buffer owners independently of the
+double-buffer index, current versus recycled command headers, transfer graph,
+light callback order, exact restored spans/colors, optional fade behavior,
+invalid ownership and repeated restore/discard. This does not test native
+task scheduling, heap failure, pointer lifetime on hardware or resource reload.
+The full Vita VPK compiles against the real native types with retained A3 link
+audit and fullres/dither ON. Build-boundary tests check generated restore/delete
+hooks and the absence of this service in the normal configuration.
+
 ## Port requirements before entry is enabled
 
-- Replace fixed-size raw copies with current typed state. Rebase pending VDP2
-  register and transfer-list pointers to their live owners; preserve both
-  register buffers and all current fields, not only Saturn byte counts.
-- Establish projection-command pointer lifetime across command-list resets.
-  Do not restore stale command pointers merely because the native size fits.
+- Verify the implemented typed graphics restoration under native task/command
+  scheduling, especially projection headers and pending transfer sources.
 - Restore resident field resources overwritten by battle loads, with actual
   filename/destination ownership and error handling. Bundle pointers and raw
   VDP1 upload destinations are not interchangeable.
-- Restore the verified CRAM/VRAM spans, pending transfer state and native light
-  setup; optional fade/VRAM spans must respect the original argument.
-- Wire both return/game-over paths and teardown cleanup without double-free.
-  The current upstream encounter Delete does not release its backup.
+- Verify both wired return/game-over paths and teardown cleanup without
+  double-free in actual execution, not only generated-source tests.
 - Exercise allocation/read failures, repeated encounters, game over, normal
   rewards/return, and hardware field rendering after return. A retained A3
   link PASS does not cover any of these runtime requirements.

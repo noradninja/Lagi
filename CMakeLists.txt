@@ -1954,6 +1954,27 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "u32 getFileSizeFromFileId(const char* fileName)"
    "__attribute__((weak)) u32 getFileSizeFromFileId(const char* fileName)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/fieldEncounterTask.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # Native graphics return 06028668 is absent upstream. Keep native encounter
+  # state decisions; replace only platform storage/copy ownership. Resident
+  # file reload restoration is still required before enabling battle entry.
+  string(FIND "${source_text}" "// 0602849a\nstruct sGraphicsBackup" backup_begin)
+  string(FIND "${source_text}" "void encounterTaskUpdate(sEncouterTask* pThis)" backup_end)
+  if(backup_begin LESS 0 OR backup_end LESS backup_begin)
+   message(FATAL_ERROR "Native battle graphics backup boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${backup_begin} backup_prefix)
+  string(SUBSTRING "${source_text}" ${backup_end} -1 backup_suffix)
+  set(source_text "${backup_prefix}#include \"lagi/battle_graphics.h\"\n\nvoid* backupGraphicsToEnterBattle(sEncouterTask*, s32 includeFade)\n{\n    return lagiCaptureBattleGraphics(includeFade != 0);\n}\n\n${backup_suffix}")
+  set(restore_marker "// TODO: restore graphics from backup (FUN_06028668)")
+  string(FIND "${source_text}" "${restore_marker}" restore_found)
+  if(restore_found LESS 0)
+   message(FATAL_ERROR "Native battle graphics restore sites changed")
+  endif()
+  string(REPLACE "${restore_marker}" "lagiRestoreBattleGraphics(pThis->m20);" source_text "${source_text}")
+  set(capture_marker "        pThis->m20 = backupGraphicsToEnterBattle(pThis, 0);")
+  string(REPLACE "${capture_marker}" "${capture_marker}\n        if (!pThis->m20)\n        {\n            pThis->m4->getTask()->clearPaused();\n            graphicEngineStatus.m40AC.m1_isMenuAllowed = pThis->m1;\n            return; // do not enter battle without restorable graphics\n        }" source_text "${source_text}")
+  string(REPLACE "void encounterTaskDelete(sEncouterTask* pThis)\n{\n    encounterTaskVar0 = 0;" "void encounterTaskDelete(sEncouterTask* pThis)\n{\n    lagiDiscardBattleGraphics(pThis->m20);\n    encounterTaskVar0 = 0;" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleGenericData.cpp")
   # Animated-quad parsing already belongs to the shared native Vita service.
   # Reuse that identical reader rather than link a second global definition.
@@ -3589,7 +3610,7 @@ set_property(TARGET lagi APPEND PROPERTY LINK_DEPENDS "${CMAKE_SOURCE_DIR}/tools
 target_include_directories(lagi PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}/src/integration")
 target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceProcessmgr_stub SceSysmem_stub SceSysmodule_stub)
 if(LAGI_BATTLE_NATIVE_BUILD)
- target_sources(lagi PRIVATE src/integration/lagi_battle_rays_vita.cpp)
+ target_sources(lagi PRIVATE src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_battle_graphics_vita.cpp)
 endif()
 
 if(LAGI_AZEL_PROBE)

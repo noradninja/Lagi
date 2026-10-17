@@ -10,6 +10,14 @@ if($normalCache -notmatch 'LAGI_BATTLE_NATIVE_BUILD:BOOL=OFF'){throw 'Normal con
 $battleNinja=Get-Content -Raw "$battle/build.ninja"
 $normalNinja=Get-Content -Raw "$normal/build.ninja"
 if($normalNinja.Contains('lagi_battle_rays_vita.cpp.obj')){throw 'Battle-only ray service leaked into ordinary build'}
+if($normalNinja.Contains('lagi_battle_graphics_vita.cpp.obj')){throw 'Battle-only graphics service leaked into ordinary build'}
+if(!$battleNinja.Contains('lagi_battle_graphics_vita.cpp.obj')){throw 'Battle graphics service missing'}
+$encounter=Get-Content -Raw "$battle/azel_upstream/field_fieldEncounterTask.cpp"
+if(($encounter.Split('lagiRestoreBattleGraphics(pThis->m20);').Count-1) -ne 2){throw 'Both battle return restoration sites must be wired'}
+if(!$encounter.Contains('lagiDiscardBattleGraphics(pThis->m20);')){throw 'Encounter teardown leaks graphics backup'}
+if(!$encounter.Contains('if (!pThis->m20)')){throw 'Encounter must not proceed after capture failure'}
+$normalEncounter=Get-Content -Raw "$normal/azel_upstream/field_fieldEncounterTask.cpp"
+if($normalEncounter.Contains('lagiCaptureBattleGraphics')){throw 'Ordinary encounter graphics path unexpectedly changed'}
 $objects=@('battle_battleEngine','battle_battleEngineSub0','battle_battleEngineSub1',
  'battle_battleMainTask','battle_battleGenericData','battle_battleDragon','battle_battleGrid',
  'battle_BTL_A3_BTL_A3','battle_BTL_A3_BTL_A3_data')
