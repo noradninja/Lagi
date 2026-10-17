@@ -21,6 +21,7 @@ if($normalNinja.Contains('lagi_resident_video_vita.cpp.obj')){throw 'Battle resi
 if(!$battleNinja.Contains('lagi_resident_video_vita.cpp.obj')){throw 'Resident video service missing'}
 if($normalNinja.Contains('lagi_allocator_tables_vita.cpp.obj')){throw 'Battle allocator service leaked into ordinary build'}
 if(!$battleNinja.Contains('lagi_allocator_tables_vita.cpp.obj')){throw 'Battle allocator table service missing'}
+if(!$battleNinja.Contains('lagi_battle_damage_digits_vita.cpp.obj') -or $normalNinja.Contains('lagi_battle_damage_digits_vita.cpp.obj')){throw 'Floating battle digits must retain native-battle build isolation'}
 $allocator=Get-Content -Raw "$battle/azel_upstream/mainMenuDebugTasks.cpp"
 foreach($hook in @('lagiPushDramFileTable(pDramAllocator);','lagiPopDramFileTable(prev);','lagiResetDramFileTables();')){
  if(!$allocator.Contains($hook)){throw "Native allocator owner hook missing: $hook"}

@@ -84,6 +84,18 @@ struct sHotpointBundle {};
 sHotpointBundle* readRiderDefinitionSub(sSaturnPtr){return nullptr;}
 #include "formation_types.inc"
 #include "formation.inc"
+struct DigitCommand{
+    u16 m0_CMDCTRL=0,m4_CMDPMOD=0,m6_CMDCOLR=0,m8_CMDSRCA=0,mA_CMDSIZE=0,m1C_CMDGRA=0;
+    s16 mC_CMDXA=0,mE_CMDYA=0,m14_CMDXC=0,m16_CMDYC=0;
+};
+struct DigitPacket{u16 m4_bucketTypes=0;DigitCommand* m6_vdp1EA=nullptr;};
+struct DigitContext{
+    DigitCommand* m0_currentVdp1WriteEA;
+    std::vector<quadColor> m14[1];std::vector<quadColor>::iterator m10;
+    DigitPacket* m20_pCurrentVdp1Packet;unsigned m1C=0,mC=0;
+};
+struct {DigitContext m14_vdp1Context[1];}graphicEngineStatus;
+#include "digits.inc"
 struct sBattleManager{s16 m2_currentBattleOverlayId,m4_previousBattleOverlayId,m6_subBattleId,m8_previousSubBattleId;};
 #include "remap.inc"
 void checkA3Dispatch(){
@@ -205,6 +217,34 @@ void checkA3Formations(){
     }
     std::printf("PASS: actual generated formation parser read %u enemy parameter sets / %u animation records; death mode/sounds and quadrant colors match separate native fields. Hotspot/model loading mocked.\n",types,states);
 }
+void checkDamageDigits(){
+    const u32 anchors[][2]={{0x0605BDB8,0x1001},{0x0605BDBC,0x048C},
+        {0x0605BDC0,0x060B1F7C},{0x0605BDC8,0x060B1F04},{0x0605C11C,0x060B1FF4}};
+    for(const auto& a:anchors)if(read(g_BTL_GenericData->getSaturnPtr(a[0]),a[1]>0xFFFF?4:2)!=a[1])
+        throw std::runtime_error("Original floating-number instruction/table anchor changed");
+    for(int mode=0;mode<2;++mode)for(unsigned color=0;color<4;++color){
+        DigitCommand commands[10];DigitPacket packets[10];
+        auto& c=graphicEngineStatus.m14_vdp1Context[0];
+        c.m0_currentVdp1WriteEA=commands;c.m20_pCurrentVdp1Packet=packets;
+        c.m14[0].resize(16);c.m10=c.m14[0].begin();c.m1C=c.mC=0;
+        lagiDrawBattleDamageDigits("0123456789",-40,30,8,mode?16:11,0x3100,color,mode);
+        if(c.mC!=10 || c.m1C!=10 || c.m10!=c.m14[0].begin()+10)throw std::runtime_error("Digit packet counters differ");
+        for(unsigned d=0;d<10;++d){
+            const auto sprite=g_BTL_GenericData->getSaturnPtr((mode?0x060B1F04:0x060B1F7C)+d*12);
+            auto& cmd=commands[d];
+            if(cmd.m0_CMDCTRL!=0x1001 || cmd.m4_CMDPMOD!=0x48C ||
+                cmd.m8_CMDSRCA!=u16(readSaturnU16(sprite+2)+0x3100) ||
+                cmd.m6_CMDCOLR!=u16(readSaturnU16(sprite+6)+0x3100) ||
+                cmd.mA_CMDSIZE!=readSaturnU16(sprite+8) || cmd.mC_CMDXA!=-40+int(d)*8 ||
+                cmd.mE_CMDYA!=-30 || cmd.m14_CMDXC!=cmd.mC_CMDXA+7 ||
+                cmd.m16_CMDYC!=(mode?16:11)-31 || cmd.m1C_CMDGRA!=d || packets[d].m6_vdp1EA!=&cmd)
+                throw std::runtime_error("Floating-digit geometry/texture/packet differs from native emitter");
+            for(unsigned v=0;v<4;++v)if(c.m14[0][d][v]!=readSaturnU16(g_BTL_GenericData->getSaturnPtr(0x060B1FF4+color*8+v*2)))
+                throw std::runtime_error("Floating-digit Gouraud colors differ from authored table");
+        }
+    }
+    puts("PASS: production floating-digit emitter covers all digits, both animation modes and all four authored Gouraud color sets with original instruction/table anchors. Mocked VDP1 context, not GPU pixels.");
+}
 int main(int argc,char** argv){
     if(argc!=2 || fopen_s(&disc,argv[1],"rb") || !disc)return 2;
     try{
@@ -218,6 +258,7 @@ int main(int argc,char** argv){
         checkA3Dispatch();
         checkA3Animations();
         checkA3Formations();
+        checkDamageDigits();
         delete g_BTL_GenericData;fclose(disc);return 0;
     }catch(const std::exception& error){std::fprintf(stderr,"FAIL: %s\n",error.what());fclose(disc);return 1;}
 }

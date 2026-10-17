@@ -13,6 +13,10 @@ $header=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/BTL_A3_UrchinFormatio
 $end=$header.IndexOf('struct BTL_A3_UrchinFormation :')
 if($end -lt 0){throw 'Native A3 formation header boundary changed'}
 [IO.File]::WriteAllText("$scratch/formation_types.inc",$header.Substring(0,$end))
+$digits=Get-Content -Raw "$repo/src/integration/lagi_battle_damage_digits_vita.cpp"
+$begin=$digits.IndexOf('void lagiDrawBattleDamageDigits(')
+if($begin -lt 0){throw 'Damage digit service boundary changed'}
+[IO.File]::WriteAllText("$scratch/digits.inc",$digits.Substring($begin))
 $enemy=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/battle_BTL_A3_urchin.cpp"
 foreach($required in @('m2C_deathMode == 4','u8 deathMode = pThis->mCC->m2C_deathMode;','m2D_hitSound != 0xFF','m2E_deathSound != 0xFF','playSystemSoundEffect(pThis->mCC->m2D_hitSound);','playSystemSoundEffect(pThis->mCC->m2E_deathSound);')){
  if(!$enemy.Contains($required)){throw "Missing generated enemy parameter consumer: $required"}

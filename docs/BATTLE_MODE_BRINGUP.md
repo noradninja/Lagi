@@ -323,6 +323,24 @@ cmake --build build-battle
 
 ## Required progression and acceptance
 
+Floating-digit checkpoint: restored the stubbed `damageDisplay_draw` through
+a native VDP1 emitter port of BTL_A3 `0605BCDC..0605BDA8`, called at
+`0605C0DE`. It reads runtime sprite tables `060B1F7C`/`060B1F04` and Gouraud
+colors `060B1FF4`; no game font/color data is embedded. Native formatting,
+timing, positions and HP/BP effects remain Azel-owned. The disc-backed test
+executes the production emitter for all ten digits, both modes and all four
+color sets, checking texture relocation, geometry, color slots and packets
+against original instruction/table anchors. Context storage is mocked, so
+actual floating-number GPU appearance is still a device acceptance item.
+
+Effect scope: shared effect lighting must work for attacks, items, Berserks
+and enemies, not only healing. Existing grid light interpolation and per-draw
+capture are the integration boundary; do not add item-specific substitute
+glows. Current source still stubs healing particle update/draw, portions of
+status/attack effects, and the final dragon effect-light step. These missing
+producer paths and setup/apply/restore ownership require original-code ports
+and device validation; restoring numbers/gauges does not complete them.
+
 First hardware battle acceptance (2026-10-17): user recording/log confirms A3
 combat entry, commands and battle completion execute. It also shows missing
 gauge fills/damage effects and a black field return despite resumed audio.

@@ -2082,6 +2082,27 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[1]);" "playSystemSoundEffect(pThis->mCC->m2D_hitSound);" source_text "${source_text}")
   string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleDamageDisplay.cpp")
+  set(damage_draw_old [=[static void damageDisplay_draw(sDamageDisplayTask* pThis)
+{
+    // Renders digits using font tables at 060b1f7c (mode 0) / 060b1f04 (mode 1)
+    // and color table at 060b1ff4 via graphicEngineStatus.vdp1Context_Master
+    Unimplemented();
+}]=])
+  string(FIND "${source_text}" "${damage_draw_old}" damage_draw_found)
+  if(damage_draw_found LESS 0)
+   message(FATAL_ERROR "Native battle damage-display draw boundary changed")
+  endif()
+  set(damage_draw_new [=[static void damageDisplay_draw(sDamageDisplayTask* pThis)
+{
+    const auto* bundle = dramAllocatorEnd[0].mC_fileBundle;
+    lagiDrawBattleDamageDigits(pThis->m24_digits, pThis->m2E_screenX, pThis->m30_screenY,
+        pThis->m32_currentWidth, pThis->m34_currentHeight,
+        bundle->m4_vd1Allocation->m4_vdp1Memory, pThis->m42_colorType, pThis->m44_animMode);
+}]=])
+  string(REPLACE "${damage_draw_old}" "${damage_draw_new}" source_text "${source_text}")
+  string(REPLACE "#include \"battleTargetable.h\"" "#include \"battleTargetable.h\"\n#include \"kernel/graphicalObject.h\"\n#include \"kernel/vdp1Allocator.h\"" source_text "${source_text}")
+  set(source_text "#include \"lagi/battle_damage_digits.h\"\n${source_text}")
  elseif(relative_path STREQUAL "battle/battleGenericData.cpp")
   # A failed synchronous read must not feed uninitialized storage into the
   # native table readers. The execution preflight reports/retries this case.
@@ -3768,7 +3789,7 @@ set_property(SOURCE src/integration/lagi_runtime.cpp APPEND PROPERTY COMPILE_DEF
 target_include_directories(lagi PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}/src/integration")
 target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceProcessmgr_stub SceSysmem_stub SceSysmodule_stub)
 if(LAGI_BATTLE_NATIVE_BUILD)
- target_sources(lagi PRIVATE src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_battle_graphics_vita.cpp src/integration/lagi_resident_video_vita.cpp src/integration/lagi_allocator_tables_vita.cpp)
+ target_sources(lagi PRIVATE src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_battle_graphics_vita.cpp src/integration/lagi_resident_video_vita.cpp src/integration/lagi_allocator_tables_vita.cpp src/integration/lagi_battle_damage_digits_vita.cpp)
  set_property(SOURCE src/integration/lagi_task_vita.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_NATIVE_TASK_HEAP_CLEANUP=1)
  set_property(SOURCE src/integration/lagi_disc_file_vita.cpp src/integration/lagi_map_resources_vita.cpp src/integration/lagi_azel_books_menu.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_TRACK_RESIDENT_VIDEO=1)
 endif()
