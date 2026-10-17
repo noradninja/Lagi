@@ -7,14 +7,12 @@ renders. Do not edit `extern/Azel` or regress accepted frontend/flight/menu path
 
 ## Entry audit
 
-The current Vita generation deliberately disconnects battle in three places:
+The current Vita generation deliberately disconnects battle in these places:
 
 1. `kernel/moduleManager.cpp` overlay dispatch slot 4 is replaced with null.
 2. `battle/battleOverlay.cpp` startup calls for BTL overlays and debug teardown
    are removed by the source adapter.
-3. The field encounter path creates upstream `field/battleStart.cpp`'s loading
-   task. Its state 3 waits for desktop debug keyboard toggles, rather than
-   implementing the actual gameplay battle transition.
+3. Generic battle-data initialization is removed from generated `PDS.cpp`.
 
 Do not merely populate slot 4 and call this complete. Native `loadBattle`
 is in `mainMenuDebugTasks.cpp`; manager/debug-list/overlay tasks and the actual
@@ -24,7 +22,22 @@ The real `loadBattle()` reads signed battle/subbattle IDs from COMMON
 `0x212F96 + 2*r5`, resets temporary allocators and calls `loadBattleOverlay()`.
 The latter requires an already-live `gBattleManager`, remaps the authored IDs,
 rejects an empty PRG name, then creates the overlay task. Restoring slot 4
-alone does not establish manager ownership or make this null dereference safe.
+alone does not enable ordinary encounters. `moduleManager_Init()` already
+creates the manager with `createBattleManager(pWorkArea, 1)`; the generated
+module retains that call. Do not create a second manager or introduce lazy
+ownership to compensate for a missing audit.
+
+The normal path is `fieldEncounterTask.cpp::encounterTaskUpdate`: pause field,
+back up graphics, run loading setup, then call `loadBattleOverlay(mC,
+battleIndex)` directly in state 3. It does not traverse module dispatch slot 4.
+`startBattleTutorial()` uses this encounter route unless the field debug bit
+is set. Only its debug branch creates `field/battleStart.cpp`'s loading task.
+Read-only original FLD_A3 inspection confirms that task really tests debug
+keyboard toggles; replacing it as the ordinary gameplay path would be wrong.
+
+Before enabling entry, restore the missing graphics/resource handback detailed
+in [BATTLE_GRAPHICS_HANDOFF.md](BATTLE_GRAPHICS_HANDOFF.md). The current upstream
+backup is incomplete and both post-battle restoration sites are TODOs.
 
 `BTL_A3.cpp::overlayStart_BTL_A3()` loads its real overlay data, selects
 `gCurrentBattleOverlay`, and constructs `createBattleMainTask()`. That task
