@@ -281,6 +281,8 @@ static void build_rbg0_gpu_parameter(
 
 bool runtime_init()
 {
+    lagi::platform::logging::writef("[BattleBuild] native=%d executeA3=%d linkAudit=%d\n",
+        LAGI_BATTLE_BUILD_NATIVE,LAGI_BATTLE_BUILD_EXECUTE_A3,LAGI_BATTLE_BUILD_LINK_AUDIT);
     if (!lagi::diagnostics::saturn_memory_readers()) {
         std::printf("[Azel] Saturn memory reader smoke test FAILED\n");
         lagi::platform::renderer::failure("[FAIL] SATURN MEMORY READERS");

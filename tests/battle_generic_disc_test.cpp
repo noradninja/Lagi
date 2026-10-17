@@ -6,6 +6,7 @@
 #include <cassert>
 #include <algorithm>
 #include <stdexcept>
+#include <set>
 using u8=std::uint8_t;using u16=std::uint16_t;using u32=std::uint32_t;
 using s16=std::int16_t;using s32=std::int32_t;using fixedPoint=s32;
 using quadColor=std::array<u16,4>;
@@ -62,9 +63,49 @@ s16 readSaturnS16(sSaturnPtr p){return static_cast<s16>(read(p,2));}
 u32 readSaturnU32(sSaturnPtr p){return read(p,4);}
 fixedPoint readSaturnFP(sSaturnPtr p){return static_cast<s32>(read(p,4));}
 sSaturnPtr readSaturnEA(sSaturnPtr p){return {p.file,read(p,4)};}
+std::string readSaturnString(sSaturnPtr p){
+    std::string result;if(!p.address)return result;
+    for(u8 c=readSaturnU8(p);c;c=readSaturnU8(p)){result.push_back(char(c));p+=1;}
+    return result;
+}
 #include "battle/battleGenericData.h"
 #include "quad.inc"
 #include "generic.inc"
+#include "entry.inc"
+#include "dispatch.inc"
+struct sBattleManager{s16 m2_currentBattleOverlayId,m4_previousBattleOverlayId,m6_subBattleId,m8_previousSubBattleId;};
+#include "remap.inc"
+void checkA3Dispatch(){
+    sSaturnMemoryFile common("COMMON.DAT");common.m_base=0x00200000;
+    struct Setup{std::string prg;unsigned count;};std::vector<Setup> setups;
+    for(unsigned i=0;i<27;++i){
+        const auto entry=common.getSaturnPtr(0x2005DC+i*0x14);
+        setups.push_back({readSaturnString(readSaturnEA(entry+4)),readSaturnU32(entry+0xC)});
+    }
+    std::set<int> subbattles;
+    for(unsigned i=0;i<setups.size();++i)for(unsigned sub=0;sub<setups[i].count;++sub){
+        sBattleManager manager{};manager.m2_currentBattleOverlayId=s16(i);manager.m6_subBattleId=s16(sub);
+        remapBattleOverlayId(&manager);
+        if(manager.m2_currentBattleOverlayId<0 || unsigned(manager.m2_currentBattleOverlayId)>=setups.size())throw std::runtime_error("Native remap outside COMMON table");
+        if(setups[manager.m2_currentBattleOverlayId].prg=="BTL_A3.PRG")subbattles.insert(manager.m6_subBattleId);
+    }
+    unsigned formations=0;
+    for(const int sub:subbattles){
+        auto entry=sOverlayBattleEntry::read(g_BTL_GenericData->getSaturnPtr(0x060A5688+sub*0x20));
+        if(std::find(std::begin(mapFunctions),std::end(mapFunctions),entry.m8_mapFunction.address)==std::end(mapFunctions)){
+            std::fprintf(stderr,"sub=%d missing map dispatch %08X\n",sub,entry.m8_mapFunction.address);throw std::runtime_error("Unimplemented authored A3 map");
+        }
+        read(entry.m4_positionData+0x59,1); // engine consumes the native 0x5A-byte block
+        auto formation=entry.m0_formationTable;
+        for(u32 address=readSaturnU32(formation);address;address=readSaturnU32(formation)){
+            if(std::find(std::begin(formationFunctions),std::end(formationFunctions),address)==std::end(formationFunctions)){
+                std::fprintf(stderr,"sub=%d missing formation dispatch %08X\n",sub,address);throw std::runtime_error("Unimplemented authored A3 formation");
+            }
+            readSaturnU32(formation+4);readSaturnU32(formation+8);++formations;formation+=0xC;
+        }
+    }
+    std::printf("PASS: native COMMON remapper reaches %zu A3 subbattles and %u formation records; all map/formation functions match native dispatch cases. Data coverage only, not callback execution.\n",subbattles.size(),formations);
+}
 int main(int argc,char** argv){
     if(argc!=2 || fopen_s(&disc,argv[1],"rb") || !disc)return 2;
     try{
@@ -75,6 +116,7 @@ int main(int argc,char** argv){
             g_BTL_GenericData->m_dataSize,reads,highest,BTL_GenericData::mLaserData.m20_numLaserNodes,
             BTL_GenericData::mBoltLaserData0.m20_numLaserNodes,BTL_GenericData::mBoltLaserData1.m20_numLaserNodes,
             BTL_GenericData::m_0x60abef4_animatedQuads.size());
+        checkA3Dispatch();
         delete g_BTL_GenericData;fclose(disc);return 0;
     }catch(const std::exception& error){std::fprintf(stderr,"FAIL: %s\n",error.what());fclose(disc);return 1;}
 }

@@ -137,6 +137,18 @@ authored A3 encounter entry and its log/video; if it crashes, retain the complet
 dump with those matching symbols. Expected markers are `[BattleStartup] generic
 data ready` and `enter BTL_A3`; neither marker alone proves combat success.
 
+Runtime initialization also logs `[BattleBuild] native=... executeA3=...
+linkAudit=...` from the actual compile options. The experimental command above
+should report all three as 1; default builds report 0. An absent startup marker
+alone cannot distinguish a disabled build from a run with no encounter.
+
+The read-only disc test now also uses the actual COMMON remapper and native
+overlay-entry reader, deriving supported function addresses from A3's source
+dispatch cases. On the inspected disc, all 10 remapped A3 subbattles and their
+10 formation records reference supported map/formation cases and bounded
+position data. This is coverage of authored dispatch data, not execution of
+formation callbacks, enemy attacks, model loading or combat.
+
 ## Battle audio sequence return (experimental option only)
 
 The original MAIN routines distinguish a pending marked sequence from a pushed
