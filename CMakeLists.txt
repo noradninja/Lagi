@@ -2028,6 +2028,27 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
             updateLCSTarget(&pThis->m40_LCSTarget);]=])
   string(REPLACE "${fish_motion_old}" "${fish_motion_new}" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldEncounterTask.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  string(REPLACE "void encounterTaskInit(sEncouterTask* pThis, s_workArea* pArg)"
+   "#include \"lagi_encounter_trace.inc\"\n\nvoid encounterTaskInit(sEncouterTask* pThis, s_workArea* pArg)"
+   source_text "${source_text}")
+  string(REPLACE "    if (!getEncounterArea(pThis))\n    {\n        noEncounterData();"
+   "    if (!getEncounterArea(pThis))\n    {\n        lagiReportEncounterState(pThis,sSaturnPtr::getNull(),1);\n        noEncounterData();"
+   source_text "${source_text}")
+  string(REPLACE "    if (readSaturnS32(local_8 + 0xC) < 0)\n    {\n        noEncounterData();"
+   "    if (readSaturnS32(local_8 + 0xC) < 0)\n    {\n        lagiReportEncounterState(pThis,sSaturnPtr::getNull(),2);\n        noEncounterData();"
+   source_text "${source_text}")
+  string(REPLACE "    // if moving and there is a valid entry"
+   "    lagiReportEncounterState(pThis,local_8,3);\n\n    // if moving and there is a valid entry"
+   source_text "${source_text}")
+  string(REPLACE "        if (hasEncounterData == 0)\n        {"
+   "        if (hasEncounterData == 0)\n        {\n            lagiReportEncounterState(pThis,sSaturnPtr::getNull(),0);"
+   source_text "${source_text}")
+  string(REPLACE "        pThis->mC = readSaturnS8(pRandomEncounterData + 1);"
+   "        pThis->mC = readSaturnS8(pRandomEncounterData + 1);\n        PDS_Log(\"[NativeEncounterTable] field=%d storyBit=%u value=%d selector=%08X root=%08X overlay=%d\\n\", fieldTaskPtr->m2C_currentFieldIndex, bitIndex, mainGameState.getBit(bitIndex), pThis->m18.m_offset, readSaturnEA(pThis->m18).m_offset, pThis->mC);"
+   source_text "${source_text}")
+  string(REPLACE "                int randomValue = performModulo2(100, randomNumber());"
+   "                int randomValue = performModulo2(100, randomNumber());\n                PDS_Log(\"[NativeEncounterRoll] row=%08X chance=%d roll=%d attempts=%d/%d\\n\", local_8.m_offset, cVar1, randomValue, pThis->mE, pThis->mF);"
+   source_text "${source_text}")
   # Native graphics return 06028668 is absent upstream. Keep native encounter
   # state decisions; replace only platform storage/copy/resource ownership.
   string(FIND "${source_text}" "// 0602849a\nstruct sGraphicsBackup" backup_begin)

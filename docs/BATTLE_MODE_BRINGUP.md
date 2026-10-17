@@ -489,6 +489,31 @@ dither Vita VPK builds. These are source/host/build checks, not device proof.
 Use a healing item in an A3 battle to validate appearance, timing and busy-
 scene performance. Status-cure, blast-chip and several berserk producers still
 contain missing paths; this does not complete all battle effects or lighting.
+
+Encounter/radar diagnosis: original US Disc 1 COMMON entry
+`00208710 + field(2)*14h` selects its A3 root with story bit **87 decimal
+(0057h)**, not 0087h. Set selects root 00207624: bounded immediate rows;
+clear selects 002076A0: probability-based rows. Both roots provide subfield
+tables only for subfields 0 and 2; subfields 1 and 3..12 have null entries.
+The probability root's first rows have 8-percent chance, row danger 1 and
+per-row cap 10, with interval 150, initial countdown 120 and forced-attempt
+limit 20 from its selector. This does not establish which root the user's
+save selects, nor prove a random-encounter failure in areas without tables.
+The current radar port separately gates danger display on consumable 56
+(Telepathy Shard); no inventory/story gate has been bypassed.
+
+Experimental builds now report `[NativeEncounterTable]` at selector setup,
+`[NativeEncounter]` only on gate/row/context changes, and
+`[NativeEncounterRoll]` only when the original probability roll occurs.
+Reasons: 0 disabled by field policy, 1 missing area table, 2 outside/exhausted
+rows, 3 valid row. Logs include native field/subfield/status, selected pointer,
+row rate/danger, movement, shard count and countdown/attempt state. The
+observer does not sample RNG or modify counters. `encounter_trace_test.ps1`
+executes its deduplication/null safety and compares the generated encounter
+evaluator with upstream after removing diagnostic calls; all native area,
+probability, RNG and counter code matches. Battle VPK and build-boundary
+checks pass. A fresh flight log through subfields 0/2 is needed to establish
+the runtime cause; the diagnostics alone do not fix or verify encounters.
 `native_color_clear_test.ps1` checks production API arguments, completion order,
 padding bounds, rejected-transfer fallback and failed-completion behavior with
 a mocked transfer engine. Builds are not hardware API or performance proof;
