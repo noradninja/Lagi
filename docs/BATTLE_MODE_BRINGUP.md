@@ -116,8 +116,8 @@ shared quad reader on US Disc 1 `BTL_A3.PRG`: 385044 bytes, 2751 bounded reads
 through `060B08F8`, three 10-node laser tables and nine animation groups.
 No game files are extracted or committed. These checks do not execute combat.
 
-Known remaining work includes native battle audio sequence push/pop (current
-Vita entry is empty and pop only logs), other overlays, generic-cache lifecycle
+Known remaining work includes audible/native-loader validation of battle audio
+(the opt-in worker stack below is now implemented), other overlays, generic-cache lifecycle
 across discs, live task/allocator/formation correctness, gameplay commands,
 results/rewards and repeated battle-to-field return. Hardware validation is
 still required; neither a retained link nor the data-parser test establishes it.
@@ -136,6 +136,43 @@ Retain the matching `build-battle/lagi.velf` and `lagi` ELF. First capture an
 authored A3 encounter entry and its log/video; if it crashes, retain the complete
 dump with those matching symbols. Expected markers are `[BattleStartup] generic
 data ready` and `enter BTL_A3`; neither marker alone proves combat success.
+
+## Battle audio sequence return (experimental option only)
+
+The original MAIN routines distinguish a pending marked sequence from a pushed
+child: `0602B3DA` marks the current entry; `0602B29A` clears the parent's mark
+while pushing, retaining its sound IDs and resetting volume sentinels to 0x80.
+The upstream reconstruction incorrectly sets the parent's mark to 1. Pop
+`0602B506` either clears a still-pending mark without a reload or decrements the
+index and restores the previous sequence. Its parameter controls post-load
+replay. `0602BADA` calls replay `0602B962`, which checks sound-config byte +2
+and starts eligible saved sounds at volume 0x7F. Original byte loads sign-extend
+the configuration's return-sequence offset. The read-only disc audit checks
+these instruction anchors; no game resource bytes are committed.
+
+With A3 execution ON, the existing SPSC queue now carries mark/pop events to
+the audio worker. Only that worker owns the eight-entry stack, sound IDs and
+bank transitions. Return uses the existing bank loader and stages saved IDs
+for the authored post-load replay filter; parameter zero does not replay.
+The loading-ready query also counts accepted bank/pop events so an older
+completion cannot acknowledge a newer transition still queued for processing.
+Default builds retain the accepted audio behavior (the new stack is inactive).
+
+`tests/battle_audio_stack_test.ps1` executes production worker load/pop/replay,
+queue/event processing and readiness bodies against mocked SCSP services. It
+checks nesting, bound/underflow behavior, cancel-before-load, signed return
+offset, parent mark clearing, volume sentinels, config-gated/no replay, and
+accepted versus rejected queued control events. Both Vita VPK builds pass.
+No listening, 68K/SCSP execution, concurrent worker scheduling or battle return
+is established by these host tests.
+
+Still open: the existing Vita loader always performs its full bank-load path;
+native same-area/same-sequence state selection and selective stopped-bank mask
+are not yet reproduced. The replay filter currently follows the full-reload
+policy, not the missing selective mask. Queue overflow remains an explicit
+logged delivery failure, not a successful transition. Modes above 1, pending
+sound requests across transitions, audio timing and repeated encounters need
+native/hardware validation before this can be called complete.
 
 ## Battle view and scene publication
 

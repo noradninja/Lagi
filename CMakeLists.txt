@@ -3679,6 +3679,7 @@ if(LAGI_BATTLE_NATIVE_BUILD)
 endif()
 if(LAGI_BATTLE_EXECUTE_A3)
  target_sources(lagi PRIVATE src/integration/lagi_battle_startup_vita.cpp)
+ set_property(SOURCE src/integration/lagi_audio_vita.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_BATTLE_AUDIO_STACK=1)
 endif()
 
 if(LAGI_AZEL_PROBE)

@@ -9,6 +9,8 @@ if($battleCache -notmatch 'LAGI_BATTLE_NATIVE_BUILD:BOOL=ON'){throw 'Battle conf
 if($normalCache -notmatch 'LAGI_BATTLE_NATIVE_BUILD:BOOL=OFF'){throw 'Normal configuration must retain encounters-disabled default'}
 $battleNinja=Get-Content -Raw "$battle/build.ninja"
 $normalNinja=Get-Content -Raw "$normal/build.ninja"
+if($normalNinja.Contains('LAGI_BATTLE_AUDIO_STACK=1')){throw 'Experimental audio stack leaked into default build'}
+if(($battleCache -match 'LAGI_BATTLE_EXECUTE_A3:BOOL=ON') -ne $battleNinja.Contains('LAGI_BATTLE_AUDIO_STACK=1')){throw 'Audio stack must match explicit A3 execution option'}
 if($normalNinja.Contains('lagi_battle_rays_vita.cpp.obj')){throw 'Battle-only ray service leaked into ordinary build'}
 if($normalNinja.Contains('lagi_battle_graphics_vita.cpp.obj')){throw 'Battle-only graphics service leaked into ordinary build'}
 if(!$battleNinja.Contains('lagi_battle_graphics_vita.cpp.obj')){throw 'Battle graphics service missing'}
