@@ -341,9 +341,26 @@ generated draw, verify endpoint ownership/arguments and original literals.
 This routine supplies sprite Gouraud colors; it does not itself establish a
 new point-light source. Device ray appearance remains pending.
 
-The extended crash artifact is a 2560-byte `.psp2dmp.tmp`; no complete crash
-context or matching symbolized fault has been established. The apparent tunnel
-to cinematic boundary is a user observation, not a diagnosed crash cause.
+The later complete dump `psp2core-1792255547-0x001d662d59-eboot.bin.psp2dmp`
+(187280 bytes), matched to the October 17 12:36 `build-battle-vita/lagi` ELF
+and `lagi.velf`, identifies a deliberate town-dispatch assertion, not a GPU
+fault. Runtime text base is 8103D000; PC offset 1E5BE2 maps to ELF 811E5BE2
+(`_kill_r`), with `raise`, `abort` and `loadTownPrg` on the captured stack.
+The return at runtime 811763E1 maps to ELF 811393E1; the preceding call at
+811393DC invokes `__assert_func` with source line 346. Generated
+`town_town.cpp` line 346 is the unknown-overlay assertion. Stack bytes retain
+`TWN_E011.PRG`; module-manager status 08 also selects E011. The preceding
+TWN_RUIN load is the existing shared-data initialization, not proof that the
+requested destination is Ruins gameplay. The user confirms this exit leads to
+an in-engine cinematic.
+
+The generated dispatch currently retains only RUIN, EXCA and E006, and the
+source list omits E011. Enabling the actual E011 startup and its dependencies
+is the next integration step; bypassing the assertion or routing it to E006
+would not implement that cinematic. No cinematic fix or hardware acceptance
+is claimed by this diagnosis. The local parser does not symbolize modules
+named `lagi` automatically: resolve offsets against the original ELF LOAD
+base, not against the relocated VELF symbol addresses.
 
 Color-clear optimization candidate: the capture spends ~3.4 ms clearing the
 960x544 color buffer on the CPU. Native scene rendering now requests an ABGR
