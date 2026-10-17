@@ -374,6 +374,18 @@ zero fill through the GXM transfer engine and finishes that transfer before
 BeginScene. A rejected submission retains the exact pitch-sized CPU clear;
 failed completion rejects the frame instead of racing GPU writes with CPU
 fallback. No actors, geometry, resolution, filtering or effects are removed.
+
+A3 water wildlife motion: `sWaterfallTask` mode 0 discarded its computed
+orbit, leaving the LCS/model X/Z at zero instead of around its authored origin.
+The generated adapter restores FLD_A3 `06055BF0..06055C60`: amplitude*sine A,
+amplitude*(cosine*shape) B, rotated X/Z offsets about the source position,
+draw heading phase-heading+04000000, followed by the native LCS target update.
+Original stores at 06055C38/54/60 target offsets 14/1C/24 respectively.
+`field_water_wildlife_motion_test.ps1` executes the generated block at sixteen
+cardinal phase/heading combinations and checks that Y remains unchanged.
+The fullres/dither battle VPK compiles this path. Wildlife visibility and
+shooting remain device checks; splash billboard substitution and the missing
+layered water background are separate unfinished rendering paths.
 `native_color_clear_test.ps1` checks production API arguments, completion order,
 padding bounds, rejected-transfer fallback and failed-completion behavior with
 a mocked transfer engine. Builds are not hardware API or performance proof;

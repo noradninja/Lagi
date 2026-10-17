@@ -2001,6 +2001,32 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "u32 getFileSizeFromFileId(const char* fileName)"
    "__attribute__((weak)) u32 getFileSizeFromFileId(const char* fileName)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a3/o_fld_a3_2.cpp")
+  set(fish_motion_old [=[            // Compute values using sin/cos tables (results not stored to struct in mode 0,
+            // only used for return value which the task scheduler ignores)
+            u32 angle = ((u32)(s32)pThis->m20_rotAngle >> 16) & 0xFFF;
+            fixedPoint sinResult = MTH_Mul(pThis->m28_amplitude, getSin(angle));
+
+            // MTH_Mul_5_6: m28 * cos(angle) + m2C (result unused in mode 0)
+            fixedPoint cosAngle = getCos(angle);
+            MTH_Mul(pThis->m28_amplitude, cosAngle);
+
+            u32 angle2 = ((u32)(s32)pThis->m30_param2 >> 16) & 0xFFF;
+            MTH_Mul(sinResult, getCos(angle2));]=])
+  string(FIND "${source_text}" "${fish_motion_old}" fish_motion_found)
+  if(fish_motion_found LESS 0)
+   message(FATAL_ERROR "Native A3 water wildlife motion boundary changed")
+  endif()
+  set(fish_motion_new [=[            // FLD_A3 06055BF0..06055C60: retain the native orbit results.
+            const u32 angle = ((u32)(s32)pThis->m20_rotAngle >> 16) & 0xFFF;
+            const fixedPoint a = MTH_Mul(pThis->m28_amplitude, getSin(angle));
+            const fixedPoint b = MTH_Mul_5_6(pThis->m28_amplitude, getCos(angle), pThis->m2C_param);
+            const u32 heading = ((u32)(s32)pThis->m30_param2 >> 16) & 0xFFF;
+            pThis->m14_LCSPosition.m0_X = pThis->m8_position.m0_X + MTH_Mul(a, getCos(heading)) - MTH_Mul(b, getSin(heading));
+            pThis->m14_LCSPosition.m8_Z = pThis->m8_position.m8_Z + MTH_Mul(a, getSin(heading)) + MTH_Mul(b, getCos(heading));
+            pThis->m24_computedY = pThis->m20_rotAngle - pThis->m30_param2 + 0x4000000;
+            updateLCSTarget(&pThis->m40_LCSTarget);]=])
+  string(REPLACE "${fish_motion_old}" "${fish_motion_new}" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldEncounterTask.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # Native graphics return 06028668 is absent upstream. Keep native encounter
   # state decisions; replace only platform storage/copy/resource ownership.
