@@ -90,6 +90,30 @@ Overlay dispatch/startup remain disabled. Generic-data initialization, manager
 lifetime, original field encounter handoff and battle camera/presentation
 routing still require restoration before on-device combat testing.
 
+## Battle view and scene publication
+
+Generated `battleGrid.cpp` now captures the native view immediately after
+`generateCameraMatrix`. That function writes `pCurrentMatrix`; the existing
+bridge removes the captured root from model matrices and Neptune reapplies it
+once. Ordinary encounters remain children of the paused field and keep module
+mode 3. They must publish the battle grid's view, not reuse the paused field
+camera. No camera pose, orbit, target or interpolation is recreated in Lagi.
+
+Direct module battle mode 4 now shares the native frame/UI/fade publication,
+material indexing, GPU texture pool, resident geometry capacity and authored
+clip-plane paths. Its presentation adapter has no field/dragon-task pointer
+dependency. Modes 3 and 4 share projected-world-sprite and mesh depth behavior;
+the existing field radar depth/filter exception is unchanged. Field-only probes
+and timing diagnostics remain field-only. Current dithering flags are unchanged.
+
+`tests/battle_presentation_test.ps1` checks the generated camera capture anchor,
+shared capability/depth gates, and production battle view publication against
+a mocked renderer (exact matrix, fixed-point clip conversion, neutral fallback
+camera). Both full Vita VPK configurations and the retained-root A3 link audit
+pass with fullres/dither ON. This is not task-order, camera motion, lighting,
+occlusion or on-device rendering acceptance. Overlay startup and generic-data initialization remain
+disabled; those lifecycle boundaries are the next integration step.
+
 ## Expanded shared/A3 graph and initial retained-root audit
 
 The opt-in source graph now contains all 49 shared battle `.cpp` modules and

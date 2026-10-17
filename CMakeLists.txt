@@ -1977,6 +1977,17 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   set(capture_marker "        pThis->m20 = backupGraphicsToEnterBattle(pThis, 0);")
   string(REPLACE "${capture_marker}" "${capture_marker}\n        if (!pThis->m20)\n        {\n            pThis->m4->getTask()->clearPaused();\n            graphicEngineStatus.m40AC.m1_isMenuAllowed = pThis->m1;\n            return; // do not enter battle without restorable graphics\n        }" source_text "${source_text}")
   string(REPLACE "void encounterTaskDelete(sEncouterTask* pThis)\n{\n    encounterTaskVar0 = 0;" "void encounterTaskDelete(sEncouterTask* pThis)\n{\n    lagiDiscardBattleGraphics(pThis->m20);\n    encounterTaskVar0 = 0;" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleGrid.cpp")
+  # Capture the native root immediately after camera generation, before
+  # local model transforms. Field encounters keep module mode 3, so they
+  # must replace that frame's view with the grid's view, not the paused field.
+  set(battle_camera_anchor "    generateCameraMatrix(&cameraProperties2, transformedCameraPosition, transformedCameraTarget, transformedCameraUp);")
+  string(FIND "${source_text}" "${battle_camera_anchor}" battle_camera_found)
+  if(battle_camera_found LESS 0)
+   message(FATAL_ERROR "Native battle camera publication anchor changed")
+  endif()
+  set(source_text "#include \"lagi/lagi_render_bridge.h\"\n${source_text}")
+  string(REPLACE "${battle_camera_anchor}" "${battle_camera_anchor}\n    lagi::azel_bridge::capture_native_scene_view_matrix();" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleGenericData.cpp")
   # Animated-quad parsing already belongs to the shared native Vita service.
   # Reuse that identical reader rather than link a second global definition.

@@ -4,6 +4,7 @@
 #include "lagi/lagi_town_tasks.h"
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/platform.h"
+#include "lagi/native_scene_mode.h"
 
 #include "kernel/moduleManager.h"
 #include "field.h"
@@ -20,6 +21,23 @@ void capture_local_coordinates(std::int16_t& x, std::int16_t& y)
 }
 
 namespace {
+
+void sync_battle_presentation_state()
+{
+    // No field-task/dragon pointer is required for module mode 4. Azel's grid
+    // owns the view; the neutral fallback camera supplies no extra transform.
+    static const float origin[3]={0.0f,0.0f,0.0f};
+    static const float target[3]={0.0f,0.0f,1.0f};
+    static const float up[3]={0.0f,1.0f,0.0f};
+    lagi::platform::renderer::presentation_set_scene_mode(4u);
+    const float nearPlane=static_cast<float>(static_cast<s32>(graphicEngineStatus.m405C.m10_nearClipDistance))/65536.0f;
+    const float farPlane=static_cast<float>(static_cast<s32>(graphicEngineStatus.m405C.m14_farClipDistance))/65536.0f;
+    lagi::platform::renderer::presentation_set_clip_planes(nearPlane,farPlane);
+    std::int32_t nativeView[12]{};
+    if(lagi::azel_bridge::native_scene_view_matrix(nativeView))
+        lagi::platform::renderer::presentation_set_native_view_matrix(nativeView);
+    lagi::platform::renderer::presentation_set_camera(origin,origin,target,up,0.0f,0.0f,0.0f);
+}
 
 void sync_field_presentation_state()
 {
@@ -151,7 +169,7 @@ void sync_presentation_state()
         vblankData.m14_numVsyncPerFrame);
     // Every native scene consumes the same Azel-authored UI planes. Do not
     // gate subtitles, badges, LCS backing or cinematic bars on actor type.
-    if (gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 2 || gGameStatus.m0_gameMode == 3) {
+    if (lagi::native_scene_mode(gGameStatus.m0_gameMode)) {
         // The task sets menuId in entry state 0; setupVdp2ForMenu runs in
         // state 1 on a later frame. Never decode the previous scene's VRAM
         // with the specialized status-menu tile format during that gap.
@@ -215,6 +233,9 @@ void sync_presentation_state()
         // Field remains Azel-owned. Phase 2 only opens the generic
         // presentation boundary for its existing model submissions.
         sync_field_presentation_state();
+        break;
+    case 4:
+        sync_battle_presentation_state();
         break;
     default:
         break;

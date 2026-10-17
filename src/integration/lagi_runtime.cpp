@@ -3,6 +3,7 @@
 
 #include "lagi/lagi_compat.h"
 #include "lagi/platform.h"
+#include "lagi/native_scene_mode.h"
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/lagi_scene_bridge.h"
 #include "lagi/lagi_input_bridge.h"
@@ -385,7 +386,7 @@ void runtime_frame()
     }
 
     begin_azel_vdp1_frame();
-    lagi::azel_bridge::begin_frame(gGameStatus.m0_gameMode == 3);
+    lagi::azel_bridge::begin_frame(gGameStatus.m0_gameMode == 3 || gGameStatus.m0_gameMode == 4);
 
     // Native 3D scene capability check. Town (1) and field (3) both
     // remain Azel-owned; Lagi only opens their generic presentation boundary.
@@ -393,8 +394,7 @@ void runtime_frame()
     const bool nativeTransitionFrame =
         gGameStatus.m0_gameMode == -1 && lastNativeSceneMode != 0u;
     const bool nativeSceneFrame = nativeTransitionFrame ||
-        gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 2 ||
-        gGameStatus.m0_gameMode == 3;
+        lagi::native_scene_mode(gGameStatus.m0_gameMode);
     if (!nativeTransitionFrame && nativeSceneFrame)
         lastNativeSceneMode = static_cast<unsigned>(gGameStatus.m0_gameMode);
     if (gGameStatus.m0_gameMode == 0)
@@ -1208,8 +1208,7 @@ void runtime_frame()
         // fade. Re-submit the retained final frame only while the movie-mode
         // state machine still owns presentation.
         lagi::platform::renderer::movie_republish_frame();
-    } else if (nativeTransitionFrame || gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 2 ||
-               gGameStatus.m0_gameMode == 3) {
+    } else if (nativeTransitionFrame || lagi::native_scene_mode(gGameStatus.m0_gameMode)) {
         // The frame that *enters* a native scene began as a movie/module-manager
         // frame and therefore did not acquire the scene producer slot. Release
         // the retained movie immediately, but publish only on a frame that

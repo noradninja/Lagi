@@ -1,4 +1,5 @@
 #include "lagi/platform.h"
+#include "lagi/native_scene_mode.h"
 #include "lagi/frontend_font.h"
 
 unsigned char* getVdp1Pointer(unsigned int EA);
@@ -4849,7 +4850,7 @@ static void drawPublishedVdp1Ui(
         // Projected scene sprites retain their producer's real endpoint Z.
         // Saturn packet buckets are priority keys, not GXM depth values.
         const bool worldDepth = command.hasWorldDepth && !command.fieldRadar &&
-            g_sceneGameMode == 3u && !g_vdp2MenuId && !g_vdp2SaveLayout &&
+            lagi::native_scene_depth_mode(g_sceneGameMode) && !g_vdp2MenuId && !g_vdp2SaveLayout &&
             g_nativeSceneNearPlane > 0.0f && g_nativeSceneFarPlane > g_nativeSceneNearPlane;
         if (!vdp1UiPassAccepts(pass, background, worldDepth))
             continue;
@@ -5377,7 +5378,7 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
     g_vdp1GpuTextures.reserve(model.textureCount);
 
     const std::size_t firstTexture = g_vdp1GpuTextures.size();
-    const bool pooled = g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u;
+    const bool pooled = lagi::native_scene_mode(g_sceneGameMode);
     g_nativeGpuTextureGenerations.resize(model.textureCount, 0u);
     std::size_t remainingNewTextureBytes = 0u;
     if (pooled && firstTexture < model.textureCount) {
@@ -5819,7 +5820,7 @@ bool prepare_vdp1_model(
     // active counts everywhere below. Cap subdivision capacity at its existing
     // 16-bit index-count limit, and preserve other modes' allocation behavior.
     const bool reserveSceneCapacity = preserveResidentTextures &&
-        (g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u) && subdivBuffersRequired;
+        lagi::native_scene_mode(g_sceneGameMode) && subdivBuffersRequired;
     const std::size_t allocationPolygons = reserveSceneCapacity
         ? std::min<std::size_t>(65535u / 24u,
             std::max<std::size_t>(2048u, model.polygonCount + model.polygonCount / 4u))
@@ -6798,7 +6799,7 @@ static std::uint16_t liveTownTextureIndex(
     };
     const std::uint64_t key = descriptorKey(
         record.cmdPmod, record.cmdColr, record.cmdSrca, record.cmdSize);
-    const bool indexedScene = g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u;
+    const bool indexedScene = lagi::native_scene_mode(g_sceneGameMode);
     if (indexedScene) {
         // Index only appended descriptors. emplace preserves the original
         // linear search's first match if the source contains duplicates.
@@ -6888,7 +6889,7 @@ static Vdp1ModelSource liveTownVdp1Source()
 // Decode at most one new material per frame; all reads use published ownership.
 static bool prepareRegisteredNativeMaterial()
 {
-    if (g_sceneGameMode < 1u || g_sceneGameMode > 3u ||
+    if (!lagi::native_scene_mode(g_sceneGameMode) ||
         g_liveTownCpuMesh.polygonRecords.empty())
         return false;
     static std::uint64_t revision = 0u, generation = 0u;
@@ -8082,7 +8083,7 @@ static ViewerMat4 buildAuthenticRoomWvp()
     }
 
     const bool nativeFieldClip =
-        (g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u) &&
+        lagi::native_scene_mode(g_sceneGameMode) &&
         g_nativeSceneNearPlane > 0.0f &&
         g_nativeSceneFarPlane > g_nativeSceneNearPlane;
     const float nearPlane =
@@ -8108,7 +8109,7 @@ static ViewerMat4 buildAuthenticRoomWvp()
     // All captured native views use the same orientation as flight. An extra
     // X reflection reverses both the image and projected triangle winding.
     // Retain the historical mirror only for the reconstructed camera fallback.
-    if (!g_nativeSceneViewValid && g_sceneGameMode != 3u)
+    if (!g_nativeSceneViewValid && !lagi::native_scene_depth_mode(g_sceneGameMode))
         projection.m[0] = -projection.m[0];
 
     return viewerMul(view, projection);
@@ -11163,13 +11164,13 @@ bool submit_vdp1_model(
                         g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
                     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
                     sceGxmSetFrontDepthFunc(
-                        g_probeContext, g_sceneGameMode == 3u ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
+                        g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
                     sceGxmSetBackDepthFunc(
-                        g_probeContext, g_sceneGameMode == 3u ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
+                        g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
                     sceGxmSetFrontDepthWriteEnable(
-                        g_probeContext, g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
+                        g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                     sceGxmSetBackDepthWriteEnable(
-                        g_probeContext, g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
+                        g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                 }
 
                 sceGxmSetFragmentProgram(
@@ -11523,15 +11524,15 @@ bool submit_vdp1_model(
                         sceGxmSetCullMode(
                             g_probeContext, SCE_GXM_CULL_NONE);
                         sceGxmSetFrontDepthFunc(
-                            g_probeContext, g_sceneGameMode == 3u ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
+                            g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
                         sceGxmSetBackDepthFunc(
-                            g_probeContext, g_sceneGameMode == 3u ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
+                            g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
                         sceGxmSetFrontDepthWriteEnable(
                             g_probeContext,
-                            g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
+                            lagi::native_scene_depth_mode(g_sceneGameMode) ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                         sceGxmSetBackDepthWriteEnable(
                             g_probeContext,
-                            g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
+                            lagi::native_scene_depth_mode(g_sceneGameMode) ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                     }
                     sceGxmSetFragmentProgram(
                         g_probeContext,
@@ -13253,7 +13254,7 @@ static void renderBasicWingViewer()
     // thread never reads mutable controller state directly.
 
     const bool nativeSceneContext =
-        g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u;
+        lagi::native_scene_mode(static_cast<int>(g_sceneGameMode));
     const bool nativeSceneMode =
         nativeSceneContext && (g_nativeSceneViewValid || g_townCameraReady) &&
         !azel_bridge::published_submissions().empty();
