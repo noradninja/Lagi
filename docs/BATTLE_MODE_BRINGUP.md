@@ -434,6 +434,20 @@ yet connected to the live effect task**: the native initializer also allocates
 state; update and draw must be restored together before replacing the timer
 stub. This preparatory commit has no runtime visual change and does not call
 for another hardware build by itself.
+
+The follow-on update trace identifies the 0x24 effect record's vectors as
+acceleration, velocity and wrapped angles; the initial names in the recovery
+helper have been corrected accordingly. A distinct `ParticleMotion` holds
+acceleration/velocity/position for the 0x38 particle record. Its recovered
+state-1 update follows 0608D60C..0608D71E: add the target displacement times
+signed FD71 (-655), integrate velocity, subtract velocity times 0CCC (3276),
+integrate position, then clear acceleration. Native 32-bit add/subtract wraps
+are explicit. States other than 1 skip motion but still require the caller's
+shared animated-quad update at 0608D720. Host tests cover both signs, repeated
+steps, inactive states and wrap boundaries; original-disc checks verify the
+signed constants, branch instructions and position stores. Vita syntax
+checking passes. Parent ring-angle forces, frame gates, animation ownership
+and actual draw integration remain pending; this helper is still disconnected.
 `native_color_clear_test.ps1` checks production API arguments, completion order,
 padding bounds, rejected-transfer fallback and failed-completion behavior with
 a mocked transfer engine. Builds are not hardware API or performance proof;
