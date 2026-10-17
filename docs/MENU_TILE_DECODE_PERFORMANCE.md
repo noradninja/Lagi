@@ -1,5 +1,41 @@
 # Menu tile decode cost and animation rate
 
+## Row raster hardware follow-up and Map mixer
+
+The next 124,844-byte hardware log contains three ordinary-menu samples
+(`menuId=1`, `saveLayout=0`, `menuNbg2=0`, `menuRaster=rows-v1`). Backing
+decode is 10.907..11.054 ms, text 0.709 ms, transfer 1.513..1.522 ms and
+renderer 25.169..25.562 ms. Compared with the preceding capture's roughly
+30.6 ms backing/4.2 ms text/48.8 ms renderer, these samples support a large
+reduction on that path. They are not identical-frame benchmarks. The user
+reports that remaining sustained lag is Map at 20 FPS, with slight dips
+while switching menus. No active NBG2/Map sample appears in this capture,
+so its exact remaining cost and the switch dips are not established.
+
+The targeted follow-up prepares `MenuNbg2Mixer` once per backing pass. It
+retains the unchanged priority/tie/transparent rules and the native RGB555
+ratio result, but builds a 1 KiB channel lookup for the current ratio instead
+of doing channel recovery/multiplication/division per pixel. Inputs are
+expanded native RGB555 palette colors; shifting each channel right by three
+recovers its original five bits exactly. Non-Map passes do not build the table.
+The original helper remains the independent differential-test reference.
+
+NBG2 window evaluation also rejects completely hidden eight-pixel runs before
+map/character decoding and only clips individual dots on partial boundary
+runs. Inclusive, narrow, reversed and offscreen windows and both area modes
+are preserved. This is still a CPU optimization, not GPU tile decoding or a
+cross-frame cache. Palette/map changes apply on every published snapshot.
+
+Tests compare 9,213,952 production/reference pixels, plus 1,048,576 colored
+RGB555/ratio combinations and the existing priority/blend cases. Device
+performance and transition improvements remain unverified for this revision.
+The final full-resolution/dither-enabled VPK build passes; selector lifecycle
+and native cadence regression tests also pass.
+ScenePerf now also captures a change in menu ID/save layout/NBG2 activity,
+in addition to its existing heartbeat, so a brief Map visit cannot vanish
+between two ordinary-menu samples. Transition samples can include first-use
+work; retain several seconds in each page to distinguish steady-state cost.
+
 ## Row raster optimization (2026-10-16, device test pending)
 
 The fresh 153,386-byte capture confirms the GXM selector at 60 FPS, including

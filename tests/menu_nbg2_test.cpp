@@ -59,6 +59,20 @@ int main()
         assert(lagi::menuNbg2Blend(state,gray(top),gray(second))==gray((top*(31-ratio)+second*(ratio+1))>>5));
         ++blends;
     }
+    unsigned mixerPixels=0;
+    state.prina=0x304;state.prinb=5;state.bgon=7;
+    for(unsigned ratio=0;ratio<32;++ratio) {
+        state.ccrnb=ratio;
+        const lagi::MenuNbg2Mixer mixer(state);
+        for(unsigned color=0;color<32768;++color) {
+            const auto a=vdp2Rgb555ToAbgr(color);
+            const auto b=vdp2Rgb555ToAbgr((color*109+ratio*73)&32767);
+            assert(mixer.compose(b,0,a)==lagi::menuNbg2Compose(state,b,0,a));
+            ++mixerPixels;
+        }
+        assert(mixer.compose(0,0,0)==0);
+        assert(mixer.compose(0,0,gray(31))==lagi::menuNbg2Compose(state,0,0,gray(31)));
+    }
     state.ccctl=0;
     const std::uint32_t pixel[]={0xFF0000FF,0xFF00FF00,0xFFFF0000};
     unsigned priorities=0;
@@ -72,6 +86,8 @@ int main()
             bestPriority=priority[layer];expected=pixel[layer];
         }
         assert(lagi::menuNbg2Compose(state,present&1?pixel[0]:0,present&2?pixel[1]:0,present&4?pixel[2]:0)==expected);
+        const lagi::MenuNbg2Mixer mixer(state);
+        assert(mixer.compose(present&1?pixel[0]:0,present&2?pixel[1]:0,present&4?pixel[2]:0)==expected);
         ++priorities;
     }
     state.prina=0x304;state.prinb=5;
@@ -83,4 +99,5 @@ int main()
     invalid=state;invalid.bgon|=0x400;assert(!lagi::menuNbg2Supported(invalid));
     invalid=state;invalid.ccctl=0x100;assert(!lagi::menuNbg2Supported(invalid));
     std::printf("PASS: production NBG2 decode %u pixels/flips, window edges, %u RGB555 blends, %u priority cases; not GPU execution\n",decoded,blends,priorities);
+    std::printf("PASS: prepared Map mixer matches original across %u colored RGB555/ratio cases and transparent/tied-priority paths\n",mixerPixels);
 }

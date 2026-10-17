@@ -87,5 +87,23 @@ int main() {
    }
   }
  }
+ // Inclusive windows can cut through a run, be one pixel wide, empty,
+ // entirely outside the screen, or select the outside rather than inside.
+ g_menuNbg2.bgon=7;g_menuNbg2.chctlb=1;g_menuNbg2.pncn=0x800C;
+ g_menuNbg2.mpofn=0x300;g_menuNbg2.mpab=0xE0E1;g_menuNbg2.mpcd=0xE1E0;
+ g_menuNbg2.craofa=0x666;g_menuNbg2.scrollX=-7;g_menuNbg2.scrollY=511;
+ const MenuRowRaster windowRaster;
+ const unsigned windows[][4]={{5,5,5,5},{3,0,349,223},{200,30,100,60},
+   {0,0,511,511},{352,0,511,223},{7,9,8,10},{0,224,351,511}};
+ std::uint32_t windowRow[kVdp2TextLayerWidth];
+ for(const auto& window:windows)for(unsigned area=0;area<2;++area) {
+  g_menuNbg2.wctlb=2|area;
+  g_menuNbg2.window[0]=window[0]*2;g_menuNbg2.window[1]=window[1];
+  g_menuNbg2.window[2]=window[2]*2;g_menuNbg2.window[3]=window[3];
+  for(unsigned y=0;y<kVdp2TextLayerHeight;++y) {
+   windowRaster.backing(windowRow,kVdp2TextLayerWidth,y,0,g_menuNbg2.scrollX,g_menuNbg2.scrollY,false,&g_menuNbg2);
+   for(unsigned x=0;x<kVdp2TextLayerWidth;++x){assert(windowRow[x]==decodeMenuNbg2Pixel(x,y));++compared;}
+  }
+ }
  std::printf("PASS: %u staged/reference pixels, status/save/Map layers, signed scroll, mutation and backing/text isolation; no Vita performance claim\n",compared);
 }

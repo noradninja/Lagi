@@ -1855,6 +1855,18 @@ struct MenuRowRaster {
         for(unsigned sx=0;sx<width;) {
             const unsigned mx=(sx+unsigned(scrollX))&wrap;
             const unsigned count=std::min(width-sx,8u-(mx&7u));
+            bool clipWindow=false;
+            if(map && (map->wctlb&2)) {
+                const int x0=(map->window[0]>>1)&511,x1=(map->window[2]>>1)&511;
+                const bool yInside=logicalY>=int(map->window[1]&511) && logicalY<=int(map->window[3]&511);
+                const bool anyInside=yInside && x0<=x1 && int(sx)<=x1 && int(sx+count-1)>=x0;
+                const bool allInside=yInside && int(sx)>=x0 && int(sx+count-1)<=x1;
+                const bool insideMode=(map->wctlb&1)!=0;
+                if((insideMode && !anyInside)||(!insideMode && allInside)) {
+                    std::fill_n(out+sx,count,0u);sx+=count;continue;
+                }
+                clipWindow=insideMode?!allInside:anyInside;
+            }
             const auto address=map ? lagi::menuNbg2PatternAddress(*map,int(sx),logicalY)
                 : mapBase+(((my>>4)*32+(mx>>4))*2);
             if(address+1>=kVdp2TextSnapshotBytes) {
@@ -1885,7 +1897,7 @@ struct MenuRowRaster {
                     const unsigned packed=g_vdp2TextVram[offset];
                     index=save ? packed : (px&1u?packed&15u:packed>>4);
                 }
-                const bool visible=!map || lagi::menuNbg2VisibleAt(*map,int(sx+dot),logicalY);
+                const bool visible=!clipWindow || lagi::menuNbg2VisibleAt(*map,int(sx+dot),logicalY);
                 out[sx+dot]=visible && index && pal+index<kVdp2CramSnapshotBytes/2 ? palette[pal+index] : 0;
             }
             sx+=count;
@@ -1952,6 +1964,7 @@ static void drawAzelMenuVdp2Gpu(bool textOnly = false)
     // original map/character format rather than interpreting SAVE.SCB as the
     // status menu's 4bpp tiles.
     const bool mapPlane=!g_vdp2SaveLayout && lagi::menuNbg2Supported(g_menuNbg2);
+    const lagi::MenuNbg2Mixer mapMixer(g_menuNbg2,mapPlane);
     std::uint32_t row0[kVdp2TextLayerWidth],row1[kVdp2TextLayerWidth],row2[kVdp2TextLayerWidth];
     for (unsigned int y = 0; !textOnly && y < kVdp2TextLayerHeight; ++y) {
         raster.backing(row0,kVdp2TextLayerWidth,y,g_vdp2SaveLayout?0x20000u:0x71800u,
@@ -1963,7 +1976,7 @@ static void drawAzelMenuVdp2Gpu(bool textOnly = false)
         for (unsigned int x = 0; x < kVdp2TextLayerWidth; ++x) {
             const std::uint32_t nbg0 = row0[x],nbg1 = row1[x];
             const std::uint32_t color = mapPlane
-                ? lagi::menuNbg2Compose(g_menuNbg2,nbg0,nbg1,row2[x])
+                ? mapMixer.compose(nbg0,nbg1,row2[x])
                 : (nbg0 ? nbg0 : nbg1);
             pixels[
                 y * kVdp2TextLayerWidth + x] = color;
@@ -13618,7 +13631,15 @@ static void renderBasicWingViewer()
             flightTiming = {};
         }
     }
-    if (nativeSceneMode && ((scenePerfHeartbeat++ % 60u) == 0u)) {
+    // Capture menu-state transitions as well as the existing heartbeat; short
+    // Map visits must not disappear between two ordinary-menu samples.
+    static unsigned previousPerfMenu = ~0u;
+    const unsigned perfMenu = (g_vdp2MenuId & 0xFFFFu) |
+        (g_vdp2SaveLayout ? 0x10000u : 0u) |
+        (lagi::menuNbg2Supported(g_menuNbg2) ? 0x20000u : 0u);
+    const bool perfMenuChanged = perfMenu != previousPerfMenu;
+    previousPerfMenu = perfMenu;
+    if (nativeSceneMode && (((scenePerfHeartbeat++ % 60u) == 0u) || perfMenuChanged)) {
         logging::writef(
             "[ScenePerf] build=%uus scan=%u cache=%u obj=%u edge=%u upload=%u "
             "light=%u gourPrep=%u gourPayload=%u gourBucket=%u "

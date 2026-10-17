@@ -16,7 +16,7 @@ $end=$source.IndexOf('static std::uint32_t ',$begin+1)
 if($begin -lt 0 -or $end -le $begin){throw 'Shared character decoder missing'}
 Set-Content -LiteralPath (Join-Path $scratch 'menu_nbg2_character_production.inc') -Value $source.Substring($begin,$end-$begin)
 foreach($guard in @('g_pendingMenuNbg2 = {};','g_menuNbg2 = g_pendingMenuNbg2;','g_menuNbg2 = {};',
- '!g_vdp2SaveLayout && lagi::menuNbg2Supported(g_menuNbg2)','lagi::menuNbg2Compose(g_menuNbg2,nbg0,nbg1,')) {
+ '!g_vdp2SaveLayout && lagi::menuNbg2Supported(g_menuNbg2)','mapMixer.compose(nbg0,nbg1,')) {
  if(!$source.Contains($guard)){throw "Menu NBG2 transport/composition guard missing: $guard"}
 }
 $exe=Join-Path $scratch 'menu_nbg2_test.exe'

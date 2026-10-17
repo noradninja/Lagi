@@ -69,4 +69,34 @@ inline std::uint32_t menuNbg2Compose(const MenuNbg2State& state,
     if ((nbg0 && p0>=p2) || (nbg1 && p1>=p2)) return backing;
     return menuNbg2Blend(state,nbg2,backing);
 }
+
+// One immutable published-frame mixer. Inputs are expanded native RGB555
+// palette colors, so channel>>3 recovers the original five bits exactly.
+// Hoist register decoding and all ratio arithmetic out of the pixel loop.
+struct MenuNbg2Mixer {
+    unsigned p0,p1,p2;
+    bool blend;
+    std::uint8_t channel[32*32]; // Filled completely iff blend can read it.
+    explicit MenuNbg2Mixer(const MenuNbg2State& state,bool active=true)
+        : p0((state.bgon&1)?state.prina&7:0),
+          p1((state.bgon&2)?(state.prina>>8)&7:0),p2(state.prinb&7),
+          blend(active && (state.ccctl&4)) {
+        if(!blend)return;
+        const unsigned ratio=state.ccrnb&31;
+        for(unsigned a=0;a<32;++a)for(unsigned b=0;b<32;++b)
+            channel[a*32+b]=static_cast<std::uint8_t>(
+                (((a*(31-ratio)+b*(ratio+1))>>5)*255)/31);
+    }
+    std::uint32_t compose(std::uint32_t nbg0,std::uint32_t nbg1,std::uint32_t nbg2) const {
+        if(!p0)nbg0=0;
+        if(!p1)nbg1=0;
+        const auto backing=nbg0 && (!nbg1 || p0>=p1)?nbg0:nbg1;
+        if((nbg0 && p0>=p2)||(nbg1 && p1>=p2)||!nbg2)return backing;
+        if(!blend)return nbg2;
+        const auto r=channel[((nbg2>>3)&31)*32+((backing>>3)&31)];
+        const auto g=channel[((nbg2>>11)&31)*32+((backing>>11)&31)];
+        const auto b=channel[((nbg2>>19)&31)*32+((backing>>19)&31)];
+        return 0xFF000000u|std::uint32_t(r)|(std::uint32_t(g)<<8)|(std::uint32_t(b)<<16);
+    }
+};
 } // namespace lagi
