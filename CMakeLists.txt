@@ -2108,6 +2108,37 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[1]);" "playSystemSoundEffect(pThis->mCC->m2D_hitSound);" source_text "${source_text}")
   string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleDragon.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(status_light_old [=[    if (local_24)
+    {
+        Unimplemented();
+    }]=])
+  set(status_light_new [=[    if (local_24)
+    {
+        // BTL_A3 0609F0D8..0609F21C: native status/damage color envelope.
+        s_battleGrid* grid = gBattleManager->m10_battleOverlay->m8_gridTask;
+        const auto table = g_BTL_GenericData->getSaturnPtr(0x060AE38C + currentIndex * 12);
+        sVec3_FP effectColor;
+        for (int channel = 0; channel < 3; ++channel)
+            effectColor[channel] = fixedPoint::fromInteger(static_cast<s8>(readSaturnS32(table + channel * 4)));
+        const sVec3_FP start = pThis->m20C ? effectColor : grid->m1F0;
+        const sVec3_FP finish = pThis->m20C ? grid->m1F0 : effectColor;
+        const s32 elapsed = pThis->m208.asS32() - (static_cast<s32>(pThis->m210) * 0x10000);
+        sVec3_FP color;
+        for (int channel = 0; channel < 3; ++channel)
+        {
+            // MAIN 06035686 divides the full signed 64-bit product, without
+            // the intermediate 16-bit truncation of MTH_Mul followed by FP_Div.
+            const s64 product = static_cast<s64>(static_cast<s32>(finish[channel] - start[channel])) * elapsed;
+            color[channel] = start[channel] + fixedPoint::fromS32(product / pThis->m208.asS32());
+        }
+        setupLightColor(s_RGB8::fromVector(color).toU32());
+    }]=])
+  string(FIND "${source_text}" "${status_light_old}" status_light_anchor)
+  if(status_light_anchor LESS 0)
+   message(FATAL_ERROR "Native battle status-light boundary changed")
+  endif()
+  string(REPLACE "${status_light_old}" "${status_light_new}" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battlePowerGauge.cpp")
   string(FIND "${source_text}" "static void sGaugeIncreaseEffect_Draw(" charge_begin)
   string(FIND "${source_text}" "static const sGaugeIncreaseEffect::TypedTaskDefinition" charge_end)

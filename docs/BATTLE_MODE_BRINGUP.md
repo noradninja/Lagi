@@ -386,6 +386,23 @@ cardinal phase/heading combinations and checks that Y remains unchanged.
 The fullres/dither battle VPK compiles this path. Wildlife visibility and
 shooting remain device checks; splash billboard substitution and the missing
 layered water background are separate unfinished rendering paths.
+
+Battle status-light envelope: the generated battle-dragon adapter now replaces
+the no-op tail of `s_battleDragon_UpdateAnimationState` with original
+BTL_A3 `0609F0D8..0609F21C`. The selected slot reads three signed color bytes
+from runtime 32-bit words at `060AE38C + slot*12` (native conversion helper
+0607C914), interpolates between the grid's m1F0 baseline and that color in
+the direction selected by m20C, and calls the ordinary `setupLightColor`.
+Elapsed time is m208 minus remaining m210 in 16.16. MAIN 06035686 computes
+the full signed product divided by the duration, without an intermediate
+fixed-point multiplication truncation. No guessed tint or independent timer
+is introduced. Intermediate native task vectors are calculated locally because
+they are recomputed before every use and are absent from the pinned header.
+`battle_status_light_test.ps1` executes the generated block across four slots,
+both phases, all 31 countdown values and the inactive path. Vita fullres/dither
+VPK compilation passes. This restores status/damage modulation only; it does
+not complete the missing healing/berserk particle producers or establish a
+point-light source for the charge rays. Visual acceptance remains pending.
 `native_color_clear_test.ps1` checks production API arguments, completion order,
 padding bounds, rejected-transfer fallback and failed-completion behavior with
 a mocked transfer engine. Builds are not hardware API or performance proof;
