@@ -220,6 +220,17 @@ int vdp1DrawQuadScaled(
     return drawQuadInternal(pThis, position, scale);
 }
 
+// MAIN 0602E428: authored frame offsets/dimensions scaled before projection,
+// with a caller-owned four-corner color table (not a generated tint).
+int lagiDrawScaledParticleWithColorTable(sAnimatedQuad* particle,
+    sVec3_FP* position,fixedPoint scale,sSaturnPtr colors)
+{
+    quadColor gouraud{};
+    for (unsigned corner=0;corner<4;++corner)
+        gouraud[corner]=readSaturnU16(colors+corner*2u);
+    return drawQuadInternal(particle,position,scale,&gouraud);
+}
+
 // Native ray service: Azel supplies view-space endpoints, width, texture and
 // Gouraud colors. Emit the same VDP1 distorted sprite used by particles/UI.
 bool gDirectRayRendering = true;

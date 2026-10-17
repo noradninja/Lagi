@@ -9,6 +9,8 @@ if($battleCache -notmatch 'LAGI_BATTLE_NATIVE_BUILD:BOOL=ON'){throw 'Battle conf
 if($normalCache -notmatch 'LAGI_BATTLE_NATIVE_BUILD:BOOL=OFF'){throw 'Normal configuration must retain encounters-disabled default'}
 $battleNinja=Get-Content -Raw "$battle/build.ninja"
 $normalNinja=Get-Content -Raw "$normal/build.ninja"
+$battleEngine=Get-Content -Raw "$battle/azel_upstream/battle_battleEngine.cpp"
+if(!$battleEngine.Contains('#include "lagi_battle_heal_effect.inc"') -or $battleEngine.Contains('Approximation: consume a few per frame')){throw 'Native healing particle producer was not installed'}
 if(!$battleNinja.Contains('town_e011_twn_e011.cpp.obj') -or $normalNinja.Contains('town_e011_twn_e011.cpp.obj')){throw 'E011 cinematic must remain native-battle opt-in'}
 $battleTown=Get-Content -Raw "$battle/azel_upstream/town_town.cpp"
 $normalTown=Get-Content -Raw "$normal/azel_upstream/town_town.cpp"

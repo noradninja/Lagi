@@ -6,6 +6,9 @@ struct sVdp1Quad{
 };
 struct sAnimatedQuad{const std::vector<sVdp1Quad>* m0_quad;u16 m4_vdp1Memory=0x100;unsigned m7_currentFrame=0;};
 namespace lagi::platform::logging{template<class... T>void writef(const char*,T...) {}}
+struct sSaturnPtr{unsigned offset; sSaturnPtr operator+(unsigned n)const{return {offset+n};}};
+quadColor runtimeColors{0xA123,0xB456,0xC789,0xDABC};
+u16 readSaturnU16(sSaturnPtr p){assert(p.offset>=100&&p.offset<108&&p.offset%2==0);return runtimeColors[(p.offset-100)/2];}
 #include "particle_body.inc"
 void reset(){auto& c=graphicEngineStatus.m14_vdp1Context[0];commands.fill({});c.m0_currentVdp1WriteEA=&commands[6];c.m20_pCurrentVdp1Packet=packets.data();c.m14[0].assign(128,{});c.m10=c.m14[0].begin();c.mC=c.m1C=0;depth.fill(-1);}
 int main(){
@@ -33,5 +36,8 @@ int main(){
   assert(depth[0]==4&&depth[3]==4);
  }
  reset();pos[2]=0x1000;assert(drawQuadInternal(&p,&pos,0x10000)==0);
+ reset();pos[2]=0x40000;
+ assert(lagiDrawScaledParticleWithColorTable(&p,&pos,0x8000,{100})==1);
+ assert(graphicEngineStatus.m14_vdp1Context[0].m14[0][0]==runtimeColors);
  puts("PASS: production particle frame offsets, scaled dimensions, Gouraud, source/LUT, depth and clipping. Not hardware validation.");
 }

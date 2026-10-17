@@ -11,7 +11,10 @@ $source=Get-Content -Raw "$repo/src/integration/lagi_vdp1_animated_quad_vita.cpp
 $begin=$source.IndexOf('static int drawQuadInternal(')
 $end=$source.IndexOf('int drawProjectedParticle(',$begin)
 if($begin -lt 0 -or $end -le $begin){throw 'Production particle body boundary changed'}
-[IO.File]::WriteAllText("$scratch/particle_body.inc",$source.Substring($begin,$end-$begin))
+$colorBegin=$source.IndexOf('int lagiDrawScaledParticleWithColorTable(')
+$colorEnd=$source.IndexOf('// Native ray service:',$colorBegin)
+if($colorBegin -lt 0 -or $colorEnd -le $colorBegin){throw 'Production scaled-color service boundary changed'}
+[IO.File]::WriteAllText("$scratch/particle_body.inc",$source.Substring($begin,$end-$begin)+$source.Substring($colorBegin,$colorEnd-$colorBegin))
 & cl /nologo /O2 /std:c++20 /EHsc "/I$scratch" "/I$repo/include" "$PSScriptRoot/particle_origin_service_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
 if($LASTEXITCODE -ne 0){throw 'Particle origin service test compile failed'}
 & "$scratch/test.exe"

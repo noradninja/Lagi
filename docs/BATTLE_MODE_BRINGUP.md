@@ -464,6 +464,31 @@ behavior, wrap boundaries, selected/unselected impulse RNG counts, seed bounds
 and deterministic state, with original-disc constant/branch anchors; host
 execution and Vita syntax checks pass. Full live task integration remains
 pending; these additions alone do not change gameplay or require a new build.
+
+Live healing-particle integration now supersedes the disconnected-helper
+checkpoints above. Generated `battleEngine.cpp` replaces its timer/RNG-only
+stub with `lagi_battle_heal_effect.inc`, retaining Azel's original item calls
+and effect data. Native task-owned motion/particle arrays, COMMON quad pointer
+060ABF1C and slot-0 VDP1 allocation feed the shared scaled/Gouraud emitter
+(MAIN 0602E428). Each particle keeps its native type/delay/animation state.
+The motion ring updates only before frame 70; active particles switch to the
+native spring state at frame 70 and continue animating afterwards. At frame
+60, the authored C210/E739/30/E739/C210/10 flash and command-finished flag
+are restored when requested. Draw applies the source position, native Y/X/Z
+rotation and particle position; task completion waits for every particle's
+delay+100 boundary, rather than stopping at the old stub's frame-70 cutoff.
+Quad-vector ownership is released by Delete; POD arrays use Azel's task heap.
+
+`battle_heal_task_test.ps1` executes the production task include through full
+creation/update/draw/deletion with service mocks: 1880 initialization RNG
+draws for four types/40 particles, delayed activation, no ring RNG after frame
+69, one frame-60 flash, state switch at 70, balanced matrix stack and final
+completion. Motion/disc tests and scaled-color emitter forwarding pass, as
+do retained battle linkage, tapered-ray regression checks and both fullres/
+dither Vita VPK builds. These are source/host/build checks, not device proof.
+Use a healing item in an A3 battle to validate appearance, timing and busy-
+scene performance. Status-cure, blast-chip and several berserk producers still
+contain missing paths; this does not complete all battle effects or lighting.
 `native_color_clear_test.ps1` checks production API arguments, completion order,
 padding bounds, rejected-transfer fallback and failed-completion behavior with
 a mocked transfer engine. Builds are not hardware API or performance proof;

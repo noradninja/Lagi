@@ -73,5 +73,5 @@ int main()
     assert(single[0].angles[0]==0x10000000-18361);
     advanceMotionRing(std::span<Motion>{},noImpulse,noTrig,noTrig);
     assert(draws==7);
-    puts("PASS: native effect motion layout, RNG order, trig indices and signed fixed-point initialization. Producer integration remains pending.");
+    puts("PASS: native effect initialization, seed bounds, ring ordering, RNG branches and signed spring motion. Not hardware validation.");
 }
