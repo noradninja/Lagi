@@ -448,6 +448,22 @@ steps, inactive states and wrap boundaries; original-disc checks verify the
 signed constants, branch instructions and position stores. Vita syntax
 checking passes. Parent ring-angle forces, frame gates, animation ownership
 and actual draw integration remain pending; this helper is still disconnected.
+
+Parent ring and particle seeds are now recovered in the same helper. The ring
+follows 0608CDA8..0608D40C in place, including the already-updated predecessor
+and first record, signed 28-bit angle differences, 028F neighbor force,
+03D7 damping, 0FFFFFFF angle mask and per-record RNG low-five-bit decision.
+A selected impulse consumes six additional random draws and uses native
+00012345 amplitude, rather than the current stub's frame-based RNG guess.
+Particle startup follows 0608D5A0 plus 0608CC8A..0608CD2C: zero motion,
+native count-1 type sampling, delay 0..49, uninterpreted field2C -40..-203,
+then four independent spherical-position samples. That is seven draws per
+particle in addition to its motion-record initialization. No guessed correction
+to the native type range is applied. Tests cover in-place versus snapshot
+behavior, wrap boundaries, selected/unselected impulse RNG counts, seed bounds
+and deterministic state, with original-disc constant/branch anchors; host
+execution and Vita syntax checks pass. Full live task integration remains
+pending; these additions alone do not change gameplay or require a new build.
 `native_color_clear_test.ps1` checks production API arguments, completion order,
 padding bounds, rejected-transfer fallback and failed-completion behavior with
 a mocked transfer engine. Builds are not hardware API or performance proof;

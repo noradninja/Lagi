@@ -43,5 +43,35 @@ int main()
     advanceParticleMotion(particle,{0,0,0},1);
     assert(particle.position[0]==67379&&particle.velocity[0]==1220);
     assert(add(INT32_MAX,1)==INT32_MIN&&subtract(INT32_MIN,1)==INT32_MAX);
+    assert(angleDifference(0x0FFFFFFF)==-1);
+    assert(angleDifference(0x08000000)==-134217728);
+    assert(angleDifference(0x07FFFFFF)==134217727);
+    std::array<Motion,2> ring{};
+    ring[1].angles[0]=65536;
+    draws=0;
+    auto noImpulse=[&](){++draws;return 1u;};
+    auto noTrig=[](unsigned)->int{assert(false);return 0;};
+    advanceMotionRing(ring,noImpulse,noTrig,noTrig);
+    assert(draws==2&&ring[0].angles[0]==1291&&ring[1].angles[0]==64270);
+    assert(ring[0].acceleration[0]==0&&ring[1].acceleration[0]==0);
+    std::array<Motion,1> single{};
+    std::array<std::uint32_t,7> impulseRandom={0,0x80000000u,0x40000000u,0x40000000u,0,0x40000000u,0x80000000u};
+    draws=0;
+    advanceMotionRing(single,[&](){assert(draws<7);return impulseRandom[draws++];},sine,cosine);
+    assert(draws==7);
+    std::array<std::uint32_t,7> seedRandom={0,0,0,0x40000000u,0,0x80000000u,0x80000000u};
+    draws=0;
+    const auto seed=initializeParticleSeed(4,0x1800,[&](){assert(draws<7);return seedRandom[draws++];},sine,cosine);
+    assert(draws==7&&seed.type==0&&seed.delay==0&&seed.field2C==-40&&seed.state==0);
+    assert((seed.motion.position==std::array<std::int32_t,3>{-0x1800,0x1800,0}));
+    assert((seed.motion.velocity==std::array<std::int32_t,3>{0,0,0}));
+    draws=0;
+    const auto upperSeed=initializeParticleSeed(4,0x1800,[&](){++draws;return 0xFFFFFFFFu;},
+        [](unsigned a){assert(a==4095);return 0;},[](unsigned a){assert(a==4095);return 65536;});
+    assert(draws==7&&upperSeed.type==2&&upperSeed.delay==49&&upperSeed.field2C==-203);
+    assert((single[0].velocity==std::array<std::int32_t,3>{-18361,36723,18362}));
+    assert(single[0].angles[0]==0x10000000-18361);
+    advanceMotionRing(std::span<Motion>{},noImpulse,noTrig,noTrig);
+    assert(draws==7);
     puts("PASS: native effect motion layout, RNG order, trig indices and signed fixed-point initialization. Producer integration remains pending.");
 }
