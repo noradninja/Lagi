@@ -12072,6 +12072,20 @@ bool submit_vdp1_model(
     return true;
 }
 
+static bool clearNativeSceneColorBuffer(std::uint32_t* pixels, int width, int height, int pitch)
+{
+    if (!pixels || width <= 0 || height <= 0 || pitch < width) return false;
+    // Transfer engine writes uncached color storage without a 2 MiB CPU
+    // memset each full-resolution frame. Finish before BeginScene consumes
+    // the destination. Keep the exact CPU clear when transfers are rejected.
+    const int submitted = sceGxmTransferFill(0, SCE_GXM_TRANSFER_FORMAT_U8U8U8U8_ABGR,
+        pixels, 0, 0, static_cast<unsigned>(pitch), static_cast<unsigned>(height),
+        pitch * static_cast<int>(sizeof(std::uint32_t)), nullptr, 0, nullptr);
+    if (submitted >= 0) return sceGxmTransferFinish() >= 0;
+    std::memset(pixels, 0, static_cast<std::size_t>(pitch) * height * sizeof(std::uint32_t));
+    return true;
+}
+
 static void drawColorOffsetPass(
     SceGxmFragmentProgram* program,
     int red, int green, int blue)
@@ -13373,10 +13387,8 @@ static void renderBasicWingViewer()
     }
 
     const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
-    std::memset(colorBuffer, 0,
-                static_cast<std::size_t>(gxmPitch) *
-                viewerRenderHeight() *
-                sizeof(std::uint32_t));
+    if (!clearNativeSceneColorBuffer(colorBuffer, viewerRenderWidth(), viewerRenderHeight(), gxmPitch))
+        return;
     // GXM initializes tile-local depth/stencil from these background values.
     // The backing buffers are spill storage, not an input to this scene:
     // clearing them on the CPU was unused work with force-load disabled.

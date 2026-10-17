@@ -345,6 +345,18 @@ The extended crash artifact is a 2560-byte `.psp2dmp.tmp`; no complete crash
 context or matching symbolized fault has been established. The apparent tunnel
 to cinematic boundary is a user observation, not a diagnosed crash cause.
 
+Color-clear optimization candidate: the capture spends ~3.4 ms clearing the
+960x544 color buffer on the CPU. Native scene rendering now requests an ABGR
+zero fill through the GXM transfer engine and finishes that transfer before
+BeginScene. A rejected submission retains the exact pitch-sized CPU clear;
+failed completion rejects the frame instead of racing GPU writes with CPU
+fallback. No actors, geometry, resolution, filtering or effects are removed.
+`native_color_clear_test.ps1` checks production API arguments, completion order,
+padding bounds, rejected-transfer fallback and failed-completion behavior with
+a mocked transfer engine. Builds are not hardware API or performance proof;
+compare fresh battle `clear`, CPU preparation, render and scanout intervals on
+the same multi-enemy route before calling this a measured improvement.
+
 Flight/tunnel audio regression: active sounds were stored by shared data-bank
 number (config +0), while native stop/wait/status operates on eight playback
 control slots (config +3). Multiple ambient sounds in one bank overwrite each
