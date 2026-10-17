@@ -18,10 +18,22 @@ foreach($object in $objects) {
  if($normalNinja.Contains($name)){throw "Battle source leaked into normal configuration: $name"}
  if(!(Test-Path "$battle/CMakeFiles/lagi.dir/azel_upstream/$name")){throw "Battle object not compiled: $name"}
 }
+$nativeRoot=Join-Path $repo 'extern/Azel/AzelLib'
+$expanded=@(Get-ChildItem "$nativeRoot/battle/*.cpp";Get-ChildItem "$nativeRoot/battle/BTL_A3/*.cpp")
+foreach($file in $expanded) {
+ $relative=$file.FullName.Substring($nativeRoot.Length+1).Replace('\','/');
+ $name=$relative.Replace('/','_')+'.obj'
+ if(!$battleNinja.Contains($name)){throw "Expanded native battle source missing: $relative"}
+ if(!(Test-Path "$battle/CMakeFiles/lagi.dir/azel_upstream/$name")){throw "Expanded battle source not compiled: $relative"}
+}
+foreach($name in @('battle_interpolators_FPInterpolator.cpp.obj','battle_interpolators_vec2FPInterpolator.cpp.obj','kernel_monsterPart.cpp.obj')) {
+ if(!(Test-Path "$battle/CMakeFiles/lagi.dir/azel_upstream/$name")){throw "Native dependency not compiled: $name"}
+ if($normalNinja.Contains($name)){throw "Native battle dependency leaked into ordinary build: $name"}
+}
 foreach($folder in @($battle,$normal)) {
  $module=Get-Content -Raw "$folder/azel_upstream/kernel_moduleManager.cpp"
  if($module -notmatch 'NULL,\s*// 4: battle - deferred'){throw 'Incomplete battle dispatch unexpectedly enabled'}
  $overlay=Get-Content -Raw "$folder/azel_upstream/battle_battleOverlay.cpp"
  if($overlay -match 'overlayStart_BTL_\w+\(pThis\)'){throw 'Incomplete overlay startup unexpectedly reachable'}
 }
-Write-Output 'PASS: nine real native battle objects compiled only when opted in; ordinary build and dispatch/overlay safeguards retained. Not a reachable-combat or hardware test.'
+Write-Output "PASS: $($expanded.Count) shared/A3 objects plus native interpolation/monster dependencies compiled; ordinary build and dispatch/overlay safeguards retained. Not a retained-root link or hardware test."

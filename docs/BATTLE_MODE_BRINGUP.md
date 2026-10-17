@@ -39,7 +39,51 @@ uses `g_BTL_GenericData`; its native constructor reads `BTL_A3.PRG`.
 Task allocation already zeroes work areas through
 the native task base; audit that contract before inventing extra state resets.
 
-## Compile foundation
+## Expanded shared/A3 graph and retained-root audit
+
+The opt-in source graph now contains all 49 shared battle `.cpp` modules and
+all 14 A3 modules, including formations, enemy bodies, HUD/radar, commands,
+items, Berserks, damage and result screens. It also compiles the real scalar/
+vector fixed-point interpolators and `kernel/monsterPart.cpp`. The latter
+three resolved dependencies exposed by a stronger retained-root audit. Native
+interpolator headers retain their original local include directory per source.
+
+`LAGI_BATTLE_LINK_AUDIT=ON` requires the native-build flag and retains the exact
+compiled `_Z19overlayStart_BTL_A3P10s_workArea` entry through the linker. It does
+not execute that entry or enable overlay dispatch. Unlike a trimmed compile
+build, this follows its real function/vtable dependency graph.
+
+The compile-only VPK succeeds with the audit OFF. The retained-root link
+currently **fails**, exposing three unfinished boundaries:
+
+- `displayRaySegment`: native fixed-point world-to-view/projection and VDP1 ray
+  packet path, not the upstream BGFX immediate-render branch.
+- `sendRaySegmentToVdp1`: projected ray-quad packet emission, Gouraud and
+  native ordering/depth metadata for Neptune.
+- `isSoundFileLoaded`: despite its name, the reachable Berserk scroll caller
+  passes filename pointers for SCB/PNB graphics loaded through `loadFile`.
+  Upstream's implementation simply returns true. Do not invent an audio-bank
+  query or accept an always-ready stub as a faithful restoration; establish
+  the actual resource-completion contract.
+
+This failure is an active dependency list, not a blocked goal or successful
+reachable-combat link. Keep the audit enabled when evaluating link readiness:
+
+```powershell
+cmake -S . -B build-battle -DLAGI_FULLRES=ON -DLAGI_STOCHASTIC_FILTER=ON -DLAGI_DITHER_LOOKUP=ON -DLAGI_BATTLE_NATIVE_BUILD=ON -DLAGI_BATTLE_LINK_AUDIT=ON
+cmake --build build-battle
+```
+
+The native battle main-task production-body test checks zero-state factory
+entry, its single music callback, repeated sound-loading waits, parent callback
+ownership, 3D/camera/grid/engine ordering, task completion and allocation failure.
+Services are mocked: this is not native audio, battle or GPU execution.
+
+Generated native sources now retain timestamps when their contents do not
+change, so toggling the link audit does not unnecessarily recompile the entire
+accepted runtime. Output bytes and upstream-source ownership remain unchanged.
+
+## Initial nine-module compile foundation (historical checkpoint)
 
 `LAGI_BATTLE_NATIVE_BUILD` defaults OFF. With ON, the ordinary generated-source
 adapter compiles these real native dependencies into the Vita target:

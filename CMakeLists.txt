@@ -21,6 +21,10 @@ option(LAGI_FULLRES "Render native Vita gameplay/movie modes at 960x544 (test on
 option(LAGI_AZEL_PROBE "Compile an Azel source portability probe" ON)
 option(LAGI_AZEL_RUINS_LINK_TRIM "Temporarily discard unreachable Azel code for Ruins bring-up" ON)
 option(LAGI_BATTLE_NATIVE_BUILD "Compile native battle engine/A3 bring-up dependencies (does not enable encounters)" OFF)
+option(LAGI_BATTLE_LINK_AUDIT "Retain native A3 battle entry to audit its full link graph without executing it" OFF)
+if(LAGI_BATTLE_LINK_AUDIT AND NOT LAGI_BATTLE_NATIVE_BUILD)
+ message(FATAL_ERROR "LAGI_BATTLE_LINK_AUDIT requires LAGI_BATTLE_NATIVE_BUILD")
+endif()
 
 # GXM viewer shaders are compiled from readable Cg source using Sony's
 # psp2cgc so color/debug and texture paths share the same compiler/toolchain.
@@ -3180,8 +3184,20 @@ void inventoryPrintBerserk(s32 row, eItems item, s32 contextFlags)
 
  string(REPLACE "/" "_" generated_name "${relative_path}")
  set(output_path "${LAGI_AZEL_GENERATED_ROOT}/${generated_name}")
- file(WRITE "${output_path}" "${source_text}")
+ # Configuration/link-audit changes must not recompile every unchanged native
+ # translation unit. Preserve the existing output timestamp when bytes match.
+ set(existing_source_text "")
+ if(EXISTS "${output_path}")
+  file(READ "${output_path}" existing_source_text)
+ endif()
+ if(NOT existing_source_text STREQUAL source_text)
+  file(WRITE "${output_path}" "${source_text}")
+ endif()
  set_source_files_properties("${output_path}" PROPERTIES GENERATED TRUE)
+ if(relative_path MATCHES "^battle/interpolators/")
+  set_property(SOURCE "${output_path}" APPEND PROPERTY INCLUDE_DIRECTORIES
+   "${LAGI_AZEL_SOURCE_ROOT}/battle/interpolators")
+ endif()
  set(${out_var} "${output_path}" PARENT_SCOPE)
 endfunction()
 
@@ -3318,7 +3334,18 @@ if(LAGI_BATTLE_NATIVE_BUILD)
   battle/battleGrid.cpp
   battle/BTL_A3/BTL_A3.cpp
   battle/BTL_A3/BTL_A3_data.cpp
+  battle/interpolators/FPInterpolator.cpp
+  battle/interpolators/vec2FPInterpolator.cpp
+  kernel/monsterPart.cpp
  )
+ # Include the real shared battle services and every A3 formation/environment
+ # module, rather than replacing unresolved engine factories with stubs.
+ file(GLOB LAGI_BATTLE_SHARED_AND_A3 CONFIGURE_DEPENDS
+  RELATIVE "${LAGI_AZEL_SOURCE_ROOT}"
+  "${LAGI_AZEL_SOURCE_ROOT}/battle/*.cpp"
+  "${LAGI_AZEL_SOURCE_ROOT}/battle/BTL_A3/*.cpp")
+ list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES ${LAGI_BATTLE_SHARED_AND_A3})
+ list(REMOVE_DUPLICATES LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES)
 endif()
 
 set(LAGI_AZEL_UPSTREAM_SOURCES)
@@ -3539,6 +3566,9 @@ endif()
 # The converter appends SCE metadata to the executable segment. Default page
 # alignment can leave too little space before data for some DSP corpus sizes.
 target_link_options(lagi PRIVATE "-Wl,-T,${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
+if(LAGI_BATTLE_LINK_AUDIT)
+ target_link_options(lagi PRIVATE "-Wl,--undefined=_Z19overlayStart_BTL_A3P10s_workArea")
+endif()
 set_property(TARGET lagi APPEND PROPERTY LINK_DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
 target_include_directories(lagi PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}/src/integration")
 target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceProcessmgr_stub SceSysmem_stub SceSysmodule_stub)
