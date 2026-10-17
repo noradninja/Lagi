@@ -51,5 +51,8 @@ foreach($folder in @($battle,$normal)) {
  if($module -notmatch 'NULL,\s*// 4: battle - deferred'){throw 'Incomplete battle dispatch unexpectedly enabled'}
  $overlay=Get-Content -Raw "$folder/azel_upstream/battle_battleOverlay.cpp"
  if($overlay -match 'overlayStart_BTL_\w+\(pThis\)'){throw 'Incomplete overlay startup unexpectedly reachable'}
+ $execCache=Get-Content -Raw "$folder/CMakeCache.txt"
+ $execEnabled=$execCache -match 'LAGI_BATTLE_EXECUTE_A3:BOOL=ON'
+ if($execEnabled -ne $overlay.Contains('if (!lagiEnterNativeA3Battle(pThis)) return;')){throw 'A3 entry must match the explicit execution option'}
 }
 Write-Output "PASS: $($expanded.Count) shared/A3 objects plus native interpolation/monster dependencies compiled; ordinary build and dispatch/overlay safeguards retained. Not a retained-root link or hardware test."

@@ -128,6 +128,8 @@ int loadFile(
 
 sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)
     : m_name(fileName ? fileName : ""),
+      m_data(nullptr),
+      m_dataSize(0),
       m_base(base)
 {
     std::vector<u8> data;

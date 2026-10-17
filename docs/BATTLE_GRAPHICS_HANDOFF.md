@@ -1,7 +1,8 @@
 # Native battle graphics handoff evidence
 
 This is an implementation map and partial restoration, not a runtime pass.
-Battle execution remains disabled. Original disc bytes are inspected read-only;
+Battle execution is disabled by default; the separate A3 execution option is
+experimental and not hardware-validated. Original disc bytes are inspected read-only;
 no executable, font, texture or other game resource is included here.
 
 ## Proven entry ownership

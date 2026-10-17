@@ -7,11 +7,12 @@ renders. Do not edit `extern/Azel` or regress accepted frontend/flight/menu path
 
 ## Entry audit
 
-The current Vita generation deliberately disconnects battle in these places:
+The default Vita generation deliberately disconnects battle in these places:
 
 1. `kernel/moduleManager.cpp` overlay dispatch slot 4 is replaced with null.
 2. `battle/battleOverlay.cpp` startup calls for BTL overlays and debug teardown
-   are removed by the source adapter.
+   are removed by the source adapter. The explicit A3 option below reconnects
+   only the real `BTL_A3` encounter entry, not other overlays/debug teardown.
 3. Generic battle-data initialization is removed from generated `PDS.cpp`.
 
 Do not merely populate slot 4 and call this complete. Native `loadBattle`
@@ -35,7 +36,7 @@ is set. Only its debug branch creates `field/battleStart.cpp`'s loading task.
 Read-only original FLD_A3 inspection confirms that task really tests debug
 keyboard toggles; replacing it as the ordinary gameplay path would be wrong.
 
-Before enabling entry, complete the graphics/resource handback detailed
+The experimental entry uses the graphics/resource handback detailed
 in [BATTLE_GRAPHICS_HANDOFF.md](BATTLE_GRAPHICS_HANDOFF.md). The generated battle
 build now uses typed graphics capture/restore at both return sites and discards
 storage on encounter teardown. Shared video-file spans are tracked and staged
@@ -51,9 +52,9 @@ the A3 initialization callback. A3 then constructs the battle engine using
 authored overlay data. Preserve that pipeline and real encounter/formation
 selection rather than hardcoding a different encounter.
 
-Battle generic initialization is also currently stripped from ordinary boot.
-Its lifetime/file dependencies must be integrated before a reachable engine
-uses `g_BTL_GenericData`; its native constructor reads `BTL_A3.PRG`.
+Battle generic initialization remains stripped from ordinary boot. The A3
+execution option initializes it at overlay preflight, before native fonts and
+engine creation; its native constructor reads `BTL_A3.PRG`.
 Task allocation already zeroes work areas through
 the native task base; audit that contract before inventing extra state resets.
 
@@ -86,9 +87,55 @@ with mocked I/O. This tracks the last load's completion, not ownership of a
 destination after later overwrites; callers still own lifetime/error recovery.
 The upstream unconditional-true stub is not used.
 
-Overlay dispatch/startup remain disabled. Generic-data initialization, manager
-lifetime, original field encounter handoff and battle camera/presentation
-routing still require restoration before on-device combat testing.
+Direct module dispatch remains disabled. The explicit A3 option now enables
+the ordinary field encounter's existing overlay/main-task/engine pipeline.
+This is experimental bring-up, not combat or return-path acceptance.
+
+## Experimental native A3 execution
+
+`LAGI_BATTLE_EXECUTE_A3=ON` requires `LAGI_BATTLE_NATIVE_BUILD=ON` and defaults
+OFF. It reconnects the native A3 entry in generated overlay Draw, after a
+resource preflight and before entering the original music/wait/engine pipeline.
+It does not select a different encounter, alter stats, grant rewards, force a
+battle from a timer, or enable module-manager debug dispatch.
+
+Preflight checks the existing manager, COMMON indices and exact authored PRG
+identity. Unsupported overlays wait with a bounded `[BattleStartup]` diagnostic;
+they are not redirected to A3 or treated as victories. Generic-data reads have
+a missing/truncated-file guard before parsing; read failure releases the failed
+owner for retry. This is not a general malformed-disc parser. The native task
+base already clears allocations. Main-task allocation retry keeps the overlay
+in startup and does not push its two fonts twice. A disc change after generic
+initialization is explicitly rejected pending cache-lifetime restoration.
+
+Checks: production preflight plus generated native overlay Draw with mocked
+engine/parser; retry/font ownership; retained startup/generic/engine symbols;
+both full VPK builds (execution ON and default OFF), fullres/dither ON.
+The read-only real-disc test runs the actual generated generic constructor and
+shared quad reader on US Disc 1 `BTL_A3.PRG`: 385044 bytes, 2751 bounded reads
+through `060B08F8`, three 10-node laser tables and nine animation groups.
+No game files are extracted or committed. These checks do not execute combat.
+
+Known remaining work includes native battle audio sequence push/pop (current
+Vita entry is empty and pop only logs), other overlays, generic-cache lifecycle
+across discs, live task/allocator/formation correctness, gameplay commands,
+results/rewards and repeated battle-to-field return. Hardware validation is
+still required; neither a retained link nor the data-parser test establishes it.
+
+Experimental hardware build, separate from the accepted normal build:
+
+```powershell
+cd E:\dev\Lagi
+git switch feature/battle-mode-bringup
+git pull --ff-only
+cmake -S . -B build-battle -DLAGI_FULLRES=ON -DLAGI_STOCHASTIC_FILTER=ON -DLAGI_DITHER_LOOKUP=ON -DLAGI_BATTLE_NATIVE_BUILD=ON -DLAGI_BATTLE_LINK_AUDIT=ON -DLAGI_BATTLE_EXECUTE_A3=ON
+cmake --build build-battle -j 4
+```
+
+Retain the matching `build-battle/lagi.velf` and `lagi` ELF. First capture an
+authored A3 encounter entry and its log/video; if it crashes, retain the complete
+dump with those matching symbols. Expected markers are `[BattleStartup] generic
+data ready` and `enter BTL_A3`; neither marker alone proves combat success.
 
 ## Battle view and scene publication
 
@@ -111,8 +158,8 @@ shared capability/depth gates, and production battle view publication against
 a mocked renderer (exact matrix, fixed-point clip conversion, neutral fallback
 camera). Both full Vita VPK configurations and the retained-root A3 link audit
 pass with fullres/dither ON. This is not task-order, camera motion, lighting,
-occlusion or on-device rendering acceptance. Overlay startup and generic-data initialization remain
-disabled; those lifecycle boundaries are the next integration step.
+occlusion or on-device rendering acceptance. Overlay startup and generic data
+are now connected only by the separate experimental A3 option described above.
 
 ## Expanded shared/A3 graph and initial retained-root audit
 

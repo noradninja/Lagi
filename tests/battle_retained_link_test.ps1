@@ -10,9 +10,11 @@ if(!$Nm) {
 }
 $symbols=(& $Nm -C --defined-only "$build/lagi") -join "`n"
 if($LASTEXITCODE -ne 0){throw 'Cannot inspect battle ELF'}
-foreach($name in @('overlayStart_BTL_A3','createBattleEngineTask','battleEngine_CreateHud1',
+$required=@('overlayStart_BTL_A3','createBattleEngineTask','battleEngine_CreateHud1',
  'battleEngine_CreateRadar','createBattleCommandMenu','createBattleResultScreen',
- 'displayRaySegment','sendRaySegmentToVdp1','isSoundFileLoaded')) {
+ 'displayRaySegment','sendRaySegmentToVdp1','isSoundFileLoaded')
+if($cache -match 'LAGI_BATTLE_EXECUTE_A3:BOOL=ON'){$required+=@('lagiPrepareNativeA3Battle','lagiEnterNativeA3Battle','BTL_GenericData::staticInit')}
+foreach($name in $required) {
  if($symbols -notmatch ('(?m)^[0-9a-fA-F]+\s+[Tt]\s+'+[regex]::Escape($name)+'\(')){
   throw "Expected retained native code missing: $name"
  }

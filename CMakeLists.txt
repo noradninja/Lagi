@@ -22,6 +22,10 @@ option(LAGI_AZEL_PROBE "Compile an Azel source portability probe" ON)
 option(LAGI_AZEL_RUINS_LINK_TRIM "Temporarily discard unreachable Azel code for Ruins bring-up" ON)
 option(LAGI_BATTLE_NATIVE_BUILD "Compile native battle engine/A3 bring-up dependencies (does not enable encounters)" OFF)
 option(LAGI_BATTLE_LINK_AUDIT "Retain native A3 battle entry to audit its full link graph without executing it" OFF)
+option(LAGI_BATTLE_EXECUTE_A3 "Enable experimental native BTL_A3 encounter startup (hardware validation required)" OFF)
+if(LAGI_BATTLE_EXECUTE_A3 AND NOT LAGI_BATTLE_NATIVE_BUILD)
+ message(FATAL_ERROR "LAGI_BATTLE_EXECUTE_A3 requires LAGI_BATTLE_NATIVE_BUILD")
+endif()
 if(LAGI_BATTLE_LINK_AUDIT AND NOT LAGI_BATTLE_NATIVE_BUILD)
  message(FATAL_ERROR "LAGI_BATTLE_LINK_AUDIT requires LAGI_BATTLE_NATIVE_BUILD")
 endif()
@@ -1989,6 +1993,15 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   set(source_text "#include \"lagi/lagi_render_bridge.h\"\n${source_text}")
   string(REPLACE "${battle_camera_anchor}" "${battle_camera_anchor}\n    lagi::azel_bridge::capture_native_scene_view_matrix();" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleGenericData.cpp")
+  # A failed synchronous read must not feed uninitialized storage into the
+  # native table readers. The execution preflight reports/retries this case.
+  set(generic_guard "BTL_GenericData::BTL_GenericData() : sSaturnMemoryFile(\"BTL_A3.PRG\")\n{")
+  string(FIND "${source_text}" "${generic_guard}" generic_guard_found)
+  if(generic_guard_found LESS 0)
+   message(FATAL_ERROR "Native battle generic-data constructor boundary changed")
+  endif()
+  set(source_text "#include \"lagi/battle_startup.h\"\n${source_text}")
+  string(REPLACE "${generic_guard}" "${generic_guard}\n    if (!m_data || m_dataSize < lagi::battle_generic_minimum_bytes) return;" source_text "${source_text}")
   # Animated-quad parsing already belongs to the shared native Vita service.
   # Reuse that identical reader rather than link a second global definition.
   string(FIND "${source_text}" "std::vector<sVdp1Quad> initVdp1Quad(sSaturnPtr ptr) {" quad_begin)
@@ -2000,9 +2013,42 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(SUBSTRING "${source_text}" ${quad_end} -1 quad_suffix)
   set(source_text "${quad_prefix}std::vector<sVdp1Quad> initVdp1Quad(sSaturnPtr ptr); // shared native service\n\n${quad_suffix}")
  elseif(relative_path STREQUAL "battle/battleOverlay.cpp")
-  # Battle manager stays authentic, but no battle is reachable before the
-  # first-flight milestone. Remove only executable battle-overlay references;
-  # keep declarations and surrounding task structure valid.
+  if(LAGI_BATTLE_EXECUTE_A3)
+   set(source_text "#include \"lagi/battle_startup.h\"\n${source_text}")
+   # Preflight before font stack mutation. Keep all native state decisions
+   # and the authentic A3 entry; do not redirect unsupported overlays to A3.
+   set(startup_anchor "        sBattleOverlayName = gCommonFile->battleOverlaySetup[gBattleManager->m2_currentBattleOverlayId].m4_prg;")
+   string(FIND "${source_text}" "${startup_anchor}" startup_found)
+   if(startup_found LESS 0)
+    message(FATAL_ERROR "Native battle overlay startup boundary changed")
+   endif()
+   string(REPLACE "${startup_anchor}" "        if (!lagiPrepareNativeA3Battle()) return;\n${startup_anchor}" source_text "${source_text}")
+   string(REPLACE "                overlayStart_BTL_A3(pThis);" "                if (!lagiEnterNativeA3Battle(pThis)) return;" source_text "${source_text}")
+   # A retry after main-task allocation failure must not push fonts twice.
+   set(battle_fonts_old [=[        loadFnt("ITEM.FNT");
+        pThis->m2_numLoadedFnt++;
+        {
+            std::string customFontName = gCommonFile->battleOverlaySetup[gBattleManager->m2_currentBattleOverlayId].m8_fnt;
+            loadFnt(customFontName.c_str());
+            pThis->m2_numLoadedFnt++;]=])
+   set(battle_fonts_new [=[        if (pThis->m2_numLoadedFnt == 0)
+        {
+            loadFnt("ITEM.FNT");
+            pThis->m2_numLoadedFnt++;
+            std::string customFontName = gCommonFile->battleOverlaySetup[gBattleManager->m2_currentBattleOverlayId].m8_fnt;
+            loadFnt(customFontName.c_str());
+            pThis->m2_numLoadedFnt++;
+        }
+        {]=])
+   string(FIND "${source_text}" "${battle_fonts_old}" battle_fonts_found)
+   if(battle_fonts_found LESS 0)
+    message(FATAL_ERROR "Native battle font ownership boundary changed")
+   endif()
+   string(REPLACE "${battle_fonts_old}" "${battle_fonts_new}" source_text "${source_text}")
+  endif()
+  # Keep every unintegrated overlay/debug teardown disconnected. The explicit
+  # A3 execution path above has already replaced its one native call with the
+  # checked service boundary; all other overlay references are removed here.
   string(REPLACE
    "        BattleEnd_deleteSub0();"
    "        /* Lagi 0.040: battle teardown deferred until battle milestone */"
@@ -3630,6 +3676,9 @@ target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_s
 if(LAGI_BATTLE_NATIVE_BUILD)
  target_sources(lagi PRIVATE src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_battle_graphics_vita.cpp src/integration/lagi_resident_video_vita.cpp)
  set_property(SOURCE src/integration/lagi_disc_file_vita.cpp src/integration/lagi_map_resources_vita.cpp src/integration/lagi_azel_books_menu.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_TRACK_RESIDENT_VIDEO=1)
+endif()
+if(LAGI_BATTLE_EXECUTE_A3)
+ target_sources(lagi PRIVATE src/integration/lagi_battle_startup_vita.cpp)
 endif()
 
 if(LAGI_AZEL_PROBE)
