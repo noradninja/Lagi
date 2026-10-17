@@ -135,11 +135,20 @@ bool lagiAzelBooksPresentWindow(std::int32_t scrollX, std::int32_t scrollY,
     return true;
 }
 
+#if LAGI_TRACK_RESIDENT_VIDEO
+#include "lagi/resident_video.h"
+#endif
 std::uint8_t* lagiAzelBooksBackupGraphics()
 {
     // Native 06016004: contiguous backup, same three source ranges/order.
     auto* backup = dramAllocate(backupBytes);
     if (!backup) return nullptr;
+#if LAGI_TRACK_RESIDENT_VIDEO
+    lagi::resident_video::save_scope(backup,{
+        {lagi::resident_video::Space::vdp1,0x12000,spriteBytes},
+        {lagi::resident_video::Space::vdp2,0x20000,tileBytes},
+        {lagi::resident_video::Space::cram,0x7E0,paletteBytes}});
+#endif
     std::memcpy(backup, getVdp1Pointer(0x25C12000), spriteBytes);
     std::memcpy(backup + spriteBytes, getVdp2Vram(0x20000), tileBytes);
     std::memcpy(backup + spriteBytes + tileBytes, getVdp2Cram(0x7E0), paletteBytes);
@@ -153,6 +162,9 @@ void lagiAzelBooksRestoreGraphics(std::uint8_t* backup)
     std::memcpy(getVdp1Pointer(0x25C12000), backup, spriteBytes);
     std::memcpy(getVdp2Vram(0x20000), backup + spriteBytes, tileBytes);
     std::memcpy(getVdp2Cram(0x7E0), backup + spriteBytes + tileBytes, paletteBytes);
+#if LAGI_TRACK_RESIDENT_VIDEO
+    lagi::resident_video::restore_scope(backup);
+#endif
     dramFree(backup);
     // Notify the Vita renderer of restored source data; no visual substitute.
     invalidateVdp1TextureRange(0x12000, spriteBytes);

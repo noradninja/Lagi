@@ -7,6 +7,9 @@
 #include <cstring>
 #include <vector>
 #include <unordered_map>
+#if LAGI_TRACK_RESIDENT_VIDEO
+#include "lagi/resident_video.h"
+#endif
 
 namespace {
 
@@ -73,6 +76,9 @@ int loadFile(const char* fileName, u8* destination, u16)
         return -1;
 
     std::memcpy(destination, data.data(), data.size());
+#if LAGI_TRACK_RESIDENT_VIDEO
+    lagi::resident_video::record_load(fileName,destination,data.size());
+#endif
     fileInfoStruct.m0 = 0;
     completedLoads[key]=true;
     return 0;

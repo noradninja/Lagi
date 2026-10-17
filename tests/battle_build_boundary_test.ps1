@@ -12,12 +12,19 @@ $normalNinja=Get-Content -Raw "$normal/build.ninja"
 if($normalNinja.Contains('lagi_battle_rays_vita.cpp.obj')){throw 'Battle-only ray service leaked into ordinary build'}
 if($normalNinja.Contains('lagi_battle_graphics_vita.cpp.obj')){throw 'Battle-only graphics service leaked into ordinary build'}
 if(!$battleNinja.Contains('lagi_battle_graphics_vita.cpp.obj')){throw 'Battle graphics service missing'}
+if($normalNinja.Contains('lagi_resident_video_vita.cpp.obj')){throw 'Battle resident video service leaked into ordinary build'}
+if(!$battleNinja.Contains('lagi_resident_video_vita.cpp.obj')){throw 'Resident video service missing'}
 $encounter=Get-Content -Raw "$battle/azel_upstream/field_fieldEncounterTask.cpp"
-if(($encounter.Split('lagiRestoreBattleGraphics(pThis->m20);').Count-1) -ne 2){throw 'Both battle return restoration sites must be wired'}
+if(($encounter.Split('lagiRestoreBattleGraphics(pThis->m20)').Count-1) -ne 2){throw 'Both battle return restoration sites must be wired'}
+if(!$encounter.Contains('if (!lagiPrepareBattleGraphicsRestore(pThis->m20)) return;')){throw 'Resource staging must precede sound cleanup'}
 if(!$encounter.Contains('lagiDiscardBattleGraphics(pThis->m20);')){throw 'Encounter teardown leaks graphics backup'}
 if(!$encounter.Contains('if (!pThis->m20)')){throw 'Encounter must not proceed after capture failure'}
 $normalEncounter=Get-Content -Raw "$normal/azel_upstream/field_fieldEncounterTask.cpp"
 if($normalEncounter.Contains('lagiCaptureBattleGraphics')){throw 'Ordinary encounter graphics path unexpectedly changed'}
+$save=Get-Content -Raw "$battle/azel_upstream/kernel_loadSavegameScreen.cpp"
+if(!$save.Contains('lagi::resident_video::save_scope(buffer,') -or !$save.Contains('lagi::resident_video::restore_scope(backup);')){throw 'Save/load byte backups must preserve resident ownership'}
+$normalSave=Get-Content -Raw "$normal/azel_upstream/kernel_loadSavegameScreen.cpp"
+if($normalSave.Contains('resident_video::')){throw 'Ordinary save/load path unexpectedly changed'}
 $objects=@('battle_battleEngine','battle_battleEngineSub0','battle_battleEngineSub1',
  'battle_battleMainTask','battle_battleGenericData','battle_battleDragon','battle_battleGrid',
  'battle_BTL_A3_BTL_A3','battle_BTL_A3_BTL_A3_data')

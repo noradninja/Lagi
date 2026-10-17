@@ -38,9 +38,11 @@ keyboard toggles; replacing it as the ordinary gameplay path would be wrong.
 Before enabling entry, complete the graphics/resource handback detailed
 in [BATTLE_GRAPHICS_HANDOFF.md](BATTLE_GRAPHICS_HANDOFF.md). The generated battle
 build now uses typed graphics capture/restore at both return sites and discards
-storage on encounter teardown. Resident field-resource reload is still missing;
-upstream remains untouched. Host service tests and the retained-root Vita build
-pass, but neither proves native battle/field execution.
+storage on encounter teardown. Shared video-file spans are tracked and staged
+for reload before sound cleanup, including menu backup ownership scopes;
+heap-owned bundles are preserved. Upstream remains untouched. Host service
+tests and both full VPK builds pass, but do not prove native battle/field
+execution or cover every shared-resource path that live integration may expose.
 
 `BTL_A3.cpp::overlayStart_BTL_A3()` loads its real overlay data, selects
 `gCurrentBattleOverlay`, and constructs `createBattleMainTask()`. That task

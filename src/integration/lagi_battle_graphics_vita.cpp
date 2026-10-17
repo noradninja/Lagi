@@ -1,5 +1,6 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/battle_graphics.h"
+#include "lagi/resident_video.h"
 #include "lightSetup.h"
 #include <new>
 #include <cstring>
@@ -8,6 +9,7 @@ extern sVdpVar1* vdpVar2;
 
 namespace {
 struct BattleGraphics {
+    lagi::resident_video::Snapshot resident;
     s_graphicEngineStatus_405C projection;
     sVdp2Controls controls;
     sFadeControls fade;
@@ -43,6 +45,7 @@ void* lagiCaptureBattleGraphics(bool includeFade)
     for(const auto& entry:vdpVar1)if(!ownedTransfer(entry.m10_nextTransfert))return nullptr;
     auto* saved=new(std::nothrow) BattleGraphics{};
     if(!saved)return nullptr;
+    lagi::resident_video::capture(saved->resident);
     saved->projection=graphicEngineStatus.m405C;
     // Never retain pointers into recycled VDP1 command lists.
     saved->hasLocal=saved->projection.setLocalCoordinatesEA!=nullptr;
@@ -76,10 +79,18 @@ void* lagiCaptureBattleGraphics(bool includeFade)
     return saved;
 }
 
-void lagiRestoreBattleGraphics(void*& backup)
+bool lagiPrepareBattleGraphicsRestore(void* backup)
 {
-    if(!backup)return;
-    const auto* saved=static_cast<const BattleGraphics*>(backup);
+    return !backup || lagi::resident_video::prepare(static_cast<BattleGraphics*>(backup)->resident);
+}
+
+bool lagiRestoreBattleGraphics(void*& backup)
+{
+    if(!backup)return true;
+    auto* saved=static_cast<BattleGraphics*>(backup);
+    // Native resource reload precedes the explicit VRAM/color-span restore.
+    // No field resume or deletion occurs if staging failed or disc changed.
+    if(!lagi::resident_video::restore(saved->resident))return false;
     auto* local=graphicEngineStatus.m405C.setLocalCoordinatesEA;
     auto* clip=graphicEngineStatus.m405C.setClippingCoordinatesEA;
     graphicEngineStatus.m405C=saved->projection;
@@ -108,6 +119,7 @@ void lagiRestoreBattleGraphics(void*& backup)
     setVdp2VramU16((vdp2Controls.m4_pendingVdp2Regs->mAC_BKTA&0x7FFFF)*2,saved->backColor);
     setVdp2VramU16((vdp2Controls.m4_pendingVdp2Regs->mA8_LCTA&0x7FFFF)*2,saved->lineColor);
     lagiDiscardBattleGraphics(backup);
+    return true;
 }
 
 void lagiDiscardBattleGraphics(void*& backup)

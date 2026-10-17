@@ -26,6 +26,13 @@ void setupLight(int a,int b,int c,unsigned d){assert(lightCall++==0);lightSetup.
 void generateLightFalloffMap(unsigned a,unsigned b,unsigned c){assert(lightCall++==1);lightSetup.m10=a;lightSetup.m14=b;lightSetup.m18=c;}
 void dragonFieldTaskDrawSub1Sub1(int a,int b,int c,unsigned d){assert(lightCall++==2);lightSetup.m1C_pointLightX=a;lightSetup.m20_pointLightY=b;lightSetup.m24_pointLightZ=c;lightSetup.m28_pointLightParam=d;}
 void lagiDiscardBattleGraphics(void*&);
+namespace lagi::resident_video {
+struct Snapshot {};
+bool resourceReady=true; int captures=0,restores=0;
+void capture(Snapshot&){++captures;}
+bool prepare(Snapshot&){return resourceReady;}
+bool restore(Snapshot&){if(!resourceReady)return false;++restores;return true;}
+}
 #include "service.inc"
 int main(){
     for(int optional=0;optional<2;++optional)for(int pending=0;pending<2;++pending){
@@ -47,12 +54,18 @@ int main(){
         cram.fill(0xAC);vram.fill(0xBD);
         setVdp2VramU16(0x240,0x1234);setVdp2VramU16(0x280,0x5678);
         void* saved=lagiCaptureBattleGraphics(optional!=0);assert(saved);
+        lagi::resident_video::resourceReady=false;
+        assert(!lagiPrepareBattleGraphicsRestore(saved));
+        assert(!lagiRestoreBattleGraphics(saved) && saved);
+        assert(lightCall==0); // no graphics mutation after failed resource stage
+        lagi::resident_video::resourceReady=true;
+        assert(lagiPrepareBattleGraphicsRestore(saved));
         s_vdp1Command newLocal{},newClip{};
         graphicEngineStatus.m405C={99,&newClip,&newLocal};
         oldLocal={};oldClip={}; // old list has been reused
         vdp2Controls={};vdpVar1={};vdpVar2=nullptr;vdpVar3=nullptr;
         lightSetup={};g_fadeControls.value=77;cram.fill(0);vram.fill(0);
-        lagiRestoreBattleGraphics(saved);assert(!saved);
+        assert(lagiRestoreBattleGraphics(saved));assert(!saved);
         assert(graphicEngineStatus.m405C.value==42);
         assert(graphicEngineStatus.m405C.setLocalCoordinatesEA==&newLocal);
         assert(graphicEngineStatus.m405C.setClippingCoordinatesEA==&newClip);

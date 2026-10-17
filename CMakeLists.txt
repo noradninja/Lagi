@@ -1956,8 +1956,7 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldEncounterTask.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # Native graphics return 06028668 is absent upstream. Keep native encounter
-  # state decisions; replace only platform storage/copy ownership. Resident
-  # file reload restoration is still required before enabling battle entry.
+  # state decisions; replace only platform storage/copy/resource ownership.
   string(FIND "${source_text}" "// 0602849a\nstruct sGraphicsBackup" backup_begin)
   string(FIND "${source_text}" "void encounterTaskUpdate(sEncouterTask* pThis)" backup_end)
   if(backup_begin LESS 0 OR backup_end LESS backup_begin)
@@ -1971,7 +1970,10 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   if(restore_found LESS 0)
    message(FATAL_ERROR "Native battle graphics restore sites changed")
   endif()
-  string(REPLACE "${restore_marker}" "lagiRestoreBattleGraphics(pThis->m20);" source_text "${source_text}")
+  string(REPLACE "${restore_marker}" "if (!lagiRestoreBattleGraphics(pThis->m20)) return;" source_text "${source_text}")
+  # Stage/validate all reload bytes before sound cleanup, so an I/O retry
+  # cannot pop the native sequence stack a second time.
+  string(REPLACE "        s8 battleResult = gBattleManager->mE;" "        if (!lagiPrepareBattleGraphicsRestore(pThis->m20)) return;\n        s8 battleResult = gBattleManager->mE;" source_text "${source_text}")
   set(capture_marker "        pThis->m20 = backupGraphicsToEnterBattle(pThis, 0);")
   string(REPLACE "${capture_marker}" "${capture_marker}\n        if (!pThis->m20)\n        {\n            pThis->m4->getTask()->clearPaused();\n            graphicEngineStatus.m40AC.m1_isMenuAllowed = pThis->m1;\n            return; // do not enter battle without restorable graphics\n        }" source_text "${source_text}")
   string(REPLACE "void encounterTaskDelete(sEncouterTask* pThis)\n{\n    encounterTaskVar0 = 0;" "void encounterTaskDelete(sEncouterTask* pThis)\n{\n    lagiDiscardBattleGraphics(pThis->m20);\n    encounterTaskVar0 = 0;" source_text "${source_text}")
@@ -2573,6 +2575,11 @@ void pauseCutscene]=]
     "        pWorkArea->m_menu[0].m_isEnabled = (azelCdNumber == 0); // new game enabled only is first disk\n        pWorkArea->m_menu[1].m_isEnabled = hasSaveGame();"
     source_text "${source_text}")
   elseif(relative_path STREQUAL "kernel/loadSavegameScreen.cpp")
+   if(LAGI_BATTLE_NATIVE_BUILD)
+    set(source_text "#include \"lagi/resident_video.h\"\n${source_text}")
+    string(REPLACE "    addToMemoryLayout(buffer, 0x1E800);" "    addToMemoryLayout(buffer, 0x1E800);\n    lagi::resident_video::save_scope(buffer,{{lagi::resident_video::Space::vdp1,0x12000,0x3D00},{lagi::resident_video::Space::vdp2,0x20000,0x1A900},{lagi::resident_video::Space::cram,0xA00,0x200}});" source_text "${source_text}")
+    string(REPLACE "        dramFree(backup);" "        lagi::resident_video::restore_scope(backup);\n        dramFree(backup);" source_text "${source_text}")
+   endif()
    string(REPLACE
     [=[    static void DrawLoad(sSaveTask* pThis)
     {]=]
@@ -3610,7 +3617,8 @@ set_property(TARGET lagi APPEND PROPERTY LINK_DEPENDS "${CMAKE_SOURCE_DIR}/tools
 target_include_directories(lagi PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}/src/integration")
 target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceProcessmgr_stub SceSysmem_stub SceSysmodule_stub)
 if(LAGI_BATTLE_NATIVE_BUILD)
- target_sources(lagi PRIVATE src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_battle_graphics_vita.cpp)
+ target_sources(lagi PRIVATE src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_battle_graphics_vita.cpp src/integration/lagi_resident_video_vita.cpp)
+ set_property(SOURCE src/integration/lagi_disc_file_vita.cpp src/integration/lagi_map_resources_vita.cpp src/integration/lagi_azel_books_menu.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_TRACK_RESIDENT_VIDEO=1)
 endif()
 
 if(LAGI_AZEL_PROBE)
