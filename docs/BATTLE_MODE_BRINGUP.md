@@ -166,11 +166,33 @@ accepted versus rejected queued control events. Both Vita VPK builds pass.
 No listening, 68K/SCSP execution, concurrent worker scheduling or battle return
 is established by these host tests.
 
-Still open: the existing Vita loader always performs its full bank-load path;
-native same-area/same-sequence state selection and selective stopped-bank mask
-are not yet reproduced. The replay filter currently follows the full-reload
-policy, not the missing selective mask. Queue overflow remains an explicit
-logged delivery failure, not a successful transition. Modes above 1, pending
+The experimental loader now selects native states 0 (different area/no prior
+sequence), 2 (same area/different sequence), and 8 (same sequence). It preserves
+sound IDs instead of unconditionally clearing them. The push comparison uses
+the authored signed return offset; pop compares with the outgoing child.
+
+Original `0602B790` tests file identity and exact destination via `0600FDCA`,
+ORs missing-file records' +8 masks, then stops only playing old sounds in those
+banks. `0602B8EC` waits on the same bank mask using the driver's high-byte status
+words. These are now service operations over worker-owned sound-RAM residency,
+old-sequence sound configurations, and 68K words at `0x780 + 2*slot`. Matching
+files skip redundant copies; any overlapping successful file write invalidates
+the old whole-file identity. Disc changes/new worker memory epochs clear the
+ledger. Transfer failure retains state 4 and cannot publish loading-ready.
+Post-load replay requires both native config +2 and the stopped-bank mask.
+Default audio retains its previous loader policy.
+
+The expanded stack test executes the actual selective stop/wait and loader
+state bodies, including a still-playing unaffected bank, failed transfer,
+masked replay, and all 65536 driver-status word patterns. The production bank
+loader test (`tests/battle_audio_banks_test.ps1`) checks exact residency skips,
+partial-overwrite invalidation, missing/oversize/out-of-range writes and disc
+change reload with mocked file bytes. Both full Vita builds and original-disc
+instruction anchors pass. This still does not prove real driver handshakes,
+audible continuity, or worker timing on hardware.
+
+Still open: queue overflow remains an explicit logged delivery failure, not a
+successful transition. Modes above 1, pending
 sound requests across transitions, audio timing and repeated encounters need
 native/hardware validation before this can be called complete.
 
