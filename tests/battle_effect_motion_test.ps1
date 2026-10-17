@@ -1,0 +1,31 @@
+param([string]$ScratchRoot='../battle-effect-motion-test',[string]$DiscImage='')
+$ErrorActionPreference='Stop'
+$repo=Split-Path $PSScriptRoot -Parent
+$scratch=[IO.Path]::GetFullPath((Join-Path $repo $ScratchRoot))
+New-Item -ItemType Directory -Force $scratch | Out-Null
+& cl /nologo /O2 /std:c++20 /EHsc "/I$repo/include" "$PSScriptRoot/battle_effect_motion_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
+if($LASTEXITCODE -ne 0){throw 'Effect motion test compile failed'}
+& "$scratch/test.exe"
+if($LASTEXITCODE -ne 0){throw 'Effect motion test failed'}
+if($DiscImage){
+ $disc=[IO.File]::OpenRead($DiscImage)
+ try {
+  # Read original BTL_A3 instructions/literals directly; no extracted game
+  # code or data is written into the repository or test artifacts.
+  $anchors=@{
+   0x0608CB18=0x2102;0x0608CB64=0x2102;0x0608CB92=0x2102;
+   0x0608CBC8=0x2102;0x0608CC20=0x2102;0x0608CC4C=0x2102;
+   0x0608CD58=0x00AA;0x0608CD5A=0xAAAA;
+   0x0608CD60=0x0400;0x0608CD62=0;
+   0x0608CAB8=0x1000;0x0608CABA=0
+  }
+  foreach($address in $anchors.Keys){
+   $offset=[long]$address-0x06054000
+   $physical=([long]258144+[long][Math]::Floor($offset/2048))*2352+16+($offset%2048)
+   $null=$disc.Seek($physical,[IO.SeekOrigin]::Begin)
+   $word=($disc.ReadByte() -shl 8) -bor $disc.ReadByte()
+   if($word -ne $anchors[$address]){throw ('Original effect anchor mismatch at {0:X8}' -f $address)}
+  }
+  Write-Output 'PASS: original BTL_A3 motion stores and speed/angle/magnitude literals match.'
+ } finally {$disc.Dispose()}
+}

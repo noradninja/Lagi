@@ -419,6 +419,21 @@ Existing collection burst and 384 particle color-window tests still pass.
 Both experimental battle and ordinary fullres/dither Vita VPK builds pass.
 This is a shared service correction, not a replacement for missing effect
 task state/particle-array producers. Hardware geometry remains unverified.
+
+Particle-producer recovery in progress: `battle_effect_motion.h` captures the
+original 0x24-byte motion record and initialization at BTL_A3
+0608CAC0..0608CC4C. It preserves independent native trig samples, ten RNG
+draws in order, 00AAAAAA linear speed and signed fixed-point products. Angles
+use the top twelve RNG bits; angular magnitudes use the top sixteen bits
+times 1024. Azel must supply RNG and trig tables; none are replaced or embedded.
+`battle_effect_motion_test.ps1 -DiscImage <original MODE1/2352 bin>` checks
+deterministic state, exact RNG count/order, table indices and arithmetic, plus
+original disc store/literal anchors. These checks pass. This helper is **not
+yet connected to the live effect task**: the native initializer also allocates
+0x38 particle records, initializes animated quads and owns frame/type/scale
+state; update and draw must be restored together before replacing the timer
+stub. This preparatory commit has no runtime visual change and does not call
+for another hardware build by itself.
 `native_color_clear_test.ps1` checks production API arguments, completion order,
 padding bounds, rejected-transfer fallback and failed-completion behavior with
 a mocked transfer engine. Builds are not hardware API or performance proof;
