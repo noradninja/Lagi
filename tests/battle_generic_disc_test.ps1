@@ -17,6 +17,11 @@ $digits=Get-Content -Raw "$repo/src/integration/lagi_battle_damage_digits_vita.c
 $begin=$digits.IndexOf('void lagiDrawBattleDamageDigits(')
 if($begin -lt 0){throw 'Damage digit service boundary changed'}
 [IO.File]::WriteAllText("$scratch/digits.inc",$digits.Substring($begin))
+$charge=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/battle_battlePowerGauge.cpp"
+$begin=$charge.IndexOf('static void sGaugeIncreaseEffect_Draw(')
+$end=$charge.IndexOf('static const sGaugeIncreaseEffect::TypedTaskDefinition',$begin)
+if($begin -lt 0 -or $end -le $begin){throw 'Native charge-effect draw boundary changed'}
+[IO.File]::WriteAllText("$scratch/charge.inc",$charge.Substring($begin,$end-$begin))
 $enemy=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/battle_BTL_A3_urchin.cpp"
 foreach($required in @('m2C_deathMode == 4','u8 deathMode = pThis->mCC->m2C_deathMode;','m2D_hitSound != 0xFF','m2E_deathSound != 0xFF','playSystemSoundEffect(pThis->mCC->m2D_hitSound);','playSystemSoundEffect(pThis->mCC->m2E_deathSound);')){
  if(!$enemy.Contains($required)){throw "Missing generated enemy parameter consumer: $required"}

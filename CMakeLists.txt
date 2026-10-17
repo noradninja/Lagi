@@ -2082,6 +2082,38 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[1]);" "playSystemSoundEffect(pThis->mCC->m2D_hitSound);" source_text "${source_text}")
   string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battlePowerGauge.cpp")
+  string(FIND "${source_text}" "static void sGaugeIncreaseEffect_Draw(" charge_begin)
+  string(FIND "${source_text}" "static const sGaugeIncreaseEffect::TypedTaskDefinition" charge_end)
+  if(charge_begin LESS 0 OR charge_end LESS charge_begin)
+   message(FATAL_ERROR "Native charge-effect draw boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${charge_begin} charge_prefix)
+  string(SUBSTRING "${source_text}" ${charge_end} -1 charge_suffix)
+  set(charge_draw [=[static void sGaugeIncreaseEffect_Draw(sGaugeIncreaseEffect* pThis)
+{
+    const fixedPoint size = MTH_Mul(fixedPoint(pThis->m10_decayRate), fixedPoint(pThis->m60_alpha));
+    std::array<sVec3_FP, 2> endpoints;
+    endpoints[0] = *pThis->m50_pPosition;
+    pushCurrentMatrix();
+    translateCurrentMatrix(pThis->m50_pPosition);
+    rotateCurrentMatrixShiftedY(fixedPoint(pThis->m5C_rotationY));
+    rotateCurrentMatrixShiftedX(fixedPoint(pThis->m58_rotationX));
+    sVec3_FP offset;
+    transformAndAddVecByCurrentMatrix(&pThis->m64_offset, &offset);
+    transformAndAddVec(offset, endpoints[1], cameraProperties2.m28[0]);
+    popMatrix();
+    std::array<fixedPoint, 2> widths = {0, size};
+    quadColor colors;
+    const auto table = g_BTL_GenericData->getSaturnPtr(0x060ACE54 + pThis->m4C_colorSetIndex * 8);
+    for (unsigned i = 0; i < 4; ++i) colors[i] = readSaturnU16(table + i * 2);
+    const u16 base = dramAllocatorEnd[0].mC_fileBundle->m4_vd1Allocation->m4_vdp1Memory;
+    displayRaySegment_2Width(endpoints, widths, base + 0xCF8, 0x320, base + 0x2EF0, &colors, 8);
+}
+
+]=])
+  set(source_text "${charge_prefix}${charge_draw}${charge_suffix}")
+  string(REPLACE "#include \"kernel/vdp1AnimatedQuad.h\"" "#include \"kernel/vdp1AnimatedQuad.h\"\n#include \"kernel/rayDisplay.h\"\n#include \"battle/battleGenericData.h\"" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleDamageDisplay.cpp")
   set(damage_draw_old [=[static void damageDisplay_draw(sDamageDisplayTask* pThis)
 {

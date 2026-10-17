@@ -96,6 +96,37 @@ struct DigitContext{
 };
 struct {DigitContext m14_vdp1Context[1];}graphicEngineStatus;
 #include "digits.inc"
+namespace charge_fixture {
+struct sGaugeIncreaseEffect{s32 m10_decayRate,m60_alpha,m5C_rotationY,m58_rotationX,m4C_colorSetIndex;sVec3_FP* m50_pPosition;sVec3_FP m64_offset;};
+struct {int m28[2]={1,2};}cameraProperties2;
+struct Allocation{u16 m4_vdp1Memory=0x3100;}allocation;
+struct Bundle{Allocation* m4_vd1Allocation=&allocation;}bundle;
+struct Entry{Bundle* mC_fileBundle=&bundle;};std::array<Entry,1>dramAllocatorEnd;
+s32 MTH_Mul(s32 a,s32 b){return s32((std::int64_t(a)*b)>>16);}
+int stackDepth=0;void pushCurrentMatrix(){++stackDepth;}void popMatrix(){--stackDepth;}
+void translateCurrentMatrix(sVec3_FP*){}void rotateCurrentMatrixShiftedY(s32){}void rotateCurrentMatrixShiftedX(s32){}
+void transformAndAddVecByCurrentMatrix(const sVec3_FP* a,sVec3_FP* b){for(int i=0;i<3;++i)(*b)[i]=(*a)[i]+10;}
+void transformAndAddVec(const sVec3_FP& a,sVec3_FP& b,int matrix){assert(matrix==1);for(int i=0;i<3;++i)b[i]=a[i]+20;}
+std::array<sVec3_FP,2> capturedPoints;std::array<s32,2> capturedWidths;quadColor capturedColors;unsigned calls=0;
+void displayRaySegment_2Width(std::array<sVec3_FP,2>& p,std::array<s32,2>& w,u16 address,s16 size,u16 color,const quadColor* colors,s32 mode){
+    assert(stackDepth==0 && address==0x3DF8 && size==0x320 && color==0x5FF0 && mode==8);
+    capturedPoints=p;capturedWidths=w;capturedColors=*colors;++calls;
+}
+#include "charge.inc"
+void check(){
+    for(unsigned color=0;color<3;++color){
+        sVec3_FP position={100,200,300};sGaugeIncreaseEffect task{0xCCC,0x10000,123,456,s32(color),&position,{1,2,3}};
+        sGaugeIncreaseEffect_Draw(&task);
+        if(capturedPoints[0]!=position || capturedPoints[1]!=sVec3_FP{31,32,33} || capturedWidths!=std::array<s32,2>{0,0xCCC})
+            throw std::runtime_error("Charge endpoints/taper differ from native draw");
+        for(unsigned i=0;i<4;++i)if(capturedColors[i]!=readSaturnU16(g_BTL_GenericData->getSaturnPtr(0x060ACE54+color*8+i*2)))
+            throw std::runtime_error("Charge Gouraud table differs");
+    }
+    const u32 anchors[][2]={{0x06085352,0x2EF0},{0x06085354,0x0320},{0x06085356,0x0CF8},{0x0608538C,0x060ACE54},{0x06085390,0x0602F610}};
+    for(const auto& a:anchors)if(read(g_BTL_GenericData->getSaturnPtr(a[0]),a[1]>0xFFFF?4:2)!=a[1])throw std::runtime_error("Native charge draw anchor changed");
+    std::puts("PASS: actual generated charge draw supplies two initialized endpoints, native zero-width taper, sprite offsets/size/mode and runtime Gouraud table; original draw literals verified. Mocked transforms, not GPU acceptance.");
+}
+}
 struct sBattleManager{s16 m2_currentBattleOverlayId,m4_previousBattleOverlayId,m6_subBattleId,m8_previousSubBattleId;};
 #include "remap.inc"
 void checkA3Dispatch(){
@@ -259,6 +290,7 @@ int main(int argc,char** argv){
         checkA3Animations();
         checkA3Formations();
         checkDamageDigits();
+        charge_fixture::check();
         delete g_BTL_GenericData;fclose(disc);return 0;
     }catch(const std::exception& error){std::fprintf(stderr,"FAIL: %s\n",error.what());fclose(disc);return 1;}
 }

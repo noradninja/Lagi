@@ -323,6 +323,28 @@ cmake --build build-battle
 
 ## Required progression and acceptance
 
+Extended hardware capture (2026-10-17, `12-16-55.mp4`): floating numbers and
+gauge fills are visible and multiple A3 battles complete/return. Battle-only
+log intervals (startup/sequence-return boundaries) include renderer samples
+at 31.7..33.8 ms with 992 polygons, ~5.0..5.3 ms scene build,
+~12.8..15.2 ms CPU preparation and ~14.6..19.0 ms GXM wait. Logged scanout
+intervals reach ~50 ms (three vblanks). These are overlapping timing scopes,
+not additive independent costs or proof of one sole bottleneck.
+
+Charge-ray repair: original BTL_A3 `0608523C..060852F0` supplies two contiguous
+endpoints to MAIN `0602F610`, widths {0, animated size}, sprite source base+CF8,
+size 0320, color base+2EF0, mode 8 and Gouraud table `060ACE54`. Upstream passed
+one local vector (the shared service reads a second endpoint beyond it), then
+used the wrong texture and non-tapered sizes. The generated draw now preserves
+the original pair and runtime table. Disc-backed tests execute that actual
+generated draw, verify endpoint ownership/arguments and original literals.
+This routine supplies sprite Gouraud colors; it does not itself establish a
+new point-light source. Device ray appearance remains pending.
+
+The extended crash artifact is a 2560-byte `.psp2dmp.tmp`; no complete crash
+context or matching symbolized fault has been established. The apparent tunnel
+to cinematic boundary is a user observation, not a diagnosed crash cause.
+
 Flight/tunnel audio regression: active sounds were stored by shared data-bank
 number (config +0), while native stop/wait/status operates on eight playback
 control slots (config +3). Multiple ambient sounds in one bank overwrite each
