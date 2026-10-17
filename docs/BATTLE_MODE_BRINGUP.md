@@ -311,6 +311,22 @@ cmake --build build-battle
 
 ## Required progression and acceptance
 
+Allocator return checkpoint: original MAIN `060315B4` pops the allocator and
+restores the parent's inline file table at +18. Upstream's C++ vector conversion
+only clears the vector at the root and otherwise leaves the child table active.
+The generated native-battle build now moves the parent's vector under its own
+allocator identity during push and restores it on pop, preserving table storage,
+filenames, refcounts and bundle pointers. Native task teardown is child-first;
+this change does not replace task/bundle deletion or reallocate surviving assets.
+Reset clears sidecar metadata. Default builds retain their prior allocator path.
+
+`tests/battle_allocator_tables_test.ps1` executes generated native push/pop/reset
+and the production owner service with mocked heap/resource I/O, covering nested
+empty/nonempty tables, exact storage/bundle identity, root pop and reset. Full
+Vita builds and original allocator instruction anchors pass. Native DRAM resource
+reload, task-heap freeing, allocation exhaustion and repeated on-device returns
+remain unverified; this table-ownership repair does not establish those behaviors.
+
 1. Audit/test combat-relevant persistent player state: inventory healing and
    quantities, healing Berserk HP/BP costs, equipment, Dragon stat/morph changes.
    Existing implementations and menu appearance are not device acceptance of

@@ -16,6 +16,14 @@ if($normalNinja.Contains('lagi_battle_graphics_vita.cpp.obj')){throw 'Battle-onl
 if(!$battleNinja.Contains('lagi_battle_graphics_vita.cpp.obj')){throw 'Battle graphics service missing'}
 if($normalNinja.Contains('lagi_resident_video_vita.cpp.obj')){throw 'Battle resident video service leaked into ordinary build'}
 if(!$battleNinja.Contains('lagi_resident_video_vita.cpp.obj')){throw 'Resident video service missing'}
+if($normalNinja.Contains('lagi_allocator_tables_vita.cpp.obj')){throw 'Battle allocator service leaked into ordinary build'}
+if(!$battleNinja.Contains('lagi_allocator_tables_vita.cpp.obj')){throw 'Battle allocator table service missing'}
+$allocator=Get-Content -Raw "$battle/azel_upstream/mainMenuDebugTasks.cpp"
+foreach($hook in @('lagiPushDramFileTable(pDramAllocator);','lagiPopDramFileTable(prev);','lagiResetDramFileTables();')){
+ if(!$allocator.Contains($hook)){throw "Native allocator owner hook missing: $hook"}
+}
+$normalAllocator=Get-Content -Raw "$normal/azel_upstream/mainMenuDebugTasks.cpp"
+if($normalAllocator.Contains('lagiPushDramFileTable')){throw 'Default allocator policy unexpectedly changed'}
 $encounter=Get-Content -Raw "$battle/azel_upstream/field_fieldEncounterTask.cpp"
 if(($encounter.Split('lagiRestoreBattleGraphics(pThis->m20)').Count-1) -ne 2){throw 'Both battle return restoration sites must be wired'}
 if(!$encounter.Contains('if (!lagiPrepareBattleGraphicsRestore(pThis->m20)) return;')){throw 'Resource staging must precede sound cleanup'}
