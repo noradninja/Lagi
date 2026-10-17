@@ -2734,6 +2734,14 @@ void pauseCutscene]=]
    "    else if (overlayFileName == \"TWN_EXCA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_EXCA;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E006;\n    }"
    source_text "${source_text}")
 
+  if(LAGI_BATTLE_NATIVE_BUILD)
+   # Status 08 after FLD_A3 selects the real E011 cinematic, not E006.
+   string(REPLACE
+    "    else if (overlayFileName == \"TWN_E006.PRG\")"
+    "    else if (overlayFileName == \"TWN_E011.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E011;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")"
+    source_text "${source_text}")
+  endif()
+
   # Vita bridge for the authentic upstream static world-grid submission path.
   # This modifies only the generated build copy, never extern/Azel.
   string(REPLACE
@@ -3550,6 +3558,7 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
 )
 
 if(LAGI_BATTLE_NATIVE_BUILD)
+ list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES town/e011/twn_e011.cpp)
  file(READ "${LAGI_AZEL_SOURCE_ROOT}/kernel/rayDisplay.cpp" battle_ray_source)
  string(FIND "${battle_ray_source}" "s32 rayComputeDisplayMatrix_fixedWidth(" battle_ray_begin)
  string(FIND "${battle_ray_source}" "s32 rayComputeDisplayMatrix_2Width(" battle_ray_end)
@@ -3784,6 +3793,7 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/ruin"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/exca"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/e006"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/e011"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/kernel"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/audio"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/ThirdParty/aosdk"

@@ -9,6 +9,14 @@ if($battleCache -notmatch 'LAGI_BATTLE_NATIVE_BUILD:BOOL=ON'){throw 'Battle conf
 if($normalCache -notmatch 'LAGI_BATTLE_NATIVE_BUILD:BOOL=OFF'){throw 'Normal configuration must retain encounters-disabled default'}
 $battleNinja=Get-Content -Raw "$battle/build.ninja"
 $normalNinja=Get-Content -Raw "$normal/build.ninja"
+if(!$battleNinja.Contains('town_e011_twn_e011.cpp.obj') -or $normalNinja.Contains('town_e011_twn_e011.cpp.obj')){throw 'E011 cinematic must remain native-battle opt-in'}
+$battleTown=Get-Content -Raw "$battle/azel_upstream/town_town.cpp"
+$normalTown=Get-Content -Raw "$normal/azel_upstream/town_town.cpp"
+if(!$battleTown.Contains('gFieldOverlayFunction = overlayStart_TWN_E011;') -or $normalTown.Contains('gFieldOverlayFunction = overlayStart_TWN_E011;')){throw 'E011 dispatch does not match compiled cinematic capability'}
+$cinematic=Get-Content -Raw "$battle/azel_upstream/town_e011_twn_e011.cpp"
+foreach($nativeStep in @('sTownOverlay("TWN_E011.PRG")','registerNpcs(gTWN_E011->mTownSetups','startScriptTask(pThis);','startE011BackgroundTask(pThis);','startCameraTask(pThis);')){
+ if(!$cinematic.Contains($nativeStep)){throw "E011 native startup missing: $nativeStep"}
+}
 if(!$battleNinja.Contains('LAGI_NATIVE_TASK_HEAP_CLEANUP=1') -or $normalNinja.Contains('LAGI_NATIVE_TASK_HEAP_CLEANUP=1')){throw 'Task heap disposal must remain native-battle opt-in'}
 if(!$battleNinja.Contains('LAGI_BATTLE_BUILD_NATIVE=1') -or !$normalNinja.Contains('LAGI_BATTLE_BUILD_NATIVE=0')){throw 'Battle build diagnostics must match compilation capability'}
 if(($battleCache -match 'LAGI_BATTLE_EXECUTE_A3:BOOL=ON') -ne $battleNinja.Contains('LAGI_BATTLE_BUILD_EXECUTE_A3=1')){throw 'Battle execution diagnostic must match the active option'}

@@ -354,11 +354,17 @@ TWN_RUIN load is the existing shared-data initialization, not proof that the
 requested destination is Ruins gameplay. The user confirms this exit leads to
 an in-engine cinematic.
 
-The generated dispatch currently retains only RUIN, EXCA and E006, and the
-source list omits E011. Enabling the actual E011 startup and its dependencies
-is the next integration step; bypassing the assertion or routing it to E006
-would not implement that cinematic. No cinematic fix or hardware acceptance
-is claimed by this diagnosis. The local parser does not symbolize modules
+The experimental native-battle build now retains E011's authentic dispatch
+and compiles `town/e011/twn_e011.cpp` through the generated adapter boundary.
+Its native overlay data, NPC registration, script task, background task, main
+logic and camera startup are retained; it is not rerouted to E006. The ordinary
+build keeps its prior dispatch and does not compile E011. The fullres/dither
+Vita VPK links successfully, and `battle_build_boundary_test.ps1` verifies
+that isolation and the native startup anchors. This removes the identified
+dispatch assertion in source; the complete cinematic, its special background
+and exit still require device testing. Upstream's unknown object-definition
+assertion and unimplemented subtask factory remain limitations if reached.
+The local parser does not symbolize modules
 named `lagi` automatically: resolve offsets against the original ELF LOAD
 base, not against the relocated VELF symbol addresses.
 
