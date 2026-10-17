@@ -2024,6 +2024,16 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   set(capture_marker "        pThis->m20 = backupGraphicsToEnterBattle(pThis, 0);")
   string(REPLACE "${capture_marker}" "${capture_marker}\n        if (!pThis->m20)\n        {\n            pThis->m4->getTask()->clearPaused();\n            graphicEngineStatus.m40AC.m1_isMenuAllowed = pThis->m1;\n            return; // do not enter battle without restorable graphics\n        }" source_text "${source_text}")
   string(REPLACE "void encounterTaskDelete(sEncouterTask* pThis)\n{\n    encounterTaskVar0 = 0;" "void encounterTaskDelete(sEncouterTask* pThis)\n{\n    lagiDiscardBattleGraphics(pThis->m20);\n    encounterTaskVar0 = 0;" source_text "${source_text}")
+  set(return_fade_anchor "        encounterTaskVar0 = 2;\n        pThis->m0_status = 1; // reset to idle")
+  string(FIND "${source_text}" "${return_fade_anchor}" return_fade_found)
+  if(return_fade_found LESS 0)
+   message(FATAL_ERROR "Native encounter return fade boundary changed")
+  endif()
+  # MAIN 0600C888..0600C8AE restores both saved field fade targets over 30
+  # frames after audio readiness and field unpause. Zero is black, not clear.
+  string(REPLACE "${return_fade_anchor}"
+   "        fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), g_fadeControls.m_48, 0x1E);\n        fadePalette(&g_fadeControls.m24_fade1, convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color), g_fadeControls.m_4A, 0x1E);\n${return_fade_anchor}"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleGrid.cpp")
   # Capture the native root immediately after camera generation, before
   # local model transforms. Field encounters keep module mode 3, so they

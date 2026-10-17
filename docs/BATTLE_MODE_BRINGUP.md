@@ -323,6 +323,20 @@ cmake --build build-battle
 
 ## Required progression and acceptance
 
+First hardware battle acceptance (2026-10-17): user recording/log confirms A3
+combat entry, commands and battle completion execute. It also shows missing
+gauge fills/damage effects and a black field return despite resumed audio.
+This is partial combat evidence, not full battle acceptance.
+
+Return-fade repair: MAIN `0600C888..0600C8AE` starts both native fade channels
+from their current colors to field targets +48/+4A over 0x1E frames, after
+sound readiness and field unpause. The reconstruction omitted these calls and
+left the preceding one-frame black hold active indefinitely, matching the log.
+The generated encounter now restores those calls. `battle_return_fade_test.ps1`
+executes the generated resume case with mocked services and checks audio wait,
+both independent targets, 30-frame duration and one-shot state advance.
+On-device corrected transition appearance remains pending.
+
 Task heap checkpoint: native-battle builds now drain task-owned allocations
 on the scheduler's disposal pass, after child/parent Delete callbacks. The
 production free service receives user data (not allocation headers) and unlinks
