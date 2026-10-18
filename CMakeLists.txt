@@ -772,6 +772,7 @@ if(LAGI_BATTLE_NATIVE_BUILD)
  endif()
 endif()
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/LagiLifeMeterFlags.cmake")
 function(lagi_prepare_upstream_azel_source relative_path out_var)
  set(input_path "${LAGI_AZEL_SOURCE_ROOT}/${relative_path}")
  if(NOT EXISTS "${input_path}")
@@ -780,6 +781,7 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
 
  file(READ "${input_path}" source_text)
  set(original_text "${source_text}")
+ lagi_adapt_life_meter_flags("${relative_path}" "${source_text}" source_text)
  if(LAGI_BATTLE_NATIVE_BUILD)
   # All generated consumers must share the same expanded native layout.
   foreach(enemy_include "BTL_A3_UrchinFormation.h" "BTL_A3/BTL_A3_UrchinFormation.h" "battle/BTL_A3/BTL_A3_UrchinFormation.h")

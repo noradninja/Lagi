@@ -829,3 +829,17 @@ inheritance, transforms, skipped playback, cleanup and model-init failure.
 Host test, original anchors, battle build-boundary test and both fullres/dither
 Vita VPK builds pass. This is staged source recovery, **not** an E011 crash fix,
 hardware rendering result, sound result or full playback acceptance.
+# Enemy life-meter typed signals
+
+Replaced all 12 known raw Saturn-offset `[0x31]` meter flag writes in A3
+urchin/queen and the staged A5 single/variant sources with typed `m31` access.
+The C++ task prefix is not the Saturn work-area layout. Incorrect writes lost
+the native reward/damage/death signals after enemies dropped their meter pointer,
+leaving an orphan bar. Native update/drain/shrink behavior remains unchanged;
+there is no results-screen hide workaround. A5 is adapted, not enabled.
+
+`battle_life_meter_test.ps1` extracts the actual adapted statements and native
+update. Checks cover shifted C++ layout, all 12 writes, one-time XP/dyne,
+position detachment, drain/shrink/removal and nonlethal damage. Host checks and
+both fullres/dither Vita VPK builds pass; device acceptance remains pending.
+
