@@ -15,7 +15,10 @@ struct State{int consumables[256]{};}mainGameState;
 int hasEncounterData=1;
 struct sEncouterTask{sSaturnPtr m18{0x207634};int m10=40,m14=90,m16=120,mE=0,mF=10;};
 int logs=0;std::string last;
-void PDS_Log(const char* format,...){char line[1024];va_list args;va_start(args,format);vsnprintf(line,sizeof line,format,args);va_end(args);last=line;++logs;}
+#define PDS_Log(...) // Match the Vita no-op: the observer must not use it.
+namespace lagi::platform::logging {
+void writef(const char* format,...){char line[1024];va_list args;va_start(args,format);vsnprintf(line,sizeof line,format,args);va_end(args);last=line;++logs;}
+}
 #include "lagi_encounter_trace.inc"
 int main(){
  sEncouterTask task;

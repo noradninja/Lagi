@@ -2063,6 +2063,15 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "                int randomValue = performModulo2(100, randomNumber());"
    "                int randomValue = performModulo2(100, randomNumber());\n                PDS_Log(\"[NativeEncounterRoll] row=%08X chance=%d roll=%d attempts=%d/%d\\n\", local_8.m_offset, cVar1, randomValue, pThis->mE, pThis->mF);"
    source_text "${source_text}")
+  # PDS_Log is intentionally a no-op on Vita. Route only these diagnostic
+  # lines through the platform sink; do not enable global per-task logging.
+  string(REPLACE "PDS_Log(\"[NativeEncounter" "lagi::platform::logging::writef(\"[NativeEncounter" source_text "${source_text}")
+  foreach(encounter_marker NativeEncounterTable NativeEncounterRoll)
+   string(FIND "${source_text}" "lagi::platform::logging::writef(\"[${encounter_marker}]" encounter_log_found)
+   if(encounter_log_found LESS 0)
+    message(FATAL_ERROR "Native encounter logging boundary changed: ${encounter_marker}")
+   endif()
+  endforeach()
   # Native graphics return 06028668 is absent upstream. Keep native encounter
   # state decisions; replace only platform storage/copy/resource ownership.
   string(FIND "${source_text}" "// 0602849a\nstruct sGraphicsBackup" backup_begin)

@@ -3,7 +3,7 @@ $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
 $scratch=[IO.Path]::GetFullPath((Join-Path $repo $ScratchRoot))
 New-Item -ItemType Directory -Force $scratch | Out-Null
-& cl /nologo /O2 /std:c++20 /EHsc "/I$repo/src/integration" "$PSScriptRoot/encounter_trace_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
+& cl /nologo /O2 /std:c++20 /EHsc "/I$repo/src/integration" "/I$repo/include" "$PSScriptRoot/encounter_trace_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
 if($LASTEXITCODE -ne 0){throw 'Encounter trace test compile failed'}
 & "$scratch/test.exe"
 if($LASTEXITCODE -ne 0){throw 'Encounter trace test failed'}
@@ -18,6 +18,6 @@ if($a -lt 0 -or $b -le $a -or $c -lt 0 -or $d -le $c){throw 'Encounter compariso
 $native=$original.Substring($a,$b-$a)
 $observed=$generated.Substring($c,$d-$c)
 $observed=[regex]::Replace($observed,'(?m)^\s*lagiReportEncounterState\([^\n]+\);\n','')
-$observed=[regex]::Replace($observed,'(?m)^\s*PDS_Log\("\[NativeEncounterRoll\][^\n]+\);\n','')
+$observed=[regex]::Replace($observed,'(?m)^\s*lagi::platform::logging::writef\("\[NativeEncounterRoll\][^\n]+\);\n','')
 if(($native -replace '\s','') -cne ($observed -replace '\s','')){throw 'Diagnostics changed native encounter evaluation code'}
 Write-Output 'PASS: native encounter area/probability/RNG/counter code is unchanged after removing observer calls.'
