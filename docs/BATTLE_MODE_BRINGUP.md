@@ -873,3 +873,20 @@ descriptor service and typed parent position, not routing all callbacks to
 the existing eight-projectile approximation. Queen/Baldor direct-call routes
 remain outside this generic formation-data audit and need separate coverage.
 
+# Authored enemy hit recoil
+
+Native A3 `060773F6..060774CC` reads fixed-point parameter longs +30/+34.
+The first scales hit-direction velocity (+2C); the second scales three RNG
+values masked to 0xFFFF and adds them to angular velocity (+50/+54/+58).
+The reconstruction incorrectly used byte +18 for both strengths and displaced
+position +14 directly. Generated adapters now read the two native fields and
+restore those destinations, without tuning the authored values or changing
+RNG order. The distinct byte +18 consumers elsewhere remain unchanged.
+
+`battle_recoil_test.ps1` executes the six actual generated statements and
+checks signed direction, authored strengths, RNG order and unchanged position.
+The disc-backed formation test verifies both fields for every parsed type and
+the original SH2 load/destination anchors before its separately known missing-
+attack-effect failure. Recoil fixture and battle Vita VPK build pass; visual
+Saturn/Vita comparison is still pending. This does not fix the attack abort.
+

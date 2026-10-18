@@ -760,7 +760,7 @@ if(LAGI_BATTLE_NATIVE_BUILD)
   message(FATAL_ERROR "Native A3 enemy parameter header boundary changed")
  endif()
  string(REPLACE "${enemy_fields_old}"
-  "    std::array<s8, 4> m28; // quadrant colors, not death/sound parameters\n    u8 m2C_deathMode;\n    u8 m2D_hitSound;\n    u8 m2E_deathSound;\n    s8 m38;"
+  "    std::array<s8, 4> m28; // quadrant colors, not death/sound parameters\n    u8 m2C_deathMode;\n    u8 m2D_hitSound;\n    u8 m2E_deathSound;\n    fixedPoint m30_hitTranslation;\n    fixedPoint m34_hitRotation;\n    s8 m38;"
   enemy_header "${enemy_header}")
  set(enemy_header_path "${LAGI_AZEL_GENERATED_ROOT}/BTL_A3_UrchinFormation_native.h")
  set(existing_enemy_header "")
@@ -2138,10 +2138,26 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    message(FATAL_ERROR "Native A3 enemy parameter reader boundary changed")
   endif()
   string(REPLACE "${enemy_parse_anchor}"
-   "            pSubEntry->m2C_deathMode = readSaturnU8(subEntry + 0x2C);\n            pSubEntry->m2D_hitSound = readSaturnU8(subEntry + 0x2D);\n            pSubEntry->m2E_deathSound = readSaturnU8(subEntry + 0x2E);\n${enemy_parse_anchor}"
+   "            pSubEntry->m2C_deathMode = readSaturnU8(subEntry + 0x2C);\n            pSubEntry->m2D_hitSound = readSaturnU8(subEntry + 0x2D);\n            pSubEntry->m2E_deathSound = readSaturnU8(subEntry + 0x2E);\n            pSubEntry->m30_hitTranslation = readSaturnFP(subEntry + 0x30);\n            pSubEntry->m34_hitRotation = readSaturnFP(subEntry + 0x34);\n${enemy_parse_anchor}"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A3/urchin.cpp")
   if(LAGI_BATTLE_NATIVE_BUILD)
+   # Native 060773F6..060774CC uses two authored fixed-point strengths.
+   # The randomized impulse is angular velocity (+50), not position (+14).
+   foreach(axis RANGE 0 2)
+    set(recoil_old "pThis->m2C_positionDelta[${axis}] += MTH_Mul(fixedPoint(pThis->mCC->m18_knockbackStrength * 0x10000), (*knockbackDir)[${axis}]);")
+    string(FIND "${source_text}" "${recoil_old}" recoil_found)
+    if(recoil_found LESS 0)
+     message(FATAL_ERROR "A3 translation recoil boundary changed")
+    endif()
+    string(REPLACE "${recoil_old}" "pThis->m2C_positionDelta[${axis}] += MTH_Mul(pThis->mCC->m30_hitTranslation, (*knockbackDir)[${axis}]);" source_text "${source_text}")
+    set(recoil_old "pThis->m14_positionCurrent[${axis}] += MTH_Mul(fixedPoint(pThis->mCC->m18_knockbackStrength * 0x10000 + 0x10000), fixedPoint(randomNumber() & 0xFFFF));")
+    string(FIND "${source_text}" "${recoil_old}" recoil_found)
+    if(recoil_found LESS 0)
+     message(FATAL_ERROR "A3 rotation recoil boundary changed")
+    endif()
+    string(REPLACE "${recoil_old}" "pThis->m50_rotationDelta[${axis}] += MTH_Mul(pThis->mCC->m34_hitRotation, fixedPoint(randomNumber() & 0xFFFF));" source_text "${source_text}")
+   endforeach()
    string(APPEND source_text "\n#include \"battle/particleEffect.h\"\n#include \"battle/battleGenericData.h\"\n#include \"lagi_battle_urchin_ambient.inc\"\n")
   endif()
   foreach(enemy_anchor "pThis->mCC->m28[4] == 4" "s8 deathMode = pThis->mCC->m28[0];" "pThis->mCC->m28[1] != -1" "pThis->mCC->m28[2] != -1")

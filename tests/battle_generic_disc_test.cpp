@@ -223,7 +223,11 @@ void checkA3Formations(){
         {0x060763CE,0xE12C},{0x060763F2,0x001C},{0x060763F6,0x8804},
         {0x0607645E,0x00CC},{0x06076C16,0xE12E},{0x06076C1E,0x001C},
         {0x06076C5A,0xE12C},{0x06076C60,0x001C},
-        {0x0607750E,0xE12D},{0x06077524,0x044C},{0x06077528,0x644C}
+        {0x0607750E,0xE12D},{0x06077524,0x044C},{0x06077528,0x644C},
+        {0x06077406,0x544C},{0x0607741A,0x544C},{0x0607742E,0x544C},
+        {0x06077436,0xE850},{0x06077496,0x544D},
+        {0x0607749E,0xE854},{0x060774AE,0x544D},
+        {0x060774B6,0xE858},{0x060774C6,0x544D}
     };
     for(const auto& anchor:anchors)
         if(readSaturnU16(g_BTL_GenericData->getSaturnPtr(anchor[0]))!=anchor[1])
@@ -251,6 +255,9 @@ void checkA3Formations(){
                 params->m2D_hitSound!=readSaturnU8(original+0x2D) ||
                 params->m2E_deathSound!=readSaturnU8(original+0x2E))
                 throw std::runtime_error("Enemy death/sound parameters differ from native bytes");
+            if(params->m30_hitTranslation!=readSaturnFP(original+0x30) ||
+                params->m34_hitRotation!=readSaturnFP(original+0x34))
+                throw std::runtime_error("Hit recoil strengths differ from native fixed-point fields");
             for(unsigned q=0;q<4;++q)if(params->m28[q]!=readSaturnS8(original+0x28+q))
                 throw std::runtime_error("Quadrant color table changed");
             const auto table=readSaturnEA(original+0x1C);
