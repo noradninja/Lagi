@@ -39,5 +39,19 @@ int main(){
  reset();pos[2]=0x40000;
  assert(lagiDrawScaledParticleWithColorTable(&p,&pos,0x8000,{100})==1);
  assert(graphicEngineStatus.m14_vdp1Context[0].m14[0][0]==runtimeColors);
+ // Native mode 1 scales the authored rectangle, but only biases the sort key.
+ graphicEngineStatus.m405C.m38_oneOverFarClip=0x12345;
+ for(int bias:{0,-0x1E000,-0x50000,0x300000}){
+  reset();p.m7_currentFrame=0;
+  assert(lagiDrawPoolParticle(&p,&pos,0x8000,bias)==1);
+  const auto cmd=commands[6];
+  const int sortZ=std::clamp(0x40000+bias,0x3000,0x200000);
+  const u16 expected=u16((u32(sortZ)*u32(0x12345))>>16);
+  assert(packets[0].m4_bucketTypes==expected);
+  assert(depth[0]==4&&depth[3]==4);
+  reset();assert(drawQuadInternal(&p,&pos,0x8000)==1);
+  assert(commands[6].mC_CMDXA==cmd.mC_CMDXA&&commands[6].m10_CMDXB==cmd.m10_CMDXB);
+  assert(commands[6].mE_CMDYA==cmd.mE_CMDYA&&commands[6].m16_CMDYC==cmd.m16_CMDYC);
+ }
  puts("PASS: production particle frame offsets, scaled dimensions, Gouraud, source/LUT, depth and clipping. Not hardware validation.");
 }

@@ -2144,6 +2144,22 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${enemy_parse_anchor}"
    "            pSubEntry->m2C_deathMode = readSaturnU8(subEntry + 0x2C);\n            pSubEntry->m2D_hitSound = readSaturnU8(subEntry + 0x2D);\n            pSubEntry->m2E_deathSound = readSaturnU8(subEntry + 0x2E);\n            pSubEntry->m30_hitTranslation = readSaturnFP(subEntry + 0x30);\n            pSubEntry->m34_hitRotation = readSaturnFP(subEntry + 0x34);\n${enemy_parse_anchor}"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/fieldParticlePool.cpp")
+  set(pool_billboard_old [=[static void particleDrawBillboard(sParticleSlot* pEntry)
+{
+    drawProjectedParticle(&pEntry->m2C_animQuad, &pEntry->m0_position);
+}]=])
+  set(pool_billboard_new [=[int lagiDrawPoolParticle(sAnimatedQuad*, sVec3_FP*, fixedPoint, fixedPoint);
+static void particleDrawBillboard(sParticleSlot* pEntry)
+{
+    lagiDrawPoolParticle(&pEntry->m2C_animQuad, &pEntry->m0_position,
+        pEntry->m18_velocityScaleX, pEntry->m1C_velocityScaleY);
+}]=])
+  string(FIND "${source_text}" "${pool_billboard_old}" pool_billboard_found)
+  if(pool_billboard_found LESS 0)
+   message(FATAL_ERROR "Native field pool billboard draw boundary changed")
+  endif()
+  string(REPLACE "${pool_billboard_old}" "${pool_billboard_new}" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/field_a3/a3_waterfall.cpp")
   # Native task offsets are not C++ work-area offsets. Infer each concrete
   # waterfall type at its call site, retaining the original emission logic.

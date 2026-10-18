@@ -64,7 +64,8 @@ static int drawQuadInternal(
     sAnimatedQuad* pThis,
     sVec3_FP* position,
     fixedPoint scale,
-    const quadColor* colors = nullptr)
+    const quadColor* colors = nullptr,
+    const fixedPoint* sortingBias = nullptr)
 {
     static unsigned missingReports = 0u, clipReports = 0u;
     static unsigned emittedReports[2]{};
@@ -163,6 +164,19 @@ static int drawQuadInternal(
     auto& ctx = graphicEngineStatus.m14_vdp1Context[0];
     ctx.m20_pCurrentVdp1Packet->m4_bucketTypes =
         MTH_Mul(invZ, graphicEngineStatus.m405C.m38_oneOverFarClip).getInteger();
+    if (sortingBias) {
+        // MAIN 0602E5CC / 0602E728: the fourth argument biases sorting only.
+        // Projection and GPU world depth must still use the actual position.
+        const s32 biasedZ = static_cast<s32>(static_cast<u32>(z) +
+            static_cast<u32>(sortingBias->asS32()));
+        const s32 sortZ = std::clamp<s32>(biasedZ,
+            static_cast<s32>(graphicEngineStatus.m405C.m10_nearClipDistance),
+            static_cast<s32>(graphicEngineStatus.m405C.m14_farClipDistance));
+        // SH-2 MUL.L followed by SHLR16 retains the low 32-bit product.
+        ctx.m20_pCurrentVdp1Packet->m4_bucketTypes = static_cast<u16>(
+            (static_cast<u32>(sortZ) * static_cast<u32>(
+                graphicEngineStatus.m405C.m38_oneOverFarClip.asS32())) >> 16);
+    }
     ctx.m20_pCurrentVdp1Packet->m6_vdp1EA = &cmd;
     ++ctx.m20_pCurrentVdp1Packet;
     ++ctx.m1C;
@@ -190,6 +204,13 @@ static int drawQuadInternal(
 int drawProjectedParticle(sAnimatedQuad* pThis, sVec3_FP* position)
 {
     return drawQuadInternal(pThis, position, fixedPoint(0x10000));
+}
+
+// Native field pool mode 1 (A3 06078A2A -> MAIN 0602E5CC).
+int lagiDrawPoolParticle(sAnimatedQuad* particle, sVec3_FP* position,
+    fixedPoint scale, fixedPoint sortingBias)
+{
+    return drawQuadInternal(particle, position, scale, nullptr, &sortingBias);
 }
 
 int drawProjectedParticleWithGouraud(
