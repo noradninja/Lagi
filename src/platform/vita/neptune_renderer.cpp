@@ -619,6 +619,8 @@ static unsigned int g_liveTownStaticIdentityMisses = 0u;
 // so the HUD naturally shows the previous task frame while the render samples
 // describe the render currently being presented.
 static unsigned int g_profileTasksUs = 0;
+static unsigned int g_profilePositionSyncUs = 0;
+static unsigned int g_profilePositionSyncVertices = 0;
 static unsigned int g_profileGameWaitUs = 0;
 static unsigned int g_profileRenderCpuPrepUs = 0;
 static unsigned int g_profileBuildUs = 0;
@@ -7937,6 +7939,8 @@ static bool buildLiveTownFrame()
         sceKernelGetProcessTimeWide() - tValidate);
 
     const std::uint64_t tUpload = sceKernelGetProcessTimeWide();
+    g_profilePositionSyncUs = 0u;
+    g_profilePositionSyncVertices = 0u;
     const bool fullSubdivMode = g_viewMode == 7;
     const bool changed = !g_liveTownPrepared ||
         g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
@@ -7956,6 +7960,7 @@ static bool buildLiveTownFrame()
     } else {
         const std::size_t firstDynamicVertex = g_liveTownStaticRebuilt
             ? 0u : g_liveTownStaticVertexCount;
+        const auto positionSyncStartUs = sceKernelGetProcessTimeWide();
         for (std::size_t i = firstDynamicVertex;
              i < g_liveTownCpuMesh.vertices.size(); ++i) {
             const auto& v = g_liveTownCpuMesh.vertices[i];
@@ -7968,6 +7973,11 @@ static bool buildLiveTownFrame()
             g_vdp1GouraudVertices[i].y = v.y;
             g_vdp1GouraudVertices[i].z = v.z;
         }
+        g_profilePositionSyncVertices = static_cast<unsigned int>(
+            g_liveTownCpuMesh.vertices.size() > firstDynamicVertex
+                ? g_liveTownCpuMesh.vertices.size() - firstDynamicVertex : 0u);
+        g_profilePositionSyncUs = static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - positionSyncStartUs);
     }
     g_profileBuildUploadUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tUpload);
@@ -13266,6 +13276,9 @@ static void renderBasicWingViewer()
     }
 
     const std::uint64_t renderStartUs = sceKernelGetProcessTimeWide();
+    // No scene build on some menu/transition frames: never report old sync work.
+    g_profilePositionSyncUs = 0u;
+    g_profilePositionSyncVertices = 0u;
     g_profileMenuBackingDecodeUs = 0u;
     g_profileMenuTextDecodeUs = 0u;
     g_profileMenuSubmitUs = 0u;
@@ -13685,7 +13698,8 @@ static void renderBasicWingViewer()
             "render=%u polys=%u verts=%u "
             "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u "
             "menuBackingDecode=%u menuTextDecode=%u menuSubmit=%u menuTransfer=%u "
-            "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1 tasks=%u uiOnly=%u slowSample=%u\n",
+            "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1 tasks=%u uiOnly=%u slowSample=%u "
+            "positionSync=%u positionSyncVerts=%u submissions=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -13723,7 +13737,10 @@ static void renderBasicWingViewer()
             lagi::menuNbg2Supported(g_menuNbg2) ? 1u : 0u,
             g_profileTasksUs,
             nativeMenuFrame && !nativeSceneMode ? 1u : 0u,
-            slowMenuSample ? 1u : 0u);
+            slowMenuSample ? 1u : 0u,
+            g_profilePositionSyncUs,
+            g_profilePositionSyncVertices,
+            g_liveTownSubmissionCount);
     }
 
     if (g_showThreadTimingOsd) {

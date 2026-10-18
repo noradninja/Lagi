@@ -423,7 +423,13 @@ void runtime_frame()
             reinterpret_cast<void*>(initialTaskStatus.m_currentTask),
             reinterpret_cast<void*>(initialTaskStatus.m_pendingTask));
 
+    // LAGI_TASK_FRAME_PROFILE_BEGIN: includes native Update AND Draw callbacks,
+    // but excludes producer-slot waiting and frame publication below.
+    const auto taskFrameStartUs = sceKernelGetProcessTimeWide();
     runTasks();
+    lagi::platform::renderer::presentation_profile_tasks_us(
+        static_cast<unsigned int>(sceKernelGetProcessTimeWide() - taskFrameStartUs));
+    // LAGI_TASK_FRAME_PROFILE_END
 
     // Flight Phase 1: record only the transition into and activity around
     // game status 0x50 / game mode 3. This is diagnostic only; field

@@ -5,6 +5,11 @@ Branch: `feature/battle-mode-bringup`, based on accepted menu milestone
 battle scene or compile-only completion. Azel decides. Lagi services. Neptune
 renders. Do not edit `extern/Azel` or regress accepted frontend/flight/menu paths.
 
+Combat performance baseline, timing definitions and the measurement-only
+handoff are in [COMBAT_PERFORMANCE.md](COMBAT_PERFORMANCE.md). The first two
+profiled encounters are user-identified Brood Queen fights; do not treat
+renderer mode numbers or submission counts as enemy identity/count.
+
 ## Entry audit
 
 The default Vita generation deliberately disconnects battle in these places:

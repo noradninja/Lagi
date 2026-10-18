@@ -1,0 +1,11 @@
+[FlightPresentWindow] mode=7 intervals=120 fpsMilli=20000 over2Vblanks=120
+[BattleStartup] enter BTL_A3 overlay=0 sub=8
+[FlightPresentWindow] mode=7 intervals=120 fpsMilli=10000 over2Vblanks=120
+[ScenePerf] render=30000 cpuprep=11000 tasks=0 uiOnly=0
+[ScenePerf] render=99999 cpuprep=99999 tasks=99999 uiOnly=1
+[ScenePerf] render=28000 cpuprep=9000 tasks=0 uiOnly=0
+[FlightPresentWindow] mode=7 intervals=120 fpsMilli=22000 over2Vblanks=80
+[BattleAudio] restore sequence=3
+[ScenePerf] render=1000 cpuprep=1000 uiOnly=0
+[BattleStartup] enter BTL_A3 overlay=0 sub=4
+[ScenePerf] render=27000 cpuprep=8000 tasks=1500 positionSync=1900 uiOnly=0
