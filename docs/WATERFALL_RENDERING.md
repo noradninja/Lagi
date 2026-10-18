@@ -33,6 +33,30 @@ comparison against the supplied Saturn reference.
 
 ## Still open
 
+## Native emission-rule audit after hardware feedback
+
+The previous typed-position fix retained reconstructed Azel helper logic;
+that did not establish that the reconstruction's emission gates were faithful.
+Hardware feedback prompted a comparison with the original FLD_A3 instructions:
+
+- Type 0, 0605BFA0: both families each visible update, unchanged.
+- Type 1, 0605C088..0605C09C: one RNG bit chooses droplet OR mist. The C++
+  reconstruction incorrectly emitted both, without the selection draw.
+- Type 2: factory 0605C21C compares model-table pointer with 06091CF8 and
+  installs update 0605C18E. That update has no falling-family emission;
+  bit 0 gates a splash with spread 80000.
+- Types 3/4 retain update 0605C12A: periodic falling family on frame & 7 == 0,
+  then low two RNG bits == 0 gate a splash with spread 40000.
+
+The adapter now preserves those factory-specific rules, independently of model
+appearance or scene location. The fixture exercises both outcomes of the small
+variant and large variant gates, family identity, RNG consumption and spread.
+No new effect positions, water planes, or renderer-side waterfall detection
+are supplied by Lagi. Native model tables and runtime quad resources remain
+Azel-owned. Both Vita configurations compile; visual acceptance is pending.
+
+## Layered water remains open
+
 The Saturn reference also shows layered water coverage absent from Lagi.
 Collision geometry and quad-debug screenshots alone do not identify whether the
 missing visible contribution is model submission, VDP1 material processing or

@@ -21,7 +21,7 @@ struct Field{void* m168_particlePool=reinterpret_cast<void*>(1);}field;
 using s_fieldSpecificData_A3=Field;
 auto* getFieldSpecificData_A3(){return &field;}
 s32 particleUpdateMoving(sParticleSlot*){return 0;}
-unsigned rng=0;u32 randomNumber(){++rng;return 0;}
+unsigned rng=0;std::vector<u32> scripted;u32 randomNumber(){unsigned index=rng++;return index<scripted.size()?scripted[index]:0;}
 s32 centeredRandom(s32 mask){return s32(randomNumber()&mask)-(mask>>1);}
 struct Emission{sVec3_FP p,v;const std::vector<sVdp1Quad>* q;int sx,sy;};std::vector<Emission> emissions;
 int spawnParticleInPool(void*,sParticleSpawnConfig* c,int mode){
@@ -49,5 +49,20 @@ int main(){
  assert(int(emissions.back().p.m0_X)==0x100000-(0x1FFFF>>1));
  assert(emissions.size()==6&&rng==26);
  field.m168_particlePool=nullptr;waterfallSpawnRisingMist(&small);assert(emissions.size()==6);
+ field.m168_particlePool=reinterpret_cast<void*>(1);
+ auto reset=[](std::vector<u32> values){emissions.clear();rng=0;scripted=values;};
+ reset({0});lagiWaterfallSmallVariantEmit(&small);
+ assert(emissions.size()==1&&emissions[0].q==&quads.m_waterfallMistQuadB&&rng==6);
+ reset({1});lagiWaterfallSmallVariantEmit(&small);
+ assert(emissions.size()==1&&emissions[0].q==&quads.m_waterfallFallingQuad&&rng==4);
+ reset({0});lagiWaterfallLargeEmit(&large,true);assert(emissions.empty()&&rng==1);
+ reset({1});lagiWaterfallLargeEmit(&large,true);
+ assert(emissions.size()==1&&emissions[0].q==&quads.m_waterfallMistQuadB&&rng==8);
+ assert(int(emissions[0].p.m4_Y)==0x10000-(0x7FFFF>>1));
+ reset({0,0,0,1});lagiWaterfallLargeEmit(&large,false);
+ assert(emissions.size()==1&&emissions[0].q==&quads.m_waterfallFallingQuad&&rng==4);
+ reset({0});large.m10_frameCounter=9;lagiWaterfallLargeEmit(&large,false);
+ assert(emissions.size()==1&&emissions[0].q==&quads.m_waterfallMistQuadB&&rng==8);
+ assert(int(emissions[0].p.m4_Y)==0x10000-(0x3FFFF>>1));
  std::puts("Actual waterfall helpers use typed source/counter across shifted small/large task layouts PASS");
 }

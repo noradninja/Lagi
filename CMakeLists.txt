@@ -2185,6 +2185,37 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   endforeach()
   string(REPLACE "*(s_DataTable2Sub0**)((u8*)pThis + 8)" "pThis->m8" source_text "${source_text}")
   string(REPLACE "*((u8*)pThis + 0xC)" "pThis->mC_frameCounter" source_text "${source_text}")
+  set(small_emit_old "        waterfallSpawnRisingMistVariant(pThis);\n        waterfallSpawnDroplet(pThis);")
+  set(large_emit_old [=[        if ((pThis->m10_frameCounter & 7) == 0)
+        {
+            waterfallLargeSpawnFalling(pThis);
+        }
+
+        u32 rnd = randomNumber();
+        if ((rnd & 3) == 0)
+        {
+            waterfallLargeSpawnSplash(pThis, 0x40000);
+        }]=])
+  foreach(emission_anchor small_emit_old large_emit_old)
+   string(FIND "${source_text}" "${${emission_anchor}}" emission_found)
+   if(emission_found LESS 0)
+    message(FATAL_ERROR "Native waterfall emission boundary changed: ${emission_anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "${small_emit_old}" "        lagiWaterfallSmallVariantEmit(pThis);" source_text "${source_text}")
+  string(REPLACE "${large_emit_old}" "        lagiWaterfallLargeEmit(pThis, alternate);" source_text "${source_text}")
+  string(REPLACE "static const s16 waterfallModelOffsets0[]" "#include \"lagi_waterfall_emission.inc\"\nstatic const s16 waterfallModelOffsets0[]" source_text "${source_text}")
+  set(large_update_old "    static void Update(s_A3_WaterfallLarge* pThis)\n    {")
+  string(FIND "${source_text}" "${large_update_old}" large_update_found)
+  if(large_update_found LESS 0)
+   message(FATAL_ERROR "Native large waterfall update boundary changed")
+  endif()
+  string(REPLACE "${large_update_old}"
+   "    static void Update(s_A3_WaterfallLarge* pThis) { UpdateNative(pThis, false); }\n    static void UpdateType2(s_A3_WaterfallLarge* pThis) { UpdateNative(pThis, true); }\n    static void UpdateNative(s_A3_WaterfallLarge* pThis, bool alternate)\n    {"
+   source_text "${source_text}")
+  string(REPLACE "        pTask->mC_modelOffsets = waterfallModelOffsets2;"
+   "        pTask->mC_modelOffsets = waterfallModelOffsets2;\n        pTask->m_UpdateMethod = &s_A3_WaterfallLarge::UpdateType2;"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A3/BTL_A3_urchinEffects.cpp")
   if(LAGI_BATTLE_NATIVE_BUILD)
    set(position_old "(sVec3_FP*)((u8*)pParent + 8)")
