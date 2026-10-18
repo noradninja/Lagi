@@ -853,3 +853,23 @@ not retrigger. Flight and frontend stick behavior are unchanged. The adapter
 is compiled out of nonexperimental builds. Direction/deadzone/diagonal/held
 tests and both Vita VPK builds pass; hardware movement acceptance is pending.
 
+# A3 attack-effect audit gap (082ef0c combat abort)
+
+The 3072-byte partial dump `psp2core-1792288364` expands to 9263 bytes but has no
+stack/module payload. Assertion registers correlate with the matching 082ef0c
+ELF: relocation 0x58000, line 296, expression `0`, generated
+`battle_BTL_A3_BTL_A3_data.cpp` effect-dispatch default. This identifies the
+route, not the requested callback. The accompanying log has no callback EA.
+
+The disc-backed generic test now also walks attack commands in every parsed
+animation state and beam-hit response, rather than checking only animation
+factories. It currently **fails** with missing factories `06056998` and
+`060569A0` (five unique attack descriptors across these generic formations).
+Native disassembly shows these are not aliases: 56998 selects mode 1 of
+5665E (20 projectiles versus 8), while 569A0 selects mode 1 of 567EE (16
+projectiles with different descriptors). Even registered 5699C currently uses
+an approximate constructor. Full recovery requires the native projectile
+descriptor service and typed parent position, not routing all callbacks to
+the existing eight-projectile approximation. Queen/Baldor direct-call routes
+remain outside this generic formation-data audit and need separate coverage.
+

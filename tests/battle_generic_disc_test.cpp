@@ -230,6 +230,16 @@ void checkA3Formations(){
             throw std::runtime_error("Original A3 enemy parameter instruction anchor changed");
     const u32 roots[]={0x060A8AE8,0x060A8AC4,0x060A7D34,0x060A7D58};
     unsigned types=0,states=0;
+    std::set<u32> attacks, missingEffects;
+    auto auditAttack=[&](sAttackCommand* command){
+        if(!command || command->m0_attackParams.isNull())return;
+        const auto params=command->m0_attackParams;
+        if(!attacks.insert(params.address).second)return;
+        const auto effect=readSaturnEA(params+8);
+        const bool registered=effect.isNull() || std::find(std::begin(effectFunctions),std::end(effectFunctions),effect.address)!=std::end(effectFunctions);
+        std::printf("A3 attack=%08X type=%d effect=%08X registered=%d\n",params.address,int(command->m8_type),effect.address,int(registered));
+        if(!registered)missingEffects.insert(effect.address);
+    };
     for(const u32 address:roots){
         const auto root=g_BTL_GenericData->getSaturnPtr(address);
         auto* formation=readUrchinFormation(root);
@@ -256,11 +266,11 @@ void checkA3Formations(){
                 if(parsed.m1C_animationOffset!=readSaturnU16(record+0x1C) ||
                     parsed.m20_timerValue!=readSaturnU16(record+0x20))
                     throw std::runtime_error("Actual animation reader did not advance source record");
-                for(auto* command:parsed.m4)delete command;
+                for(auto* command:parsed.m4){auditAttack(command);delete command;}
                 ++states;
             }
             for(auto* response:{params->m20_beamHitCounterData,params->m24_beamHitAttackData}){
-                if(response){for(auto* command:response->m4)delete command;delete response;}
+                if(response){for(auto* command:response->m4){auditAttack(command);delete command;}delete response;}
             }
             delete params;++types;
         }
@@ -268,6 +278,9 @@ void checkA3Formations(){
         delete formation;
     }
     std::printf("PASS: actual generated formation parser read %u enemy parameter sets / %u animation records; all non-null animation effect factories are registered; death mode/sounds and quadrant colors match separate native fields. Hotspot/model loading mocked.\n",types,states);
+    for(auto effect:missingEffects)std::fprintf(stderr,"Missing A3 authored attack effect factory %08X\n",effect);
+    if(!missingEffects.empty())throw std::runtime_error("Authored attack effects missing from live dispatcher");
+    std::printf("PASS: %zu unique authored attack descriptors include normal and beam-hit response commands.\n",attacks.size());
 }
 void checkDamageDigits(){
     const u32 anchors[][2]={{0x0605BDB8,0x1001},{0x0605BDBC,0x048C},
