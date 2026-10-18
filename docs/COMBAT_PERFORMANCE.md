@@ -115,6 +115,22 @@ semantics and compare the same hardware encounter before claiming a gain.
 
 ### Hardware capture
 
+### October 18 follow-up log
+
+The supplied 1,598,374-byte log (SHA256
+`3261A93160D70BD7E8A02CC1D735CDEA771EE72579C1C865C89F1C9BB1A87AE4`)
+contains one explicit overlay-0/sub-8 encounter with audio restoration.
+Its sampled median task time is 9.053 ms, render 29.282 ms, CPU preparation
+10.284 ms, vertex synchronization 1.674 ms, and finish wait 17.335 ms.
+After excluding the first crossing window, 537 of 1800 presentation intervals
+exceed two vblanks, across 15 windows (22.907–29.970 FPS).
+Timings overlap; finish wait is not an isolated GPU timer. The log does not
+identify the executable SHA and is not a matched before/after capture, so it
+does not establish the benefit of the removed unused lighting-vertex copy.
+The new waterfall changes are correctness work, not a combat performance claim.
+
+### Hardware capture commands
+
 ```powershell
 cd E:\dev\Lagi
 git switch feature/battle-mode-bringup
