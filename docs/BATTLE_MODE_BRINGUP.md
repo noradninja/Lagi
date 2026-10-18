@@ -918,3 +918,43 @@ each emit boundary. Host test and both fullres/dither VPK builds pass. The
 broader generic attack audit remains red for the two unregistered callbacks;
 there is no new hardware crash-fix claim or test-build request at this stage.
 
+# Connected native generic A3 projectile routes
+
+The staged pattern recovery is now live for 56998/5699C/569A0/569A4 and the
+single-projectile 54DCE path. All five unique attack descriptors reached by
+the generic formation/response audit now resolve through the live dispatcher;
+that previously failing audit passes. This removes the two known missing
+attack factory cases, but the partial crash dump did not retain the requested
+EA, so on-device confirmation is still required for the reported attack abort.
+
+`lagi_battle_projectile_vita.cpp` recovers 060A486C and 060A44DE through typed
+descriptors and work areas. It uses authored hierarchy/pose/animation or quad,
+authored muzzle/trail/hit resources and slots, native RNG/motion/scroll order,
+signed timer expiry and native collision-plus-expiry particle emission.
+`lagi_battle_projectile_motion.inc` retains fixed-point arithmetic order and
+reads explicit sphere radii (+0C in the original) rather than position X.
+It does not change the separate reconstructed gunshot helper/callers, which
+still need their own full layout audit. No light has been invented for attacks.
+
+Projectile tasks belong to the dragon; native monitor tasks belong to the
+enemy. Cancelling a monitor does not cancel its already emitted projectiles.
+Task-owned model pose/matrix objects are explicitly deleted; file geometry is
+borrowed, not retired. Authored quad metadata is interned by byte content in a
+stable runtime cache so spawned particles can outlive the projectile without
+retaining a dangling overlay pointer. The idle/legacy effect factory's raw
+parent+8 accesses now use a typed sUrchin position accessor as well.
+
+`battle_projectile_runtime_test.ps1` executes production runtime/monitor code
+with mocked native services. It covers radius-based translated collision,
+fixed-point squared-distance quantization, odd negative acceleration shifts,
+scroll, model/sprite draw and animation, trail RNG, no-hit expiry, impact plus
+same-tick expiry, particle metadata lifetime, model init failure/cleanup and
+all four monitor counts/cancellation/completion. Its live-source assertions
+check new dispatcher routes and absence of raw parent-position offsets.
+Descriptor/disc anchors, generic attack audit, build boundary, life-meter,
+recoil and ambient-emitter fixtures pass, as do both fullres/dither VPK builds.
+These are host/source/build checks, not Vita rendering, speed or audio proof.
+Queen/Baldor direct projectile routines, non-A3 overlays, E011 recovery, water
+transparency/splashes and multi-enemy performance remain separate unfinished
+bringup work; this is not completion of the battle goal.
+

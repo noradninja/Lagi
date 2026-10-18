@@ -2111,10 +2111,14 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
     message(FATAL_ERROR "Native A3 effect dispatcher boundary changed")
    endif()
    string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
-    "#include \"lagi/lagi_azel_upstream_prelude.h\"\np_workArea lagiCreateUrchinAmbientEffect(struct s_workAreaCopy*);"
+    "#include \"lagi/lagi_azel_upstream_prelude.h\"\np_workArea lagiCreateUrchinAmbientEffect(struct s_workAreaCopy*);\np_workArea lagiCreateUrchinProjectileEffect(struct s_workAreaCopy*,bool,bool);\np_workArea lagiCreateUrchinSingleProjectile(struct s_workAreaCopy*);"
     source_text "${source_text}")
    string(REPLACE "${effect_anchor}"
     "${effect_anchor}\n    case 0x06056AF2:\n        return lagiCreateUrchinAmbientEffect(pParent);"
+    source_text "${source_text}")
+   string(REPLACE "return urchinAttack_spawnProjectile(pParent);" "return lagiCreateUrchinSingleProjectile(pParent);" source_text "${source_text}")
+   string(REPLACE "    case 0x0605699c:\n        return createPattergoMultiParticleEffect(pParent);"
+    "    case 0x06056998:\n        return lagiCreateUrchinProjectileEffect(pParent,false,true);\n    case 0x0605699c:\n        return lagiCreateUrchinProjectileEffect(pParent,false,false);\n    case 0x060569A0:\n        return lagiCreateUrchinProjectileEffect(pParent,true,true);\n    case 0x060569A4:\n        return lagiCreateUrchinProjectileEffect(pParent,true,false);"
     source_text "${source_text}")
   endif()
   set(animation_reader_old "            for (int j=0; j<1; j++)\n            {\n                sGenericFormationPerTypeDataSub1C subData1C;")
@@ -2140,6 +2144,18 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${enemy_parse_anchor}"
    "            pSubEntry->m2C_deathMode = readSaturnU8(subEntry + 0x2C);\n            pSubEntry->m2D_hitSound = readSaturnU8(subEntry + 0x2D);\n            pSubEntry->m2E_deathSound = readSaturnU8(subEntry + 0x2E);\n            pSubEntry->m30_hitTranslation = readSaturnFP(subEntry + 0x30);\n            pSubEntry->m34_hitRotation = readSaturnFP(subEntry + 0x34);\n${enemy_parse_anchor}"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A3/BTL_A3_urchinEffects.cpp")
+  if(LAGI_BATTLE_NATIVE_BUILD)
+   set(position_old "(sVec3_FP*)((u8*)pParent + 8)")
+   string(FIND "${source_text}" "${position_old}" position_found)
+   if(position_found LESS 0)
+    message(FATAL_ERROR "A3 effect parent position boundary changed")
+   endif()
+   string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
+    "#include \"lagi/lagi_azel_upstream_prelude.h\"\nsVec3_FP* lagiUrchinEffectPosition(struct s_workAreaCopy*);"
+    source_text "${source_text}")
+   string(REPLACE "${position_old}" "lagiUrchinEffectPosition(pParent)" source_text "${source_text}")
+  endif()
  elseif(relative_path STREQUAL "battle/BTL_A3/urchin.cpp")
   if(LAGI_BATTLE_NATIVE_BUILD)
    # Native 060773F6..060774CC uses two authored fixed-point strengths.
@@ -2158,7 +2174,7 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
     endif()
     string(REPLACE "${recoil_old}" "pThis->m50_rotationDelta[${axis}] += MTH_Mul(pThis->mCC->m34_hitRotation, fixedPoint(randomNumber() & 0xFFFF));" source_text "${source_text}")
    endforeach()
-   string(APPEND source_text "\n#include \"battle/particleEffect.h\"\n#include \"battle/battleGenericData.h\"\n#include \"lagi_battle_urchin_ambient.inc\"\n#include \"lagi_battle_projectile_descriptor.inc\"\n")
+   string(APPEND source_text "\n#include \"battle/particleEffect.h\"\n#include \"battle/battleGenericData.h\"\n#include \"lagi_battle_urchin_ambient.inc\"\n#include \"lagi_battle_projectile_descriptor.inc\"\n#include \"lagi_battle_urchin_projectiles.inc\"\n")
   endif()
   foreach(enemy_anchor "pThis->mCC->m28[4] == 4" "s8 deathMode = pThis->mCC->m28[0];" "pThis->mCC->m28[1] != -1" "pThis->mCC->m28[2] != -1")
    string(FIND "${source_text}" "${enemy_anchor}" enemy_anchor_found)
@@ -3981,6 +3997,7 @@ set_property(SOURCE src/integration/lagi_runtime.cpp APPEND PROPERTY COMPILE_DEF
 target_include_directories(lagi PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}/src/integration")
 target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceProcessmgr_stub SceSysmem_stub SceSysmodule_stub)
 if(LAGI_BATTLE_NATIVE_BUILD)
+ target_sources(lagi PRIVATE src/integration/lagi_battle_projectile_vita.cpp)
  target_sources(lagi PRIVATE src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_battle_graphics_vita.cpp src/integration/lagi_resident_video_vita.cpp src/integration/lagi_allocator_tables_vita.cpp src/integration/lagi_battle_damage_digits_vita.cpp)
  set_property(SOURCE src/integration/lagi_task_vita.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_NATIVE_TASK_HEAP_CLEANUP=1)
  set_property(SOURCE src/integration/lagi_disc_file_vita.cpp src/integration/lagi_map_resources_vita.cpp src/integration/lagi_azel_books_menu.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_TRACK_RESIDENT_VIDEO=1)

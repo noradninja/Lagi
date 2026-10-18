@@ -1,3 +1,4 @@
+#pragma once
 // Native BTL_A3 projectile descriptor (+00..+2C), usable for disc-backed
 // descriptors and the two original stack-built urchin attack patterns.
 struct sLagiBattleProjectileDescriptor
