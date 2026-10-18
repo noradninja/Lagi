@@ -2144,6 +2144,19 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${enemy_parse_anchor}"
    "            pSubEntry->m2C_deathMode = readSaturnU8(subEntry + 0x2C);\n            pSubEntry->m2D_hitSound = readSaturnU8(subEntry + 0x2D);\n            pSubEntry->m2E_deathSound = readSaturnU8(subEntry + 0x2E);\n            pSubEntry->m30_hitTranslation = readSaturnFP(subEntry + 0x30);\n            pSubEntry->m34_hitRotation = readSaturnFP(subEntry + 0x34);\n${enemy_parse_anchor}"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a3/a3_waterfall.cpp")
+  # Native task offsets are not C++ work-area offsets. Infer each concrete
+  # waterfall type at its call site, retaining the original emission logic.
+  foreach(helper waterfallSpawnRisingMist waterfallSpawnSplashMist waterfallSpawnRisingMistVariant waterfallSpawnDroplet waterfallLargeSpawnFalling waterfallLargeSpawnSplash)
+   set(helper_anchor "static void ${helper}(s_workArea* pThis")
+   string(FIND "${source_text}" "${helper_anchor}" helper_found)
+   if(helper_found LESS 0)
+    message(FATAL_ERROR "Native waterfall helper boundary changed: ${helper}")
+   endif()
+   string(REPLACE "${helper_anchor}" "template<class T>\nstatic void ${helper}(T* pThis" source_text "${source_text}")
+  endforeach()
+  string(REPLACE "*(s_DataTable2Sub0**)((u8*)pThis + 8)" "pThis->m8" source_text "${source_text}")
+  string(REPLACE "*((u8*)pThis + 0xC)" "pThis->mC_frameCounter" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A3/BTL_A3_urchinEffects.cpp")
   if(LAGI_BATTLE_NATIVE_BUILD)
    set(position_old "(sVec3_FP*)((u8*)pParent + 8)")
