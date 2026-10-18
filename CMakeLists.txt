@@ -2158,7 +2158,7 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
     endif()
     string(REPLACE "${recoil_old}" "pThis->m50_rotationDelta[${axis}] += MTH_Mul(pThis->mCC->m34_hitRotation, fixedPoint(randomNumber() & 0xFFFF));" source_text "${source_text}")
    endforeach()
-   string(APPEND source_text "\n#include \"battle/particleEffect.h\"\n#include \"battle/battleGenericData.h\"\n#include \"lagi_battle_urchin_ambient.inc\"\n")
+   string(APPEND source_text "\n#include \"battle/particleEffect.h\"\n#include \"battle/battleGenericData.h\"\n#include \"lagi_battle_urchin_ambient.inc\"\n#include \"lagi_battle_projectile_descriptor.inc\"\n")
   endif()
   foreach(enemy_anchor "pThis->mCC->m28[4] == 4" "s8 deathMode = pThis->mCC->m28[0];" "pThis->mCC->m28[1] != -1" "pThis->mCC->m28[2] != -1")
    string(FIND "${source_text}" "${enemy_anchor}" enemy_anchor_found)

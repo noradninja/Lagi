@@ -890,3 +890,31 @@ the original SH2 load/destination anchors before its separately known missing-
 attack-effect failure. Recoil fixture and battle Vita VPK build pass; visual
 Saturn/Vita comparison is still pending. This does not fix the attack abort.
 
+# Native projectile descriptor/pattern recovery checkpoint
+
+`lagi_battle_projectile_descriptor.inc` defines the shared +00..+2C descriptor
+and recovers both stack-built attack families from 0605665E/060567EE, including
+the four 56998/5699C/569A0/569A4 entry modes. The first family emits 8 or 20
+model projectiles, with 2 or 3 initial exact targets, then native spread,
+9..24 travel ticks, 30 lifetime, damage 20, gravity -160 and hit quad AE668
+owned by slot 0. The alternate family emits 8 or 16, each with tighter spread,
+two randomized acceleration terms, 30..61 travel, 60 lifetime, damage 9,
+trail A87B4/hit A8680 owned by slot 12. Both use slot 12 hierarchy C/pose DC.
+The descriptor is consumed synchronously, avoiding fabricated game data files.
+
+This is compiled staging code, **not connected to runtime effect dispatch**.
+The shared constructor/lifecycle must first retain the authored quad resources,
+model ownership and native collision semantics. Original 0605D610 loads sphere
+radii at +0C, while the existing reconstructed helper adds X coordinates;
+this is a separate correctness gap, not evidence of the callback abort cause.
+The native update also intentionally emits hit particles in both collision
+and same-tick expiry branches; do not deduplicate without source evidence.
+
+`battle_projectile_descriptor_test.ps1 -DiscImage <disc>` checks original
+entry/count/spread anchors, reads a real descriptor and executes production
+pattern code for all four modes with deterministic RNG. It checks emission
+counts, targets, resource slots, timing/acceleration/damage and draw counts at
+each emit boundary. Host test and both fullres/dither VPK builds pass. The
+broader generic attack audit remains red for the two unregistered callbacks;
+there is no new hardware crash-fix claim or test-build request at this stage.
+
