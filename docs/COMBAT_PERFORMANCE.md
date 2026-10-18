@@ -131,6 +131,25 @@ The new waterfall changes are correctness work, not a combat performance claim.
 
 ## Opt-in render-bridge compiler experiment
 
+### Three-encounter hardware follow-up
+
+Log SHA256 `F4CAA46A72D0EB8DCDE107EDAFAFB49CC28E8F1DC667BAA83A4321E70B968B9B`
+has optimizedBridge=1 and successful audio-return markers for all three spans.
+The user identifies sub 8/9 as Queen fights and sub 4 as Magnata/Gelata urchins.
+After the analyzer excludes each first crossing window:
+
+| Encounter | Render median | Task median | Lowest window FPS | >2-vblank intervals |
+|---|---:|---:|---:|---:|
+| Queen 8 | 29.313 ms | 6.920 ms | 27.349 | 109/1920 |
+| Urchins 4 | 26.954 ms | 6.349 ms | 29.845 | 1/2520 |
+| Queen 9 | 29.472 ms | 6.947 ms | 27.453 | 165/2640 |
+
+Frame pacing is better than the earlier captures, but these are not controlled
+A/B runs or equal enemy-lifetime/effect workloads. Renderer medians remain near
+29.4 ms for Queens; do not attribute the pacing difference to one optimization
+or treat the full performance goal as achieved. UI LUT freshness work below is
+correctness work and is not included in this capture.
+
 `LAGI_OPTIMIZE_RENDER_BRIDGE` defaults OFF. ON changes only
 `src/integration/lagi_render_bridge.cpp` to `-O2 -fwrapv
 -fno-strict-aliasing -fno-fast-math -ffp-contract=off`. No task, native model,
