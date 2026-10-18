@@ -11,6 +11,7 @@ $battleNinja=Get-Content -Raw "$battle/build.ninja"
 $normalNinja=Get-Content -Raw "$normal/build.ninja"
 $battleEngine=Get-Content -Raw "$battle/azel_upstream/battle_battleEngine.cpp"
 if(!$battleEngine.Contains('#include "lagi_battle_heal_effect.inc"') -or $battleEngine.Contains('Approximation: consume a few per frame')){throw 'Native healing particle producer was not installed'}
+if(!$battleEngine.Contains('#include "lagi_battle_status_sparkles.inc"') -or !$battleEngine.Contains('0x060ABEF4 + effectId * 4')){throw 'Native status-sparkle producer or authored quad selection missing'}
 if(!$battleNinja.Contains('town_e011_twn_e011.cpp.obj') -or $normalNinja.Contains('town_e011_twn_e011.cpp.obj')){throw 'E011 cinematic must remain native-battle opt-in'}
 $battleTown=Get-Content -Raw "$battle/azel_upstream/town_town.cpp"
 $normalTown=Get-Content -Raw "$normal/azel_upstream/town_town.cpp"

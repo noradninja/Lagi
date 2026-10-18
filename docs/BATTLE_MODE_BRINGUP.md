@@ -534,6 +534,29 @@ Lagi's existing saturating divide already handles zero. No speculative
 zero-duration fix was applied. Restoring the two model records still requires
 faithful custom-MCB model initialization and resource ownership, not billboard
 substitutes. This checkpoint alone needs no new device build.
+
+The independent status-cure sparkle task is now connected in experimental
+battle builds through `lagi_battle_status_sparkles.inc`. Original caller
+06065754 selects its quad list from runtime table 060ABEF4 by effect ID and
+requests two cycles. Native reseeding 06099E14 uses nine draws, preserves
+animation/scale, and restores the authored radial/angular accelerations;
+initialization adds the tenth draw for delay 0..11 and scale 8000. Eight
+particles advance their own animations, decay scale only at animation wrap,
+and restart together for the next cycle. Draw retains native source position,
+Y rotation, current radius and per-particle scale. Quad data uses the common
+slot-0 VDP1 allocation and owned parsed metadata is released at task deletion.
+This is a sibling effect owned by the engine, independent of the model task
+and its command-finished flag; it does not replace either missing 3D model.
+
+`battle_status_sparkles_test.ps1` executes the production task through both
+cycles, checks 80 initialization RNG draws, delayed animation, emission,
+matrix-stack balance and cleanup, and confirms no command/flash side effects.
+Motion/disc checks, the live healing regression, retained-link and build-
+boundary checks pass; the fullres/dither battle VPK builds. Device appearance
+and busy-scene performance remain unverified. The user is testing e4cb1d4,
+which predates this sparkle integration; do not attribute those results to
+the new task. The status-cure companion model/lighting sequence remains a
+timer-only stub and is still required for complete effect parity.
 `native_color_clear_test.ps1` checks production API arguments, completion order,
 padding bounds, rejected-transfer fallback and failed-completion behavior with
 a mocked transfer engine. Builds are not hardware API or performance proof;

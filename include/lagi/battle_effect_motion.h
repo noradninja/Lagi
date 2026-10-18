@@ -169,6 +169,31 @@ struct SparkleMotion {
     std::int32_t scale=0;
 };
 
+// BTL_A3 06099E14..06099F0A, nine RNG draws. Scale and quad animation
+// belong to the caller and survive reseeding at the end of each cycle.
+template<class Random,class Sine,class Cosine>
+void reseedSparkleMotion(SparkleMotion& sparkle,
+    std::array<std::int32_t,3>& position,Random&& random,Sine&& sine,Cosine&& cosine)
+{
+    auto sample=[&](std::int32_t range){return multiply(static_cast<std::uint32_t>(random()) >> 16,range);};
+    auto angle=[&](){return static_cast<std::uint32_t>(random()) >> 20;};
+    const auto vertical=sample(0x3000);
+    position[1]=multiply(sine(angle()),vertical);
+    const auto horizontal=sample(0x3000);
+    const auto radius=multiply(cosine(angle()),horizontal);
+    position[2]=multiply(sine(angle()),radius);
+    position[0]=multiply(cosine(angle()),radius);
+    if ((static_cast<std::uint32_t>(random()) & 1u)==0)
+        position[1]=subtract(position[1],0x14CC);
+    sparkle.radialAcceleration=0x0106;
+    sparkle.radialVelocity=0;
+    sparkle.radius=position[1];
+    sparkle.angularAcceleration=0;
+    sparkle.angularVelocity=0;
+    sparkle.angle=sample(0x10000000);
+    sparkle.angularAcceleration=add(sample(0x001C71C7),0x0005B05B);
+}
+
 // BTL_A3 06099D10..06099D4C. Angular damping really is zero in this
 // routine; radial damping is 051E. Neither acceleration is cleared here.
 inline void advanceSparkleMotion(SparkleMotion& sparkle)

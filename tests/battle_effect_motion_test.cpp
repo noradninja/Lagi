@@ -89,5 +89,12 @@ int main()
     const auto beforeEmptyRing=draws;
     advanceMotionRing(std::span<Motion>{},noImpulse,noTrig,noTrig);
     assert(draws==beforeEmptyRing);
+    draws=0;std::array<std::int32_t,3> sparklePosition{};
+    SparkleMotion seededSparkle;seededSparkle.scale=0x1234;
+    reseedSparkleMotion(seededSparkle,sparklePosition,[&](){++draws;return 0u;},
+        [](unsigned a){assert(a==0);return 0;},[](unsigned a){assert(a==0);return 65536;});
+    assert(draws==9&&seededSparkle.scale==0x1234&&seededSparkle.radius==-0x14CC);
+    assert(seededSparkle.radialAcceleration==0x106&&seededSparkle.angularAcceleration==0x5B05B);
+    assert(seededSparkle.angle==0&&seededSparkle.radialVelocity==0&&seededSparkle.angularVelocity==0);
     puts("PASS: native effect initialization, seed bounds, ring ordering, RNG branches and signed spring motion. Not hardware validation.");
 }

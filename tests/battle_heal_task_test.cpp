@@ -37,7 +37,8 @@ u32 rng=1;u32 randomNumber(){++rngCalls;rng=rng*1664525u+1013904223u;return rng;
 fixedPoint getSin(u32 a){assert(a<4096);return a<2048?65536:-65536;}
 fixedPoint getCos(u32 a){assert(a<4096);return a<1024||a>=3072?65536:-65536;}
 void particleInitSub(sAnimatedQuad* p,u16 vram,const std::vector<sVdp1Quad>* q){++quadInits;p->data=q;p->vram=vram;}
-int sGunShotTask_UpdateSub4(sAnimatedQuad* p){assert(p->data&&p->vram==0x100);++quadUpdates;return 0;}
+bool animationEnd=false;
+int sGunShotTask_UpdateSub4(sAnimatedQuad* p){assert(p->data&&p->vram==0x100);++quadUpdates;return animationEnd?3:0;}
 int matrixDepth=0;
 void pushCurrentMatrix(){++matrixDepth;}void popMatrix(){assert(matrixDepth>0);--matrixDepth;}
 void translateCurrentMatrix(const sVec3_FP&){}
@@ -68,4 +69,5 @@ int main(){
  sHealVisualEffectTask_Delete(task);assert(task->quads==nullptr);
  delete task;for(auto p:allocations)::operator delete(p);
  puts("PASS: production heal task allocation/RNG, frame gates, delayed particles, quad updates, draw ownership, completion and cleanup. Not Vita validation.");
+ return 0;
 }

@@ -2137,7 +2137,16 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   endif()
   math(EXPR heal_length "${heal_end}-${heal_begin}")
   string(SUBSTRING "${source_text}" ${heal_begin} ${heal_length} heal_stub)
-  string(REPLACE "${heal_stub}" "#include \"lagi_battle_heal_effect.inc\"\n\n" source_text "${source_text}")
+  string(REPLACE "${heal_stub}" "#include \"lagi_battle_heal_effect.inc\"\n#include \"lagi_battle_status_sparkles.inc\"\n\n" source_text "${source_text}")
+  string(REPLACE "        // TODO: FUN_06099aa0 — creates secondary sparkle particle effect task" "        // The independent native sparkle task is created below." source_text "${source_text}")
+  set(sparkle_anchor "    refreshBattleGaugeAfterHeal();\n}\n\n// BTL_A3::0607f7e4")
+  string(FIND "${source_text}" "${sparkle_anchor}" sparkle_found)
+  if(sparkle_found LESS 0)
+   message(FATAL_ERROR "Native status sparkle creation boundary changed")
+  endif()
+  string(REPLACE "${sparkle_anchor}"
+   "    lagiCreateStatusSparkles(pEngine, &gBattleManager->m10_battleOverlay->m18_dragon->m8_position, readSaturnEA(g_BTL_GenericData->getSaturnPtr(0x060ABEF4 + effectId * 4)), 2);\n${sparkle_anchor}"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleDragon.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set(status_light_old [=[    if (local_24)
     {
