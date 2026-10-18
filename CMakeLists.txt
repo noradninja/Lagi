@@ -1446,6 +1446,18 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
 } while (false)
 ]=])
  elseif(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  # MAIN 06035550 -> 060355F0 returns zero for a zero divisor and
+  # records native arithmetic error 044E; it does not abort the game.
+  foreach(remainder_helper performModulo performModulo2)
+   set(remainder_old "u32 ${remainder_helper}(u32 r0, u32 r1)\n{\n    assert(r0);")
+   string(FIND "${source_text}" "${remainder_old}" remainder_found)
+   if(remainder_found LESS 0)
+    message(FATAL_ERROR "Native remainder helper boundary changed: ${remainder_helper}")
+   endif()
+   string(REPLACE "${remainder_old}"
+    "u32 ${remainder_helper}(u32 r0, u32 r1)\n{\n    if (!r0) {\n        static unsigned reports = 0;\n        if (reports++ < 8) PDS_Log(\"[NativeArithmetic] ${remainder_helper} error=044E divisor=0 result=0\\n\");\n        return 0;\n    }"
+    source_text "${source_text}")
+  endforeach()
   if(LAGI_BATTLE_NATIVE_BUILD)
    set(source_text "#include \"lagi/native_allocator_tables.h\"\n${source_text}")
    set(allocator_push_old "    dramAllocatorHead = pDramAllocator;\n\n    dramAllocatorEnd.clear();")
