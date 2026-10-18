@@ -1,0 +1,10 @@
+build CMakeFiles/lagi.dir/src/platform/vita/neptune_renderer.cpp.obj: CXX source.cpp
+  FLAGS = -O0 -O2 -fno-fast-math
+  DEFINES = -DSHIPPING_BUILD=1
+build CMakeFiles/lagi.dir/azel_upstream/3dEngine.cpp.obj: CXX source.cpp
+  FLAGS = -O2 -O0 -ffast-math -fno-fast-math
+  DEFINES = -DNDEBUG
+build CMakeFiles/lagi.dir/azel_upstream/kernel_animation.cpp.obj: CXX source.cpp
+  FLAGS = -Wl,-q -std=gnu++20
+build CMakeFiles/lagi.dir/azel_upstream/battle_BTL_A3_baldorQueen.cpp.obj: CXX source.cpp
+  FLAGS = -O3 -ffast-math

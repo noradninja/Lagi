@@ -87,6 +87,34 @@ lighting, draw list, simulation or audio work is reduced by this change.
 
 ## Reproduce
 
+### Build-settings audit (no flags changed)
+
+Checked both the current local `build-battle-dev/build.ninja` and the user's
+`E:/dev/Lagi/build-battle-vita/build.ninja`: Neptune explicitly uses
+`-O2 -fno-fast-math -ffp-contract=off`, while the runtime, task host, render
+bridge, generated 3dEngine, animation, battle engine, Brood Queen and urchin
+objects have no `-O` flag (compiler default). Neither set lists `-DNDEBUG`.
+This is a CPU-cost lead, not proof that unoptimized task execution is the
+dominant cause of the measured dips, nor a match to the earlier log's binary.
+Await measured task timings before selecting an optimization experiment.
+
+```powershell
+.\tools\audit_vita_perf_build.ps1 -Build build-battle-vita |
+    Format-Table Source, Found, Optimization, NDebug, ExplicitFastMath
+```
+
+The audit is read-only and inspects explicit per-object Ninja FLAGS/DEFINES;
+it does not expand arbitrary Ninja variables, infer every compiler option
+group (such as Ofast), or prove runtime assert behavior. Missing objects are
+reported as missing, not assumed to share another object's settings. The
+fixture checks per-source attribution, last -O/explicit fast-math precedence
+and NDEBUG detection. No broad Release/global-optimization switch has been
+made. A future experiment must isolate its source scope, retain assertions,
+avoid fast-math/reassociation, check native fixed-point overflow/aliasing
+semantics and compare the same hardware encounter before claiming a gain.
+
+### Hardware capture
+
 ```powershell
 cd E:\dev\Lagi
 git switch feature/battle-mode-bringup
