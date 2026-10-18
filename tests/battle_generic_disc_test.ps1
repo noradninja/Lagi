@@ -42,7 +42,11 @@ $end=$dispatch.IndexOf('sGenericFormationData* readUrchinFormation(',$middle)
 if($begin -lt 0 -or $middle -le $begin -or $end -le $middle){throw 'Native A3 dispatch boundary changed'}
 $formations=([regex]::Matches($dispatch.Substring($begin,$middle-$begin),'case (0x[0-9a-fA-F]+):') | ForEach-Object {$_.Groups[1].Value}) -join ','
 $maps=([regex]::Matches($dispatch.Substring($middle,$end-$middle),'case (0x[0-9a-fA-F]+):') | ForEach-Object {$_.Groups[1].Value}) -join ','
-[IO.File]::WriteAllText("$scratch/dispatch.inc","constexpr u32 formationFunctions[]={$formations};`nconstexpr u32 mapFunctions[]={$maps};`n")
+$effectBegin=$a3.IndexOf('p_workArea BTL_A3_data::invokeCreateEffect(')
+$effectEnd=$a3.IndexOf('BTL_A3_data::BTL_A3_data()', $effectBegin)
+if($effectBegin -lt 0 -or $effectEnd -le $effectBegin){throw 'Live A3 effect dispatch boundary changed'}
+$effects=([regex]::Matches($a3.Substring($effectBegin,$effectEnd-$effectBegin),'case (0x[0-9a-fA-F]+):') | ForEach-Object {$_.Groups[1].Value}) -join ','
+[IO.File]::WriteAllText("$scratch/dispatch.inc","constexpr u32 formationFunctions[]={$formations};`nconstexpr u32 mapFunctions[]={$maps};`nconstexpr u32 effectFunctions[]={$effects};`n")
 $overlay=Get-Content -Raw "$repo/extern/Azel/AzelLib/battle/battleOverlay.h"
 $begin=$overlay.IndexOf('struct sOverlayBattleEntry');$end=$overlay.IndexOf('struct battleOverlay :',$begin)
 if($begin -lt 0 -or $end -le $begin){throw 'Native battle entry reader boundary changed'}

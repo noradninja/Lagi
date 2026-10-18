@@ -189,6 +189,11 @@ void checkA3Animations(){
         }
         for(int state=0;state<count;++state){
             const auto record=table+state*0x24;
+            const auto effect=readSaturnEA(record);
+            if(!effect.isNull() && std::find(std::begin(effectFunctions),std::end(effectFunctions),effect.address)==std::end(effectFunctions)){
+                std::fprintf(stderr,"params=%08X state=%d missing effect factory=%08X\n",parameters[i],state,effect.address);
+                throw std::runtime_error("Authored animation effect missing from live A3 dispatcher");
+            }
             // Exercise all native record fields, including pointers, within the file.
             read(record+0x20,2);
             for(unsigned q=0;q<4;++q){
@@ -197,6 +202,18 @@ void checkA3Animations(){
             }
         }
     }
+    for(const u32 address:{0x060A8300u,0x060A84C0u,0x060A87B4u}){
+        const auto frames=initVdp1Quad(g_BTL_GenericData->getSaturnPtr(address));
+        if(frames.empty() || frames.back().m0_isLast!=1)
+            throw std::runtime_error("Native ambient particle descriptor missing its terminator");
+    }
+    const u32 emitterAnchors[][2]={{0x06056AF4,0xD513},{0x06056AFE,0xE604},
+        {0x06056B04,0x7308},{0x060569BC,0xC807},{0x06056B1C,0x20216E80},
+        {0x06056B24,0x20217E80},{0x06056B22,0xA000},
+        {0x06056B12,0x00C0},{0x06056B38,0x00010000}};
+    for(const auto& anchor:emitterAnchors)
+        if(read(g_BTL_GenericData->getSaturnPtr(anchor[0]),anchor[1]>0xFFFF?4:2)!=anchor[1])
+            throw std::runtime_error("Original native ambient emitter anchor changed");
     std::puts("PASS: A3 authored animation counts 1,2,1,3; beam-hit transitions, subsequent state 2 and 0x24-stride records are readable. Not combat execution.");
 }
 void checkA3Formations(){
@@ -232,6 +249,10 @@ void checkA3Formations(){
             if(params->m1C.size()!=count)throw std::runtime_error("Actual formation reader omitted animation states");
             for(unsigned state=0;state<params->m1C.size();++state){
                 auto& parsed=params->m1C[state];const auto record=table+state*0x24;
+                if(!parsed.m0.isNull() && std::find(std::begin(effectFunctions),std::end(effectFunctions),parsed.m0.address)==std::end(effectFunctions)){
+                    std::fprintf(stderr,"formation=%08X type=%u state=%u missing effect=%08X\n",address,type,state,parsed.m0.address);
+                    throw std::runtime_error("Parsed enemy animation effect missing from live dispatcher");
+                }
                 if(parsed.m1C_animationOffset!=readSaturnU16(record+0x1C) ||
                     parsed.m20_timerValue!=readSaturnU16(record+0x20))
                     throw std::runtime_error("Actual animation reader did not advance source record");
@@ -246,7 +267,7 @@ void checkA3Formations(){
         for(auto* positions:formation->m10_formationSubData)delete positions;
         delete formation;
     }
-    std::printf("PASS: actual generated formation parser read %u enemy parameter sets / %u animation records; death mode/sounds and quadrant colors match separate native fields. Hotspot/model loading mocked.\n",types,states);
+    std::printf("PASS: actual generated formation parser read %u enemy parameter sets / %u animation records; all non-null animation effect factories are registered; death mode/sounds and quadrant colors match separate native fields. Hotspot/model loading mocked.\n",types,states);
 }
 void checkDamageDigits(){
     const u32 anchors[][2]={{0x0605BDB8,0x1001},{0x0605BDBC,0x048C},

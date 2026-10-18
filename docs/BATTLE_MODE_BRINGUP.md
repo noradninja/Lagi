@@ -756,3 +756,47 @@ in r5/r6/r7; those preserved registers are 251, relocated string `"0"`, and
 line 251 asserts on an unregistered **one-argument** town script function. This
 narrows the fault beyond overlay dispatch, but does not recover the missing
 function EA or a call stack. The log confirms E011.EPK opened before the abort.
+
+The E011 script at `060541F4` calls one-argument factory `0605890C` with
+`060600C4`. This is the first unregistered call after the already-observed EPK
+startup. Original `06058884..0605892A` creates an eight-byte callback scheduler,
+reading its schedule through the argument pointer. Its table `0605FD10` contains
+descending remaining-frame thresholds and callbacks `060589E2`, `06058B2A`,
+`06058FF8`, ending at `060600B8`. These callbacks must be restored, not skipped.
+Later script calls also require `0605809E`, `060557E0`, and `06055872`. No E011
+scheduler/callback fix is claimed yet. The Saturn water screenshot is a reference,
+not a Lagi screenshot: transparent surface layers and waterfall splashes remain
+open, as do the lingering combat meter and measured multi-enemy performance.
+
+### Earlier random-battle core: missing animation effect factory
+
+The complete 530,448-byte `psp2core-1792262512-0x00239831ed-eboot.bin.psp2dmp`
+records main-thread PC offset `1E9422` (abort trap), r5=293, and a stack containing
+`06056AF2`. Candidate ELF offsets line up with `_kill_r`, `__assert_func`,
+`BTL_A3_data::invokeCreateEffect`, `urchinUpdateSub2`, and `Urchin_update`; its
+preserved assertion-string addresses resolve to `"0"`, generated
+`battle_BTL_A3_BTL_A3_data.cpp`, and the dispatcher function name. The old core
+does not capture those read-only strings; the supplied later ELF is supporting
+symbol evidence, not a separately archived earlier matching executable.
+Independently, current source lacks that dispatcher case and the original disc
+contains the actual factory at `06056AF2`, update `060569A8`.
+
+The generated battle adapter now registers that factory and compiles its native
+animation-owned particle emitter. It preserves the one-in-eight RNG gate, six
+RNG calls on emission, signed-angle draws, original sine/sine/cosine coordinate
+products (Y reuses the sine radius), radius `A000`, three runtime quad sequences
+at `060A8300/060A84C0/060A87B4`, scale `10000`, animation completion lifetime,
+and slot-12 resource parent. It takes the typed enemy `m8` position rather than
+reading a Saturn byte offset from the C++ object. Descriptor arrays remain alive
+for particles spawned before the emitter's animation ends. No fake effect,
+assertion suppression, game assets, or upstream edits are added.
+
+`battle_urchin_ambient_test.ps1` executes the production emitter with mocked task,
+trig and particle services, covering the gate, RNG count, all descriptors, live
+parent position and descriptor lifetime. `battle_generic_disc_test.ps1` checks
+original factory/update literals and bounded quad reads, then compares all
+non-null animation effect pointers in the four A3 formation readers (seven enemy
+parameter sets, ten animation records) with the **generated live** dispatcher.
+This is not every effect in every battle overlay, nor hardware AI/particle
+acceptance. Host tests, battle-boundary tests, and full battle/ordinary Vita VPK
+builds pass; on-device crash regression testing remains required.

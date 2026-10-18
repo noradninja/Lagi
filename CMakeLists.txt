@@ -2093,6 +2093,19 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   set(source_text "#include \"lagi/lagi_render_bridge.h\"\n${source_text}")
   string(REPLACE "${battle_camera_anchor}" "${battle_camera_anchor}\n    lagi::azel_bridge::capture_native_scene_view_matrix();" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A3/BTL_A3_data.cpp")
+  if(LAGI_BATTLE_NATIVE_BUILD)
+   set(effect_anchor "    case 0x06054dce:\n        return urchinAttack_spawnProjectile(pParent);")
+   string(FIND "${source_text}" "${effect_anchor}" effect_anchor_found)
+   if(effect_anchor_found LESS 0)
+    message(FATAL_ERROR "Native A3 effect dispatcher boundary changed")
+   endif()
+   string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
+    "#include \"lagi/lagi_azel_upstream_prelude.h\"\np_workArea lagiCreateUrchinAmbientEffect(struct s_workAreaCopy*);"
+    source_text "${source_text}")
+   string(REPLACE "${effect_anchor}"
+    "${effect_anchor}\n    case 0x06056AF2:\n        return lagiCreateUrchinAmbientEffect(pParent);"
+    source_text "${source_text}")
+  endif()
   set(animation_reader_old "            for (int j=0; j<1; j++)\n            {\n                sGenericFormationPerTypeDataSub1C subData1C;")
   string(FIND "${source_text}" "${animation_reader_old}" animation_reader_found)
   if(animation_reader_found LESS 0)
@@ -2117,6 +2130,9 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "            pSubEntry->m2C_deathMode = readSaturnU8(subEntry + 0x2C);\n            pSubEntry->m2D_hitSound = readSaturnU8(subEntry + 0x2D);\n            pSubEntry->m2E_deathSound = readSaturnU8(subEntry + 0x2E);\n${enemy_parse_anchor}"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A3/urchin.cpp")
+  if(LAGI_BATTLE_NATIVE_BUILD)
+   string(APPEND source_text "\n#include \"battle/particleEffect.h\"\n#include \"battle/battleGenericData.h\"\n#include \"lagi_battle_urchin_ambient.inc\"\n")
+  endif()
   foreach(enemy_anchor "pThis->mCC->m28[4] == 4" "s8 deathMode = pThis->mCC->m28[0];" "pThis->mCC->m28[1] != -1" "pThis->mCC->m28[2] != -1")
    string(FIND "${source_text}" "${enemy_anchor}" enemy_anchor_found)
    if(enemy_anchor_found LESS 0)
