@@ -1122,7 +1122,7 @@ bool start_audio_worker()
         0x10000100,
         128u * 1024u,
         0,
-        SCE_KERNEL_CPU_MASK_USER_2,
+        SCE_KERNEL_CPU_MASK_USER_ALL,
         nullptr);
     if (g_audioWorkerThread < 0) {
         lagi::platform::logging::writef(
