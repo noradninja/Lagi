@@ -810,9 +810,10 @@ factory 0605890C yet**. Callback `06058FF8` draws ribbon/trail geometry and rema
 unfinished. Wiring only the first two callbacks would postpone the known abort,
 not establish a complete cinematic; this checkpoint deliberately does not do so.
 
-Both leaf tasks use the original remaining-frame clock and bottom-tested update
-loop: a remaining-time delta of zero still executes once, and stopped/skipped
-playback supplies delta one (two state-machine iterations). Animated sprites
+Both leaf tasks use the original remaining-frame clock. The native initial
+branch enters the loop test before the first body: a remaining-time delta of
+zero executes no updates, and stopped/skipped playback supplies one update.
+The second clock sample is retained as the next previous time. Animated sprites
 initialize through MAIN `0602CF2A`, advance through `0602CF38`, and count actual
 animation wraps. Model tasks use `init3DModelRawData`, `stepAnimation`'s returned
 previous frame, authored hierarchy/animation/pose indices and ZYX rotation.
@@ -957,4 +958,26 @@ These are host/source/build checks, not Vita rendering, speed or audio proof.
 Queen/Baldor direct projectile routines, non-A3 overlays, E011 recovery, water
 transparency/splashes and multi-enemy performance remain separate unfinished
 bringup work; this is not completion of the battle goal.
+
+# E011 staged-effect clock correction
+
+Reinspection of the initial branches at 06058964 and 06058A5E corrected an
+off-by-one in the staged quad/model tasks: they jump to the TST/BF-S loop test
+before the first body. A delta of N executes N updates, not N+1. The previous
+checkpoint's host expectations had repeated that mistaken interpretation.
+Normal updates also preserve two original clock samples (the first computes
+delta; the second becomes the next previous time). Stopped playback executes
+one state-machine update without clock reads. Regression tests now cover
+initial-branch plus loop/delay-slot anchors, zero/one/multiple elapsed ticks,
+distinct first/second clock samples, wraps and stopped-state cleanup.
+
+Ribbon recovery evidence: 06058C06 similarly enters at 06058ED6 before its
+first body. It shifts a 20-position history, follows the authored linear path
+plus sine-scaled oriented curvature while fixed-point duration remains, then
+snaps to the endpoint and advances a constant tangent for a separate 30-tick
+tail. Draw 06058F04 emits 19 independently sized two-endpoint strips using
+authored width pairs at 06061F4C and selectors at 06061F38; service 0602E1AA
+transforms both world endpoints before the two-width projection helper.
+These observations are recovery evidence only; the ribbon/scheduler and later
+native script callbacks remain unfinished, so the E011 abort remains unfixed.
 

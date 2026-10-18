@@ -34,8 +34,8 @@ struct s_3dModel{
     void(*m18_drawFunction)(s_3dModel*){};
     ~s_3dModel(){++destroyed;}
 };
-int remaining=100;bool stopped=false;
-s32 e006_scriptFunction_6057438(){++clockReads;return remaining;}
+int remaining=100;bool stopped=false;std::vector<int> clockSamples;
+s32 e006_scriptFunction_6057438(){++clockReads;if(clockSamples.empty())return remaining;const auto value=clockSamples.front();clockSamples.erase(clockSamples.begin());return value;}
 s32 e006_scriptFunction_605861eSub0(){return stopped;}
 s16 readSaturnS16(sSaturnPtr p){
     if(p.address==0x1000 || p.address==0x2000)return 2;
@@ -66,21 +66,26 @@ void translateCurrentMatrix(const sVec3_FP& p){assert(matrixDepth==1 && p.v[0]==
 void rotateCurrentMatrixZYX(const sVec3_FP& r){assert(matrixDepth==1 && r.v[0]==0x2010);}
 #include "lagi_e011_scheduled_effects.inc"
 int main(){
+    s16 previous=101;clockSamples={100,99};
+    assert(lagiE011EffectTicks(previous)==1 && previous==99 && clockSamples.empty());
     dramAllocatorEnd[2].mC_fileBundle=&owner;
     auto* q=static_cast<sE011ScheduledQuad*>(lagiE011CreateScheduledQuad({0x1000}));
     assert(q->previous==101 && q->cycles==2);
     lagiE011QuadUpdate(q);
-    assert(quadInits==1 && quadSteps==1 && q->state==1 && q->cycles==1);
+    assert(quadInits==1 && quadSteps==0 && q->state==1 && q->cycles==2);
     lagiE011QuadDraw(q);assert(quadDraws==1);
-    lagiE011QuadUpdate(q);assert(quadSteps==2 && q->state==2 && !q->control.finished);
+    lagiE011QuadUpdate(q);assert(quadSteps==0 && q->state==1 && q->cycles==2);
+    --remaining;lagiE011QuadUpdate(q);assert(quadSteps==1 && q->cycles==1);
+    --remaining;lagiE011QuadUpdate(q);assert(quadSteps==2 && q->state==2 && !q->control.finished);
     --remaining;lagiE011QuadUpdate(q);assert(q->control.finished);
     lagiE011QuadDelete(q);assert(!q->frames);delete q;
     remaining=100;
     auto* m=static_cast<sE011ScheduledModel*>(lagiE011CreateScheduledModel({0x2000}));
-    lagiE011ModelUpdate(m);assert(modelSteps==2 && m->cycles==2);
-    --remaining;lagiE011ModelUpdate(m);assert(modelSteps==4 && m->cycles==1);
-    lagiE011ModelUpdate(m);assert(modelSteps==5 && m->cycles==1 && m->state==1);
-    lagiE011ModelUpdate(m);assert(modelSteps==6 && m->state==2);
+    const auto clockBefore=clockReads;
+    lagiE011ModelUpdate(m);assert(modelSteps==1 && m->cycles==2 && clockReads==clockBefore+2);
+    remaining-=2;lagiE011ModelUpdate(m);assert(modelSteps==3 && m->cycles==1);
+    lagiE011ModelUpdate(m);assert(modelSteps==3 && m->cycles==1 && m->state==1);
+    remaining-=3;lagiE011ModelUpdate(m);assert(modelSteps==6 && m->state==2);
     lagiE011ModelDraw(m);assert(matrixDepth==0 && modelDraws==1);
     const auto before=clockReads;stopped=true;lagiE011ModelUpdate(m);
     assert(m->control.finished && before==clockReads);

@@ -6,7 +6,8 @@ static s32 lagiE011EffectTicks(s16& previous)
     if (e006_scriptFunction_605861eSub0()) return 1;
     const s32 remaining = lagiE011Remaining();
     const s32 delta = previous - remaining;
-    previous = static_cast<s16>(remaining);
+    // Original tasks sample again when recording the next previous time.
+    previous = static_cast<s16>(lagiE011Remaining());
     assert(delta >= 0);
     return delta;
 }
@@ -27,8 +28,8 @@ static void lagiE011QuadDelete(sE011ScheduledQuad* task)
 }
 static void lagiE011QuadUpdate(sE011ScheduledQuad* task)
 {
-    // Native bottom-tested loop: a delta of zero still executes once.
-    for (s32 ticks = lagiE011EffectTicks(task->previous);; --ticks) {
+    // 06058964 jumps to the TST/BF-S at 060589BA before the first body.
+    for (s32 ticks = lagiE011EffectTicks(task->previous); ticks > 0; --ticks) {
         switch (task->state) {
         case 0:
             particleInitSub(&task->quad, task->m4_vd1Allocation->m4_vdp1Memory, task->frames);
@@ -41,7 +42,6 @@ static void lagiE011QuadUpdate(sE011ScheduledQuad* task)
         case 2: task->getTask()->markFinished(); break;
         default: assert(0);
         }
-        if (!ticks) break;
     }
 }
 static void lagiE011QuadDraw(sE011ScheduledQuad* task)
@@ -79,7 +79,8 @@ static void lagiE011ModelDelete(sE011ScheduledModel* task)
 }
 static void lagiE011ModelUpdate(sE011ScheduledModel* task)
 {
-    for (s32 ticks = lagiE011EffectTicks(task->previous);; --ticks) {
+    // 06058A5E likewise enters through the test, not the update body.
+    for (s32 ticks = lagiE011EffectTicks(task->previous); ticks > 0; --ticks) {
         switch (task->state) {
         case 0: task->state = 1; [[fallthrough]];
         case 1: {
@@ -92,7 +93,6 @@ static void lagiE011ModelUpdate(sE011ScheduledModel* task)
         case 2: task->getTask()->markFinished(); break;
         default: assert(0);
         }
-        if (!ticks) break;
     }
 }
 static void lagiE011ModelDraw(sE011ScheduledModel* task)
