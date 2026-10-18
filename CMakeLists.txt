@@ -2092,6 +2092,15 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   endif()
   set(source_text "#include \"lagi/lagi_render_bridge.h\"\n${source_text}")
   string(REPLACE "${battle_camera_anchor}" "${battle_camera_anchor}\n    lagi::azel_bridge::capture_native_scene_view_matrix();" source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/e011/twn_e011.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(e011_constructor "TWN_E011_data::TWN_E011_data() :")
+  string(FIND "${source_text}" "${e011_constructor}" e011_constructor_found)
+  if(e011_constructor_found LESS 0)
+   message(FATAL_ERROR "Native E011 scheduled-effect compilation boundary changed")
+  endif()
+  string(REPLACE "${e011_constructor}"
+   "#include \"kernel/vdp1AnimatedQuad.h\"\n#include \"lagi_e011_scheduled_effects.inc\"\n\n${e011_constructor}"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A3/BTL_A3_data.cpp")
   if(LAGI_BATTLE_NATIVE_BUILD)
    set(effect_anchor "    case 0x06054dce:\n        return urchinAttack_spawnProjectile(pParent);")

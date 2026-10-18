@@ -800,3 +800,32 @@ parameter sets, ten animation records) with the **generated live** dispatcher.
 This is not every effect in every battle overlay, nor hardware AI/particle
 acceptance. Host tests, battle-boundary tests, and full battle/ordinary Vita VPK
 builds pass; on-device crash regression testing remains required.
+
+### E011 scheduled effect recovery checkpoint
+
+`lagi_e011_scheduled_effects.inc` recovers the native leaf tasks behind callback
+`060589E2` (animated sprite) and `06058B2A` (animated model). These are compiled
+only with the existing native-battle E011 source, but **not connected to script
+factory 0605890C yet**. Callback `06058FF8` draws ribbon/trail geometry and remains
+unfinished. Wiring only the first two callbacks would postpone the known abort,
+not establish a complete cinematic; this checkpoint deliberately does not do so.
+
+Both leaf tasks use the original remaining-frame clock and bottom-tested update
+loop: a remaining-time delta of zero still executes once, and stopped/skipped
+playback supplies delta one (two state-machine iterations). Animated sprites
+initialize through MAIN `0602CF2A`, advance through `0602CF38`, and count actual
+animation wraps. Model tasks use `init3DModelRawData`, `stepAnimation`'s returned
+previous frame, authored hierarchy/animation/pose indices and ZYX rotation.
+The file owner is `dramAllocatorEnd[descriptor.s16(0)].mC_fileBundle`, not an NPC
+proxy or an assumed byte offset. Persistent file caches remain file-owned;
+task-owned parsed quad descriptors and model pose/matrix vectors are explicitly
+released by Delete, since upstream work areas lack virtual C++ destructors.
+
+`e011_scheduled_effects_test.ps1 -DiscImage <disc>` executes the production leaf
+task code with mocked native services and checks source instruction/service and
+descriptor anchors from the original E011 overlay. It covers delta-zero/delta-
+one timing, first-state fallthrough differences, loop completion, resource
+inheritance, transforms, skipped playback, cleanup and model-init failure.
+Host test, original anchors, battle build-boundary test and both fullres/dither
+Vita VPK builds pass. This is staged source recovery, **not** an E011 crash fix,
+hardware rendering result, sound result or full playback acceptance.
