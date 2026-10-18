@@ -113,8 +113,6 @@ made. A future experiment must isolate its source scope, retain assertions,
 avoid fast-math/reassociation, check native fixed-point overflow/aliasing
 semantics and compare the same hardware encounter before claiming a gain.
 
-### Hardware capture
-
 ### October 18 follow-up log
 
 The supplied 1,598,374-byte log (SHA256
@@ -130,6 +128,37 @@ does not establish the benefit of the removed unused lighting-vertex copy.
 The new waterfall changes are correctness work, not a combat performance claim.
 
 ### Hardware capture commands
+
+## Opt-in render-bridge compiler experiment
+
+`LAGI_OPTIMIZE_RENDER_BRIDGE` defaults OFF. ON changes only
+`src/integration/lagi_render_bridge.cpp` to `-O2 -fwrapv
+-fno-strict-aliasing -fno-fast-math -ffp-contract=off`. No task, native model,
+animation, shader, resolution or draw-list logic changes. Assertions are not
+disabled by this option. Existing resource-inventory logs include
+`optimizedBridge=0/1` for attribution. This is a candidate, not a proven gain:
+the task timer contains bridge calls but does not isolate their contribution.
+
+For a matched A/B, retain the same commit, build type and encounter route:
+
+```powershell
+cd E:\dev\Lagi
+git switch feature/battle-mode-bringup
+git pull --ff-only
+cmake -S . -B build-battle-vita -DLAGI_OPTIMIZE_RENDER_BRIDGE=OFF
+cmake --build build-battle-vita -j 32
+# Capture baseline log/video; preserve them before installing the candidate.
+cmake -S . -B build-battle-vita -DLAGI_OPTIMIZE_RENDER_BRIDGE=ON
+cmake --build build-battle-vita -j 32
+```
+
+Existing Vita toolchain/generator/fullres/dither/battle options are retained in
+that build cache. Use a multiple-enemy Brood Queen fight, including attacks,
+gauge charge, results and return. Compare `tasks`, presentation windows and
+image/behavior, not just sampled renderer medians. The build-flag check is
+`tests/render_bridge_perf_build_test.ps1 -Build <folder> -ExpectedOn $true`
+(or `$false`). Keep OFF if gains are absent or fidelity regresses. This does
+not resolve the separately documented water-layer or cinematic gaps.
 
 ```powershell
 cd E:\dev\Lagi

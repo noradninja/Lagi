@@ -3999,6 +3999,18 @@ else()
  )
 endif()
 
+# Isolated A/B candidate: do not change native simulation or renderer shaders.
+# Default OFF until a matched hardware encounter establishes benefit/correctness.
+option(LAGI_OPTIMIZE_RENDER_BRIDGE "Experiment: optimize Lagi scene submission bridge" OFF)
+if(LAGI_OPTIMIZE_RENDER_BRIDGE)
+ set_source_files_properties(src/integration/lagi_render_bridge.cpp
+  PROPERTIES COMPILE_OPTIONS "-O2;-fwrapv;-fno-strict-aliasing;-fno-fast-math;-ffp-contract=off"
+             COMPILE_DEFINITIONS "LAGI_RENDER_BRIDGE_OPTIMIZED=1")
+else()
+ set_source_files_properties(src/integration/lagi_render_bridge.cpp
+  PROPERTIES COMPILE_DEFINITIONS "LAGI_RENDER_BRIDGE_OPTIMIZED=0")
+endif()
+
 # The SCSP DSP interpreter is the measured native-audio hotspot. Optimize only
 # the Lagi-owned replacement; keep the rest of the bring-up build unchanged.
 set_source_files_properties(

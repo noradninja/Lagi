@@ -47,6 +47,14 @@ extern s32 pointLightParams[5] __attribute__((weak));
 
 namespace lagi::azel_bridge {
 
+#ifndef LAGI_RENDER_BRIDGE_OPTIMIZED
+#define LAGI_RENDER_BRIDGE_OPTIMIZED 0
+#endif
+#if LAGI_RENDER_BRIDGE_OPTIMIZED
+#define LAGI_BRIDGE_OPTIMIZATION_TEXT "1"
+#else
+#define LAGI_BRIDGE_OPTIMIZATION_TEXT "0"
+#endif
 static std::uint32_t g_submissionCount = 0;
 static std::uint32_t g_modelCacheMisses = 0;
 static std::uint32_t g_publishedModelCacheMisses = 0;
@@ -266,7 +274,8 @@ void publish_frame()
         g_publishedResources.swap(snapshot);
         g_resourceInventoryDirty = false;
         ++g_publishedResourceRevision;
-        lagi::platform::logging::writef("[NativeResourceInventory] generation=%llu models=%u\n",
+        lagi::platform::logging::writef("[NativeResourceInventory] generation=%llu models=%u optimizedBridge="
+            LAGI_BRIDGE_OPTIMIZATION_TEXT "\n",
             static_cast<unsigned long long>(g_resourceGeneration),
             static_cast<unsigned>(g_publishedResources.size()));
     }
