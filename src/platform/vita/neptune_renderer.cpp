@@ -474,6 +474,7 @@ static bool g_liveTownHasBillboards = false;
 
 struct LiveTownResolvedMaterialCache {
     sProcessed3dModel* model = nullptr;
+    std::uint64_t generation = 0;
     std::vector<std::uint16_t> textureIndices;
 };
 static std::vector<LiveTownResolvedMaterialCache> g_liveTownMaterialCache;
@@ -6937,6 +6938,7 @@ static bool prepareRegisteredNativeMaterial()
 
 static const std::vector<std::uint16_t>* resolvedLiveTownMaterialIndices(
     sProcessed3dModel* modelIdentity,
+    std::uint64_t modelGeneration,
     const azel_bridge::LiveVdp1Model& model)
 {
     if (!modelIdentity)
@@ -6944,13 +6946,25 @@ static const std::vector<std::uint16_t>* resolvedLiveTownMaterialIndices(
 
     for (auto& cached : g_liveTownMaterialCache) {
         if (cached.model == modelIdentity &&
+            cached.generation == modelGeneration &&
             cached.textureIndices.size() == model.polygons.size())
             return &cached.textureIndices;
     }
 
+    // A retired native address may be reused with the same polygon count.
+    // No caller retains these indices past appendLiveTownModel(), so discard
+    // obsolete bindings for this identity before resolving the new snapshot.
+    g_liveTownMaterialCache.erase(std::remove_if(
+        g_liveTownMaterialCache.begin(), g_liveTownMaterialCache.end(),
+        [modelIdentity, modelGeneration](const auto& entry) {
+            return entry.model == modelIdentity &&
+                entry.generation != modelGeneration;
+        }), g_liveTownMaterialCache.end());
+
     const std::uint64_t resolveStartUs = sceKernelGetProcessTimeWide();
     LiveTownResolvedMaterialCache cached{};
     cached.model = modelIdentity;
+    cached.generation = modelGeneration;
     cached.textureIndices.reserve(model.polygons.size());
     for (const auto& record : model.polygons)
         cached.textureIndices.push_back(liveTownTextureIndex(record));
@@ -7675,6 +7689,8 @@ static bool buildLiveTownFrame()
             staticSignature ^= static_cast<std::uint64_t>(
                 reinterpret_cast<std::uintptr_t>(submission.model));
             staticSignature *= 1099511628211ull;
+            staticSignature ^= submission.modelGeneration;
+            staticSignature *= 1099511628211ull;
             staticSignature ^= static_cast<std::uint8_t>(
                 submission.bundleIndex);
             staticSignature *= 1099511628211ull;
@@ -7751,7 +7767,7 @@ static bool buildLiveTownFrame()
             // property of the adapted Azel model and uses the same generic
             // cache as task-owned/dynamic submissions.
             const auto* resolved = resolvedLiveTownMaterialIndices(
-                submission.model, *model);
+                submission.model, submission.modelGeneration, *model);
             appendLiveTownModel(
                 *model,
                 submission.state,
@@ -7810,7 +7826,7 @@ static bool buildLiveTownFrame()
             continue;
 
         const auto* resolved = resolvedLiveTownMaterialIndices(
-            submission.model, *model);
+            submission.model, submission.modelGeneration, *model);
         appendLiveTownModel(
             *model,
             submission.state,

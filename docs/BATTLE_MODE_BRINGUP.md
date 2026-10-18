@@ -702,3 +702,32 @@ remain unverified; this table-ownership repair does not establish those behavior
 Books, System settings, world travel and Enemy List completion remain separate
 unless a demonstrated battle dependency makes one necessary. Menu transition
 polish is accepted as good enough and is not a prerequisite for this goal.
+
+### Temporary effect model lifetime preparation (2026-10-17)
+
+The status-cure 3D model task remains unfinished. Before wrapping its raw custom
+MCB bundle, inspection found two pointer-reuse hazards: the bridge retained
+adapted geometry solely by native pointer, and Neptune reused material bindings
+by native pointer plus polygon count. Neither distinguishes a replacement model
+allocated at the same address.
+
+The bridge now owns immutable, generation-tagged model snapshots. A producer can
+call `retire_native_model()` before freeing a temporary model: current/published
+frames retain their snapshots, while later submissions at that address adapt
+fresh geometry. Neptune keys material reuse and static mesh signatures by the
+snapshot generation as well; superseded material bindings at a reused address
+are removed. Ordinary persistent models still adapt once, not once per frame.
+
+`tests/model_snapshot_cache_test.ps1` executes the production cache with equal-
+address/equal-size replacement geometry, duplicate insertion, retirement,
+published-frame retention and eventual release. It does not exercise a live
+effect bundle, native parsed-bundle deletion, GPU execution or frame timing.
+No effect task calls retirement yet: connecting the original two-model task and
+explicitly owning its hierarchy/animation/pose allocations is the next step.
+This is infrastructure, not a claim that status-cure model visuals are restored.
+
+Validation: lifetime, native healing task, native status-sparkle task and battle
+build-boundary host tests pass. Both experimental battle and ordinary fullres
+Vita VPK builds pass with stochastic filtering and dither lookup enabled. No
+device run or timing capture exists for this change; reference-counted frame
+retention adds bookkeeping whose on-device cost has not been measured.

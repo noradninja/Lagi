@@ -93,6 +93,7 @@ struct Vdp1UiCommand {
 
 struct RenderSubmission {
     sProcessed3dModel* model = nullptr;
+    std::uint64_t modelGeneration = 0;
     std::int32_t adaptedModelIndex = -1;
     std::int8_t bundleIndex = -1;
     std::uint32_t cellIndex = 0;
@@ -103,6 +104,10 @@ struct RenderSubmission {
 
 // Reset per-frame submission diagnostics before Azel task draw execution.
 void begin_frame(bool forceDynamicSubmissions = false);
+
+// Call on the task/producer thread before destroying a temporary native model.
+// Published geometry remains owned by its frame; the raw identity is opaque.
+void retire_native_model(sProcessed3dModel* model);
 
 // User-requested environment extension of the accepted field special light.
 // Called after native point setup/color/falloff, before its normal cleanup.
