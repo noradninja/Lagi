@@ -27,6 +27,33 @@ after removing observation calls. The battle Vita VPK compiles. None of these
 checks proves random encounters or danger colors work on hardware; the new log
 is needed to identify the runtime gate rather than guessing a forced battle.
 
+## Hardware follow-up and LUT cache correction
+
+The fresh log SHA256
+`F4CAA46A72D0EB8DCDE107EDAFAFB49CC28E8F1DC667BAA83A4321E70B968B9B`
+confirms `shard=1`, enabled native area 00207680, rate 8 and rowDanger/danger 1.
+Native rolls 93,65,74,46 fail, then 7 triggers subbattle 4. The user identifies
+the encounter order as Baldor Queen, Magnata/Gelata urchins, Baldor Queen.
+All three have return markers. Random encounters are therefore hardware-proven
+in this run; the blue-only radar is not evidence they are disabled.
+
+The shared `findOrUploadVdp1UiTexture` returned descriptor hits without checking
+live palette contents. Radar uses LUT mode 1 and updates the same 32-byte LUT
+at m3C, while CMDCOLR/CMDSRCA/CMDSIZE remain unchanged. That left the GPU texture
+with old colors. Cache entries now retain the 16 resolved RGB555 LUT colors,
+including CRAM references. Changed colors rerun the existing decoder and update
+the existing padded texture allocation; equal colors retain the cache hit.
+No radar-specific palette selection, encounter changes or extra waits are added.
+The prior frame is finished before this scene's in-place upload, consistent with
+the renderer's existing synchronous frame boundary.
+
+`ui_lut_palette_test.ps1` checks direct/CRAM changes, BE decoding, equality,
+bounds and repeated padded in-place row updates, plus production routing order.
+This does not prove on-device GPU cache visibility. The existing unimplemented
+native palette-fade task also remains: this fixes stale colors, not a verified
+smooth native fade. Pixel-data-only and other color-mode cache dependencies are
+outside this targeted LUT freshness correction.
+
 ## Separate audio findings
 
 The unlocked-audio run contains `PCM field file=EV04_1.PCM (stream path pending)`

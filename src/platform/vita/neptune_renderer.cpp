@@ -1,4 +1,5 @@
 #include "lagi/platform.h"
+#include "lagi/ui_lut_palette.h"
 #include "lagi/native_scene_mode.h"
 #include "lagi/frontend_font.h"
 
@@ -785,6 +786,8 @@ struct Vdp1UiTextureCacheEntry {
     std::uint16_t cmdColr = 0;
     std::uint16_t cmdSrca = 0;
     std::uint16_t cmdSize = 0;
+    lagi::UiLutPalette palette{};
+    bool hasPalette = false;
     GpuMode1Texture gpu{};
 };
 static std::vector<Vdp1UiTextureCacheEntry> g_vdp1UiTextureCache;
@@ -4449,12 +4452,26 @@ static bool decodeLiveVdp1Texture(const azel::SaturnPolygonRecord& record,
 static GpuMode1Texture* findOrUploadVdp1UiTexture(
     const azel_bridge::Vdp1UiCommand& command)
 {
+    const unsigned paletteMode=(static_cast<unsigned>(command.cmdPmod)>>3)&7u;
+    lagi::UiLutPalette palette{};
+    const bool hasPalette=paletteMode==1u;
+    if (hasPalette) {
+        const unsigned address=static_cast<unsigned>(command.cmdColr)<<3;
+        if (address+32u>0x80000u || !lagi::capture_ui_lut_palette(
+                getVdp1Pointer(0x25C00000u+address),g_vdp2Cram,
+                sizeof(g_vdp2Cram),palette)) return nullptr;
+    }
+    Vdp1UiTextureCacheEntry* refreshEntry=nullptr;
     for (auto& entry : g_vdp1UiTextureCache) {
         if (entry.cmdPmod == command.cmdPmod &&
             entry.cmdColr == command.cmdColr &&
             entry.cmdSrca == command.cmdSrca &&
-            entry.cmdSize == command.cmdSize)
-            return &entry.gpu;
+            entry.cmdSize == command.cmdSize) {
+            if (!hasPalette || (entry.hasPalette && entry.palette==palette))
+                return &entry.gpu;
+            refreshEntry=&entry;
+            break;
+        }
     }
 
     const unsigned int commandType =
@@ -4578,7 +4595,20 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         const unsigned int bytes =
             stridePixels * decoded.height * sizeof(std::uint32_t);
 
+        // Same descriptor, changed live colors: reuse storage rather than
+        // allocating a texture for every native palette-fade step. The prior
+        // frame is finished before this scene; all commands share its snapshot.
+        if (refreshEntry) {
+            lagi::refresh_ui_texture_rows(
+                static_cast<std::uint32_t*>(refreshEntry->gpu.data),
+                decoded.rgba.data(),decoded.width,decoded.height);
+            refreshEntry->palette=palette;
+            refreshEntry->hasPalette=hasPalette;
+            return &refreshEntry->gpu;
+        }
         Vdp1UiTextureCacheEntry entry{};
+        entry.palette=palette;
+        entry.hasPalette=hasPalette;
         entry.cmdPmod = command.cmdPmod;
         entry.cmdColr = command.cmdColr;
         entry.cmdSrca = command.cmdSrca;
