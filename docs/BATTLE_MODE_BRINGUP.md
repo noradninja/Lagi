@@ -514,6 +514,26 @@ evaluator with upstream after removing diagnostic calls; all native area,
 probability, RNG and counter code matches. Battle VPK and build-boundary
 checks pass. A fresh flight log through subfields 0/2 is needed to establish
 the runtime cause; the diagnostics alone do not fix or verify encounters.
+
+Status-cure recovery checkpoint: native 06065754 creates a two-model effect
+through 06099504 and a separate eight-sparkle task through 06099AA0; the port
+still has a timer-only model task and omits that sparkle task. The shared
+motion helper now recovers sparkle motion at 06099D06..06099D7A: angular
+acceleration/velocity with zero angular damping and 28-bit wrapping, radial
+integration with 051E damping, and animation-end-only scale decay using
+3334 RNG range plus 0CCC, followed by motion reseeding. Acceleration is not
+cleared by this routine. Host fixtures check signed motion, unchanged RNG on
+non-ending animation steps, decay bounds and callback ordering; original-disc
+instruction/literal checks and Vita syntax checks pass. The live healing task
+regression still passes. These sparkle helpers are not yet wired to gameplay.
+
+The status-cure trace also confirms zero-duration calls to native light setup
+0607C61A/0607C708. Those functions divide through the original hardware helper
+and the grid update completes nonpositive step counts on the next update;
+Lagi's existing saturating divide already handles zero. No speculative
+zero-duration fix was applied. Restoring the two model records still requires
+faithful custom-MCB model initialization and resource ownership, not billboard
+substitutes. This checkpoint alone needs no new device build.
 `native_color_clear_test.ps1` checks production API arguments, completion order,
 padding bounds, rejected-transfer fallback and failed-completion behavior with
 a mocked transfer engine. Builds are not hardware API or performance proof;

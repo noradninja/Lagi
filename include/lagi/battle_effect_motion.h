@@ -160,4 +160,36 @@ inline void advanceParticleMotion(ParticleMotion& particle,
         particle.acceleration[axis] = 0;
     }
 }
+
+// Logical motion state for a status-cure sparkle (native record stride 34h,
+// animated quad +00, these six fields +08..1C, position +20, scale +2C).
+struct SparkleMotion {
+    std::int32_t radialAcceleration=0, radialVelocity=0, radius=0;
+    std::int32_t angularAcceleration=0, angularVelocity=0, angle=0;
+    std::int32_t scale=0;
+};
+
+// BTL_A3 06099D10..06099D4C. Angular damping really is zero in this
+// routine; radial damping is 051E. Neither acceleration is cleared here.
+inline void advanceSparkleMotion(SparkleMotion& sparkle)
+{
+    sparkle.angularVelocity=add(sparkle.angularVelocity,sparkle.angularAcceleration);
+    sparkle.angle=add(sparkle.angle,sparkle.angularVelocity) & 0x0FFFFFFF;
+    sparkle.radialVelocity=add(sparkle.radialVelocity,sparkle.radialAcceleration);
+    sparkle.radialVelocity=subtract(sparkle.radialVelocity,multiply(sparkle.radialVelocity,0x051E));
+    sparkle.radius=add(sparkle.radius,sparkle.radialVelocity);
+}
+
+// Native 06099D4E..06099D7A advances the quad first. Only its end-of-cycle
+// flag consumes RNG, decreases scale and invokes 06099E14 to reseed motion.
+template<class Random, class Reseed>
+void finishSparkleAnimationStep(SparkleMotion& sparkle,unsigned animationFlags,
+    Random&& random, Reseed&& reseed)
+{
+    if (!(animationFlags & 2u))
+        return;
+    const auto decay=multiply(static_cast<std::uint32_t>(random()) >> 16,0x3334)+0x0CCC;
+    sparkle.scale=subtract(sparkle.scale,decay);
+    reseed();
+}
 } // namespace lagi::battle::effects

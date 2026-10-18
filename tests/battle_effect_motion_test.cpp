@@ -69,9 +69,25 @@ int main()
     const auto upperSeed=initializeParticleSeed(4,0x1800,[&](){++draws;return 0xFFFFFFFFu;},
         [](unsigned a){assert(a==4095);return 0;},[](unsigned a){assert(a==4095);return 65536;});
     assert(draws==7&&upperSeed.type==2&&upperSeed.delay==49&&upperSeed.field2C==-203);
+    SparkleMotion sparkle{1,65535,100,-2,1,0,0x8000};
+    advanceSparkleMotion(sparkle);
+    assert(sparkle.angularVelocity==-1&&sparkle.angle==0x0FFFFFFF);
+    assert(sparkle.radialVelocity==64226&&sparkle.radius==64326);
+    assert(sparkle.radialAcceleration==1&&sparkle.angularAcceleration==-2);
+    draws=0;int reseeds=0;
+    auto minimumRandom=[&](){++draws;return 0u;};
+    auto reseed=[&](){++reseeds;assert(sparkle.scale==0x8000-0xCCC);};
+    finishSparkleAnimationStep(sparkle,0,minimumRandom,reseed);
+    finishSparkleAnimationStep(sparkle,1,minimumRandom,reseed);
+    assert(draws==0&&reseeds==0&&sparkle.scale==0x8000);
+    finishSparkleAnimationStep(sparkle,3,minimumRandom,reseed);
+    assert(draws==1&&reseeds==1);
+    sparkle.scale=0;
+    finishSparkleAnimationStep(sparkle,2,[]{return 0xFFFFFFFFu;},[&](){assert(sparkle.scale==-16383);});
     assert((single[0].velocity==std::array<std::int32_t,3>{-18361,36723,18362}));
     assert(single[0].angles[0]==0x10000000-18361);
+    const auto beforeEmptyRing=draws;
     advanceMotionRing(std::span<Motion>{},noImpulse,noTrig,noTrig);
-    assert(draws==7);
+    assert(draws==beforeEmptyRing);
     puts("PASS: native effect initialization, seed bounds, ring ordering, RNG branches and signed spring motion. Not hardware validation.");
 }
