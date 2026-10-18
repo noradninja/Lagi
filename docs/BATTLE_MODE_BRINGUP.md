@@ -843,3 +843,13 @@ update. Checks cover shifted C++ layout, all 12 writes, one-time XP/dyne,
 position detachment, drain/shrink/removal and nonlethal damage. Host checks and
 both fullres/dither Vita VPK builds pass; device acceptance remains pending.
 
+# Battle left-stick directional input
+
+During native manager state 3 (battle running), the Vita bridge supplies the
+same half-travel stick-to-direction mapping as upstream's SDL pad bridge.
+Analog values remain available, physical D-pad bits are retained, and press
+edges are computed from combined controls so a held stick/D-pad handoff does
+not retrigger. Flight and frontend stick behavior are unchanged. The adapter
+is compiled out of nonexperimental builds. Direction/deadzone/diagonal/held
+tests and both Vita VPK builds pass; hardware movement acceptance is pending.
+
