@@ -1122,7 +1122,7 @@ bool start_audio_worker()
         0x10000100,
         128u * 1024u,
         0,
-        SCE_KERNEL_CPU_MASK_USER_2,
+        SCE_KERNEL_CPU_MASK_USER_ALL,
         nullptr);
     if (g_audioWorkerThread < 0) {
         lagi::platform::logging::writef(
@@ -1144,6 +1144,9 @@ bool start_audio_worker()
         return false;
     }
 
+    lagi::platform::logging::writef(
+        "[AzelAudio:%llu] SCSP worker affinity=all-user-cores mask=%08X\n",
+        next_audio_trace(), static_cast<unsigned>(SCE_KERNEL_CPU_MASK_USER_ALL));
     return true;
 }
 
