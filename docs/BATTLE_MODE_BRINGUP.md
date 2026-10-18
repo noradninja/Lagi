@@ -731,3 +731,28 @@ build-boundary host tests pass. Both experimental battle and ordinary fullres
 Vita VPK builds pass with stochastic filtering and dither lookup enabled. No
 device run or timing capture exists for this change; reference-counted frame
 retention adds bookkeeping whose on-device cost has not been measured.
+
+### Hardware feedback: e4cb1d4 (2026-10-17 evening)
+
+The user confirms healing particles now look correct; a healing-specific light
+is not established by the reference and must not be invented. The supplied
+21-03-17 video shows NORMAL separating from its panel as the HUD hides. Original
+BTL_A3 `060726B6..060726CA` computes position Y as `-163 - 16 - part1Y + 112`,
+then `06072724` negates it for CMDYA. The generated battle adapter corrects the
+reconstruction from `67 - part1Y` to **`67 + part1Y`**. The authored table words
+are at `060B19AA` (163) and `060AC100` (16). No layout redesign or UI timing
+change is involved. `battle_hud_slide_test.ps1 -DiscImage <disc>` checks generated
+arithmetic at visible/command-menu/hidden offsets and the original anchors;
+Vita battle VPK compilation passes. Hardware slide acceptance remains pending.
+
+Other feedback remains open: a lingering meter, multi-enemy combat performance,
+and the E011 cinematic abort. The new partial core is 2,560 compressed bytes,
+inflating to 7,597 bytes without a gzip trailer. It contains complete THREAD_INFO
+and the first main-thread register record, but no module inventory or stacks.
+Main PC `81236422` / LR `812363EF` match the supplied ELF's `_kill_r` with inferred
+relocation +`4D000`. The matching ELF's `__assert_func` saves line/expression/file
+in r5/r6/r7; those preserved registers are 251, relocated string `"0"`, and
+`E:/dev/Lagi/build-battle-vita/azel_upstream/town_townScript.cpp`. Matching generated
+line 251 asserts on an unregistered **one-argument** town script function. This
+narrows the fault beyond overlay dispatch, but does not recover the missing
+function EA or a call stack. The log confirms E011.EPK opened before the abort.

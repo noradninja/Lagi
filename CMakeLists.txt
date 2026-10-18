@@ -2129,6 +2129,17 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[1]);" "playSystemSoundEffect(pThis->mCC->m2D_hitSound);" source_text "${source_text}")
   string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleHud.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # BTL_A3 060726B6..CA / 0607271E..26: native position is
+  # -(-163 - 16 - part1Y + 112), hence 67 + part1Y, not 67 - part1Y.
+  set(status_y_old "vdp1WriteEA.mE_CMDYA = -((s16)pThis->m18_part1Y - 0x43);")
+  string(FIND "${source_text}" "${status_y_old}" status_y_found)
+  if(status_y_found LESS 0)
+   message(FATAL_ERROR "Native battle status text position boundary changed")
+  endif()
+  string(REPLACE "${status_y_old}"
+   "vdp1WriteEA.mE_CMDYA = static_cast<s16>(pThis->m18_part1Y + 0x43); // Native HUD slide direction"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleEngine.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   string(FIND "${source_text}" "struct sHealVisualEffectTask :" heal_begin)
   string(FIND "${source_text}" "struct sStatusCureEffectTask :" heal_end)
