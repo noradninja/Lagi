@@ -20,7 +20,7 @@ if($reset -lt $start -or $reset -gt $start+300){throw 'Position-sync metrics can
 $copy=$renderer.IndexOf('const auto positionSyncStartUs =')
 $finish=$renderer.IndexOf('sceKernelGetProcessTimeWide() - positionSyncStartUs)', $copy)
 if($copy -lt 0 -or $finish -le $copy){throw 'Position sync loop is not timed'}
-foreach($name in @('g_vdp1Vertices[i] = v;','g_vdp1LightingVertices[i] = v;','g_vdp1TextureVertices[i].z = v.z;','g_vdp1GouraudVertices[i].z = v.z;')){
+foreach($name in @('g_vdp1Vertices[i] = v;','g_vdp1TextureVertices[i].z = v.z;','g_vdp1GouraudVertices[i].z = v.z;')){
  if(!$renderer.Substring($copy,$finish-$copy).Contains($name)){throw "Existing sync path changed without verification: $name"}
 }
-Write-Output 'PASS frame-reset and unchanged geometry-copy profiling boundary (not a performance result).'
+Write-Output 'PASS frame-reset and active geometry-copy profiling boundary (not a performance result).'

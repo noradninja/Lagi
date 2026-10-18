@@ -54,11 +54,36 @@ frames that skip scene building. Existing task-profile publication uses the
 existing producer snapshot boundary. There are no per-task clock reads or new
 per-frame log lines; extra fields use the existing ScenePerf heartbeat.
 
-The steady-state loop copies positions into base, lighting, texture and Gouraud
-buffers. Full mode generally draws subdivision buffers but also has fallback
-consumers; removing copies before auditing validity/mode-switch paths would
-be unsafe. First measure this loop and task cost in the heavy Queen scenes.
-Neither the current data nor this instrumentation proves actor-count causality.
+The d9116fb measurement baseline's steady-state loop copies positions into base,
+lighting, texture and Gouraud buffers. Full mode generally draws subdivision
+buffers but also has fallback consumers; removing active copies without
+auditing validity/mode-switch paths would be unsafe. Neither the current data
+nor this instrumentation proves actor-count causality.
+
+## First candidate: remove one unused duplicate write
+
+A complete read/write audit of `g_vdp1LightingVertices` found allocation,
+readiness checks, initialisation/animation writes and release, but no stream
+binding or content reader. The live steady-state copy to that buffer has been
+removed. The buffer allocation and all diagnostic/initialisation contracts are
+retained. The base, texture and Gouraud copies and subdivision source/geometry
+are unchanged in every mode, avoiding new stale-buffer or mode-switch rules.
+This saves one DebugColorVertex write per copied vertex (16 bytes with the
+current layout), not a demonstrated number of milliseconds or FPS.
+
+`live_position_sync_test.ps1` executes the actual loop with no legacy-lighting
+buffer declaration. It checks all active coordinates, base colour, untouched
+UV/Gouraud attributes, retained static prefix, complete updates on rebuild and
+empty-range counter safety. A source audit fence fails if the complete draw
+implementation gains any reference beyond the existing readiness check, so a
+future consumer forces a re-audit. This fence is not an automatic whole-program
+alias proof. Task-profile checks still pass with the three active copies.
+
+Compare the d9116fb measurement baseline against this candidate on the same
+Brood Queen route. Finish a baseline capture before switching if already testing
+it. The old 05:40 log lacks positionSync and measured task timings, so it cannot
+establish a measured benefit of this candidate. No resolution, shader, dither,
+lighting, draw list, simulation or audio work is reduced by this change.
 
 ## Reproduce
 
@@ -83,5 +108,5 @@ The read-only analyzer excludes outside/UI-only samples and initial crossing
 windows, retains incomplete encounter data, and reports absent timing fields
 as null. Tests cover those boundaries. The task profiler fixture executes the
 actual timing/publication block with a mocked clock; source checks retain all
-four payload copies and frame reset. These checks do not establish low overhead
+active payload copies and frame reset. These checks do not establish low overhead
 on hardware or an optimization win.

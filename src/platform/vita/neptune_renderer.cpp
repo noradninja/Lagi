@@ -7958,6 +7958,7 @@ static bool buildLiveTownFrame()
         g_residentVdp1Model = ResidentVdp1Model::LiveTown;
         g_liveTownPrepared = true;
     } else {
+        // LAGI_LIVE_POSITION_SYNC_BEGIN
         const std::size_t firstDynamicVertex = g_liveTownStaticRebuilt
             ? 0u : g_liveTownStaticVertexCount;
         const auto positionSyncStartUs = sceKernelGetProcessTimeWide();
@@ -7965,7 +7966,9 @@ static bool buildLiveTownFrame()
              i < g_liveTownCpuMesh.vertices.size(); ++i) {
             const auto& v = g_liveTownCpuMesh.vertices[i];
             g_vdp1Vertices[i] = v;
-            g_vdp1LightingVertices[i] = v;
+            // No draw path binds/reads the legacy lighting-buffer contents.
+            // Keep its allocation for existing readiness/diagnostic contracts,
+            // but do not rewrite this unused duplicate for every live actor.
             g_vdp1TextureVertices[i].x = v.x;
             g_vdp1TextureVertices[i].y = v.y;
             g_vdp1TextureVertices[i].z = v.z;
@@ -7978,6 +7981,7 @@ static bool buildLiveTownFrame()
                 ? g_liveTownCpuMesh.vertices.size() - firstDynamicVertex : 0u);
         g_profilePositionSyncUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - positionSyncStartUs);
+        // LAGI_LIVE_POSITION_SYNC_END
     }
     g_profileBuildUploadUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tUpload);
