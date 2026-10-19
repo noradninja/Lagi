@@ -1,5 +1,15 @@
 // 06057F00 / 0605809E. Timed native CRAM sequence; descriptors remain in
 // the live E011 overlay and the child follows currentResTask's lifetime.
+// 0605948C: selected native color-offset channels fade independently from
+// their current values. Color is RGB555, not a replacement full-screen quad.
+static s32 lagiE011FadeColor(s32 color,s32 frames,s32 mask)
+{
+    if(mask&1)fadePalette(&g_fadeControls.m0_fade0,
+        convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color),static_cast<u16>(color),frames);
+    if(mask&2)fadePalette(&g_fadeControls.m24_fade1,
+        convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color),static_cast<u16>(color),frames);
+    return 0;
+}
 struct sE011PaletteSequence : s_workAreaTemplate<sE011PaletteSequence>
 {
     sSaturnPtr descriptor;

@@ -108,3 +108,42 @@ regression. Original instructions and all scheduled callback kinds are checked
 against the user's disc without committing assets. Both Vita build variants
 compile. This removes the proven dispatcher failure; complete on-device E011
 playback and handoff to the Arachnoth fight remain unverified.
+
+## Mid-playback follow-up: color fade and streamed actor scopes
+
+Hardware reaches and plays E011 after the scheduler recovery. The new partial
+core `1792422757` expands to 9,281 bytes and retains line 283 plus expression
+`"0"`. Its matching ELF (`62F9C7F8581A7C313FEA46513EF92DB3B4C8F16F591DA7F6E629329887732027`)
+and fatal image anchor give relocation `+19000`; that line is the missing
+**three-argument** town script dispatcher branch. The only three-argument
+native callback in the bounded E011 script region is `0605948C`, the native
+color fade. Original code selects fade0/fade1 by mask bits 1/2, converts each
+channel's current color, then fades to the low 16 bits of the authored RGB555
+target over the supplied duration. This is now registered, with mask/start/
+target/duration fixture coverage and original instruction checks.
+
+The end-of-sequence calls `060584E4` (remaining frames), `0605851C` (close
+cutscene) and `060579D2` (restore main logic) are registered through their
+existing shared E006/native services. The common `0603011E` terminateTown
+handler was already registered. The disc-backed test now inventories **151
+native-call records** throughout the script-data span `0605415D..06054B75`,
+checking every candidate record's EA and arity against the live generated
+overlay and kernel maps. This is not an interpreter/branch execution test,
+but closes the gap left by auditing only the 78 scheduler records.
+
+Missing rider/Gash/coolia/boss imagery is not established as an unimplemented
+cell-object factory: EPK generic streamed models are created by the common
+cutscene command path, independently of those factories. Their default Draw
+had no view-relative scope, unlike the earlier corrected E006 dragon/NPC draw
+boundaries. The adapter now scopes the generic EPK draw before local/model
+transforms and ends it after the matrix pop. E011's attached-model task receives
+the same boundary treatment. No authored positions, animation, resource indices,
+visibility flags or draw order are changed. Bounded per-actor diagnostics log
+creation/entity/model/bone count and the first two Draw submission counts, so
+the next hardware run can distinguish missing creation from zero submission.
+
+`epk_actor_scope_test` executes the actual generated generic and attached Draw
+bodies, checking ordering, scope cleanup and diagnostic bounds; the existing
+324-case projection test passes. Both Vita builds compile. Actor visibility,
+complete E011 playback and handoff remain hardware acceptance items; do not
+claim pixel correctness from these host checks.

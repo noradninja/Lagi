@@ -2155,7 +2155,20 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "    overlayScriptFunctions.m_twoArg[0x605cbd0]"
    "    overlayScriptFunctions.m_oneArg[0x605890C] = {&lagiE011StartSchedule, \"E011 native schedule\"};\n    overlayScriptFunctions.m_oneArg[0x605809E] = {&lagiE011StartPaletteSequence, \"E011 palette sequence\"};\n    overlayScriptFunctions.m_oneArg[0x60557E0] = {&lagiE011SetScreenWave, \"E011 screen wave\"};\n    overlayScriptFunctions.m_oneArg[0x6055872] = {&lagiE011SetScreenTracking, \"E011 screen tracking\"};\n    overlayScriptFunctions.m_twoArg[0x605cbd0]"
    source_text "${source_text}")
-  set(source_text "static int lagiE011StartPaletteSequence(int);\nstatic int lagiE011SetScreenWave(int);\nstatic int lagiE011SetScreenTracking(int);\n${source_text}\n#include \"lagi_e011_later_callbacks.inc\"\n")
+  set(source_text "static int lagiE011StartPaletteSequence(int);\nstatic int lagiE011SetScreenWave(int);\nstatic int lagiE011SetScreenTracking(int);\nstatic int lagiE011FadeColor(int,int,int);\nint scriptFunction_6056926();\nint scriptFunction_6057470();\n${source_text}\n#include \"lagi_e011_later_callbacks.inc\"\n")
+  string(REPLACE "    overlayScriptFunctions.m_twoArg[0x605cbd0]"
+   "    overlayScriptFunctions.m_zeroArg[0x60584E4] = {&e006_scriptFunction_6057438, \"E011 remaining frames\"};\n    overlayScriptFunctions.m_zeroArg[0x605851C] = {&scriptFunction_6057470, \"E011 close cutscene\"};\n    overlayScriptFunctions.m_zeroArg[0x60579D2] = {&scriptFunction_6056926, \"E011 restore main logic\"};\n    overlayScriptFunctions.m_threeArg[0x605948C] = {&lagiE011FadeColor, \"E011 native color fade\"};\n    overlayScriptFunctions.m_twoArg[0x605cbd0]"
+   source_text "${source_text}")
+  set(e011_attached_draw "    static void Draw(sE011Task1* pThis)\n    {\n        pushCurrentMatrix();")
+  string(FIND "${source_text}" "${e011_attached_draw}" e011_attached_found)
+  if(e011_attached_found LESS 0)
+   message(FATAL_ERROR "Native E011 attached actor draw boundary changed")
+  endif()
+  set(source_text "#include \"lagi/lagi_render_bridge.h\"\n${source_text}")
+  string(REPLACE "${e011_attached_draw}"
+   "    static void Draw(sE011Task1* pThis)\n    {\n        lagi::azel_bridge::begin_view_relative_submission_scope();\n        pushCurrentMatrix();" source_text "${source_text}")
+  string(REPLACE "        pThis->mC_3dModel.m18_drawFunction(&pThis->mC_3dModel);\n        popMatrix();"
+   "        pThis->mC_3dModel.m18_drawFunction(&pThis->mC_3dModel);\n        popMatrix();\n        lagi::azel_bridge::end_view_relative_submission_scope();" source_text "${source_text}")
   string(REPLACE "    sVec3_FP* m64_positionPtr;"
    "    sVec3_FP lagiTrackingPoint;\n    sVec3_FP* m64_positionPtr;" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A3/BTL_A3_data.cpp")
@@ -2587,6 +2600,34 @@ static void lagiPatchModelAddresses(sProcessed3dModel* model, u32 offset)
    "lagiPatchModelAddresses(pNewNode->m0_3dModel, mVdp1Offset);"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townCutscene.cpp")
+  set(epk_actor_draw "    static void Draw(sCutsceneCommandDefaultTask* pThis)\n    {\n        pushCurrentMatrix();\n        pThis->m8.m18_drawFunction(&pThis->m8);\n        popMatrix();\n    }")
+  string(FIND "${source_text}" "${epk_actor_draw}" epk_actor_found)
+  if(epk_actor_found LESS 0)
+   message(FATAL_ERROR "Native EPK actor draw boundary changed")
+  endif()
+  string(REPLACE "${epk_actor_draw}" [=[    static void Draw(sCutsceneCommandDefaultTask* pThis)
+    {
+        lagi::azel_bridge::begin_view_relative_submission_scope();
+        pushCurrentMatrix();
+        const unsigned before = lagi::azel_bridge::submission_count();
+        pThis->m8.m18_drawFunction(&pThis->m8);
+        popMatrix();
+        lagi::azel_bridge::end_view_relative_submission_scope();
+        if (pThis->lagiDrawReports < 2) {
+            ++pThis->lagiDrawReports;
+            lagi::platform::logging::writef("[NativeEPKActor] draw=%p bones=%u submissions=%u\n",
+                static_cast<void*>(pThis), unsigned(pThis->m8.m12_numBones), lagi::azel_bridge::submission_count()-before);
+        }
+    }]=] source_text "${source_text}")
+  string(REPLACE "    s_3dModel m8;" "    s_3dModel m8;\n    unsigned lagiDrawReports = 0;" source_text "${source_text}")
+  set(epk_actor_init "    init3DModelRawData(piVar2, &piVar2->m8, 0, piVar2->m0, modelIndex, 0, pStaticPose, 0, 0);")
+  string(FIND "${source_text}" "${epk_actor_init}" epk_actor_init_found)
+  if(epk_actor_init_found LESS 0)
+   message(FATAL_ERROR "Native EPK actor initialization boundary changed")
+  endif()
+  string(REPLACE "${epk_actor_init}"
+   "${epk_actor_init}\n    lagi::platform::logging::writef(\"[NativeEPKActor] create=%p entity=%u model=%u bones=%u\\n\", static_cast<void*>(piVar2), unsigned(READ_BE_U32(local_r13_28+4)-0x10), unsigned(modelIndex), unsigned(piVar2->m8.m12_numBones));"
+   source_text "${source_text}")
   # Generic Vita bring-up for Azel's native in-engine town cutscene subsystem.
   # Azel retains ownership of script ordering, fades, camera commands, entity
   # animation, subtitles and completion. Lagi supplies only disc transport,

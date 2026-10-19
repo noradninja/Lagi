@@ -68,6 +68,10 @@ struct sE011BackgroundTask {
  static void initCinematicBarParams(sE011BackgroundTask*){++paramInits;}
 }background;
 static auto* gE011BackgroundTask=&background;
+struct Fade{int m0_color;};static struct{Fade m0_fade0{11},m24_fade1{22};}g_fadeControls;
+struct FadeCall{Fade* owner;int start;u16 target;int frames;};static std::vector<FadeCall> fades;
+static int convertColorToU32ForFade(int color){return color+100;}
+static void fadePalette(Fade* owner,int start,u16 target,int frames){fades.push_back({owner,start,target,frames});}
 #include "lagi_e011_later_callbacks.inc"
 int main(){
  constexpr u32 descriptor=0x06055000,table=0x06056000;
@@ -107,5 +111,8 @@ int main(){
  lagiE011SetScreenTracking(track);assert(unpacks==2 && paramInits==1 && background.m60_state==2 && background.m70_counter==55 && background.m68_offsetX==-12 && background.m6C_offsetY==34);
  assert(background.m64_positionPtr==&background.lagiTrackingPoint && (*background.m64_positionPtr)[2]==789);
  stopped=true;lagiE011SetScreenWave(wave);lagiE011SetScreenTracking(track);assert(unpacks==2 && tableInits==2 && paramInits==1);
+ for(int mask=0;mask<4;++mask){fades.clear();lagiE011FadeColor(0x1a94a,40,mask);
+  assert(fades.size()==unsigned((mask&1)+((mask>>1)&1)));
+  for(auto& f:fades){assert(f.target==0xa94a && f.frames==40);assert(f.start==(f.owner==&g_fadeControls.m0_fade0?111:122));}}
  puts("PASS production E011 ribbon lifecycle, colors, draw resources, zero-delta clock, scheduler catch-up, sentinel and stop");
 }
