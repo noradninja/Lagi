@@ -51,3 +51,33 @@ and GPU time remain open. The original Charge common tail's negative `0x28F`
 coefficient is present on disc (`0605A128`); do not change its sign merely because
 it looks suspicious in reconstructed C++. No arbitrary relocation, animation
 slowdown, or depth-test exemption is part of this change.
+
+## Follow-up run: world-grid assertion identified
+
+Run `1792436777` now reports the C++ condition and container type explicitly:
+`__n < this->size()`, `std::vector<sCellObjectListNode*>::operator[]`, after
+`E014: startCameraTask(pThis)`. This identifies the cell-object list, not the
+resource-entry vector; the earlier resource-retirement bug was real but did not
+resolve this remaining crash. The partial dump still does not provide a complete
+stack, so avoid claiming its missing caller chain was recovered.
+
+`initTownGrid` cleared the object list and dimensions but only rows 0 and 1 of
+the **8x8** cell-task ring. A battle can populate any ring row. E014 installs
+town callbacks, then `initWorldGridData` calls `resetWorldGrid` before creating
+its new cell-object list. Surviving battle ring entries therefore reached town
+`deleteGridRow` / `deleteCellObjects` with no corresponding list entries.
+
+The generated adapter now clears every row at the existing initialization
+boundary. It does not bounds-skip live objects, invent dimensions, retain old
+scene objects or suppress the assertion. The existing parent task teardown
+continues to own outgoing battle tasks.
+
+`town_grid_reset_test` executes actual generated init/delete-row/delete-object
+bodies with the native grid drain. It populates all 64 ring slots, switches to
+an empty list, drains safely, and checks normal live-object cleanup separately.
+The battle and battle-disabled fixtures and Vita builds pass. Actual E014
+playback remains a hardware acceptance gate.
+
+The same run confirms the audio service loads bank **67**, `BOSS01_2.SEQ` /
+`A3BOSS.SEQ` / `A3BOSS.BIN`, and starts Charge sound 118 on **control 6**, data
+bank 3 / sound 17. This confirms routing, not subjective listening acceptance.

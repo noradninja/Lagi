@@ -3133,6 +3133,14 @@ void pauseCutscene]=]
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/town.cpp")
+  # The ring is 8x8, not two rows. Overlay replacement clears the object
+  # list; stale cells in any other row must not survive into its reset.
+  set(town_ring_old "    gWorldGrid.m40_cellTasks[0].fill(nullptr);\n    gWorldGrid.m40_cellTasks[1].fill(nullptr);")
+  string(FIND "${source_text}" "${town_ring_old}" town_ring_found)
+  if(town_ring_found LESS 0)
+   message(FATAL_ERROR "Town grid ring reset boundary changed")
+  endif()
+  string(REPLACE "${town_ring_old}" "    for (auto& row : gWorldGrid.m40_cellTasks) row.fill(nullptr); // LAGI_FULL_TOWN_RING_RESET" source_text "${source_text}")
   # First-flight progression reaches Azel's native E006 cinematic and then
   # the Excavation town. Preserve both authentic dispatches; later unrelated
   # town overlays remain trimmed until their own dependencies are integrated.
