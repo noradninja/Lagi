@@ -94,5 +94,5 @@ int main(){
     m=static_cast<sE011ScheduledModel*>(lagiE011CreateScheduledModel({0x2000}));
     assert(m->control.finished && !m->m_DrawMethod && !m->m_UpdateMethod);
     lagiE011ModelDelete(m);delete m;assert(destroyed==2);
-    std::puts("PASS production E011 scheduled quad/model creation, native clock tick counts, loops, drawing, cleanup and init failure; dispatcher not connected; not Vita playback");
+    std::puts("PASS production E011 scheduled quad/model creation, native clock tick counts, loops, drawing, cleanup and init failure; not Vita playback");
 }

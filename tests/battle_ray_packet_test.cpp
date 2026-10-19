@@ -39,6 +39,10 @@ static int rayComputeDisplayMatrix_fixedWidth(std::array<sVec3_FP,2>& view,int w
  ++projections;assert(width==42 && &clip==&graphicEngineStatus.m405C);
  assert(view[0][2].raw==131072 && view[1][2].raw==262144);screen={};return projectVisible;
 }
+static int rayComputeDisplayMatrix_2Width(std::array<sVec3_FP,2>& view,std::array<fixedPoint,2>& widths,int& clip,sScreenQuad3& screen){
+ assert(widths[0].raw==42 && widths[1].raw==84);
+ return rayComputeDisplayMatrix_fixedWidth(view,42,clip,screen);
+}
 #include "wrapper.inc"
 static void reset(){
  commands.assign(1024,{});packets={};metadataCalls=0;
@@ -78,5 +82,11 @@ int main(){
  assert(capturedZ[0]==2 && capturedZ[1]==4 && capturedZ[2]==4 && capturedZ[3]==2);
  reset();projectVisible=false;displayRaySegment(endpoints,42,1,2,3,&colors,0);
  assert(c.mC==0 && !metadataCalls && transforms==4 && projections==2);
+ reset();projectVisible=true;std::array<fixedPoint,2> widths={fixedPoint{42},fixedPoint{84}};
+ lagiDisplayWorldStrip(endpoints,widths,1,2,3,&colors,8);
+ assert(c.mC==1 && metadataCalls==2 && transforms==6 && projections==3);
+ assert(capturedZ[0]==2 && capturedZ[1]==4 && capturedZ[2]==4 && capturedZ[3]==2);
+ reset();projectVisible=false;lagiDisplayWorldStrip(endpoints,widths,1,2,3,&colors,8);
+ assert(c.mC==0 && !metadataCalls && transforms==8 && projections==4);
  std::puts("PASS: native projection body preserved; 1024 packet/Gouraud/coordinate/priority comparisons, world/view handoff and bounded-buffer guards; no GPU execution");
 }

@@ -129,6 +129,5 @@ static p_workArea lagiE011CreateScheduledModel(sSaturnPtr descriptor)
     return task;
 }
 
-// Recovered leaf tasks are intentionally not wired to 0605890C until all
-// scheduled callback kinds (including 06058FF8 ribbon/trails) are restored.
-// Avoid claiming that postponing the assertion fixes cinematic playback.
+// The scheduler and recovered ribbon callback are in the adjacent
+// lagi_e011_ribbon_scheduler.inc; these leaf tasks retain independent tests.

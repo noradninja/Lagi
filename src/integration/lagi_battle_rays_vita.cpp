@@ -50,3 +50,23 @@ void displayRaySegment(std::array<sVec3_FP,2>& points,s32 width,
         lagiRecordVdp1WorldDepth(&*command,viewZ);
     }
 }
+
+// MAIN 0602E1AA: a world-space tapered strip, distinct from the rotated
+// collection/charge square service behind displayRaySegment_2Width.
+void lagiDisplayWorldStrip(std::array<sVec3_FP,2>& points,std::array<fixedPoint,2>& widths,
+    u16 address,s16 size,u16 color,const quadColor* gouraud,s32 mode)
+{
+    std::array<sVec3_FP,2> view;
+    transformAndAddVecByCurrentMatrix(&points[0],&view[0]);
+    transformAndAddVecByCurrentMatrix(&points[1],&view[1]);
+    sScreenQuad3 screen;
+    if(!rayComputeDisplayMatrix_2Width(view,widths,graphicEngineStatus.m405C,screen))return;
+    const auto command=graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA;
+    sendRaySegmentToVdp1(screen,view[1][2],address,size,color,gouraud,mode);
+    if(graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA!=command) {
+        const float a=static_cast<float>(view[0][2].asS32())/65536.0f;
+        const float b=static_cast<float>(view[1][2].asS32())/65536.0f;
+        const float depths[4]={a,b,b,a};
+        lagiRecordVdp1WorldDepth(&*command,depths);
+    }
+}

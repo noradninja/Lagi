@@ -6,7 +6,7 @@ New-Item -ItemType Directory -Force $scratch | Out-Null
 $native=(Get-Content -Raw "$repo/extern/Azel/AzelLib/kernel/rayDisplay.cpp").Replace("`r`n","`n")
 $begin=$native.IndexOf('void sendRaySegmentToVdp1(');$end=$native.IndexOf('static void computeRayVertexColor',$begin)
 [IO.File]::WriteAllText("$scratch/native.inc",$native.Substring($begin,$end-$begin).Replace('sendRaySegmentToVdp1(','referenceSend('))
-$begin=$native.IndexOf('s32 rayComputeDisplayMatrix_fixedWidth(');$end=$native.IndexOf('s32 rayComputeDisplayMatrix_2Width(',$begin)
+$begin=$native.IndexOf('s32 rayComputeDisplayMatrix_fixedWidth(');$end=$native.IndexOf('void sendRaySegmentToVdp1(',$begin)
 if((Get-Content -Raw "$repo/$BattleBuild/lagi_battle_ray_projection.inc").Replace("`r`n","`n") -cne $native.Substring($begin,$end-$begin)){throw 'Battle projection is not the exact native body'}
 $service=Get-Content -Raw "$repo/src/integration/lagi_battle_rays_vita.cpp"
 $begin=$service.IndexOf('void sendRaySegmentToVdp1(');$end=$service.IndexOf('void displayRaySegment(',$begin)

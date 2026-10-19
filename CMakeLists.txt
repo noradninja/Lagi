@@ -2150,8 +2150,14 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    message(FATAL_ERROR "Native E011 scheduled-effect compilation boundary changed")
   endif()
   string(REPLACE "${e011_constructor}"
-   "#include \"kernel/vdp1AnimatedQuad.h\"\n#include \"lagi_e011_scheduled_effects.inc\"\n\n${e011_constructor}"
+   "#include \"kernel/vdp1AnimatedQuad.h\"\n#include \"menu_dragonMorph.h\"\n#include \"audio/systemSounds.h\"\n#include \"lagi_e011_scheduled_effects.inc\"\n#include \"lagi_e011_ribbon_scheduler.inc\"\n\n${e011_constructor}"
    source_text "${source_text}")
+  string(REPLACE "    overlayScriptFunctions.m_twoArg[0x605cbd0]"
+   "    overlayScriptFunctions.m_oneArg[0x605890C] = {&lagiE011StartSchedule, \"E011 native schedule\"};\n    overlayScriptFunctions.m_oneArg[0x605809E] = {&lagiE011StartPaletteSequence, \"E011 palette sequence\"};\n    overlayScriptFunctions.m_oneArg[0x60557E0] = {&lagiE011SetScreenWave, \"E011 screen wave\"};\n    overlayScriptFunctions.m_oneArg[0x6055872] = {&lagiE011SetScreenTracking, \"E011 screen tracking\"};\n    overlayScriptFunctions.m_twoArg[0x605cbd0]"
+   source_text "${source_text}")
+  set(source_text "static int lagiE011StartPaletteSequence(int);\nstatic int lagiE011SetScreenWave(int);\nstatic int lagiE011SetScreenTracking(int);\n${source_text}\n#include \"lagi_e011_later_callbacks.inc\"\n")
+  string(REPLACE "    sVec3_FP* m64_positionPtr;"
+   "    sVec3_FP lagiTrackingPoint;\n    sVec3_FP* m64_positionPtr;" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A3/BTL_A3_data.cpp")
   if(LAGI_BATTLE_NATIVE_BUILD)
    set(effect_anchor "    case 0x06054dce:\n        return urchinAttack_spawnProjectile(pParent);")
@@ -3858,7 +3864,7 @@ if(LAGI_BATTLE_NATIVE_BUILD)
  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES town/e011/twn_e011.cpp)
  file(READ "${LAGI_AZEL_SOURCE_ROOT}/kernel/rayDisplay.cpp" battle_ray_source)
  string(FIND "${battle_ray_source}" "s32 rayComputeDisplayMatrix_fixedWidth(" battle_ray_begin)
- string(FIND "${battle_ray_source}" "s32 rayComputeDisplayMatrix_2Width(" battle_ray_end)
+ string(FIND "${battle_ray_source}" "void sendRaySegmentToVdp1(" battle_ray_end)
  if(battle_ray_begin LESS 0 OR battle_ray_end LESS battle_ray_begin)
   message(FATAL_ERROR "Native battle ray projection boundary changed")
  endif()

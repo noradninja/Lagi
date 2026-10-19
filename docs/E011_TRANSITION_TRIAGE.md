@@ -63,3 +63,48 @@ transition fix are still pending.
 Next hardware evidence: reproduce the same exit and attach **lagi-fatal.log**,
 ordinary lagi.log and the matching lagi.velf (partial core optional). The runtime
 anchor permits relocation even if the next dump again omits MODULE_INFO.
+
+## Complete follow-up core: proven missing scheduler and recovery
+
+`psp2core-1792420901-0x000bb22e7d-eboot.bin.psp2dmp` expands to 5,789,144
+bytes with all 56 segments present. Code base `8102B000`; PC `81210562` is
+the fatal stop. The retained stack now identifies townScript's one-argument
+dispatcher assertion, line 251, script location `060541F6`, native function
+`0605890C`, and E011's live overlay owner. The fatal report's caller is
+`8120A677`, imageAbort `811F0793`, last startup stage startCameraTask. This
+confirms the known missing E011 scheduler. Do not continue treating the lack of
+EPK messages or the older partial registers as proof of an earlier/different
+failure: async log loss and incomplete state did not establish that distinction.
+
+The generated adapter now registers `0605890C` and its native child callbacks:
+quad `060589E2`, model `06058B2A`, ribbon `06058FF8`. Original table `0605FD10`
+has 78 records, including four ribbons. Each record is **threshold, argument,
+callback**; original `060588E2..E6` loads the function from +8 and the argument
+from +4. The native scheduler samples the clock once per update, catches up all
+due records in order, and retires at the end sentinel on the next update. All
+78 original records are checked in place by the disc-backed fixture.
+
+The ribbon task retains native resource ownership, its 20-position history,
+one-time sound, sine-displaced flight, oriented random amplitude, 30-tick tail,
+per-segment widths, sprite selectors and RGB555 gradient. Its world two-width
+strip uses the mechanically extracted native fixed-point projector and existing
+packet sender, with renderer depth metadata. It deliberately does not replace
+the accepted rotated-square collection/charge ray service.
+
+Three later unregistered calls were also recovered instead of waiting for the
+next assertion: palette sequencing `0605809E`, wave control `060557E0`, and
+point-tracking screen control `06055872`. They retain native clock, stop, bank,
+loop/delay, graphics decompression, state and duration behavior. The tracking
+point is converted from big-endian disc data into background-task-owned storage,
+not aliased as a host Vec3. Overlapping persistent transfers are removed through
+the typed transfer list rather than Saturn raw pointer offsets.
+
+Host tests execute the production scheduler/ribbon and later callback bodies,
+including catch-up, delta-zero, sound once, tail expiry, draw resource addresses,
+color endpoints, palette delay/termination, screen mode changes, transfer
+unlinking, owned point and cinematic stop. Separate existing leaf and 1,024-case
+ray packet differential tests pass, as does the accepted collection-burst
+regression. Original instructions and all scheduled callback kinds are checked
+against the user's disc without committing assets. Both Vita build variants
+compile. This removes the proven dispatcher failure; complete on-device E011
+playback and handoff to the Arachnoth fight remain unverified.

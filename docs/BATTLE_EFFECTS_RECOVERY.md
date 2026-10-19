@@ -74,3 +74,9 @@ playback fixed. The old partial core cannot prove a new fault location, and a
 currently overwritten ELF must not be represented as its matching executable.
 
 No cinematic crash fix is claimed by the palette correction.
+
+2026-10-19 follow-up: the complete transition core proved the missing `0605890C`
+dispatch. Scheduler, quad/model/ribbon tasks and all three later callbacks above
+are now recovered and registered. See `E011_TRANSITION_TRIAGE.md` for the updated
+evidence, source/disc tests and pending hardware acceptance. The earlier staged
+status above describes the palette-only checkpoint, not the latest source tree.
