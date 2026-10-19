@@ -183,3 +183,31 @@ black and later fades in. Native module-manager requests black over 30 frames,
 but synchronous overlay replacement does not present that outgoing scene.
 Changing the target from 0 to 0x8000 cannot fix it: both encode the same black
 offset. No guessed blackout or artificial script delay has been added here.
+
+## 2026-10-19: Arachnoth victory reaches E014
+
+Hardware report for `d803065`: Arachnoth is playable through defeat. The user
+also confirms the tunnel-exit fade is correct, superseding the open item above.
+Do not treat absent fade samples in the log as proof of a visible fade failure.
+
+The new log ends after native victory/stat processing, status 09 -> 0A. The
+remaining town dispatch trim still rejected E014. The accompanying partial core
+expands to only 7,612 bytes, so it cannot independently establish a full stack;
+the fatal caller resolves to `__assert_func` using the matching executable's
+abort-wrapper relocation. The log and generated dispatch establish the missing
+post-victory overlay boundary, not a failure inside the boss's death animation.
+
+The battle build now retains `overlayStart_TWN_E014` and links its native ground,
+script, streaming and camera code. Original E014 completion callbacks `060577BC`
+and `06056C72` map to the same shared close-cutscene / restore-main-logic services
+already used by E006/E011. Instruction anchors and 60 native-call records in the
+bounded original script prefix have handlers of the correct arity. This is data
+coverage, not complete branch execution. No victory flag or cinematic is skipped.
+
+Vita compilation passes; E014 playback and return after victory still require
+hardware validation. Boss slime/trails, Energy Prism VFX, audio interruption,
+HUD flicker and attack-camera occlusion/performance remain separate work items.
+The 640-second supplied video was sampled directly: the boss attack camera can
+put a foreground rock between the camera and the actors (e.g. around 352 s).
+That observation alone does not prove a depth-test error; authored battle-camera
+positions and near clipping need comparison before disabling any occlusion.

@@ -2128,6 +2128,11 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   endif()
   set(source_text "#include \"lagi/lagi_render_bridge.h\"\n${source_text}")
   string(REPLACE "${battle_camera_anchor}" "${battle_camera_anchor}\n    lagi::azel_bridge::capture_native_scene_view_matrix();" source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/e014/twn_e014.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  string(REPLACE "#include \"twn_e014.h\"" "#include \"town/e014/twn_e014.h\"" source_text "${source_text}")
+  set(source_text "int scriptFunction_6056926();\nint scriptFunction_6057470();\n${source_text}")
+  string(REPLACE "    overlayScriptFunctions.m_zeroArg[0x6057724]"
+   "    overlayScriptFunctions.m_zeroArg[0x60577BC] = {&scriptFunction_6057470, \"E014 close cutscene\"};\n    overlayScriptFunctions.m_zeroArg[0x6056C72] = {&scriptFunction_6056926, \"E014 restore main logic\"};\n    overlayScriptFunctions.m_zeroArg[0x6057724]" source_text "${source_text}")
  elseif(relative_path STREQUAL "town/e011/twn_e011.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set(source_text "extern \"C\" void lagiSetE011FatalStage(const char*);\n${source_text}")
   foreach(e011_stage_anchor IN ITEMS
@@ -3088,7 +3093,7 @@ void pauseCutscene]=]
    # Status 08 after FLD_A3 selects the real E011 cinematic, not E006.
    string(REPLACE
     "    else if (overlayFileName == \"TWN_E006.PRG\")"
-    "    else if (overlayFileName == \"TWN_E011.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E011;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")"
+    "    else if (overlayFileName == \"TWN_E011.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E011;\n    }\n    else if (overlayFileName == \"TWN_E014.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E014;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")"
     source_text "${source_text}")
   endif()
 
@@ -3908,7 +3913,7 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
 )
 
 if(LAGI_BATTLE_NATIVE_BUILD)
- list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES town/e011/twn_e011.cpp)
+ list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES town/e011/twn_e011.cpp town/e014/twn_e014.cpp)
  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
   battle/BTL_A3_2/BTL_A3_2.cpp
   battle/BTL_A3_2/BTL_A3_2_data.cpp
