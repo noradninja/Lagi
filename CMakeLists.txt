@@ -1853,6 +1853,14 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  set(cart_smoke_old "config.m0_pPosition = (sVec3_FP*)pThis; // uses m0_position at offset 0")
+  string(FIND "${source_text}" "${cart_smoke_old}" cart_smoke_found)
+  if(cart_smoke_found LESS 0)
+   message(FATAL_ERROR "Native cart smoke position boundary changed")
+  endif()
+  string(REPLACE "${cart_smoke_old}"
+   "config.m0_pPosition = &pThis->m0_position; // Typed native payload, not C++ task header."
+   source_text "${source_text}")
   set(navigator_default_old [=[        //06079234
         assert(0);]=])
   set(navigator_default_new [=[        // LAGI_NATIVE_NAVIGATOR_DEFAULT: 06079234, 060792BA.
@@ -2181,6 +2189,17 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    message(FATAL_ERROR "Native field pool billboard draw boundary changed")
   endif()
   string(REPLACE "${pool_billboard_old}" "${pool_billboard_new}" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a3/a3_dynamic_mine_cart.cpp")
+  # Restore the complete shot-cart state machine, not a crash guard or
+  # a switch to the unrelated looping-cart waypoint update.
+  string(FIND "${source_text}" "    static void Update2(s_A3_0_Obj3* pThis)" cart_update_begin)
+  string(FIND "${source_text}" "    s_memoryAreaOutput m0;" cart_update_end)
+  if(cart_update_begin LESS 0 OR cart_update_end LESS cart_update_begin)
+   message(FATAL_ERROR "Native shootable cart update boundary changed")
+  endif()
+  math(EXPR cart_update_length "${cart_update_end}-${cart_update_begin}")
+  string(SUBSTRING "${source_text}" ${cart_update_begin} ${cart_update_length} cart_update_stub)
+  string(REPLACE "${cart_update_stub}" "#include \"lagi_a3_shootable_cart_update.inc\"\n\n" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/field_a3/a3_waterfall.cpp")
   # Native task offsets are not C++ work-area offsets. Infer each concrete
   # waterfall type at its call site, retaining the original emission logic.
