@@ -2124,6 +2124,26 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   set(source_text "#include \"lagi/lagi_render_bridge.h\"\n${source_text}")
   string(REPLACE "${battle_camera_anchor}" "${battle_camera_anchor}\n    lagi::azel_bridge::capture_native_scene_view_matrix();" source_text "${source_text}")
  elseif(relative_path STREQUAL "town/e011/twn_e011.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(source_text "extern \"C\" void lagiSetE011FatalStage(const char*);\n${source_text}")
+  foreach(e011_stage_anchor IN ITEMS
+    "    loadSoundBanks(-1, 0);"
+    "    initDramAllocator(pThis, townBuffer, sizeof(townBuffer), listOfFilesToLoad);"
+    "    initVdp1Ram(pThis, 0x25C18800, 0x63800);"
+    "    registerNpcs(gTWN_E011->mTownSetups, gTWN_E011->getSaturnPtr(0x605414c), arg);"
+    "    startScriptTask(pThis);"
+    "    startE011BackgroundTask(pThis);"
+    "    startMainLogic(pThis);"
+    "    setupVdp1Proj(0x1c71c71);"
+    "    startCameraTask(pThis);")
+   string(FIND "${source_text}" "${e011_stage_anchor}" e011_stage_found)
+   if(e011_stage_found LESS 0)
+    message(FATAL_ERROR "Native E011 startup diagnostic anchor changed")
+   endif()
+   # Store static text only, with no per-frame logging or clock reads.
+   string(REPLACE "${e011_stage_anchor}"
+    "    lagiSetE011FatalStage(\"${e011_stage_anchor}\");\n${e011_stage_anchor}"
+    source_text "${source_text}")
+  endforeach()
   set(e011_constructor "TWN_E011_data::TWN_E011_data() :")
   string(FIND "${source_text}" "${e011_constructor}" e011_constructor_found)
   if(e011_constructor_found LESS 0)
@@ -4104,6 +4124,10 @@ target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDER
 if(LAGI_AZEL_RUINS_LINK_TRIM)
  target_compile_options(lagi PRIVATE -ffunction-sections -fdata-sections)
  target_link_options(lagi PRIVATE -Wl,--gc-sections)
+ if(LAGI_BATTLE_NATIVE_BUILD)
+  target_sources(lagi PRIVATE src/platform/vita/vita_fatal_trace.cpp)
+  target_link_options(lagi PRIVATE -Wl,--wrap=abort -Wl,--wrap=__cxa_throw)
+ endif()
 endif()
 
 # The converter appends SCE metadata to the executable segment. Default page
