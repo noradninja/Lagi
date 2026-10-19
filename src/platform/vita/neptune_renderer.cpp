@@ -1,5 +1,6 @@
 #include "lagi/platform.h"
 #include "lagi/ui_lut_palette.h"
+#include "lagi/ui_texture_cache_index.h"
 #include "lagi/native_scene_mode.h"
 #include "lagi/frontend_font.h"
 
@@ -791,6 +792,8 @@ struct Vdp1UiTextureCacheEntry {
     GpuMode1Texture gpu{};
 };
 static std::vector<Vdp1UiTextureCacheEntry> g_vdp1UiTextureCache;
+static lagi::UiTextureCacheIndex g_vdp1UiTextureIndex;
+static lagi::UiSpriteProfile g_profileSprites;
 static SceUID g_vdp1UiVertexUid = -1;
 static SceUID g_vdp1UiIndexUid = -1;
 static azel::DebugTextureVertex* g_vdp1UiVertices = nullptr;
@@ -4462,17 +4465,18 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                 sizeof(g_vdp2Cram),palette)) return nullptr;
     }
     Vdp1UiTextureCacheEntry* refreshEntry=nullptr;
-    for (auto& entry : g_vdp1UiTextureCache) {
-        if (entry.cmdPmod == command.cmdPmod &&
-            entry.cmdColr == command.cmdColr &&
-            entry.cmdSrca == command.cmdSrca &&
-            entry.cmdSize == command.cmdSize) {
-            if (!hasPalette || (entry.hasPalette && entry.palette==palette))
-                return &entry.gpu;
-            refreshEntry=&entry;
-            break;
+    const auto cacheKey=lagi::ui_texture_key(command.cmdPmod,command.cmdColr,
+        command.cmdSrca,command.cmdSize);
+    std::size_t cacheIndex=0;
+    if (g_vdp1UiTextureIndex.find(cacheKey,cacheIndex)) {
+        auto& entry=g_vdp1UiTextureCache[cacheIndex];
+        if (!hasPalette || (entry.hasPalette && entry.palette==palette)) {
+            ++g_profileSprites.cacheHits;
+            return &entry.gpu;
         }
+        refreshEntry=&entry;
     }
+    if (!refreshEntry) ++g_profileSprites.cacheMisses;
 
     const unsigned int commandType =
         static_cast<unsigned int>(command.cmdCtrl & 0x000Fu);
@@ -4604,6 +4608,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                 decoded.rgba.data(),decoded.width,decoded.height);
             refreshEntry->palette=palette;
             refreshEntry->hasPalette=hasPalette;
+            ++g_profileSprites.paletteRefreshes;
             return &refreshEntry->gpu;
         }
         Vdp1UiTextureCacheEntry entry{};
@@ -4690,6 +4695,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         }
 
         g_vdp1UiTextureCache.push_back(std::move(entry));
+        g_vdp1UiTextureIndex.insert(cacheKey,g_vdp1UiTextureCache.size()-1u);
         return &g_vdp1UiTextureCache.back().gpu;
     }
 
@@ -4748,6 +4754,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
 
     g_vdp1UiTextureCache.push_back(std::move(entry));
+    g_vdp1UiTextureIndex.insert(cacheKey,g_vdp1UiTextureCache.size()-1u);
     return &g_vdp1UiTextureCache.back().gpu;
 }
 
@@ -5206,8 +5213,10 @@ static void drawPublishedVdp1Ui(
             break;
         }
 
-        if (spriteSlot >= 128u)
+        if (spriteSlot >= 128u) {
+            ++g_profileSprites.slotSkips;
             continue;
+        }
 
         azel::DebugTextureVertex* const spriteVertices =
             g_vdp1UiVertices + spriteSlot * 4u;
@@ -5358,6 +5367,11 @@ static void drawPublishedVdp1Ui(
         }
         sceGxmSetFragmentTexture(
             g_probeContext, 0, &texture->texture);
+        ++g_profileSprites.draws;
+        if (worldDepth) ++g_profileSprites.worldTagged;
+        if (shaded) ++g_profileSprites.shaded;
+        g_profileSprites.bboxPixels+=lagi::sprite_bbox_pixels(
+            pos,viewerRenderWidth(),viewerRenderHeight());
         sceGxmDraw(
             g_probeContext,
             SCE_GXM_PRIMITIVE_TRIANGLES,
@@ -13318,6 +13332,7 @@ static void renderBasicWingViewer()
     }
 
     const std::uint64_t renderStartUs = sceKernelGetProcessTimeWide();
+    g_profileSprites={};
     // No scene build on some menu/transition frames: never report old sync work.
     g_profilePositionSyncUs = 0u;
     g_profilePositionSyncVertices = 0u;
@@ -13741,7 +13756,9 @@ static void renderBasicWingViewer()
             "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u "
             "menuBackingDecode=%u menuTextDecode=%u menuSubmit=%u menuTransfer=%u "
             "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1 tasks=%u uiOnly=%u slowSample=%u "
-            "positionSync=%u positionSyncVerts=%u submissions=%u\n",
+            "positionSync=%u positionSyncVerts=%u submissions=%u "
+            "spriteDraws=%u spriteWorldTagged=%u spriteShaded=%u spriteBboxPixels=%llu "
+            "spriteCacheHits=%u spriteCacheMisses=%u spritePaletteRefresh=%u spriteSlotSkips=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -13782,7 +13799,11 @@ static void renderBasicWingViewer()
             slowMenuSample ? 1u : 0u,
             g_profilePositionSyncUs,
             g_profilePositionSyncVertices,
-            g_liveTownSubmissionCount);
+            g_liveTownSubmissionCount,
+            g_profileSprites.draws,g_profileSprites.worldTagged,g_profileSprites.shaded,
+            static_cast<unsigned long long>(g_profileSprites.bboxPixels),
+            g_profileSprites.cacheHits,g_profileSprites.cacheMisses,
+            g_profileSprites.paletteRefreshes,g_profileSprites.slotSkips);
     }
 
     if (g_showThreadTimingOsd) {

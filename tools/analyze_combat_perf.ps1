@@ -41,6 +41,11 @@ $result=@(foreach($run in $runs){
   $values=@($run.Samples | Where-Object {$_.ContainsKey($field)} | ForEach-Object {$_[$field]})
   $median[$field]=Get-Median $values
  }
+ $workload=[ordered]@{}
+ foreach($field in @('polys','verts','positionSyncVerts','submissions','spriteDraws','spriteWorldTagged','spriteShaded','spriteBboxPixels','spriteCacheHits','spriteCacheMisses','spritePaletteRefresh','spriteSlotSkips')){
+  $values=@($run.Samples | Where-Object {$_.ContainsKey($field)} | ForEach-Object {$_[$field]})
+  $workload[$field]=Get-Median $values
+ }
  $intervals=0L;$missed=0L
  foreach($window in $run.Windows){$intervals+=$window.intervals;$missed+=$window.over2Vblanks}
  $fps=@($run.Windows | ForEach-Object {$_.fpsMilli/1000.0})
@@ -49,6 +54,7 @@ $result=@(foreach($run in $runs){
   SceneSamples=$run.Samples.Count;FullWindows=$run.Windows.Count;Intervals=$intervals;OverTwoVblanks=$missed
   WindowFpsMin=($fps | Measure-Object -Minimum).Minimum;WindowFpsMax=($fps | Measure-Object -Maximum).Maximum
   MedianUs=[pscustomobject]$median
+  WorkloadMedian=[pscustomobject]$workload
   Notes='Startup-to-audio-restore span can include intro/results. Heartbeat medians are sampled, not whole-frame averages. cpuprep/build/sync overlap; GPU finish is wait time. tasks=0 in older logs is uninstrumented. ReturnedAudio does not prove encounter correctness.'
  }
 })

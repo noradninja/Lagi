@@ -8,4 +8,4 @@
 [BattleAudio] restore sequence=3
 [ScenePerf] render=1000 cpuprep=1000 uiOnly=0
 [BattleStartup] enter BTL_A3 overlay=0 sub=4
-[ScenePerf] render=27000 cpuprep=8000 tasks=1500 positionSync=1900 uiOnly=0
+[ScenePerf] render=27000 cpuprep=8000 tasks=1500 positionSync=1900 uiOnly=0 spriteDraws=75 spriteWorldTagged=30 spriteBboxPixels=800000 spriteSlotSkips=2

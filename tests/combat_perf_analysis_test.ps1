@@ -8,4 +8,7 @@ if($first.SceneSamples -ne 2 -or $first.MedianUs.render -ne 29000 -or $first.Med
 if($first.FullWindows -ne 1 -or $first.Intervals -ne 120 -or $first.OverTwoVblanks -ne 80 -or $first.WindowFpsMin -ne 22){throw 'First cross-boundary window was not excluded'}
 if($null -ne $first.MedianUs.positionSync -or $last.MedianUs.positionSync -ne 1900){throw 'Missing instrumentation was reported as zero or data lost'}
 if($last.FullWindows -ne 0 -or $last.SceneSamples -ne 1){throw 'Trailing incomplete encounter samples lost'}
+if($null -ne $first.WorkloadMedian.spriteDraws){throw 'Missing sprite instrumentation incorrectly reported as zero'}
+if($last.WorkloadMedian.spriteDraws -ne 75 -or $last.WorkloadMedian.spriteWorldTagged -ne 30 -or
+ $last.WorkloadMedian.spriteBboxPixels -ne 800000 -or $last.WorkloadMedian.spriteSlotSkips -ne 2){throw 'Sprite workload attribution lost or reported as timings'}
 Write-Output 'PASS combat interval attribution, first-window exclusion, missing fields and incomplete encounter reporting.'
