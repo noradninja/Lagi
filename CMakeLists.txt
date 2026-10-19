@@ -952,6 +952,11 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "        if (gGameStatus.m6_previousGameStatus == 74)"
    "        if (gGameStatus.m6_previousGameStatus == 74 || lagiAzelSaveConsumeInGameLoad())"
    source_text "${source_text}")
+  if(LAGI_BATTLE_EXECUTE_A3)
+   string(REPLACE "    NULL,               // 4: battle - deferred until flight milestone"
+    "    loadBattle,         // 4: native story battle, COMMON selects encounter"
+    source_text "${source_text}")
+  endif()
 
   # Trace entry into module-manager state 1 before any transition helper.
   # Bracket-quoted CMake strings keep the generated C++ diagnostics readable
@@ -2483,6 +2488,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    endif()
    string(REPLACE "${startup_anchor}" "        if (!lagiPrepareNativeA3Battle()) return;\n${startup_anchor}" source_text "${source_text}")
    string(REPLACE "                overlayStart_BTL_A3(pThis);" "                if (!lagiEnterNativeA3Battle(pThis)) return;" source_text "${source_text}")
+   string(REPLACE "                overlayStart_BTL_A3_2(pThis);" "                if (!lagiEnterNativeA3Battle(pThis)) return;" source_text "${source_text}")
    # A retry after main-task allocation failure must not push fonts twice.
    set(battle_fonts_old [=[        loadFnt("ITEM.FNT");
         pThis->m2_numLoadedFnt++;
@@ -3903,6 +3909,14 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
 
 if(LAGI_BATTLE_NATIVE_BUILD)
  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES town/e011/twn_e011.cpp)
+ list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
+  battle/BTL_A3_2/BTL_A3_2.cpp
+  battle/BTL_A3_2/BTL_A3_2_data.cpp
+  battle/BTL_A3_2/BTL_A3_2_map.cpp
+  battle/BTL_A3_2/BTL_A3_2_particles.cpp
+  battle/BTL_A3_2/Arachnoth.cpp
+  battle/BTL_A3_2/ArachnothSubPart.cpp
+  battle/BTL_A3_2/ArachnothTentacle.cpp)
  file(READ "${LAGI_AZEL_SOURCE_ROOT}/kernel/rayDisplay.cpp" battle_ray_source)
  string(FIND "${battle_ray_source}" "s32 rayComputeDisplayMatrix_fixedWidth(" battle_ray_begin)
  string(FIND "${battle_ray_source}" "void sendRaySegmentToVdp1(" battle_ray_end)
@@ -4160,6 +4174,7 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_d5"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/battle"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/battle/BTL_A3"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/battle/BTL_A3_2"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/menu"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
 )

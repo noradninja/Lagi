@@ -24,6 +24,8 @@ namespace lagi::disc {int selected_disc(){return selectedDisc;}}
 namespace lagi::platform::logging {template<class... T>void writef(const char*,T...){++reports;}}
 s_workArea* expectedParent=nullptr;
 s_workArea* overlayStart_BTL_A3(s_workArea* parent){assert(parent==expectedParent);++entries;return allocationSucceeds?parent:nullptr;}
+int bossEntries=0;
+s_workArea* overlayStart_BTL_A3_2(s_workArea* parent){assert(parent==expectedParent);++bossEntries;return allocationSucceeds?parent:nullptr;}
 #include "service.inc"
 struct sBattleOverlayTask:s_workArea {int m0=1,m2_numLoadedFnt=0;};
 struct {int m4=0;}graphicEngineStatus;
@@ -35,9 +37,9 @@ int main(){
     const int firstError=reports;assert(!lagiPrepareNativeA3Battle() && reports==firstError);
     gBattleManager=&manager;gCommonFile=&common;
     assert(!lagiPrepareNativeA3Battle());
-    common.battleOverlaySetup={{"BTL_A3.PRG",10},{"BTL_A3_2.PRG",2}};
+    common.battleOverlaySetup={{"BTL_A3.PRG",10},{"BTL_A3_2.PRG",2},{"BTL_A5.PRG",1}};
     manager.m2_currentBattleOverlayId=-1;assert(!lagiPrepareNativeA3Battle());
-    manager.m2_currentBattleOverlayId=1;assert(!lagiPrepareNativeA3Battle() && initializations==0);
+    manager.m2_currentBattleOverlayId=2;assert(!lagiPrepareNativeA3Battle() && initializations==0);
     manager.m2_currentBattleOverlayId=0;manager.m6_subBattleId=10;assert(!lagiPrepareNativeA3Battle());
     manager.m6_subBattleId=-1;assert(!lagiPrepareNativeA3Battle());
     manager.m6_subBattleId=3;resourceBytes=0;assert(!lagiPrepareNativeA3Battle() && initializations==0);
@@ -58,6 +60,8 @@ int main(){
     allocationSucceeds=true;battleOverlayTask_Draw(&task);
     assert(task.m0==2 && fontLoads==2);const int started=entries;
     battleOverlayTask_Draw(&task);assert(entries==started && task.m0==2);
+    manager.m2_currentBattleOverlayId=1;manager.m6_subBattleId=0;expectedParent=&parent;
+    assert(lagiEnterNativeA3Battle(&parent) && bossEntries==1 && entries==started);
     delete[] g_BTL_GenericData->m_data;delete g_BTL_GenericData;g_BTL_GenericData=nullptr;
     puts("PASS: production A3 preflight and generated native overlay Draw: generic-data retry/once-init, authored IDs, unsupported overlay/disc rejection, factory retry without duplicate fonts, running-state handoff; mocked engine/data parser");
 }

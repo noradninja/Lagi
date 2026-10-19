@@ -147,3 +147,39 @@ bodies, checking ordering, scope cleanup and diagnostic bounds; the existing
 324-case projection test passes. Both Vita builds compile. Actor visibility,
 complete E011 playback and handoff remain hardware acceptance items; do not
 claim pixel correctness from these host checks.
+
+## 2026-10-19: E011 actors accepted; story battle dispatch
+
+Hardware report for `1b05f9a`: all actors now appear and this sequence renders
+correctly, apart from the missing tunnel-exit fade to black. The shared EPK
+actor scope is already generic; it is not limited to E011.
+
+The complete `1792424024` dump contains all 57 segments (5,795,424 expanded
+bytes). With module base `81057000`, its assertion strings identify generated
+`town_town.cpp::loadTownPrg`, line 350, rejecting `TWN_E014.PRG`. The log shows
+status 09 / mode 4 with no battle commands, followed by status 0A. This is not
+evidence of a crash inside Arachnoth: the old module-dispatch trim still set
+type 4 to NULL, so it skipped the story battle and reached the unintegrated
+post-boss cinematic.
+
+In the opt-in execution build, type 4 now retains native `loadBattle`. COMMON's
+story pair `(0, 0x0A)` remaps to overlay `0x10`, subbattle 0, `BTL_A3_2.PRG`.
+The native Arachnoth overlay, map, particles, formation, subparts and tentacles
+are linked, and the checked startup service selects its real factory. Shared
+generic tables continue to load from `BTL_A3.PRG`; no encounter is substituted.
+Other unsupported overlay names remain rejected. Battle-disabled builds retain
+the trimmed dispatch. Upstream source and game data are unchanged.
+
+The production startup fixture tests the boss factory separately from field
+A3, cache reuse and unsupported-overlay rejection, and guards the generated
+module-manager dispatch and native boss engine entry. The battle Vita package
+build succeeds. This is compile/host validation, **not hardware boss acceptance**.
+Upstream Arachnoth still contains incomplete effects and assertion branches;
+this integration does not claim complete boss attacks, victory, or E014 support.
+
+The tunnel-exit black fade remains open. The current log changes from field
+status 53 to status 08 without intermediate fade samples; E011 initializes at
+black and later fades in. Native module-manager requests black over 30 frames,
+but synchronous overlay replacement does not present that outgoing scene.
+Changing the target from 0 to 0x8000 cannot fix it: both encode the same black
+offset. No guessed blackout or artificial script delay has been added here.

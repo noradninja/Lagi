@@ -5,6 +5,7 @@
 #include "battle/battleManager.h"
 #include "battle/battleGenericData.h"
 #include "battle/BTL_A3/BTL_A3.h"
+#include "battle/BTL_A3_2/BTL_A3_2.h"
 #include "commonOverlay.h"
 
 namespace {
@@ -28,7 +29,7 @@ bool lagiPrepareNativeA3Battle()
     if(overlay<0 || static_cast<std::size_t>(overlay)>=gCommonFile->battleOverlaySetup.size())
         return reject("overlay index outside COMMON table");
     const auto& entry=gCommonFile->battleOverlaySetup[overlay];
-    if(entry.m4_prg!="BTL_A3.PRG")return reject("overlay not integrated: "+entry.m4_prg);
+    if(entry.m4_prg!="BTL_A3.PRG" && entry.m4_prg!="BTL_A3_2.PRG")return reject("overlay not integrated: "+entry.m4_prg);
     if(sub<0 || static_cast<unsigned>(sub)>=entry.mC_numSubBattles)
         return reject("subbattle index outside authored overlay");
     const int disc=lagi::disc::selected_disc();
@@ -53,9 +54,11 @@ bool lagiEnterNativeA3Battle(s_workArea* parent)
 {
     // Native entry owns overlay data, current-overlay selection and creation
     // of the music/wait/engine task. No substitute scene or debug stats.
-    if(!overlayStart_BTL_A3(parent))
+    const auto& name=gCommonFile->battleOverlaySetup[gBattleManager->m2_currentBattleOverlayId].m4_prg;
+    auto* task=name=="BTL_A3_2.PRG"?overlayStart_BTL_A3_2(parent):overlayStart_BTL_A3(parent);
+    if(!task)
         return reject("native A3 main-task allocation failed");
-    lagi::platform::logging::writef("[BattleStartup] enter BTL_A3 overlay=%d sub=%d parent=%p\n",
+    lagi::platform::logging::writef("[BattleStartup] enter %s overlay=%d sub=%d parent=%p\n",name.c_str(),
         int(gBattleManager->m2_currentBattleOverlayId),int(gBattleManager->m6_subBattleId),static_cast<void*>(parent));
     startupError.clear();
     return true;

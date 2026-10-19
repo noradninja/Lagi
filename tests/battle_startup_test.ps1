@@ -5,6 +5,10 @@ $scratch=[IO.Path]::GetFullPath((Join-Path $repo $ScratchRoot))
 New-Item -ItemType Directory -Force $scratch | Out-Null
 $cache=Get-Content -Raw "$repo/$BattleBuild/CMakeCache.txt"
 if($cache -notmatch 'LAGI_BATTLE_EXECUTE_A3:BOOL=ON'){throw 'Configure the opt-in A3 execution build first'}
+$manager=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/kernel_moduleManager.cpp"
+if(!$manager.Contains('loadBattle,         // 4: native story battle, COMMON selects encounter')){throw 'Story battles are still disabled in the module manager'}
+$boss=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/battle_BTL_A3_2_BTL_A3_2.cpp"
+if(!$boss.Contains('createBattleMainTask') -or !$boss.Contains('0x60a84bc')){throw 'Native Arachnoth engine entry missing'}
 $overlay=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/battle_battleOverlay.cpp"
 if($overlay.IndexOf('if (!lagiPrepareNativeA3Battle()) return;') -gt $overlay.IndexOf('loadFnt("ITEM.FNT")') -or !$overlay.Contains('if (!lagiPrepareNativeA3Battle()) return;')){throw 'Battle preflight must precede font allocation'}
 if(!$overlay.Contains('if (!lagiEnterNativeA3Battle(pThis)) return;') -or !$overlay.Contains('if (pThis->m2_numLoadedFnt == 0)')){throw 'A3 factory retry/font ownership guard absent'}
