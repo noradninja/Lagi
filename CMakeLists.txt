@@ -2128,6 +2128,10 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   endif()
   set(source_text "#include \"lagi/lagi_render_bridge.h\"\n${source_text}")
   string(REPLACE "${battle_camera_anchor}" "${battle_camera_anchor}\n    lagi::azel_bridge::capture_native_scene_view_matrix();" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A3_2/BTL_A3_2.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  string(REPLACE "#include \"BTL_A3_2_data.h\""
+   "#include \"BTL_A3_2_data.h\"\n#include \"audio/soundDriver.h\"\n#include \"battle/battleManager.h\"\n#include \"battle/battleOverlay.h\"\n#include \"lagi_arachnoth_music.inc\"" source_text "${source_text}")
+  string(REPLACE "&battle_A3_initMusic, battle_A3_2_func0" "&lagiArachnothInitMusic, battle_A3_2_func0" source_text "${source_text}")
  elseif(relative_path STREQUAL "town/e014/twn_e014.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   string(REPLACE "#include \"twn_e014.h\"" "#include \"town/e014/twn_e014.h\"" source_text "${source_text}")
   set(source_text "int scriptFunction_6056926();\nint scriptFunction_6057470();\n${source_text}")
