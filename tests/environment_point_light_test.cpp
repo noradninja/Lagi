@@ -105,6 +105,22 @@ int main(){
  assert(!actor.additionalLight.active && actor.lightVector[0]==4096 && actor.lightColor[2]==0x33);
  loc_601FA9E=0x6103;actor={};::capture_current_light(actor);
  assert(actor.lightVector[0]==700 && actor.lightColor[0]==6 && !actor.additionalLight.active);
+ // Cinematics use this same capture/renderer payload path. A camera transform
+ // may rotate direction, but must not average, swap or neutralize RGB/falloff.
+ begin_frame(false);loc_601FA9E=0x6103;
+ currentLightVector_M.color[0]=3;currentLightVector_M.color[1]=17;currentLightVector_M.color[2]=29;
+ for(bool transformed:{false,true}) {
+  g_nativeSceneViewValid=transformed;SubmissionState cinematic;::capture_current_light(cinematic);
+  for(unsigned channel=0;channel<3;++channel){
+   assert(cinematic.lightColor[channel]==currentLightVector_M.color[channel]);
+   assert(cinematic.lightFalloff[channel]==lightSetup.falloff[channel]);
+  }
+  auto transported=cachedPayload(cinematic);
+  for(unsigned channel=0;channel<3;++channel){
+   assert(transported.color[channel]==currentLightVector_M.color[channel]);
+   assert(transported.falloff[channel]==lightSetup.falloff[channel]);
+  }
+ }
  begin_frame(false);assert(!g_fieldActorBaseLight.active);
  puts("PASS: production environment snapshot/application/frame reset, copied color/range, native matrix, outside-range preservation and actor/UI exclusion; GPU/device untested");
 }

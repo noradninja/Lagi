@@ -3149,6 +3149,26 @@ void pauseCutscene]=]
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 6)"
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/townCamera.cpp")
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  string(REPLACE "void townCamera_update(sCameraTask* pThis)" [=[static void lagiTraceTownLight(const char* source,sSaturnPtr data)
+{
+    lagi::platform::logging::writef(
+        "[NativeCameraLight] source=%s status=%02X rgb=%06X falloff=%06X,%06X,%06X\n",
+        source,unsigned(gGameStatus.m4_gameStatus),unsigned(readSaturnRGB8(data).toU32()),
+        unsigned(readSaturnRGB8(data+3).toU32()),unsigned(readSaturnRGB8(data+6).toU32()),
+        unsigned(readSaturnRGB8(data+9).toU32()));
+}
+
+void townCamera_update(sCameraTask* pThis)]=] source_text "${source_text}")
+  foreach(light_arg IN ITEMS lightData r5Ptr)
+   set(light_line "    generateLightFalloffMap(readSaturnRGB8(${light_arg} + 3).toU32(), readSaturnRGB8(${light_arg} + 6).toU32(), readSaturnRGB8(${light_arg} + 9).toU32());")
+   string(FIND "${source_text}" "${light_line}" camera_light_found)
+   if(camera_light_found LESS 0)
+    message(FATAL_ERROR "Native town light color boundary changed")
+   endif()
+   string(REPLACE "${light_line}" "${light_line}\n    lagiTraceTownLight(\"${light_arg}\",${light_arg});" source_text "${source_text}")
+  endforeach()
  elseif(relative_path STREQUAL "town/town.cpp")
   # The ring is 8x8, not two rows. Overlay replacement clears the object
   # list; stale cells in any other row must not survive into its reset.
