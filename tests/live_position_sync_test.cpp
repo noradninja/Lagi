@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 struct Vertex{float x,y,z;unsigned color;};
 struct Texture{float x,y,z,u,v;};
 struct Gouraud{float x,y,z;unsigned payload;};

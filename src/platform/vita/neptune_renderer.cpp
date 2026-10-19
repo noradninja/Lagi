@@ -7992,16 +7992,24 @@ static bool buildLiveTownFrame()
         const std::size_t firstDynamicVertex = g_liveTownStaticRebuilt
             ? 0u : g_liveTownStaticVertexCount;
         const auto positionSyncStartUs = sceKernelGetProcessTimeWide();
+        // Keep each GPU-backed write stream contiguous. Interleaving three
+        // uncached destinations per vertex defeats ARM store coalescing.
+        if (firstDynamicVertex < g_liveTownCpuMesh.vertices.size()) {
+            std::memcpy(g_vdp1Vertices + firstDynamicVertex,
+                g_liveTownCpuMesh.vertices.data() + firstDynamicVertex,
+                (g_liveTownCpuMesh.vertices.size() - firstDynamicVertex) *
+                    sizeof(g_liveTownCpuMesh.vertices[0]));
+        }
         for (std::size_t i = firstDynamicVertex;
              i < g_liveTownCpuMesh.vertices.size(); ++i) {
             const auto& v = g_liveTownCpuMesh.vertices[i];
-            g_vdp1Vertices[i] = v;
-            // No draw path binds/reads the legacy lighting-buffer contents.
-            // Keep its allocation for existing readiness/diagnostic contracts,
-            // but do not rewrite this unused duplicate for every live actor.
             g_vdp1TextureVertices[i].x = v.x;
             g_vdp1TextureVertices[i].y = v.y;
             g_vdp1TextureVertices[i].z = v.z;
+        }
+        for (std::size_t i = firstDynamicVertex;
+             i < g_liveTownCpuMesh.vertices.size(); ++i) {
+            const auto& v = g_liveTownCpuMesh.vertices[i];
             g_vdp1GouraudVertices[i].x = v.x;
             g_vdp1GouraudVertices[i].y = v.y;
             g_vdp1GouraudVertices[i].z = v.z;
