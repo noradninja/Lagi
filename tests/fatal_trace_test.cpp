@@ -32,6 +32,9 @@ extern "C" [[noreturn]] void __real___cxa_throw(void* object,std::type_info* typ
     ++throws;thrownObject=object;thrownType=type;thrownDestroy=destroy;throw Stop{};
 }
 static void destroy(void*) {}
+extern "C" [[noreturn]] void __real__ZSt21__glibcxx_assert_failPKciS0_S0_(const char* file,int line,const char* function,const char* condition) {
+    assert(std::string(file)=="vector.h"&&line==123&&std::string(function)=="operator[]"&&std::string(condition)=="index < size");throw Stop{};
+}
 int main() {
     lagiSetE011FatalStage("startScriptTask");
     try { __wrap_abort(); }catch(Stop&){}
@@ -42,8 +45,11 @@ int main() {
     try { __wrap___cxa_throw(&object,type,destroy); }catch(Stop&){}
     assert(throws==1 && thrownObject==&object && thrownType==type && thrownDestroy==destroy);
     assert(output.find("kind=cxx-throw")!=std::string::npos);
+    output.clear();
+    try { __wrap__ZSt21__glibcxx_assert_failPKciS0_S0_("vector.h",123,"operator[]","index < size"); }catch(Stop&){}
+    assert(output.find("kind=cxx-assert")!=std::string::npos && output.find("file=vector.h line=123 function=operator[] condition=index < size")!=std::string::npos);
     output.clear();failOpen=true;
     try { __wrap_abort(); }catch(Stop&){}
-    assert(aborts==2 && output.empty() && opened==3 && closed==2);
-    puts("PASS fatal-only synchronous trace, 32-frame bound, original abort/throw forwarding, file failure and stage context");
+    assert(aborts==2 && output.empty() && opened==4 && closed==3);
+    puts("PASS fatal-only synchronous trace, C++ assertion details, 32-frame bound, original failure forwarding, file failure and stage context");
 }

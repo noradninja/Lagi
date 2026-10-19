@@ -2132,7 +2132,55 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "#include \"BTL_A3_2_data.h\""
    "#include \"BTL_A3_2_data.h\"\n#include \"audio/soundDriver.h\"\n#include \"battle/battleManager.h\"\n#include \"battle/battleOverlay.h\"\n#include \"lagi_arachnoth_music.inc\"" source_text "${source_text}")
   string(REPLACE "&battle_A3_initMusic, battle_A3_2_func0" "&lagiArachnothInitMusic, battle_A3_2_func0" source_text "${source_text}")
+ elseif(relative_path STREQUAL "dragonData.cpp")
+  set(vdp_free_start "void vdp1Free(u8* ptr)")
+  string(FIND "${source_text}" "${vdp_free_start}" free_begin)
+  string(FIND "${source_text}" "void loadDragon(s_workArea* pWorkArea)" free_end)
+  if(free_begin LESS 0 OR free_end LESS free_begin)
+   message(FATAL_ERROR "Native VDP1 free boundary changed")
+  endif()
+  math(EXPR free_length "${free_end}-${free_begin}")
+  string(SUBSTRING "${source_text}" ${free_begin} ${free_length} free_body)
+  set(free_original "${free_body}")
+  string(REPLACE "    if (!pNode) return;" [=[    if (!pNode) return;
+    // A delayed task can hold a node from a retired overlay allocator.
+    // Establish ownership BEFORE dereferencing it or clearing shared VRAM.
+    s_vdp1Allocator* lagiOwner = nullptr;
+    const auto lagiAddress = reinterpret_cast<uintptr_t>(pNode);
+    for (auto* allocator = vdp1AllocatorHead; allocator; allocator = allocator->m0_nextAllocator) {
+        const auto first = reinterpret_cast<uintptr_t>(&allocator->m18_list[0]);
+        const auto end = reinterpret_cast<uintptr_t>(&allocator->m18_list[0x40]);
+        if (pNode == &allocator->m10_allocatedHead ||
+            (lagiAddress >= first && lagiAddress < end &&
+             (lagiAddress - first) % sizeof(s_vdp1AllocationNode) == 0)) {
+            lagiOwner = allocator;
+            break;
+        }
+    }
+    if (!lagiOwner) return; // retired allocator: never touch the replacement scene
+]=] free_body "${free_body}")
+  string(REPLACE "vdp1AllocatorHead->" "lagiOwner->" free_body "${free_body}")
+  string(REPLACE "${free_original}" "${free_body}" source_text "${source_text}")
+ elseif(relative_path STREQUAL "kernel/graphicalObject.cpp")
+  # Finished resource tasks can retire after the next overlay replaces this
+  # table. Cleanup still frees their own payload; only detach a live entry
+  # when its index exists AND that entry still belongs to this task.
+  set(deleter_owner_guard "pThis->mC >= 0 && dramAllocatorEnd[pThis->mC].mC_fileBundle == pThis")
+  string(FIND "${source_text}" "${deleter_owner_guard}" deleter_guard_found)
+  if(deleter_guard_found LESS 0)
+   message(FATAL_ERROR "Native resource deleter ownership boundary changed")
+  endif()
+  string(REPLACE "${deleter_owner_guard}"
+   "pThis->mC >= 0 && static_cast<size_t>(pThis->mC) < dramAllocatorEnd.size() && dramAllocatorEnd[pThis->mC].mC_fileBundle == pThis" source_text "${source_text}")
  elseif(relative_path STREQUAL "town/e014/twn_e014.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(source_text "extern \"C\" void lagiSetE011FatalStage(const char*);\n${source_text}")
+  foreach(e014_stage IN ITEMS "initDramAllocator(pThis, townBuffer, sizeof(townBuffer), listOfFilesToLoad);" "initVdp1Ram(pThis, 0x25C18800, 0x63800);" "registerNpcs(gTWN_E014->mTownSetups, gTWN_E014->getSaturnPtr(0x605414c), arg);" "startScriptTask(pThis);" "startE014BackgroundTask(pThis);" "startMainLogic(pThis);" "startCameraTask(pThis);")
+   string(FIND "${source_text}" "    ${e014_stage}" e014_stage_found)
+   if(e014_stage_found LESS 0)
+    message(FATAL_ERROR "E014 startup stage boundary changed")
+   endif()
+   string(REPLACE "    ${e014_stage}" "    lagiSetE011FatalStage(\"E014: ${e014_stage}\");\n    ${e014_stage}" source_text "${source_text}")
+  endforeach()
   string(REPLACE "#include \"twn_e014.h\"" "#include \"town/e014/twn_e014.h\"" source_text "${source_text}")
   set(source_text "int scriptFunction_6056926();\nint scriptFunction_6057470();\n${source_text}")
   string(REPLACE "    overlayScriptFunctions.m_zeroArg[0x6057724]"
@@ -4197,7 +4245,7 @@ if(LAGI_AZEL_RUINS_LINK_TRIM)
  target_link_options(lagi PRIVATE -Wl,--gc-sections)
  if(LAGI_BATTLE_NATIVE_BUILD)
   target_sources(lagi PRIVATE src/platform/vita/vita_fatal_trace.cpp)
-  target_link_options(lagi PRIVATE -Wl,--wrap=abort -Wl,--wrap=__cxa_throw)
+  target_link_options(lagi PRIVATE -Wl,--wrap=abort -Wl,--wrap=__cxa_throw -Wl,--wrap=_ZSt21__glibcxx_assert_failPKciS0_S0_)
  endif()
 endif()
 

@@ -21,7 +21,7 @@ _Unwind_Reason_Code collect(_Unwind_Context* context,void* opaque)
     trace.addresses[trace.count++]=_Unwind_GetIP(context);
     return _URC_NO_REASON;
 }
-void report(const char* reason,const char* detail,void* caller)
+void report(const char* reason,const char* detail,void* caller,const char* context=nullptr)
 {
     if(reporting.test_and_set())return;
     // Separate append-only file: never race the normal log writer's file offset,
@@ -35,6 +35,10 @@ void report(const char* reason,const char* detail,void* caller)
             reason,detail?detail:"none",sceKernelGetThreadId(),caller,
             reinterpret_cast<void*>(&__wrap_abort),stage.load(std::memory_order_relaxed));
         if(n>0)sceIoWrite(fd,buffer,n<int(sizeof(buffer))?n:int(sizeof(buffer))-1);
+        if(context) {
+            n=std::snprintf(buffer,sizeof(buffer),"[FatalAssert] %.480s\n",context);
+            if(n>0)sceIoWrite(fd,buffer,n<int(sizeof(buffer))?n:int(sizeof(buffer))-1);
+        }
         // Caller is written before unwinding: missing EH tables must not lose it.
         Trace trace;
         _Unwind_Backtrace(collect,&trace);
@@ -57,6 +61,15 @@ extern "C" [[noreturn]] void __wrap_abort()
     __real_abort();
 }
 extern "C" [[noreturn]] void __real___cxa_throw(void*,std::type_info*,void(*)(void*));
+extern "C" [[noreturn]] void __real__ZSt21__glibcxx_assert_failPKciS0_S0_(const char*,int,const char*,const char*);
+extern "C" [[noreturn]] void __wrap__ZSt21__glibcxx_assert_failPKciS0_S0_(const char* file,int line,const char* function,const char* condition)
+{
+    char context[480];
+    std::snprintf(context,sizeof(context),"file=%.128s line=%d function=%.128s condition=%.128s",
+        file?file:"none",line,function?function:"none",condition?condition:"none");
+    report("cxx-assert",condition,__builtin_return_address(0),context);
+    __real__ZSt21__glibcxx_assert_failPKciS0_S0_(file,line,function,condition);
+}
 extern "C" [[noreturn]] void __wrap___cxa_throw(void* object,std::type_info* type,void(*destroy)(void*))
 {
     report("cxx-throw",type?type->name():nullptr,__builtin_return_address(0));
