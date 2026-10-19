@@ -9,6 +9,8 @@
 #include "kernel/fileBundle.h"
 #include "lagi/native_audio_stack.h"
 #include "lagi/native_audio_banks.h"
+#include "lagi/streamed_pcm.h"
+#include "lagi/cutscene_audio.h"
 #ifndef LAGI_BATTLE_AUDIO_STACK
 #define LAGI_BATTLE_AUDIO_STACK 0
 #endif
@@ -188,6 +190,9 @@ constexpr unsigned kAudioEventMask = kAudioEventCapacity - 1;
 std::atomic<unsigned long long> g_audioTraceSerial{0};
 bool g_scspInitialized = false;
 const sSequenceConfig* g_sequence = nullptr;
+lagi::StreamedPCM<> g_cutscenePCM;
+const void* g_cutscenePCMOwner=nullptr; // parser-thread owned
+unsigned g_cutscenePCMPackets=0;
 s32 g_sequenceNumber = -1;
 s32 g_loadingState = -1;
 s32 g_maxDistance = 0x200000;
@@ -907,6 +912,7 @@ void render_scsp_audio()
                 static_cast<int>(g_loadingState));
         }
 
+        g_cutscenePCM.mix(g_mixBuffer.data(), kRenderChunkFrames, kScspRate);
         const std::size_t written =
             lagi::platform::audio::write_pcm_frames(
                 g_mixBuffer.data(), kRenderChunkFrames);
@@ -1175,6 +1181,32 @@ void trace_sequence_config(s8 musicNumber, s8 mode)
 }
 
 } // namespace
+
+int lagiSubmitCutscenePCM(const void* owner,const std::uint8_t* data,std::size_t bytes,unsigned rate,unsigned channels,unsigned bits,
+    const std::uint8_t* wrapped,std::size_t contiguous)
+{
+    if(!owner || rate<8000 || rate>96000 || (channels!=1&&channels!=2) || (bits!=8&&bits!=16))return -2;
+    if(g_cutscenePCMOwner!=owner) {
+        g_cutscenePCMOwner=owner;g_cutscenePCMPackets=0;g_cutscenePCM.begin(rate);
+        lagi::platform::logging::writef("[EPKAudio] start owner=%p rate=%u channels=%u bits=%u\n",owner,rate,channels,bits);
+    }
+    const auto result=g_cutscenePCM.enqueue(data,bytes,channels,bits,wrapped,contiguous);
+    if(result==lagi::StreamedPCM<>::Result::busy)return -1;
+    if(result==lagi::StreamedPCM<>::Result::invalid)return -2;
+    if(++g_cutscenePCMPackets<=2)
+        lagi::platform::logging::writef("[EPKAudio] packet=%u bytes=%u queuedFrames=%u\n",g_cutscenePCMPackets,unsigned(bytes),g_cutscenePCM.queued());
+    return 0;
+}
+void lagiStopCutscenePCM(const void* owner)
+{
+    if(g_cutscenePCMOwner!=owner)return;
+    lagi::platform::logging::writef("[EPKAudio] stop owner=%p packets=%u queuedFrames=%u\n",owner,g_cutscenePCMPackets,g_cutscenePCM.queued());
+    g_cutscenePCMOwner=nullptr;g_cutscenePCM.begin(0);
+}
+void lagiPauseCutscenePCM(const void* owner,bool paused)
+{
+    if(g_cutscenePCMOwner==owner)g_cutscenePCM.pause(paused);
+}
 
 extern "C" void lagi_audio_stop_worker_for_shutdown() {
     if (g_audioWorkerThread >= 0) {

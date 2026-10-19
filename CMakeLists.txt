@@ -2663,6 +2663,7 @@ static void lagiPatchModelAddresses(sProcessed3dModel* model, u32 offset)
    "lagiPatchModelAddresses(pNewNode->m0_3dModel, mVdp1Offset);"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townCutscene.cpp")
+  set(source_text "#include \"lagi/cutscene_audio.h\"\n${source_text}")
   set(epk_actor_draw "    static void Draw(sCutsceneCommandDefaultTask* pThis)\n    {\n        pushCurrentMatrix();\n        pThis->m8.m18_drawFunction(&pThis->m8);\n        popMatrix();\n    }")
   string(FIND "${source_text}" "${epk_actor_draw}" epk_actor_found)
   if(epk_actor_found LESS 0)
@@ -2882,6 +2883,8 @@ GfsHn GFS_Open(const std::string& name)
     if (!iParm1)
         return;
 
+    lagiStopCutscenePCM(iParm1);
+
     LagiGfsHandle* stream = lagiGfsHandle(iParm1->m198.m0_gfsHandle);
     if (stream)
     {
@@ -3044,12 +3047,26 @@ GfsHn GFS_Open(const std::string& name)
     Unimplemented();
     return 0;
 }]=]
-   [=[s32 cutsceneCommand1(sStreamingFile*)
+   [=[s32 cutsceneCommand1(sStreamingFile* stream)
 {
-    // Opcode 1 is Saturn streamed-audio service data. Its packet remains part
-    // of Azel's command stream; Vita currently advances it while the game's
-    // native SCSP/BGM service continues independently.
-    return 0;
+    // Native 0600ED20: sixteen-byte packet header followed by planar PCM.
+    const auto* packet=stream->m28.m34_pBufferRead;
+    const u32 size=READ_BE_U32(packet);
+    if(size<16 || !stream->m194)return -1;
+    const auto* metadata=stream->m194;
+    const auto* payload=packet+16;
+    const auto* boundary=stream->m28.m38;
+    if(payload>=boundary)payload=stream->m28.m3C+(payload-boundary);
+    const auto contiguous=std::min<size_t>(size-16,boundary-payload);
+    const int result=lagiSubmitCutscenePCM(stream,payload,size-16,
+        metadata->m8_sampleRateFP>>16,metadata->m4_channels,metadata->m5_bitDepth,
+        stream->m28.m3C,contiguous);
+    if(result==-2) {
+        lagi::platform::logging::writef("[EPKAudio] invalid packet/format bytes=%u\n",size);
+        updateStreamingFileReadSub0(stream);
+        return -1;
+    }
+    return result; // busy keeps Azel's packet at the read cursor for retry
 }]=]
    source_text "${source_text}")
 
@@ -3058,9 +3075,9 @@ GfsHn GFS_Open(const std::string& name)
 {
     Unimplemented();
 }]=]
-   [=[void pauseCutscene(sStreamingFile*, s32)
+   [=[void pauseCutscene(sStreamingFile* stream, s32 paused)
 {
-    // pauseEngine[] already gates the Vita cutscene timeline.
+    lagiPauseCutscenePCM(stream,paused!=0);
 }]=]
    source_text "${source_text}")
 
