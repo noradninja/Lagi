@@ -41,6 +41,23 @@ source-path audit, not a claim about the user's exact saved EXP value.
 
 ## Still open
 
+## Wall-impact animated model restoration
+
+The wall-impact caller 0605A1D0 calls the animated-model factory 06062EAA,
+not the bone-debris factory. Its original arguments select owner slot 8,
+hierarchy 0018, animation 0210 and pose **02CC** (R6=0210+00BC).
+The retained comment incorrectly said 01CC and substituted bone debris.
+The generated adapter now restores the animated model with a copied world
+transform, native YXZ rotation, normal model draw and animation-end lifetime
+(06062F5E). Task deletion releases only its model instance, not bundle assets.
+This restores that specific omitted task, not all smoke/death effects.
+`tests/battle_impact_model_test.cpp` exercises the production task, including
+resource IDs, copy semantics, completion and failed-init cleanup. The earlier
+suspected pose-stride issue was ruled out: sPoseData still has the native B4
+layout. No speculative shared debris patch was made.
+
+## Remaining work
+
 - Wall-impact mesh/debris effects and death-bile spawning (0605A4EC remains
   explicitly unimplemented); do not replace them with generic particles.
 - Cinematic clouds and missing rock-break/monster SFX: trace native scheduled

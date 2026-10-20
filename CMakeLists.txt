@@ -2409,6 +2409,22 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A3_2/Arachnoth.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_impact.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_impact.inc" impact_service)
+  set(impact_begin "    // Create impact model at position with animation")
+  set(impact_end "void arachnoth_createSmokeParticle(")
+  string(FIND "${source_text}" "${impact_begin}" impact_start)
+  string(FIND "${source_text}" "${impact_end}" impact_stop)
+  if(impact_start LESS 0 OR impact_stop LESS impact_start)
+   message(FATAL_ERROR "Native Arachnoth impact model boundary changed")
+  endif()
+  math(EXPR impact_length "${impact_stop}-${impact_start}")
+  string(SUBSTRING "${source_text}" ${impact_start} ${impact_length} impact_old)
+  string(REPLACE "${impact_old}"
+   "    lagiCreateBattleImpactModel(dramAllocatorEnd[8].mC_fileBundle, 0x18, 0x2CC, 0x210, position, rotation);\n}\n\n"
+   source_text "${source_text}")
+  string(REPLACE "// 0605a1d0\nvoid arachnoth_createChargeImpact" "${impact_service}\n// 0605a1d0\nvoid arachnoth_createChargeImpact" source_text "${source_text}")
   # The reconstruction lost the sign of both arena anchors. Keep pointer
   # lifetime stable, but decode coordinates from the original overlay data.
   foreach(charge_anchor IN ITEMS "0x1D2000|0x060A909C" "0x230000|0x060A9090")
