@@ -745,8 +745,22 @@ void service_pending_sounds()
     g_pendingSounds.clear();
 }
 
+void clock_scsp_discard(bool throttle = true);
 void render_scsp_audio()
 {
+    // EPK PCM owns an independent lane, including after fade-all has muted
+    // gameplay synthesis. Keep driver clocks running without leaking old BGM.
+    if (!g_gameplayRenderEnabled && g_cutscenePCM.active()) {
+        ensure_output_stream();
+        if (lagi::platform::audio::pcm_stream_active() &&
+            lagi::platform::audio::queued_pcm_frames() < kTargetQueuedFrames) {
+            if (g_scspInitialized && g_sequence) clock_scsp_discard(false);
+            std::fill(g_mixBuffer.begin(), g_mixBuffer.end(), 0);
+            g_cutscenePCM.mix(g_mixBuffer.data(), kRenderChunkFrames, kScspRate);
+            lagi::platform::audio::write_pcm_frames(g_mixBuffer.data(), kRenderChunkFrames);
+        }
+        return;
+    }
     if (!g_scspInitialized || !g_sequence)
         return;
 
@@ -934,7 +948,7 @@ void render_scsp_audio()
     }
 }
 
-void clock_scsp_discard()
+void clock_scsp_discard(bool throttle)
 {
     // Movies own SceAudioOut, but the Saturn sound CPU must continue running.
     // Advance one small audio-time slice and discard the generated PCM so the
@@ -951,7 +965,7 @@ void clock_scsp_discard()
 
     // 256 frames at 44.1 kHz is ~5.8 ms. Account approximately for the work
     // above while avoiding a busy-spin on CPU2 during FMV playback.
-    sceKernelDelayThread(5000);
+    if (throttle) sceKernelDelayThread(5000);
 }
 
 void worker_load_banks(s32 musicNumber, s32 mode)
@@ -1021,7 +1035,7 @@ void worker_fade_all()
     }
 
     // Module/movie transitions call this immediately before movie ownership.
-    // Stop synthesizing into the shared PCM service until the next bank load.
+    // Stop gameplay synthesis until the next bank load; EPK PCM remains independent.
     g_gameplayRenderEnabled = false;
 }
 
@@ -1099,7 +1113,8 @@ int audio_worker_thread(SceSize, void*)
 
         lagi_dsp_service_pending(&SCSP.DSP);
 
-        if (g_gameplayRenderEnabled && g_sequence) {
+        g_cutscenePCM.service();
+        if ((g_gameplayRenderEnabled && g_sequence) || g_cutscenePCM.active()) {
             render_scsp_audio();
             if (lagi::platform::audio::queued_pcm_frames() >=
                 kTargetQueuedFrames) {

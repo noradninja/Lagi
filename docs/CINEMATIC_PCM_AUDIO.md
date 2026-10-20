@@ -47,6 +47,19 @@ matching sample counts. Final queued samples are cancelled on native closure.
 
 ## Validation and acceptance
 
+### Fade-all / first-packet stall correction
+
+The first device test stopped E011 command consumption at frame 638: the audio
+start was logged but no packet was accepted. Fade-all disables gameplay output;
+the worker previously acknowledged PCM generations only inside that disabled
+render path. The worker now services generation changes regardless of device
+queue capacity, and routes active EPK PCM independently of gameplay synthesis.
+When gameplay is muted, its driver still clocks with discarded output while EPK
+samples mix into a cleared buffer. Output queue pacing replaces the FMV discard
+sleep in this lane. This does not resume old gameplay music or take a second
+audio port. Queue tests cover acknowledgement without rendering and stop state;
+device audio and cinematic completion still require a fresh run.
+
 Host tests cover all signed formats, planar stereo, odd-byte ring wrap, additive
 saturation, 22,050-to-44,100 interpolation, whole-packet backpressure, generation
 reset/stop, pause and 10,000-frame concurrent SPSC transfer. A second fixture runs

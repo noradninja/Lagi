@@ -23,7 +23,9 @@ static std::vector<u8> program(FILE* f,const char* wanted){
 static void units(){
  lagi::StreamedPCM<8> q;using R=lagi::StreamedPCM<8>::Result;
  const u8 pcm[]={0,0,3,232,7,208,11,184};std::int16_t out[32]{};
- q.begin(22050);assert(q.enqueue(pcm,8,1,16)==R::busy);q.mix(out,0,44100);
+ q.begin(22050);assert(q.enqueue(pcm,8,1,16)==R::busy);
+ // A faded gameplay lane or full device ring must not prevent reset acknowledgement.
+ q.service();assert(q.active());
  assert(q.enqueue(pcm,8,1,16)==R::accepted);std::fill(out,out+16,10);q.mix(out,8,44100);
  const int expected[]={0,500,1000,1500,2000,2500,3000,3000};
  for(int i=0;i<8;++i)assert(out[i*2]==expected[i]+10&&out[i*2+1]==expected[i]+10);
@@ -36,7 +38,7 @@ static void units(){
  assert(out[0]==32767&&out[2]==-32768);
  assert(q.enqueue(pcm,3,1,16)==R::invalid);assert(q.enqueue(pcm,8,3,16)==R::invalid);
  const u8 full[16]{};assert(q.enqueue(full,16,1,16)==R::accepted);assert(q.enqueue(pcm,2,1,16)==R::busy);
- q.begin(0);q.mix(out,0,44100);assert(q.queued()==0);q.begin(44100);q.mix(out,0,44100);
+ q.begin(0);q.service();assert(!q.active());assert(q.queued()==0);q.begin(44100);q.mix(out,0,44100);
  assert(q.enqueue(pcm,2,1,16)==R::accepted); // old-generation payload cannot leak
  q.pause(true);out[0]=out[1]=77;q.mix(out,1,44100);assert(out[0]==77&&q.queued()==1);q.pause(false);
  q.begin(44100);assert(q.enqueue(pcm,2,1,16)==R::busy);q.mix(out,0,44100);assert(q.queued()==0);

@@ -17,6 +17,9 @@ template<std::size_t Capacity=65536> class StreamedPCM {
     std::uint32_t generation=0,rate=0,phase=0;
 public:
     enum class Result { accepted,busy,invalid };
+    // Consumer only: service transitions even when the output ring is full.
+    void service() { mix(nullptr,0,0); }
+    bool active() const { return rate!=0; } // consumer only
     void begin(std::uint32_t sampleRate) {
         paused.store(false,std::memory_order_release);
         requestedRate.store(sampleRate,std::memory_order_relaxed);
