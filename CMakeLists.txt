@@ -4355,7 +4355,7 @@ if(LAGI_BATTLE_LINK_AUDIT)
  target_link_options(lagi PRIVATE "-Wl,--undefined=_Z19overlayStart_BTL_A3P10s_workArea")
 endif()
 set_property(TARGET lagi APPEND PROPERTY LINK_DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
-set_property(SOURCE src/integration/lagi_runtime.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+set_property(SOURCE src/integration/lagi_runtime.cpp src/integration/lagi_input_bridge.cpp APPEND PROPERTY COMPILE_DEFINITIONS
  LAGI_BATTLE_BUILD_NATIVE=$<BOOL:${LAGI_BATTLE_NATIVE_BUILD}>
  LAGI_BATTLE_BUILD_EXECUTE_A3=$<BOOL:${LAGI_BATTLE_EXECUTE_A3}>
  LAGI_BATTLE_BUILD_LINK_AUDIT=$<BOOL:${LAGI_BATTLE_LINK_AUDIT}>)

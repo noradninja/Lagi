@@ -5,6 +5,7 @@
 #include "lagi/battle_stick_input.h"
 #if LAGI_BATTLE_BUILD_EXECUTE_A3
 #include "battle/battleManager.h"
+#include "kernel/moduleManager.h"
 #endif
 
 #include "VDP1.h"
@@ -24,7 +25,8 @@ void sync_to_azel()
 
     bool battleRunning = false;
 #if LAGI_BATTLE_BUILD_EXECUTE_A3
-    battleRunning = gBattleManager && gBattleManager->m0_status == 3;
+    battleRunning = gGameStatus.m0_gameMode == 4 ||
+        (gBattleManager && gBattleManager->m0_status == 3);
 #endif
     const auto directions = battle_stick_directions(
         platform::input::analog_x(), platform::input::analog_y(), battleRunning);
