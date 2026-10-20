@@ -1,6 +1,12 @@
 // BTL_A3_2 0605B412..464. Upstream calls this task a smoke puff, but its
 // native draw is a textured strip between the two simulated world endpoints.
 #include "kernel/rayDisplay.h"
+static void lagiInitArachnothStrandAllocation(sSmokePuffTask* task)
+{
+    // 0605A774..780 loads owner slot 0, then copies its allocation into
+    // task +4. The formation parent intentionally has no VRAM allocation.
+    task->m4_vd1Allocation = dramAllocatorEnd[0].mC_fileBundle->m4_vd1Allocation;
+}
 static void smokePuff_draw(sSmokePuffTask* task)
 {
     const u16 base=task->m4_vd1Allocation->m4_vdp1Memory;

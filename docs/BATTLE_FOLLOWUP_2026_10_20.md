@@ -125,3 +125,27 @@ the production growth code with synthetic rows to test weighting, multiple
 levels, limits, reset and level cap. These are not on-device save acceptance
 or proof of the pause-menu layout. Keep a backup before testing new saves;
 older builds cannot read version 10001.
+
+## Boss-entry crash after strand draw restoration
+
+The 2026-10-20 12:43 recording/log and partial core
+`psp2core-1792514601-0x003794398b-eboot.bin.psp2dmp.tmp` reach boss battle
+after Start skips E011. The gzip expands to 9,062 bytes: no complete stack
+or module inventory. Available thread entries establish a +4E000 runtime
+relocation, independently matching the SCSP worker and render-thread entry
+addresses in the supplied executable. PC 811BCC9C maps to linked 8116EC9C,
+`smokePuff_draw`; LR maps to its typed Draw wrapper. The fault instruction
+is `ldrh r3,[r3,#4]` with r3=0, reading the null VRAM allocation's base.
+
+This was introduced by restoring the previously skipped strand draw without
+also restoring its factory's allocation assignment. Native 0605A774..780
+loads `dramAllocatorEnd[0]`'s file owner/allocation and assigns task +4.
+The formation parent has no allocation to inherit. The generated spawn now
+performs that explicit assignment; no renderer-side fallback, guessed bank,
+or suppression of the draw was added. Start-skip flow is unchanged.
+
+The strand fixture now extracts and executes the actual generated factory
+with an allocation-less parent, then draws the result. Original-disc checks
+cover both the allocation instructions/global and draw constants. This closes
+the earlier test gap, which assumed an already valid allocation. Strand and
+death-bile/trail fixtures pass; Vita boss-entry acceptance remains pending.

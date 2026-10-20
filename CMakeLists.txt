@@ -2521,6 +2521,14 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    message(FATAL_ERROR "Native Arachnoth strand draw boundary changed")
   endif()
   string(REPLACE "${drool_draw_old}" "${drool_draw_service}" source_text "${source_text}")
+  set(drool_owner_anchor "    pTask->m8_positionPtr = position;")
+  string(FIND "${source_text}" "${drool_owner_anchor}" drool_owner_found)
+  if(drool_owner_found LESS 0)
+   message(FATAL_ERROR "Native Arachnoth strand allocation boundary changed")
+  endif()
+  string(REPLACE "${drool_owner_anchor}"
+   "    lagiInitArachnothStrandAllocation(pTask); // 0605A774..780\n${drool_owner_anchor}"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleTrail.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_trail_draw.inc")
