@@ -192,3 +192,16 @@ draws, retaining the original live-battle emission predicate and spring task.
 The strand fixture checks native instruction anchors and low/middle/high RNG
 values against the authored position ranges. Battle VPK compilation and the
 fixture pass; visible persistent mouth strands still need hardware confirmation.
+
+### Authored two-shape boss deformation
+
+Restore omitted BTL_A3_2 06055BEC -> 06054E38 -> MAIN 0601507A.
+The caller targets sub-model +98, uses descriptors 060A9538/540 (hierarchies
+000C/0010, poses 01C0/01C4), and supplies the existing m288[2] spring value.
+The shared native two-source service reproduces 16.16 radius/translation and
+truncated 2.14 vertex/normal/color blends. It leaves bone 0, animation rotations
+and scales unchanged, and ignores native spring overshoot outside [0,1].
+Changed mesh snapshots are invalidated individually; already-published frames
+retain immutable data. No whole-actor scale, new animation timing or replacement
+shape is introduced. Disc-backed fixture and battle VPK pass; swelling and mouth
+deformation appearance remain hardware-pending.

@@ -2543,6 +2543,19 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    message(FATAL_ERROR "Native idle drool offset boundary changed")
   endif()
   string(REPLACE "${drool_offset_old}" "            sVec3_FP temp = lagiArachnothDroolOffset();" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_native_two_pose_morph.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_native_two_pose_morph.inc" arachnoth_morph_service)
+  string(REPLACE "void arachnothFormation_update(sArachnothFormation* pThis)"
+   "${arachnoth_morph_service}\nvoid arachnothFormation_update(sArachnothFormation* pThis)" source_text "${source_text}")
+  set(arachnoth_morph_old "    // TODO: arachnothFormation_updateSub8 — applies m288[2] jaw rotation to sub-model bones")
+  string(FIND "${source_text}" "${arachnoth_morph_old}" arachnoth_morph_found)
+  if(arachnoth_morph_found LESS 0)
+   message(FATAL_ERROR "Native Arachnoth two-pose morph boundary changed")
+  endif()
+  string(REPLACE "${arachnoth_morph_old}"
+   "    lagiNativeTwoPoseMorph(pThis->m98_poisonDart.m0, &pThis->m98_poisonDart.m8_model, g_BTL_A3_2->getSaturnPtr(0x060A9538), g_BTL_A3_2->getSaturnPtr(0x060A9540), pThis->m288[2]);"
+   source_text "${source_text}")
   set(drool_owner_anchor "    pTask->m8_positionPtr = position;")
   string(FIND "${source_text}" "${drool_owner_anchor}" drool_owner_found)
   if(drool_owner_found LESS 0)
