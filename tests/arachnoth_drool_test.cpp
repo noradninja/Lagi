@@ -3,6 +3,9 @@
 #include <cstdint>
 #include <cstdio>
 using u16=std::uint16_t;
+std::uint32_t rng=0; int rngCalls=0;
+std::uint32_t randomNumber(){++rngCalls;return rng;}
+int MTH_Mul(std::uint32_t a,int b){return int((std::int64_t(a)*b)>>16);}
 struct sVec3_FP:std::array<int,3>{
  void zeroize(){fill(0);}
  sVec3_FP& operator+=(const sVec3_FP& b){for(int i=0;i<3;++i)(*this)[i]+=b[i];return *this;}
@@ -38,6 +41,14 @@ void displayRaySegment(std::array<sVec3_FP,2>& points,int width,u16 address,int 
 #include "production.inc"
 #include "factory.inc"
 int main(){
+ for(auto value:{0u,0x80000000u,0xFFFF0000u}){
+  rng=value;rngCalls=0;auto offset=lagiArachnothDroolOffset();
+  assert(rngCalls==3);
+  assert(offset[0]>=-0x3000&&offset[0]<0x3000);
+  assert(offset[1]>=-0x1000&&offset[1]<0x1000);
+  assert(offset[2]>=0x2000&&offset[2]<0x5000);
+  if(value==0x80000000u)assert(offset==sVec3_FP({0,0,0x3800}));
+ }
  owner.m4_vd1Allocation=&allocation;dramAllocatorEnd[0].mC_fileBundle=&owner;
  sSmokePuffTask task;assert(!task.m4_vd1Allocation);
  lagiInitArachnothStrandAllocation(&task);smokePuff_draw(&task);assert(draws==1);

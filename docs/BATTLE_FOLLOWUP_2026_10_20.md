@@ -182,3 +182,13 @@ instruction, signed calculation and generated caller before executing the
 production model fixture. No game assets are included. Hardware acceptance is
 pending; persistent mouth strands and belly/enrage presentation remain separate
 investigations, not claimed fixed by this pose correction.
+
+### Idle mouth strand offsets
+
+BTL_A3_2 0605569E/B0/C2 use logical SHLR16 on each RNG result. The
+reconstruction converted the RNG word through signed fixedPoint::toInteger,
+biasing all three offsets for half the RNG range. Restore ordered unsigned
+draws, retaining the original live-battle emission predicate and spring task.
+The strand fixture checks native instruction anchors and low/middle/high RNG
+values against the authored position ranges. Battle VPK compilation and the
+fixture pass; visible persistent mouth strands still need hardware confirmation.

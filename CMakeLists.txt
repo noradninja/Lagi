@@ -2534,6 +2534,15 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    message(FATAL_ERROR "Native Arachnoth strand draw boundary changed")
   endif()
   string(REPLACE "${drool_draw_old}" "${drool_draw_service}" source_text "${source_text}")
+  set(drool_offset_old [=[            sVec3_FP temp;
+            temp[0] = MTH_Mul(fixedPoint(randomNumber()).toInteger(), 0x6000) - 0x3000;
+            temp[1] = MTH_Mul(fixedPoint(randomNumber()).toInteger(), 0x2000) - 0x1000;
+            temp[2] = MTH_Mul(fixedPoint(randomNumber()).toInteger(), 0x3000) + 0x2000;]=])
+  string(FIND "${source_text}" "${drool_offset_old}" drool_offset_found)
+  if(drool_offset_found LESS 0)
+   message(FATAL_ERROR "Native idle drool offset boundary changed")
+  endif()
+  string(REPLACE "${drool_offset_old}" "            sVec3_FP temp = lagiArachnothDroolOffset();" source_text "${source_text}")
   set(drool_owner_anchor "    pTask->m8_positionPtr = position;")
   string(FIND "${source_text}" "${drool_owner_anchor}" drool_owner_found)
   if(drool_owner_found LESS 0)

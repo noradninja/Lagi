@@ -6,6 +6,7 @@ try {
  function Read-Word([long]$ea){$v=0;for($i=0;$i -lt 2;$i++){$o=$ea+$i-0x06054000;$disc.Position=(258333+[long][Math]::Floor($o/2048))*2352+16+($o%2048);$b=$disc.ReadByte();if($b -lt 0){throw 'Short disc read'};$v=($v-shl 8)-bor $b};return $v}
  foreach($pair in @(@(0x0605B466,0x108),@(0x0605B468,0x2EEC),@(0x0605B46A,0x510),@(0x0605B46C,0xCD0),@(0x0605B46E,0x400),@(0x0605B470,0x0602),@(0x0605B472,0xE136),@(0x0605A778,0x6432),@(0x0605A77A,0x5443),@(0x0605A77C,0x5241),@(0x0605A780,0x1E21),@(0x0605A998,0x0605),@(0x0605A99A,0x3248))){if((Read-Word $pair[0]) -ne $pair[1]){throw 'Native strand draw/owner contract differs'}}
  'PASS original strand draw constants and MAIN 0602E136 dispatch'
+ foreach($ea in @(0x0605569E,0x060556B0,0x060556C2)){if((Read-Word $ea) -ne 0x4429){throw 'Native idle drool no longer uses unsigned SHLR16'}}
 } finally {$disc.Dispose()}
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-drool-'+[guid]::NewGuid())
 New-Item -ItemType Directory $scratch | Out-Null
@@ -13,6 +14,7 @@ $source=Get-Content -Raw "$repo/src/integration/lagi_arachnoth_drool.inc"
 $source=[regex]::Replace($source,'(?m)^#include[^\r\n]*','')
 [IO.File]::WriteAllText("$scratch/production.inc",$source)
 $generated=Get-Content -Raw (Join-Path $repo "$BuildDirectory/azel_upstream/battle_BTL_A3_2_Arachnoth.cpp")
+if(!$generated.Contains('sVec3_FP temp = lagiArachnothDroolOffset();')){throw 'Idle drool offset adapter absent'}
 $begin=$generated.LastIndexOf('void arachnoth_spawnSmokePuff(')
 $end=$generated.IndexOf('// 0605680a',$begin)
 if($begin -lt 0 -or $end -lt $begin){throw 'Generated strand factory boundary changed'}

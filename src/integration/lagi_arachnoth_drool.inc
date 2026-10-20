@@ -1,6 +1,16 @@
 // BTL_A3_2 0605B412..464. Upstream calls this task a smoke puff, but its
 // native draw is a textured strip between the two simulated world endpoints.
 #include "kernel/rayDisplay.h"
+static sVec3_FP lagiArachnothDroolOffset()
+{
+    // 0605569E/B0/C2: SHLR16, not signed fixedPoint::toInteger().
+    // Keep the three RNG calls ordered exactly as the authored update.
+    sVec3_FP offset;
+    offset[0] = MTH_Mul(randomNumber() >> 16, 0x6000) - 0x3000;
+    offset[1] = MTH_Mul(randomNumber() >> 16, 0x2000) - 0x1000;
+    offset[2] = MTH_Mul(randomNumber() >> 16, 0x3000) + 0x2000;
+    return offset;
+}
 static void lagiInitArachnothStrandAllocation(sSmokePuffTask* task)
 {
     // 0605A774..780 loads owner slot 0, then copies its allocation into
