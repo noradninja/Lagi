@@ -2427,6 +2427,18 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_devour.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_devour.inc" devour_service)
+  # Native 06057E48..74 branches to the epilogue, not the common timer
+  # increment. A break cancels the countdown and permanently stalls Devour.
+  set(devour_wait_old [=[        // Wait for delay, then switch to eat-dragon model
+        if (--pThis->m2C4_currentAttackDelay < 1)
+        {
+            arachnoth_setEatDragonAnim(pThis, -1);
+            playSystemSoundEffect(0x6F);
+            pThis->m2C4_currentAttackDelay = 0;
+            pThis->m2C0_currentAttackState++;
+        }
+        break;]=])
+  string(REPLACE "        break;" "        return; // Native countdown skips the common increment." devour_wait_new "${devour_wait_old}")
   set(devour_approach_old [=[        MTH_Mul(gBattleManager->m10_battleOverlay->m18_dragon->m8_position[0] - pThis->m308_eatDragonPosition[0], 0x28F);
         return; // early return — skip m2C4 increment]=])
   set(devour_closeup_old [=[            pThis->m2CC = gBattleManager->m10_battleOverlay->m18_dragon->m8_position;
@@ -2434,13 +2446,14 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
             pThis->m2CC[0] += MTH_Mul(0x4000, getSin((pThis->m278_targetedQuadrant << 0x1A) >> 16));
             return;]=])
   set(devour_definition "static void arachnoth_eatDragonAttack_update(sArachnothFormation* pThis)\n{")
-  foreach(devour_anchor devour_approach_old devour_closeup_old devour_definition)
+  foreach(devour_anchor devour_wait_old devour_approach_old devour_closeup_old devour_definition)
    string(FIND "${source_text}" "${${devour_anchor}}" devour_found)
    if(devour_found LESS 0)
     message(FATAL_ERROR "Native Devour boundary changed: ${devour_anchor}")
    endif()
   endforeach()
   string(REPLACE "${devour_definition}" "${devour_service}\n${devour_definition}" source_text "${source_text}")
+  string(REPLACE "${devour_wait_old}" "${devour_wait_new}" source_text "${source_text}")
   string(REPLACE "${devour_approach_old}" "        lagiArachnothDevourApproach(pThis);\n        break;" source_text "${source_text}")
   string(REPLACE "${devour_closeup_old}" "            lagiArachnothDevourCloseup(pThis);" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleHud.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
