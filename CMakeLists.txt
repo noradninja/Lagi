@@ -806,6 +806,19 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   endforeach()
  endif()
  if(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_menu_growth.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_menu_growth.inc" menu_growth_service)
+  set(menu_growth_stub "        PDS_unimplemented(\"draw level curve\");")
+  set(menu_growth_draw "void s_statusMenuTaskWorkArea::Draw(s_statusMenuTaskWorkArea* pWorkArea)")
+  foreach(menu_growth_anchor IN ITEMS menu_growth_stub menu_growth_draw)
+   string(FIND "${source_text}" "${${menu_growth_anchor}}" menu_growth_found)
+   if(menu_growth_found LESS 0)
+    message(FATAL_ERROR "Native menu growth boundary changed: ${menu_growth_anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "${menu_growth_stub}" "        lagiDrawMenuGrowth();" source_text "${source_text}")
+  string(REPLACE "${menu_growth_draw}" "${menu_growth_service}\n${menu_growth_draw}" source_text "${source_text}")
   string(REPLACE
    "void s_FieldSubTaskWorkArea::Init(s_FieldSubTaskWorkArea* pFieldSubTaskWorkArea)\n{"
    "void s_FieldSubTaskWorkArea::Init(s_FieldSubTaskWorkArea* pFieldSubTaskWorkArea)\n{\n    pFieldSubTaskWorkArea->fieldSubTaskStatus = 0; // LAGI_FIELD_ENTRY_ZERO_STATE"

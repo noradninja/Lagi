@@ -149,3 +149,22 @@ with an allocation-less parent, then draws the result. Original-disc checks
 cover both the allocation instructions/global and draw constants. This closes
 the earlier test gap, which assumed an already valid allocation. Strand and
 death-bile/trail fixtures pass; Vita boss-entry acceptance remains pending.
+
+## Status-menu current EXP and next-level bar
+
+Restored the independent `draw level curve` stub in the generated status
+menu. MAIN 0601A05E..19C prints LV at (3,36), current EXP at (3,44), NEXT at
+(3,46), and submits the authored polygon at x=-113 with an 11-pixel height.
+Its fill is floor(63 * (XP-currentThreshold)/(nextThreshold-currentThreshold)),
+using the same live COMMON 0020701C 12-byte rows as battle progression.
+Command 1004, PMOD 04C0, color 8256, NTSC/PAL vertical placement and sorting
+depth match the native caller/0602CAF4 submitter. No replacement font, layout
+shift or world-space rendering is involved. Level 99 omits NEXT/fill; the
+existing Floater branch is unchanged. Out-of-interval legacy data is clamped
+for display only and never changes player EXP or level.
+
+`tests/menu_growth_test.ps1 -DiscImage <disc>` checks original instruction
+anchors and executes the production helper for empty/partial/full progress,
+next-level boundaries, max level, NTSC/PAL, text positions and command bounds.
+Hardware menu appearance remains pending. The menu can be checked directly
+after loading, without entering the boss battle.
