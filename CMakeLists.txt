@@ -2691,6 +2691,15 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "${status_y_old}"
    "vdp1WriteEA.mE_CMDYA = static_cast<s16>(pThis->m18_part1Y + 0x43); // Native HUD slide direction"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleResultScreenProgressiveText.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # BTL_A3 0606E858: MOV.L @(8,R13),R0, then AND #15.
+  # The descriptor stores a big-endian long, not its most significant byte.
+  set(result_palette_old "((readSaturnS8(config + 8)) & 0xF)")
+  string(FIND "${source_text}" "${result_palette_old}" result_palette_found)
+  if(result_palette_found LESS 0)
+   message(FATAL_ERROR "Native result text palette boundary changed")
+  endif()
+  string(REPLACE "${result_palette_old}" "((readSaturnS32(config + 8)) & 0xF)" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/berserk_laser.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # 0609DA3E..56: both SRCA and COLR are relative to the owner's VRAM
   # allocation. Leaving COLR unrelocated samples an unrelated LUT.

@@ -312,3 +312,15 @@ output keeps the cache and externally modified geometry is still restored.
 Disc-backed host fixture and full-resolution battle VPK build pass. This is
 a bounded CPU/cache optimization, not proof that the reported slowdown is
 resolved; fresh hardware timing remains required.
+
+### Result label palette descriptor width
+
+BTL_A3 0606E858 reads the descriptor palette with MOV.L @(8,R13),R0
+and masks its low nibble. The reconstructed immediate string printer read
+the most significant byte instead. Big-endian descriptors 060ABA20..60
+therefore incorrectly selected bank zero instead of D/C. Correct the shared
+generated printer to read S32, retaining palette restoration and all strings.
+The disc-backed test checks the native load/AND and all five label palette
+fields, then executes the generated printer with caller-palette restoration.
+Host fixture and full-resolution battle VPK pass; screenshot validation is
+pending hardware. No game font or palette data is committed.
