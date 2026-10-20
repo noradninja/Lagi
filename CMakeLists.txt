@@ -2400,6 +2400,26 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[1]);" "playSystemSoundEffect(pThis->mCC->m2D_hitSound);" source_text "${source_text}")
   string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A3_2/Arachnoth.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_devour.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_devour.inc" devour_service)
+  set(devour_approach_old [=[        MTH_Mul(gBattleManager->m10_battleOverlay->m18_dragon->m8_position[0] - pThis->m308_eatDragonPosition[0], 0x28F);
+        return; // early return — skip m2C4 increment]=])
+  set(devour_closeup_old [=[            pThis->m2CC = gBattleManager->m10_battleOverlay->m18_dragon->m8_position;
+            pThis->m2CC[1] += 0xA000;
+            pThis->m2CC[0] += MTH_Mul(0x4000, getSin((pThis->m278_targetedQuadrant << 0x1A) >> 16));
+            return;]=])
+  set(devour_definition "static void arachnoth_eatDragonAttack_update(sArachnothFormation* pThis)\n{")
+  foreach(devour_anchor devour_approach_old devour_closeup_old devour_definition)
+   string(FIND "${source_text}" "${${devour_anchor}}" devour_found)
+   if(devour_found LESS 0)
+    message(FATAL_ERROR "Native Devour boundary changed: ${devour_anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "${devour_definition}" "${devour_service}\n${devour_definition}" source_text "${source_text}")
+  string(REPLACE "${devour_approach_old}" "        lagiArachnothDevourApproach(pThis);\n        break;" source_text "${source_text}")
+  string(REPLACE "${devour_closeup_old}" "            lagiArachnothDevourCloseup(pThis);" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleHud.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # BTL_A3 060726B6..CA / 0607271E..26: native position is
   # -(-163 - 16 - part1Y + 112), hence 67 + part1Y, not 67 - part1Y.
