@@ -938,6 +938,17 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # integration lands, disabling LAGI_AZEL_RUINS_LINK_TRIM restores the upstream
  # dispatch table unchanged.
  if(relative_path STREQUAL "kernel/moduleManager.cpp" AND LAGI_AZEL_RUINS_LINK_TRIM)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_module_exit_fade.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_module_exit_fade.inc" module_exit_fade_service)
+  set(module_exit_fade_anchor "void moduleManager_Draw(s_moduleManager* pWorkArea)\n{")
+  string(FIND "${source_text}" "${module_exit_fade_anchor}" module_exit_fade_found)
+  if(module_exit_fade_found LESS 0)
+   message(FATAL_ERROR "Native module-manager exit-fade boundary changed")
+  endif()
+  string(REPLACE "${module_exit_fade_anchor}"
+   "${module_exit_fade_service}\n${module_exit_fade_anchor}\n    if (pWorkArea->state == 0 && lagiWaitForModuleExitFade(pWorkArea)) return; // LAGI_MODULE_EXIT_FADE"
+   source_text "${source_text}")
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
    "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/platform.h\"\n#include \"lagi/azel_save_platform.h\""

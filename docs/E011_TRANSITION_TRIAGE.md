@@ -211,3 +211,29 @@ The 640-second supplied video was sampled directly: the boss attack camera can
 put a foreground rock between the camera and the actors (e.g. around 352 s).
 That observation alone does not prove a depth-test error; authored battle-camera
 positions and near clipping need comparison before disabling any occlusion.
+
+## 2026-10-19: pre-cinematic fades reopened and serviced before teardown
+
+The user retracts the earlier fade acceptance: no outgoing cinematic fades are
+visible, not just the Deep Canyon tunnel. MAIN 06027682..060276A0 confirms the
+existing module transition's two black (`0`) targets and 30-frame duration.
+The preceding module state marks the outgoing task finished; native synchronous
+overlay dispatch then replaces the scene in the same task pass as the fade
+request. A renderer color-offset change cannot recover the deleted scene.
+
+The generated module manager now services that existing request before task
+deletion for native scene -> movie/town transitions, identified through COMMON's
+native destination table. It waits on both Azel stopped flags, without blocking
+the task loop or advancing a second fade clock. The priority gate is honored;
+the request is not restarted each frame. Ordinary field/subfield transitions,
+battle entry, pushed overlays and frontend save/title startup are excluded.
+An already completed blackout proceeds immediately without a second hold.
+The original module-state request remains; its black-to-black request cannot
+expose the outgoing scene. Incoming cinematic scripts retain their fades.
+
+This is a Vita presentation-boundary adaptation, not a claim that the original
+game used this additional task-loop wait. No upstream source or script/data is
+changed. The production helper fixture checks route selection, both completion
+flags, priority, cancellation and one-time requests; a generated-source guard
+checks placement before task deletion. Host checks/builds do not establish a
+visible fade: test E006/E011 and post-boss E014 with the audio fix on hardware.
