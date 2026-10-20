@@ -10,11 +10,12 @@ float4 main(
 #if LAGI_DITHER_LOOKUP
     uniform sampler2D ditherOffsets : TEXUNIT1,
 #endif
-    uniform float4 textureSize,
-    uniform float meshMode)
+    uniform float4 textureSize)
 {
-    if (meshMode > 0.5f && frac((floor(fragCoord.x)+floor(fragCoord.y))*0.5f)>=0.5f)
+#if LAGI_NATIVE_MESH
+    if (frac((floor(fragCoord.x)+floor(fragCoord.y))*0.5f)>=0.5f)
         discard;
+#endif
 #if LAGI_DITHER_LOOKUP
     float2 offset = tex2D(ditherOffsets, fragCoord.xy * 0.5f).rg;
 #else

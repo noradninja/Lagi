@@ -1,0 +1,2 @@
+#define LAGI_NATIVE_MESH 1
+#include "stochastic_gouraud_f.cg"

@@ -714,7 +714,24 @@ add_custom_command(
  VERBATIM
 )
 
+set(LAGI_GOURAUD_MESH_OBJECTS)
+foreach(mesh_shader IN ITEMS stochastic_gouraud textured_gouraud_subdiv)
+ set(mesh_name "lagi_${mesh_shader}_mesh_f")
+ set(mesh_gxp "${CMAKE_CURRENT_BINARY_DIR}/${mesh_name}.gxp")
+ set(mesh_obj "${CMAKE_CURRENT_BINARY_DIR}/${mesh_name}_gxp.o")
+ add_custom_command(OUTPUT "${mesh_gxp}"
+  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${mesh_shader}_mesh_f.cg"
+   -DLAGI_DITHER_LOOKUP=$<BOOL:${LAGI_DITHER_LOOKUP}> -Wperf -fastprecision -O3 -o "${mesh_gxp}"
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${mesh_shader}_mesh_f.cg"
+   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${mesh_shader}_f.cg" VERBATIM)
+ add_custom_command(OUTPUT "${mesh_obj}"
+  COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm "${mesh_name}.gxp" "${mesh_obj}"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" DEPENDS "${mesh_gxp}" VERBATIM)
+ list(APPEND LAGI_GOURAUD_MESH_OBJECTS "${mesh_obj}")
+endforeach()
 set_source_files_properties(
+ ${LAGI_GOURAUD_MESH_OBJECTS}
  "${LAGI_COLOR_V_OBJ}" "${LAGI_COLOR_F_OBJ}"
  "${LAGI_GOURAUD_DEBUG_F_OBJ}"
  "${LAGI_TEXTURED_LIT_F_OBJ}"
@@ -4382,6 +4399,7 @@ add_executable(lagi
  src/platform/vita/neptune_renderer.cpp
  ${LAGI_COLOR_V_OBJ}
  ${LAGI_COLOR_F_OBJ}
+ ${LAGI_GOURAUD_MESH_OBJECTS}
  ${LAGI_GOURAUD_DEBUG_F_OBJ}
  ${LAGI_TEXTURED_LIT_F_OBJ}
  ${LAGI_TEXTURED_LIT_OPAQUE_F_OBJ}

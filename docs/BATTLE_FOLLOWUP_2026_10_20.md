@@ -256,3 +256,21 @@ color mode 8; it is not silently rewritten globally to 0108. If a remaining
 effect still lacks stipple, `[NativeEffectMaterial]` captures the actual battle
 sprite PMOD/material for further native-producer tracing. This is a shared
 coverage fix, not a claim that all requested effects are hardware-verified.
+
+### Stipple performance follow-up
+
+The new capture has 155 battle ScenePerf samples: median render 31,199 us,
+CPU preparation 8,926 us, GXM wait 20,323 us and submission 1,728 us; render
+p90 is 33,093 us. These overlapping counters are not additive, and wait alone
+does not prove shader cost or exclude scheduling/audio interference. This is
+not a route-matched comparison or a hardware measurement of the new fix.
+
+Remove the last change's uniform-controlled stipple branch from ordinary
+Full geometry. Compile separate ordinary/stochastic Gouraud mesh variants,
+selected only by an actual native mesh sprite command. This also eliminates
+per-material fragment-uniform allocation/reset on every ordinary Full batch.
+Gouraud, dither lookup, mesh coverage and half blending remain supported.
+Compiled base Full GXP is 444 bytes versus the tested build's 608 bytes; base
+stochastic Gouraud is 680 versus 768 bytes. Binary size is not a speed result.
+Source-contract checks and GXM shader/VPK compilation pass; recovery of the
+frame budget must be checked on hardware with the updated tree.

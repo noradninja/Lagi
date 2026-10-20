@@ -4,12 +4,15 @@
 float4 main(
     float2 vTexcoord : TEXCOORD0,
     float3 vShade : TEXCOORD1,
+#if LAGI_NATIVE_MESH
     float4 fragCoord : WPOS,
-    uniform sampler2D tex,
-    uniform float meshMode)
+#endif
+    uniform sampler2D tex)
 {
-    if (meshMode > 0.5f && frac((floor(fragCoord.x)+floor(fragCoord.y))*0.5f)>=0.5f)
+#if LAGI_NATIVE_MESH
+    if (frac((floor(fragCoord.x)+floor(fragCoord.y))*0.5f)>=0.5f)
         discard;
+#endif
     float4 color = tex2D(tex, vTexcoord);
     if (color.a < 0.5f)
         discard;
