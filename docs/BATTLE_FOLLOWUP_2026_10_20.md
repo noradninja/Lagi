@@ -274,3 +274,23 @@ Compiled base Full GXP is 444 bytes versus the tested build's 608 bytes; base
 stochastic Gouraud is 680 versus 768 bytes. Binary size is not a speed result.
 Source-contract checks and GXM shader/VPK compilation pass; recovery of the
 frame budget must be checked on hardware with the updated tree.
+
+### Charge particle animation ownership
+
+The charge loop selects authored tables 060A9814 and 060A999C. Both contain
+14 frames but differ in delay and PMOD: the former uses delays 2 (last 4)
+and PMOD 0088; the latter uses delay 4 throughout and PMOD 0188. Each call
+previously assigned a new table into the same static vector. Active particles
+borrowed that vector, so later spawns replaced their frame timing and mesh
+flags in mid-animation. Native code borrows immutable overlay tables instead.
+
+Cache decoded frames by persistent BTL_A3_2 file identity and source EA, without
+replacing existing vectors. The overlay is created once on first entry; the
+cache shares that lifetime, not a transient particle's lifetime. Preserve all
+authored delays, last-frame markers, materials, spawn timing, motion and RNG
+calls. The disc-backed fixture checks all 28 source frame headers and executes
+the production cache plus Azel's actual frame-step function with simultaneous
+particles, reproducing independent 44/70 advancement-tick sequences. The
+particle variant's initial hold tick is unchanged. This is not a retuning of
+the separate 3D bone-debris physics or generic impact-model lifetime. Visual
+matching of smoke/rocks still needs hardware confirmation.

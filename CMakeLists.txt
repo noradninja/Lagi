@@ -2487,6 +2487,16 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    "    lagiCreateBattleImpactModel(dramAllocatorEnd[8].mC_fileBundle, 0x18, 0x1CC, 0x210, position, rotation);\n}\n\n"
    source_text "${source_text}")
   string(REPLACE "// 0605a1d0\nvoid arachnoth_createChargeImpact" "${impact_service}\n// 0605a1d0\nvoid arachnoth_createChargeImpact" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_particle_frames.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_particle_frames.inc" particle_frames_service)
+  set(particle_frames_old "    static std::vector<sVdp1Quad> cachedQuads;\n    cachedQuads = initVdp1Quad(spriteDataEA);")
+  string(FIND "${source_text}" "${particle_frames_old}" particle_frames_found)
+  if(particle_frames_found LESS 0)
+   message(FATAL_ERROR "Native charge particle animation boundary changed")
+  endif()
+  string(REPLACE "${particle_frames_old}" "    const auto& cachedQuads = lagiBattleParticleFrames(spriteDataEA);" source_text "${source_text}")
+  string(REPLACE "void arachnoth_createSmokeParticle(npcFileDeleter*" "${particle_frames_service}\nvoid arachnoth_createSmokeParticle(npcFileDeleter*" source_text "${source_text}")
   # The reconstruction lost the sign of both arena anchors. Keep pointer
   # lifetime stable, but decode coordinates from the original overlay data.
   foreach(charge_anchor IN ITEMS "0x1D2000|0x060A909C" "0x230000|0x060A9090")
