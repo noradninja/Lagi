@@ -13,7 +13,7 @@ try {
   $value=0L;foreach($b in $raw){$value=($value-shl 8)-bor $b}
   if($value -ne $entry[1]){throw 'Original WORLD draw call table differs'}
  }
- foreach($slot in @(0x1EC,0x5C8,0x5D0)){
+ foreach($slot in @(0x1EC,0x3DC,0x5C8,0x5D0)){
   $raw=Read-Native 244271 0 $slot 4
   $offset=0L;foreach($b in $raw){$offset=($offset-shl 8)-bor $b}
   if($offset -le 0 -or $offset -ge 212752){throw 'Original map bundle resource slot invalid'}

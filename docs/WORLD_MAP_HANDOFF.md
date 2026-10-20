@@ -1,6 +1,43 @@
 # Native WORLD handoff boundary (not a playable world map)
 
-## 2026-10-20 recovery checkpoint
+## 2026-10-20 display-controller checkpoint
+
+The typed display controller now recovers native Update 06054F9E and its
+retail helpers: all seven states, six fixed-point easing profiles, accelerated
+springs, initial target positioning, marker arrival/visibility, camera orbit
+and close-up transitions, the 16-entry trail ring, RGB-table blending, native
+camera angles, directional light and depth falloff. No floating-point lerp or
+replacement renderer is used. Original-disc checks verify the easing tables;
+production-code fixtures exercise all states, selection changes, exact arrival,
+travel-camera dependency, RGB endpoints, bounded trails and native service
+calls. A separate signed-branch differential checks 400,000 easing cases.
+Fixtures mock camera/matrix services; they do not prove final rendered pixels.
+Native trail rendering 06055128 is also recovered: it walks the ring backward,
+wrapping at 16, and submits original MCB slot 03DC through Azel's draw service.
+Its fixture verifies three-point wrap, matrix push/pop balance and invalid-state
+guards. Both experimental-battle and non-battle Vita configurations build.
+
+**Important correction to the upstream dependency names:** native root Init
+060540EA calls WORLD-local 0605571A (literal at 06054190), creating a 0x40-byte
+child. It does not call the title `initLoadSavegameScreen` that upstream has
+substituted. Display helper 060545F4 copies that child's live +8/+C/+10
+position, not the current selected destination or an embedded Saturn pointer.
+The new controller takes that position explicitly and refuses state 3 before
+the native child is ready. The child's +3D controls marker shrink; it is named
+`arrivalBusy`, not assumed to be a title save-screen flag.
+
+Environment 06056928 is likewise an initial callback: it runs 06056658, then
+installs Update 06056AD4 and Draw 06056DDE and sets ready bit 4. The latter
+consumes the display's live camera/rotation and generates two native rotation
+passes. Merely replacing its initial stub with a permanent Update function
+would be incorrect. These environment and local-child routines are the next
+recovery work, not an instruction to enable the placeholder graph.
+
+The controller and camera/light application service compile in the Vita
+experimental build, but are not wired to mode 6. The live map remains unready
+for hardware testing. No new testing build is recommended at this checkpoint.
+
+## Model setup checkpoint
 
 `lagi_world_map_model.cpp` now ports WORLD's model initializer (06054504)
 and renderer (060551AC) into typed host state. It reads the original map
@@ -18,11 +55,12 @@ Do not send this checkpoint for hardware map testing as though it were ready.
 
 Remaining native recovery gates, in dependency order:
 
-1. Display Update 06054F9E and helpers 06054308, 060545DA..06054DE0:
-   initial target, camera interpolation, pose/scale/visibility transitions.
-2. Environment Update 06056928 and Dragon Init/Draw 06055740/06055924.
+1. Connect the recovered display controller only after its native children
+   and environment are available. 06054308's debug keyboard editor is excluded.
+2. Environment initial callback 06056928, setup 06056658, Update 06056AD4 and
+   Draw 06056DDE; control Init/Draw 06055740/06055924.
 3. Camera task writes currently replaced by `Unimplemented()`, name task,
-   destination confirmation, resident save child and native travel dispatch.
+   destination confirmation, WORLD-local child 0605571A and native travel dispatch.
 4. Owned root/overlay lifetime and shared mode-6 scene/view/composition gate.
 5. Build and fixture checks, then Vita entry/selection/cancel/travel testing.
 
@@ -55,8 +93,9 @@ temporary menu or claimed completion of world-map bring-up.
 
 Enabling upstream `worldmap.cpp` wholesale is unsafe: Display Init/Update/Draw,
 Env Update and Dragon Init/Draw are stubs; camera logic reads their absent state.
-Root Init also calls the title save/load initializer, which resets the same map
-allocator, and `loadWorldOverlay` returns its parent as the active overlay.
+Upstream Root Init incorrectly substitutes the title save/load initializer,
+which resets the same map allocator, for WORLD-local 0605571A. Its
+`loadWorldOverlay` also returns its parent as the active overlay.
 Those need native ports before enabling the map's task graph. The next work is
 to recover WORLD 06054504/06054F9E/060551AC display state/rendering and its camera,
 environment, dragon and resident-save child services; then expose mode 6 through
