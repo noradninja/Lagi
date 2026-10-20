@@ -168,3 +168,17 @@ anchors and executes the production helper for empty/partial/full progress,
 next-level boundaries, max level, NTSC/PAL, text positions and command bounds.
 Hardware menu appearance remains pending. The menu can be checked directly
 after loading, without entering the boss battle.
+
+### First-charge invalid impact pose (1792520328)
+
+The matching ELF and two thread-entry anchors establish a runtime slide of
+0x2F000. Fault PC 810C596A resolves to READ_BE_S32, with its caller in
+sStaticPoseData construction and pose index 02CC. This is distinct from the
+previous missing strand VRAM allocation. The charge-impact adapter incorrectly
+treated SH-2 instruction 76BC at 0605A23A as an unsigned addition: it actually
+adds signed -68 to animation index 0210, selecting static pose 01CC.
+The generated call now uses 01CC. The disc-backed regression checks the original
+instruction, signed calculation and generated caller before executing the
+production model fixture. No game assets are included. Hardware acceptance is
+pending; persistent mouth strands and belly/enrage presentation remain separate
+investigations, not claimed fixed by this pose correction.

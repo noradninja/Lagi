@@ -2467,7 +2467,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   math(EXPR impact_length "${impact_stop}-${impact_start}")
   string(SUBSTRING "${source_text}" ${impact_start} ${impact_length} impact_old)
   string(REPLACE "${impact_old}"
-   "    lagiCreateBattleImpactModel(dramAllocatorEnd[8].mC_fileBundle, 0x18, 0x2CC, 0x210, position, rotation);\n}\n\n"
+   "    lagiCreateBattleImpactModel(dramAllocatorEnd[8].mC_fileBundle, 0x18, 0x1CC, 0x210, position, rotation);\n}\n\n"
    source_text "${source_text}")
   string(REPLACE "// 0605a1d0\nvoid arachnoth_createChargeImpact" "${impact_service}\n// 0605a1d0\nvoid arachnoth_createChargeImpact" source_text "${source_text}")
   # The reconstruction lost the sign of both arena anchors. Keep pointer

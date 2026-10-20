@@ -8,7 +8,7 @@ struct Hierarchy { int countNumberOfBones(){return 3;} } hierarchy;
 struct Bundle {
  Hierarchy* getModelHierarchy(u16 i){assert(i==0x18);return &hierarchy;}
  Animation* getAnimation(u16 i){assert(i==0x210);return &animation;}
- void* getStaticPose(u16 i,int bones){assert(i==0x2CC&&bones==3);return this;}
+ void* getStaticPose(u16 i,int bones){assert(i==0x1CC&&bones==3);return this;}
 } bundle;
 struct npcFileDeleter{} owner;
 struct Task { bool finished=false; void markFinished(){finished=true;} } state;
@@ -39,14 +39,17 @@ template<class T> bool init3DModelRawData(T*,s_3dModel*,int mode,Bundle* b,u16 i
 #include "../src/integration/lagi_arachnoth_impact.inc"
 int main(){
  sVec3_FP p{1,2,3},r{4,5,6};
- lagiCreateBattleImpactModel(&owner,0x18,0x2CC,0x210,p,r);
+ // SH-2 76BC sign-extends the immediate: 0x210 + (-68), not +188.
+ constexpr u16 nativePose = 0x210 + static_cast<std::int8_t>(0xBC);
+ static_assert(nativePose == 0x1CC);
+ lagiCreateBattleImpactModel(&owner,0x18,nativePose,0x210,p,r);
  auto* t=static_cast<sLagiBattleImpactModel*>(allocated);p[0]=99;r[0]=99;
  lagiBattleImpactDraw(t);assert(draws==1&&pushes==pops);
  lagiBattleImpactUpdate(t);lagiBattleImpactUpdate(t);assert(!state.finished);
  lagiBattleImpactUpdate(t);assert(state.finished);
  lagiBattleImpactDelete(t);delete t;assert(liveModels==0);
  state.finished=false;initSuccess=false;
- lagiCreateBattleImpactModel(&owner,0x18,0x2CC,0x210,p,r);
+ lagiCreateBattleImpactModel(&owner,0x18,nativePose,0x210,p,r);
  t=static_cast<sLagiBattleImpactModel*>(allocated);
  assert(state.finished&&!t->m_UpdateMethod&&!t->m_DrawMethod);
  lagiBattleImpactDelete(t);delete t;assert(liveModels==0);
