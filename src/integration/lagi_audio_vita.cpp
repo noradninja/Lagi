@@ -1107,6 +1107,13 @@ int audio_worker_thread(SceSize, void*)
         g_previousSequence=nullptr;g_stoppedBankMask=0;
         g_sequence=nullptr;g_sequenceNumber=-1;g_loadingState=-1;
     }
+    // COMMON sequence 0 owns persistent system SE plus the initial player/DSP
+    // banks. Direct/title startup begins at sequence 75, whose list omits SYS_SE.
+    // Restore that boot residency, not a new sequence or replacement mapping.
+    const bool systemBanksReady = !SoundDataTable.empty() &&
+        load_sound_file_list(SoundDataTable.front().m0);
+    lagi::platform::logging::writef("[AzelAudio] native boot banks ready=%u\n",
+        systemBanksReady ? 1u : 0u);
     g_audioWorkerRunning.store(true, std::memory_order_release);
     lagi::platform::logging::writef(
         "[AzelAudio:%llu] SCSP worker started cpu=%d targetQueue=%u\n",
