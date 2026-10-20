@@ -2456,6 +2456,23 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "${devour_wait_old}" "${devour_wait_new}" source_text "${source_text}")
   string(REPLACE "${devour_approach_old}" "        lagiArachnothDevourApproach(pThis);\n        break;" source_text "${source_text}")
   string(REPLACE "${devour_closeup_old}" "            lagiArachnothDevourCloseup(pThis);" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_drool.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_drool.inc" drool_draw_service)
+  set(drool_draw_old [=[static void smokePuff_draw(sSmokePuffTask* pThis)
+{
+    pushCurrentMatrix();
+    translateCurrentMatrix(pThis->m28_position);
+    rotateCurrentMatrixYXZ(*pThis->mC_rotationPtr);
+    // Draw using the model's draw function — but we don't have a model
+    // The smoke puff is a visual-only effect; skip for now
+    popMatrix();
+}]=])
+  string(FIND "${source_text}" "${drool_draw_old}" drool_draw_found)
+  if(drool_draw_found LESS 0)
+   message(FATAL_ERROR "Native Arachnoth strand draw boundary changed")
+  endif()
+  string(REPLACE "${drool_draw_old}" "${drool_draw_service}" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleHud.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # BTL_A3 060726B6..CA / 0607271E..26: native position is
   # -(-163 - 16 - part1Y + 112), hence 67 + part1Y, not 67 - part1Y.
