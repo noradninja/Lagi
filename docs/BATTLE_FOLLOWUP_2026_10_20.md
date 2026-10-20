@@ -324,3 +324,28 @@ The disc-backed test checks the native load/AND and all five label palette
 fields, then executes the generated printer with caller-palette restoration.
 Host fixture and full-resolution battle VPK pass; screenshot validation is
 pending hardware. No game font or palette data is committed.
+
+### VDP2 sprite color calculation: state boundary, not enabled yet
+
+Capture CCCTL, SPCTL, CRAOFB, all eight sprite priority/ratio selectors and
+rectangular color-calculation window registers with the native frame. Reset
+the pending state with each VRAM publication and consume it with that frame,
+not through a live game-thread register pointer. Bounded VDP2SpriteColor logs
+explicitly report composite=pending.
+
+The Arachnoth environment enables sprite CC, selects priority equality to 4
+and initializes ratios 16/18/20. This is separate from VDP1 PMOD 3/7, which
+already blends against the VDP1 destination. Applying CCRS per primitive
+would incorrectly accumulate background blending across overlapping actors
+and effects. Current Neptune draws RBG0 then native geometry into one target;
+it has no completed-VDP1 surface/selector data to perform the second stage.
+Do not enable a per-material alpha workaround or claim the effect restored.
+
+The new selection/ratio oracle checks enable, all four priority/MSB conditions,
+window rejection, bank packing and all 32x32x32 five-bit ratio combinations.
+These tests validate selection/math, not the unimplemented GPU compositor.
+Next work must preserve VDP1 RGB/index/priority/ratio metadata until final
+composition and blend its visible result against the selected VDP2 layer,
+including window and additive/destination-ratio modes. Existing screenshot
+is a Saturn reference, not a measured Lagi failure frame. Saturation itself
+is not evidence for a global tint or a global additive blend switch.

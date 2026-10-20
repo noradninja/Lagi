@@ -1106,6 +1106,7 @@ static std::uint8_t g_vdp2TextVram[kVdp2TextSnapshotBytes]{};
 static std::uint8_t g_vdp2Cram[kVdp2CramSnapshotBytes]{};
 static bool g_pendingVdp2TextValid = false;
 static lagi::MenuNbg2State g_pendingMenuNbg2{},g_menuNbg2{};
+static lagi::Vdp2SpriteColorState g_pendingSpriteColor{},g_spriteColor{};
 static bool g_vdp2TextValid = false;
 static unsigned int g_pendingVdp2MenuId = 0u;
 static unsigned int g_vdp2MenuId = 0u;
@@ -15156,6 +15157,7 @@ void presentation_publish_frame()
     g_profileGameWaitUs = g_pendingProfileGameWaitUs;
     std::memcpy(g_sceneColorOffset, g_pendingSceneColorOffset, sizeof(g_sceneColorOffset));
     g_menuNbg2 = g_pendingMenuNbg2;
+    g_spriteColor = g_pendingSpriteColor;
     if (g_pendingVdp2TextValid) {
         std::memcpy(
             g_vdp2TextVram,
@@ -15379,6 +15381,7 @@ void presentation_set_vdp2_text(
     // Each VRAM/text publication starts without an NBG2 plane. Only its
     // native scene capture can attach matching register/scroll state after it.
     g_pendingMenuNbg2 = {};
+    g_pendingSpriteColor = {};
     if (!vram || !cram || !lineScroll) {
         g_pendingVdp2TextValid = false;
         return;
@@ -15419,6 +15422,21 @@ void presentation_set_vdp2_text(
 void presentation_set_menu_nbg2(const lagi::MenuNbg2State& state)
 {
     g_pendingMenuNbg2 = state;
+}
+
+void presentation_set_sprite_color_state(const lagi::Vdp2SpriteColorState& state)
+{
+    g_pendingSpriteColor=state;
+    // Bounded native-state evidence, not a claim that composition is enabled.
+    static unsigned budget=32;
+    static lagi::Vdp2SpriteColorState previous{};
+    if (budget && (state.ccctl!=previous.ccctl || state.spctl!=previous.spctl ||
+        state.ratio[0]!=previous.ratio[0] || state.priority[0]!=previous.priority[0])) {
+        --budget;
+        logging::writef("[VDP2SpriteColor] CCCTL=%04X SPCTL=%04X PRISA=%04X CCRSA=%04X CCRSB=%04X window=%02X composite=pending\n",
+            state.ccctl,state.spctl,state.priority[0],state.ratio[0],state.ratio[1],state.colorWindow);
+        previous=state;
+    }
 }
 
 void presentation_set_native_frame_vblanks(unsigned int count)

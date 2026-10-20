@@ -193,6 +193,22 @@ void sync_presentation_state()
             graphicEngineStatus.m40BC_layersConfig[1].scrollY,
             graphicEngineStatus.m40BC_layersConfig[3].scrollX,
             graphicEngineStatus.m40BC_layersConfig[3].scrollY);
+        if (regs) {
+            lagi::Vdp2SpriteColorState sprite;
+            sprite.ccctl=regs->mEC_CCCTL;
+            sprite.spctl=regs->mE0_SPCTL;
+            sprite.craofb=regs->mE6_CRAOFB;
+            sprite.priority[0]=regs->mF0_PRISA; sprite.priority[1]=regs->mF2_PRISB;
+            sprite.priority[2]=regs->mF4_PRISC; sprite.priority[3]=regs->mF6_PRISD;
+            sprite.ratio[0]=regs->m100_CCRSA; sprite.ratio[1]=regs->m102_CCRSB;
+            sprite.ratio[2]=regs->m104_CCRSC; sprite.ratio[3]=regs->m106_CCRSD;
+            sprite.colorWindow=regs->mD6_WCTLD>>8;
+            sprite.window[0]=regs->mC0_WPSX0; sprite.window[1]=regs->mC2_WPSY0;
+            sprite.window[2]=regs->mC4_WPEX0; sprite.window[3]=regs->mC6_WPEY0;
+            sprite.window[4]=regs->mC8_WPSX1; sprite.window[5]=regs->mCA_WPSY1;
+            sprite.window[6]=regs->mCC_WPEX1; sprite.window[7]=regs->mCE_WPEY1;
+            lagi::platform::renderer::presentation_set_sprite_color_state(sprite);
+        }
         if (statusLayout) {
             lagi::MenuNbg2State map;
             map.bgon=regs->m20_BGON;
