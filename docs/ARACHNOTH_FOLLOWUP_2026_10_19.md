@@ -29,6 +29,17 @@ damage/release and animation appearance remain acceptance items.
 
 ## Still open
 
+### 2026-10-20: Charge anchor correction
+
+The two reconstructed `m240` return anchors were positive Z (0x1D2000 and
+0x230000). Original BTL_A3_2 data at 060A909C and 060A9090 has negative Z
+(-0x1D2000 and -0x230000), with X=0x201000/Y=0x13000. Initial placement already
+uses the correct negative side. The generated adapter now decodes both points
+through `readSaturnVec3`, rather than maintaining transcribed coordinates.
+Stable host storage preserves the pointers' lifetime. The direct-disc and
+generated-source fixture verifies both points. Charge/recovery timing and
+acceleration coefficients remain unchanged; device movement is not yet accepted.
+
 - Charge: native tail 06059FB8..0605A0F8 really uses signed -0x28F then +0xA3
   on the same target/position delta. Both are already in the reconstruction.
   Flipping that sign to hide wall intersection would not be source-faithful.

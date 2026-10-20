@@ -2401,6 +2401,21 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A3_2/Arachnoth.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # The reconstruction lost the sign of both arena anchors. Keep pointer
+  # lifetime stable, but decode coordinates from the original overlay data.
+  foreach(charge_anchor IN ITEMS "0x1D2000|0x060A909C" "0x230000|0x060A9090")
+   string(REPLACE "|" ";" charge_parts "${charge_anchor}")
+   list(GET charge_parts 0 charge_z)
+   list(GET charge_parts 1 charge_ea)
+   set(charge_old "static sVec3_FP tempVec(0x201000, 0x13000, ${charge_z});")
+   string(FIND "${source_text}" "${charge_old}" charge_found)
+   if(charge_found LESS 0)
+    message(FATAL_ERROR "Native Charge arena-anchor boundary changed: ${charge_z}")
+   endif()
+   string(REPLACE "${charge_old}"
+    "static sVec3_FP tempVec;\n                tempVec = readSaturnVec3(g_BTL_A3_2->getSaturnPtr(${charge_ea})); // LAGI_CHARGE_NATIVE_ANCHOR"
+    source_text "${source_text}")
+  endforeach()
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_devour.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_devour.inc" devour_service)
