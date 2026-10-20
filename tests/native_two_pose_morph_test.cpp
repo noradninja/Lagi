@@ -45,9 +45,17 @@ int main(){
   assert(model.m2C_poseData[0].m0_translation==Vec({9,8,7}));
  }
  assert(invalidations==3&&dst.m_vertexBuffersDirty);
+ dst.m_vertexBuffersDirty=false;
+ lagiNativeTwoPoseMorph(&owner,&model,0x060A9538,0x060A9540,0x10000);
+ assert(invalidations==3&&!dst.m_vertexBuffersDirty);
+ // Compare actual output, not a cached weight: externally changed geometry
+ // must be restored even if the morph inputs have not changed.
+ dst.m8_vertices[0][0]=123;
+ lagiNativeTwoPoseMorph(&owner,&model,0x060A9538,0x060A9540,0x10000);
+ assert(invalidations==4&&dst.m8_vertices[0][0]==-100);
  lagiNativeTwoPoseMorph(&owner,&model,0x060A9538,0x060A9540,-1);
  lagiNativeTwoPoseMorph(&owner,&model,0x060A9538,0x060A9540,0x10001);
- assert(invalidations==3);
+ assert(invalidations==4);
  assert(lagiMorphPair16(32767,-32768,0x8001)==1);
  puts("PASS native two-source mesh/normal/color/pose morph, endpoints, root preservation, signed weight truncation and snapshot invalidation; device pending");
 }

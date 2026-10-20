@@ -294,3 +294,21 @@ particles, reproducing independent 44/70 advancement-tick sequences. The
 particle variant's initial hold tick is unchanged. This is not a retuning of
 the separate 3D bone-debris physics or generic impact-model lifetime. Visual
 matching of smoke/rocks still needs hardware confirmation.
+
+### Unchanged morph output retains geometry caches
+
+The next capture contains 124 combat samples: median render 30,933 us,
+CPU preparation 8,835 us, GXM wait 20,402 us; render p90 32,351 us.
+This does not demonstrate recovery versus the previous capture. Counters
+overlap and the runs are not identical.
+
+The two-pose morph unconditionally retired its model snapshot each update.
+Compare the actual computed radius, vertices, normals and colors before
+marking buffers dirty or retiring geometry. Fixed-point interpolation and
+pose updates remain unchanged. This avoids rebuilding identical output,
+including quantized output during small spring changes, without retaining
+pointer/weight caches across actor lifetimes. The fixture verifies repeated
+output keeps the cache and externally modified geometry is still restored.
+Disc-backed host fixture and full-resolution battle VPK build pass. This is
+a bounded CPU/cache optimization, not proof that the reported slowdown is
+resolved; fresh hardware timing remains required.

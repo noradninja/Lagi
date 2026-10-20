@@ -24,10 +24,14 @@ static void lagiMorphPairHierarchy(sModelHierarchy* dst,
             if (d.m4_numVertices && d.m8_vertices.size()==x.m8_vertices.size() &&
                 d.m8_vertices.size()==y.m8_vertices.size() &&
                 d.mC_Quads.size()==x.mC_Quads.size() && d.mC_Quads.size()==y.mC_Quads.size()) {
-                d.m0_radius=lagiMorphPair32(x.m0_radius, y.m0_radius, weight);
+                bool changed=false;
+                const auto assign=[&changed](auto& destination, auto value) {
+                    if (destination!=value) { destination=value; changed=true; }
+                };
+                assign(d.m0_radius,lagiMorphPair32(x.m0_radius, y.m0_radius, weight));
                 for (size_t i=0;i<d.m8_vertices.size();++i)
                     for (int axis=0;axis<3;++axis)
-                        d.m8_vertices[i][axis]=lagiMorphPair16(x.m8_vertices[i][axis],y.m8_vertices[i][axis],weight);
+                        assign(d.m8_vertices[i][axis],lagiMorphPair16(x.m8_vertices[i][axis],y.m8_vertices[i][axis],weight));
                 for (size_t q=0;q<d.mC_Quads.size();++q) {
                     auto& out=d.mC_Quads[q];
                     const auto& xa=x.mC_Quads[q].m14_extraData;
@@ -36,15 +40,17 @@ static void lagiMorphPairHierarchy(sModelHierarchy* dst,
                     if (!type || out.m14_extraData.size()!=xa.size() || xa.size()!=ya.size()) continue;
                     for (size_t i=0;i<out.m14_extraData.size();++i)
                         for (int axis=0;axis<3;++axis) {
-                            out.m14_extraData[i].m0_normals[axis]=lagiMorphPair16(xa[i].m0_normals[axis],ya[i].m0_normals[axis],weight);
+                            assign(out.m14_extraData[i].m0_normals[axis],lagiMorphPair16(xa[i].m0_normals[axis],ya[i].m0_normals[axis],weight));
                             if (type==2)
-                                out.m14_extraData[i].m6_colors[axis]=lagiMorphPair16(static_cast<s16>(xa[i].m6_colors[axis]),static_cast<s16>(ya[i].m6_colors[axis]),weight);
+                                assign(out.m14_extraData[i].m6_colors[axis],static_cast<u16>(lagiMorphPair16(static_cast<s16>(xa[i].m6_colors[axis]),static_cast<s16>(ya[i].m6_colors[axis]),weight)));
                         }
                 }
+                if (changed) {
                 d.m_vertexBuffersDirty=true;
                 // Published frames retain immutable snapshots; retire only
                 // this changed cache entry before its next native submission.
                 lagi::azel_bridge::retire_native_model(&d);
+                }
             }
         }
         if (dst->m4_subNode && a->m4_subNode && b->m4_subNode)
