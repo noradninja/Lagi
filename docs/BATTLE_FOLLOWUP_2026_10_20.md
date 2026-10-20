@@ -56,8 +56,7 @@ layout. No speculative shared debris patch was made.
 
 ## Remaining work
 
-- Wall-impact mesh/debris effects and death-bile spawning (0605A4EC remains
-  explicitly unimplemented); do not replace them with generic particles.
+- Other wall-impact mesh/debris effects still need hardware comparison.
 - Cinematic clouds and missing rock-break/monster SFX: trace native scheduled
   callbacks, resource owners and sound events before declaring audio channels
   missing or adding hard-coded sound cues.
@@ -75,3 +74,25 @@ input/timeout. The two dismissal conditions now converge so simultaneous
 button and timeout cannot create duplicate exits or advance past phase 7.
 The generated-phase fixture checks both entry and actual dismissal code.
 Visual timing still needs device confirmation.
+
+## Death bile and descriptor-driven trails
+
+Restored the omitted 0605A4EC factory and death caller 06058C8A..96:
+speed 1000, mode 1, source +2E4, two native RNG samples, pitch in
+[-08000000,0), full-turn yaw, and 120-frame lifetime. The trail descriptor
+060A9624 supplies the VRAM-owner slot; the task does not assume its parent's
+allocation. Mode 1 selects the native per-segment Gouraud draw. Its history
+allocation is released when the new task is deleted.
+
+Shared trail drawing now follows 060A0EAA/060A0DE4: width table at descriptor
++0C, optional Gouraud table at +10, one width/color block per segment,
+texture/CLUT relocation and original segment order. Removed the fabricated
+800-width taper and the incorrect inline color reads at descriptor +18.
+No replacement textures, spawn cadence or invented light were added.
+Production-code fixtures `battle_trail_draw_test.cpp` and
+`arachnoth_death_bile_test.cpp` pass. Experimental full-resolution Vita build
+compiles; actual death strands/colors require hardware confirmation.
+`tests/arachnoth_bile_test.ps1 -DiscImage <original-disc>` additionally checks
+the death call, RNG constants, lifetime and both native draw dispatches
+directly against the original disc. Those checks, the result-dismissal fixture,
+and E011 scheduled-effect production/native-anchor tests pass together.
