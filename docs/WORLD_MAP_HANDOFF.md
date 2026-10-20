@@ -1,5 +1,37 @@
 # Native WORLD handoff boundary (not a playable world map)
 
+## 2026-10-20 recovery checkpoint
+
+`lagi_world_map_model.cpp` now ports WORLD's model initializer (06054504)
+and renderer (060551AC) into typed host state. It reads the original map
+hierarchy slot 01EC, static pose 05C8 and color animation 05D0 from
+WORLDMAP.MCB. Visibility bit 20, translation/yaw/three-column scale order,
+pose control and the four native RGB triplets are retained. No game data is
+committed. `tests/world_map_model_test.ps1` checks the original-disc call
+table/resource offsets and runs the actual production initializer/draw code
+against mocked services. The full-resolution experimental Vita VPK builds.
+
+This service is **not connected to mode 6 yet**. Its scale starts at zero and
+visibility starts clear, exactly as native Init requires; WORLD Update owns
+revealing and positioning it. Calling Draw alone is not map functionality.
+Do not send this checkpoint for hardware map testing as though it were ready.
+
+Remaining native recovery gates, in dependency order:
+
+1. Display Update 06054F9E and helpers 06054308, 060545DA..06054DE0:
+   initial target, camera interpolation, pose/scale/visibility transitions.
+2. Environment Update 06056928 and Dragon Init/Draw 06055740/06055924.
+3. Camera task writes currently replaced by `Unimplemented()`, name task,
+   destination confirmation, resident save child and native travel dispatch.
+4. Owned root/overlay lifetime and shared mode-6 scene/view/composition gate.
+5. Build and fixture checks, then Vita entry/selection/cancel/travel testing.
+
+The existing black holding boundary remains deliberate until these gates
+are satisfied; no stub task graph, fabricated destination screen or premature
+travel path has been enabled.
+
+## Original handoff evidence
+
 The previous interpretation of status 0x4F as return-to-title was wrong.
 Original-disc evidence:
 
