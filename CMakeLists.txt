@@ -2532,6 +2532,48 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(SUBSTRING "${source_text}" 0 ${trail_draw_start} source_text)
   string(APPEND source_text "${trail_draw_service}\n")
  elseif(relative_path STREQUAL "battle/battleResultScreen.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_growth.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_growth.inc" growth_service)
+  string(REPLACE "    s16 m4;\n    s8 m72;" "    s16 m4;\n    std::array<u16,6> m6_gains;\n    u8 m73_oldLevel;\n    s8 m72;" source_text "${source_text}")
+  foreach(growth_stub IN ITEMS "void battleResultScreen_updateSub5(int XPReceived)\n{\n    Unimplemented();\n}" "void battleResultScreen_checkLevelUp(sBattleResultScreen* pThis)\n{\n    Unimplemented();\n}")
+   string(FIND "${source_text}" "${growth_stub}" growth_stub_found)
+   if(growth_stub_found LESS 0)
+    message(FATAL_ERROR "Native battle growth stub changed")
+   endif()
+   string(REPLACE "${growth_stub}" "" source_text "${source_text}")
+  endforeach()
+  string(REPLACE "void battleResultScreen_printItemReceived" "#include \"commonOverlay.h\"\n${growth_service}\nvoid battleResultScreen_printItemReceived" source_text "${source_text}")
+  string(REPLACE "                Unimplemented(); // level-up display: applies HP/BP stat increases, shows level-up text"
+   "                lagiApplyBattleGrowth(pThis);\n                pThis->m72 = 3;\n                pThis->m4 = 0x5A;" source_text "${source_text}")
+  set(growth_states [=[    case 3:
+        if ((graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m6_buttonDown & 6) || --pThis->m4 < 0) {
+            clearVdp2TextLargeFont();
+            battleResultScreen_createProgressiveText2(pThis, g_BTL_GenericData->getSaturnPtr(0x060ABAB0));
+            pThis->m72=4; pThis->m4=9;
+        }
+        break;
+    case 4:
+        if (--pThis->m4 < 0) {
+            playSystemSoundEffect(0x1B);
+            for (unsigned i=0;i<5;++i)
+                battleResultScreenProgressiveText_printString(g_BTL_GenericData->getSaturnPtr(0x060ABA20+i*16));
+            const s32 values[5]={mainGameState.gameStats.m0_level+1,pThis->m6_gains[0],pThis->m6_gains[1],
+                pThis->m6_gains[2]+pThis->m6_gains[4],pThis->m6_gains[3]+pThis->m6_gains[5]};
+            for (unsigned i=0;i<5;++i) {
+                const auto config=g_BTL_GenericData->getSaturnPtr(0x060ABBC0+i*16);
+                std::array<s32,4> data;
+                for(unsigned j=0;j<4;++j)data[j]=readSaturnS32(config+j*4);
+                battleResultScreenProgressiveText_printNumber(data,values[i]);
+            }
+            pThis->m72=5;pThis->m4=15;
+        }
+        break;
+    case 5:
+        if (--pThis->m4 < 0) {pThis->m72=6;pThis->m4=0x5A;}
+        break;
+]=])
+  string(REPLACE "    case 6:" "${growth_states}    case 6:" source_text "${source_text}")
   # Requested result presentation: retain normal lighting until the result
   # is dismissed. BattleEnd already owns the actual exit fade to black.
   set(result_dim_begin "        fadePalette(&g_fadeControls.m0_fade0, 0xC210, 0xa94a, 0x1E);")

@@ -60,7 +60,8 @@ layout. No speculative shared debris patch was made.
 - Cinematic clouds and missing rock-break/monster SFX: trace native scheduled
   callbacks, resource owners and sound events before declaring audio channels
   missing or adding hard-coded sound cues.
-- EXP level/stat advancement and its result/pause presentation.
+- Hardware confirmation of level/stat advancement and result presentation;
+  native ability-learning announcements remain a separate incomplete path.
 
 ## Results remain lit until dismissal
 
@@ -96,3 +97,31 @@ compiles; actual death strands/colors require hardware confirmation.
 the death call, RNG constants, lifetime and both native draw dispatches
 directly against the original disc. Those checks, the result-dismissal fixture,
 and E011 scheduled-effect production/native-anchor tests pass together.
+
+## Native EXP growth and save compatibility
+
+Restored BTL_A3 0606EF20 (cursor-weighted growth XP), 0606F0A2 (player
+level/stat gains) and 0606F002 (four cumulative proficiency levels). The
+12-byte rows remain in the live COMMON overlay at 0020701C: no threshold
+or copyrighted table is committed. Signed/unsigned byte coefficients,
+fixed-point rounding, growth-counter reset, HP/BP caps and current HP/BP
+increases follow the native path. Result states 3..5 now show level-up
+text/stat gains and advance to dismissal instead of the unimplemented branch.
+The original rating calculator and ability-learning announcements are still
+incomplete; this does not claim every results-screen effect is restored.
+
+The omitted growth fields use an appended 48-byte typed stats extension in
+the generated common header; all Vita consumers share it. Existing fields
+retain their prior offsets. Save version 10001 includes those counters.
+Version 10000 saves are checksum-validated, expanded in memory with zero
+growth history, and rechecksummed. Their inventory, existing stats, battle
+results and button configuration remain intact. Past growth weighting cannot
+be reconstructed from old saves because it was never recorded. Reads do not
+rewrite disk files. The existing temporary-file/rename write path is retained.
+
+`save_growth_migration_test.cpp` checks byte preservation, current-version
+roundtrip and corrupt/truncated rejection. `battle_growth_test.cpp` executes
+the production growth code with synthetic rows to test weighting, multiple
+levels, limits, reset and level cap. These are not on-device save acceptance
+or proof of the pause-menu layout. Keep a backup before testing new saves;
+older builds cannot read version 10001.
