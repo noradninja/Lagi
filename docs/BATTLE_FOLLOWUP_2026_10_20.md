@@ -39,8 +39,6 @@ together; no fabricated thresholds or direct level increments were added.
 No new-run log was supplied with these reference screenshots, so this is a
 source-path audit, not a claim about the user's exact saved EXP value.
 
-## Still open
-
 ## Wall-impact animated model restoration
 
 The wall-impact caller 0605A1D0 calls the animated-model factory 06062EAA,
@@ -64,8 +62,16 @@ layout. No speculative shared debris patch was made.
   callbacks, resource owners and sound events before declaring audio channels
   missing or adding hard-coded sound cues.
 - EXP level/stat advancement and its result/pause presentation.
-- Victory dimming order. Original BTL_A3 0606F752..75C itself contains a
-  C210->A94A request before rating text; the retained source reflects that.
-  Need to distinguish the affected layers/native result timing from an early
-  whole-screen application before moving any authored fade or lighting calls.
-  No speculative timing change was included in the strand fix.
+
+## Results remain lit until dismissal
+
+Per the requested presentation, the generated result entry no longer starts
+the A94A color offset, forces falloff to -31, or interpolates scene lighting
+to zero ahead of the rating text. Its neutral fade reset, reward timing and
+camera remain intact. This is an intentional presentation change: original
+BTL_A3 0606F752 does request the early offset, not evidence of a missing call.
+The existing BattleEnd task retains ownership of the black exit fade after
+input/timeout. The two dismissal conditions now converge so simultaneous
+button and timeout cannot create duplicate exits or advance past phase 7.
+The generated-phase fixture checks both entry and actual dismissal code.
+Visual timing still needs device confirmation.

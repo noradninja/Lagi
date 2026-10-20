@@ -2489,6 +2489,39 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    message(FATAL_ERROR "Native Arachnoth strand draw boundary changed")
   endif()
   string(REPLACE "${drool_draw_old}" "${drool_draw_service}" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleResultScreen.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # Requested result presentation: retain normal lighting until the result
+  # is dismissed. BattleEnd already owns the actual exit fade to black.
+  set(result_dim_begin "        fadePalette(&g_fadeControls.m0_fade0, 0xC210, 0xa94a, 0x1E);")
+  set(result_dim_end "        pThis->m80_battleRating = battleResultScreen_computeBattleRating(pThis);")
+  string(FIND "${source_text}" "${result_dim_begin}" result_dim_start)
+  string(FIND "${source_text}" "${result_dim_end}" result_dim_stop)
+  if(result_dim_start LESS 0 OR result_dim_stop LESS result_dim_start)
+   message(FATAL_ERROR "Battle result dimming boundary changed")
+  endif()
+  math(EXPR result_dim_length "${result_dim_stop}-${result_dim_start}")
+  string(SUBSTRING "${source_text}" ${result_dim_start} ${result_dim_length} result_dim_old)
+  string(REPLACE "${result_dim_old}"
+   "        // LAGI_RESULT_HOLD_LIGHTING: exit fading belongs to BattleEnd.\n\n"
+   source_text "${source_text}")
+  # Input and timeout can coincide: never create two exit tasks or skip
+  # phase 7. Both paths intentionally converge on the existing exit owner.
+  set(result_exit_old [=[        if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m6_buttonDown & 6)
+        {
+            battleResultScreen_updateSub17(pThis);
+            pThis->m72++;
+        }
+        if (--pThis->m4 < 0)]=])
+  set(result_exit_new [=[        const bool dismiss = (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m6_buttonDown & 6) != 0;
+        if (dismiss || --pThis->m4 < 0)]=])
+  string(FIND "${source_text}" "${result_exit_old}" result_exit_found)
+  if(result_exit_found LESS 0)
+   message(FATAL_ERROR "Battle result dismissal boundary changed")
+  endif()
+  string(REPLACE "${result_exit_old}" "${result_exit_new}" source_text "${source_text}")
+  # Keep declarations scoped to phase 6 rather than crossing case labels.
+  string(REPLACE "    case 6:\n        const bool dismiss" "    case 6: {\n        const bool dismiss" source_text "${source_text}")
+  string(REPLACE "        break;\n    case 7:" "        break;\n    }\n    case 7:" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleHud.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # BTL_A3 060726B6..CA / 0607271E..26: native position is
   # -(-163 - 16 - part1Y + 112), hence 67 + part1Y, not 67 - part1Y.
