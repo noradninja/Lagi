@@ -1025,7 +1025,8 @@ void worker_load_banks(s32 musicNumber, s32 mode)
     if constexpr(LAGI_BATTLE_AUDIO_STACK){for(auto& sound:g_activeSounds)sound.volume=0x80;}
     else reset_active_sounds();
     g_gameplayRenderEnabled = true;
-    ensure_output_stream();
+    // Open only inside the render quantum's OutputLease. A bank-load event
+    // must not race CPK's claim and replace its physical output port.
 
     lagi::platform::logging::writef(
         "[AzelAudio:%llu] worker accepted sequence=%d mode=%d cpu=%d staleCmds=%u\n",
