@@ -501,7 +501,13 @@ void capture_current_light(SubmissionState& state)
         // model matrices. When the bridge publishes world-space geometry,
         // rotate the light back through inverse(view) too. Later Neptune's
         // model-space transpose multiply then reproduces the same dot product.
-        if (g_nativeSceneViewValid) {
+        if (g_viewRelativeScope || g_nativeSceneViewValid) {
+            // Geometry removes the scope's own root, which can differ from
+            // the last scene-camera capture for early cinematic actors. Use
+            // that same basis for light so native model-space dot products
+            // survive the view removal; mixing two camera roots rotates light.
+            const auto* lightView = g_viewRelativeScope
+                ? g_viewScopeMatrix : g_nativeSceneViewMatrix;
             const std::int32_t in[3] = {
                 state.lightVector[0],
                 state.lightVector[1],
@@ -509,11 +515,11 @@ void capture_current_light(SubmissionState& state)
             for (unsigned int axis = 0; axis < 3; ++axis) {
                 std::int64_t value = 0;
                 value += static_cast<std::int64_t>(
-                    g_nativeSceneViewMatrix[axis]) * in[0];
+                    lightView[axis]) * in[0];
                 value += static_cast<std::int64_t>(
-                    g_nativeSceneViewMatrix[4u + axis]) * in[1];
+                    lightView[4u + axis]) * in[1];
                 value += static_cast<std::int64_t>(
-                    g_nativeSceneViewMatrix[8u + axis]) * in[2];
+                    lightView[8u + axis]) * in[2];
                 state.lightVector[axis] =
                     static_cast<std::int32_t>(value >> 16);
             }

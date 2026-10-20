@@ -18,6 +18,7 @@ struct {std::uint32_t falloff[3]={0x010203,0x040506,0x070809};} lightSetup;
 void copyMatrixRaw(const LagiMatrix4x3& in,s32 out[12]){std::memcpy(out,in.raw,sizeof(in.raw));}
 bool g_forceDynamicSubmissions,g_nativeSceneViewValid,g_viewRelativeScope,g_hasPendingTownSubmission;
 s32 g_nativeSceneViewMatrix[12]={65536,0,0,0,0,65536,0,0,0,0,65536,0};
+s32 g_viewScopeMatrix[12]{};
 unsigned g_submissionCount,g_modelCacheMisses,g_explicitStaticContextsSet,g_explicitStaticContextsConsumed;
 void* g_lastModel;void* g_lastAdaptedModel;
 SubmissionState g_lastState;
@@ -120,6 +121,19 @@ int main(){
    assert(transported.color[channel]==currentLightVector_M.color[channel]);
    assert(transported.falloff[channel]==lightSetup.falloff[channel]);
   }
+ }
+ // EPK actor root differs from the scene's last captured view. Geometry and
+ // lighting must remove the SAME root, including before a camera capture.
+ std::copy(rotatedView,rotatedView+12,g_viewScopeMatrix);
+ const s32 identity[12]={65536,0,0,0,0,65536,0,0,0,0,65536,0};
+ std::copy(identity,identity+12,g_nativeSceneViewMatrix);
+ g_viewRelativeScope=true;
+ for(bool sceneValid:{false,true}) {
+  g_nativeSceneViewValid=sceneValid;SubmissionState scoped;::capture_current_light(scoped);
+  assert(scoped.lightVector[0]==-currentLightVector_M.lightVector[2].asS32());
+  assert(scoped.lightVector[1]==currentLightVector_M.lightVector[1].asS32());
+  assert(scoped.lightVector[2]==currentLightVector_M.lightVector[0].asS32());
+  for(unsigned c=0;c<3;++c)assert(scoped.lightColor[c]==currentLightVector_M.color[c]);
  }
  begin_frame(false);assert(!g_fieldActorBaseLight.active);
  puts("PASS: production environment snapshot/application/frame reset, copied color/range, native matrix, outside-range preservation and actor/UI exclusion; GPU/device untested");

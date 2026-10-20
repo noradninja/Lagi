@@ -31,3 +31,15 @@ falloff colors for each town/cinematic camera-light request. They do not log per
 frame or alter the lighting. A hardware lighting-only/full-mode comparison is
 still needed to verify each scene's authored appearance and any missing effect
 tasks; preserved color transport alone cannot prove those tasks execute.
+
+## 2026-10-20: cinematic actor light basis
+
+Scoped cinematic actor geometry removes `g_viewScopeMatrix`, but its light
+previously always removed `g_nativeSceneViewMatrix`. Those roots can differ
+when an actor Draw precedes the scene camera capture. This rotates light relative
+to otherwise correctly placed actors. The shared capture now uses the same root
+as geometry, including the case where only the scoped root is valid. RGB,
+falloff, native normals and light strengths are unchanged. The production
+fixture tests a quarter-turn actor root against an identity scene root, with
+and without a valid scene view. This establishes the coordinate-space correction,
+not that every screenshot difference (including floor/sky palettes) is resolved.
