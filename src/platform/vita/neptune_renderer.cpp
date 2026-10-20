@@ -1,6 +1,7 @@
 #include "lagi/platform.h"
 #include "lagi/ui_lut_palette.h"
 #include "lagi/ui_texture_cache_index.h"
+#include "lagi/vdp1_color_calculation.h"
 #include "lagi/native_scene_mode.h"
 #include "lagi/frontend_font.h"
 
@@ -206,6 +207,9 @@ static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_stochasticFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_stochasticGouraudFragmentProgram = nullptr;
+enum NativeBlendProgram { BlendTexture, BlendStochastic, BlendSubdiv,
+    BlendStochasticGouraud, BlendMesh, BlendMeshSubdiv, BlendLitHalf, BlendCount };
+static SceGxmFragmentProgram* g_nativeBlendPrograms[BlendCount]{};
 static const SceGxmProgramParameter* g_stochasticTextureSizeParam = nullptr;
 static const SceGxmProgramParameter* g_stochasticGouraudTextureSizeParam = nullptr;
 static SceUID g_ditherOffsetsUid = -1;
@@ -216,12 +220,12 @@ static constexpr bool kStochastic = true;
 #else
 static constexpr bool kStochastic = false;
 #endif
-static void setStochastic(unsigned w, unsigned h)
+static void setStochastic(unsigned w, unsigned h, bool blended=false)
 {
     if (!kStochastic || !g_stochasticFragmentProgram ||
         !g_stochasticTextureSizeParam)
         return;
-    sceGxmSetFragmentProgram(g_probeContext, g_stochasticFragmentProgram);
+    sceGxmSetFragmentProgram(g_probeContext, blended ? g_nativeBlendPrograms[BlendStochastic] : g_stochasticFragmentProgram);
 #if LAGI_DITHER_LOOKUP
     sceGxmSetFragmentTexture(g_probeContext, 1, &g_ditherOffsetsTexture);
 #endif
@@ -233,13 +237,13 @@ static void setStochastic(unsigned w, unsigned h)
     }
 }
 
-static void setStochasticGouraud(unsigned w, unsigned h)
+static void setStochasticGouraud(unsigned w, unsigned h, bool blended=false)
 {
     if (!kStochastic || !g_stochasticGouraudFragmentProgram ||
         !g_stochasticGouraudTextureSizeParam)
         return;
     sceGxmSetFragmentProgram(
-        g_probeContext, g_stochasticGouraudFragmentProgram);
+        g_probeContext, blended ? g_nativeBlendPrograms[BlendStochasticGouraud] : g_stochasticGouraudFragmentProgram);
 #if LAGI_DITHER_LOOKUP
     sceGxmSetFragmentTexture(g_probeContext, 1, &g_ditherOffsetsTexture);
 #endif
@@ -2594,6 +2598,10 @@ void shutdown()
     freeMovieResources();
 
     if (g_probeShaderPatcher) {
+        for (auto& program : g_nativeBlendPrograms) {
+            if (program) sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,program);
+            program=nullptr;
+        }
         if (g_gouraudScanlineGrayFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_gouraudScanlineGrayFragmentProgram);
@@ -4594,6 +4602,9 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         }
 
         }
+        if (lagi::vdp1_half_transparent(command.cmdPmod))
+            for (auto& pixel : decoded.rgba)
+                pixel=lagi::vdp1_blend_texel(command.cmdPmod,pixel);
         const unsigned int stridePixels =
             (decoded.width + 7u) & ~7u;
         const unsigned int bytes =
@@ -4711,6 +4722,10 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         !decoded.width || !decoded.height ||
         decoded.rgba.size() != decoded.width * decoded.height)
         return nullptr;
+
+    if (lagi::vdp1_half_transparent(command.cmdPmod))
+        for (auto& pixel : decoded.rgba)
+            pixel=lagi::vdp1_blend_texel(command.cmdPmod,pixel);
 
     const unsigned int stridePixels = (decoded.width + 7u) & ~7u;
     const unsigned int bytes =
@@ -4901,7 +4916,7 @@ static void drawPublishedVdp1Ui(
         const auto commandDepthFunc = worldDepth ? SCE_GXM_DEPTH_FUNC_LESS_EQUAL : SCE_GXM_DEPTH_FUNC_ALWAYS;
         sceGxmSetFrontDepthFunc(g_probeContext, commandDepthFunc);
         sceGxmSetBackDepthFunc(g_probeContext, commandDepthFunc);
-        const auto commandDepthWrite = worldDepth ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED;
+        const auto commandDepthWrite = worldDepth && !lagi::vdp1_half_transparent(command.cmdPmod) ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED;
         sceGxmSetFrontDepthWriteEnable(g_probeContext, commandDepthWrite);
         sceGxmSetBackDepthWriteEnable(g_probeContext, commandDepthWrite);
 
@@ -4949,9 +4964,10 @@ static void drawPublishedVdp1Ui(
             for (unsigned i = 0; i < 4; ++i)
                 vertices[i] = {command.fieldRadar ? radarX(xs[i]) : xs[i] / 176.0f * saturnAspectCorrection,
                     command.fieldRadar ? radarY(ys[i]) : -ys[i] / 112.0f, commandZ(i),
-                    expand(c & 31u), expand((c >> 5) & 31u), expand((c >> 10) & 31u), 255u};
+                    expand(c & 31u), expand((c >> 5) & 31u), expand((c >> 10) & 31u),
+                    static_cast<std::uint8_t>(lagi::vdp1_half_transparent(command.cmdPmod) ? 128u : 255u)};
             sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
-            sceGxmSetFragmentProgram(g_probeContext, g_probeFragmentProgram);
+            sceGxmSetFragmentProgram(g_probeContext, lagi::vdp1_half_transparent(command.cmdPmod) ? g_fadeFragmentProgram : g_probeFragmentProgram);
             const auto solidPolygonMode = commandType == 6u
                 ? SCE_GXM_POLYGON_MODE_LINE : SCE_GXM_POLYGON_MODE_TRIANGLE_FILL;
             sceGxmSetFrontPolygonMode(g_probeContext, solidPolygonMode);
@@ -5309,6 +5325,8 @@ static void drawPublishedVdp1Ui(
         sceGxmSetVertexStream(g_probeContext, 0, spriteVertices);
         const bool shaded = command.hasGouraud &&
             g_gouraudSubdivVertexProgram && g_texturedGouraudSubdivFragmentProgram;
+        const bool blended = lagi::vdp1_half_transparent(command.cmdPmod);
+        sceGxmSetFragmentProgram(g_probeContext, blended ? g_nativeBlendPrograms[BlendTexture] : g_textureFragmentProgram);
         if (g_sceneGameMode == 3u && command.hasGouraud) {
             // Sample distinct texture sources, not the first eight draws:
             // recurring early effects otherwise consume every report before
@@ -5341,21 +5359,21 @@ static void drawPublishedVdp1Ui(
                     (static_cast<int>((c >> 10) & 31u) - 16) / 31.0f};
             }
             sceGxmSetVertexProgram(g_probeContext, g_gouraudSubdivVertexProgram);
-            sceGxmSetFragmentProgram(g_probeContext, g_texturedGouraudSubdivFragmentProgram);
+            sceGxmSetFragmentProgram(g_probeContext, blended ? g_nativeBlendPrograms[BlendSubdiv] : g_texturedGouraudSubdivFragmentProgram);
             void* shadeUniforms = nullptr;
             if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &shadeUniforms) >= 0 && shadeUniforms)
                 sceGxmSetUniformDataF(shadeUniforms, g_gouraudSubdivWvpParam, 0, 16, identity);
             sceGxmSetVertexStream(g_probeContext, 0, gouraudVertices);
         }
         if (shaded && !fieldRadarMap && kStochastic) {
-            setStochasticGouraud(texture->width, texture->height);
+            setStochasticGouraud(texture->width, texture->height, blended);
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
         }
         if (!shaded && !fieldRadarMap && kStochastic) {
-            setStochastic(texture->width, texture->height);
+            setStochastic(texture->width, texture->height, blended);
             sceGxmTextureSetMinFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
         }
@@ -6621,6 +6639,18 @@ static bool decodeLiveVdp1Texture(
     out.cmdSrca = record.cmdSrca;
     out.cmdSize = record.cmdSize;
     out.nativeDependenciesKnown = true;
+    if (lagi::vdp1_half_transparent(record.cmdPmod)) {
+        static std::uint64_t reported[32]{};
+        static unsigned count=0;
+        const auto key=lagi::ui_texture_key(record.cmdPmod,record.cmdColr,record.cmdSrca,record.cmdSize);
+        bool found=false;
+        for(unsigned i=0;i<count;++i) found |= reported[i]==key;
+        if (!found && count<32) {
+            reported[count++]=key;
+            logging::writef("[NativeColorBlend] type=%u PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X half=1\n",
+                commandType,record.cmdPmod,record.cmdColr,record.cmdSrca,record.cmdSize);
+        }
+    }
 
     // VDP1 command type 4 is an untextured polygon. CMDSIZE is therefore
     // legitimately zero; CMDCOLR supplies the flat RGB555 color. Represent
@@ -6631,9 +6661,9 @@ static bool decodeLiveVdp1Texture(
 
         out.width = 1u;
         out.height = 1u;
-        out.rgba.assign(1u, vdp2Rgb555ToAbgr(record.cmdColr));
+        out.rgba.assign(1u, lagi::vdp1_blend_texel(record.cmdPmod,vdp2Rgb555ToAbgr(record.cmdColr)));
         out.opacityKnown = true;
-        out.opaque = (out.rgba[0] & 0x80000000u) != 0u;
+        out.opaque = !lagi::vdp1_half_transparent(record.cmdPmod) && (out.rgba[0] & 0x80000000u) != 0u;
 
         static bool loggedSolidPolygon = false;
         if (!loggedSolidPolygon) {
@@ -6673,13 +6703,13 @@ static bool decodeLiveVdp1Texture(
     std::size_t writtenPixels = 0u;
     std::uint32_t opaqueBits = 0x80000000u;
     auto storePixel = [&](unsigned pixel, std::uint32_t color) {
-        out.rgba[pixel] = color;
+        out.rgba[pixel] = lagi::vdp1_blend_texel(record.cmdPmod,color);
         opaqueBits &= color;
         ++writtenPixels;
     };
     auto finishDecode = [&]() {
         out.opacityKnown = true;
-        out.opaque = writtenPixels == out.rgba.size() &&
+        out.opaque = !lagi::vdp1_half_transparent(record.cmdPmod) && writtenPixels == out.rgba.size() &&
             (opaqueBits & 0x80000000u) != 0u;
         return true;
     };
@@ -7217,7 +7247,15 @@ static void appendLiveTownModel(
     for (std::size_t p = 0; p < model.polygons.size(); ++p) {
         auto record = model.polygons[p];
 
-        if (record.cmdPmod & 0x0100u) {
+        if (lagi::vdp1_half_transparent(record.cmdPmod)) {
+            // Color calculation reads the existing destination. Do not let
+            // texture bucketing reorder overlapping blended commands.
+            if (runCount) {
+                g_liveTownMeshRanges.push_back({polygonBase+runStart,runCount});
+                runCount=0;
+            }
+            g_liveTownMeshRanges.push_back({polygonBase+p,1u});
+        } else if (record.cmdPmod & 0x0100u) {
             if (runCount == 0u)
                 runStart = p;
             ++runCount;
@@ -7260,10 +7298,11 @@ static void appendLiveTownModel(
         g_liveTownPolygonLights[polygonBase + p] = polygonLight;
     }
 
-    // Preserve the exact positions of Azel-authored VDP1 mesh commands in the
+    // Preserve the exact positions of Azel-authored VDP1 color/mesh commands in the
     // flattened live-town stream. Adjacent mesh polygons from the same model
     // are coalesced into ranges during the polygon copy, but no scene/object
-    // identity is inferred.
+    // identity is inferred. Half-transparent polygons remain single-command
+    // ranges so texture sorting cannot change their blend order.
     if (runCount != 0u)
         g_liveTownMeshRanges.push_back(
             {polygonBase + runStart, runCount});
@@ -10500,6 +10539,22 @@ void show_game_presentation()
         return;
     }
 
+    // Separate blend variants keep the opaque/cutout fast path unchanged.
+    const auto createNativeBlend = [&](NativeBlendProgram slot,SceGxmShaderPatcherId id,
+        const SceGxmProgram* vertex,SceGxmMultisampleMode samples) {
+        return sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,id,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,samples,&fadeBlend,vertex,
+            &g_nativeBlendPrograms[slot])>=0;
+    };
+    if (!createNativeBlend(BlendTexture,g_textureFragmentProgramId,textureVertexGxp,kMultisampleMode) ||
+        !createNativeBlend(BlendStochastic,g_stochasticFragmentProgramId,textureVertexGxp,SCE_GXM_MULTISAMPLE_NONE) ||
+        !createNativeBlend(BlendSubdiv,g_texturedGouraudSubdivFragmentProgramId,gouraudSubdivVertexGxp,kMultisampleMode) ||
+        !createNativeBlend(BlendStochasticGouraud,g_stochasticGouraudFragmentProgramId,gouraudSubdivVertexGxp,SCE_GXM_MULTISAMPLE_NONE) ||
+        !createNativeBlend(BlendMesh,g_meshFragmentProgramId,textureVertexGxp,kMultisampleMode) ||
+        !createNativeBlend(BlendMeshSubdiv,g_meshFragmentProgramId,gouraudSubdivVertexGxp,kMultisampleMode) ||
+        !createNativeBlend(BlendLitHalf,g_texturedLitHalfFragmentProgramId,gouraudPayloadVertexGxp,kMultisampleMode)) {
+        failure("[FAIL] NATIVE VDP1 BLEND PROGRAMS"); return;
+    }
     status("[PASS] GXM GOURAUD VERTEX PAYLOAD", 0xFF80E0FFu);
     status("[PASS] GXM GOURAUD SUBDIV PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM GOURAUD SUBDIV GRAY", 0xFF80E0FFu);
@@ -11224,7 +11279,7 @@ bool submit_vdp1_model(
                     continue;
 
                 const bool mesh =
-                    orderedShadow || g_vdp1GpuTextures[t].mesh;
+                    g_vdp1GpuTextures[t].mesh;
                 if (orderedShadow) {
                     static unsigned int orderedShadowTraceBudget = 8u;
                     if (orderedShadowTraceBudget != 0u) {
@@ -11256,18 +11311,28 @@ bool submit_vdp1_model(
                         g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                 }
 
+                const bool blended = lagi::vdp1_half_transparent(g_vdp1GpuTextures[t].cmdPmod);
                 sceGxmSetFragmentProgram(
                     g_probeContext,
-                    mesh ? g_meshTextureFragmentProgram
-                         : g_textureFragmentProgram);
+                    blended ? g_nativeBlendPrograms[mesh ? BlendMesh : BlendTexture] :
+                    (mesh ? g_meshTextureFragmentProgram : g_textureFragmentProgram));
                 sceGxmSetFragmentTexture(
                     g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
+                if (blended) {
+                    sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
+                    sceGxmSetBackDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
+                }
                 sceGxmDraw(
                     g_probeContext,
                     SCE_GXM_PRIMITIVE_TRIANGLES,
                     SCE_GXM_INDEX_FORMAT_U16,
                     g_vdp1TextureIndices + batch.firstIndex,
                     batch.indexCount);
+
+                if (blended && !orderedShadow) {
+                    sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_ENABLED);
+                    sceGxmSetBackDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_ENABLED);
+                }
 
                 if (orderedShadow) {
                     sceGxmSetCullMode(g_probeContext, cullMode);
@@ -11595,8 +11660,9 @@ bool submit_vdp1_model(
                 const TextureBatch& batch = g_vdp1TextureBatches[t];
 
                 bool mesh = false;
+                const bool blended = subdividedTexturedLit && lagi::vdp1_half_transparent(g_vdp1GpuTextures[t].cmdPmod);
                 if (subdividedTexturedLit) {
-                    mesh = orderedShadow || g_vdp1GpuTextures[t].mesh;
+                    mesh = g_vdp1GpuTextures[t].mesh;
                     if (orderedShadow) {
                         sceGxmSetFrontPolygonMode(
                             g_probeContext,
@@ -11619,19 +11685,28 @@ bool submit_vdp1_model(
                     }
                     sceGxmSetFragmentProgram(
                         g_probeContext,
-                        mesh ? g_meshSubdivFragmentProgram
-                             : g_texturedGouraudSubdivFragmentProgram);
+                        blended ? g_nativeBlendPrograms[mesh ? BlendMeshSubdiv : BlendSubdiv] :
+                        (mesh ? g_meshSubdivFragmentProgram : g_texturedGouraudSubdivFragmentProgram));
                     sceGxmSetFragmentTexture(
                         g_probeContext, 0,
                         &g_vdp1GpuTextures[t].texture);
                 }
 
+                if (blended) {
+                    sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
+                    sceGxmSetBackDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
+                }
                 sceGxmDraw(
                     g_probeContext,
                     SCE_GXM_PRIMITIVE_TRIANGLES,
                     SCE_GXM_INDEX_FORMAT_U16,
                     g_vdp1SubdivIndices + batch.firstIndex,
                     batch.indexCount);
+
+                if (blended && !orderedShadow) {
+                    sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_ENABLED);
+                    sceGxmSetBackDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_ENABLED);
+                }
 
                 if (orderedShadow) {
                     sceGxmSetCullMode(g_probeContext, cullMode);
@@ -11926,7 +12001,8 @@ bool submit_vdp1_model(
 
             if (texturedLit) {
                 sceGxmSetFragmentProgram(
-                    g_probeContext, g_texturedLitHalfFragmentProgram);
+                    g_probeContext, lagi::vdp1_half_transparent(g_vdp1GpuTextures[t].cmdPmod)
+                        ? g_nativeBlendPrograms[BlendLitHalf] : g_texturedLitHalfFragmentProgram);
                 sceGxmSetFragmentTexture(
                     g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
             }

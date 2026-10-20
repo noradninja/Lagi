@@ -205,3 +205,24 @@ Changed mesh snapshots are invalidated individually; already-published frames
 retain immutable data. No whole-actor scale, new animation timing or replacement
 shape is introduced. Disc-backed fixture and battle VPK pass; swelling and mouth
 deformation appearance remain hardware-pending.
+
+### Shared VDP1 half-transparency
+
+Native PMOD 3/7 (with/without Gouraud) previously reached cutout-only fragment
+programs. Preserve their RGB, encode half alpha in decoded materials, and select
+dedicated GXM source-alpha blend variants for sprites, solid UI polygons,
+textured geometry and Full-mode Gouraud geometry. Transparent holes stay holes;
+mesh bit 8 remains independent and is not converted into alpha transparency.
+Opaque/cutout programs remain unblended to preserve their pixels and fast path.
+Blended commands test world depth but do not write it. In the ordinary native
+mesh-range route, each blended polygon retains its own authored submission
+boundary so texture batching cannot reorder overlapping commands.
+
+This restores VDP1 command semantics, not a cloud-specific proxy or arbitrary
+effect placement. It does not implement all VDP2 CCCTL/CCRSA layer color
+calculation, PMOD shadow/half-luminance operations, or pixel-exact Saturn
+RGB555 destination rounding (GXM uses 8-bit alpha). In particular, a cloud which
+is not emitted, or which uses a VDP2 layer blend, needs further native-path
+tracing. `[NativeColorBlend]` records decoded authored half-transparent material
+descriptors. Host selection/mask tests and both VPK builds are the validation
+gate here, not proof of cloud appearance, order or hardware performance.
