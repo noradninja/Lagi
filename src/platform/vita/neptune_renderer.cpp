@@ -212,6 +212,16 @@ enum NativeBlendProgram { BlendTexture, BlendStochastic, BlendSubdiv,
 static SceGxmFragmentProgram* g_nativeBlendPrograms[BlendCount]{};
 static const SceGxmProgramParameter* g_stochasticTextureSizeParam = nullptr;
 static const SceGxmProgramParameter* g_stochasticGouraudTextureSizeParam = nullptr;
+static const SceGxmProgramParameter* g_stochasticGouraudMeshParam = nullptr;
+static const SceGxmProgramParameter* g_subdivMeshParam = nullptr;
+static void setSubdivMesh(bool enabled)
+{
+    void* uniforms=nullptr;
+    if (g_subdivMeshParam && sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext,&uniforms)>=0 && uniforms) {
+        const float value=enabled ? 1.0f : 0.0f;
+        sceGxmSetUniformDataF(uniforms,g_subdivMeshParam,0,1,&value);
+    }
+}
 static SceUID g_ditherOffsetsUid = -1;
 static void* g_ditherOffsetsPixels = nullptr;
 static SceGxmTexture g_ditherOffsetsTexture{};
@@ -237,7 +247,7 @@ static void setStochastic(unsigned w, unsigned h, bool blended=false)
     }
 }
 
-static void setStochasticGouraud(unsigned w, unsigned h, bool blended=false)
+static void setStochasticGouraud(unsigned w, unsigned h, bool blended=false, bool mesh=false)
 {
     if (!kStochastic || !g_stochasticGouraudFragmentProgram ||
         !g_stochasticGouraudTextureSizeParam)
@@ -253,6 +263,9 @@ static void setStochasticGouraud(unsigned w, unsigned h, bool blended=false)
         const float size[4] = {float(w), float(h), 1.0f / float(w), 1.0f / float(h)};
         sceGxmSetUniformDataF(
             ub, g_stochasticGouraudTextureSizeParam, 0, 4, size);
+        const float value=mesh ? 1.0f : 0.0f;
+        if (g_stochasticGouraudMeshParam)
+            sceGxmSetUniformDataF(ub,g_stochasticGouraudMeshParam,0,1,&value);
     }
 }
 
@@ -5326,7 +5339,22 @@ static void drawPublishedVdp1Ui(
         const bool shaded = command.hasGouraud &&
             g_gouraudSubdivVertexProgram && g_texturedGouraudSubdivFragmentProgram;
         const bool blended = lagi::vdp1_half_transparent(command.cmdPmod);
-        sceGxmSetFragmentProgram(g_probeContext, blended ? g_nativeBlendPrograms[BlendTexture] : g_textureFragmentProgram);
+        const bool mesh = (command.cmdPmod & 0x100u)!=0;
+        if (g_sceneGameMode==4u && worldDepth) {
+            static std::uint64_t seen[64]{};
+            static unsigned count=0;
+            const auto key=lagi::ui_texture_key(command.cmdPmod,command.cmdColr,command.cmdSrca,command.cmdSize);
+            bool found=false;
+            for(unsigned i=0;i<count;++i) found|=seen[i]==key;
+            if (!found && count<64) {
+                seen[count++]=key;
+                logging::writef("[NativeEffectMaterial] PMOD=%04X SRCA=%04X SIZE=%04X mesh=%u shaded=%u\n",
+                    command.cmdPmod,command.cmdSrca,command.cmdSize,mesh?1u:0u,shaded?1u:0u);
+            }
+        }
+        sceGxmSetFragmentProgram(g_probeContext, mesh
+            ? (blended ? g_nativeBlendPrograms[BlendMesh] : g_meshTextureFragmentProgram)
+            : (blended ? g_nativeBlendPrograms[BlendTexture] : g_textureFragmentProgram));
         if (g_sceneGameMode == 3u && command.hasGouraud) {
             // Sample distinct texture sources, not the first eight draws:
             // recurring early effects otherwise consume every report before
@@ -5360,19 +5388,20 @@ static void drawPublishedVdp1Ui(
             }
             sceGxmSetVertexProgram(g_probeContext, g_gouraudSubdivVertexProgram);
             sceGxmSetFragmentProgram(g_probeContext, blended ? g_nativeBlendPrograms[BlendSubdiv] : g_texturedGouraudSubdivFragmentProgram);
+            if (!kStochastic || fieldRadarMap) setSubdivMesh(mesh);
             void* shadeUniforms = nullptr;
             if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &shadeUniforms) >= 0 && shadeUniforms)
                 sceGxmSetUniformDataF(shadeUniforms, g_gouraudSubdivWvpParam, 0, 16, identity);
             sceGxmSetVertexStream(g_probeContext, 0, gouraudVertices);
         }
         if (shaded && !fieldRadarMap && kStochastic) {
-            setStochasticGouraud(texture->width, texture->height, blended);
+            setStochasticGouraud(texture->width, texture->height, blended, mesh);
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
         }
-        if (!shaded && !fieldRadarMap && kStochastic) {
+        if (!shaded && !fieldRadarMap && kStochastic && !mesh) {
             setStochastic(texture->width, texture->height, blended);
             sceGxmTextureSetMinFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
@@ -10001,6 +10030,7 @@ void show_game_presentation()
     const SceGxmProgram* texturedGouraudSubdivFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_textured_gouraud_subdiv_f_gxp_start);
+    g_subdivMeshParam=sceGxmProgramFindParameterByName(texturedGouraudSubdivFragmentGxp,"meshMode");
     const SceGxmProgram* stochasticGouraudFragmentGxp =
         reinterpret_cast<const SceGxmProgram*>(
             _binary_lagi_stochastic_gouraud_f_gxp_start);
@@ -10555,6 +10585,8 @@ void show_game_presentation()
         !createNativeBlend(BlendLitHalf,g_texturedLitHalfFragmentProgramId,gouraudPayloadVertexGxp,kMultisampleMode)) {
         failure("[FAIL] NATIVE VDP1 BLEND PROGRAMS"); return;
     }
+    g_stochasticGouraudMeshParam=sceGxmProgramFindParameterByName(stochasticGouraudFragmentGxp,"meshMode");
+    if (!g_subdivMeshParam || !g_stochasticGouraudMeshParam) { failure("[FAIL] NATIVE MESH UNIFORMS"); return; }
     status("[PASS] GXM GOURAUD VERTEX PAYLOAD", 0xFF80E0FFu);
     status("[PASS] GXM GOURAUD SUBDIV PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM GOURAUD SUBDIV GRAY", 0xFF80E0FFu);
@@ -11687,6 +11719,7 @@ bool submit_vdp1_model(
                         g_probeContext,
                         blended ? g_nativeBlendPrograms[mesh ? BlendMeshSubdiv : BlendSubdiv] :
                         (mesh ? g_meshSubdivFragmentProgram : g_texturedGouraudSubdivFragmentProgram));
+                    if (!mesh) setSubdivMesh(false);
                     sceGxmSetFragmentTexture(
                         g_probeContext, 0,
                         &g_vdp1GpuTextures[t].texture);

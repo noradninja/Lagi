@@ -241,3 +241,18 @@ typed clear operation; never create a text task from the coordinate record.
 The disc-backed production fixture verifies the original call/record, all 32
 cleared cells and the absence of any +C dereference. Button/timeout dismissal
 fixture also passes; on-device fade/handoff confirmation remains pending.
+
+### Native sprite mesh/stipple coverage
+
+The sprite path previously selected only texture/Gouraud programs, ignoring
+PMOD bit 8 even for the restored drool command 0108. Honor that bit in both
+ordinary and stochastic Gouraud sprite shaders using the existing screen-space
+checkerboard discard. Keep texture masks, Gouraud colors and half-transparency
+independent. Unshaded mesh sprites use the existing mesh shader. Ordinary Full
+geometry explicitly resets the new fragment uniform so a prior mesh sprite
+cannot leak coverage state into the next scene. No actor/effect-name guess
+changes source PMODs. In particular, the native Gouraud trail submitter uses
+color mode 8; it is not silently rewritten globally to 0108. If a remaining
+effect still lacks stipple, `[NativeEffectMaterial]` captures the actual battle
+sprite PMOD/material for further native-producer tracing. This is a shared
+coverage fix, not a claim that all requested effects are hardware-verified.
