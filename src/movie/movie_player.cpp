@@ -3,6 +3,7 @@
 #include "lagi/disc_image.h"
 #include "lagi/movie/film_demuxer.h"
 #include "lagi/platform.h"
+#include "lagi/audio_output_owner.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -120,6 +121,10 @@ public:
 
         hasAudio = audio.codec == FilmAudioCodec::PcmS8Planar ||
                    audio.codec == FilmAudioCodec::PcmS16BePlanar;
+        if (hasAudio) {
+            lagi::audio::claim_movie_output();
+            ownsOutput = true;
+        }
         if (hasAudio &&
             !platform::audio::start_pcm_stream(audio.sampleRate, audio.channels))
             return fail("SceAudio could not open the movie PCM stream");
@@ -185,7 +190,9 @@ public:
 
     void close()
     {
-        platform::audio::stop_pcm_stream();
+        if (ownsOutput) platform::audio::stop_pcm_stream();
+        if (ownsOutput) lagi::audio::release_movie_output();
+        ownsOutput = false;
         // Azel closes the CPK stream before its native 30-frame fade-out has
         // completed.  Keep the final decoded texture alive so the renderer can
         // apply that fade; the next movie or VDP2 front-end upload replaces it.
@@ -208,7 +215,9 @@ public:
     bool fail(const std::string& message)
     {
         error = message.empty() ? "movie playback failed" : message;
-        platform::audio::stop_pcm_stream();
+        if (ownsOutput) platform::audio::stop_pcm_stream();
+        if (ownsOutput) lagi::audio::release_movie_output();
+        ownsOutput = false;
         platform::renderer::movie_clear_frame();
         state = PlaybackState::Failed;
         return false;
@@ -298,6 +307,7 @@ public:
     std::uint64_t fallbackClockUs = 0;
     std::uint64_t currentPts = 0;
     bool hasAudio = false;
+    bool ownsOutput = false;
     bool audioFinishSent = false;
     PlaybackState state = PlaybackState::Closed;
     std::string error;

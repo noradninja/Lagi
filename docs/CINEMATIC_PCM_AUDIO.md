@@ -47,6 +47,27 @@ matching sample counts. Final queued samples are cancelled on native closure.
 
 ## Validation and acceptance
 
+### Speech accepted; SCSP coexistence and bank-local music lookup
+
+The next device run confirms speech. It also exposes a second issue: E011/E014
+load native sequence 68, then call fade-all. MAIN 0602B670 stops sequences and
+resets volumes; it does not disable SCSP output. The Vita-only output-disable
+side effect is removed. CPK instead explicitly claims the physical output port,
+waiting for the current native render quantum before replacing it; close/fail
+release that ownership. EPK remains mixed with normal SCSP music/effects.
+
+The log starts sound 100 in cinematic sequence 68 but never requests it after
+boss sequence 67 loads. The asynchronous public `findSound` had observed the old
+cinematic sound ID. Worker-published IDs now carry their sequence namespace;
+bank-local IDs >=100 are checked against the synchronously announced requested
+sequence. Global system sounds <100 remain global. This is an asynchronous
+service correction, not replacement boss music or altered COMMON mappings.
+
+The production-function fixture covers native fade commands/volumes, namespace
+lookup, global IDs and quiescent movie/native output handoff. Both Vita builds
+compile. Audible music/SFX recovery requires hardware; longstanding missing
+system effects are not claimed fixed merely because their commands enqueue.
+
 ### Fade-all / first-packet stall correction
 
 The first device test stopped E011 command consumption at frame 638: the audio

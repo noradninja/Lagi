@@ -11,6 +11,7 @@
 #include "lagi/native_audio_banks.h"
 #include "lagi/streamed_pcm.h"
 #include "lagi/cutscene_audio.h"
+#include "lagi/audio_output_owner.h"
 #ifndef LAGI_BATTLE_AUDIO_STACK
 #define LAGI_BATTLE_AUDIO_STACK 0
 #endif
@@ -216,6 +217,8 @@ std::atomic<bool> g_audioWorkerRunning{false};
 std::atomic<bool> g_loadingFinished{true};
 std::atomic<unsigned> g_pendingSequenceEvents{0};
 std::array<std::atomic<s32>, 8> g_activeSoundIds{};
+std::array<std::atomic<s32>, 8> g_activeSoundSequences{};
+std::atomic<s32> g_requestedSequence{-1};
 SceUID g_audioWorkerThread = -1;
 bool g_gameplayRenderEnabled = false;
 std::atomic<unsigned> g_updateSoundCalls{0};
@@ -312,12 +315,15 @@ void reset_active_sounds()
         sound.soundIndex = -1;
         sound.volume = 0x80;
     }
-    for (auto& id : g_activeSoundIds)
-        id.store(-1, std::memory_order_release);
+    for (unsigned i=0;i<g_activeSoundIds.size();++i) {
+        g_activeSoundIds[i].store(-1, std::memory_order_release);
+        g_activeSoundSequences[i].store(-1, std::memory_order_release);
+    }
 }
 
 void ensure_output_stream()
 {
+    if (lagi::audio::movieOwnsOutput.load(std::memory_order_acquire)) return;
     if (!lagi::platform::audio::pcm_stream_active()) {
         if (lagi::platform::audio::start_pcm_stream(kScspRate, 2)) {
             lagi::platform::logging::writef(
@@ -489,6 +495,7 @@ void replay_restored_sequence()
     for(unsigned bank=0;bank<g_activeSounds.size();++bank){
         const auto sound=g_activeSounds[bank].soundIndex;
         g_activeSoundIds[bank].store(sound,std::memory_order_release);
+        g_activeSoundSequences[bank].store(g_sequenceNumber,std::memory_order_release);
         if(sound<0)continue;
         const auto config=sound>99 ? g_sequence->m4_soundConfigs+u32(sound-100)*4u :
             gCommonFile->getSaturnPtr(0x02131C4)+u32(sound)*4u;
@@ -695,6 +702,8 @@ void submit_sound_request(const PendingSound& request)
             static_cast<u8>(sequenceDataBank),
             static_cast<u8>(soundNumber));
         active.soundIndex = static_cast<s16>(request.soundIndex);
+        g_activeSoundSequences[static_cast<unsigned>(soundControlId)].store(
+            g_sequenceNumber, std::memory_order_release);
         g_activeSoundIds[static_cast<unsigned>(soundControlId)].store(
             request.soundIndex, std::memory_order_release);
 
@@ -1034,9 +1043,9 @@ void worker_fade_all()
         queue_command(0x05, i, 0x7f, 0);
     }
 
-    // Module/movie transitions call this immediately before movie ownership.
-    // Stop gameplay synthesis until the next bank load; EPK PCM remains independent.
-    g_gameplayRenderEnabled = false;
+    // MAIN 0602B670 stops sequences and resets their volume, not the sound
+    // processor/output service. Later cinematic BGM and SFX must remain audible.
+    for (auto& sound : g_activeSounds) sound.volume = 0x7f;
 }
 
 void worker_pop_sequence(s32 replay)
@@ -1114,8 +1123,13 @@ int audio_worker_thread(SceSize, void*)
         lagi_dsp_service_pending(&SCSP.DSP);
 
         g_cutscenePCM.service();
-        if ((g_gameplayRenderEnabled && g_sequence) || g_cutscenePCM.active()) {
-            render_scsp_audio();
+        if (!lagi::audio::movieOwnsOutput.load(std::memory_order_acquire) &&
+            ((g_gameplayRenderEnabled && g_sequence) || g_cutscenePCM.active())) {
+            {
+                lagi::audio::OutputLease lease;
+                if (!lagi::audio::movieOwnsOutput.load(std::memory_order_acquire))
+                    render_scsp_audio();
+            }
             if (lagi::platform::audio::queued_pcm_frames() >=
                 kTargetQueuedFrames) {
                 sceKernelDelayThread(1000);
@@ -1294,6 +1308,7 @@ void updateSound()
 
 void loadSoundBanks(s8 musicNumber, s8 mode)
 {
+    g_requestedSequence.store(musicNumber, std::memory_order_release);
     trace_sequence_config(musicNumber, mode);
 
     AudioEvent event{};
@@ -1367,7 +1382,10 @@ s32 fadeOutAllSequences()
 s32 findSound(s32 soundIndex)
 {
     for (unsigned i = 0; i < g_activeSoundIds.size(); ++i) {
-        if (g_activeSoundIds[i].load(std::memory_order_acquire) == soundIndex)
+        if (g_activeSoundIds[i].load(std::memory_order_acquire) == soundIndex &&
+            (soundIndex < 100 ||
+             g_activeSoundSequences[i].load(std::memory_order_acquire) ==
+             g_requestedSequence.load(std::memory_order_acquire)))
             return static_cast<s32>(i);
     }
     return -1;
