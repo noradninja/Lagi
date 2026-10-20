@@ -1,4 +1,5 @@
 #include "lagi/azel_save_platform.h"
+#include "lagi/save_growth_migration.h"
 
 #include "lagi/platform.h"
 
@@ -15,7 +16,7 @@ namespace {
 
 constexpr const char* kSaveRoot = "ux0:data/lagi/save";
 constexpr const char* kInternalSaveRoot = "ux0:data/lagi/save/0";
-constexpr std::uint32_t kSaveVersion = 0x00010000u;
+constexpr std::uint32_t kSaveVersion = 0x00010001u;
 constexpr std::size_t kMaximumSaveBytes = 0x2000u;
 constexpr std::array<const char*, 3> kSlotNames = {
     "PANDRA_3_01", "PANDRA_3_02", "PANDRA_3_03"
@@ -121,9 +122,37 @@ bool validSaveFile(int deviceId, const char* fileName)
     if (!read)
         return false;
 
-    return readU32(bytes.data() + 4) == kSaveVersion &&
+    return (readU32(bytes.data() + 4) == kSaveVersion || readU32(bytes.data() + 4) == 0x10000) &&
         readU32(bytes.data()) ==
             computeChecksum(bytes.data(), static_cast<std::size_t>(stat.st_size));
+}
+
+// Retain the last pre-growth save once, so an older build can be restored
+// without relying on the transient rename backup (which normal writes remove).
+bool preserveLegacySave(int deviceId, const char* fileName, const char* path)
+{
+    SceIoStat metadata{};
+    if (sceIoGetstat(path, &metadata) < 0) return true;
+    if (metadata.st_size < 8 || metadata.st_size > kMaximumSaveBytes) return false;
+    std::array<std::uint8_t, kMaximumSaveBytes> bytes{};
+    const SceUID input = sceIoOpen(path, SCE_O_RDONLY, 0);
+    if (input < 0) return false;
+    const auto size = static_cast<std::size_t>(metadata.st_size);
+    const bool read = readAll(input, bytes.data(), size);
+    const int closed = sceIoClose(input);
+    if (!read || closed < 0) return false;
+    if (readU32(bytes.data()+4) != 0x10000) return true;
+    if (readU32(bytes.data()) != computeChecksum(bytes.data(), size)) return false;
+    char retained[160]{};
+    if (!buildPath(retained, sizeof(retained), deviceId, fileName, ".v10000")) return false;
+    if (sceIoGetstat(retained, &metadata) >= 0) return true;
+    const SceUID output = sceIoOpen(retained, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_EXCL, 0666);
+    if (output < 0) return false;
+    const bool written = writeAll(output, bytes.data(), size);
+    const int result = sceIoClose(output);
+    if (!written || result < 0) {sceIoRemove(retained);return false;}
+    lagi::platform::logging::writef("[SavePlatform] retained legacy backup slot=%s\n", fileName);
+    return true;
 }
 
 } // namespace
@@ -159,11 +188,11 @@ extern "C" int lagiAzelSaveHasAnyValidSlot()
     return validMask != 0u ? 1 : 0;
 }
 
-extern "C" int lagiAzelSaveRead(
+extern "C" int lagiAzelSaveReadGrowth(
     int deviceId,
     const char* fileName,
     void* destination,
-    std::size_t size)
+    std::size_t size, std::size_t extensionOffset)
 {
     if (!destination || size < 8 || size > kMaximumSaveBytes)
         return -1;
@@ -177,8 +206,11 @@ extern "C" int lagiAzelSaveRead(
     const SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
     if (fd < 0)
         return -1;
-    const bool read = readAll(
-        fd, static_cast<std::uint8_t*>(destination), size);
+    SceIoStat metadata{};
+    const bool sized = sceIoGetstat(path, &metadata) >= 0 && metadata.st_size >= 8 &&
+        static_cast<std::uint64_t>(metadata.st_size) <= size;
+    const std::size_t stored = sized ? static_cast<std::size_t>(metadata.st_size) : 0;
+    const bool read = sized && readAll(fd, static_cast<std::uint8_t*>(destination), stored);
     const int closeResult = sceIoClose(fd);
     if (!read || closeResult < 0) {
         lagi::platform::logging::writef(
@@ -189,9 +221,7 @@ extern "C" int lagiAzelSaveRead(
 
     // Slot preview reads this same raw structure before readSave performs its
     // own checks. Reject invalid metadata before it can reach menu indexing.
-    const auto* bytes = static_cast<const std::uint8_t*>(destination);
-    if (readU32(bytes + 4) != kSaveVersion ||
-        readU32(bytes) != computeChecksum(bytes, size)) {
+    if (!lagi::save::expand_growth(static_cast<std::uint8_t*>(destination), stored, size, extensionOffset)) {
         lagi::platform::logging::writef(
             "[SavePlatform] invalid metadata device=%d slot=%s size=%u\n",
             deviceId, fileName, static_cast<unsigned>(size));
@@ -202,6 +232,11 @@ extern "C" int lagiAzelSaveRead(
         "[SavePlatform] read device=%d slot=%s size=%u\n",
         deviceId, fileName, static_cast<unsigned>(size));
     return 0;
+}
+
+extern "C" int lagiAzelSaveRead(int deviceId,const char* fileName,void* destination,std::size_t size)
+{
+    return lagiAzelSaveReadGrowth(deviceId,fileName,destination,size,size);
 }
 
 extern "C" int lagiAzelSaveWrite(
@@ -219,6 +254,7 @@ extern "C" int lagiAzelSaveWrite(
         return -1;
 
     ensureSaveDirectories();
+    if (!preserveLegacySave(deviceId, fileName, path)) return -1;
     sceIoRemove(temporaryPath);
     const SceUID fd = sceIoOpen(
         temporaryPath, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);

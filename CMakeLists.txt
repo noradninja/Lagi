@@ -752,6 +752,23 @@ set(LAGI_AZEL_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib")
 set(LAGI_AZEL_GENERATED_ROOT "${CMAKE_CURRENT_BINARY_DIR}/azel_upstream")
 file(MAKE_DIRECTORY "${LAGI_AZEL_GENERATED_ROOT}")
 
+# Keep the existing stats prefix byte-for-byte stable. Missing Saturn growth
+# fields are appended as a typed extension, shared by every Vita consumer.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LAGI_AZEL_SOURCE_ROOT}/common.h")
+file(READ "${LAGI_AZEL_SOURCE_ROOT}/common.h" common_native)
+set(growth_anchor "    s16 mC2_dragonSpr; // C2\n};")
+string(FIND "${common_native}" "${growth_anchor}" growth_found)
+if(growth_found LESS 0)
+ message(FATAL_ERROR "Native growth stats boundary changed")
+endif()
+string(REPLACE "${growth_anchor}" [=[    s16 mC2_dragonSpr; // C2
+    // Appended host storage for omitted native fields, not native byte offsets.
+    std::array<u32, 5> m24_growth;
+    std::array<u32, 5> m80_growthXP;
+    std::array<u8, 8> m4_growthLevels;
+};]=] common_native "${common_native}")
+file(CONFIGURE OUTPUT "${LAGI_AZEL_GENERATED_ROOT}/common.h" CONTENT "${common_native}" @ONLY)
+
 if(LAGI_BATTLE_NATIVE_BUILD)
  file(READ "${LAGI_AZEL_SOURCE_ROOT}/battle/BTL_A3/BTL_A3_UrchinFormation.h" enemy_header)
  set(enemy_fields_old "    std::array<s8, 4> m28;\n    s8 m38;")
@@ -3492,6 +3509,11 @@ void townCamera_update(sCameraTask* pThis)]=] source_text "${source_text}")
     "#include \"3dEngine_textureCache.h\""
     "#include \"3dEngine_textureCache.h\"\n#include \"lagi/azel_save_platform.h\""
     source_text "${source_text}")
+   string(REPLACE "m4_version == 0x10000" "m4_version == 0x10001" source_text "${source_text}")
+   string(REPLACE "m4_version = 0x10000" "m4_version = 0x10001" source_text "${source_text}")
+   string(REPLACE "// structure of the save data"
+    "static_assert(sizeof(s_gameStats) - offsetof(s_gameStats, m24_growth) == 48, \"Growth save extension layout\");\n// structure of the save data"
+    source_text "${source_text}")
    # Saturn work areas are cleared before Init. The C++ task host uses plain
    # `new T`, so establish the load-overlay dispatch state explicitly before
    # its first Draw. Otherwise Continue may branch on an indeterminate status.
@@ -3552,7 +3574,7 @@ void townCamera_update(sCameraTask* pThis)]=] source_text "${source_text}")
     [=[s32 readFrombackup(s32 deviceId, const std::string* filename, sSaveDataRaw* buffer)
 {
     return filename && buffer
-        ? lagiAzelSaveRead(deviceId, filename->c_str(), buffer, sizeof(sSaveDataRaw))
+        ? lagiAzelSaveReadGrowth(deviceId, filename->c_str(), buffer, sizeof(sSaveDataRaw), offsetof(sSaveDataRaw, mC_mainGameState) + offsetof(s_mainGameState, gameStats) + offsetof(s_gameStats, m24_growth))
         : -1;
 }]=]
     source_text "${source_text}")
@@ -3591,8 +3613,8 @@ s32 getBupStatus(s32 slotIndex)
 
         return NULL;]=]
     [=[        sSaveDataRaw* pNewGameState = new sSaveDataRaw;
-        if (lagiAzelSaveRead(device, saveFileName.c_str(),
-                pNewGameState, sizeof(sSaveDataRaw)) == 0)
+        if (lagiAzelSaveReadGrowth(device, saveFileName.c_str(),
+                pNewGameState, sizeof(sSaveDataRaw), offsetof(sSaveDataRaw, mC_mainGameState) + offsetof(s_mainGameState, gameStats) + offsetof(s_gameStats, m24_growth)) == 0)
             return pNewGameState;
         delete pNewGameState;
         return NULL;]=]
@@ -4417,6 +4439,7 @@ set_source_files_properties(
  PROPERTIES COMPILE_OPTIONS "-O2"
 )
 
+target_include_directories(lagi BEFORE PRIVATE "${LAGI_AZEL_GENERATED_ROOT}")
 target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town"
