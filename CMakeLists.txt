@@ -2578,6 +2578,10 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_growth.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_growth.inc" growth_service)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_result_clear.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_result_clear.inc" result_clear_service)
+  string(APPEND growth_service "\n${result_clear_service}")
   string(REPLACE "    s16 m4;\n    s8 m72;" "    s16 m4;\n    std::array<u16,6> m6_gains;\n    u8 m73_oldLevel;\n    s8 m72;" source_text "${source_text}")
   foreach(growth_stub IN ITEMS "void battleResultScreen_updateSub5(int XPReceived)\n{\n    Unimplemented();\n}" "void battleResultScreen_checkLevelUp(sBattleResultScreen* pThis)\n{\n    Unimplemented();\n}")
    string(FIND "${source_text}" "${growth_stub}" growth_stub_found)
@@ -2592,7 +2596,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   set(growth_states [=[    case 3:
         if ((graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m6_buttonDown & 6) || --pThis->m4 < 0) {
             clearVdp2TextLargeFont();
-            battleResultScreen_createProgressiveText2(pThis, g_BTL_GenericData->getSaturnPtr(0x060ABAB0));
+            lagiBattleResultClearArea(g_BTL_GenericData->getSaturnPtr(0x060ABAB0));
             pThis->m72=4; pThis->m4=9;
         }
         break;

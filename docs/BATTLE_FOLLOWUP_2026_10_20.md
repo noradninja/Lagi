@@ -226,3 +226,18 @@ is not emitted, or which uses a VDP2 layer blend, needs further native-path
 tracing. `[NativeColorBlend]` records decoded authored half-transparent material
 descriptors. Host selection/mask tests and both VPK builds are the validation
 gate here, not proof of cloud appearance, order or hardware performance.
+
+### Result-dismissal crash 1792523191
+
+Matching ELF thread entries (SCSP and render) establish slide 0x62000.
+Runtime PC 81260CA2 resolves to newlib SIGABRT; saved line 297 and expression
+identify readSaturnS8's file-range assertion. The truncated core has no usable
+caller stack, so it does not alone prove which caller supplied the bad address.
+Source/disc inspection finds a concrete matching regression: growth phase 3
+passed 060ABAB0 to progressive-text creation. That record has coordinates
+(18,21) and zero at +C, not a string pointer. Native 0606FCAE..B4 calls
+0606E9D2, which clears a 16x2 region and resets print position. Restore that
+typed clear operation; never create a text task from the coordinate record.
+The disc-backed production fixture verifies the original call/record, all 32
+cleared cells and the absence of any +C dereference. Button/timeout dismissal
+fixture also passes; on-device fade/handoff confirmation remains pending.
