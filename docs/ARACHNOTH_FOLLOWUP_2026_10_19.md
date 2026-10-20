@@ -53,8 +53,8 @@ acceleration coefficients remain unchanged; device movement is not yet accepted.
   acceptance; shared bank/sample/mixer behavior still needs tracing.
 - World map: source case 10 requests 0x4F, and original MAIN 06027C72..74 also
   calls 06027110 with 0x4F. This is not merely a Vita adapter typo. The current
-  dispatch trims world-map mode 5. Do not silently substitute a guessed world
-  map index or describe this boundary as implemented. Determine the intended
-  full-game progression/data variant and bring up its native world-map path.
+  dispatch interpretation was wrong: subsequent inspection proves native mode
+  6 loads WORLD.PRG and mode 5 loads CHANGE.PRG. See WORLD_MAP_HANDOFF.md for
+  the corrected, explicitly non-playable handoff boundary and remaining ports.
 
 Music/output recovery is documented separately in `CINEMATIC_PCM_AUDIO.md`.

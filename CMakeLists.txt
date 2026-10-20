@@ -964,6 +964,14 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "        if (gGameStatus.m6_previousGameStatus == 74 || lagiAzelSaveConsumeInGameLoad())"
    source_text "${source_text}")
   if(LAGI_BATTLE_EXECUTE_A3)
+   string(REPLACE "p_workArea(*overlayDispatchTable[])"
+    "p_workArea lagiLoadNativeWorldBoundary(p_workArea,s32);\np_workArea(*overlayDispatchTable[])"
+    source_text "${source_text}")
+   string(REPLACE "    NULL,               // 6: unused"
+    "    lagiLoadNativeWorldBoundary, // 6: native WORLD.PRG boundary; display/travel deferred"
+    source_text "${source_text}")
+   string(REPLACE "// 5: worldmap - deferred" "// 5: native CHANGE.PRG - deferred" source_text "${source_text}")
+   string(REPLACE "// 0x4F return to title" "// 0x4F native WORLD.PRG (mode 6)" source_text "${source_text}")
    string(REPLACE "    NULL,               // 4: battle - deferred until flight milestone"
     "    loadBattle,         // 4: native story battle, COMMON selects encounter"
     source_text "${source_text}")
@@ -4360,7 +4368,7 @@ if(LAGI_BATTLE_NATIVE_BUILD)
  set_property(SOURCE src/integration/lagi_disc_file_vita.cpp src/integration/lagi_map_resources_vita.cpp src/integration/lagi_azel_books_menu.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_TRACK_RESIDENT_VIDEO=1)
 endif()
 if(LAGI_BATTLE_EXECUTE_A3)
- target_sources(lagi PRIVATE src/integration/lagi_battle_startup_vita.cpp)
+ target_sources(lagi PRIVATE src/integration/lagi_battle_startup_vita.cpp src/integration/lagi_world_boundary_vita.cpp)
  set_property(SOURCE src/integration/lagi_audio_vita.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_BATTLE_AUDIO_STACK=1)
 endif()
 
