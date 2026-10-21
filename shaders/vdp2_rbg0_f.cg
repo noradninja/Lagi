@@ -308,6 +308,9 @@ float4 main(
 #if LAGI_RBG_DECODED_PAGES
     uniform sampler2D decodedPages:TEXUNIT1,
 #endif
+#if LAGI_RBG_ROW_COEFFICIENTS
+    uniform sampler2D coefficientRows:TEXUNIT2,
+#endif
     uniform float4 rbg0Plane0,
     uniform float4 rbg0Plane1,
     uniform float4 rbg0Plane2,
@@ -362,6 +365,9 @@ float4 main(
     if (rbg0SwitchInfo.w >= 1.5f) {
         bool selectedForB = false;
         if (rbg0SwitchInfo.y >= 0.5f) {
+#if LAGI_RBG_ROW_COEFFICIENTS
+            selectedForB = tex2D(coefficientRows,float2((y+0.5f)/256.0f,0.25f)).g >= 0.5f;
+#else
             float index = fmod(floor(rbg0SwitchCoefficient.x +
                 rbg0SwitchCoefficient.y * y + rbg0SwitchCoefficient.z * x), 65536.0f);
             if (index < 0.0f) index += 65536.0f;
@@ -369,11 +375,20 @@ float4 main(
                 0.0f : rbg0SwitchInfo.x) + index * rbg0SwitchInfo.z;
             address = fmod(address + rbg0SwitchInfo.z - 1.0f, 524288.0f);
             selectedForB = readByte(raw, address) >= 128.0f;
+#endif
         }
         if (!selectedForB) discard;
     }
 
     if (rbg0Info.y >= 0.5f) {
+#if LAGI_RBG_ROW_COEFFICIENTS
+        // Info.x is the primary table selector in this variant only (0=A,
+        // 1=B). The service has already applied KTAOF/wrapping to each row.
+        const float2 rowValue=tex2D(coefficientRows,
+            float2((y+0.5f)/256.0f,rbg0Info.x<0.5f?0.25f:0.75f)).rg;
+        k=rowValue.r;
+        const bool invalid=rowValue.g>=0.5f;
+#else
         const float accum =
             rbg0Coefficient.x +
             rbg0Coefficient.y * y +
@@ -392,6 +407,7 @@ float4 main(
             coeffIndex * rbg0Info.z;
         bool invalid;
         k = readRbgCoefficient(raw, address, rbg0Info.z, invalid);
+#endif
         // In RPMD=2, the CPU publishes A's table/size/accumulator in both
         // selection and scaling uniforms. Reuse this fetch's invalid bit.
         if (rbg0SwitchInfo.w >= 0.5f && rbg0SwitchInfo.w < 1.5f)
@@ -421,6 +437,9 @@ float4 main(
         plane3 = rbg0BPlane3;
         k = 1.0f;
         if (info.y >= 0.5f) {
+#if LAGI_RBG_ROW_COEFFICIENTS
+            k=tex2D(coefficientRows,float2((y+0.5f)/256.0f,0.75f)).r;
+#else
             float index = fmod(floor(coefficient.x + coefficient.y * y +
                 coefficient.z * x), 65536.0f);
             if (index < 0.0f) index += 65536.0f;
@@ -428,6 +447,7 @@ float4 main(
                 0.0f : info.x) + index * info.z;
             bool invalidB;
             k = readRbgCoefficient(raw, address, info.z, invalidB);
+#endif
         }
     }
 

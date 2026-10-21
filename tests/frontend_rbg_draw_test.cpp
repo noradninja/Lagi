@@ -16,6 +16,8 @@ struct ViewerMat4 {float m[16]{};};
 static ViewerMat4 viewerIdentity(){return {};}
 static bool g_sceneVdp2ByteTextureValid=false,g_rbgDecodedPagesReady=false;
 static bool g_rbgTileBound=false,g_rbgDecodedBound=false;
+static bool g_rbgRowsBound=false,g_rbgCoefficientRowsReady=false;
+static int g_rbgCoefficientRowsTexture=0;
 static float g_rbgDecodedPlanesA[16]{},g_rbgDecodedPlanesB[16]{};
 static int g_sceneVdp2ByteTexture=0,g_rbgDecodedAtlasTexture=0;
 static void* g_probeContext=nullptr;
@@ -30,7 +32,7 @@ static azel::DebugTextureVertex coverage[224*3*4];
 static std::uint16_t coverageIndices[224*3*6];
 static azel::DebugTextureVertex* g_vdp2WindowVertices=coverage;
 static std::uint16_t* g_vdp2WindowIndices=coverageIndices;
-static void selectRbgTileProgram(bool,bool){}
+static void selectRbgTileProgram(bool,bool,bool){}
 static void sceGxmSetFragmentTexture(void*,int,const int*){}
 static int sceGxmReserveFragmentDefaultUniformBuffer(void*,void** p){*p=coverage;return 0;}
 static int sceGxmReserveVertexDefaultUniformBuffer(void*,void** p){*p=coverage;return 0;}

@@ -52,6 +52,10 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #ifndef LAGI_RBG_DECODED_PAGES
 #define LAGI_RBG_DECODED_PAGES 0
 #endif
+#ifndef LAGI_RBG_COEFFICIENT_ROWS
+#define LAGI_RBG_COEFFICIENT_ROWS 0
+#endif
+#include "lagi/rbg_coefficient_rows.h"
 
 // Diagnostic samples drain at scene boundaries. These are CPU wall/wait
 // intervals, not GPU timestamp queries or normal overlapping frame timings.
@@ -76,6 +80,7 @@ extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
 extern const unsigned char _binary_lagi_sprite_composite_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_tile16_8bit_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_pages_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_rbg0_rows_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_subdiv_v_gxp_start[];
@@ -964,6 +969,9 @@ static SceGxmTexture g_sceneVdp2ByteTexture{};
 static bool g_sceneVdp2ByteTextureValid=false;
 static bool g_rbgDecodedPagesReady=false;
 static SceGxmTexture g_rbgDecodedAtlasTexture{};
+static SceGxmTexture g_rbgCoefficientRowsTexture{};
+static bool g_rbgCoefficientRowsReady=false;
+static void releaseRbgCoefficientRows();
 static float g_rbgDecodedPlanesA[16]{},g_rbgDecodedPlanesB[16]{};
 static void releaseRbgDecodedPages();
 static azel::DebugTextureVertex* g_sceneVdp2Vertices = nullptr;
@@ -2565,6 +2573,7 @@ void shutdown()
     releaseSpriteComposite();
     releaseRbgTileProgram();
     releaseRbgDecodedPages();
+    releaseRbgCoefficientRows();
     freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
     g_sceneVdp2ByteTextureValid=false;
     freeSimpleMappedProbe(g_ditherOffsetsUid, g_ditherOffsetsPixels);
@@ -12605,12 +12614,15 @@ static bool drawVdp2Rbg0Gpu(
     bool rbgSubmitted = true;
     selectRbgTileProgram(!frontend && (g_sceneVdp2ByteTextureValid || g_rbgDecodedPagesReady) && lagi::rbgTile16EightBit(
         static_cast<unsigned>(rbg.format[0]),static_cast<unsigned>(rbg.format[1])),
-        !frontend && g_rbgDecodedPagesReady);
+        !frontend && g_rbgDecodedPagesReady,
+        !frontend && g_rbgCoefficientRowsReady);
     if(g_rbgTileBound)
         sceGxmSetFragmentTexture(g_probeContext,1,&g_sceneVdp2ByteTexture);
     if(g_rbgDecodedBound) {
         sceGxmSetFragmentTexture(g_probeContext,1,&g_rbgDecodedAtlasTexture);
     }
+    if(g_rbgRowsBound)
+        sceGxmSetFragmentTexture(g_probeContext,2,&g_rbgCoefficientRowsTexture);
 
     const unsigned int rpmd =
         static_cast<unsigned int>(rbg.ctrl[0]) & 3u;
@@ -12658,8 +12670,8 @@ static bool drawVdp2Rbg0Gpu(
         for (unsigned i = 1; i < 16u; ++i)
             sharedPlane = sharedPlane && planes[i] == planes[0];
         const float rbgInfo[4] = {
-            static_cast<float>(coefficientOffset) *
-                coefficientSize * 65536.0f,
+            g_rbgRowsBound ? (coefficientEnableBit==1u?0.0f:1.0f) :
+                static_cast<float>(coefficientOffset) * coefficientSize * 65536.0f,
             (ktctl & coefficientEnableBit) ? 1.0f : 0.0f,
             coefficientSize,
             sharedPlane ? 1.0f : 0.0f,
@@ -12673,7 +12685,7 @@ static bool drawVdp2Rbg0Gpu(
             rbgUniforms,
             g_vdp2Rbg0Transform1Param,
             0, 4, &transform[4]);
-        sceGxmSetUniformDataF(
+        if(g_vdp2Rbg0CoefficientParam) sceGxmSetUniformDataF(
             rbgUniforms,
             g_vdp2Rbg0CoefficientParam,
             0, 4, coefficient);
@@ -12702,8 +12714,9 @@ static bool drawVdp2Rbg0Gpu(
             (ktctl & 1u) ? 1.0f : 0.0f, switchSize,
             rpmd == 2u ? (coefficientEnableBit == 1u ? 1.0f : 2.0f) : 0.0f
         };
-        sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0SwitchCoefficientParam,
-            0, 4, rbg.coefficientA);
+        if(g_vdp2Rbg0SwitchCoefficientParam)
+            sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0SwitchCoefficientParam,
+                0, 4, rbg.coefficientA);
         sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0SwitchInfoParam,
             0, 4, switchInfo);
 
@@ -12726,7 +12739,7 @@ static bool drawVdp2Rbg0Gpu(
             rbg.transformB, rbg.transformB + 4, rbg.coefficientB, bInfo, bFormat
         };
         for (unsigned i = 0; i < 9u; ++i)
-            sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0BParam[i],
+            if(g_vdp2Rbg0BParam[i]) sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0BParam[i],
                 0, 4, bValues[i]);
 
         if (sceGxmSetVertexStream(
@@ -13005,10 +13018,12 @@ static bool drawVdp2Rbg0Gpu(
 }
 
 #include "neptune_rbg_decoded_pages.inc"
+#include "neptune_rbg_coefficient_rows.inc"
 
 static bool prepareSceneVdp2Background()
 {
     g_rbgDecodedPagesReady=false;
+    g_rbgCoefficientRowsReady=false;
     if (!g_sceneRbg0Enabled)
         return true;
     if (!g_sceneVdp2GpuRaw) {
@@ -13105,6 +13120,7 @@ static bool prepareSceneVdp2Background()
     }
     g_sceneVdp2GpuRawInitialized = true;
     g_rbgDecodedPagesReady=prepareRbgDecodedPages();
+    g_rbgCoefficientRowsReady=prepareRbgCoefficientRows();
     return true;
 }
 

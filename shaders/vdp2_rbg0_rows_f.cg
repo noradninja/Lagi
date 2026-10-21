@@ -1,0 +1,4 @@
+#define LAGI_RBG_TILE16_8BIT 1
+#define LAGI_RBG_DECODED_PAGES 1
+#define LAGI_RBG_ROW_COEFFICIENTS 1
+#include "vdp2_rbg0_f.cg"

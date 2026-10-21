@@ -8,7 +8,7 @@ $bindings=Get-Content -Raw "$repo/src/platform/vita/neptune_rbg_tile_program.inc
 $block=[regex]::Match($bindings,'const char\* names\[22\]=\{([\s\S]*?)\};').Groups[1].Value
 $names=@([regex]::Matches($block,'"(rbg0\w+)"') | ForEach-Object {$_.Groups[1].Value})
 if($names.Count -ne 22){throw 'Runtime reflection list must contain 22 bindings'}
-foreach($variant in @('vdp2_rbg0_f','vdp2_rbg0_tile16_8bit_f','vdp2_rbg0_pages_f')) {
+foreach($variant in @('vdp2_rbg0_f','vdp2_rbg0_tile16_8bit_f','vdp2_rbg0_pages_f','vdp2_rbg0_rows_f')) {
     $xmlPath=Join-Path $scratch "$variant.xml"
     & $Compiler -profile sce_fp_psp2 "$repo/shaders/$variant.cg" -Wperf -fastprecision -O3 -xmlsdb $xmlPath -o (Join-Path $scratch "$variant.gxp")
     if($LASTEXITCODE -ne 0){throw "Shader compilation failed: $variant"}
@@ -16,6 +16,10 @@ foreach($variant in @('vdp2_rbg0_f','vdp2_rbg0_tile16_8bit_f','vdp2_rbg0_pages_f
     $resources=$metadata.sdb.resourceInfo
     foreach($name in $names) {
         $uniform=@($resources.uniform | Where-Object {$_.symbolName -eq $name})
+        if($variant -eq 'vdp2_rbg0_rows_f' -and $name -in @('rbg0SwitchCoefficient','rbg0Coefficient','rbg0BCoefficient')){
+            if($uniform.Count -ne 0){throw 'Rows shader unexpectedly retained raw selector addressing'}
+            continue
+        }
         if($uniform.Count -ne 1 -or $uniform[0].leafFormat -ne 'fp32:4' -or $uniform[0].buffer -ne 'default') {
             throw "Missing or incompatible reflected uniform $name in $variant"
         }
@@ -28,8 +32,12 @@ foreach($variant in @('vdp2_rbg0_f','vdp2_rbg0_tile16_8bit_f','vdp2_rbg0_pages_f
     } elseif($bytes.Count -ne 0){throw 'Generic/frontend shader must not require a byte-view texture'}
     $decoded=@($resources.sampler | Where-Object {$_.symbolName -eq 'decodedPages'})
     $lookup=@($resources.sampler | Where-Object {$_.symbolName -eq 'pageSlots'})
-    if($variant -eq 'vdp2_rbg0_pages_f') {
+    if($variant -in @('vdp2_rbg0_pages_f','vdp2_rbg0_rows_f')) {
         if($decoded.Count -ne 1 -or $decoded[0].textureUnit -ne '1' -or $lookup.Count -ne 0){throw 'Decoded-page texture slots changed'}
     } elseif($decoded.Count -ne 0 -or $lookup.Count -ne 0){throw 'Non-cache shader requires page resources'}
-    Write-Output "PASS $variant compiler reflection: 22 uniforms and expected sampler slots"
+    $rows=@($resources.sampler | Where-Object {$_.symbolName -eq 'coefficientRows'})
+    if($variant -eq 'vdp2_rbg0_rows_f'){
+        if($rows.Count -ne 1 -or $rows[0].textureUnit -ne '2'){throw 'Rows sampler slot changed'}
+    } elseif($rows.Count -ne 0){throw 'Fallback shader requires row resources'}
+    Write-Output "PASS $variant compiler reflection: expected uniforms and sampler slots"
 }

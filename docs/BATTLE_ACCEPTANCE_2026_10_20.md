@@ -340,6 +340,26 @@ for exactly 112 rows; disabled inside windows submit B only; outside windows
 cover all pixels without overlap; missing coverage storage fails before draw.
 Program-switch and page-service executable regressions also pass. These tests
 prove CPU submission behavior, not the device reflection or timing target.
+
+## Opt-in gameplay coefficient-row predecode
+
+`LAGI_RBG_COEFFICIENT_ROWS` defaults OFF. With decoded pages active, tables
+whose per-X step is exactly zero can be decoded once per native row into a
+4096-byte RG32F texture. Values keep full signed 15/24-bit precision and the
+invalid bit. Both fused and unfused float index calculations must agree with
+the exact accumulator floor for all 224 rows; ambiguous tables fall back.
+Per-pixel tables (including D5) are unchanged. GPU projection, RPMD selection,
+window coverage and palette remain live. Coefficient words are reread each
+frame, not cached across register/table changes. Allocation/descriptor or
+program failure preserves the existing page/raw shader fallback.
+
+Exhaustive host testing covers every 16-bit and 24-bit payload; the latter is
+compared against the actual extracted upstream decoder. Production-service
+tests cover wrap, disabled/unused tables, live updates and failure cleanup.
+Actual shader compilation/reflection validates the three removed accumulator
+uniforms and the new TEXUNIT2 sampler; program-switch tests verify restoring
+all fallback bindings. This remains an experimental unmeasured option, not
+a claimed device speedup. Marker: `[RBG0CoefficientRows] active=1 reason=0`.
 Device pixel equivalence, warm/cold behavior and performance are still pending.
 Final fullres/dither Vita VPK builds pass for battle/compositor/cache/timing ON
 and battle/compositor/cache/timing OFF. The latter retains the generic frontend

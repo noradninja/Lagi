@@ -142,6 +142,20 @@ add_custom_command(OUTPUT "${LAGI_RBG_TILE_OBJ}"
 option(LAGI_VDP2_SPRITE_COMPOSITE "Experimental separate native VDP1/VDP2 composition" OFF)
 option(LAGI_GPU_PASS_TIMING "Sample serialized native GPU pass timing (diagnostic stalls)" OFF)
 option(LAGI_RBG_DECODED_PAGES "Cache native RBG source pages before GPU rotation" OFF)
+option(LAGI_RBG_COEFFICIENT_ROWS "Predecode scanline-constant native RBG coefficients" OFF)
+set(LAGI_RBG_ROWS_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f_gxp.o")
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_rows_f.cg" -Wperf -fastprecision -O3
+ -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_rows_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_common.cginc" VERBATIM)
+add_custom_command(OUTPUT "${LAGI_RBG_ROWS_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
+ lagi_vdp2_rbg0_rows_f.gxp "${LAGI_RBG_ROWS_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp" VERBATIM)
 set(LAGI_RBG_PAGES_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_pages_f_gxp.o")
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_pages_f.gxp"
  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
@@ -4506,6 +4520,7 @@ add_executable(lagi
  ${LAGI_SPRITE_COMPOSITE_OBJ}
  ${LAGI_RBG_TILE_OBJ}
  ${LAGI_RBG_PAGES_OBJ}
+ ${LAGI_RBG_ROWS_OBJ}
  ${LAGI_VDP2_RBG0_F_OBJ}
  src/platform/vita/vita_audio.cpp
  src/platform/vita/frontend_music.cpp
@@ -4655,6 +4670,7 @@ target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDER
 target_compile_definitions(lagi PRIVATE LAGI_VDP2_SPRITE_COMPOSITE=$<BOOL:${LAGI_VDP2_SPRITE_COMPOSITE}>)
 target_compile_definitions(lagi PRIVATE LAGI_GPU_PASS_TIMING=$<BOOL:${LAGI_GPU_PASS_TIMING}>)
 target_compile_definitions(lagi PRIVATE LAGI_RBG_DECODED_PAGES=$<BOOL:${LAGI_RBG_DECODED_PAGES}>)
+target_compile_definitions(lagi PRIVATE LAGI_RBG_COEFFICIENT_ROWS=$<BOOL:${LAGI_RBG_COEFFICIENT_ROWS}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without
