@@ -58,6 +58,14 @@ water/combat comparison.
 
 ## Post-boss subtitle presentation
 
+2026-10-21 lookup correction: native 0606D7CA..0606D7EE resolves the live
+engine overlay battle-data entry at signed subBattleId * 0x20 + 0xC. The first
+adapter incorrectly used the announcement task's cached text table. Resolve the
+current native speech table instead, and clear the subtitle region before
+writing. This remains text-only and never creates a boxed announcement task.
+The mock fixture now distinguishes the live sub-battle table from the cached
+announcement table. Device positioning/backing acceptance remains pending.
+
 Native 060590AE..B6 passes the speech descriptor to 0606D68A, not the boxed
 attack-name helper. 0606D7A4 writes directly to text region (3,25,38,4);
 0606D9D0 clears that region at timer completion. Restore this text-only task
