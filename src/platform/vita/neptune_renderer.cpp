@@ -3660,10 +3660,17 @@ bool frontend_present_vdp2(
         g_moviePayloadHeight != rawHeight) {
         freeMovieResources();
 
-        g_movieTextureData = probeGpuAlloc(
-            rawBytes,
-            SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_movieTextureUid);
+        // D5 name entry samples this raw Saturn image through RBG/NBG shaders.
+        // Keep this VDP2-only path local; ordinary movie/selector allocation
+        // paths above are deliberately unchanged.
+        g_movieTextureData = probeCdramAlloc(
+            rawBytes,SCE_GXM_MEMORY_ATTRIB_READ,&g_movieTextureUid);
+        const bool frontendRawInCdram=g_movieTextureData!=nullptr;
+        if(!g_movieTextureData)
+            g_movieTextureData=probeGpuAlloc(
+                rawBytes,SCE_GXM_MEMORY_ATTRIB_READ,&g_movieTextureUid);
+        logging::writef("[FrontendVdp2Memory] cdram=%u payloadBytes=%u\n",
+            frontendRawInCdram?1u:0u,rawBytes);
         g_movieVertices = static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(
                 4u * sizeof(azel::DebugTextureVertex),

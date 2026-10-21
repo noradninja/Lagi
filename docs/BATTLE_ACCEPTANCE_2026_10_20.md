@@ -155,3 +155,20 @@ changes need a device timing capture; neither is a proven speedup yet.
 Keep `LAGI_GPU_PASS_TIMING=ON` for the next short diagnostic flight capture
 to compare pass waits and confirm both placement markers. Turn it OFF for
 subsequent normal frame-rate acceptance.
+
+## D5 name-entry frontend source memory (separate commit)
+
+Runtime status 2 publishes `frontend_set_rbg0_state` and frontend VDP2 layout
+2 for the complete D5 name sequence. This is not the ordinary menu raster
+path. Its raw 512x258 VRAM/CRAM source was also allocated in uncached system
+RAM. Prefer CDRAM with system fallback in `frontend_present_vdp2` only; movie
+RGBA, Cinepak and accepted disc-selector paths remain unchanged. Existing
+frontend resource ownership, upload bytes, layout and shader are retained.
+The title and D5 share this VDP2 source allocation; both receive the placement
+change. Expected marker: `[FrontendVdp2Memory] cdram=1`.
+
+Unlike the native scene RBG resolve at 352x224, D5 currently invokes the raw
+RBG shader across its enlarged 4:3 frontend quad. That remains another possible
+cost; this commit does not change sampling resolution or claim to fix name
+entry's frame rate. A short name-entry log with `[VDP2Perf] ... layout=2`
+will establish its remaining cost. Source checks verify the VDP2-only scope.
