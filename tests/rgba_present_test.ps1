@@ -1,0 +1,13 @@
+$ErrorActionPreference='Stop'
+$root=Split-Path $PSScriptRoot -Parent
+$shader=Get-Content "$root/shaders/rgba_present_f.cg" -Raw
+if(([regex]::Matches($shader,'tex2D\(')).Count -ne 1 -or
+    $shader -match '#include|discard|readBE16|sampleSceneNbg0') {
+    throw 'Resolved RGBA display must remain a single sample without decode or cutout.'
+}
+$draw=Get-Content "$root/src/platform/vita/neptune_scene_nbg0.inc" -Raw
+$display=$draw.Substring($draw.IndexOf('static void drawSceneNbg0Gpu'))
+if($display -notmatch 'g_rgbaPresentInfo' -or $display -match 'g_vdp2InfoParam') {
+    throw 'Cloud display must use the independent RGBA program uniforms.'
+}
+Write-Output 'PASS: independent single-sample premultiplied display contract; not GPU timing evidence'

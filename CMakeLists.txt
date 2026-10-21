@@ -125,6 +125,17 @@ set(LAGI_CINEPAK_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_cinepak_f.gxp")
 set(LAGI_CINEPAK_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_cinepak_f_gxp.o")
 set(LAGI_VDP2_NBG_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_nbg_f.gxp")
 set(LAGI_VDP2_NBG_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_nbg_f_gxp.o")
+set(LAGI_RGBA_PRESENT_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_rgba_present_f_gxp.o")
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_rgba_present_f.gxp"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rgba_present_f.cg" -Wperf -fastprecision -O3
+ -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_rgba_present_f.gxp"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rgba_present_f.cg" VERBATIM)
+add_custom_command(OUTPUT "${LAGI_RGBA_PRESENT_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
+ "lagi_rgba_present_f.gxp" "${LAGI_RGBA_PRESENT_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_rgba_present_f.gxp" VERBATIM)
 set(LAGI_SPRITE_COMPOSITE_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_sprite_composite_f_gxp.o")
 set(LAGI_RBG_TILE_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f_gxp.o")
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f.gxp"
@@ -809,7 +820,7 @@ set_source_files_properties(
  "${LAGI_STOCHASTIC_GOURAUD_F_OBJ}"
  "${LAGI_MESH_F_OBJ}"
  "${LAGI_CINEPAK_F_OBJ}"
- "${LAGI_VDP2_NBG_F_OBJ}" "${LAGI_VDP2_RBG0_F_OBJ}"
+ "${LAGI_VDP2_NBG_F_OBJ}" "${LAGI_VDP2_RBG0_F_OBJ}" "${LAGI_RGBA_PRESENT_OBJ}"
  PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
 )
 
@@ -4558,6 +4569,7 @@ add_executable(lagi
  ${LAGI_MESH_F_OBJ}
  ${LAGI_CINEPAK_F_OBJ}
  ${LAGI_VDP2_NBG_F_OBJ}
+ ${LAGI_RGBA_PRESENT_OBJ}
  ${LAGI_SPRITE_COMPOSITE_OBJ}
  ${LAGI_RBG_TILE_OBJ}
  ${LAGI_RBG_PAGES_OBJ}

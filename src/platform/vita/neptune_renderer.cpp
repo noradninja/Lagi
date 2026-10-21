@@ -81,6 +81,7 @@ extern const unsigned char _binary_lagi_textured_gouraud_subdiv_mesh_f_gxp_start
 extern const unsigned char _binary_lagi_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_cinepak_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
+extern const unsigned char _binary_lagi_rgba_present_f_gxp_start[];
 extern const unsigned char _binary_lagi_sprite_composite_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_tile16_8bit_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_pages_f_gxp_start[];
@@ -232,6 +233,9 @@ static bool g_stochasticFragmentRegistered = false;
 static bool g_stochasticGouraudFragmentRegistered = false;
 static bool g_cinepakFragmentRegistered = false;
 static bool g_vdp2NbgFragmentRegistered = false;
+static bool g_rgbaPresentRegistered = false;
+static SceGxmShaderPatcherId g_rgbaPresentId{};
+static const SceGxmProgramParameter* g_rgbaPresentInfo = nullptr;
 static bool g_vdp2Rbg0FragmentRegistered = false;
 static bool g_vdp2Rbg0Available = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
@@ -2932,6 +2936,10 @@ void shutdown()
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_vdp2NbgFragmentProgramId);
             g_vdp2NbgFragmentRegistered = false;
+        }
+        if(g_rgbaPresentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_rgbaPresentId);
+            g_rgbaPresentRegistered=false;
         }
         if (g_cinepakFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -10742,18 +10750,26 @@ void show_game_presentation()
     }
 
     // Separate blend variants keep the opaque/cutout fast path unchanged.
+    const auto* rgbaGxp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_rgba_present_f_gxp_start);
+    if(sceGxmProgramCheck(rgbaGxp)<0 || sceGxmShaderPatcherRegisterProgram(
+        g_probeShaderPatcher,rgbaGxp,&g_rgbaPresentId)<0) {
+        failure("[FAIL] RGBA PRESENT REGISTER");return;
+    }
+    g_rgbaPresentRegistered=true;
+    g_rgbaPresentInfo=sceGxmProgramFindParameterByName(rgbaGxp,"presentInfo");
+    if(!g_rgbaPresentInfo){failure("[FAIL] RGBA PRESENT PARAM");return;}
     SceGxmBlendInfo nbgAdd{};
     nbgAdd.colorFunc=SCE_GXM_BLEND_FUNC_ADD;nbgAdd.alphaFunc=SCE_GXM_BLEND_FUNC_ADD;
     nbgAdd.colorSrc=SCE_GXM_BLEND_FACTOR_ONE;nbgAdd.colorDst=SCE_GXM_BLEND_FACTOR_ONE;
     nbgAdd.alphaSrc=SCE_GXM_BLEND_FACTOR_ONE;nbgAdd.alphaDst=SCE_GXM_BLEND_FACTOR_ZERO;
     nbgAdd.colorMask=SCE_GXM_COLOR_MASK_ALL;
     if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,
-        g_vdp2NbgFragmentProgramId,
+        g_rgbaPresentId,
         SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,kMultisampleMode,&nbgAdd,textureVertexGxp,
         &g_sceneNbg0AddProgram)<0) {failure("[FAIL] NBG0 ADD PROGRAM");return;}
     nbgAdd.colorDst=SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     nbgAdd.alphaDst=SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    const int nbgOverResult=sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_vdp2NbgFragmentProgramId,
+    const int nbgOverResult=sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_rgbaPresentId,
         SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,kMultisampleMode,&nbgAdd,textureVertexGxp,
         &g_sceneNbg0OverProgram);
     if(nbgOverResult<0) {
@@ -14884,8 +14900,8 @@ static bool launcherDrawGpu(int selected, unsigned brightness, float loadingOpac
         void* fragmentUniforms = nullptr;
         ok = sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext, &fragmentUniforms) >= 0 && fragmentUniforms;
         if (ok) {
-            const float info[4] = {4.0f, loadingOpacity, 0.0f, 0.0f};
-            sceGxmSetUniformDataF(fragmentUniforms, g_vdp2InfoParam, 0, 4, info);
+            const float info[4] = {loadingOpacity, 0.0f, 0.0f, 0.0f};
+            sceGxmSetUniformDataF(fragmentUniforms, g_rgbaPresentInfo, 0, 4, info);
             sceGxmSetFragmentTexture(g_probeContext, 0, &g_launcherLoading.texture);
             ok = sceGxmDraw(g_probeContext, SCE_GXM_PRIMITIVE_TRIANGLES,
                 SCE_GXM_INDEX_FORMAT_U16, g_launcherGpuIndices, 6) >= 0;

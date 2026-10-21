@@ -72,8 +72,8 @@ static void drawSceneNbg0Gpu()
     sceGxmSetUniformDataF(uniforms,g_textureWvpParam,0,16,identity.m);
     void* fragment=nullptr;
     if(sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext,&fragment)<0 || !fragment)return;
-    const float info[4]={3,0,0,0};
-    sceGxmSetUniformDataF(fragment,g_vdp2InfoParam,0,4,info);
+    const float info[4]={1,0,0,0};
+    sceGxmSetUniformDataF(fragment,g_rgbaPresentInfo,0,4,info);
     sceGxmSetFragmentTexture(g_probeContext,0,&g_sceneNbg0Texture);
     if(sceGxmSetVertexStream(g_probeContext,0,g_sceneVdp2Vertices)>=0)
         sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,SCE_GXM_INDEX_FORMAT_U16,g_sceneVdp2Indices,6);

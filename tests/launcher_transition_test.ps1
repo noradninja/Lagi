@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $source = Get-Content "$root/src/platform/vita/neptune_renderer.cpp" -Raw
-$shader = Get-Content "$root/shaders/vdp2_nbg_f.cg" -Raw
+$shader = Get-Content "$root/shaders/rgba_present_f.cg" -Raw
 if ($source -notmatch 'g_preserveLoadingScanout \? 0 : sceDisplaySetFrameBuf') {
     throw 'Backend initialization must preserve the loading scanout.'
 }
@@ -13,7 +13,7 @@ $fade = $source.Substring($source.IndexOf('void launcher_fade'), $source.IndexOf
 if ($fade -notmatch 'Hold the completed black GXM frame until native presentation') {
     throw 'Final black frame must retain GXM ownership.'
 }
-if ($shader -notmatch 'if\(vdp2Info.x>3.5f\)return tex2D\(raw,vTexcoord\)\*vdp2Info.y') {
+if ($shader -notmatch 'return tex2D\(raw,vTexcoord\)\*presentInfo.x') {
     throw 'Crossfade must scale premultiplied RGB and alpha together.'
 }
 for ($frame = 0; $frame -le 30; ++$frame) {
