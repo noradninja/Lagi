@@ -1,0 +1,1 @@
+# No runtime samples: this must not prove the deadline or fabricate timing.

@@ -471,3 +471,28 @@ link/package successfully. The raw title fallback remains available during
 Azel's high-resolution setup, before decoded TITLEE is ready. Native NBG,
 window partition, actual draw, page-service, coefficient, program-switch and
 compiled shader-resource tests all pass. The final device capture is pending.
+
+## Acceptance-log scope audit
+
+`tools/analyze-vdp2-log.ps1 -LogPath <capture>` produces a non-invasive JSON
+report. It keeps layout/framebuffer/NBG visibility groups separate, preserves
+unknown legacy visibility instead of inferring it, separates cache fills from
+hits and source domains, and isolates serialized diagnostic samples. Native
+renderer/task/preparation times remain separate: tasks and nested CPU stages
+can overlap, and final completion wait is already included in render time.
+Completed field renderer/presentation windows and incomplete-tail outliers
+are retained through the existing flight analyzer.
+
+The report applies exact 25000/33000 us sample thresholds. It never treats
+heartbeat samples, renderer-only windows, or 30 Hz pacing as proof of the
+whole-frame/whole-route objective. It records the log hash and build markers,
+rejects a log modified during analysis, and explicitly requires device build
+identity and visual acceptance separately. Missing counters remain null.
+
+The current e356619-era log has nine layout=2 samples: median 61337 us,
+maximum 65265 us; every sample exceeds 33000 us. Four logged cache hits have
+median 20.5 us, maximum 21 us, with no uploads. It has no native ScenePerf or
+completed field windows and no newer nbgNative/complementary-coverage marker,
+so it cannot validate 7545157 or ordinary gameplay deadlines. Synthetic and
+empty-capture analyzer tests pass. This tooling commit changes no runtime;
+7545157 remains the pending device-test renderer.
