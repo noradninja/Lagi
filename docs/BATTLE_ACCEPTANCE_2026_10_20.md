@@ -656,3 +656,41 @@ logged hits take median 25 us, maximum 27 us. Cold fills and warm throughput
 remain separate problems. No serialized pass timings or new visual acceptance
 were supplied. The 25/33 ms goal remains unproven; the next comparison still
 requires explicit rows=ON configuration and the activation/fallback marker.
+
+## Water/tunnel movement diagnostic (opt-in)
+
+The E231D8E4140AFE12B32D90DB1031EF3C51858D7600DD9DB8C2F0E0593067B85F
+capture does activate coefficient rows. Its 36 RBG-enabled renderer samples
+have median 25578 us, maximum 28859 us; non-RBG median is 12313 us. Complete
+presentation windows contain only one >2-vblank interval among 3120, so the
+reported sustained water-motion judder is not explained by repeated deadline
+misses. In the supplied 59.94 FPS video, broad scene-change detection at two
+luma thresholds finds 239 consecutive two-frame change intervals in each of
+the 1-9 s and 12-20 s water segments. This supports regular scene delivery,
+not smoothness of individual player/camera motion or exact display latency.
+
+Source inspection finds camera, player presentation state and RBG state copied
+under the same acquired renderer slot. VDP2 is captured after native deferred
+DMA; this is not evidence of a mixed-frame bug. Do not change native motion,
+interpolate frames, or offset the water camera on this evidence alone.
+
+`LAGI_FIELD_MOTION_TRACE=ON` adds two independent, bounded diagnostic streams;
+it defaults OFF and does not change task scheduling or rendering. FieldMotion
+records native fixed-point dragon position and view repeats, position L1 step
+range, producer intervals and expected next publication serial. FieldSnapshot
+records presented publication serial, exact view and RBG transform/coefficient
+word repeats and presentation intervals. Each emits at most 24 summaries of
+120 intervals, retaining the endpoint between windows. Key changes start a
+fresh baseline. RBG word repeats do not compare coefficient-table contents;
+stationary positions, unchanged transforms and changed input can be legitimate.
+The position step is raw fixed-point Manhattan distance, not a physical speed.
+Neither stream alone establishes the cause of judder. No per-frame disk log,
+GPU readback or serialized GPU timing is added. Startup now reports the rows
+and motion-trace build switches explicitly.
+
+For a short diagnostic comparison, add `-DLAGI_FIELD_MOTION_TRACE=ON` to the
+rows-ON/timing-OFF test configuration and rebuild. Fly/turn over water and then
+in a tunnel, and send the log/video. Set the trace OFF for final performance
+acceptance. Host tests cover exact repeats, sequence gaps, signed step extremes,
+clock/key resets and inter-window interval accounting. Device diagnosis is
+still pending; this is instrumentation, not a claimed judder fix.

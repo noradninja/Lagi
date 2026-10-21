@@ -143,6 +143,7 @@ option(LAGI_VDP2_SPRITE_COMPOSITE "Experimental separate native VDP1/VDP2 compos
 option(LAGI_GPU_PASS_TIMING "Sample serialized native GPU pass timing (diagnostic stalls)" OFF)
 option(LAGI_RBG_DECODED_PAGES "Cache native RBG source pages before GPU rotation" OFF)
 option(LAGI_RBG_COEFFICIENT_ROWS "Predecode scanline-constant native RBG coefficients" OFF)
+option(LAGI_FIELD_MOTION_TRACE "Bounded field motion/snapshot cadence diagnostics" OFF)
 set(LAGI_RBG_ROWS_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f_gxp.o")
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp"
  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
@@ -4671,6 +4672,7 @@ target_compile_definitions(lagi PRIVATE LAGI_VDP2_SPRITE_COMPOSITE=$<BOOL:${LAGI
 target_compile_definitions(lagi PRIVATE LAGI_GPU_PASS_TIMING=$<BOOL:${LAGI_GPU_PASS_TIMING}>)
 target_compile_definitions(lagi PRIVATE LAGI_RBG_DECODED_PAGES=$<BOOL:${LAGI_RBG_DECODED_PAGES}>)
 target_compile_definitions(lagi PRIVATE LAGI_RBG_COEFFICIENT_ROWS=$<BOOL:${LAGI_RBG_COEFFICIENT_ROWS}>)
+target_compile_definitions(lagi PRIVATE LAGI_FIELD_MOTION_TRACE=$<BOOL:${LAGI_FIELD_MOTION_TRACE}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without

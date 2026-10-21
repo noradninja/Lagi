@@ -5,6 +5,10 @@
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/platform.h"
 #include "lagi/native_scene_mode.h"
+#if LAGI_FIELD_MOTION_TRACE
+#include "lagi/motion_cadence.h"
+#include <psp2/kernel/processmgr.h>
+#endif
 
 #include "kernel/moduleManager.h"
 #include "field.h"
@@ -21,6 +25,9 @@ void capture_local_coordinates(std::int16_t& x, std::int16_t& y)
 }
 
 namespace {
+#if LAGI_FIELD_MOTION_TRACE
+lagi::MotionCadence<12,3> g_fieldMotion;
+#endif
 
 void sync_battle_presentation_state()
 {
@@ -84,6 +91,33 @@ void sync_field_presentation_state()
         0.0f);
 
     const s_dragonTaskWorkArea* const dragon = field->m338_pDragonTask;
+#if LAGI_FIELD_MOTION_TRACE
+    // Independent producer evidence: no live Azel pointers cross to renderer.
+    auto& motion=g_fieldMotion;
+    const auto serial=lagi::azel_bridge::published_frame_number()+1;
+    static unsigned budget=24;
+    std::array<std::int32_t,12> view{};
+    const bool viewValid=lagi::azel_bridge::native_scene_view_matrix(view.data());
+    std::array<std::int32_t,3> actor{};
+    for(unsigned i=0;i<3;++i) {
+        actor[i]=dragon->m8_pos[i].asS32();
+    }
+    const auto* regs=vdp2Controls.m4_pendingVdp2Regs;
+    const unsigned rbg=regs && (regs->m20_BGON&0x10) && (regs->mFC_PRIR&7);
+    const unsigned key=(unsigned(fieldTaskPtr->m2C_currentFieldIndex)&0xffu)<<16 |
+        (unsigned(fieldTaskPtr->m2E_currentSubFieldIndex)&0xffu)<<8 | (rbg?1u:0u);
+    if(budget && viewValid && motion.add(key,serial,sceKernelGetProcessTimeWide(),view,actor)) {
+        const auto& s=motion.summary;
+        lagi::platform::logging::writef(
+            "[FieldMotion] diagnostic=1 key=%u serial=%llu intervals=%u minUs=%llu maxUs=%llu meanUs=%llu viewRepeated=%u positionRepeated=%u viewChangedPositionRepeated=%u serialGaps=%u minPositionStep=%llu maxPositionStep=%llu\n",
+            key,(unsigned long long)serial,s.intervals,(unsigned long long)s.minUs,
+            (unsigned long long)s.maxUs,(unsigned long long)(s.totalUs/s.intervals),
+            s.aRepeated,s.bRepeated,s.aChangedBRepeated,s.serialGaps,
+            (unsigned long long)s.minBStep,(unsigned long long)s.maxBStep);
+        --budget;motion.nextWindow();
+    }
+    if(!viewValid)motion.reset();
+#endif
     const s_visibilityGridWorkArea* const grid =
         field->m348_pFieldCameraTask1;
 
@@ -165,6 +199,9 @@ void sync_field_presentation_state()
 
 void sync_presentation_state()
 {
+#if LAGI_FIELD_MOTION_TRACE
+    if(gGameStatus.m0_gameMode!=3)g_fieldMotion.reset();
+#endif
     lagi::platform::renderer::presentation_set_native_frame_vblanks(
         vblankData.m14_numVsyncPerFrame);
     // Every native scene consumes the same Azel-authored UI planes. Do not

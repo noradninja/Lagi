@@ -5,6 +5,9 @@
 #include "lagi/rbg_format.h"
 #include "lagi/rbg_decoded_page.h"
 #include "lagi/native_scene_mode.h"
+#if LAGI_FIELD_MOTION_TRACE
+#include "lagi/motion_cadence.h"
+#endif
 #include "lagi/frontend_font.h"
 
 unsigned char* getVdp1Pointer(unsigned int EA);
@@ -1288,6 +1291,36 @@ static void recordFlightPresentation(
         int mode = -1;
     };
     static Window window;
+#if LAGI_FIELD_MOTION_TRACE
+    static lagi::MotionCadence<12,24> motion;
+    static unsigned motionBudget=24;
+    if(!nativeField || !g_nativeSceneViewValid)motion.reset();
+    else if(motionBudget) {
+        std::array<std::int32_t,12> view{};
+        std::array<std::int32_t,24> rbg{};
+        static_assert(sizeof(view)==sizeof(g_nativeSceneViewMatrix));
+        std::memcpy(view.data(),g_nativeSceneViewMatrix,sizeof(view));
+        // Compare transform/coefficient words exactly, without float equality
+        // or hashing. This does not inspect mutable Azel memory or GPU memory.
+        if(g_sceneRbg0Enabled) {
+            std::memcpy(rbg.data(),g_sceneRbg0.transformA,32);
+            std::memcpy(rbg.data()+8,g_sceneRbg0.transformB,32);
+            std::memcpy(rbg.data()+16,g_sceneRbg0.coefficientA,16);
+            std::memcpy(rbg.data()+20,g_sceneRbg0.coefficientB,16);
+        }
+        const unsigned key=unsigned(g_viewMode)*2+(g_sceneRbg0Enabled?1u:0u);
+        const auto serial=azel_bridge::published_frame_number();
+        if(motion.add(key,serial,nowUs,view,rbg)) {
+            const auto& s=motion.summary;
+            logging::writef(
+                "[FieldSnapshot] diagnostic=1 key=%u serial=%llu intervals=%u minUs=%llu maxUs=%llu meanUs=%llu viewRepeated=%u rbgRepeated=%u viewChangedRbgRepeated=%u serialGaps=%u\n",
+                key,(unsigned long long)serial,s.intervals,(unsigned long long)s.minUs,
+                (unsigned long long)s.maxUs,(unsigned long long)(s.totalUs/s.intervals),
+                s.aRepeated,s.bRepeated,s.aChangedBRepeated,s.serialGaps);
+            --motionBudget;motion.nextWindow();
+        }
+    }
+#endif
     if (!nativeField || window.mode != g_viewMode) {
         window = {};
         window.mode = g_viewMode;
@@ -2436,8 +2469,10 @@ bool init()
 {
     logging::writef(
         "[NeptuneBuild] optimized=%u fieldDescriptorIndex=1 sharedRbg0=1 "
-        "rbg0NativeResolve=1 pooledFieldTextures=1\n",
-        static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED));
+        "rbg0NativeResolve=1 pooledFieldTextures=1 coefficientRows=%u motionTrace=%u\n",
+        static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED),
+        static_cast<unsigned int>(LAGI_RBG_COEFFICIENT_ROWS),
+        static_cast<unsigned int>(LAGI_FIELD_MOTION_TRACE));
     logging::writef(
         "[DitherFilter] enabled=%u pattern=screen-2x2 sampling=%s\n",
         static_cast<unsigned int>(kStochastic),
