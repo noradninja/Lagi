@@ -562,3 +562,26 @@ The coalesced final tree links/packages in both the exact recommended native
 battle/cache-ON/rows-OFF/timing-OFF profile and the menu/cache-OFF fallback.
 Its device timing and visual acceptance remain pending. Native water scenes
 using RPMD0/2 do not receive this RPMD3-only geometry optimization.
+
+## Name-entry device acceptance after rectangle coalescing (2026-10-21)
+
+The user reports "30fps now!" and supplies a screenshot showing the keyboard,
+entered EDGE text, mirrored background and 30 FPS counter. The fresh lagi.log
+SHA256 is `329245D4F4B29577E2AF91B972FCB95DF2A1376512F976233B6305865C8466D2`
+(97018 bytes). It contains complementary coverage with aSpans=1, bSpans=1,
+coalesced=1 and nbgNative=1, confirming the 5ff269d rendering path is active;
+the log does not independently identify the installed executable revision.
+
+All 22 keyboard-visible layout=2 samples are below 25000 us: median 23944.5 us,
+p90 24305 us, maximum 24855 us. Final completion wait is included in these
+render times, not additional work. Eleven logged cache hits take median 20 us,
+maximum 23 us with no uploads; the initial page fill takes 23871 us and uploads
+1 MiB. These are rate-limited samples, not every frame or cache operation.
+
+Name-entry responsiveness is now hardware-accepted at the reported 30 FPS,
+with sampled render work meeting the 25 ms target and the reflected background
+retained. This closes the pending name-entry test above, not the broader VDP2
+performance goal: this capture contains no ordinary-flight timing windows.
+The earlier water capture's approximately 27.8 ms renderer median and route
+outliers remain outstanding. This acceptance update changes no runtime code
+and does not require rebuilding the tested executable.
