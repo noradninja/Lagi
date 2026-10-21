@@ -7,10 +7,13 @@ static SceGxmTexture g_spriteLayerTexture{};
 static SceGxmFragmentProgram* g_spriteCompositeProgram=nullptr;
 static SceGxmShaderPatcherId g_spriteCompositeId{};
 static bool g_spriteCompositeRegistered=false;
-static const SceGxmProgramParameter *g_spriteControl=nullptr,*g_spritePriorities=nullptr,
-    *g_spriteRatios=nullptr,*g_spriteGeometry=nullptr,*g_spriteBackColor=nullptr;
+static void* g_spriteLookupPixels=nullptr;
+static SceUID g_spriteLookupUid=-1;
+static SceGxmTexture g_spriteLookupTexture{};
+static const SceGxmProgramParameter *g_spriteGeometry=nullptr,*g_spriteBackColor=nullptr;
 static void releaseSpriteComposite() {
     freeMovieMappedBlock(g_spriteLayerUid,g_spriteLayerPixels);
+    freeMovieMappedBlock(g_spriteLookupUid,g_spriteLookupPixels);
     if(g_probeShaderPatcher && g_spriteCompositeProgram)
         sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_spriteCompositeProgram);
     g_spriteCompositeProgram=nullptr;
@@ -49,12 +52,9 @@ static bool prepareSpriteComposite(bool native,bool menu) {
         if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_spriteCompositeId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,nullptr,vp,
             &g_spriteCompositeProgram)<0)return false;
-        g_spriteControl=sceGxmProgramFindParameterByName(fp,"control");
-        g_spritePriorities=sceGxmProgramFindParameterByName(fp,"priorities");
-        g_spriteRatios=sceGxmProgramFindParameterByName(fp,"ratios");
         g_spriteGeometry=sceGxmProgramFindParameterByName(fp,"geometry");
         g_spriteBackColor=sceGxmProgramFindParameterByName(fp,"backColor");
-        if(!g_spriteControl||!g_spritePriorities||!g_spriteRatios||!g_spriteGeometry||!g_spriteBackColor) {
+        if(!g_spriteGeometry||!g_spriteBackColor) {
             releaseSpriteComposite();return false;
         }
     }
@@ -74,6 +74,23 @@ static bool prepareSpriteComposite(bool native,bool menu) {
         sceGxmTextureSetMagFilter(&g_spriteLayerTexture,SCE_GXM_TEXTURE_FILTER_POINT);
         logging::writef("[VDP2SpriteComposite] experimental type3 RBG0/BACK world pass ready; NBG1/3 UI retained separately\n");
     }
+    if(!g_spriteLookupPixels) {
+        g_spriteLookupPixels=probeGpuAlloc(256*4,
+            static_cast<SceGxmMemoryAttribFlags>(SCE_GXM_MEMORY_ATTRIB_READ|SCE_GXM_MEMORY_ATTRIB_WRITE),
+            &g_spriteLookupUid);
+        if(!g_spriteLookupPixels)return false;
+        if(sceGxmTextureInitLinear(&g_spriteLookupTexture,g_spriteLookupPixels,
+            SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,256,1,0)<0) {
+            freeMovieMappedBlock(g_spriteLookupUid,g_spriteLookupPixels);return false;
+        }
+        sceGxmTextureSetMinFilter(&g_spriteLookupTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(&g_spriteLookupTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+        logging::writef("[VDP2SpriteComposite] register decision lookup ready (256 entries)\n");
+    }
+    // Previous frame completes before this preparation; no in-flight texture
+    // is mutated. This table contains only published register decisions.
+    auto* lookup=static_cast<std::uint32_t*>(g_spriteLookupPixels);
+    for(unsigned i=0;i<256;++i)lookup[i]=lagi::spriteCompositeLookup(g_spriteColor,i);
     return clearNativeSceneColorBuffer(static_cast<std::uint32_t*>(g_spriteLayerPixels),kWidth,kHeight,kGxmPitch);
 }
 static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface* destination,
@@ -95,18 +112,13 @@ static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface*
         sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext,&f)<0 || !f)return false;
     const auto identity=viewerIdentity();
     sceGxmSetUniformDataF(v,g_textureWvpParam,0,16,identity.m);
-    const float control[4]={float((g_spriteColor.spctl>>12)&3),float((g_spriteColor.spctl>>8)&7),
-        (g_spriteColor.ccctl&0x100)?1.f:0.f,0};
-    float p[4],r[4];for(unsigned i=0;i<4;++i){p[i]=lagi::spritePriority(g_spriteColor,i);r[i]=lagi::spriteColorRatio(g_spriteColor,i);}
     const float geometry[4]={float(kWidth)/kGxmPitch,1,g_sceneRbg0Enabled?1.f:0.f,float(g_spriteColor.prir&7)};
     const float back[4]={0,0,0,1}; // Matches clearNativeSceneColorBuffer.
-    sceGxmSetUniformDataF(f,g_spriteControl,0,4,control);
-    sceGxmSetUniformDataF(f,g_spritePriorities,0,4,p);
-    sceGxmSetUniformDataF(f,g_spriteRatios,0,4,r);
     sceGxmSetUniformDataF(f,g_spriteGeometry,0,4,geometry);
     sceGxmSetUniformDataF(f,g_spriteBackColor,0,4,back);
     sceGxmSetFragmentTexture(g_probeContext,0,&g_spriteLayerTexture);
     sceGxmSetFragmentTexture(g_probeContext,1,g_sceneRbg0Enabled?&g_sceneRbg0ResolvedTexture:&g_spriteLayerTexture);
+    sceGxmSetFragmentTexture(g_probeContext,2,&g_spriteLookupTexture);
     sceGxmSetVertexStream(g_probeContext,0,g_sceneVdp2Vertices);
     return sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,SCE_GXM_INDEX_FORMAT_U16,g_sceneVdp2Indices,6)>=0;
 }

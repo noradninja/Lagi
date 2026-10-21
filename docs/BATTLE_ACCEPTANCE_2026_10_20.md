@@ -68,3 +68,26 @@ when this flag is set; no renderer-specific boss filtering is added. Retain
 the later cleanup as an idempotent safety net. The host fixture exercises all
 three lists and repeated cleanup. Host test and battle VPK pass; device
 confirmation of indicator removal remains pending.
+
+## Compositor register-decision lookup
+
+The follow-up log currently at the supplied path includes
+`[RBG0TileFormat] specialized8bit16=1 genericFallback=0`. The earlier statement
+that specialization was unconfirmed must not be treated as evidence that it
+failed. Compositor-active steady ScenePerf samples remain over budget; their
+finish waits include queued GPU work, not isolated per-pass timestamps.
+
+Move register-only priority, selector, condition and ratio decisions from the
+full-screen fragment program into a 256-entry RGBA8 point-sampled lookup.
+Build it from the same frame's published Azel state after previous GPU work
+finishes. Retain per-pixel RBG presence, final source/destination colors,
+RGB555 quantization, exact /32 ratio and saturating addition on GPU. No change
+to water coverage, mesh stipple, geometry or scene eligibility. Adds 1 KiB
+payload (allocator granularity may be larger) and one dependent texture sample;
+reduces per-fragment selector arithmetic/branches. This is a performance
+candidate, not a measured speedup: device timing is still required.
+
+The exhaustive host fixture compares every alpha byte across all conditions,
+thresholds, background priorities and rotated bank priority/ratio values against
+the previous shader's independent decision oracle. Existing RGB555 ratio tests
+also pass. Expected new device marker: `register decision lookup ready`.
