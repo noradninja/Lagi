@@ -12970,6 +12970,8 @@ static bool prepareSceneVdp2Background()
     return true;
 }
 
+#include "neptune_frontend_nbg.inc"
+
 static bool renderSceneVdp2BackgroundPass(bool frontend = false)
 {
     if (!frontend && !g_sceneRbg0Enabled)
@@ -13020,6 +13022,7 @@ static bool renderSceneVdp2BackgroundPass(bool frontend = false)
             frontend ? g_movieVertices + 4 : g_sceneVdp2Vertices,
             frontend ? g_movieIndices : g_sceneVdp2Indices, 1.0f, frontend);
     }
+    if(submitted && frontend)submitted=drawFrontendNbgNative();
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     return submitted;
 }
@@ -13137,7 +13140,7 @@ static bool renderMovieFrame()
         return true;
 
     // RBG's native output domain is 352x224. Resolve each native pixel once,
-    // then scale ordinary RGBA; NBG/text/cursors remain separate live layers.
+    // then composite native NBG before scaling. Text/cursors remain separate.
     const bool frontendRbg = g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f;
     g_frontendRbgDecodedReady=false;
     if(frontendRbg && g_frontendVdp2RawInitialized)
@@ -13147,7 +13150,7 @@ static bool renderMovieFrame()
         return true;
     static bool loggedFrontendRbgResolve = false;
     if (frontendRbg && !loggedFrontendRbgResolve) {
-        logging::writef("[FrontendRbgResolve] native=352x224 liveRotation=1 liveWindows=1\n");
+        logging::writef("[FrontendRbgResolve] native=352x224 liveRotation=1 liveWindows=1 nbgNative=1\n");
         loggedFrontendRbgResolve = true;
     }
 
@@ -13232,8 +13235,19 @@ static bool renderMovieFrame()
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_movieIndices,
                 6) >= 0;
+        } else if (streamReady && g_movieUsesVdp2Title && g_movieVdp2Info[0] < 0.5f) {
+            // Preserve the raw title fallback while Azel is still setting up
+            // its high-resolution mode and decoded TITLEE is not ready yet.
+            sceGxmSetFragmentTexture(g_probeContext,0,&g_movieTexture);
+            sceGxmSetFragmentProgram(g_probeContext,g_vdp2NbgFragmentProgram);
+            void* titleUniforms=nullptr;
+            if(sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext,&titleUniforms)>=0 && titleUniforms) {
+                sceGxmSetUniformDataF(titleUniforms,g_vdp2InfoParam,0,4,g_movieVdp2Info);
+                submitted=sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,
+                    SCE_GXM_INDEX_FORMAT_U16,g_movieIndices,6u)>=0;
+            }
         } else if (streamReady && g_movieUsesVdp2Title) {
-            // Only the expensive RBG lookup was resolved at native size.
+            // Live RBG + NBG were decoded/composited at native size.
             bool rbgSubmitted = true;
             if (g_movieVdp2Info[0] >= 0.5f && g_vdp2Rbg0Available &&
                 g_vdp2Rbg0FragmentProgram && g_vdp2Rbg0InfoParam) {
@@ -13245,27 +13259,7 @@ static bool renderMovieFrame()
                     g_movieIndices, 6u) >= 0;
             }
 
-            // NBG must sample raw VRAM/CRAM, not the resolved background.
-            sceGxmSetFragmentTexture(g_probeContext, 0, &g_movieTexture);
-            sceGxmSetFragmentProgram(
-                g_probeContext, g_vdp2NbgFragmentProgram);
-            void* nbgUniforms = nullptr;
-            bool nbgSubmitted = false;
-            if (sceGxmReserveFragmentDefaultUniformBuffer(
-                    g_probeContext, &nbgUniforms) >= 0 &&
-                nbgUniforms) {
-                sceGxmSetUniformDataF(
-                    nbgUniforms,
-                    g_vdp2InfoParam,
-                    0, 4, g_movieVdp2Info);
-                nbgSubmitted = sceGxmDraw(
-                    g_probeContext,
-                    SCE_GXM_PRIMITIVE_TRIANGLES,
-                    SCE_GXM_INDEX_FORMAT_U16,
-                    g_movieIndices,
-                    6) >= 0;
-            }
-            submitted = rbgSubmitted && nbgSubmitted;
+            submitted = rbgSubmitted;
         } else if (streamReady) {
             // Cinepak has already been reconstructed to a conventional RGBA
             // source-resolution texture above. Apply the same screen-space
@@ -13332,12 +13326,13 @@ static bool renderMovieFrame()
     if (g_movieUsesVdp2Title &&
         ((frontendPerfFrames++ % 60u) == 0u)) {
         logging::writef(
-            "[VDP2Perf] fb=%ux%u frame=%uus gpuWait=%uus layout=%u\n",
+            "[VDP2Perf] fb=%ux%u frame=%uus gpuWait=%uus layout=%u nbg=%u\n",
             static_cast<unsigned int>(movieOutputWidth),
             static_cast<unsigned int>(movieOutputHeight),
             frameRenderUs,
             gpuWaitUs,
-            static_cast<unsigned int>(g_movieVdp2Info[0]));
+            static_cast<unsigned int>(g_movieVdp2Info[0]),
+            frontendRbg && g_movieVdp2Info[3]>=0.5f ? 1u : 0u);
     }
 
     if (!submitted) {

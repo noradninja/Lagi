@@ -445,3 +445,29 @@ decisions against the prior general predicate, requiring complete exclusive
 A/B coverage. The actual production draw fixture verifies both 112-row
 parameter submissions. Marker: `[RBG0WindowCoverage] complementary=1`.
 Device visuals/timing are still required.
+
+## Native frontend NBG resolve
+
+After cache hits, the remaining raw keyboard decoder was still running at
+enlarged display resolution. NBG now draws into the same native 352x224
+resolve after RBG's own color-offset pass, before final scaling/text/VDP1.
+It uses the unchanged native-map shader and live BGON visibility/scroll/
+VRAM/CRAM. Disabled NBG submits no draw. The expensive raw decoder is removed
+from the display-resolution scene; title/selector/Cinepak and gameplay NBG
+paths are unchanged. Completed RBG/NBG pixels share the existing presentation
+dither; keyboard edge filtering therefore requires visual acceptance too.
+
+No extra surface or texture allocation is required. The production NBG
+submission fixture verifies live uniforms, native mapped quad, raw source,
+title exclusion and submission failures; source-order tests require NBG
+after RBG/color offset and before EndScene. `[VDP2Perf]` now includes `nbg=0/1`
+to identify visibility in the two timing plateaus without serialized probes.
+`[FrontendRbgResolve] ... nbgNative=1` identifies this build path. The supplied
+33/61-65 ms measurements predate both this and complementary coverage, so
+neither change has a device time or visual acceptance claim yet.
+
+Final-tree validation: battle/cache-on and menu/cache-off Vita builds both
+link/package successfully. The raw title fallback remains available during
+Azel's high-resolution setup, before decoded TITLEE is ready. Native NBG,
+window partition, actual draw, page-service, coefficient, program-switch and
+compiled shader-resource tests all pass. The final device capture is pending.

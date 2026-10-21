@@ -20,10 +20,9 @@ $resolve=$m.IndexOf('renderSceneVdp2BackgroundPass(true)')
 $begin=$m.IndexOf('const int beginResult = sceGxmBeginScene(')
 if($resolve -lt 0 -or $resolve -gt $begin){throw 'Resolve must precede presentation scene'}
 if($m.Contains('drawVdp2Rbg0Gpu(')){throw 'Expensive raw RBG decode returned to display-resolution scene'}
-$start=$m.IndexOf('// Only the expensive RBG lookup was resolved at native size.')
+$start=$m.IndexOf('// Live RBG + NBG were decoded/composited at native size.')
 $body=$m.Substring($start,$m.IndexOf('} else if (streamReady)', $start)-$start)
 if(!$body.Contains('&g_sceneRbg0ResolvedTexture') -or
    !$body.Contains('setStochastic(kSceneRbg0Width, kSceneRbg0Height)') -or
-   $body.IndexOf('&g_movieTexture);') -gt $body.IndexOf('g_vdp2NbgFragmentProgram') -or
-   $body.IndexOf('&g_movieTexture);') -lt 0){throw 'Resolved presentation/raw NBG texture handoff lost'}
+   $body.Contains('g_vdp2NbgFragmentProgram')){throw 'Native composited presentation contract lost'}
 Write-Output 'PASS frontend native-resolve/presentation source contracts (Vita timing and pixels unverified)'
