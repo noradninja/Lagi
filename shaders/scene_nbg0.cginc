@@ -25,7 +25,11 @@ bool nbgWindow(uniform sampler2D raw,float2 pixel,float4 rect,float lineAddress,
     }
     return pixel.x>=rect.x && pixel.x<=rect.z && pixel.y>=rect.y && pixel.y<=rect.w;
 }
-float4 sampleSceneNbg0(uniform sampler2D raw,float2 uv,uniform float4 state[8]) {
+float4 sampleSceneNbg0(uniform sampler2D raw,float2 uv,uniform float4 state[8]
+#ifdef LAGI_NBG_LINE_ROWS
+    ,uniform sampler2D rowData
+#endif
+) {
     float2 pixel=min(floor(uv*float2(352.0f,224.0f)),float2(351.0f,223.0f));
     float ctl=state[6].x;
     bool en0=nbgBit(ctl,2.0f)>0.5f,en1=nbgBit(ctl,8.0f)>0.5f;
@@ -36,6 +40,10 @@ float4 sampleSceneNbg0(uniform sampler2D raw,float2 uv,uniform float4 state[8]) 
     bool visible= en0 && en1 ? (nbgBit(ctl,128.0f)>0.5f ? a && b : a || b)
         : (en0 ? a : (en1 ? b : true));
     if(!visible)return float4(0,0,0,0);
+#ifdef LAGI_NBG_LINE_ROWS
+    float2 rowXY=tex2D(rowData,float2((pixel.y+0.5f)/256.0f,0.25f)).xy;
+    float3 line=float3(rowXY.x,rowXY.y,tex2D(rowData,float2((pixel.y+0.5f)/256.0f,0.75f)).x);
+#else
     float3 line=float3(0.0f,pixel.y*state[2].w,state[2].z);
     float lctl=state[3].y;
     bool lx=nbgBit(lctl,2.0f)>0.5f,ly=nbgBit(lctl,4.0f)>0.5f,lz=nbgBit(lctl,8.0f)>0.5f;
@@ -44,6 +52,7 @@ float4 sampleSceneNbg0(uniform sampler2D raw,float2 uv,uniform float4 state[8]) 
     if(lx){line.x=nbgFixed(raw,address);address+=4.0f;}
     if(ly){line.y=nbgFixed(raw,address)+nbgWrap(pixel.y,state[3].z);address+=4.0f;}
     if(lz)line.z=nbgFixed(raw,address);
+#endif
     float2 pos=floor(state[2].xy+float2(pixel.x*line.z+line.x,line.y));
     float2 planeSize=state[7].xy;
     pos=float2(nbgWrap(pos.x,planeSize.x*2.0f),nbgWrap(pos.y,planeSize.y*2.0f));

@@ -1,4 +1,5 @@
 #include "lagi/scene_nbg0.h"
+#include "lagi/nbg0_line_rows.h"
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -18,8 +19,16 @@ float4 rawTexel(sampler2D b,float i){++packedReads;unsigned a=unsigned(i)*4;retu
 float readByte(sampler2D b,float a){assert(a>=0&&a<0x81000);return b[unsigned(a)];}
 float readBE16(sampler2D b,float a){++halfReads;return readByte(b,a)*256+readByte(b,a+1);}
 float4 rgb555(float c){unsigned v=unsigned(c);return {float(v&31),float((v>>5)&31),float((v>>10)&31),1};}
+float4 tex2D(sampler2D b,float2 uv){const auto* f=reinterpret_cast<const float*>(b);unsigned i=(unsigned(uv.y*2)*256+unsigned(uv.x*256))*2;return {f[i],f[i+1],0,1};}
 #define uniform
 #include "scene_shader.inc"
+namespace row_shader {
+#define LAGI_NBG_LINE_ROWS 1
+#define nbgWindow rowWindow
+#include "scene_shader.inc"
+#undef nbgWindow
+#undef LAGI_NBG_LINE_ROWS
+}
 #undef uniform
 static std::array<unsigned char,0x81000> memory{};
 void word(unsigned a,unsigned v){memory[a]=v>>8;memory[a+1]=v;}
@@ -56,7 +65,15 @@ int main(){
     for(unsigned cell=0;cell<4;++cell)for(unsigned i=0;i<32;++i)memory[cell*32+i]=(cell+1)*0x11;
     for(unsigned c=1;c<=4;++c)word(0x80000+c*2,c);
     for(unsigned y=0;y<224;++y){longword(0x24000+y*12,0);longword(0x24004+y*12,y<<16);longword(0x24008+y*12,65536);}
-    const auto sample=[&](int x,int y){return sampleSceneNbg0(memory.data(),float2((x+.5f)/352,(y+.5f)/224),s);};
+    const auto sample=[&](int x,int y){
+        float state[8][4];for(unsigned i=0;i<8;++i){state[i][0]=s[i].x;state[i][1]=s[i].y;state[i][2]=s[i].z;state[i][3]=s[i].w;}
+        const auto rows=lagi::buildNbg0LineRows(memory.data(),state);
+        float2 uv((x+.5f)/352,(y+.5f)/224);
+        auto expected=sampleSceneNbg0(memory.data(),uv,s);
+        auto got=row_shader::sampleSceneNbg0(memory.data(),uv,s,reinterpret_cast<const unsigned char*>(rows.data()));
+        assert(got.x==expected.x && got.y==expected.y && got.z==expected.z && got.w==expected.w);
+        return got;
+    };
     assert(sample(0,0).x==2);assert(sample(8,0).x==1);
     assert(sample(0,8).x==4);assert(sample(8,8).x==3);
     for(int y=0;y<224;++y)assert(sample(0,y).x==((y&8)?4:2));
@@ -76,5 +93,20 @@ int main(){
     assert(sample(0,0).w==0);assert(sample(8,0).w==1);
     s[6]={0,0,0,0};memory.fill(0);
     assert(sample(0,0).w==0);s[0].z=1;assert(sample(0,0).w==1);
+    for(unsigned i=0;i<224*3;++i)longword(0x24000+i*4,(i*7193u)<<8);
+    for(unsigned ctl=0;ctl<=14;ctl+=2)for(unsigned interval: {1u,2u,4u,8u}){
+        float state[8][4]{};state[2][2]=1.25f;state[2][3]=0.75f;
+        state[3][0]=0x24000;state[3][1]=float(ctl);state[3][2]=float(interval);
+        auto rows=lagi::buildNbg0LineRows(memory.data(),state);
+        unsigned stride=4*((ctl&2?1:0)+(ctl&4?1:0)+(ctl&8?1:0));
+        for(unsigned y=0;y<224;++y){
+            unsigned a=0x24000+(y/interval)*stride;
+            float x=0,py=y*0.75f,z=1.25f;
+            if(ctl&2){x=nbgFixed(memory.data(),float(a));a+=4;}
+            if(ctl&4){py=nbgFixed(memory.data(),float(a))+y%interval;a+=4;}
+            if(ctl&8)z=nbgFixed(memory.data(),float(a));
+            assert(rows[y][0]==x && rows[y][1]==py && rows[256+y][0]==z);
+        }
+    }
     puts("PASS production NBG0 shader scalar addressing, flips, signed line scroll, windows and transparent zero; not GPU execution");
 }

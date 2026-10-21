@@ -40,3 +40,17 @@ is no longer compiled into the cloud program, and cloud state is no longer
 part of the frontend shader. Raster size, blends, window/line math and output
 remain unchanged. This removes unrelated code and register pressure without
 reducing resolution or effect fidelity; actual speedup remains device-gated.
+
+Device feedback finds no meaningful gain from program isolation. The next
+change follows the established RBG0 coefficient-row route: CPU prepares native
+line X/Y/zoom once per scanline into a 256x2 F32F32 texture (4096 bytes). It
+does not rasterize cloud pixels. The GPU samples those row values instead of
+repeating signed byte decode, interval/stride and fixed-point conversion for
+each of 352 pixels per row. Tile addressing, palette decode, windows, native
+raster and blending remain on the same GPU route. Existing frame completion
+protects row-buffer reuse, as with the RBG0 row texture.
+
+The host fixture runs both production shader variants and compares output for
+the existing native addressing/scroll/window test cases. SceneNBG0 records
+lineRows=1 and rowBytes=4096. Fresh Vita timing and visual confirmation remain
+required; this is not proof that the 25/33 ms target is met.

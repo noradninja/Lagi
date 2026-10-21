@@ -17,7 +17,7 @@ if($decode -match 'sampleSceneNbg0|nbg0State|scene_nbg0.cginc' -or
     throw 'Cloud resolve must be independent of the frontend shader.'
 }
 $cloud=Get-Content "$root/shaders/scene_nbg0_f.cg" -Raw
-if($cloud -notmatch 'return sampleSceneNbg0\(raw,vTexcoord,nbg0State\)' -or $cloud -match 'vdp2Info') {
+if($cloud -notmatch 'return sampleSceneNbg0\(raw,vTexcoord,nbg0State,rowData\)' -or $cloud -match 'vdp2Info') {
     throw 'Cloud shader must call the tested production decoder without a frontend mode selector.'
 }
 Write-Output 'PASS: cloud resolve program is independent of frontend layouts 0, 1 and 2'

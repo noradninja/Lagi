@@ -13,6 +13,7 @@
 unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/debug_mesh.h"
 #include "lagi/shared_color_offset.h"
+#include "lagi/nbg0_line_rows.h"
 #include "lagi/vdp1_renderer.h"
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_render_bridge.h"
@@ -239,6 +240,9 @@ static bool g_rgbaPresentRegistered = false;
 static bool g_sceneNbg0Registered = false;
 static SceGxmShaderPatcherId g_sceneNbg0Id{};
 static SceGxmFragmentProgram* g_sceneNbg0ResolveProgram = nullptr;
+static void* g_nbg0RowsPixels=nullptr;
+static SceUID g_nbg0RowsUid=-1;
+static SceGxmTexture g_nbg0RowsTexture{};
 static SceGxmShaderPatcherId g_rgbaPresentId{};
 static const SceGxmProgramParameter* g_rgbaPresentInfo = nullptr;
 static bool g_vdp2Rbg0FragmentRegistered = false;
@@ -2637,6 +2641,7 @@ void shutdown()
     releaseRbgTileProgram();
     releaseRbgDecodedPages();
     releaseRbgCoefficientRows();
+    freeMovieMappedBlock(g_nbg0RowsUid,g_nbg0RowsPixels);
     freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
     freeSimpleMappedProbe(g_sceneNbg0Uid,g_sceneNbg0Pixels);
     g_sceneNbg0={};g_pendingSceneNbg0={};
