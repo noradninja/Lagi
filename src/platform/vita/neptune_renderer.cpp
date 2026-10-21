@@ -3684,6 +3684,15 @@ bool frontend_present_vdp2(
                 rawBytes,SCE_GXM_MEMORY_ATTRIB_READ,&g_movieTextureUid);
         logging::writef("[FrontendVdp2Memory] cdram=%u payloadBytes=%u\n",
             frontendRawInCdram?1u:0u,rawBytes);
+        // freeMovieResources() also releases RPMD3 coverage. The raw VDP2
+        // frontend must own this allocation too, not depend on a prior RGBA
+        // movie having allocated it. Otherwise A silently covers B's pixels.
+        g_vdp2WindowVertices = static_cast<azel::DebugTextureVertex*>(
+            probeGpuAlloc(224u * 3u * 4u * sizeof(azel::DebugTextureVertex),
+                SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowVertexUid));
+        g_vdp2WindowIndices = static_cast<std::uint16_t*>(
+            probeGpuAlloc(224u * 3u * 6u * sizeof(std::uint16_t),
+                SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowIndexUid));
         g_movieVertices = static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(
                 4u * sizeof(azel::DebugTextureVertex),
@@ -3694,7 +3703,8 @@ bool frontend_present_vdp2(
                 6u * sizeof(std::uint16_t),
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_movieIndexUid));
-        if (!g_movieTextureData || !g_movieVertices || !g_movieIndices) {
+        if (!g_movieTextureData || !g_movieVertices || !g_movieIndices ||
+            !g_vdp2WindowVertices || !g_vdp2WindowIndices) {
             freeMovieResources();
             return false;
         }
@@ -12598,6 +12608,9 @@ static bool drawVdp2Rbg0Gpu(
 
     const unsigned int rpmd =
         static_cast<unsigned int>(rbg.ctrl[0]) & 3u;
+    // Never substitute an unrestricted A overlay for missing RPMD3 coverage.
+    if (rpmd == 3u && (!g_vdp2WindowVertices || !g_vdp2WindowIndices))
+        return false;
     const unsigned int ktctl =
         static_cast<unsigned int>(rbg.ctrl[1]);
     const unsigned int ktaof =
@@ -12918,7 +12931,7 @@ static bool drawVdp2Rbg0Gpu(
                     (static_cast<unsigned int>(
                         rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
 
-                int xs = 0;
+                int xs = 1;
                 int xe = 0;
                 if (xeRaw != 0xFFFFu) {
                     xs = static_cast<int>((xsRaw >> 1) & 0x1FFu);

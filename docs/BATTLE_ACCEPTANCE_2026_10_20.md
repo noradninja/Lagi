@@ -298,6 +298,22 @@ surviving-slot reservation, four-page encoding, capacity rejection, unsupported
 addresses, allocation failure and cleanup. Upstream pixel-oracle comparisons
 cover the indexed path with live CRAM reconstruction in addition to RGBA mode.
 All three actual compiled shaders pass uniform/sampler reflection checks.
+
+## Name-entry RPMD3 coverage lifetime
+
+The fresh name-entry capture reports 189248 us/frame, including 185241 us
+GPU wait (layout=2). The screenshot's lower corruption has a concrete service
+bug: `frontend_present_vdp2` calls `freeMovieResources`, which releases the
+RPMD3 window geometry, but previously did not recreate it. The draw routine
+then skipped window generation and submitted A fullscreen over B. The raw
+frontend now allocates and validates that coverage itself. Missing coverage
+fails submission rather than substituting fullscreen A. Disabled 0xFFFF line
+windows emit no inside span (previously a one-pixel A column).
+
+No coefficients, rotation, palette, layout, or upstream Azel sources change.
+The source-contract regression test is `tests/frontend_rbg_window_test.ps1`;
+it is not proof of Vita pixels. A fresh name-entry screenshot is required to
+accept the reflection. Performance remains a separate unresolved issue.
 Device pixel equivalence, warm/cold behavior and performance are still pending.
 Final fullres/dither Vita VPK builds pass for battle/compositor/cache/timing ON
 and battle/compositor/cache/timing OFF. The latter retains the generic frontend
