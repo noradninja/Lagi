@@ -870,6 +870,12 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
 
  file(READ "${input_path}" source_text)
  set(original_text "${source_text}")
+ if(relative_path STREQUAL "field/field_d5/d5_particles.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_d5_particles.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_d5_particles.inc" source_text)
+ elseif(relative_path STREQUAL "field/field_d5/d5_nameEntry.cpp")
+  string(REPLACE "#include \"d5_particles.h\"" "#include \"lagi/lagi_d5_particles.h\"" source_text "${source_text}")
+ endif()
  lagi_adapt_life_meter_flags("${relative_path}" "${source_text}" source_text)
  if(LAGI_BATTLE_NATIVE_BUILD)
   # All generated consumers must share the same expanded native layout.

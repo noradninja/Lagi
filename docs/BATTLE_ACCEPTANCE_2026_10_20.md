@@ -708,3 +708,34 @@ Device exit validation remains pending. The separate D5 particle task still
 needs its original position/update/transform behavior restored: the supplied
 name-entry log records depth rejection, and original SH-2 code proves the
 upstream positive-Z/random-velocity reconstruction is not faithful.
+
+## D5 native particle adapter and layer order
+
+Disc inspection of FLD_D5 060547F8-06054C26 establishes the original particle
+initialization, wrap, update and draw path. The generated particle source now
+uses a shared host header with the generated name-entry caller; extern/Azel
+remains untouched. The adapter retains 64 particles, descending initialization
+indices, original RNG ordering, negative object-space Z, native row positions,
+angle-step/wobble, vertical wrapping, state 0/1 drift, state 2/3 contraction/
+expansion and all 64 emissions during transitions. The local identity/Z-rotation
+matrix precedes the existing native projection once. Sprite frames/palettes
+come from the user's game resource, not committed data or substitute art.
+
+Projected commands are drawn at native resolution between RBG and NBG0;
+unprojected cursor/underline commands remain after the scaled keyboard/text.
+Both passes share a monotonically allocated sprite-slot range so later cursor
+vertices cannot overwrite queued particle vertices. Native-canvas coordinates
+avoid applying the display's 4:3 aspect correction twice. Ordinary scene passes
+are unchanged. The native name-entry exit sprite also has projected depth and
+therefore reaches this same frontend path even after RBG is disabled.
+
+The executable host fixture runs the production adapter with mock platform
+services, testing RNG order, signed positions, wrap, state-service calls and 64
+emissions. Layer/order tests are source contracts, not pixel proof; trig,
+projection and interpolation remain the existing native services. Battle
+fullres/pages/rows/trace-ON build links/packages successfully; the menu generic
+fallback also links/packages with rows/trace OFF. Particle appearance, final
+fade and exit garbage require a fresh name-entry completion capture. This
+does not establish hardware acceptance or claim the whole fade pipeline is
+complete: D5's BACK-only color offset and final sprite transition still need
+on-device observation after restoring the missing sprites.

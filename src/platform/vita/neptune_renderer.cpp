@@ -942,6 +942,7 @@ struct RbgGpuState {
     float coefficientA[4]{}, coefficientB[4]{};
 };
 static RbgGpuState g_movieRbg0;
+static unsigned g_frontendSpriteSlot=0;
 static RbgGpuState g_pendingSceneRbg0, g_sceneRbg0;
 static constexpr unsigned int kRawVdp2Bytes = 0x81000u;
 static constexpr unsigned int kSceneVdp2BlockBytes = 4096u;
@@ -4925,7 +4926,9 @@ enum class Vdp1UiPass {
     All,
     Background,
     WorldEffects,
-    Foreground
+    Foreground,
+    FrontendProjected,
+    FrontendOverlay
 };
 
 static bool vdp1UiPassAccepts(Vdp1UiPass pass, bool background, bool worldDepth)
@@ -4935,6 +4938,8 @@ static bool vdp1UiPassAccepts(Vdp1UiPass pass, bool background, bool worldDepth)
     case Vdp1UiPass::Background: return background;
     case Vdp1UiPass::WorldEffects: return !background && worldDepth;
     case Vdp1UiPass::Foreground: return !background && !worldDepth;
+    case Vdp1UiPass::FrontendProjected:
+    case Vdp1UiPass::FrontendOverlay: return true; // producer depth tag below
     }
     return false;
 }
@@ -4996,7 +5001,8 @@ static void drawMenuCanvasMask()
 
 static void drawPublishedVdp1Ui(
     Vdp1UiPass pass = Vdp1UiPass::All,
-    unsigned int* sharedSpriteSlot = nullptr)
+    unsigned int* sharedSpriteSlot = nullptr,
+    bool nativeCanvas = false)
 {
     const auto& commands = azel_bridge::published_vdp1_ui_commands();
     if (commands.empty() || !g_textureVertexProgram ||
@@ -5048,11 +5054,13 @@ static void drawPublishedVdp1Ui(
         ? *sharedSpriteSlot
         : localSpriteSlot;
     for (const auto& command : commands) {
+        if(pass==Vdp1UiPass::FrontendProjected && !command.hasWorldDepth)continue;
+        if(pass==Vdp1UiPass::FrontendOverlay && command.hasWorldDepth)continue;
         const bool background = isVdp1BackgroundCommand(command);
         const unsigned int commandType = command.cmdCtrl & 0x000Fu;
         // Projected scene sprites retain their producer's real endpoint Z.
         // Saturn packet buckets are priority keys, not GXM depth values.
-        const bool worldDepth = command.hasWorldDepth && !command.fieldRadar &&
+        const bool worldDepth = !nativeCanvas && pass!=Vdp1UiPass::FrontendOverlay && command.hasWorldDepth && !command.fieldRadar &&
             lagi::native_scene_depth_mode(g_sceneGameMode) && !g_vdp2MenuId && !g_vdp2SaveLayout &&
             g_nativeSceneNearPlane > 0.0f && g_nativeSceneFarPlane > g_nativeSceneNearPlane;
         if (!vdp1UiPassAccepts(pass, background, worldDepth))
@@ -5087,7 +5095,7 @@ static void drawPublishedVdp1Ui(
             static_cast<float>(viewerRenderWidth()) /
             static_cast<float>(viewerRenderHeight());
         const float saturnAspectCorrection =
-            (4.0f / 3.0f) / renderAspect;
+            nativeCanvas ? 1.0f : (4.0f / 3.0f) / renderAspect;
         // Only native radar-owned commands use this right-anchored, square
         // integer pixel grid. Keep animation offsets and all authored geometry.
         const float radarScale = std::max(1, viewerRenderHeight() / 224);
@@ -13070,6 +13078,11 @@ static bool renderSceneVdp2BackgroundPass(bool frontend = false)
             frontend ? g_movieVertices + 4 : g_sceneVdp2Vertices,
             frontend ? g_movieIndices : g_sceneVdp2Indices, 1.0f, frontend);
     }
+    if(submitted && frontend) {
+        // Native projected particles sit between RBG and the NBG keyboard.
+        // Slots remain distinct from the later display-space cursor pass.
+        drawPublishedVdp1Ui(Vdp1UiPass::FrontendProjected,&g_frontendSpriteSlot,true);
+    }
     if(submitted && frontend)submitted=drawFrontendNbgNative();
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     return submitted;
@@ -13190,6 +13203,7 @@ static bool renderMovieFrame()
     // RBG's native output domain is 352x224. Resolve each native pixel once,
     // then composite native NBG before scaling. Text/cursors remain separate.
     const bool frontendRbg = g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f;
+    g_frontendSpriteSlot=0;
     g_frontendRbgDecodedReady=false;
     if(frontendRbg && g_movieRbg0.enabled && g_frontendVdp2RawInitialized)
         g_frontendRbgDecodedReady=prepareRbgDecodedPagesFor(g_movieRbg0,
@@ -13344,7 +13358,7 @@ static bool renderMovieFrame()
         drawAzelVdp2TextLayerGpu(movieOutputWidth, movieOutputHeight);
 
     if (submitted && g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f)
-        drawPublishedVdp1Ui();
+        drawPublishedVdp1Ui(Vdp1UiPass::FrontendOverlay,&g_frontendSpriteSlot);
         drawMenuCanvasMask();
 
     if (submitted) {
