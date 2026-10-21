@@ -203,3 +203,30 @@ and existing format tests pass. Hardware equivalence and performance remain
 pending. Expected markers: `[RBG0ByteView] available=1 sharedUpload=1` and
 `[RBG0TileFormat] specialized8bit16=1`. Keep pass timing ON for the next short
 flight log, then disable serialization for final deadline/visual acceptance.
+
+### Byte-view follow-up and compiler resource verification
+
+The new device log confirms byte view and specialized shader are active.
+Nine serialized samples average 14,820 us RBG / 5,452 us world / 7,657 us
+final wait, versus 15,116 / 5,405 / 7,691 us before byte view. This does not
+establish a meaningful performance improvement. Do not call the RBG goal
+resolved or request unchanged reruns as if more samples alone fix it.
+
+`tests/rbg_shader_resources_test.ps1` compiles generic and specialized shaders
+using the installed Vita compiler with production precision/optimization flags.
+It validates actual compiler XML reflection against all 22 runtime uniform
+names, fp32:4/default-buffer types, raw sampler unit 0, specialized byte sampler
+unit 1, and absence of that sampler from the generic/frontend program. Both
+pass. This catches binding/resource regressions, not GPU appearance or timing.
+The fullres/dither compositor-OFF/battle-OFF fallback VPK also builds after
+062ec10; the earlier compositor-ON/battle-ON VPK passed separately.
+
+Next pipeline investigation: cache native tile/palette source decoding with
+exact VRAM/CRAM dependency invalidation instead of redoing it per rotated
+output pixel. Keep coefficient tables, A/B selection, windows and composition
+live on GPU. Upstream `renderer_vdp2.cpp::sampleTileAtCoordinate` consumes
+integer source coordinates after fixed-point rotation (lines 1179-1216), so
+compare any decoded-page implementation with that source, not merely the
+current float packed-sampler's fractional-lane behavior. Existing generation
+tracking must distinguish source-page/character/palette dependencies from
+changing coefficient blocks. This pipeline is not implemented or accepted yet.
