@@ -2,6 +2,7 @@
 #include "lagi/ui_lut_palette.h"
 #include "lagi/ui_texture_cache_index.h"
 #include "lagi/vdp1_color_calculation.h"
+#include "lagi/rbg_format.h"
 #include "lagi/native_scene_mode.h"
 #include "lagi/frontend_font.h"
 
@@ -60,6 +61,7 @@ extern const unsigned char _binary_lagi_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_cinepak_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
 extern const unsigned char _binary_lagi_sprite_composite_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_rbg0_tile16_8bit_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_subdiv_v_gxp_start[];
@@ -290,6 +292,7 @@ static const SceGxmProgramParameter* g_vdp2Rbg0InfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0FormatParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0LayerWindowParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0LayerWindowInfoParam = nullptr;
+static void releaseRbgTileProgram();
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
 static SceGxmFragmentProgram* g_meshTextureFragmentProgram = nullptr;
@@ -2540,6 +2543,7 @@ void shutdown()
     freeSimpleMappedProbe(g_fadeIndexUid, fadeIndexPtr);
     g_fadeIndices = nullptr;
     releaseSpriteComposite();
+    releaseRbgTileProgram();
     freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
     freeSimpleMappedProbe(g_ditherOffsetsUid, g_ditherOffsetsPixels);
     g_sceneVdp2GpuRawInitialized = false;
@@ -12546,14 +12550,16 @@ static bool renderCinepakResolvePass()
     return submitted;
 }
 
+#include "neptune_rbg_tile_program.inc"
+
 static bool drawVdp2Rbg0Gpu(
     const RbgGpuState& rbg, const void* rawTextureData,
     const azel::DebugTextureVertex* vertices, const std::uint16_t* indices,
     float xExtent, bool frontend)
 {
     bool rbgSubmitted = true;
-    sceGxmSetFragmentProgram(
-        g_probeContext, g_vdp2Rbg0FragmentProgram);
+    selectRbgTileProgram(!frontend && lagi::rbgTile16EightBit(
+        static_cast<unsigned>(rbg.format[0]),static_cast<unsigned>(rbg.format[1])));
 
     const unsigned int rpmd =
         static_cast<unsigned int>(rbg.ctrl[0]) & 3u;
@@ -13626,7 +13632,9 @@ static void renderBasicWingViewer()
     const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
     const bool spriteComposite=prepareSpriteComposite(nativeSceneMode &&
         (roomAuthenticLitMode || roomAuthenticTexturedMode),nativeMenuFrame);
-    if (!clearNativeSceneColorBuffer(colorBuffer, viewerRenderWidth(), viewerRenderHeight(), gxmPitch))
+    // The compositor writes every final-target pixel, including transparent
+    // VDP1 holes resolved to RBG0/BACK. Only its input surface needs clearing.
+    if (!spriteComposite && !clearNativeSceneColorBuffer(colorBuffer, viewerRenderWidth(), viewerRenderHeight(), gxmPitch))
         return;
     // GXM initializes tile-local depth/stencil from these background values.
     // The backing buffers are spill storage, not an input to this scene:

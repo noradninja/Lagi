@@ -55,10 +55,18 @@ float4 sampleRbg0Cell(
     const float plsz = fmod(format.w, 4.0f);
     const float screenOver = fmod(floor(format.w / 4.0f), 4.0f);
 
+#if LAGI_RBG_TILE16_8BIT
+    // Selected only from the published CHCTLB/PNCR format, not scene identity.
+    const float chsz = 1.0f;
+    const float chcn = 1.0f;
+    const float pnb = 1.0f;
+    const float cnsm = 0.0f;
+#else
     const float chsz = fmod(floor(chctlb / 256.0f), 2.0f);
     const float chcn = fmod(floor(chctlb / 4096.0f), 8.0f);
     const float pnb = fmod(floor(pncr / 32768.0f), 2.0f);
     const float cnsm = fmod(floor(pncr / 16384.0f), 2.0f);
+#endif
     const float scn = fmod(pncr, 1024.0f);
     const float caos = fmod(craofb, 8.0f);
 

@@ -126,6 +126,19 @@ set(LAGI_CINEPAK_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_cinepak_f_gxp.o")
 set(LAGI_VDP2_NBG_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_nbg_f.gxp")
 set(LAGI_VDP2_NBG_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_nbg_f_gxp.o")
 set(LAGI_SPRITE_COMPOSITE_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_sprite_composite_f_gxp.o")
+set(LAGI_RBG_TILE_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f_gxp.o")
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f.gxp"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_tile16_8bit_f.cg" -Wperf -fastprecision -O3
+ -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f.gxp"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_tile16_8bit_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_common.cginc" VERBATIM)
+add_custom_command(OUTPUT "${LAGI_RBG_TILE_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
+ lagi_vdp2_rbg0_tile16_8bit_f.gxp "${LAGI_RBG_TILE_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f.gxp" VERBATIM)
 option(LAGI_VDP2_SPRITE_COMPOSITE "Experimental separate native VDP1/VDP2 composition" OFF)
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_sprite_composite_f.gxp"
  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
@@ -4455,6 +4468,7 @@ add_executable(lagi
  ${LAGI_CINEPAK_F_OBJ}
  ${LAGI_VDP2_NBG_F_OBJ}
  ${LAGI_SPRITE_COMPOSITE_OBJ}
+ ${LAGI_RBG_TILE_OBJ}
  ${LAGI_VDP2_RBG0_F_OBJ}
  src/platform/vita/vita_audio.cpp
  src/platform/vita/frontend_music.cpp
