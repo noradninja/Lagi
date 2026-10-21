@@ -1,5 +1,16 @@
 # Latest battle acceptance and follow-up
 
+## 2026-10-21 cinematic particle occlusion
+
+Projected sprites retain producer view-Z, but native_scene_depth_mode excluded
+town modes 1/2, which also host E011 and other in-engine cinematics. That gate
+disabled both world-sprite depth testing and native geometry depth writes.
+Enable the shared depth path for all native scene modes 1..4. Untagged UI,
+menus and authored background commands remain on their separate passes. No
+sand texture IDs or invented positions are used. This affects town geometry
+ordering too; verify town overlap, sand behind ridge silhouettes, actor effects
+and cinematic transitions on device. Compilation does not prove visual parity.
+
 User confirms f138a83's compositor and previously missing water coverage work
 on hardware. Preserve that route. Target renderer time is ideally 25 ms,
 maximum 33 ms; builds and unit checks do not establish either deadline.

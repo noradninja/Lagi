@@ -25,7 +25,7 @@ void presentation_set_camera(const float a[3],const float b[3],const float c[3],
 int main(){
     for(int mode=-10;mode<20;++mode){
         assert(lagi::native_scene_mode(mode)==(mode>=1 && mode<=4));
-        assert(lagi::native_scene_depth_mode(mode)==(mode==3 || mode==4));
+        assert(lagi::native_scene_depth_mode(mode)==(mode>=1 && mode<=4));
     }
     graphicEngineStatus.m405C={0x18000,0x12340000};
     sync_battle_presentation_state();

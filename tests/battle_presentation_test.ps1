@@ -14,7 +14,7 @@ foreach($file in @('src/integration/lagi_runtime.cpp','src/integration/lagi_scen
 }
 $renderer=Get-Content -Raw "$repo/src/platform/vita/neptune_renderer.cpp"
 if($renderer.Contains('g_sceneGameMode == 3u ? depthFunc') -or $renderer.Contains('g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED')){throw 'Direct battle mesh depth still uses the unconditional overlay policy'}
-if($renderer -notmatch 'const bool worldDepth = command.hasWorldDepth && !command.fieldRadar &&\s*lagi::native_scene_depth_mode\(g_sceneGameMode\)'){throw 'Battle projected world sprites must keep their supplied endpoint depth'}
+if($renderer -notmatch 'const bool worldDepth = !nativeCanvas && pass!=Vdp1UiPass::FrontendOverlay && command.hasWorldDepth && !command.fieldRadar &&\s*lagi::native_scene_depth_mode\(g_sceneGameMode\)'){throw 'Native projected world sprites must keep their supplied endpoint depth while excluding frontend UI'}
 & cl /nologo /O2 /std:c++20 /EHsc "/I$scratch" "/I$repo/include" "$PSScriptRoot/battle_presentation_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
 if($LASTEXITCODE -ne 0){throw 'Battle presentation test compile failed'}
 & "$scratch/test.exe"
