@@ -34,6 +34,18 @@ static std::array<unsigned char,0x81000> memory{};
 void word(unsigned a,unsigned v){memory[a]=v>>8;memory[a+1]=v;}
 void longword(unsigned a,unsigned v){word(a,v>>16);word(a+2,v);}
 int main(){
+    lagi::SceneNbg0State clipState{};clipState.gpu[6][0]=3;
+    for(int top=0;top<224;++top)for(int bottom=top;bottom<224;++bottom){
+        clipState.gpu[4][0]=19;clipState.gpu[4][1]=float(top);
+        clipState.gpu[4][2]=330;clipState.gpu[4][3]=float(bottom);
+        auto clip=lagi::sceneNbg0ResolveClip(clipState);
+        assert(!clip.empty && clip.left<=19 && clip.right>=330 && clip.top<=unsigned(top) && clip.bottom>=unsigned(bottom));
+        assert(clip.right<352 && clip.bottom<224);
+    }
+    clipState.gpu[4][1]=30;clipState.gpu[4][3]=20;
+    assert(lagi::sceneNbg0ResolveClip(clipState).empty);
+    clipState.gpu[6][3]=1;
+    assert(!lagi::sceneNbg0ResolveClip(clipState).empty); // Line window: full-raster fallback.
     // Exercise the production aligned path and compare all signed high-word
     // values against the old two-halfword formula, including fractional bits.
     for(unsigned hi=0;hi<65536;++hi){

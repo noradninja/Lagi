@@ -34,9 +34,13 @@ static bool renderSceneNbg0Gpu()
         sceGxmTextureSetMagFilter(&g_sceneNbg0Texture,SCE_GXM_TEXTURE_FILTER_LINEAR);
     }
     std::memset(g_sceneNbg0Pixels,0,kSceneRbg0Pitch*kSceneRbg0Height*4);
+    const auto clip=lagi::sceneNbg0ResolveClip(g_sceneNbg0);
+    if(clip.empty)return true;
     if(sceGxmBeginScene(g_probeContext,0,g_sceneRbg0RenderTarget,nullptr,nullptr,nullptr,
         &g_sceneNbg0Surface,nullptr)<0)return false;
     sceGxmSetDefaultRegionClipAndViewport(g_probeContext,kSceneRbg0Width-1,kSceneRbg0Height-1);
+    sceGxmSetRegionClip(g_probeContext,SCE_GXM_REGION_CLIP_INSIDE,
+        clip.left,clip.top,clip.right,clip.bottom);
     sceGxmSetVertexProgram(g_probeContext,g_textureVertexProgram);
     sceGxmSetFragmentProgram(g_probeContext,g_sceneNbg0ResolveProgram);
     sceGxmSetFrontDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
@@ -60,8 +64,9 @@ static bool renderSceneNbg0Gpu()
     }
     sceGxmEndScene(g_probeContext,nullptr,nullptr);
     static unsigned reports=0;
-    if(reports++<4)logging::writef("[SceneNBG0] nativeGpu=1 raster=352x224 additive=%u priority=%u ok=%u stochastic=0 lineRows=1 rowBytes=4096\n",
-        g_sceneNbg0.additive?1u:0u,unsigned(g_sceneNbg0.gpu[7][2]),ok?1u:0u);
+    if(reports++<4)logging::writef("[SceneNBG0] nativeGpu=1 raster=352x224 additive=%u priority=%u ok=%u stochastic=0 lineRows=1 rowBytes=4096 clip=%u,%u,%u,%u\n",
+        g_sceneNbg0.additive?1u:0u,unsigned(g_sceneNbg0.gpu[7][2]),ok?1u:0u,
+        clip.left,clip.top,clip.right,clip.bottom);
     return ok;
 }
 static void drawSceneNbg0Gpu()

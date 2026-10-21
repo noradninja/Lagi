@@ -7,6 +7,17 @@ struct SceneNbg0State {
     // Native normal-background packet; no camera/effect-specific positions.
     float gpu[8][4]{};
 };
+struct Nbg0ResolveClip {unsigned left=0,top=0,right=351,bottom=223;bool empty=false;};
+inline Nbg0ResolveClip sceneNbg0ResolveClip(const SceneNbg0State& s) {
+    // Conservative tile-sized clip for one enabled rectangular inside window.
+    // Other window combinations retain the full raster and exact shader test.
+    if((unsigned(s.gpu[6][0])&15u)!=3u || (unsigned(s.gpu[6][3])&1u))return {};
+    int l=int(s.gpu[4][0]),t=int(s.gpu[4][1]),r=int(s.gpu[4][2]),b=int(s.gpu[4][3]);
+    if(l>r || t>b || r<0 || b<0 || l>351 || t>223)return {0,0,0,0,true};
+    l=l<0?0:l;t=t<0?0:t;r=r>351?351:r;b=b>223?223:b;
+    return {unsigned(l)&~31u,unsigned(t)&~31u,
+        unsigned(r)|31u,unsigned(b)|31u,false};
+}
 constexpr bool sceneNbg0Supported(unsigned chctla,unsigned pncn,unsigned ccctl,unsigned plsz) {
     // Tile16, 4bpp, one-word names with native flip bits. Additive and opaque
     // composition use the existing SGX sampling route. Ratio mode is not

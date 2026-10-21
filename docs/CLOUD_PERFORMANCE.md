@@ -54,3 +54,12 @@ The host fixture runs both production shader variants and compares output for
 the existing native addressing/scroll/window test cases. SceneNBG0 records
 lineRows=1 and rowBytes=4096. Fresh Vita timing and visual confirmation remain
 required; this is not proof that the 25/33 ms target is met.
+
+The row-path device run reports unchanged 20 FPS but cloud render samples of
+32.551, 33.868, 34.079, 32.961, 34.063, 33.526, 33.152 and 33.550 ms, with
+19.9-24.1 ms GPU waits. This is improvement versus the prior 39-41 ms samples,
+not acceptance of the deadline. The next change conservatively clips native
+resolve work to 32-pixel tiles enclosing a single rectangular inside window.
+The existing exact pixel window test stays in the shader. Line windows,
+outside windows and multi-window cases retain full-raster fallback. No cloud
+resolution, blending, palette or placement changes are made.
