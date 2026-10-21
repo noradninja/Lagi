@@ -1083,6 +1083,7 @@ private:
 };
 
 static bool g_probeDisplayingGxm = false;
+static bool g_preserveLoadingScanout = false;
 static bool g_viewerReady = false;
 static float g_viewYaw = 0.0f;
 static float g_viewPitch = 0.0f;
@@ -10938,7 +10939,7 @@ void show_game_presentation()
     gxmFb.height = kHeight;
 
     const int displayResult =
-        sceDisplaySetFrameBuf(&gxmFb, SCE_DISPLAY_SETBUF_NEXTFRAME);
+        g_preserveLoadingScanout ? 0 : sceDisplaySetFrameBuf(&gxmFb, SCE_DISPLAY_SETBUF_NEXTFRAME);
     if (displayResult < 0) {
         char line[78];
         std::snprintf(
@@ -14714,6 +14715,8 @@ struct LauncherGpuState {
     SceGxmTexture texture{};
 };
 static LauncherGpuState g_launcherGpuStates[5]; // -1 (no selection), then 0..3
+static LauncherGpuState g_launcherLoading;
+static bool g_launcherEntered = false;
 static azel::DebugTextureVertex* g_launcherGpuVertices = nullptr;
 static std::uint16_t* g_launcherGpuIndices = nullptr;
 static SceUID g_launcherGpuVertexUid = -1, g_launcherGpuIndexUid = -1;
@@ -14736,6 +14739,8 @@ static void launcherReleaseGpu()
         release(state.uid, state.pixels);
         state = {};
     }
+    release(g_launcherLoading.uid, g_launcherLoading.pixels);
+    g_launcherLoading = {};
     void* vertices = g_launcherGpuVertices;
     release(g_launcherGpuVertexUid, vertices);
     g_launcherGpuVertices = nullptr;
@@ -14754,16 +14759,28 @@ static bool launcherPrepareGpu(const bool available[4])
     if (g_launcherGpuReady && mask == g_launcherGpuMask) return true;
     const auto start = sceKernelGetProcessTimeWide();
     // Reuse Neptune's backend. No Azel task or native simulation is started.
+    g_preserveLoadingScanout = true;
     show_game_presentation();
+    g_preserveLoadingScanout = false;
     if (!g_viewerReady || !g_probeContext || !g_textureVertexProgram ||
         !g_textureFragmentProgram || !g_textureWvpParam ||
-        !g_fadeFragmentProgram || !g_fadeVertices || !g_fadeIndices) {
+        !g_fadeFragmentProgram || !g_fadeVertices || !g_fadeIndices ||
+        !g_sceneNbg0OverProgram || !g_vdp2InfoParam) {
         g_launcherGpuFailed = true;
         g_debugVisible = true;
         g_probeDisplayingGxm = false;
         return false;
     }
     launcherReleaseGpu();
+    g_launcherLoading.pixels = probeGpuAlloc(kFrameBytes, SCE_GXM_MEMORY_ATTRIB_READ,
+        &g_launcherLoading.uid);
+    if (g_launcherLoading.pixels) {
+        std::memcpy(g_launcherLoading.pixels, g_frameBuffer[g_drawBuffer ^ 1], kFrameBytes);
+        sceGxmTextureInitLinear(&g_launcherLoading.texture, g_launcherLoading.pixels,
+            SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, kWidth, kHeight, 0);
+        sceGxmTextureSetMinFilter(&g_launcherLoading.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(&g_launcherLoading.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+    }
     g_launcherGpuVertices = static_cast<azel::DebugTextureVertex*>(probeGpuAlloc(
         4 * sizeof(azel::DebugTextureVertex), SCE_GXM_MEMORY_ATTRIB_READ,
         &g_launcherGpuVertexUid));
@@ -14811,7 +14828,7 @@ static bool launcherPrepareGpu(const bool available[4])
     return true;
 }
 
-static bool launcherDrawGpu(int selected, unsigned brightness)
+static bool launcherDrawGpu(int selected, unsigned brightness, float loadingOpacity = 0.0f)
 {
     if (!g_launcherGpuReady || selected < -1 || selected > 3 ||
         !g_launcherGpuStates[selected + 1].pixels) return false;
@@ -14839,6 +14856,19 @@ static bool launcherDrawGpu(int selected, unsigned brightness)
         sceGxmSetVertexStream(g_probeContext, 0, g_launcherGpuVertices);
         ok = sceGxmDraw(g_probeContext, SCE_GXM_PRIMITIVE_TRIANGLES,
             SCE_GXM_INDEX_FORMAT_U16, g_launcherGpuIndices, 6) >= 0;
+    }
+    if (ok && loadingOpacity > 0.0f && g_launcherLoading.pixels) {
+        // Premultiplied overlay: fade the actual loading pixels over the ready selector.
+        sceGxmSetFragmentProgram(g_probeContext, g_sceneNbg0OverProgram);
+        void* fragmentUniforms = nullptr;
+        ok = sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext, &fragmentUniforms) >= 0 && fragmentUniforms;
+        if (ok) {
+            const float info[4] = {4.0f, loadingOpacity, 0.0f, 0.0f};
+            sceGxmSetUniformDataF(fragmentUniforms, g_vdp2InfoParam, 0, 4, info);
+            sceGxmSetFragmentTexture(g_probeContext, 0, &g_launcherLoading.texture);
+            ok = sceGxmDraw(g_probeContext, SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16, g_launcherGpuIndices, 6) >= 0;
+        }
     }
     if (ok && brightness < 255) {
         for (unsigned i = 0; i < 6; ++i) {
@@ -14891,11 +14921,9 @@ void launcher_fade(int frame, int frames)
         if (launcherDrawGpu(g_launcherGpuSelection, brightness)) {
             if (frame >= frames) {
                 launcherReleaseGpu();
-                // Return to the ordinary loading framebuffer until Azel asks
-                // Neptune to present its first native scene/movie.
-                g_probeDisplayingGxm = false;
-                g_debugVisible = true;
-                fill(0xFF000000u);
+                // Hold the completed black GXM frame until native presentation.
+                g_probeDisplayingGxm = true;
+                g_debugVisible = false;
             }
             return;
         }
@@ -14933,7 +14961,15 @@ void launcher_fade(int frame, int frames)
 void launcher_present(const bool available[4], int selected)
 {
     if (launcherLoadAssets()) {
-        if (launcherPrepareGpu(available) && launcherDrawGpu(selected, 255)) return;
+        if (launcherPrepareGpu(available)) {
+            bool ok = true;
+            if (!g_launcherEntered) {
+                for (int frame = 0; ok && frame <= 30; ++frame)
+                    ok = launcherDrawGpu(selected, 255, (30 - frame) / 30.0f);
+                g_launcherEntered = ok;
+            } else ok = launcherDrawGpu(selected, 255);
+            if (ok) return;
+        }
         launcherReleaseGpu();
         g_launcherGpuFailed = true;
         g_debugVisible = true;
