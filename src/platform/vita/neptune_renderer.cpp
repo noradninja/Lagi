@@ -9603,9 +9603,11 @@ void show_game_presentation()
 
     status("[PASS] GXM DEPTH SURFACES", 0xFF80E0FFu);
 
-    constexpr unsigned int patcherBufferSize = 64u * 1024u;
+    constexpr unsigned int patcherBufferSize = 256u * 1024u;
     constexpr unsigned int patcherVertexUsseSize = 64u * 1024u;
-    constexpr unsigned int patcherFragmentUsseSize = 64u * 1024u;
+    // Native VDP2 resolvers and their blend/MSAA variants outgrew the original
+    // bring-up pool. These are startup-resident programs, not per-frame memory.
+    constexpr unsigned int patcherFragmentUsseSize = 512u * 1024u;
 
     g_probePatcherBuffer = probeGpuAlloc(
         patcherBufferSize,
@@ -10751,9 +10753,16 @@ void show_game_presentation()
         &g_sceneNbg0AddProgram)<0) {failure("[FAIL] NBG0 ADD PROGRAM");return;}
     nbgAdd.colorDst=SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     nbgAdd.alphaDst=SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_vdp2NbgFragmentProgramId,
+    const int nbgOverResult=sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_vdp2NbgFragmentProgramId,
         SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,kMultisampleMode,&nbgAdd,textureVertexGxp,
-        &g_sceneNbg0OverProgram)<0) {failure("[FAIL] NBG0 OVER PROGRAM");return;}
+        &g_sceneNbg0OverProgram);
+    if(nbgOverResult<0) {
+        logging::writef("[GxmPatcher] NBG0 over error=0x%08X buffer=%u/%u fragment=%u/%u\n",
+            unsigned(nbgOverResult),sceGxmShaderPatcherGetBufferMemAllocated(g_probeShaderPatcher),
+            patcherBufferSize,sceGxmShaderPatcherGetFragmentUsseMemAllocated(g_probeShaderPatcher),
+            patcherFragmentUsseSize);
+        failure("[FAIL] NBG0 OVER PROGRAM");return;
+    }
     const auto createNativeBlend = [&](NativeBlendProgram slot,SceGxmShaderPatcherId id,
         const SceGxmProgram* vertex,SceGxmMultisampleMode samples) {
         return sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,id,
@@ -10962,6 +10971,10 @@ void show_game_presentation()
     g_probeDisplayingGxm = true;
     g_gxmDrawBuffer = 1;
     g_debugVisible = false;
+    logging::writef("[GxmPatcher] ready buffer=%u/%u vertex=%u/%u fragment=%u/%u\n",
+        sceGxmShaderPatcherGetBufferMemAllocated(g_probeShaderPatcher),patcherBufferSize,
+        sceGxmShaderPatcherGetVertexUsseMemAllocated(g_probeShaderPatcher),patcherVertexUsseSize,
+        sceGxmShaderPatcherGetFragmentUsseMemAllocated(g_probeShaderPatcher),patcherFragmentUsseSize);
     g_suppressGxmInitPassStatus = false;
     status("[PASS] GXM INITIALIZATION + VDP1 READY", 0xFF80E0FFu);
     std::printf("[GXM] black town boot framebuffer queued for display\n");
