@@ -4,6 +4,7 @@
 #include "lagi/lagi_compat.h"
 #include "lagi/platform.h"
 #include "lagi/native_scene_mode.h"
+#include "lagi/play_time_clock.h"
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/lagi_scene_bridge.h"
 #include "lagi/lagi_input_bridge.h"
@@ -29,6 +30,7 @@ void updateFadeInterrupt();
 p_workArea createTitleMenuTask(p_workArea);
 
 namespace lagi::azel {
+static lagi::PlayTimeClock playTimeClock;
 
 static std::array<bool, 1024> radarCommandOwned{};
 static std::array<std::array<float, 4>, 1024> worldCommandViewZ{};
@@ -304,6 +306,8 @@ bool runtime_init()
     // Lagi provides only the Vita platform services underneath those calls.
     azelInit();
     resetEngine();
+    playTimeClock={};
+    playTimeClock.sample(sceKernelGetProcessTimeWide());
 
     // Native boot can enter the title movie immediately. Stop the CPU loading
     // framebuffer from overwriting GXM/movie presentation; front-end VDP2
@@ -426,7 +430,12 @@ void runtime_frame()
     // LAGI_TASK_FRAME_PROFILE_BEGIN: includes native Update AND Draw callbacks,
     // but excludes producer-slot waiting and frame publication below.
     const auto taskFrameStartUs = sceKernelGetProcessTimeWide();
+    // The desktop VBlank callback is not run by the Vita loop. Supply elapsed
+    // native 60 Hz units to Azel's existing module-manager time consumer.
+    // Do not call interrupt_VBlankIn(): that also advances fades/VDP state.
+    vblankData.mC_numFramesPresented=playTimeClock.sample(taskFrameStartUs);
     runTasks();
+    vblankData.mC_numFramesPresented=0;
     lagi::platform::renderer::presentation_profile_tasks_us(
         static_cast<unsigned int>(sceKernelGetProcessTimeWide() - taskFrameStartUs));
     // LAGI_TASK_FRAME_PROFILE_END

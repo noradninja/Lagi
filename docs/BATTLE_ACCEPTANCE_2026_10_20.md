@@ -763,3 +763,21 @@ before text/cursors. No window is synthesized from text bounds. Layer source
 contracts and the production gameplay pass-partition fixture pass; the Vita
 build links/packages. The latter fixture now recognizes the frontend pass
 enumerators added with native particles. Hardware appearance remains pending.
+
+## Native play-time VBlank service
+
+The Vita loop never calls the desktop interrupt_VBlankIn; consequently Azel's
+moduleManager_Update receives zero mC_numFramesPresented and the saved native
+m3C_frameCounter stays at zero. Native save previews divide that counter by
+0xE10 (3600) to obtain minutes, establishing 60 Hz time units rather than one
+tick per task iteration. The platform now supplies elapsed monotonic 60 Hz
+ticks before runTasks and clears the consumed input afterward. Azel retains
+ownership of incrementing, resetting, loading and saving its counter. Fractional
+microseconds are retained, so 20/30/60 FPS do not change clock speed. This does
+not call the full VBlank interrupt or double-advance fades/VDP state.
+
+The host fixture runs the actual upstream module-manager consumer and verifies
+five-minute totals at all three cadences, fractional accumulation and clock
+reset/regression handling. Vita fullres linking/packaging passes. Verify a new
+save after at least one minute and reload it; previously lost play time cannot
+be recovered from a save containing zero. App-suspend behavior is not tested.
