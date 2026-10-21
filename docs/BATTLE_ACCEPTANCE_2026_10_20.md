@@ -630,3 +630,29 @@ pass. Local artifacts (not the user's installed build identity):
 
 - Lagi.vpk SHA256 `55F35C272C4C4460E983594981C3BCB283A44ECEBBE772296C07A0C14F540B14`.
 - lagi.velf SHA256 `2756AADE28CFF4E5904B10C5AD60EC0847686DEDE8536264F26418910EF0F63B`.
+
+## Fresh flight capture without coefficient-row activation marker
+
+The next supplied lagi.log has SHA256
+`CA4C59B13294C6B3E5AAE5146AF485AFD87E38310AB1361237C9524FB38EA090`
+(494218 bytes). Decoded pages are active, but no RBG0CoefficientRows marker
+appears. Production calls row preparation immediately after successful page
+preparation; with the option enabled, its first eligible attempt reports either
+activation or a fallback reason. Therefore this log does not establish that
+the row-enabled executable ran, and must not be credited as a row-path win.
+
+The 45 RBG-enabled non-menu, non-serialized renderer samples have median
+26630 us, p90 27663 us, maximum 30753 us; none exceed 33000 us. The earlier
+water capture's median was 27764.5 us, but these are different workloads, not
+a controlled attribution. Median build is 3298 us, CPU preparation 8561 us,
+final GPU completion wait 17525 us; nested/overlapping stages are not additive.
+
+Across 23 complete renderer windows/2760 frames, 1824 exceed 25000 us, four
+exceed 33333 us, maximum 108864 us. Presentation windows contain nine intervals
+over two vblanks, maximum 50050 us. Rebuild outliers include 96992, 99004 and
+108864 us; non-rebuild 50 ms presentation intervals occur even with renderer
+work around 30.8-32.1 ms. Logged page fills take up to 62802 us, whereas 22
+logged hits take median 25 us, maximum 27 us. Cold fills and warm throughput
+remain separate problems. No serialized pass timings or new visual acceptance
+were supplied. The 25/33 ms goal remains unproven; the next comparison still
+requires explicit rows=ON configuration and the activation/fallback marker.
