@@ -496,3 +496,25 @@ completed field windows and no newer nbgNative/complementary-coverage marker,
 so it cannot validate 7545157 or ordinary gameplay deadlines. Synthetic and
 empty-capture analyzer tests pass. This tooling commit changes no runtime;
 7545157 remains the pending device-test renderer.
+
+## Exact recommended profile build verification (2026-10-21)
+
+The earlier successful configurations bracketed the recommended options:
+battle/cache ON with rows/timing ON, and menu/cache OFF with rows/timing OFF.
+The exact recommended battle profile is now also fully compiled, linked and
+packaged at source revision 1df2378 (runtime code unchanged since 7545157):
+
+- FULLRES, STOCHASTIC_FILTER and DITHER_LOOKUP: ON.
+- BATTLE_NATIVE_BUILD, BATTLE_LINK_AUDIT and BATTLE_EXECUTE_A3: ON.
+- VDP2_SPRITE_COMPOSITE and RBG_DECODED_PAGES: ON.
+- RBG_COEFFICIENT_ROWS and GPU_PASS_TIMING: OFF.
+
+Local build-battle-dev artifact SHA256 values (not user-installed identities):
+
+- Lagi.vpk: `7E1DD35BF8326504CAE626B7E0D228BC6F1F8C1B03A2B797B3750BC9D8441090`.
+- lagi.velf: `94DA6B3BEDC52B69A7C305DB5318E6284D30178BEE41FB02B3B9AA57C98426DE`.
+
+The remote branch was independently checked with ls-remote at 1df2378.
+No further runtime change is made by this verification. A fresh capture with
+the complementary-coverage/nbgNative markers, native gameplay pass/workload
+timings and visual acceptance of water/transparency are still required.
