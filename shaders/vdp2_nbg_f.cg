@@ -188,12 +188,9 @@ float4 main(
     uniform float4 vdp2Info,
     uniform float4 nbg0State[8])
 {
-    // Display the already-decoded premultiplied layer with ordinary filtering.
-    // Do not apply the sprite shader's half-alpha cutout to cloud edges.
-    // Platform boot crossfade uses the premultiplied over program, not stochastic sampling.
-    if(vdp2Info.x>3.5f)return tex2D(raw,vTexcoord)*vdp2Info.y;
-    if(vdp2Info.x>2.5f)return tex2D(raw,vTexcoord);
-    if(vdp2Info.x>1.5f)return sampleSceneNbg0(raw,vTexcoord,nbg0State);
+    // Frontend layouts 1 and 2 both use the native keyboard decoder. Never
+    // alias those live layout values with a world-layer resolve mode.
+    if(vdp2Info.x>7.5f)return sampleSceneNbg0(raw,vTexcoord,nbg0State);
     const float logicalX = min(
         351.0f, floor(vTexcoord.x * 352.0f));
     const float logicalY = min(

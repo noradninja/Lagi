@@ -38,7 +38,7 @@ static bool renderSceneNbg0Gpu()
     bool ok=sceGxmReserveVertexDefaultUniformBuffer(g_probeContext,&vertex)>=0 && vertex &&
         sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext,&fragment)>=0 && fragment;
     if(ok) {
-        const auto identity=viewerIdentity();const float info[4]={2,0,0,0};
+        const auto identity=viewerIdentity();const float info[4]={8,0,0,0};
         sceGxmSetUniformDataF(vertex,g_textureWvpParam,0,16,identity.m);
         sceGxmSetUniformDataF(fragment,g_vdp2InfoParam,0,4,info);
         sceGxmSetUniformDataF(fragment,g_sceneNbg0Param,0,32,&g_sceneNbg0.gpu[0][0]);

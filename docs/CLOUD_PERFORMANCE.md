@@ -15,3 +15,11 @@ variant code. The hypothesis is reduced full-resolution register/instruction
 pressure; only a fresh device log can establish the improvement.
 
 Target remains ideal 25 ms/frame, maximum 33 ms/frame, with accepted pixels.
+
+Name-entry regression: frontend layout 2 collided with the cloud resolve
+selector 2 introduced with cloud support. Keyboard activation consequently
+ran the cloud decoder using frontend uniforms and produced missing/flickering
+layers. World cloud resolve now explicitly uses mode 8; frontend layouts 0,
+1 and 2 retain their original title/keyboard routing. Obsolete display modes
+were removed because resolved RGBA now has its own shader. This dispatch fix
+does not change native cloud math or the independent display optimization.
