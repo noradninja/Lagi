@@ -968,6 +968,10 @@ static SceGxmTexture g_sceneVdp2Texture{};
 static SceGxmTexture g_sceneVdp2ByteTexture{};
 static bool g_sceneVdp2ByteTextureValid=false;
 static bool g_rbgDecodedPagesReady=false;
+static bool g_frontendRbgDecodedReady=false;
+alignas(64) static unsigned char g_frontendVdp2RawShadow[kRawVdp2Bytes]{};
+static std::uint32_t g_frontendVdp2Generations[kSceneVdp2BlockCount]{};
+static bool g_frontendVdp2RawInitialized=false;
 static SceGxmTexture g_rbgDecodedAtlasTexture{};
 static SceGxmTexture g_rbgCoefficientRowsTexture{};
 static bool g_rbgCoefficientRowsReady=false;
@@ -3199,6 +3203,8 @@ static void freeMovieMappedBlock(SceUID& uid, void*& memory)
 
 static void freeMovieResources()
 {
+    g_frontendRbgDecodedReady=false;
+    g_frontendVdp2RawInitialized=false;
     freeMovieMappedBlock(g_movieTextureUid, g_movieTextureData);
 
     void* titlePixels = g_titleDecodedPixels;
@@ -3769,6 +3775,21 @@ bool frontend_present_vdp2(
     auto* raw = static_cast<unsigned char*>(g_movieTextureData);
     std::memcpy(raw, vram, vramBytes);
     std::memcpy(raw + vramBytes, cram, cramBytes);
+    if(LAGI_RBG_DECODED_PAGES && layout!=0u) {
+        // Track the producer's cached-memory source, not GPU-local readback.
+        // MovieFrameGuard serializes this snapshot with frontend rendering.
+        for(unsigned block=0;block<kSceneVdp2BlockCount;++block) {
+            const unsigned offset=block*kSceneVdp2BlockBytes;
+            const unsigned bytes=std::min(kSceneVdp2BlockBytes,kRawVdp2Bytes-offset);
+            const unsigned char* source=offset<vramBytes?vram+offset:cram+offset-vramBytes;
+            if(!g_frontendVdp2RawInitialized ||
+                std::memcmp(g_frontendVdp2RawShadow+offset,source,bytes)!=0) {
+                std::memcpy(g_frontendVdp2RawShadow+offset,source,bytes);
+                if(++g_frontendVdp2Generations[block]==0)++g_frontendVdp2Generations[block];
+            }
+        }
+        g_frontendVdp2RawInitialized=true;
+    }
 
     // VDP1 sprite color-bank decoding shares the same live VDP2 CRAM as the
     // front-end layers. Keep Neptune's CPU-side CRAM snapshot coherent with
@@ -12612,9 +12633,10 @@ static bool drawVdp2Rbg0Gpu(
     float xExtent, bool frontend)
 {
     bool rbgSubmitted = true;
-    selectRbgTileProgram(!frontend && (g_sceneVdp2ByteTextureValid || g_rbgDecodedPagesReady) && lagi::rbgTile16EightBit(
+    const bool decodedPages=frontend?g_frontendRbgDecodedReady:g_rbgDecodedPagesReady;
+    selectRbgTileProgram(((!frontend && g_sceneVdp2ByteTextureValid) || decodedPages) && lagi::rbgTile16EightBit(
         static_cast<unsigned>(rbg.format[0]),static_cast<unsigned>(rbg.format[1])),
-        !frontend && g_rbgDecodedPagesReady,
+        decodedPages,
         !frontend && g_rbgCoefficientRowsReady);
     if(g_rbgTileBound)
         sceGxmSetFragmentTexture(g_probeContext,1,&g_sceneVdp2ByteTexture);
@@ -13293,6 +13315,10 @@ static bool renderMovieFrame()
     // RBG's native output domain is 352x224. Resolve each native pixel once,
     // then scale ordinary RGBA; NBG/text/cursors remain separate live layers.
     const bool frontendRbg = g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f;
+    g_frontendRbgDecodedReady=false;
+    if(frontendRbg && g_frontendVdp2RawInitialized)
+        g_frontendRbgDecodedReady=prepareRbgDecodedPagesFor(g_movieRbg0,
+            g_frontendVdp2RawShadow,g_frontendVdp2Generations,true);
     if (frontendRbg && !renderSceneVdp2BackgroundPass(true))
         return true;
     static bool loggedFrontendRbgResolve = false;

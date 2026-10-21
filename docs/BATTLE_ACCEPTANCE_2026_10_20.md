@@ -390,3 +390,33 @@ This supplements actual compiled-resource reflection tests; it is not a GPU
 pixel/timing test and introduces no new device-rendering change after 8084b3c.
 The available Downloads log still has no cache-enabled marker. Hardware cache
 hit behavior, water correctness and the frame deadline remain unverified.
+
+## Frontend cache follow-up after device reflection acceptance
+
+User confirms the name-entry background is now visually correct on 2005c2a.
+The supplied log records four early layout=2 frames at 51691-53465 us
+(GPU wait 46797-48732 us), then eight later frames at 76878-80458 us
+(GPU wait 72246-75758 us). The native resolve fixed the lower image and
+substantially reduced cost, but did not meet the frame deadline.
+
+The same bounded indexed-page cache now accepts a published frontend source
+as well as a native gameplay source. Frontend VRAM/CRAM generations are
+tracked from the producer's ordinary cached-memory input, never CDRAM
+readback. Switching producer domains resets cached page validity even if
+their numeric generation counters match. The 4 MiB atlas is reused, not
+duplicated. Per-pixel D5 coefficients, palette, rotation, wrapping and
+windows stay live; the row-coefficient option is not used for frontend.
+Unsupported layouts/allocation failures retain the raw generic path.
+The existing LAGI_RBG_DECODED_PAGES flag controls both domains; OFF retains
+the previous device-accepted frontend resolve.
+
+Production cache-service tests cover equal-generation domain switches and
+the captured D5 RPMD=3/PNCR=8008/shared-60000-page format. Coefficient and
+palette changes preserve atlas hits; character changes rebuild. Frontend
+source/lifetime checks and actual draw-coverage tests pass. Both Vita
+configurations are compiled separately; no device speedup is claimed yet.
+
+Expected capture: `[RBG0PageCache] active=1 reason=0 ... frontend=1`, then
+stable `rebuilt=0`, `uploadBytes=0`, and `[VDP2Perf] ... layout=2`.
+Build the existing Vita cache with decoded pages ON and GPU timing OFF;
+leave LAGI_RBG_COEFFICIENT_ROWS OFF to isolate this name-entry test.

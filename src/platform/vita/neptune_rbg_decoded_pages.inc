@@ -8,6 +8,7 @@ static bool g_rbgPageAllocationAttempted=false;
 static std::array<lagi::RbgDecodedPage,kRbgPageSlots> g_rbgPages{};
 static std::array<bool,kRbgPageSlots> g_rbgPageAssigned{};
 static std::uint32_t* g_rbgPageScratch=nullptr;
+static bool g_rbgPageFrontend=false;
 static void releaseRbgDecodedPages() {
     freeMovieMappedBlock(g_rbgAtlasUid,g_rbgAtlasPixels);
     g_rbgDecodedPagesReady=false;g_rbgPageAllocationAttempted=false;
@@ -15,23 +16,31 @@ static void releaseRbgDecodedPages() {
     for(auto& page:g_rbgPages)page.reset();
     std::free(g_rbgPageScratch);g_rbgPageScratch=nullptr;
 }
-static bool prepareRbgDecodedPages() {
+template<class State> static bool prepareRbgDecodedPagesFor(const State& rbg,
+    const unsigned char* raw,const std::uint32_t* sourceGenerations,bool frontend) {
     if(!LAGI_RBG_DECODED_PAGES)return false;
+    // Independent producer generation counters can have equal numeric values.
+    // Never accept one domain's resource as a hit in the other domain.
+    if(frontend!=g_rbgPageFrontend) {
+        g_rbgPageAssigned.fill(false);
+        for(auto& page:g_rbgPages)page.reset();
+        g_rbgPageFrontend=frontend;
+    }
     const auto start=sceKernelGetProcessTimeWide();
     static unsigned frame=0,lastReason=~0u,logBudget=32;
     ++frame;
     auto status=[&](unsigned reason,unsigned pages,unsigned rebuilt,unsigned hits) {
         if((reason!=lastReason && logBudget) || (frame%120==0) || (rebuilt && logBudget)) {
             if(logBudget)--logBudget;
-            logging::writef("[RBG0PageCache] active=%u reason=%u pages=%u rebuilt=%u hits=%u prepUs=%u uploadBytes=%u\n",
+            logging::writef("[RBG0PageCache] active=%u reason=%u pages=%u rebuilt=%u hits=%u prepUs=%u uploadBytes=%u frontend=%u\n",
                 reason==0?1u:0u,reason,pages,rebuilt,hits,
-                static_cast<unsigned>(sceKernelGetProcessTimeWide()-start),rebuilt*512u*512u*4u);
+                static_cast<unsigned>(sceKernelGetProcessTimeWide()-start),rebuilt*512u*512u*4u,frontend?1u:0u);
         }
         lastReason=reason;
         return reason==0;
     };
-    if(!lagi::rbgTile16EightBit(static_cast<unsigned>(g_sceneRbg0.format[0]),
-        static_cast<unsigned>(g_sceneRbg0.format[1])))return status(1,0,0,0);
+    if(!lagi::rbgTile16EightBit(static_cast<unsigned>(rbg.format[0]),
+        static_cast<unsigned>(rbg.format[1])))return status(1,0,0,0);
     std::array<unsigned,kRbgPageSlots> required{};
     unsigned count=0;
     auto collect=[&](const float* planes,unsigned plsz) {
@@ -45,12 +54,12 @@ static bool prepareRbgDecodedPages() {
             }
         return true;
     };
-    const unsigned mode=static_cast<unsigned>(g_sceneRbg0.ctrl[0])&3;
+    const unsigned mode=static_cast<unsigned>(rbg.ctrl[0])&3;
     const auto overMode=[](float format){return (static_cast<unsigned>(format)>>2)&3;};
-    if((mode!=1 && overMode(g_sceneRbg0.parameterFormat[0])==1) ||
-       (mode!=0 && overMode(g_sceneRbg0.parameterFormat[1])==1))return status(5,0,0,0);
-    if((mode!=1 && !collect(g_sceneRbg0.planesA,static_cast<unsigned>(g_sceneRbg0.parameterFormat[0])&3)) ||
-       (mode!=0 && !collect(g_sceneRbg0.planesB,static_cast<unsigned>(g_sceneRbg0.parameterFormat[1])&3)))
+    if((mode!=1 && overMode(rbg.parameterFormat[0])==1) ||
+       (mode!=0 && overMode(rbg.parameterFormat[1])==1))return status(5,0,0,0);
+    if((mode!=1 && !collect(rbg.planesA,static_cast<unsigned>(rbg.parameterFormat[0])&3)) ||
+       (mode!=0 && !collect(rbg.planesB,static_cast<unsigned>(rbg.parameterFormat[1])&3)))
         return status(2,count,0,0);
     if(!g_rbgPageAllocationAttempted) {
         g_rbgPageAllocationAttempted=true;
@@ -86,14 +95,14 @@ static bool prepareRbgDecodedPages() {
         }
     lagi::RbgDecodedPage::Generations generations{};
     static_assert(generations.size()==kSceneVdp2BlockCount);
-    std::copy_n(g_sceneVdp2BlockGenerations,generations.size(),generations.begin());
+    std::copy_n(sourceGenerations,generations.size(),generations.begin());
     unsigned rebuilt=0,hits=0;
     g_rbgPageLookup.fill(0);
     for(unsigned i=0;i<count;++i) {
         const unsigned slot=slots[i];
-        const lagi::RbgPageKey key{required[i],static_cast<std::uint16_t>(g_sceneRbg0.format[1]),
-            0,(static_cast<unsigned>(g_sceneRbg0.parameterFormat[0])&16)!=0,true}; // CAOS remains live on GPU.
-        const auto result=g_rbgPages[slot].update(g_sceneVdp2Raw,generations,key,
+        const lagi::RbgPageKey key{required[i],static_cast<std::uint16_t>(rbg.format[1]),
+            0,(static_cast<unsigned>(rbg.parameterFormat[0])&16)!=0,true}; // CAOS remains live on GPU.
+        const auto result=g_rbgPages[slot].update(raw,generations,key,
             g_rbgPageScratch,lagi::RbgDecodedPage::Pixels);
         if(result==lagi::RbgPageResult::Unsupported)return status(4,count,rebuilt,hits);
         if(result==lagi::RbgPageResult::Rebuilt) {
@@ -114,7 +123,10 @@ static bool prepareRbgDecodedPages() {
             output[plane]=static_cast<float>(code);
         }
     };
-    if(mode!=1)encode(g_sceneRbg0.planesA,g_rbgDecodedPlanesA,static_cast<unsigned>(g_sceneRbg0.parameterFormat[0]));
-    if(mode!=0)encode(g_sceneRbg0.planesB,g_rbgDecodedPlanesB,static_cast<unsigned>(g_sceneRbg0.parameterFormat[1]));
+    if(mode!=1)encode(rbg.planesA,g_rbgDecodedPlanesA,static_cast<unsigned>(rbg.parameterFormat[0]));
+    if(mode!=0)encode(rbg.planesB,g_rbgDecodedPlanesB,static_cast<unsigned>(rbg.parameterFormat[1]));
     return status(0,count,rebuilt,hits);
+}
+static bool prepareRbgDecodedPages() {
+    return prepareRbgDecodedPagesFor(g_sceneRbg0,g_sceneVdp2Raw,g_sceneVdp2BlockGenerations,false);
 }

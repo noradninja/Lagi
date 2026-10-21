@@ -15,6 +15,7 @@ struct RbgGpuState {
 struct ViewerMat4 {float m[16]{};};
 static ViewerMat4 viewerIdentity(){return {};}
 static bool g_sceneVdp2ByteTextureValid=false,g_rbgDecodedPagesReady=false;
+static bool g_frontendRbgDecodedReady=false;
 static bool g_rbgTileBound=false,g_rbgDecodedBound=false;
 static bool g_rbgRowsBound=false,g_rbgCoefficientRowsReady=false;
 static int g_rbgCoefficientRowsTexture=0;

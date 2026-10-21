@@ -46,6 +46,14 @@ int main() {
     atlas[0]=0x12345678; // Cache hits must not overwrite existing atlas storage.
     ++g_sceneVdp2BlockGenerations[126];
     assert(prepareRbgDecodedPages());assert(atlas[0]==0x12345678);
+    // Identical numeric generations in another producer domain must not hit.
+    assert(prepareRbgDecodedPagesFor(g_sceneRbg0,image.data(),g_sceneVdp2BlockGenerations,true));
+    assert(atlas[0]!=0x12345678);
+    atlas[0]=0x12345678;
+    assert(prepareRbgDecodedPagesFor(g_sceneRbg0,image.data(),g_sceneVdp2BlockGenerations,true));
+    assert(atlas[0]==0x12345678); // Same domain, stable resources: real hit.
+    assert(prepareRbgDecodedPages());assert(atlas[0]!=0x12345678);
+    atlas[0]=0x12345678;
     ++g_sceneVdp2BlockGenerations[128];
     assert(prepareRbgDecodedPages());assert(atlas[0]==0x12345678); // Palette stays live on GPU.
     g_sceneRbg0.format[2]=7;assert(prepareRbgDecodedPages());assert(atlas[0]==0x12345678);
@@ -70,6 +78,20 @@ int main() {
     for(unsigned page=0;page<4;++page)
         assert(((unsigned(g_rbgDecodedPlanesA[0])>>(page*2))&3)==slot(0x70000+page*2048));
     g_sceneRbg0.parameterFormat[0]=0;
+    // Captured D5 state: both RPMD3 parameters share the 0x60000 page,
+    // SCN=8 selects characters at 0x40000. Coefficients are independent.
+    g_sceneRbg0.ctrl[0]=3;g_sceneRbg0.format[1]=0x8008;
+    planes(g_sceneRbg0.planesA,0x60000);planes(g_sceneRbg0.planesB,0x60000);
+    assert(prepareRbgDecodedPagesFor(g_sceneRbg0,image.data(),g_sceneVdp2BlockGenerations,true));
+    assert(g_rbgDecodedPlanesA[0]==g_rbgDecodedPlanesB[0]);
+    atlas[0]=0x12345678;
+    ++g_sceneVdp2BlockGenerations[0x20000/4096]; // Live coefficient updates.
+    ++g_sceneVdp2BlockGenerations[128]; // Live CRAM updates.
+    assert(prepareRbgDecodedPagesFor(g_sceneRbg0,image.data(),g_sceneVdp2BlockGenerations,true));
+    assert(atlas[0]==0x12345678);
+    ++g_sceneVdp2BlockGenerations[0x40000/4096];
+    assert(prepareRbgDecodedPagesFor(g_sceneRbg0,image.data(),g_sceneVdp2BlockGenerations,true));
+    assert(atlas[0]!=0x12345678);
     releaseRbgDecodedPages();
     assert(!g_rbgAtlasPixels && !g_rbgPageScratch && !g_rbgDecodedPagesReady);
     allocationFails=true;assert(!prepareRbgDecodedPages());
