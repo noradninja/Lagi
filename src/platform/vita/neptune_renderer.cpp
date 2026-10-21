@@ -12501,6 +12501,16 @@ static void drawColorOffsetPass(
         6u);
 }
 
+static bool frontendHasSharedColorOffset()
+{
+    // When every Saturn layer (including SPRITE and BACK) uses one bank,
+    // apply the offset once after composition. This also covers VDP1 pixels
+    // without tinting transparent texels or applying the fade twice.
+    const unsigned enable=g_azelColorOffsetEnable.load(std::memory_order_relaxed)&0x7fu;
+    const unsigned select=g_azelColorOffsetSelect.load(std::memory_order_relaxed)&0x7fu;
+    return enable==0x7fu && (select==0u || select==0x7fu);
+}
+
 static void drawAzelColorOffsetForLayer(
     unsigned int layerBit,
     bool requireEnable)
@@ -12900,7 +12910,8 @@ static bool drawVdp2Rbg0Gpu(
     // tint the rotation plane when only the back screen is selected.
     if (rbgSubmitted) {
         constexpr unsigned int kRbg0Bit = 0x10u;
-        drawAzelColorOffsetForLayer(kRbg0Bit, true);
+        if (!frontend || !frontendHasSharedColorOffset())
+            drawAzelColorOffsetForLayer(kRbg0Bit, true);
         // Color-offset passes use colored vertices; restore the texture vertex
         // program before the caller submits its next VDP2 layer.
         sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
@@ -13259,7 +13270,8 @@ static bool renderMovieFrame()
         const unsigned c=g_movieRbg0.backColor;
         drawColorOffsetPass(g_colorOffsetAddFragmentProgram,
             (c&31)*255/31,((c>>5)&31)*255/31,((c>>10)&31)*255/31);
-        drawAzelColorOffsetForLayer(0x20u,true);
+        if(!frontendHasSharedColorOffset())
+            drawAzelColorOffsetForLayer(0x20u,true);
         sceGxmSetVertexProgram(g_probeContext,g_textureVertexProgram);
     }
     bool submitted = false;
@@ -13380,7 +13392,9 @@ static bool renderMovieFrame()
         // between the RBG0 and NBG passes above. Title and Cinepak/movie
         // surfaces instead represent the already-composited Saturn frontend,
         // so their Azel transition is a fullscreen compatibility pass.
-        if (!d5FrontEnd)
+        if (d5FrontEnd && frontendHasSharedColorOffset())
+            drawAzelColorOffsetForLayer(0x40u,true);
+        else if (!d5FrontEnd)
             drawAzelFrontendFadeOffset();
     }
 

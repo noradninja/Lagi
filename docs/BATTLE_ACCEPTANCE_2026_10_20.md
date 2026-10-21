@@ -783,6 +783,13 @@ save after at least one minute and reload it; previously lost play time cannot
 be recovered from a save containing zero. App-suspend behavior is not tested.
 # 2026-10-21 native fade correction
 
+Follow-up: device confirms background fades, but VDP1 particles/selectors did
+not fade. When CLOFEN enables all seven layers and CLOFSL selects a shared bank,
+frontend composition now defers that native offset until after sprites and text.
+RBG0/BACK do not receive a second offset. Selective layer/bank cases retain their
+existing layer path; this is not a general implementation of selective sprite
+offsets. Composition-order contract passes; Vita visual acceptance is pending.
+
 The name-entry background/window tiles are device-confirmed correct. White
 transitions remain pending device verification with this change. Earlier COEN
 and half-scale interpretations are superseded: MAIN register reset preserves
