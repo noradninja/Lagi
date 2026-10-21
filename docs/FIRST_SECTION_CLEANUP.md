@@ -71,7 +71,13 @@ encounter_rng_test executes the generated RNG for one million output/state
 comparisons against an independent arithmetic form, including zero-low-word
 reseed and unsigned modulo behavior. It also verifies the original COMMON
 metadata above. This does not assert that a full run must encounter any named
-formation or prove every original RNG instruction. The existing encounter
+formation. The test now additionally checks the complete original MAIN RNG
+instruction stream at 060361F4..06036218, both seed-address literals at
+060361F0/0603621C, the 2A6D365B fallback and the initializer at 060361E8.
+The original multiplies by 41, folds product halves, swaps the return halves
+and stores the next state in the return delay slot, matching the reconstructed
+routine exercised by the host fixture. This is an instruction/data audit,
+not a whole-system SH2 execution comparison. The existing encounter
 observer/evaluation-equivalence test also passes.
 
 ## First shared optimization
