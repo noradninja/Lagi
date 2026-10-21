@@ -783,6 +783,17 @@ save after at least one minute and reload it; previously lost play time cannot
 be recovered from a save containing zero. App-suspend behavior is not tested.
 # 2026-10-21 native fade correction
 
+Device feedback confirms menu fades now affect sprites correctly (853544e).
+
+Target-retirement follow-up: the shared target cursor draw callbacks now honor
+the native 0x40000 retirement bit before emitting packets, including null target
+references. Native task traversal calls Draw even when Update has just marked a
+task finished, and also calls Draw while updates are paused. All three cursor
+variants use the same guard, not a boss-ID or texture filter. Arachnoth's existing
+death entry retires all three targetable sets. This closes packet emission after
+retirement; a hardware death/reward capture remains required to prove no further
+target-state producer is reviving indicators.
+
 Follow-up: device confirms background fades, but VDP1 particles/selectors did
 not fade. When CLOFEN enables all seven layers and CLOFSL selects a shared bank,
 frontend composition now defers that native offset until after sprites and text.

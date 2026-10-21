@@ -2519,6 +2519,19 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[1]);" "playSystemSoundEffect(pThis->mCC->m2D_hitSound);" source_text "${source_text}")
   string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleTargetable.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # Draw may still run after Update marks a task finished, or while updates
+  # are paused. Honor the native target retirement bit at packet emission too.
+  foreach(cursor_draw IN ITEMS sBaldorSubTask0_draw sBaldorSubTask0_draw1 sBaldorSubTask1_draw)
+   set(cursor_anchor "void ${cursor_draw}(sBaldorSubTask* pThis)\n{")
+   string(FIND "${source_text}" "${cursor_anchor}" cursor_found)
+   if(cursor_found LESS 0)
+    message(FATAL_ERROR "Native target cursor draw boundary changed: ${cursor_draw}")
+   endif()
+   string(REPLACE "${cursor_anchor}"
+    "${cursor_anchor}\n    if (!pThis->m84_pTargetable || (pThis->m84_pTargetable->m50_flags & 0x40000u)) return; // LAGI_RETIRED_TARGET_DRAW"
+    source_text "${source_text}")
+  endforeach()
  elseif(relative_path STREQUAL "battle/BTL_A3_2/Arachnoth.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set(death_cursor_anchor "void arachnoth_enterDeathState(sArachnothFormation* pThis)\n{")
   string(FIND "${source_text}" "${death_cursor_anchor}" death_cursor_found)
