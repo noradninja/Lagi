@@ -59,9 +59,18 @@ static bool prepareSpriteComposite(bool native,bool menu) {
         }
     }
     if(!g_spriteLayerPixels) {
-        g_spriteLayerPixels=probeGpuAlloc(kGxmPitch*kHeight*4,
+        // This full-resolution surface is written by world rendering and
+        // sampled by final composition every frame. Prefer GPU-local memory.
+        g_spriteLayerPixels=probeCdramAlloc(kGxmPitch*kHeight*4,
             static_cast<SceGxmMemoryAttribFlags>(SCE_GXM_MEMORY_ATTRIB_READ|SCE_GXM_MEMORY_ATTRIB_WRITE),
             &g_spriteLayerUid);
+        const bool layerInCdram=g_spriteLayerPixels!=nullptr;
+        if(!g_spriteLayerPixels)
+            g_spriteLayerPixels=probeGpuAlloc(kGxmPitch*kHeight*4,
+                static_cast<SceGxmMemoryAttribFlags>(SCE_GXM_MEMORY_ATTRIB_READ|SCE_GXM_MEMORY_ATTRIB_WRITE),
+                &g_spriteLayerUid);
+        logging::writef("[VDP2SpriteMemory] cdram=%u payloadBytes=%u\n",
+            layerInCdram?1u:0u,static_cast<unsigned>(kGxmPitch*kHeight*4));
         if(!g_spriteLayerPixels)return false;
         if(sceGxmColorSurfaceInit(&g_spriteLayerSurface,SCE_GXM_COLOR_FORMAT_A8B8G8R8,
             SCE_GXM_COLOR_SURFACE_LINEAR,SCE_GXM_COLOR_SURFACE_SCALE_NONE,

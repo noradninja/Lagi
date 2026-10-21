@@ -140,3 +140,18 @@ if CDRAM allocation fails. The 528,384-byte payload rounds to 768 KiB CDRAM
 (vs 516 KiB system allocation). `[RBG0Memory] cdram=1` confirms placement only,
 not a performance win. Source-contract test verifies allocation, fallback,
 descriptor and cleanup ordering. Device timing remains required.
+
+## Completed world surface memory placement (separate commit)
+
+The completed VDP1 world image was also in uncached system RAM, unlike the
+ordinary main color surfaces. Prefer CDRAM for its identical 1024x544 RGBA
+payload, retaining the prior allocation as fallback. GXM surface/texture
+descriptors, synchronization, clear, composition and resource cleanup are
+unchanged. The 2,176 KiB payload rounds to 2,304 KiB CDRAM. No duplicate copy
+or extra texture upload is introduced. `[VDP2SpriteMemory] cdram=1` confirms
+placement; tests check fallback and descriptor ordering. Both allocation
+changes need a device timing capture; neither is a proven speedup yet.
+
+Keep `LAGI_GPU_PASS_TIMING=ON` for the next short diagnostic flight capture
+to compare pass waits and confirm both placement markers. Turn it OFF for
+subsequent normal frame-rate acceptance.
