@@ -19,6 +19,7 @@ string(SUBSTRING "${adapter_tail}" 0 ${length} adapter)
 # generated source. Leave all production text transformations unchanged.
 function(set_source_files_properties)
 endfunction()
+include("${REPO_ROOT}/cmake/LagiLifeMeterFlags.cmake")
 cmake_language(EVAL CODE "${adapter}")
 set(LAGI_AZEL_GENERATED_ROOT "${CMAKE_CURRENT_BINARY_DIR}/azel_upstream")
 file(MAKE_DIRECTORY "${LAGI_AZEL_GENERATED_ROOT}")

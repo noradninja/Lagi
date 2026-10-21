@@ -6,6 +6,7 @@ namespace ImGui {
 struct IO { bool MouseClicked[5]{}; };
 inline IO& GetIO() { static IO io{}; return io; }
 inline bool InputFloat(const char*, float*, float = 0.0f, float = 0.0f) { return false; }
+inline bool InputInt(const char*, int*, int = 1, int = 100) { return false; }
 inline bool Begin(const char*, bool* = nullptr) { return false; }
 inline void End() {}
 inline bool Checkbox(const char*, bool*) { return false; }

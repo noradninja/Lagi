@@ -1,0 +1,7 @@
+// Already-decoded premultiplied RGBA. Keep raw VDP2 addressing out of the
+// full-resolution display pass, including its register pressure and branches.
+float4 main(float2 vTexcoord : TEXCOORD0, uniform sampler2D raw,
+    uniform float4 presentInfo)
+{
+    return tex2D(raw,vTexcoord)*presentInfo.x;
+}

@@ -8,7 +8,7 @@ foreach($entry in @(
  @('struct FieldEnvironmentPointLight','// Bounded FLD_A3 diagnostic:','environment_state.inc'),
  @('void begin_frame(bool forceDynamicSubmissions)','std::uint32_t submission_count()','environment_begin.inc'),
  @('static void capture_native_point_light(','void capture_field_environment_point_light()','actor_point_capture.inc'),
- @('void capture_current_light(','void begin_view_relative_submission_scope()','actor_current_capture.inc'),
+ @('void capture_current_light(','void begin_view_relative_submission_scope(','actor_current_capture.inc'),
  @('void capture_field_environment_point_light()','void capture_current_light(','environment_capture.inc'))){
  $start=$source.IndexOf($entry[0]);$end=$source.IndexOf($entry[1],$start)
  if($start -lt 0 -or $end -lt 0){throw "Production environment boundary missing: $($entry[0])"}

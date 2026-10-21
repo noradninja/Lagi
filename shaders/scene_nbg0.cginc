@@ -1,0 +1,95 @@
+// Native NBG0 tile16/4bpp decode. Runs at the Saturn raster, never per
+// high-resolution display pixel. Coordinates and line tables are Azel-owned.
+// Inputs are nonnegative native register/byte integers. Binary scaling and
+// floor avoid the GPU's general signed-remainder correction sequence.
+float nbgBit(float v,float bit) { return floor(v/bit)-2.0f*floor(v/(bit*2.0f)); }
+float nbgWrap(float v,float size) { return v-floor(v/size)*size; }
+float4 nbgRawTexel(uniform sampler2D raw,float index) {
+    float texelY=floor(index/512.0f);
+    return tex2D(raw,float2((index-texelY*512.0f+0.5f)/512.0f,(texelY+0.5f)/258.0f));
+}
+float nbgReadByte(uniform sampler2D raw,float address) {
+    float index=floor(address*0.25f);
+    return selectByte(nbgRawTexel(raw,index),address-index*4.0f);
+}
+float nbgAlignedWord(uniform sampler2D raw,float address) {
+    // Native pattern names, CRAM words and window endpoints are even-aligned.
+    // Both bytes therefore reside in one RGBA texel, never across its edge.
+    float index=floor(address*0.25f);
+    float4 bytes=nbgRawTexel(raw,index);
+    float2 pair=address-index*4.0f<1.5f?bytes.xy:bytes.zw;
+    return floor(pair.x*255.0f+0.5f)*256.0f+floor(pair.y*255.0f+0.5f);
+}
+float nbgFixed(uniform sampler2D raw,float address) {
+    address=nbgWrap(address,524288.0f);
+    // A native line longword fits exactly in one packed RGBA texel. Avoid
+    // repeated byte-lane selection and dependent reads for both halfwords.
+    if(nbgWrap(address,4.0f)<0.5f) {
+        float4 bytes=nbgRawTexel(raw,address*0.25f);
+        float hi=floor(bytes.x*255.0f+0.5f)*256.0f+floor(bytes.y*255.0f+0.5f);
+        if(hi>=32768.0f)hi-=65536.0f;
+        float lo=floor(bytes.z*255.0f+0.5f)*256.0f+floor(bytes.w*255.0f+0.5f);
+        return hi+lo/65536.0f;
+    }
+    float hi=readBE16(raw,address);
+    if(hi>=32768.0f)hi-=65536.0f;
+    return hi+readBE16(raw,address+2.0f)/65536.0f;
+}
+bool nbgWindow(uniform sampler2D raw,float2 pixel,float4 rect,float lineAddress,bool line) {
+    if(line) {
+        float address=nbgWrap(lineAddress+pixel.y*4.0f,524288.0f);
+        rect.x=floor(nbgAlignedWord(raw,address)/2.0f);
+        rect.z=floor(nbgAlignedWord(raw,address+2.0f)/2.0f);
+    }
+    return pixel.x>=rect.x && pixel.x<=rect.z && pixel.y>=rect.y && pixel.y<=rect.w;
+}
+float4 sampleSceneNbg0(uniform sampler2D raw,float2 uv,uniform float4 state[8]
+#ifdef LAGI_NBG_LINE_ROWS
+    ,uniform sampler2D rowData
+#endif
+) {
+    float2 pixel=min(floor(uv*float2(352.0f,224.0f)),float2(351.0f,223.0f));
+    float ctl=state[6].x;
+    bool en0=nbgBit(ctl,2.0f)>0.5f,en1=nbgBit(ctl,8.0f)>0.5f;
+    bool a=nbgWindow(raw,pixel,state[4],state[6].y,nbgBit(state[6].w,1.0f)>0.5f);
+    bool b=nbgWindow(raw,pixel,state[5],state[6].z,nbgBit(state[6].w,2.0f)>0.5f);
+    a=(nbgBit(ctl,1.0f)>0.5f)?a:!a;
+    b=(nbgBit(ctl,4.0f)>0.5f)?b:!b;
+    bool visible= en0 && en1 ? (nbgBit(ctl,128.0f)>0.5f ? a && b : a || b)
+        : (en0 ? a : (en1 ? b : true));
+    if(!visible)return float4(0,0,0,0);
+#ifdef LAGI_NBG_LINE_ROWS
+    float2 rowXY=tex2D(rowData,float2((pixel.y+0.5f)/256.0f,0.25f)).xy;
+    float3 line=float3(rowXY.x,rowXY.y,tex2D(rowData,float2((pixel.y+0.5f)/256.0f,0.75f)).x);
+#else
+    float3 line=float3(0.0f,pixel.y*state[2].w,state[2].z);
+    float lctl=state[3].y;
+    bool lx=nbgBit(lctl,2.0f)>0.5f,ly=nbgBit(lctl,4.0f)>0.5f,lz=nbgBit(lctl,8.0f)>0.5f;
+    float stride=4.0f*((lx?1.0f:0.0f)+(ly?1.0f:0.0f)+(lz?1.0f:0.0f));
+    float address=state[3].x+floor(pixel.y/state[3].z)*stride;
+    if(lx){line.x=nbgFixed(raw,address);address+=4.0f;}
+    if(ly){line.y=nbgFixed(raw,address)+nbgWrap(pixel.y,state[3].z);address+=4.0f;}
+    if(lz)line.z=nbgFixed(raw,address);
+#endif
+    float2 pos=floor(state[2].xy+float2(pixel.x*line.z+line.x,line.y));
+    float2 planeSize=state[7].xy;
+    pos=float2(nbgWrap(pos.x,planeSize.x*2.0f),nbgWrap(pos.y,planeSize.y*2.0f));
+    float plane=floor(pos.x/planeSize.x)+2.0f*floor(pos.y/planeSize.y);
+    float base=plane<0.5f?state[1].x:plane<1.5f?state[1].y:plane<2.5f?state[1].z:state[1].w;
+    pos=float2(nbgWrap(pos.x,planeSize.x),nbgWrap(pos.y,planeSize.y));
+    float page=floor(pos.y/512.0f)*(planeSize.x/512.0f)+floor(pos.x/512.0f);
+    float2 tile=floor(float2(nbgWrap(pos.x,512.0f),nbgWrap(pos.y,512.0f))/16.0f);
+    float name=nbgAlignedWord(raw,nbgWrap(base+page*2048.0f+(tile.y*32.0f+tile.x)*2.0f,524288.0f));
+    float2 within=float2(nbgWrap(pos.x,16.0f),nbgWrap(pos.y,16.0f));
+    if(nbgBit(name,1024.0f)>0.5f)within.x=15.0f-within.x;
+    if(nbgBit(name,2048.0f)>0.5f)within.y=15.0f-within.y;
+    float scn=state[0].x;
+    float character=nbgWrap(name,1024.0f)*4.0f+nbgWrap(scn,4.0f)+floor(nbgWrap(scn,32.0f)/4.0f)*4096.0f;
+    float cell=floor(within.y/8.0f)*2.0f+floor(within.x/8.0f);
+    float byteAddress=character*32.0f+cell*32.0f+nbgWrap(within.y,8.0f)*4.0f+floor(nbgWrap(within.x,8.0f)/2.0f);
+    float packedByte=nbgReadByte(raw,nbgWrap(byteAddress,524288.0f));
+    float dotIndex=nbgWrap(within.x,2.0f)>0.5f?nbgWrap(packedByte,16.0f):floor(packedByte/16.0f);
+    if(dotIndex<0.5f && state[0].z<0.5f)return float4(0,0,0,0);
+    float palette=state[0].y*256.0f+floor(name/4096.0f)*16.0f+floor(scn/32.0f)*256.0f+dotIndex;
+    return rgb555(nbgAlignedWord(raw,524288.0f+nbgWrap(palette,2048.0f)*2.0f));
+}

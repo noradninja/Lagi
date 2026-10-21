@@ -1,0 +1,2 @@
+#define LAGI_RBG_TILE16_8BIT 1
+#include "vdp2_rbg0_f.cg"

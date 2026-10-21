@@ -1,8 +1,19 @@
 #include "lagi/platform.h"
+#include "lagi/ui_lut_palette.h"
+#include "lagi/ui_texture_cache_index.h"
+#include "lagi/vdp1_color_calculation.h"
+#include "lagi/rbg_format.h"
+#include "lagi/rbg_decoded_page.h"
+#include "lagi/native_scene_mode.h"
+#if LAGI_FIELD_MOTION_TRACE
+#include "lagi/motion_cadence.h"
+#endif
 #include "lagi/frontend_font.h"
 
 unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/debug_mesh.h"
+#include "lagi/shared_color_offset.h"
+#include "lagi/nbg0_line_rows.h"
 #include "lagi/vdp1_renderer.h"
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_render_bridge.h"
@@ -37,6 +48,26 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #ifndef LAGI_NEPTUNE_OPTIMIZED
 #define LAGI_NEPTUNE_OPTIMIZED 0
 #endif
+#ifndef LAGI_VDP2_SPRITE_COMPOSITE
+#define LAGI_VDP2_SPRITE_COMPOSITE 0
+#endif
+#ifndef LAGI_GPU_PASS_TIMING
+#define LAGI_GPU_PASS_TIMING 0
+#endif
+#ifndef LAGI_RBG_DECODED_PAGES
+#define LAGI_RBG_DECODED_PAGES 0
+#endif
+#ifndef LAGI_RBG_COEFFICIENT_ROWS
+#define LAGI_RBG_COEFFICIENT_ROWS 0
+#endif
+#include "lagi/rbg_coefficient_rows.h"
+#include "lagi/rbg_window_spans.h"
+
+// Diagnostic samples drain at scene boundaries. These are CPU wall/wait
+// intervals, not GPU timestamp queries or normal overlapping frame timings.
+static bool g_gpuPassSample=false;
+static unsigned g_gpuPassWorldWaitUs=0;
+static std::uint64_t g_gpuPassFinalStartUs=0;
 
 namespace lagi::platform::renderer {
 
@@ -47,9 +78,17 @@ extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
 extern const unsigned char _binary_lagi_stochastic_f_gxp_start[];
 extern const unsigned char _binary_lagi_stochastic_gouraud_f_gxp_start[];
+extern const unsigned char _binary_lagi_stochastic_gouraud_mesh_f_gxp_start[];
+extern const unsigned char _binary_lagi_textured_gouraud_subdiv_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_cinepak_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
+extern const unsigned char _binary_lagi_rgba_present_f_gxp_start[];
+extern const unsigned char _binary_lagi_scene_nbg0_f_gxp_start[];
+extern const unsigned char _binary_lagi_sprite_composite_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_rbg0_tile16_8bit_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_rbg0_pages_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_rbg0_rows_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_subdiv_v_gxp_start[];
@@ -197,14 +236,32 @@ static bool g_stochasticFragmentRegistered = false;
 static bool g_stochasticGouraudFragmentRegistered = false;
 static bool g_cinepakFragmentRegistered = false;
 static bool g_vdp2NbgFragmentRegistered = false;
+static bool g_rgbaPresentRegistered = false;
+static bool g_sceneNbg0Registered = false;
+static SceGxmShaderPatcherId g_sceneNbg0Id{};
+static SceGxmFragmentProgram* g_sceneNbg0ResolveProgram = nullptr;
+static void* g_nbg0RowsPixels=nullptr;
+static SceUID g_nbg0RowsUid=-1;
+static SceGxmTexture g_nbg0RowsTexture{};
+static SceGxmShaderPatcherId g_rgbaPresentId{};
+static const SceGxmProgramParameter* g_rgbaPresentInfo = nullptr;
 static bool g_vdp2Rbg0FragmentRegistered = false;
 static bool g_vdp2Rbg0Available = false;
 static SceGxmVertexProgram* g_textureVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_stochasticFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_stochasticGouraudFragmentProgram = nullptr;
+enum NativeBlendProgram { BlendTexture, BlendStochastic, BlendSubdiv,
+    BlendStochasticGouraud, BlendMesh, BlendMeshSubdiv, BlendLitHalf, BlendSolid, BlendCount };
+static SceGxmFragmentProgram* g_nativeBlendPrograms[BlendCount]{};
 static const SceGxmProgramParameter* g_stochasticTextureSizeParam = nullptr;
 static const SceGxmProgramParameter* g_stochasticGouraudTextureSizeParam = nullptr;
+// Subdiv opaque/blended, then stochastic opaque/blended. Only mesh sprites
+// use these binaries; ordinary Full geometry has no mesh branch/uniform.
+static SceGxmFragmentProgram* g_gouraudMeshPrograms[4]{};
+static SceGxmShaderPatcherId g_gouraudMeshProgramIds[2]{};
+static bool g_gouraudMeshRegistered[2]{};
+static const SceGxmProgramParameter* g_meshStochasticTextureSizeParam = nullptr;
 static SceUID g_ditherOffsetsUid = -1;
 static void* g_ditherOffsetsPixels = nullptr;
 static SceGxmTexture g_ditherOffsetsTexture{};
@@ -213,12 +270,12 @@ static constexpr bool kStochastic = true;
 #else
 static constexpr bool kStochastic = false;
 #endif
-static void setStochastic(unsigned w, unsigned h)
+static void setStochastic(unsigned w, unsigned h, bool blended=false)
 {
     if (!kStochastic || !g_stochasticFragmentProgram ||
         !g_stochasticTextureSizeParam)
         return;
-    sceGxmSetFragmentProgram(g_probeContext, g_stochasticFragmentProgram);
+    sceGxmSetFragmentProgram(g_probeContext, blended ? g_nativeBlendPrograms[BlendStochastic] : g_stochasticFragmentProgram);
 #if LAGI_DITHER_LOOKUP
     sceGxmSetFragmentTexture(g_probeContext, 1, &g_ditherOffsetsTexture);
 #endif
@@ -230,13 +287,14 @@ static void setStochastic(unsigned w, unsigned h)
     }
 }
 
-static void setStochasticGouraud(unsigned w, unsigned h)
+static void setStochasticGouraud(unsigned w, unsigned h, bool blended=false, bool mesh=false)
 {
     if (!kStochastic || !g_stochasticGouraudFragmentProgram ||
         !g_stochasticGouraudTextureSizeParam)
         return;
     sceGxmSetFragmentProgram(
-        g_probeContext, g_stochasticGouraudFragmentProgram);
+        g_probeContext, mesh ? g_gouraudMeshPrograms[2+(blended?1:0)] :
+        (blended ? g_nativeBlendPrograms[BlendStochasticGouraud] : g_stochasticGouraudFragmentProgram));
 #if LAGI_DITHER_LOOKUP
     sceGxmSetFragmentTexture(g_probeContext, 1, &g_ditherOffsetsTexture);
 #endif
@@ -245,7 +303,7 @@ static void setStochasticGouraud(unsigned w, unsigned h)
             g_probeContext, &ub) >= 0 && ub) {
         const float size[4] = {float(w), float(h), 1.0f / float(w), 1.0f / float(h)};
         sceGxmSetUniformDataF(
-            ub, g_stochasticGouraudTextureSizeParam, 0, 4, size);
+            ub, mesh ? g_meshStochasticTextureSizeParam : g_stochasticGouraudTextureSizeParam, 0, 4, size);
     }
 }
 
@@ -257,6 +315,14 @@ static SceGxmFragmentProgram* g_vdp2NbgFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_vdp2Rbg0FragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_cinepakMovieInfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2InfoParam = nullptr;
+static const SceGxmProgramParameter* g_sceneNbg0Param = nullptr;
+static SceGxmFragmentProgram* g_sceneNbg0AddProgram = nullptr;
+static SceGxmFragmentProgram* g_sceneNbg0OverProgram = nullptr;
+static lagi::SceneNbg0State g_pendingSceneNbg0{},g_sceneNbg0{};
+static SceUID g_sceneNbg0Uid=-1;
+static void* g_sceneNbg0Pixels=nullptr;
+static SceGxmColorSurface g_sceneNbg0Surface{};
+static SceGxmTexture g_sceneNbg0Texture{};
 static const SceGxmProgramParameter* g_vdp2Rbg0PlaneParam[4] = {
     nullptr, nullptr, nullptr, nullptr
 };
@@ -270,6 +336,7 @@ static const SceGxmProgramParameter* g_vdp2Rbg0InfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0FormatParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0LayerWindowParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0LayerWindowInfoParam = nullptr;
+static void releaseRbgTileProgram();
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
 static SceGxmFragmentProgram* g_meshTextureFragmentProgram = nullptr;
@@ -473,6 +540,7 @@ static bool g_liveTownHasBillboards = false;
 
 struct LiveTownResolvedMaterialCache {
     sProcessed3dModel* model = nullptr;
+    std::uint64_t generation = 0;
     std::vector<std::uint16_t> textureIndices;
 };
 static std::vector<LiveTownResolvedMaterialCache> g_liveTownMaterialCache;
@@ -617,6 +685,8 @@ static unsigned int g_liveTownStaticIdentityMisses = 0u;
 // so the HUD naturally shows the previous task frame while the render samples
 // describe the render currently being presented.
 static unsigned int g_profileTasksUs = 0;
+static unsigned int g_profilePositionSyncUs = 0;
+static unsigned int g_profilePositionSyncVertices = 0;
 static unsigned int g_profileGameWaitUs = 0;
 static unsigned int g_profileRenderCpuPrepUs = 0;
 static unsigned int g_profileBuildUs = 0;
@@ -670,6 +740,7 @@ static unsigned int g_profileGxmFinishUs = 0;
 // Resolve measures command recording and any BeginScene stall, not GPU execution.
 static unsigned int g_profileRbgPrepareUs = 0;
 static unsigned int g_profileRbgResolveUs = 0;
+static unsigned int g_profileNbg0ResolveUs = 0;
 static unsigned int g_profileRenderUs = 0;
 static unsigned int g_profilePresentUs = 0;
 static unsigned int g_profileFramePublishUs = 0;
@@ -781,9 +852,13 @@ struct Vdp1UiTextureCacheEntry {
     std::uint16_t cmdColr = 0;
     std::uint16_t cmdSrca = 0;
     std::uint16_t cmdSize = 0;
+    lagi::UiLutPalette palette{};
+    bool hasPalette = false;
     GpuMode1Texture gpu{};
 };
 static std::vector<Vdp1UiTextureCacheEntry> g_vdp1UiTextureCache;
+static lagi::UiTextureCacheIndex g_vdp1UiTextureIndex;
+static lagi::UiSpriteProfile g_profileSprites;
 static SceUID g_vdp1UiVertexUid = -1;
 static SceUID g_vdp1UiIndexUid = -1;
 static azel::DebugTextureVertex* g_vdp1UiVertices = nullptr;
@@ -882,12 +957,16 @@ static bool g_movieFrameVisible = false;
 static float g_movieVdp2Info[4] = {};
 static unsigned int g_movieVdp2Tvmd = 0u;
 struct RbgGpuState {
+    bool enabled=true;
+    unsigned layerEnable=0;
+    unsigned backColor=0;
     float parameterFormat[2]{};
     float planesA[16]{}, planesB[16]{}, ctrl[16]{}, plsz = 0.0f;
     float format[4]{}, transformA[8]{}, transformB[8]{};
     float coefficientA[4]{}, coefficientB[4]{};
 };
 static RbgGpuState g_movieRbg0;
+static unsigned g_frontendSpriteSlot=0;
 static RbgGpuState g_pendingSceneRbg0, g_sceneRbg0;
 static constexpr unsigned int kRawVdp2Bytes = 0x81000u;
 static constexpr unsigned int kSceneVdp2BlockBytes = 4096u;
@@ -916,6 +995,19 @@ static bool g_sceneVdp2GpuRawInitialized = false;
 static unsigned int g_profileRbgRawUpdatedBytes = 0u;
 static SceUID g_sceneVdp2RawUid = -1;
 static SceGxmTexture g_sceneVdp2Texture{};
+static SceGxmTexture g_sceneVdp2ByteTexture{};
+static bool g_sceneVdp2ByteTextureValid=false;
+static bool g_rbgDecodedPagesReady=false;
+static bool g_frontendRbgDecodedReady=false;
+alignas(64) static unsigned char g_frontendVdp2RawShadow[kRawVdp2Bytes]{};
+static std::uint32_t g_frontendVdp2Generations[kSceneVdp2BlockCount]{};
+static bool g_frontendVdp2RawInitialized=false;
+static SceGxmTexture g_rbgDecodedAtlasTexture{};
+static SceGxmTexture g_rbgCoefficientRowsTexture{};
+static bool g_rbgCoefficientRowsReady=false;
+static void releaseRbgCoefficientRows();
+static float g_rbgDecodedPlanesA[16]{},g_rbgDecodedPlanesB[16]{};
+static void releaseRbgDecodedPages();
 static azel::DebugTextureVertex* g_sceneVdp2Vertices = nullptr;
 static SceUID g_sceneVdp2VertexUid = -1;
 static std::uint16_t* g_sceneVdp2Indices = nullptr;
@@ -1004,6 +1096,7 @@ private:
 };
 
 static bool g_probeDisplayingGxm = false;
+static bool g_preserveLoadingScanout = false;
 static bool g_viewerReady = false;
 static float g_viewYaw = 0.0f;
 static float g_viewPitch = 0.0f;
@@ -1083,6 +1176,11 @@ static std::uint8_t g_vdp2TextVram[kVdp2TextSnapshotBytes]{};
 static std::uint8_t g_vdp2Cram[kVdp2CramSnapshotBytes]{};
 static bool g_pendingVdp2TextValid = false;
 static lagi::MenuNbg2State g_pendingMenuNbg2{},g_menuNbg2{};
+static lagi::Vdp2SpriteColorState g_pendingSpriteColor{},g_spriteColor{};
+static std::uint32_t nativeSpriteMetadata(std::uint32_t rgba,unsigned code) {
+    return LAGI_VDP2_SPRITE_COMPOSITE ? lagi::spriteType3Metadata(rgba,code) : rgba;
+}
+static void releaseSpriteComposite();
 static bool g_vdp2TextValid = false;
 static unsigned int g_pendingVdp2MenuId = 0u;
 static unsigned int g_vdp2MenuId = 0u;
@@ -1220,6 +1318,36 @@ static void recordFlightPresentation(
         int mode = -1;
     };
     static Window window;
+#if LAGI_FIELD_MOTION_TRACE
+    static lagi::MotionCadence<12,24> motion;
+    static unsigned motionBudget=24;
+    if(!nativeField || !g_nativeSceneViewValid)motion.reset();
+    else if(motionBudget) {
+        std::array<std::int32_t,12> view{};
+        std::array<std::int32_t,24> rbg{};
+        static_assert(sizeof(view)==sizeof(g_nativeSceneViewMatrix));
+        std::memcpy(view.data(),g_nativeSceneViewMatrix,sizeof(view));
+        // Compare transform/coefficient words exactly, without float equality
+        // or hashing. This does not inspect mutable Azel memory or GPU memory.
+        if(g_sceneRbg0Enabled) {
+            std::memcpy(rbg.data(),g_sceneRbg0.transformA,32);
+            std::memcpy(rbg.data()+8,g_sceneRbg0.transformB,32);
+            std::memcpy(rbg.data()+16,g_sceneRbg0.coefficientA,16);
+            std::memcpy(rbg.data()+20,g_sceneRbg0.coefficientB,16);
+        }
+        const unsigned key=unsigned(g_viewMode)*2+(g_sceneRbg0Enabled?1u:0u);
+        const auto serial=azel_bridge::published_frame_number();
+        if(motion.add(key,serial,nowUs,view,rbg)) {
+            const auto& s=motion.summary;
+            logging::writef(
+                "[FieldSnapshot] diagnostic=1 key=%u serial=%llu intervals=%u minUs=%llu maxUs=%llu meanUs=%llu viewRepeated=%u rbgRepeated=%u viewChangedRbgRepeated=%u serialGaps=%u\n",
+                key,(unsigned long long)serial,s.intervals,(unsigned long long)s.minUs,
+                (unsigned long long)s.maxUs,(unsigned long long)(s.totalUs/s.intervals),
+                s.aRepeated,s.bRepeated,s.aChangedBRepeated,s.serialGaps);
+            --motionBudget;motion.nextWindow();
+        }
+    }
+#endif
     if (!nativeField || window.mode != g_viewMode) {
         window = {};
         window.mode = g_viewMode;
@@ -2368,8 +2496,10 @@ bool init()
 {
     logging::writef(
         "[NeptuneBuild] optimized=%u fieldDescriptorIndex=1 sharedRbg0=1 "
-        "rbg0NativeResolve=1 pooledFieldTextures=1\n",
-        static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED));
+        "rbg0NativeResolve=1 pooledFieldTextures=1 coefficientRows=%u motionTrace=%u\n",
+        static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED),
+        static_cast<unsigned int>(LAGI_RBG_COEFFICIENT_ROWS),
+        static_cast<unsigned int>(LAGI_FIELD_MOTION_TRACE));
     logging::writef(
         "[DitherFilter] enabled=%u pattern=screen-2x2 sampling=%s\n",
         static_cast<unsigned int>(kStochastic),
@@ -2507,7 +2637,15 @@ void shutdown()
     void* fadeIndexPtr = g_fadeIndices;
     freeSimpleMappedProbe(g_fadeIndexUid, fadeIndexPtr);
     g_fadeIndices = nullptr;
+    releaseSpriteComposite();
+    releaseRbgTileProgram();
+    releaseRbgDecodedPages();
+    releaseRbgCoefficientRows();
+    freeMovieMappedBlock(g_nbg0RowsUid,g_nbg0RowsPixels);
     freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
+    freeSimpleMappedProbe(g_sceneNbg0Uid,g_sceneNbg0Pixels);
+    g_sceneNbg0={};g_pendingSceneNbg0={};
+    g_sceneVdp2ByteTextureValid=false;
     freeSimpleMappedProbe(g_ditherOffsetsUid, g_ditherOffsetsPixels);
     g_sceneVdp2GpuRawInitialized = false;
     void* sceneVertices = g_sceneVdp2Vertices;
@@ -2584,6 +2722,18 @@ void shutdown()
     freeMovieResources();
 
     if (g_probeShaderPatcher) {
+        for(auto& program:g_gouraudMeshPrograms) {
+            if(program) sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,program);
+            program=nullptr;
+        }
+        for(unsigned i=0;i<2;++i) if(g_gouraudMeshRegistered[i]) {
+            sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_gouraudMeshProgramIds[i]);
+            g_gouraudMeshRegistered[i]=false;
+        }
+        for (auto& program : g_nativeBlendPrograms) {
+            if (program) sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,program);
+            program=nullptr;
+        }
         if (g_gouraudScanlineGrayFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_gouraudScanlineGrayFragmentProgram);
@@ -2658,6 +2808,18 @@ void shutdown()
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_vdp2Rbg0FragmentProgram);
             g_vdp2Rbg0FragmentProgram = nullptr;
+        }
+        if(g_sceneNbg0AddProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_sceneNbg0AddProgram);
+            g_sceneNbg0AddProgram=nullptr;
+        }
+        if(g_sceneNbg0ResolveProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_sceneNbg0ResolveProgram);
+            g_sceneNbg0ResolveProgram=nullptr;
+        }
+        if(g_sceneNbg0OverProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_sceneNbg0OverProgram);
+            g_sceneNbg0OverProgram=nullptr;
         }
         if (g_vdp2NbgFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
@@ -2788,6 +2950,14 @@ void shutdown()
             sceGxmShaderPatcherUnregisterProgram(
                 g_probeShaderPatcher, g_vdp2NbgFragmentProgramId);
             g_vdp2NbgFragmentRegistered = false;
+        }
+        if(g_rgbaPresentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_rgbaPresentId);
+            g_rgbaPresentRegistered=false;
+        }
+        if(g_sceneNbg0Registered) {
+            sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_sceneNbg0Id);
+            g_sceneNbg0Registered=false;
         }
         if (g_cinepakFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -3039,6 +3209,9 @@ void status(const char* text, unsigned int color)
 
 void failure(const char* text)
 {
+    // Startup may still be showing the loading scanout: never hide the only
+    // explanation for a failed native renderer behind the debug-screen toggle.
+    logging::writef("[RendererFailure] %s\n", text ? text : "unknown");
     // If GXM initialization fails, stop suppressing its status stream so the
     // failure remains visible and future diagnostics are not hidden.
     g_suppressGxmInitPassStatus = false;
@@ -3119,6 +3292,8 @@ static void freeMovieMappedBlock(SceUID& uid, void*& memory)
 
 static void freeMovieResources()
 {
+    g_frontendRbgDecodedReady=false;
+    g_frontendVdp2RawInitialized=false;
     freeMovieMappedBlock(g_movieTextureUid, g_movieTextureData);
 
     void* titlePixels = g_titleDecodedPixels;
@@ -3225,11 +3400,10 @@ bool movie_present_frame(
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_movieIndexUid));
 
-        // A Saturn line window can expose up to two horizontal spans on each
-        // of 224 scanlines (outside-window mode). Build that coverage as
-        // reusable textured geometry instead of branching/reading VRAM inside
-        // the RBG0 fragment shader.
-        constexpr unsigned int kWindowMaxQuads = 224u * 3u;
+        // Each of the two complementary parameters can expose up to three
+        // spans per row with two windows. Keep both geometry ranges immutable
+        // until their GPU submissions finish.
+        constexpr unsigned int kWindowMaxQuads = lagi::RbgWindowMaxSpans * 2u;
         g_vdp2WindowVertices = static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(
                 kWindowMaxQuads * 4u * sizeof(azel::DebugTextureVertex),
@@ -3475,6 +3649,9 @@ bool movie_republish_frame()
 static RbgGpuState makeRbgGpuState(const FrontendRbg0State& state)
 {
     RbgGpuState rbg{};
+    rbg.enabled=(state.bgon&0x10u)!=0;
+    rbg.layerEnable=state.bgon;
+    rbg.backColor=state.backColor;
     for (unsigned int i = 0; i < 16u; ++i) {
         rbg.planesA[i] =
             static_cast<float>(state.planeA[i]);
@@ -3538,7 +3715,7 @@ void presentation_set_vdp2_background(const FrontendRbg0State& state,
 {
     // Producer staging only; publish transfers ownership with the world frame.
     g_pendingSceneRbg0Enabled = enabled && vram && cram;
-    if (!g_pendingSceneRbg0Enabled)
+    if (!vram || !cram || (!enabled && !(state.bgon&1u)))
         return;
     g_pendingSceneRbg0 = makeRbgGpuState(state);
     std::memcpy(g_pendingSceneVdp2Raw, vram, 0x80000u);
@@ -3602,13 +3779,29 @@ bool frontend_present_vdp2(
         g_moviePayloadHeight != rawHeight) {
         freeMovieResources();
 
-        g_movieTextureData = probeGpuAlloc(
-            rawBytes,
-            SCE_GXM_MEMORY_ATTRIB_READ,
-            &g_movieTextureUid);
+        // D5 name entry samples this raw Saturn image through RBG/NBG shaders.
+        // Keep this VDP2-only path local; ordinary movie/selector allocation
+        // paths above are deliberately unchanged.
+        g_movieTextureData = probeCdramAlloc(
+            rawBytes,SCE_GXM_MEMORY_ATTRIB_READ,&g_movieTextureUid);
+        const bool frontendRawInCdram=g_movieTextureData!=nullptr;
+        if(!g_movieTextureData)
+            g_movieTextureData=probeGpuAlloc(
+                rawBytes,SCE_GXM_MEMORY_ATTRIB_READ,&g_movieTextureUid);
+        logging::writef("[FrontendVdp2Memory] cdram=%u payloadBytes=%u\n",
+            frontendRawInCdram?1u:0u,rawBytes);
+        // freeMovieResources() also releases RPMD3 coverage. The raw VDP2
+        // frontend must own this allocation too, not depend on a prior RGBA
+        // movie having allocated it. Otherwise A silently covers B's pixels.
+        g_vdp2WindowVertices = static_cast<azel::DebugTextureVertex*>(
+            probeGpuAlloc(lagi::RbgWindowMaxSpans * 2u * 4u * sizeof(azel::DebugTextureVertex),
+                SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowVertexUid));
+        g_vdp2WindowIndices = static_cast<std::uint16_t*>(
+            probeGpuAlloc(lagi::RbgWindowMaxSpans * 2u * 6u * sizeof(std::uint16_t),
+                SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowIndexUid));
         g_movieVertices = static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(
-                4u * sizeof(azel::DebugTextureVertex),
+                8u * sizeof(azel::DebugTextureVertex),
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_movieVertexUid));
         g_movieIndices = static_cast<std::uint16_t*>(
@@ -3616,7 +3809,8 @@ bool frontend_present_vdp2(
                 6u * sizeof(std::uint16_t),
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_movieIndexUid));
-        if (!g_movieTextureData || !g_movieVertices || !g_movieIndices) {
+        if (!g_movieTextureData || !g_movieVertices || !g_movieIndices ||
+            !g_vdp2WindowVertices || !g_vdp2WindowIndices) {
             freeMovieResources();
             return false;
         }
@@ -3649,6 +3843,12 @@ bool frontend_present_vdp2(
         g_movieVertices[1] = { xExtent,  yExtent, 0.5f, 1.0f, 0.0f};
         g_movieVertices[2] = {-xExtent, -yExtent, 0.5f, 0.0f, 1.0f};
         g_movieVertices[3] = { xExtent, -yExtent, 0.5f, 1.0f, 1.0f};
+        // A separate mapped quad fills the native RBG resolve target; the
+        // first quad retains the accepted 4:3 frontend presentation layout.
+        g_movieVertices[4] = {-1, 1, 0.5f, 0, 0};
+        g_movieVertices[5] = { 1, 1, 0.5f, 1, 0};
+        g_movieVertices[6] = {-1,-1, 0.5f, 0, 1};
+        g_movieVertices[7] = { 1,-1, 0.5f, 1, 1};
         const std::uint16_t indices[6] = {0, 1, 2, 2, 1, 3};
         std::memcpy(g_movieIndices, indices, sizeof(indices));
 
@@ -3666,6 +3866,21 @@ bool frontend_present_vdp2(
     auto* raw = static_cast<unsigned char*>(g_movieTextureData);
     std::memcpy(raw, vram, vramBytes);
     std::memcpy(raw + vramBytes, cram, cramBytes);
+    if(LAGI_RBG_DECODED_PAGES && layout!=0u) {
+        // Track the producer's cached-memory source, not GPU-local readback.
+        // MovieFrameGuard serializes this snapshot with frontend rendering.
+        for(unsigned block=0;block<kSceneVdp2BlockCount;++block) {
+            const unsigned offset=block*kSceneVdp2BlockBytes;
+            const unsigned bytes=std::min(kSceneVdp2BlockBytes,kRawVdp2Bytes-offset);
+            const unsigned char* source=offset<vramBytes?vram+offset:cram+offset-vramBytes;
+            if(!g_frontendVdp2RawInitialized ||
+                std::memcmp(g_frontendVdp2RawShadow+offset,source,bytes)!=0) {
+                std::memcpy(g_frontendVdp2RawShadow+offset,source,bytes);
+                if(++g_frontendVdp2Generations[block]==0)++g_frontendVdp2Generations[block];
+            }
+        }
+        g_frontendVdp2RawInitialized=true;
+    }
 
     // VDP1 sprite color-bank decoding shares the same live VDP2 CRAM as the
     // front-end layers. Keep Neptune's CPU-side CRAM snapshot coherent with
@@ -4445,13 +4660,28 @@ static bool decodeLiveVdp1Texture(const azel::SaturnPolygonRecord& record,
 static GpuMode1Texture* findOrUploadVdp1UiTexture(
     const azel_bridge::Vdp1UiCommand& command)
 {
-    for (auto& entry : g_vdp1UiTextureCache) {
-        if (entry.cmdPmod == command.cmdPmod &&
-            entry.cmdColr == command.cmdColr &&
-            entry.cmdSrca == command.cmdSrca &&
-            entry.cmdSize == command.cmdSize)
-            return &entry.gpu;
+    const unsigned paletteMode=(static_cast<unsigned>(command.cmdPmod)>>3)&7u;
+    lagi::UiLutPalette palette{};
+    const bool hasPalette=paletteMode==1u;
+    if (hasPalette) {
+        const unsigned address=static_cast<unsigned>(command.cmdColr)<<3;
+        if (address+32u>0x80000u || !lagi::capture_ui_lut_palette(
+                getVdp1Pointer(0x25C00000u+address),g_vdp2Cram,
+                sizeof(g_vdp2Cram),palette)) return nullptr;
     }
+    Vdp1UiTextureCacheEntry* refreshEntry=nullptr;
+    const auto cacheKey=lagi::ui_texture_key(command.cmdPmod,command.cmdColr,
+        command.cmdSrca,command.cmdSize);
+    std::size_t cacheIndex=0;
+    if (g_vdp1UiTextureIndex.find(cacheKey,cacheIndex)) {
+        auto& entry=g_vdp1UiTextureCache[cacheIndex];
+        if (!hasPalette || (entry.hasPalette && entry.palette==palette)) {
+            ++g_profileSprites.cacheHits;
+            return &entry.gpu;
+        }
+        refreshEntry=&entry;
+    }
+    if (!refreshEntry) ++g_profileSprites.cacheMisses;
 
     const unsigned int commandType =
         static_cast<unsigned int>(command.cmdCtrl & 0x000Fu);
@@ -4527,11 +4757,13 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                 }
 
                 std::uint16_t color = 0u;
+                unsigned spriteCode=0x8000u;
                 if (colorMode == 0u) {
                     const unsigned int paletteIndex =
-                        (static_cast<unsigned int>(command.cmdColr) & 0x07F0u) |
+                        (static_cast<unsigned int>(command.cmdColr) & 0xFFF0u) |
                         dot;
-                    const unsigned int cramByte = paletteIndex * 2u;
+                    spriteCode=paletteIndex;
+                    const unsigned int cramByte = (paletteIndex & 0x7FFu) * 2u;
                     if (cramByte + 1u >= sizeof(g_vdp2Cram))
                         continue;
                     color = readVdp2Be16(g_vdp2Cram, cramByte);
@@ -4556,6 +4788,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                     if (lutValue & 0x8000u) {
                         color = lutValue;
                     } else {
+                        spriteCode=lutValue;
                         const unsigned int cramByte =
                             (static_cast<unsigned int>(lutValue) & 0x07FFu) * 2u;
                         if (cramByte + 1u >= sizeof(g_vdp2Cram))
@@ -4563,18 +4796,37 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                         color = readVdp2Be16(g_vdp2Cram, cramByte);
                     }
                 }
-                if (color)
-                    decoded.rgba[pixel] = vdp2Rgb555ToAbgr(color);
+                if (color) {
+                    const auto rgba=vdp2Rgb555ToAbgr(color);
+                    decoded.rgba[pixel] = (spriteCode&0x8000u)?rgba:nativeSpriteMetadata(rgba,spriteCode);
+                }
             }
         }
 
         }
+        if (lagi::vdp1_half_transparent(command.cmdPmod))
+            for (auto& pixel : decoded.rgba)
+                pixel=lagi::vdp1_blend_texel(command.cmdPmod,pixel);
         const unsigned int stridePixels =
             (decoded.width + 7u) & ~7u;
         const unsigned int bytes =
             stridePixels * decoded.height * sizeof(std::uint32_t);
 
+        // Same descriptor, changed live colors: reuse storage rather than
+        // allocating a texture for every native palette-fade step. The prior
+        // frame is finished before this scene; all commands share its snapshot.
+        if (refreshEntry) {
+            lagi::refresh_ui_texture_rows(
+                static_cast<std::uint32_t*>(refreshEntry->gpu.data),
+                decoded.rgba.data(),decoded.width,decoded.height);
+            refreshEntry->palette=palette;
+            refreshEntry->hasPalette=hasPalette;
+            ++g_profileSprites.paletteRefreshes;
+            return &refreshEntry->gpu;
+        }
         Vdp1UiTextureCacheEntry entry{};
+        entry.palette=palette;
+        entry.hasPalette=hasPalette;
         entry.cmdPmod = command.cmdPmod;
         entry.cmdColr = command.cmdColr;
         entry.cmdSrca = command.cmdSrca;
@@ -4656,6 +4908,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         }
 
         g_vdp1UiTextureCache.push_back(std::move(entry));
+        g_vdp1UiTextureIndex.insert(cacheKey,g_vdp1UiTextureCache.size()-1u);
         return &g_vdp1UiTextureCache.back().gpu;
     }
 
@@ -4671,6 +4924,10 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         !decoded.width || !decoded.height ||
         decoded.rgba.size() != decoded.width * decoded.height)
         return nullptr;
+
+    if (lagi::vdp1_half_transparent(command.cmdPmod))
+        for (auto& pixel : decoded.rgba)
+            pixel=lagi::vdp1_blend_texel(command.cmdPmod,pixel);
 
     const unsigned int stridePixels = (decoded.width + 7u) & ~7u;
     const unsigned int bytes =
@@ -4714,6 +4971,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         &entry.gpu.texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
 
     g_vdp1UiTextureCache.push_back(std::move(entry));
+    g_vdp1UiTextureIndex.insert(cacheKey,g_vdp1UiTextureCache.size()-1u);
     return &g_vdp1UiTextureCache.back().gpu;
 }
 
@@ -4721,7 +4979,9 @@ enum class Vdp1UiPass {
     All,
     Background,
     WorldEffects,
-    Foreground
+    Foreground,
+    FrontendProjected,
+    FrontendOverlay
 };
 
 static bool vdp1UiPassAccepts(Vdp1UiPass pass, bool background, bool worldDepth)
@@ -4731,6 +4991,8 @@ static bool vdp1UiPassAccepts(Vdp1UiPass pass, bool background, bool worldDepth)
     case Vdp1UiPass::Background: return background;
     case Vdp1UiPass::WorldEffects: return !background && worldDepth;
     case Vdp1UiPass::Foreground: return !background && !worldDepth;
+    case Vdp1UiPass::FrontendProjected:
+    case Vdp1UiPass::FrontendOverlay: return true; // producer depth tag below
     }
     return false;
 }
@@ -4792,7 +5054,8 @@ static void drawMenuCanvasMask()
 
 static void drawPublishedVdp1Ui(
     Vdp1UiPass pass = Vdp1UiPass::All,
-    unsigned int* sharedSpriteSlot = nullptr)
+    unsigned int* sharedSpriteSlot = nullptr,
+    bool nativeCanvas = false)
 {
     const auto& commands = azel_bridge::published_vdp1_ui_commands();
     if (commands.empty() || !g_textureVertexProgram ||
@@ -4844,12 +5107,14 @@ static void drawPublishedVdp1Ui(
         ? *sharedSpriteSlot
         : localSpriteSlot;
     for (const auto& command : commands) {
+        if(pass==Vdp1UiPass::FrontendProjected && !command.hasWorldDepth)continue;
+        if(pass==Vdp1UiPass::FrontendOverlay && command.hasWorldDepth)continue;
         const bool background = isVdp1BackgroundCommand(command);
         const unsigned int commandType = command.cmdCtrl & 0x000Fu;
         // Projected scene sprites retain their producer's real endpoint Z.
         // Saturn packet buckets are priority keys, not GXM depth values.
-        const bool worldDepth = command.hasWorldDepth && !command.fieldRadar &&
-            g_sceneGameMode == 3u && !g_vdp2MenuId && !g_vdp2SaveLayout &&
+        const bool worldDepth = !nativeCanvas && pass!=Vdp1UiPass::FrontendOverlay && command.hasWorldDepth && !command.fieldRadar &&
+            lagi::native_scene_depth_mode(g_sceneGameMode) && !g_vdp2MenuId && !g_vdp2SaveLayout &&
             g_nativeSceneNearPlane > 0.0f && g_nativeSceneFarPlane > g_nativeSceneNearPlane;
         if (!vdp1UiPassAccepts(pass, background, worldDepth))
             continue;
@@ -4860,7 +5125,7 @@ static void drawPublishedVdp1Ui(
         const auto commandDepthFunc = worldDepth ? SCE_GXM_DEPTH_FUNC_LESS_EQUAL : SCE_GXM_DEPTH_FUNC_ALWAYS;
         sceGxmSetFrontDepthFunc(g_probeContext, commandDepthFunc);
         sceGxmSetBackDepthFunc(g_probeContext, commandDepthFunc);
-        const auto commandDepthWrite = worldDepth ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED;
+        const auto commandDepthWrite = worldDepth && !lagi::vdp1_half_transparent(command.cmdPmod) ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED;
         sceGxmSetFrontDepthWriteEnable(g_probeContext, commandDepthWrite);
         sceGxmSetBackDepthWriteEnable(g_probeContext, commandDepthWrite);
 
@@ -4883,7 +5148,7 @@ static void drawPublishedVdp1Ui(
             static_cast<float>(viewerRenderWidth()) /
             static_cast<float>(viewerRenderHeight());
         const float saturnAspectCorrection =
-            (4.0f / 3.0f) / renderAspect;
+            nativeCanvas ? 1.0f : (4.0f / 3.0f) / renderAspect;
         // Only native radar-owned commands use this right-anchored, square
         // integer pixel grid. Keep animation offsets and all authored geometry.
         const float radarScale = std::max(1, viewerRenderHeight() / 224);
@@ -4894,9 +5159,10 @@ static void drawPublishedVdp1Ui(
             return 1.0f - 2.0f * (y + 112.0f) * radarScale / viewerRenderHeight();
         };
 
-        // Native radar direction line (6) and altitude fill polygon (4).
-        // Do not infer HUD ownership from texture, color or screen position.
-        if ((command.fieldRadar && commandType == 4u) || commandType == 6u) {
+        // Native solid polygons (4) include battle HP/BP/power/enemy gauges,
+        // not just the radar altitude fill. Only radar ownership changes the
+        // coordinate transform; it must not gate primitive support.
+        if (commandType == 4u || commandType == 6u) {
             if (spriteSlot >= 128u || !g_probeVertexProgram ||
                 !g_probeFragmentProgram || !g_probeWvpParam) continue;
             auto* vertices = g_vdp1UiLineVertices + spriteSlot++ * 4u;
@@ -4907,9 +5173,12 @@ static void drawPublishedVdp1Ui(
             for (unsigned i = 0; i < 4; ++i)
                 vertices[i] = {command.fieldRadar ? radarX(xs[i]) : xs[i] / 176.0f * saturnAspectCorrection,
                     command.fieldRadar ? radarY(ys[i]) : -ys[i] / 112.0f, commandZ(i),
-                    expand(c & 31u), expand((c >> 5) & 31u), expand((c >> 10) & 31u), 255u};
+                    expand(c & 31u), expand((c >> 5) & 31u), expand((c >> 10) & 31u),
+                    static_cast<std::uint8_t>(lagi::vdp1_half_transparent(command.cmdPmod) ? 128u : 255u)};
             sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
-            sceGxmSetFragmentProgram(g_probeContext, g_probeFragmentProgram);
+            sceGxmSetFragmentProgram(g_probeContext, lagi::vdp1_half_transparent(command.cmdPmod)
+                ? (LAGI_VDP2_SPRITE_COMPOSITE ? g_nativeBlendPrograms[BlendSolid] : g_fadeFragmentProgram)
+                : g_probeFragmentProgram);
             const auto solidPolygonMode = commandType == 6u
                 ? SCE_GXM_POLYGON_MODE_LINE : SCE_GXM_POLYGON_MODE_TRIANGLE_FILL;
             sceGxmSetFrontPolygonMode(g_probeContext, solidPolygonMode);
@@ -5171,8 +5440,10 @@ static void drawPublishedVdp1Ui(
             break;
         }
 
-        if (spriteSlot >= 128u)
+        if (spriteSlot >= 128u) {
+            ++g_profileSprites.slotSkips;
             continue;
+        }
 
         azel::DebugTextureVertex* const spriteVertices =
             g_vdp1UiVertices + spriteSlot * 4u;
@@ -5265,6 +5536,23 @@ static void drawPublishedVdp1Ui(
         sceGxmSetVertexStream(g_probeContext, 0, spriteVertices);
         const bool shaded = command.hasGouraud &&
             g_gouraudSubdivVertexProgram && g_texturedGouraudSubdivFragmentProgram;
+        const bool blended = lagi::vdp1_half_transparent(command.cmdPmod);
+        const bool mesh = (command.cmdPmod & 0x100u)!=0;
+        if (g_sceneGameMode==4u && worldDepth) {
+            static std::uint64_t seen[64]{};
+            static unsigned count=0;
+            const auto key=lagi::ui_texture_key(command.cmdPmod,command.cmdColr,command.cmdSrca,command.cmdSize);
+            bool found=false;
+            for(unsigned i=0;i<count;++i) found|=seen[i]==key;
+            if (!found && count<64) {
+                seen[count++]=key;
+                logging::writef("[NativeEffectMaterial] PMOD=%04X SRCA=%04X SIZE=%04X mesh=%u shaded=%u\n",
+                    command.cmdPmod,command.cmdSrca,command.cmdSize,mesh?1u:0u,shaded?1u:0u);
+            }
+        }
+        sceGxmSetFragmentProgram(g_probeContext, mesh
+            ? (blended ? g_nativeBlendPrograms[BlendMesh] : g_meshTextureFragmentProgram)
+            : (blended ? g_nativeBlendPrograms[BlendTexture] : g_textureFragmentProgram));
         if (g_sceneGameMode == 3u && command.hasGouraud) {
             // Sample distinct texture sources, not the first eight draws:
             // recurring early effects otherwise consume every report before
@@ -5297,21 +5585,22 @@ static void drawPublishedVdp1Ui(
                     (static_cast<int>((c >> 10) & 31u) - 16) / 31.0f};
             }
             sceGxmSetVertexProgram(g_probeContext, g_gouraudSubdivVertexProgram);
-            sceGxmSetFragmentProgram(g_probeContext, g_texturedGouraudSubdivFragmentProgram);
+            sceGxmSetFragmentProgram(g_probeContext, mesh ? g_gouraudMeshPrograms[blended?1:0] :
+                (blended ? g_nativeBlendPrograms[BlendSubdiv] : g_texturedGouraudSubdivFragmentProgram));
             void* shadeUniforms = nullptr;
             if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &shadeUniforms) >= 0 && shadeUniforms)
                 sceGxmSetUniformDataF(shadeUniforms, g_gouraudSubdivWvpParam, 0, 16, identity);
             sceGxmSetVertexStream(g_probeContext, 0, gouraudVertices);
         }
         if (shaded && !fieldRadarMap && kStochastic) {
-            setStochasticGouraud(texture->width, texture->height);
+            setStochasticGouraud(texture->width, texture->height, blended, mesh);
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
         }
-        if (!shaded && !fieldRadarMap && kStochastic) {
-            setStochastic(texture->width, texture->height);
+        if (!shaded && !fieldRadarMap && kStochastic && !mesh) {
+            setStochastic(texture->width, texture->height, blended);
             sceGxmTextureSetMinFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
         }
@@ -5323,6 +5612,11 @@ static void drawPublishedVdp1Ui(
         }
         sceGxmSetFragmentTexture(
             g_probeContext, 0, &texture->texture);
+        ++g_profileSprites.draws;
+        if (worldDepth) ++g_profileSprites.worldTagged;
+        if (shaded) ++g_profileSprites.shaded;
+        g_profileSprites.bboxPixels+=lagi::sprite_bbox_pixels(
+            pos,viewerRenderWidth(),viewerRenderHeight());
         sceGxmDraw(
             g_probeContext,
             SCE_GXM_PRIMITIVE_TRIANGLES,
@@ -5377,7 +5671,7 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
     g_vdp1GpuTextures.reserve(model.textureCount);
 
     const std::size_t firstTexture = g_vdp1GpuTextures.size();
-    const bool pooled = g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u;
+    const bool pooled = lagi::native_scene_mode(g_sceneGameMode);
     g_nativeGpuTextureGenerations.resize(model.textureCount, 0u);
     std::size_t remainingNewTextureBytes = 0u;
     if (pooled && firstTexture < model.textureCount) {
@@ -5819,7 +6113,7 @@ bool prepare_vdp1_model(
     // active counts everywhere below. Cap subdivision capacity at its existing
     // 16-bit index-count limit, and preserve other modes' allocation behavior.
     const bool reserveSceneCapacity = preserveResidentTextures &&
-        (g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u) && subdivBuffersRequired;
+        lagi::native_scene_mode(g_sceneGameMode) && subdivBuffersRequired;
     const std::size_t allocationPolygons = reserveSceneCapacity
         ? std::min<std::size_t>(65535u / 24u,
             std::max<std::size_t>(2048u, model.polygonCount + model.polygonCount / 4u))
@@ -6572,6 +6866,18 @@ static bool decodeLiveVdp1Texture(
     out.cmdSrca = record.cmdSrca;
     out.cmdSize = record.cmdSize;
     out.nativeDependenciesKnown = true;
+    if (lagi::vdp1_half_transparent(record.cmdPmod)) {
+        static std::uint64_t reported[32]{};
+        static unsigned count=0;
+        const auto key=lagi::ui_texture_key(record.cmdPmod,record.cmdColr,record.cmdSrca,record.cmdSize);
+        bool found=false;
+        for(unsigned i=0;i<count;++i) found |= reported[i]==key;
+        if (!found && count<32) {
+            reported[count++]=key;
+            logging::writef("[NativeColorBlend] type=%u PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X half=1\n",
+                commandType,record.cmdPmod,record.cmdColr,record.cmdSrca,record.cmdSize);
+        }
+    }
 
     // VDP1 command type 4 is an untextured polygon. CMDSIZE is therefore
     // legitimately zero; CMDCOLR supplies the flat RGB555 color. Represent
@@ -6582,9 +6888,9 @@ static bool decodeLiveVdp1Texture(
 
         out.width = 1u;
         out.height = 1u;
-        out.rgba.assign(1u, vdp2Rgb555ToAbgr(record.cmdColr));
+        out.rgba.assign(1u, lagi::vdp1_blend_texel(record.cmdPmod,vdp2Rgb555ToAbgr(record.cmdColr)));
         out.opacityKnown = true;
-        out.opaque = (out.rgba[0] & 0x80000000u) != 0u;
+        out.opaque = !lagi::vdp1_half_transparent(record.cmdPmod) && (out.rgba[0] & 0x80000000u) != 0u;
 
         static bool loggedSolidPolygon = false;
         if (!loggedSolidPolygon) {
@@ -6624,13 +6930,13 @@ static bool decodeLiveVdp1Texture(
     std::size_t writtenPixels = 0u;
     std::uint32_t opaqueBits = 0x80000000u;
     auto storePixel = [&](unsigned pixel, std::uint32_t color) {
-        out.rgba[pixel] = color;
+        out.rgba[pixel] = lagi::vdp1_blend_texel(record.cmdPmod,color);
         opaqueBits &= color;
         ++writtenPixels;
     };
     auto finishDecode = [&]() {
         out.opacityKnown = true;
-        out.opaque = writtenPixels == out.rgba.size() &&
+        out.opaque = !lagi::vdp1_half_transparent(record.cmdPmod) && writtenPixels == out.rgba.size() &&
             (opaqueBits & 0x80000000u) != 0u;
         return true;
     };
@@ -6643,11 +6949,11 @@ static bool decodeLiveVdp1Texture(
         const unsigned block = (byte & 0x0fffu) / 32u;
         out.nativeCramDependencies[block / 32u] |= 1u << (block % 32u);
     };
-    auto cramColor = [&](unsigned index) -> std::uint32_t {
+    auto cramColor = [&](unsigned index,bool retainZero=false) -> std::uint32_t {
         const unsigned byte = (index * 2u) & 0x0FFFu;
         trackCramRead(byte);
         const std::uint16_t c = readVdp2Be16(g_vdp2Cram, byte);
-        return c ? vdp2Rgb555ToAbgr(c) : 0u;
+        return (c || retainZero) ? nativeSpriteMetadata(vdp2Rgb555ToAbgr(c),index) : 0u;
     };
 
     // A descriptor's palette/LUT is fixed throughout this decode. Resolve
@@ -6702,7 +7008,7 @@ static bool decodeLiveVdp1Texture(
     switch (mode) {
     case 0u: {
         const unsigned bank =
-            static_cast<unsigned>(record.cmdColr) & 0x07F0u;
+            static_cast<unsigned>(record.cmdColr) & 0xFFF0u;
         decodeDot4([&](unsigned dot) {
             return cramColor(bank | dot);
         }, true);
@@ -6727,7 +7033,7 @@ static bool decodeLiveVdp1Texture(
                     static_cast<unsigned>(lut[dot * 2u + 1u]));
             if (entry & 0x8000u)
                 return vdp2Rgb555ToAbgr(entry);
-            return entry ? cramColor(entry & 0x07FFu) : 0u;
+            return entry ? cramColor(entry) : 0u;
         }, lutAddress <= 0x80000u - 32u);
         return finishDecode();
     }
@@ -6736,7 +7042,7 @@ static bool decodeLiveVdp1Texture(
     case 3u:
     case 4u: {
         const unsigned mask = mode == 2u ? 0x3Fu : mode == 3u ? 0x7Fu : 0xFFu;
-        const unsigned bank = record.cmdColr & (0x7FFu & ~mask);
+        const unsigned bank = record.cmdColr & (0xFFFFu & ~mask);
         for (unsigned y = 0; y < height; ++y) {
             unsigned endCount = 0u;
             for (unsigned x = 0; x < width; ++x) {
@@ -6750,9 +7056,7 @@ static bool decodeLiveVdp1Texture(
                 const unsigned dot = rawDot & mask;
                 if (!dot && !spd) continue;
                 storePixel(p, cachedDotColor(dot, [&](unsigned value) {
-                    trackCramRead(((bank | value) * 2u) & 0xFFFu);
-                    return vdp2Rgb555ToAbgr(readVdp2Be16(
-                        g_vdp2Cram, ((bank | value) * 2u) & 0xFFFu));
+                    return cramColor(bank | value,true);
                 }));
             }
         }
@@ -6798,7 +7102,7 @@ static std::uint16_t liveTownTextureIndex(
     };
     const std::uint64_t key = descriptorKey(
         record.cmdPmod, record.cmdColr, record.cmdSrca, record.cmdSize);
-    const bool indexedScene = g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u;
+    const bool indexedScene = lagi::native_scene_mode(g_sceneGameMode);
     if (indexedScene) {
         // Index only appended descriptors. emplace preserves the original
         // linear search's first match if the source contains duplicates.
@@ -6888,7 +7192,7 @@ static Vdp1ModelSource liveTownVdp1Source()
 // Decode at most one new material per frame; all reads use published ownership.
 static bool prepareRegisteredNativeMaterial()
 {
-    if (g_sceneGameMode < 1u || g_sceneGameMode > 3u ||
+    if (!lagi::native_scene_mode(g_sceneGameMode) ||
         g_liveTownCpuMesh.polygonRecords.empty())
         return false;
     static std::uint64_t revision = 0u, generation = 0u;
@@ -6935,6 +7239,7 @@ static bool prepareRegisteredNativeMaterial()
 
 static const std::vector<std::uint16_t>* resolvedLiveTownMaterialIndices(
     sProcessed3dModel* modelIdentity,
+    std::uint64_t modelGeneration,
     const azel_bridge::LiveVdp1Model& model)
 {
     if (!modelIdentity)
@@ -6942,13 +7247,25 @@ static const std::vector<std::uint16_t>* resolvedLiveTownMaterialIndices(
 
     for (auto& cached : g_liveTownMaterialCache) {
         if (cached.model == modelIdentity &&
+            cached.generation == modelGeneration &&
             cached.textureIndices.size() == model.polygons.size())
             return &cached.textureIndices;
     }
 
+    // A retired native address may be reused with the same polygon count.
+    // No caller retains these indices past appendLiveTownModel(), so discard
+    // obsolete bindings for this identity before resolving the new snapshot.
+    g_liveTownMaterialCache.erase(std::remove_if(
+        g_liveTownMaterialCache.begin(), g_liveTownMaterialCache.end(),
+        [modelIdentity, modelGeneration](const auto& entry) {
+            return entry.model == modelIdentity &&
+                entry.generation != modelGeneration;
+        }), g_liveTownMaterialCache.end());
+
     const std::uint64_t resolveStartUs = sceKernelGetProcessTimeWide();
     LiveTownResolvedMaterialCache cached{};
     cached.model = modelIdentity;
+    cached.generation = modelGeneration;
     cached.textureIndices.reserve(model.polygons.size());
     for (const auto& record : model.polygons)
         cached.textureIndices.push_back(liveTownTextureIndex(record));
@@ -7155,7 +7472,15 @@ static void appendLiveTownModel(
     for (std::size_t p = 0; p < model.polygons.size(); ++p) {
         auto record = model.polygons[p];
 
-        if (record.cmdPmod & 0x0100u) {
+        if (lagi::vdp1_half_transparent(record.cmdPmod)) {
+            // Color calculation reads the existing destination. Do not let
+            // texture bucketing reorder overlapping blended commands.
+            if (runCount) {
+                g_liveTownMeshRanges.push_back({polygonBase+runStart,runCount});
+                runCount=0;
+            }
+            g_liveTownMeshRanges.push_back({polygonBase+p,1u});
+        } else if (record.cmdPmod & 0x0100u) {
             if (runCount == 0u)
                 runStart = p;
             ++runCount;
@@ -7198,10 +7523,11 @@ static void appendLiveTownModel(
         g_liveTownPolygonLights[polygonBase + p] = polygonLight;
     }
 
-    // Preserve the exact positions of Azel-authored VDP1 mesh commands in the
+    // Preserve the exact positions of Azel-authored VDP1 color/mesh commands in the
     // flattened live-town stream. Adjacent mesh polygons from the same model
     // are coalesced into ranges during the polygon copy, but no scene/object
-    // identity is inferred.
+    // identity is inferred. Half-transparent polygons remain single-command
+    // ranges so texture sorting cannot change their blend order.
     if (runCount != 0u)
         g_liveTownMeshRanges.push_back(
             {polygonBase + runStart, runCount});
@@ -7673,6 +7999,8 @@ static bool buildLiveTownFrame()
             staticSignature ^= static_cast<std::uint64_t>(
                 reinterpret_cast<std::uintptr_t>(submission.model));
             staticSignature *= 1099511628211ull;
+            staticSignature ^= submission.modelGeneration;
+            staticSignature *= 1099511628211ull;
             staticSignature ^= static_cast<std::uint8_t>(
                 submission.bundleIndex);
             staticSignature *= 1099511628211ull;
@@ -7749,7 +8077,7 @@ static bool buildLiveTownFrame()
             // property of the adapted Azel model and uses the same generic
             // cache as task-owned/dynamic submissions.
             const auto* resolved = resolvedLiveTownMaterialIndices(
-                submission.model, *model);
+                submission.model, submission.modelGeneration, *model);
             appendLiveTownModel(
                 *model,
                 submission.state,
@@ -7808,7 +8136,7 @@ static bool buildLiveTownFrame()
             continue;
 
         const auto* resolved = resolvedLiveTownMaterialIndices(
-            submission.model, *model);
+            submission.model, submission.modelGeneration, *model);
         appendLiveTownModel(
             *model,
             submission.state,
@@ -7919,6 +8247,8 @@ static bool buildLiveTownFrame()
         sceKernelGetProcessTimeWide() - tValidate);
 
     const std::uint64_t tUpload = sceKernelGetProcessTimeWide();
+    g_profilePositionSyncUs = 0u;
+    g_profilePositionSyncVertices = 0u;
     const bool fullSubdivMode = g_viewMode == 7;
     const bool changed = !g_liveTownPrepared ||
         g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
@@ -7936,20 +8266,38 @@ static bool buildLiveTownFrame()
         g_residentVdp1Model = ResidentVdp1Model::LiveTown;
         g_liveTownPrepared = true;
     } else {
+        // LAGI_LIVE_POSITION_SYNC_BEGIN
         const std::size_t firstDynamicVertex = g_liveTownStaticRebuilt
             ? 0u : g_liveTownStaticVertexCount;
+        const auto positionSyncStartUs = sceKernelGetProcessTimeWide();
+        // Keep each GPU-backed write stream contiguous. Interleaving three
+        // uncached destinations per vertex defeats ARM store coalescing.
+        if (firstDynamicVertex < g_liveTownCpuMesh.vertices.size()) {
+            std::memcpy(g_vdp1Vertices + firstDynamicVertex,
+                g_liveTownCpuMesh.vertices.data() + firstDynamicVertex,
+                (g_liveTownCpuMesh.vertices.size() - firstDynamicVertex) *
+                    sizeof(g_liveTownCpuMesh.vertices[0]));
+        }
         for (std::size_t i = firstDynamicVertex;
              i < g_liveTownCpuMesh.vertices.size(); ++i) {
             const auto& v = g_liveTownCpuMesh.vertices[i];
-            g_vdp1Vertices[i] = v;
-            g_vdp1LightingVertices[i] = v;
             g_vdp1TextureVertices[i].x = v.x;
             g_vdp1TextureVertices[i].y = v.y;
             g_vdp1TextureVertices[i].z = v.z;
+        }
+        for (std::size_t i = firstDynamicVertex;
+             i < g_liveTownCpuMesh.vertices.size(); ++i) {
+            const auto& v = g_liveTownCpuMesh.vertices[i];
             g_vdp1GouraudVertices[i].x = v.x;
             g_vdp1GouraudVertices[i].y = v.y;
             g_vdp1GouraudVertices[i].z = v.z;
         }
+        g_profilePositionSyncVertices = static_cast<unsigned int>(
+            g_liveTownCpuMesh.vertices.size() > firstDynamicVertex
+                ? g_liveTownCpuMesh.vertices.size() - firstDynamicVertex : 0u);
+        g_profilePositionSyncUs = static_cast<unsigned int>(
+            sceKernelGetProcessTimeWide() - positionSyncStartUs);
+        // LAGI_LIVE_POSITION_SYNC_END
     }
     g_profileBuildUploadUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tUpload);
@@ -8082,7 +8430,7 @@ static ViewerMat4 buildAuthenticRoomWvp()
     }
 
     const bool nativeFieldClip =
-        (g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u) &&
+        lagi::native_scene_mode(g_sceneGameMode) &&
         g_nativeSceneNearPlane > 0.0f &&
         g_nativeSceneFarPlane > g_nativeSceneNearPlane;
     const float nearPlane =
@@ -8108,7 +8456,7 @@ static ViewerMat4 buildAuthenticRoomWvp()
     // All captured native views use the same orientation as flight. An extra
     // X reflection reverses both the image and projected triangle winding.
     // Retain the historical mirror only for the reconstructed camera fallback.
-    if (!g_nativeSceneViewValid && g_sceneGameMode != 3u)
+    if (!g_nativeSceneViewValid && !lagi::native_scene_depth_mode(g_sceneGameMode))
         projection.m[0] = -projection.m[0];
 
     return viewerMul(view, projection);
@@ -9281,9 +9629,11 @@ void show_game_presentation()
 
     status("[PASS] GXM DEPTH SURFACES", 0xFF80E0FFu);
 
-    constexpr unsigned int patcherBufferSize = 64u * 1024u;
+    constexpr unsigned int patcherBufferSize = 256u * 1024u;
     constexpr unsigned int patcherVertexUsseSize = 64u * 1024u;
-    constexpr unsigned int patcherFragmentUsseSize = 64u * 1024u;
+    // Native VDP2 resolvers and their blend/MSAA variants outgrew the original
+    // bring-up pool. These are startup-resident programs, not per-frame memory.
+    constexpr unsigned int patcherFragmentUsseSize = 512u * 1024u;
 
     g_probePatcherBuffer = probeGpuAlloc(
         patcherBufferSize,
@@ -10416,6 +10766,88 @@ void show_game_presentation()
         return;
     }
 
+    // Separate blend variants keep the opaque/cutout fast path unchanged.
+    const auto* sceneNbgGxp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_scene_nbg0_f_gxp_start);
+    if(sceGxmProgramCheck(sceneNbgGxp)<0 || sceGxmShaderPatcherRegisterProgram(
+        g_probeShaderPatcher,sceneNbgGxp,&g_sceneNbg0Id)<0) {
+        failure("[FAIL] SCENE NBG0 REGISTER");return;
+    }
+    g_sceneNbg0Registered=true;
+    g_sceneNbg0Param=sceGxmProgramFindParameterByName(sceneNbgGxp,"nbg0State");
+    if(!g_sceneNbg0Param || sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,
+        g_sceneNbg0Id,SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,
+        &vdp2NbgBlend,textureVertexGxp,&g_sceneNbg0ResolveProgram)<0) {
+        failure("[FAIL] SCENE NBG0 RESOLVE PROGRAM");return;
+    }
+    const auto* rgbaGxp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_rgba_present_f_gxp_start);
+    if(sceGxmProgramCheck(rgbaGxp)<0 || sceGxmShaderPatcherRegisterProgram(
+        g_probeShaderPatcher,rgbaGxp,&g_rgbaPresentId)<0) {
+        failure("[FAIL] RGBA PRESENT REGISTER");return;
+    }
+    g_rgbaPresentRegistered=true;
+    g_rgbaPresentInfo=sceGxmProgramFindParameterByName(rgbaGxp,"presentInfo");
+    if(!g_rgbaPresentInfo){failure("[FAIL] RGBA PRESENT PARAM");return;}
+    SceGxmBlendInfo nbgAdd{};
+    nbgAdd.colorFunc=SCE_GXM_BLEND_FUNC_ADD;nbgAdd.alphaFunc=SCE_GXM_BLEND_FUNC_ADD;
+    nbgAdd.colorSrc=SCE_GXM_BLEND_FACTOR_ONE;nbgAdd.colorDst=SCE_GXM_BLEND_FACTOR_ONE;
+    nbgAdd.alphaSrc=SCE_GXM_BLEND_FACTOR_ONE;nbgAdd.alphaDst=SCE_GXM_BLEND_FACTOR_ZERO;
+    nbgAdd.colorMask=SCE_GXM_COLOR_MASK_ALL;
+    if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,
+        g_rgbaPresentId,
+        SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,kMultisampleMode,&nbgAdd,textureVertexGxp,
+        &g_sceneNbg0AddProgram)<0) {failure("[FAIL] NBG0 ADD PROGRAM");return;}
+    nbgAdd.colorDst=SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    nbgAdd.alphaDst=SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    const int nbgOverResult=sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_rgbaPresentId,
+        SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,kMultisampleMode,&nbgAdd,textureVertexGxp,
+        &g_sceneNbg0OverProgram);
+    if(nbgOverResult<0) {
+        logging::writef("[GxmPatcher] NBG0 over error=0x%08X buffer=%u/%u fragment=%u/%u\n",
+            unsigned(nbgOverResult),sceGxmShaderPatcherGetBufferMemAllocated(g_probeShaderPatcher),
+            patcherBufferSize,sceGxmShaderPatcherGetFragmentUsseMemAllocated(g_probeShaderPatcher),
+            patcherFragmentUsseSize);
+        failure("[FAIL] NBG0 OVER PROGRAM");return;
+    }
+    const auto createNativeBlend = [&](NativeBlendProgram slot,SceGxmShaderPatcherId id,
+        const SceGxmProgram* vertex,SceGxmMultisampleMode samples) {
+        return sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,id,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,samples,&fadeBlend,vertex,
+            &g_nativeBlendPrograms[slot])>=0;
+    };
+    // Native half-transparency produces a new RGB framebuffer pixel. Retain
+    // its reserved RGB selector instead of the overwritten destination's bank.
+    if (LAGI_VDP2_SPRITE_COMPOSITE) {
+        fadeBlend.alphaSrc = SCE_GXM_BLEND_FACTOR_ONE;
+        fadeBlend.alphaDst = SCE_GXM_BLEND_FACTOR_ZERO;
+    }
+    if (!createNativeBlend(BlendTexture,g_textureFragmentProgramId,textureVertexGxp,kMultisampleMode) ||
+        !createNativeBlend(BlendStochastic,g_stochasticFragmentProgramId,textureVertexGxp,SCE_GXM_MULTISAMPLE_NONE) ||
+        !createNativeBlend(BlendSubdiv,g_texturedGouraudSubdivFragmentProgramId,gouraudSubdivVertexGxp,kMultisampleMode) ||
+        !createNativeBlend(BlendStochasticGouraud,g_stochasticGouraudFragmentProgramId,gouraudSubdivVertexGxp,SCE_GXM_MULTISAMPLE_NONE) ||
+        !createNativeBlend(BlendMesh,g_meshFragmentProgramId,textureVertexGxp,kMultisampleMode) ||
+        !createNativeBlend(BlendMeshSubdiv,g_meshFragmentProgramId,gouraudSubdivVertexGxp,kMultisampleMode) ||
+        !createNativeBlend(BlendLitHalf,g_texturedLitHalfFragmentProgramId,gouraudPayloadVertexGxp,kMultisampleMode) ||
+        (LAGI_VDP2_SPRITE_COMPOSITE && !createNativeBlend(BlendSolid,g_probeFragmentProgramId,vertexProgram,kMultisampleMode))) {
+        failure("[FAIL] NATIVE VDP1 BLEND PROGRAMS"); return;
+    }
+    const SceGxmProgram* meshGxp[2]={
+        reinterpret_cast<const SceGxmProgram*>(_binary_lagi_textured_gouraud_subdiv_mesh_f_gxp_start),
+        reinterpret_cast<const SceGxmProgram*>(_binary_lagi_stochastic_gouraud_mesh_f_gxp_start)};
+    for(unsigned i=0;i<2;++i) {
+        if(sceGxmProgramCheck(meshGxp[i])<0 || sceGxmShaderPatcherRegisterProgram(
+                g_probeShaderPatcher,meshGxp[i],&g_gouraudMeshProgramIds[i])<0) {
+            failure("[FAIL] REGISTER GOURAUD MESH SHADER");return;
+        }
+        g_gouraudMeshRegistered[i]=true;
+        for(unsigned blend=0;blend<2;++blend)
+            if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_gouraudMeshProgramIds[i],
+                SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,i?SCE_GXM_MULTISAMPLE_NONE:kMultisampleMode,
+                blend?&fadeBlend:nullptr,gouraudSubdivVertexGxp,&g_gouraudMeshPrograms[i*2+blend])<0) {
+                failure("[FAIL] CREATE GOURAUD MESH SHADER");return;
+            }
+    }
+    g_meshStochasticTextureSizeParam=sceGxmProgramFindParameterByName(meshGxp[1],"textureSize");
+    if(!g_meshStochasticTextureSizeParam) {failure("[FAIL] MESH TEXTURE SIZE");return;}
     status("[PASS] GXM GOURAUD VERTEX PAYLOAD", 0xFF80E0FFu);
     status("[PASS] GXM GOURAUD SUBDIV PIPELINE", 0xFF80E0FFu);
     status("[PASS] GXM GOURAUD SUBDIV GRAY", 0xFF80E0FFu);
@@ -10564,7 +10996,7 @@ void show_game_presentation()
     gxmFb.height = kHeight;
 
     const int displayResult =
-        sceDisplaySetFrameBuf(&gxmFb, SCE_DISPLAY_SETBUF_NEXTFRAME);
+        g_preserveLoadingScanout ? 0 : sceDisplaySetFrameBuf(&gxmFb, SCE_DISPLAY_SETBUF_NEXTFRAME);
     if (displayResult < 0) {
         char line[78];
         std::snprintf(
@@ -10584,6 +11016,10 @@ void show_game_presentation()
     g_probeDisplayingGxm = true;
     g_gxmDrawBuffer = 1;
     g_debugVisible = false;
+    logging::writef("[GxmPatcher] ready buffer=%u/%u vertex=%u/%u fragment=%u/%u\n",
+        sceGxmShaderPatcherGetBufferMemAllocated(g_probeShaderPatcher),patcherBufferSize,
+        sceGxmShaderPatcherGetVertexUsseMemAllocated(g_probeShaderPatcher),patcherVertexUsseSize,
+        sceGxmShaderPatcherGetFragmentUsseMemAllocated(g_probeShaderPatcher),patcherFragmentUsseSize);
     g_suppressGxmInitPassStatus = false;
     status("[PASS] GXM INITIALIZATION + VDP1 READY", 0xFF80E0FFu);
     std::printf("[GXM] black town boot framebuffer queued for display\n");
@@ -11140,7 +11576,7 @@ bool submit_vdp1_model(
                     continue;
 
                 const bool mesh =
-                    orderedShadow || g_vdp1GpuTextures[t].mesh;
+                    g_vdp1GpuTextures[t].mesh;
                 if (orderedShadow) {
                     static unsigned int orderedShadowTraceBudget = 8u;
                     if (orderedShadowTraceBudget != 0u) {
@@ -11163,27 +11599,37 @@ bool submit_vdp1_model(
                         g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
                     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
                     sceGxmSetFrontDepthFunc(
-                        g_probeContext, g_sceneGameMode == 3u ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
+                        g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
                     sceGxmSetBackDepthFunc(
-                        g_probeContext, g_sceneGameMode == 3u ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
+                        g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
                     sceGxmSetFrontDepthWriteEnable(
-                        g_probeContext, g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
+                        g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                     sceGxmSetBackDepthWriteEnable(
-                        g_probeContext, g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
+                        g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                 }
 
+                const bool blended = lagi::vdp1_half_transparent(g_vdp1GpuTextures[t].cmdPmod);
                 sceGxmSetFragmentProgram(
                     g_probeContext,
-                    mesh ? g_meshTextureFragmentProgram
-                         : g_textureFragmentProgram);
+                    blended ? g_nativeBlendPrograms[mesh ? BlendMesh : BlendTexture] :
+                    (mesh ? g_meshTextureFragmentProgram : g_textureFragmentProgram));
                 sceGxmSetFragmentTexture(
                     g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
+                if (blended) {
+                    sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
+                    sceGxmSetBackDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
+                }
                 sceGxmDraw(
                     g_probeContext,
                     SCE_GXM_PRIMITIVE_TRIANGLES,
                     SCE_GXM_INDEX_FORMAT_U16,
                     g_vdp1TextureIndices + batch.firstIndex,
                     batch.indexCount);
+
+                if (blended && !orderedShadow) {
+                    sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_ENABLED);
+                    sceGxmSetBackDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_ENABLED);
+                }
 
                 if (orderedShadow) {
                     sceGxmSetCullMode(g_probeContext, cullMode);
@@ -11511,8 +11957,9 @@ bool submit_vdp1_model(
                 const TextureBatch& batch = g_vdp1TextureBatches[t];
 
                 bool mesh = false;
+                const bool blended = subdividedTexturedLit && lagi::vdp1_half_transparent(g_vdp1GpuTextures[t].cmdPmod);
                 if (subdividedTexturedLit) {
-                    mesh = orderedShadow || g_vdp1GpuTextures[t].mesh;
+                    mesh = g_vdp1GpuTextures[t].mesh;
                     if (orderedShadow) {
                         sceGxmSetFrontPolygonMode(
                             g_probeContext,
@@ -11523,31 +11970,40 @@ bool submit_vdp1_model(
                         sceGxmSetCullMode(
                             g_probeContext, SCE_GXM_CULL_NONE);
                         sceGxmSetFrontDepthFunc(
-                            g_probeContext, g_sceneGameMode == 3u ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
+                            g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
                         sceGxmSetBackDepthFunc(
-                            g_probeContext, g_sceneGameMode == 3u ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
+                            g_probeContext, lagi::native_scene_depth_mode(g_sceneGameMode) ? depthFunc : SCE_GXM_DEPTH_FUNC_ALWAYS);
                         sceGxmSetFrontDepthWriteEnable(
                             g_probeContext,
-                            g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
+                            lagi::native_scene_depth_mode(g_sceneGameMode) ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                         sceGxmSetBackDepthWriteEnable(
                             g_probeContext,
-                            g_sceneGameMode == 3u ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
+                            lagi::native_scene_depth_mode(g_sceneGameMode) ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED);
                     }
                     sceGxmSetFragmentProgram(
                         g_probeContext,
-                        mesh ? g_meshSubdivFragmentProgram
-                             : g_texturedGouraudSubdivFragmentProgram);
+                        blended ? g_nativeBlendPrograms[mesh ? BlendMeshSubdiv : BlendSubdiv] :
+                        (mesh ? g_meshSubdivFragmentProgram : g_texturedGouraudSubdivFragmentProgram));
                     sceGxmSetFragmentTexture(
                         g_probeContext, 0,
                         &g_vdp1GpuTextures[t].texture);
                 }
 
+                if (blended) {
+                    sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
+                    sceGxmSetBackDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
+                }
                 sceGxmDraw(
                     g_probeContext,
                     SCE_GXM_PRIMITIVE_TRIANGLES,
                     SCE_GXM_INDEX_FORMAT_U16,
                     g_vdp1SubdivIndices + batch.firstIndex,
                     batch.indexCount);
+
+                if (blended && !orderedShadow) {
+                    sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_ENABLED);
+                    sceGxmSetBackDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_ENABLED);
+                }
 
                 if (orderedShadow) {
                     sceGxmSetCullMode(g_probeContext, cullMode);
@@ -11842,7 +12298,8 @@ bool submit_vdp1_model(
 
             if (texturedLit) {
                 sceGxmSetFragmentProgram(
-                    g_probeContext, g_texturedLitHalfFragmentProgram);
+                    g_probeContext, lagi::vdp1_half_transparent(g_vdp1GpuTextures[t].cmdPmod)
+                        ? g_nativeBlendPrograms[BlendLitHalf] : g_texturedLitHalfFragmentProgram);
                 sceGxmSetFragmentTexture(
                     g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
             }
@@ -12070,6 +12527,20 @@ bool submit_vdp1_model(
     return true;
 }
 
+static bool clearNativeSceneColorBuffer(std::uint32_t* pixels, int width, int height, int pitch)
+{
+    if (!pixels || width <= 0 || height <= 0 || pitch < width) return false;
+    // Transfer engine writes uncached color storage without a 2 MiB CPU
+    // memset each full-resolution frame. Finish before BeginScene consumes
+    // the destination. Keep the exact CPU clear when transfers are rejected.
+    const int submitted = sceGxmTransferFill(0, SCE_GXM_TRANSFER_FORMAT_U8U8U8U8_ABGR,
+        pixels, 0, 0, static_cast<unsigned>(pitch), static_cast<unsigned>(height),
+        pitch * static_cast<int>(sizeof(std::uint32_t)), nullptr, 0, nullptr);
+    if (submitted >= 0) return sceGxmTransferFinish() >= 0;
+    std::memset(pixels, 0, static_cast<std::size_t>(pitch) * height * sizeof(std::uint32_t));
+    return true;
+}
+
 static void drawColorOffsetPass(
     SceGxmFragmentProgram* program,
     int red, int green, int blue)
@@ -12126,6 +12597,24 @@ static void drawColorOffsetPass(
         6u);
 }
 
+static bool frontendHasSharedColorOffset()
+{
+    // When every Saturn layer (including SPRITE and BACK) uses one bank,
+    // apply the offset once after composition. This also covers VDP1 pixels
+    // without tinting transparent texels or applying the fade twice.
+    const unsigned enable=g_azelColorOffsetEnable.load(std::memory_order_relaxed)&0x7fu;
+    const unsigned select=g_azelColorOffsetSelect.load(std::memory_order_relaxed)&0x7fu;
+    // Mixed bank selectors are still a shared offset when native A/B RGB
+    // values match (D5 selects B for RBG0 and A for its sprite particles).
+    return lagi::shared_color_offset(enable,select,
+        g_azelColorOffsetARed.load(std::memory_order_relaxed),
+        g_azelColorOffsetAGreen.load(std::memory_order_relaxed),
+        g_azelColorOffsetABlue.load(std::memory_order_relaxed),
+        g_azelColorOffsetBRed.load(std::memory_order_relaxed),
+        g_azelColorOffsetBGreen.load(std::memory_order_relaxed),
+        g_azelColorOffsetBBlue.load(std::memory_order_relaxed));
+}
+
 static void drawAzelColorOffsetForLayer(
     unsigned int layerBit,
     bool requireEnable)
@@ -12170,18 +12659,14 @@ static void drawAzelColorOffsetForLayer(
             : static_cast<int>(raw);
     };
 
-    // Azel's fade reconstruction expands Saturn's signed 5-bit color
-    // endpoints to approximately -128..+135 (see unpackColor(): negative
-    // values * 8, positive values * 9). Neptune blends in an 8-bit display
-    // domain, so expand that contribution once here. With the CLOFEN/CLOFSL
-    // layer mapping now corrected this reaches true black/white without
-    // incorrectly washing unrelated layers.
+    // Native fade endpoints already span signed-nine-bit -256..+255.
+    // Do not multiply them again in the display domain.
     const int displayRed =
-        std::clamp(hardwareSigned9(red) * 2, -255, 255);
+        std::clamp(hardwareSigned9(red), -255, 255);
     const int displayGreen =
-        std::clamp(hardwareSigned9(green) * 2, -255, 255);
+        std::clamp(hardwareSigned9(green), -255, 255);
     const int displayBlue =
-        std::clamp(hardwareSigned9(blue) * 2, -255, 255);
+        std::clamp(hardwareSigned9(blue), -255, 255);
 
     drawColorOffsetPass(
         g_colorOffsetAddFragmentProgram,
@@ -12299,26 +12784,36 @@ static bool renderCinepakResolvePass()
     return submitted;
 }
 
+#include "neptune_rbg_tile_program.inc"
+
 static bool drawVdp2Rbg0Gpu(
     const RbgGpuState& rbg, const void* rawTextureData,
     const azel::DebugTextureVertex* vertices, const std::uint16_t* indices,
     float xExtent, bool frontend)
 {
     bool rbgSubmitted = true;
-    sceGxmSetFragmentProgram(
-        g_probeContext, g_vdp2Rbg0FragmentProgram);
+    const bool decodedPages=frontend?g_frontendRbgDecodedReady:g_rbgDecodedPagesReady;
+    selectRbgTileProgram(((!frontend && g_sceneVdp2ByteTextureValid) || decodedPages) && lagi::rbgTile16EightBit(
+        static_cast<unsigned>(rbg.format[0]),static_cast<unsigned>(rbg.format[1])),
+        decodedPages,
+        !frontend && g_rbgCoefficientRowsReady);
+    if(g_rbgTileBound)
+        sceGxmSetFragmentTexture(g_probeContext,1,&g_sceneVdp2ByteTexture);
+    if(g_rbgDecodedBound) {
+        sceGxmSetFragmentTexture(g_probeContext,1,&g_rbgDecodedAtlasTexture);
+    }
+    if(g_rbgRowsBound)
+        sceGxmSetFragmentTexture(g_probeContext,2,&g_rbgCoefficientRowsTexture);
 
     const unsigned int rpmd =
         static_cast<unsigned int>(rbg.ctrl[0]) & 3u;
+    // Never substitute an unrestricted A overlay for missing RPMD3 coverage.
+    if (rpmd == 3u && (!g_vdp2WindowVertices || !g_vdp2WindowIndices))
+        return false;
     const unsigned int ktctl =
         static_cast<unsigned int>(rbg.ctrl[1]);
     const unsigned int ktaof =
         static_cast<unsigned int>(rbg.ctrl[2]);
-    const unsigned int wctld =
-        static_cast<unsigned int>(rbg.ctrl[4]);
-    const unsigned int lineWindowMask =
-        static_cast<unsigned int>(rbg.ctrl[7]);
-
     auto submitRbgParameter =
         [&](const float* planes,
             const float* transform,
@@ -12340,7 +12835,7 @@ static bool drawVdp2Rbg0Gpu(
                 rbgUniforms,
                 g_vdp2Rbg0PlaneParam[i],
                 0, 4,
-                &planes[i * 4u]);
+                g_rbgDecodedBound?((coefficientEnableBit==1u?g_rbgDecodedPlanesA:g_rbgDecodedPlanesB)+i*4u):&planes[i*4u]);
         }
 
         const float coefficientSize =
@@ -12351,8 +12846,8 @@ static bool drawVdp2Rbg0Gpu(
         for (unsigned i = 1; i < 16u; ++i)
             sharedPlane = sharedPlane && planes[i] == planes[0];
         const float rbgInfo[4] = {
-            static_cast<float>(coefficientOffset) *
-                coefficientSize * 65536.0f,
+            g_rbgRowsBound ? (coefficientEnableBit==1u?0.0f:1.0f) :
+                static_cast<float>(coefficientOffset) * coefficientSize * 65536.0f,
             (ktctl & coefficientEnableBit) ? 1.0f : 0.0f,
             coefficientSize,
             sharedPlane ? 1.0f : 0.0f,
@@ -12366,7 +12861,7 @@ static bool drawVdp2Rbg0Gpu(
             rbgUniforms,
             g_vdp2Rbg0Transform1Param,
             0, 4, &transform[4]);
-        sceGxmSetUniformDataF(
+        if(g_vdp2Rbg0CoefficientParam) sceGxmSetUniformDataF(
             rbgUniforms,
             g_vdp2Rbg0CoefficientParam,
             0, 4, coefficient);
@@ -12395,8 +12890,9 @@ static bool drawVdp2Rbg0Gpu(
             (ktctl & 1u) ? 1.0f : 0.0f, switchSize,
             rpmd == 2u ? (coefficientEnableBit == 1u ? 1.0f : 2.0f) : 0.0f
         };
-        sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0SwitchCoefficientParam,
-            0, 4, rbg.coefficientA);
+        if(g_vdp2Rbg0SwitchCoefficientParam)
+            sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0SwitchCoefficientParam,
+                0, 4, rbg.coefficientA);
         sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0SwitchInfoParam,
             0, 4, switchInfo);
 
@@ -12412,11 +12908,14 @@ static bool drawVdp2Rbg0Gpu(
             rbg.format[0], rbg.format[1], rbg.format[2], rbg.parameterFormat[1]
         };
         const float* bValues[9] = {
-            rbg.planesB, rbg.planesB + 4, rbg.planesB + 8, rbg.planesB + 12,
+            g_rbgDecodedBound?g_rbgDecodedPlanesB:rbg.planesB,
+            g_rbgDecodedBound?g_rbgDecodedPlanesB+4:rbg.planesB+4,
+            g_rbgDecodedBound?g_rbgDecodedPlanesB+8:rbg.planesB+8,
+            g_rbgDecodedBound?g_rbgDecodedPlanesB+12:rbg.planesB+12,
             rbg.transformB, rbg.transformB + 4, rbg.coefficientB, bInfo, bFormat
         };
         for (unsigned i = 0; i < 9u; ++i)
-            sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0BParam[i],
+            if(g_vdp2Rbg0BParam[i]) sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0BParam[i],
                 0, 4, bValues[i]);
 
         if (sceGxmSetVertexStream(
@@ -12431,234 +12930,71 @@ static bool drawVdp2Rbg0Gpu(
             indexCount) >= 0;
     };
 
-    if (rpmd == 1u || rpmd == 3u) {
-        // Parameter B is the base for RPMD=3.
-        rbgSubmitted = submitRbgParameter(
-            rbg.planesB,
-            rbg.transformB,
-            rbg.coefficientB,
-            0x100u, 0x200u, 8u,
-            vertices, indices, 6u);
-    }
-
     unsigned int parameterAIndexCount = 6u;
-    const azel::DebugTextureVertex* parameterAVertices =
-        vertices;
-    const std::uint16_t* parameterAIndices =
-        indices;
+    const azel::DebugTextureVertex* parameterAVertices = vertices;
+    const std::uint16_t* parameterAIndices = indices;
+    unsigned int parameterBIndexCount = 6u;
+    const azel::DebugTextureVertex* parameterBVertices = vertices;
+    const std::uint16_t* parameterBIndices = indices;
 
-    if (rbgSubmitted && rpmd == 3u &&
-        g_vdp2WindowVertices && g_vdp2WindowIndices) {
-        unsigned int lineAddress = 0u;
-        bool drawInside = true;
-        int yStart = 0;
-        int yEnd = 223;
-        bool haveSingleLineWindow = false;
-
-        if ((wctld & 0x8u) != 0u &&
-            (lineWindowMask & 0x2u) != 0u) {
-            lineAddress =
-                static_cast<unsigned int>(rbg.ctrl[6]);
-            drawInside = (wctld & 0x4u) != 0u;
-            yStart = static_cast<int>(rbg.ctrl[13]);
-            yEnd = static_cast<int>(rbg.ctrl[15]);
-            haveSingleLineWindow = true;
-        } else if ((wctld & 0x2u) != 0u &&
-                   (lineWindowMask & 0x1u) != 0u) {
-            lineAddress =
-                static_cast<unsigned int>(rbg.ctrl[5]);
-            drawInside = (wctld & 0x1u) != 0u;
-            yStart = static_cast<int>(rbg.ctrl[9]);
-            yEnd = static_cast<int>(rbg.ctrl[11]);
-            haveSingleLineWindow = true;
-        }
-
-        if (haveSingleLineWindow || !frontend) {
-            const auto* rawBytes =
-                static_cast<const unsigned char*>(
-                    rawTextureData);
-
-            // Hardware bring-up diagnostic: D5 currently uses
-            // RPMD=3 with line window 1. Preserve the last
-            // hardware-good B-base/A-overlay compositor while we
-            // inspect the authored line-window coverage before
-            // changing parameter ownership semantics.
-            static bool loggedD5RpWindow = false;
-            if (frontend && !loggedD5RpWindow) {
-                logging::writef(
-                    "[NeptuneVDP2] RPMD3 window WCTLD=%04X "
-                    "mask=%u addr=%05X y=%d..%d inside=%u\n",
-                    wctld, lineWindowMask, lineAddress,
-                    yStart, yEnd, drawInside ? 1u : 0u);
-                const int sampleY[] = {
-                    0, 32, 64, 96, 112, 128, 160, 192, 223
-                };
-                for (unsigned int si = 0;
-                     si < sizeof(sampleY) / sizeof(sampleY[0]);
-                     ++si) {
-                    const int sy = sampleY[si];
-                    const unsigned int addr =
-                        (lineAddress +
-                         static_cast<unsigned int>(sy) * 4u) &
-                        0x7FFFFu;
-                    const unsigned int xsRaw =
-                        static_cast<unsigned int>(rawBytes[addr]) |
-                        (static_cast<unsigned int>(
-                            rawBytes[(addr + 1u) & 0x7FFFFu]) << 8);
-                    const unsigned int xeRaw =
-                        static_cast<unsigned int>(
-                            rawBytes[(addr + 2u) & 0x7FFFFu]) |
-                        (static_cast<unsigned int>(
-                            rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
-                    logging::writef(
-                        "[NeptuneVDP2] LW1 y=%d raw=%04X..%04X "
-                        "x=%u..%u\n",
-                        sy, xsRaw, xeRaw,
-                        (xsRaw >> 1) & 0x1FFu,
-                        (xeRaw >> 1) & 0x1FFu);
+    if (rpmd == 3u) {
+        lagi::RbgWindowRectCoalescer rectangles;
+        bool overflow = false;
+        const bool covered = lagi::emitRbgWindowSpans(rbg.ctrl,
+            static_cast<const unsigned char*>(rawTextureData),
+            [&](unsigned parameter, int y, int x0, int x1) {
+                const auto rectangle=rectangles.add(parameter,y,x0,x1);
+                if (!rectangle.valid) {
+                    overflow = true;
+                    return;
                 }
-                loggedD5RpWindow = true;
-            }
-
-
-
-            unsigned int quadCount = 0u;
-            auto emitSpan =
-                [&](int y, int x0, int x1) {
-                if (quadCount >= 224u * 3u)
-                    return;
-                x0 = std::max(x0, 0);
-                x1 = std::min(x1, 351);
-                if (x1 < x0)
-                    return;
-
-                const float u0 =
-                    static_cast<float>(x0) / 352.0f;
-                const float u1 =
-                    static_cast<float>(x1 + 1) / 352.0f;
-                const float v0 =
-                    static_cast<float>(y) / 224.0f;
-                const float v1 =
-                    static_cast<float>(y + 1) / 224.0f;
-                const float px0 =
-                    -xExtent + 2.0f * xExtent * u0;
-                const float px1 =
-                    -xExtent + 2.0f * xExtent * u1;
-                const float py0 = 1.0f - 2.0f * v0;
+                // Separate A/B ranges remain immutable until both GPU draws
+                // finish. No rewriting geometry already submitted for B.
+                const unsigned quad = parameter * lagi::RbgWindowMaxSpans + rectangle.quad;
+                const unsigned base = quad * 4u;
+                const float v1 = static_cast<float>(y + 1) / 224.0f;
                 const float py1 = 1.0f - 2.0f * v1;
-
-                const unsigned int base = quadCount * 4u;
-                g_vdp2WindowVertices[base + 0u] =
-                    {px0, py0, 0.5f, u0, v0};
-                g_vdp2WindowVertices[base + 1u] =
-                    {px1, py0, 0.5f, u1, v0};
-                g_vdp2WindowVertices[base + 2u] =
-                    {px0, py1, 0.5f, u0, v1};
-                g_vdp2WindowVertices[base + 3u] =
-                    {px1, py1, 0.5f, u1, v1};
-
-                const unsigned int ii = quadCount * 6u;
-                g_vdp2WindowIndices[ii + 0u] =
-                    static_cast<std::uint16_t>(base + 0u);
-                g_vdp2WindowIndices[ii + 1u] =
-                    static_cast<std::uint16_t>(base + 1u);
-                g_vdp2WindowIndices[ii + 2u] =
-                    static_cast<std::uint16_t>(base + 2u);
-                g_vdp2WindowIndices[ii + 3u] =
-                    static_cast<std::uint16_t>(base + 2u);
-                g_vdp2WindowIndices[ii + 4u] =
-                    static_cast<std::uint16_t>(base + 1u);
-                g_vdp2WindowIndices[ii + 5u] =
-                    static_cast<std::uint16_t>(base + 3u);
-                ++quadCount;
-            };
-
-            if (!frontend) {
-                // Window coverage is geometry; GXM still performs every pixel's
-                // rotation, coefficient lookup, tile decode and palette fetch.
-                const auto accepted = [&](unsigned w, int x, int y) {
-                    const unsigned enable = w ? 8u : 2u;
-                    if (!(wctld & enable)) return 3;
-                    const unsigned base = 8u + w * 4u;
-                    int xs = static_cast<int>(rbg.ctrl[base]);
-                    int xe = static_cast<int>(rbg.ctrl[base + 2u]);
-                    if (lineWindowMask & (1u << w)) {
-                        const unsigned address =
-                            (static_cast<unsigned>(rbg.ctrl[5u + w]) + y * 4u) & 0x7FFFFu;
-                        const unsigned start = rawBytes[address] |
-                            (rawBytes[(address + 1u) & 0x7FFFFu] << 8);
-                        const unsigned end = rawBytes[(address + 2u) & 0x7FFFFu] |
-                            (rawBytes[(address + 3u) & 0x7FFFFu] << 8);
-                        xs = (start >> 1) & 0x1FFu;
-                        xe = (end >> 1) & 0x1FFu;
-                        if (end == 0xFFFFu) { xs = 1; xe = 0; }
+                if(!rectangle.fresh) {
+                    for(unsigned corner:{2u,3u}) {
+                        g_vdp2WindowVertices[base+corner].y=py1;
+                        g_vdp2WindowVertices[base+corner].v=v1;
                     }
-                    const bool inside = x >= xs && x <= xe &&
-                        y >= static_cast<int>(rbg.ctrl[base + 1u]) &&
-                        y <= static_cast<int>(rbg.ctrl[base + 3u]);
-                    return inside == ((wctld & (w ? 4u : 1u)) != 0) ? 1 : 0;
-                };
-                for (int y = 0; y < 224; ++y) {
-                    int span = -1;
-                    for (int x = 0; x <= 352; ++x) {
-                        bool draw = false;
-                        if (x < 352) {
-                            const int a = accepted(0, x, y), b = accepted(1, x, y);
-                            draw = (a & 2) ? (b & 1) : (b & 2) ? (a & 1) :
-                                (wctld & 0x80u) ? (a || b) : (a && b);
-                        }
-                        if (draw && span < 0) span = x;
-                        if (!draw && span >= 0) { emitSpan(y, span, x - 1); span = -1; }
-                    }
+                    return;
                 }
-            } else {
-            for (int y = 0; y < 224; ++y) {
-                const unsigned int addr =
-                    (lineAddress +
-                     static_cast<unsigned int>(y) * 4u) &
-                    0x7FFFFu;
-                const unsigned int xsRaw =
-                    static_cast<unsigned int>(rawBytes[addr]) |
-                    (static_cast<unsigned int>(
-                        rawBytes[(addr + 1u) & 0x7FFFFu]) << 8);
-                const unsigned int xeRaw =
-                    static_cast<unsigned int>(
-                        rawBytes[(addr + 2u) & 0x7FFFFu]) |
-                    (static_cast<unsigned int>(
-                        rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
-
-                int xs = 0;
-                int xe = 0;
-                if (xeRaw != 0xFFFFu) {
-                    xs = static_cast<int>((xsRaw >> 1) & 0x1FFu);
-                    xe = static_cast<int>((xeRaw >> 1) & 0x1FFu);
+                const float u0 = static_cast<float>(x0) / 352.0f;
+                const float u1 = static_cast<float>(x1 + 1) / 352.0f;
+                const float v0 = static_cast<float>(y) / 224.0f;
+                const float px0 = -xExtent + 2.0f * xExtent * u0;
+                const float px1 = -xExtent + 2.0f * xExtent * u1;
+                const float py0 = 1.0f - 2.0f * v0;
+                g_vdp2WindowVertices[base + 0] = {px0,py0,0.5f,u0,v0};
+                g_vdp2WindowVertices[base + 1] = {px1,py0,0.5f,u1,v0};
+                g_vdp2WindowVertices[base + 2] = {px0,py1,0.5f,u0,v1};
+                g_vdp2WindowVertices[base + 3] = {px1,py1,0.5f,u1,v1};
+                const unsigned ii = quad * 6u;
+                for (unsigned i = 0; i < 6; ++i) {
+                    constexpr unsigned order[6] = {0,1,2,2,1,3};
+                    g_vdp2WindowIndices[ii + i] = static_cast<std::uint16_t>(base + order[i]);
                 }
-
-                const bool yInside =
-                    y >= yStart && y <= yEnd;
-                if (drawInside) {
-                    if (yInside)
-                        emitSpan(y, xs, xe);
-                } else {
-                    if (!yInside) {
-                        emitSpan(y, 0, 351);
-                    } else {
-                        emitSpan(y, 0, xs - 1);
-                        emitSpan(y, xe + 1, 351);
-                    }
-                }
-            }
-
-            }
-
-            if (quadCount) {
-                parameterAVertices = g_vdp2WindowVertices;
-                parameterAIndices = g_vdp2WindowIndices;
-                parameterAIndexCount = quadCount * 6u;
-            } else {
-                parameterAIndexCount = 0u;
-            }
+            });
+        if (!covered || overflow) return false;
+        parameterAVertices = parameterBVertices = g_vdp2WindowVertices;
+        parameterAIndices = g_vdp2WindowIndices;
+        parameterBIndices = g_vdp2WindowIndices + lagi::RbgWindowMaxSpans * 6u;
+        parameterAIndexCount = rectangles.count(0) * 6u;
+        parameterBIndexCount = rectangles.count(1) * 6u;
+        static bool loggedCoverage = false;
+        if (frontend && !loggedCoverage) {
+            logging::writef("[RBG0WindowCoverage] complementary=1 aSpans=%u bSpans=%u nativePixels=78848 coalesced=1\n",
+                rectangles.count(0),rectangles.count(1));
+            loggedCoverage = true;
         }
+    }
+    if ((rpmd == 1u || rpmd == 3u) && parameterBIndexCount) {
+        rbgSubmitted = submitRbgParameter(
+            rbg.planesB, rbg.transformB, rbg.coefficientB,
+            0x100u, 0x200u, 8u,
+            parameterBVertices, parameterBIndices, parameterBIndexCount);
     }
 
     if (rbgSubmitted && rpmd != 1u &&
@@ -12678,7 +13014,8 @@ static bool drawVdp2Rbg0Gpu(
     // tint the rotation plane when only the back screen is selected.
     if (rbgSubmitted) {
         constexpr unsigned int kRbg0Bit = 0x10u;
-        drawAzelColorOffsetForLayer(kRbg0Bit, true);
+        if (!frontend || !frontendHasSharedColorOffset())
+            drawAzelColorOffsetForLayer(kRbg0Bit, true);
         // Color-offset passes use colored vertices; restore the texture vertex
         // program before the caller submits its next VDP2 layer.
         sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
@@ -12694,14 +13031,27 @@ static bool drawVdp2Rbg0Gpu(
     return rbgSubmitted;
 }
 
+#include "neptune_rbg_decoded_pages.inc"
+#include "neptune_rbg_coefficient_rows.inc"
+
 static bool prepareSceneVdp2Background()
 {
-    if (!g_sceneRbg0Enabled)
+    g_rbgDecodedPagesReady=false;
+    g_rbgCoefficientRowsReady=false;
+    if (!g_sceneRbg0Enabled && !g_sceneNbg0.enabled)
         return true;
     if (!g_sceneVdp2GpuRaw) {
         g_sceneVdp2GpuRawInitialized = false;
-        g_sceneVdp2GpuRaw = probeGpuAlloc(kRawVdp2Bytes,
+        // The RBG shader makes dependent VRAM/CRAM reads per output pixel.
+        // Keep the unchanged raw image in GPU-local memory, not system RAM.
+        g_sceneVdp2GpuRaw = probeCdramAlloc(kRawVdp2Bytes,
             SCE_GXM_MEMORY_ATTRIB_READ, &g_sceneVdp2RawUid);
+        const bool rawInCdram=g_sceneVdp2GpuRaw!=nullptr;
+        if(!g_sceneVdp2GpuRaw)
+            g_sceneVdp2GpuRaw=probeGpuAlloc(kRawVdp2Bytes,
+                SCE_GXM_MEMORY_ATTRIB_READ,&g_sceneVdp2RawUid);
+        logging::writef("[RBG0Memory] cdram=%u payloadBytes=%u\n",
+            rawInCdram?1u:0u,kRawVdp2Bytes);
         g_sceneVdp2Vertices = static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(4u * sizeof(azel::DebugTextureVertex),
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_sceneVdp2VertexUid));
@@ -12710,6 +13060,7 @@ static bool prepareSceneVdp2Background()
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_sceneVdp2IndexUid));
         const auto discard = [] {
             freeMovieMappedBlock(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
+            g_sceneVdp2ByteTextureValid=false;
             g_sceneVdp2GpuRawInitialized = false;
             void* vertices = g_sceneVdp2Vertices;
             freeMovieMappedBlock(g_sceneVdp2VertexUid, vertices);
@@ -12729,6 +13080,16 @@ static bool prepareSceneVdp2Background()
         }
         sceGxmTextureSetMinFilter(&g_sceneVdp2Texture, SCE_GXM_TEXTURE_FILTER_POINT);
         sceGxmTextureSetMagFilter(&g_sceneVdp2Texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        // Alias the identical upload: each 512-RGBA row is 2048 byte texels.
+        // A failed descriptor leaves the generic packed shader available.
+        g_sceneVdp2ByteTextureValid=sceGxmTextureInitLinear(
+            &g_sceneVdp2ByteTexture,g_sceneVdp2GpuRaw,
+            SCE_GXM_TEXTURE_FORMAT_U8_RRRR,2048u,258u,0)>=0;
+        if(g_sceneVdp2ByteTextureValid) {
+            sceGxmTextureSetMinFilter(&g_sceneVdp2ByteTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+            sceGxmTextureSetMagFilter(&g_sceneVdp2ByteTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+        }
+        logging::writef("[RBG0ByteView] available=%u sharedUpload=1\n",g_sceneVdp2ByteTextureValid?1u:0u);
         const azel::DebugTextureVertex vertices[4] = {
             {-1,1,0.5f,0,0}, {1,1,0.5f,1,0},
             {-1,-1,0.5f,0,1}, {1,-1,0.5f,1,1}
@@ -12745,10 +13106,10 @@ static bool prepareSceneVdp2Background()
         void* oldIndices = g_vdp2WindowIndices;
         freeMovieMappedBlock(g_vdp2WindowIndexUid, oldIndices);
         g_vdp2WindowVertices = static_cast<azel::DebugTextureVertex*>(
-            probeGpuAlloc(224u * 3u * 4u * sizeof(azel::DebugTextureVertex),
+            probeGpuAlloc(lagi::RbgWindowMaxSpans * 2u * 4u * sizeof(azel::DebugTextureVertex),
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowVertexUid));
         g_vdp2WindowIndices = static_cast<std::uint16_t*>(
-            probeGpuAlloc(224u * 3u * 6u * sizeof(std::uint16_t),
+            probeGpuAlloc(lagi::RbgWindowMaxSpans * 2u * 6u * sizeof(std::uint16_t),
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowIndexUid));
         if (!g_vdp2WindowVertices || !g_vdp2WindowIndices) return false;
     }
@@ -12772,14 +13133,20 @@ static bool prepareSceneVdp2Background()
         }
     }
     g_sceneVdp2GpuRawInitialized = true;
+    if(g_sceneRbg0Enabled) {
+        g_rbgDecodedPagesReady=prepareRbgDecodedPages();
+        g_rbgCoefficientRowsReady=prepareRbgCoefficientRows();
+    }
     return true;
 }
 
-static bool renderSceneVdp2BackgroundPass()
+#include "neptune_frontend_nbg.inc"
+
+static bool renderSceneVdp2BackgroundPass(bool frontend = false)
 {
-    if (!g_sceneRbg0Enabled)
+    if (!frontend && !g_sceneRbg0Enabled)
         return true;
-    if (!g_sceneVdp2GpuRaw || !g_vdp2Rbg0Available ||
+    if (!(frontend ? g_movieTextureData : g_sceneVdp2GpuRaw) || !g_vdp2Rbg0Available ||
         !g_sceneRbg0RenderTarget || !g_sceneRbg0ColorBuffer)
         return false;
 
@@ -12811,18 +13178,29 @@ static bool renderSceneVdp2BackgroundPass()
         static_cast<int>(kSceneRbg0Width) - 1,
         static_cast<int>(kSceneRbg0Height) - 1);
     void* uniforms = nullptr;
-    bool submitted = false;
-    if (sceGxmReserveVertexDefaultUniformBuffer(
+    // D5 disables RBG0 before its final sprite/fade sequence. Its VRAM may
+    // then be reused: a disabled native plane must not decode those bytes.
+    const bool rbgEnabled=!frontend || g_movieRbg0.enabled;
+    bool submitted = !rbgEnabled;
+    if (rbgEnabled && sceGxmReserveVertexDefaultUniformBuffer(
             g_probeContext, &uniforms) >= 0 && uniforms) {
         const ViewerMat4 identity = viewerIdentity();
         sceGxmSetUniformDataF(
             uniforms, g_textureWvpParam, 0, 16, identity.m);
         sceGxmSetFragmentTexture(
-            g_probeContext, 0, &g_sceneVdp2Texture);
+            g_probeContext, 0, frontend ? &g_movieTexture : &g_sceneVdp2Texture);
         submitted = drawVdp2Rbg0Gpu(
-            g_sceneRbg0, g_sceneVdp2Raw,
-            g_sceneVdp2Vertices, g_sceneVdp2Indices, 1.0f, false);
+            frontend ? g_movieRbg0 : g_sceneRbg0,
+            frontend ? g_movieTextureData : g_sceneVdp2Raw,
+            frontend ? g_movieVertices + 4 : g_sceneVdp2Vertices,
+            frontend ? g_movieIndices : g_sceneVdp2Indices, 1.0f, frontend);
     }
+    if(submitted && frontend) {
+        // Native projected particles sit between RBG and the NBG keyboard.
+        // Slots remain distinct from the later display-space cursor pass.
+        drawPublishedVdp1Ui(Vdp1UiPass::FrontendProjected,&g_frontendSpriteSlot,true);
+    }
+    if(submitted && frontend)submitted=drawFrontendNbgNative();
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     return submitted;
 }
@@ -12866,6 +13244,9 @@ static void drawSceneVdp2Background()
             6u);
     }
 }
+
+#include "neptune_sprite_composite.inc"
+#include "neptune_scene_nbg0.inc"
 
 static bool renderMovieFrame()
 {
@@ -12937,6 +13318,22 @@ static bool renderMovieFrame()
     if (g_movieUsesCinepakPayload && !renderCinepakResolvePass())
         return true;
 
+    // RBG's native output domain is 352x224. Resolve each native pixel once,
+    // then composite native NBG before scaling. Text/cursors remain separate.
+    const bool frontendRbg = g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f;
+    g_frontendSpriteSlot=0;
+    g_frontendRbgDecodedReady=false;
+    if(frontendRbg && g_movieRbg0.enabled && g_frontendVdp2RawInitialized)
+        g_frontendRbgDecodedReady=prepareRbgDecodedPagesFor(g_movieRbg0,
+            g_frontendVdp2RawShadow,g_frontendVdp2Generations,true);
+    if (frontendRbg && !renderSceneVdp2BackgroundPass(true))
+        return true;
+    static bool loggedFrontendRbgResolve = false;
+    if (frontendRbg && !loggedFrontendRbgResolve) {
+        logging::writef("[FrontendRbgResolve] native=352x224 liveRotation=1 liveWindows=1 nbgNative=1\n");
+        loggedFrontendRbgResolve = true;
+    }
+
     std::memset(
         colorBuffer,
         0,
@@ -12976,6 +13373,14 @@ static bool renderMovieFrame()
         g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
 
     void* uniformBuffer = nullptr;
+    if(frontendRbg) {
+        const unsigned c=g_movieRbg0.backColor;
+        drawColorOffsetPass(g_colorOffsetAddFragmentProgram,
+            (c&31)*255/31,((c>>5)&31)*255/31,((c>>10)&31)*255/31);
+        if(!frontendHasSharedColorOffset())
+            drawAzelColorOffsetForLayer(0x20u,true);
+        sceGxmSetVertexProgram(g_probeContext,g_textureVertexProgram);
+    }
     bool submitted = false;
     if (sceGxmReserveVertexDefaultUniformBuffer(
             g_probeContext, &uniformBuffer) >= 0 && uniformBuffer) {
@@ -13018,42 +13423,31 @@ static bool renderMovieFrame()
                 SCE_GXM_INDEX_FORMAT_U16,
                 g_movieIndices,
                 6) >= 0;
+        } else if (streamReady && g_movieUsesVdp2Title && g_movieVdp2Info[0] < 0.5f) {
+            // Preserve the raw title fallback while Azel is still setting up
+            // its high-resolution mode and decoded TITLEE is not ready yet.
+            sceGxmSetFragmentTexture(g_probeContext,0,&g_movieTexture);
+            sceGxmSetFragmentProgram(g_probeContext,g_vdp2NbgFragmentProgram);
+            void* titleUniforms=nullptr;
+            if(sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext,&titleUniforms)>=0 && titleUniforms) {
+                sceGxmSetUniformDataF(titleUniforms,g_vdp2InfoParam,0,4,g_movieVdp2Info);
+                submitted=sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,
+                    SCE_GXM_INDEX_FORMAT_U16,g_movieIndices,6u)>=0;
+            }
         } else if (streamReady && g_movieUsesVdp2Title) {
-            // D5 still consumes live raw VDP2 state for RBG0/NBG0 composition.
+            // Live RBG + NBG were decoded/composited at native size.
             bool rbgSubmitted = true;
             if (g_movieVdp2Info[0] >= 0.5f && g_vdp2Rbg0Available &&
                 g_vdp2Rbg0FragmentProgram && g_vdp2Rbg0InfoParam) {
-                const float displayAspect =
-                    static_cast<float>(viewerRenderWidth()) /
-                    static_cast<float>(viewerRenderHeight());
-                rbgSubmitted = drawVdp2Rbg0Gpu(
-                    g_movieRbg0, g_movieTextureData,
-                    g_movieVertices, g_movieIndices,
-                    (4.0f / 3.0f) / displayAspect, true);
-                // NBG uses the normal fullscreen front-end quad.
-                sceGxmSetVertexStream(
-                    g_probeContext, 0, g_movieVertices);
+                sceGxmSetFragmentTexture(g_probeContext, 0, &g_sceneRbg0ResolvedTexture);
+                sceGxmSetFragmentProgram(g_probeContext, g_movieTextureFragmentProgram);
+                if (kStochastic) setStochastic(kSceneRbg0Width, kSceneRbg0Height);
+                rbgSubmitted = sceGxmDraw(g_probeContext,
+                    SCE_GXM_PRIMITIVE_TRIANGLES, SCE_GXM_INDEX_FORMAT_U16,
+                    g_movieIndices, 6u) >= 0;
             }
 
-            sceGxmSetFragmentProgram(
-                g_probeContext, g_vdp2NbgFragmentProgram);
-            void* nbgUniforms = nullptr;
-            bool nbgSubmitted = false;
-            if (sceGxmReserveFragmentDefaultUniformBuffer(
-                    g_probeContext, &nbgUniforms) >= 0 &&
-                nbgUniforms) {
-                sceGxmSetUniformDataF(
-                    nbgUniforms,
-                    g_vdp2InfoParam,
-                    0, 4, g_movieVdp2Info);
-                nbgSubmitted = sceGxmDraw(
-                    g_probeContext,
-                    SCE_GXM_PRIMITIVE_TRIANGLES,
-                    SCE_GXM_INDEX_FORMAT_U16,
-                    g_movieIndices,
-                    6) >= 0;
-            }
-            submitted = rbgSubmitted && nbgSubmitted;
+            submitted = rbgSubmitted;
         } else if (streamReady) {
             // Cinepak has already been reconstructed to a conventional RGBA
             // source-resolution texture above. Apply the same screen-space
@@ -13086,11 +13480,15 @@ static bool renderMovieFrame()
     if (submitted && !g_movieUsesVdp2Title)
         drawAzelVdp2CinematicBarsGpu();
 
+    // Native NBG1 contains the authored dialogue/choice window tiles. The
+    // glyph-only pass below cannot supply its backing or border graphics.
+    if (submitted && frontendRbg && (g_movieRbg0.layerEnable&2u))
+        drawAzelVdp2Nbg1Gpu();
     if (submitted)
         drawAzelVdp2TextLayerGpu(movieOutputWidth, movieOutputHeight);
 
     if (submitted && g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f)
-        drawPublishedVdp1Ui();
+        drawPublishedVdp1Ui(Vdp1UiPass::FrontendOverlay,&g_frontendSpriteSlot);
         drawMenuCanvasMask();
 
     if (submitted) {
@@ -13101,7 +13499,9 @@ static bool renderMovieFrame()
         // between the RBG0 and NBG passes above. Title and Cinepak/movie
         // surfaces instead represent the already-composited Saturn frontend,
         // so their Azel transition is a fullscreen compatibility pass.
-        if (!d5FrontEnd)
+        if (d5FrontEnd && frontendHasSharedColorOffset())
+            drawAzelColorOffsetForLayer(0x40u,true);
+        else if (!d5FrontEnd)
             drawAzelFrontendFadeOffset();
     }
 
@@ -13120,12 +13520,13 @@ static bool renderMovieFrame()
     if (g_movieUsesVdp2Title &&
         ((frontendPerfFrames++ % 60u) == 0u)) {
         logging::writef(
-            "[VDP2Perf] fb=%ux%u frame=%uus gpuWait=%uus layout=%u\n",
+            "[VDP2Perf] fb=%ux%u frame=%uus gpuWait=%uus layout=%u nbg=%u\n",
             static_cast<unsigned int>(movieOutputWidth),
             static_cast<unsigned int>(movieOutputHeight),
             frameRenderUs,
             gpuWaitUs,
-            static_cast<unsigned int>(g_movieVdp2Info[0]));
+            static_cast<unsigned int>(g_movieVdp2Info[0]),
+            frontendRbg && g_movieVdp2Info[3]>=0.5f ? 1u : 0u);
     }
 
     if (!submitted) {
@@ -13234,6 +13635,10 @@ static void renderBasicWingViewer()
     }
 
     const std::uint64_t renderStartUs = sceKernelGetProcessTimeWide();
+    g_profileSprites={};
+    // No scene build on some menu/transition frames: never report old sync work.
+    g_profilePositionSyncUs = 0u;
+    g_profilePositionSyncVertices = 0u;
     g_profileMenuBackingDecodeUs = 0u;
     g_profileMenuTextDecodeUs = 0u;
     g_profileMenuSubmitUs = 0u;
@@ -13246,6 +13651,7 @@ static void renderBasicWingViewer()
     g_profileGxmFinishUs = 0u;
     g_profileRbgPrepareUs = 0u;
     g_profileRbgResolveUs = 0u;
+    g_profileNbg0ResolveUs = 0u;
     g_profileRbgRawUpdatedBytes = 0u;
     g_liveTownGouraudPrepValid = false;
 
@@ -13253,7 +13659,7 @@ static void renderBasicWingViewer()
     // thread never reads mutable controller state directly.
 
     const bool nativeSceneContext =
-        g_sceneGameMode == 1u || g_sceneGameMode == 2u || g_sceneGameMode == 3u;
+        lagi::native_scene_mode(static_cast<int>(g_sceneGameMode));
     const bool nativeSceneMode =
         nativeSceneContext && (g_nativeSceneViewValid || g_townCameraReady) &&
         !azel_bridge::published_submissions().empty();
@@ -13354,6 +13760,12 @@ static void renderBasicWingViewer()
     SceGxmDepthStencilSurface* const depthSurface =
         g_halfResolution ? &g_probeDepthSurfaceHalf : &g_probeDepthSurface;
 
+    static unsigned gpuPassFrame=0;
+    g_gpuPassSample=LAGI_GPU_PASS_TIMING && nativeSceneMode && !nativeMenuFrame &&
+        (g_spriteColor.ccctl&0x40) && !(g_spriteColor.bgon&5) && (++gpuPassFrame%120u==0);
+    g_gpuPassWorldWaitUs=0;
+    g_gpuPassFinalStartUs=0;
+    unsigned gpuPassRbgWaitUs=0;
     if (nativeSceneMode) {
         const std::uint64_t rbgPrepStart = sceKernelGetProcessTimeWide();
         const bool prepared = prepareSceneVdp2Background();
@@ -13368,13 +13780,27 @@ static void renderBasicWingViewer()
             sceKernelGetProcessTimeWide() - rbgResolveStart);
         if (!resolved)
             return;
+        const auto nbg0Start=sceKernelGetProcessTimeWide();
+        if(!renderSceneNbg0Gpu()) {
+            static unsigned nbgFailures=0;
+            if(nbgFailures++<4)logging::writef("[SceneNBG0] FAIL native GPU resolve\n");
+            return;
+        }
+        g_profileNbg0ResolveUs=static_cast<unsigned>(sceKernelGetProcessTimeWide()-nbg0Start);
+        if(g_gpuPassSample) {
+            const auto start=sceKernelGetProcessTimeWide();
+            sceGxmFinish(g_probeContext);
+            gpuPassRbgWaitUs=static_cast<unsigned>(sceKernelGetProcessTimeWide()-start);
+        }
     }
 
     const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
-    std::memset(colorBuffer, 0,
-                static_cast<std::size_t>(gxmPitch) *
-                viewerRenderHeight() *
-                sizeof(std::uint32_t));
+    const bool spriteComposite=prepareSpriteComposite(nativeSceneMode &&
+        (roomAuthenticLitMode || roomAuthenticTexturedMode),nativeMenuFrame);
+    // The compositor writes every final-target pixel, including transparent
+    // VDP1 holes resolved to RBG0/BACK. Only its input surface needs clearing.
+    if (!spriteComposite && !clearNativeSceneColorBuffer(colorBuffer, viewerRenderWidth(), viewerRenderHeight(), gxmPitch))
+        return;
     // GXM initializes tile-local depth/stencil from these background values.
     // The backing buffers are spill storage, not an input to this scene:
     // clearing them on the CPU was unused work with force-load disabled.
@@ -13389,8 +13815,8 @@ static void renderBasicWingViewer()
     g_overlayVertexSlot = 0;
     const int beginSceneResult = sceGxmBeginScene(
             g_probeContext, 0, renderTarget,
-            nullptr, nullptr, syncObject,
-            colorSurface, depthSurface);
+            nullptr, nullptr, spriteComposite ? nullptr : syncObject,
+            spriteComposite ? &g_spriteLayerSurface : colorSurface, depthSurface);
     g_profileBeginSceneUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - beginSceneStartUs);
     if (beginSceneResult < 0)
@@ -13398,7 +13824,7 @@ static void renderBasicWingViewer()
 
     unsigned int vdp1UiSpriteSlot = 0u;
     if (nativeSceneMode) {
-        drawSceneVdp2Background();
+        if (!spriteComposite) drawSceneVdp2Background();
         // Azel's far-plane VDP1 sprites (for example the flight horizon
         // strip) sit above RBG0 but behind world geometry. Foreground VDP1
         // commands remain in the normal late composition pass below.
@@ -13515,6 +13941,13 @@ static void renderBasicWingViewer()
             // Share slots so later overlay draws cannot overwrite queued data.
             drawPublishedVdp1Ui(
                 Vdp1UiPass::WorldEffects, &vdp1UiSpriteSlot);
+            if (spriteComposite && !finishSpriteComposite(renderTarget,colorSurface,syncObject)) {
+                logging::writef("[VDP2SpriteComposite] FAIL finishing world layer\n");
+                sceGxmEndScene(g_probeContext,nullptr,nullptr);
+                sceGxmFinish(g_probeContext);
+                return;
+            }
+            drawSceneNbg0Gpu();
             drawAzelVdp2Nbg1Gpu();
             drawAzelVdp2CinematicBarsGpu();
             drawAzelVdp2TextLayerGpu();
@@ -13527,13 +13960,13 @@ static void renderBasicWingViewer()
     // composes it after world/UI; Azel alone advances the color and countdown.
     if (!nativeMenuFrame && roomAuthenticCameraMode) {
         drawColorOffsetPass(g_colorOffsetAddFragmentProgram,
-            std::clamp(g_sceneColorOffset[0] * 2, 0, 255),
-            std::clamp(g_sceneColorOffset[1] * 2, 0, 255),
-            std::clamp(g_sceneColorOffset[2] * 2, 0, 255));
+            std::clamp(g_sceneColorOffset[0], 0, 255),
+            std::clamp(g_sceneColorOffset[1], 0, 255),
+            std::clamp(g_sceneColorOffset[2], 0, 255));
         drawColorOffsetPass(g_colorOffsetSubtractFragmentProgram,
-            std::clamp(-g_sceneColorOffset[0] * 2, 0, 255),
-            std::clamp(-g_sceneColorOffset[1] * 2, 0, 255),
-            std::clamp(-g_sceneColorOffset[2] * 2, 0, 255));
+            std::clamp(-g_sceneColorOffset[0], 0, 255),
+            std::clamp(-g_sceneColorOffset[1], 0, 255),
+            std::clamp(-g_sceneColorOffset[2], 0, 255));
     }
     g_profileComposeUs = menuBackingUs + static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - composeStartUs);
@@ -13556,6 +13989,16 @@ static void renderBasicWingViewer()
     sceGxmFinish(g_probeContext);
     g_profileGxmFinishUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - finishStartUs);
+    if(g_gpuPassSample) {
+        const unsigned worldWall=g_gpuPassFinalStartUs?static_cast<unsigned>(
+            g_gpuPassFinalStartUs-beginSceneStartUs):0;
+        const unsigned finalSubmit=g_gpuPassFinalStartUs?static_cast<unsigned>(
+            finishStartUs-g_gpuPassFinalStartUs):0;
+        logging::writef("[GpuPassTiming] serialized=1 mode=%d composite=%u rbgSubmit=%u rbgWait=%u worldSubmit=%u worldWait=%u finalSubmit=%u finalWait=%u\n",
+            g_sceneGameMode,spriteComposite?1u:0u,g_profileRbgResolveUs,gpuPassRbgWaitUs,
+            worldWall>=g_gpuPassWorldWaitUs?worldWall-g_gpuPassWorldWaitUs:0,
+            g_gpuPassWorldWaitUs,finalSubmit,g_profileGxmFinishUs);
+    }
     if (preparedMaterial) {
         // Upload only an appended suffix after GPU completion. Never refresh
         // retained payloads or mutate descriptors used by an in-flight scene.
@@ -13653,9 +14096,12 @@ static void renderBasicWingViewer()
             "gourIndex=%u gourDraw=%u clear=%u begin=%u submit=%u compose=%u "
             "cpuprep=%u gxmwait=%u gxmend=%u gxmfinish=%u "
             "render=%u polys=%u verts=%u "
-            "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u "
+            "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus nbg0Resolve=%uus rbgRawBytes=%u "
             "menuBackingDecode=%u menuTextDecode=%u menuSubmit=%u menuTransfer=%u "
-            "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1 tasks=%u uiOnly=%u slowSample=%u\n",
+            "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1 tasks=%u uiOnly=%u slowSample=%u "
+            "positionSync=%u positionSyncVerts=%u submissions=%u "
+            "spriteDraws=%u spriteWorldTagged=%u spriteShaded=%u spriteBboxPixels=%llu "
+            "spriteCacheHits=%u spriteCacheMisses=%u spritePaletteRefresh=%u spriteSlotSkips=%u gpuSerialized=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -13683,6 +14129,7 @@ static void renderBasicWingViewer()
             g_sceneRbg0Enabled ? 1u : 0u,
             g_profileRbgPrepareUs,
             g_profileRbgResolveUs,
+            g_profileNbg0ResolveUs,
             g_profileRbgRawUpdatedBytes,
             g_profileMenuBackingDecodeUs,
             g_profileMenuTextDecodeUs,
@@ -13693,7 +14140,14 @@ static void renderBasicWingViewer()
             lagi::menuNbg2Supported(g_menuNbg2) ? 1u : 0u,
             g_profileTasksUs,
             nativeMenuFrame && !nativeSceneMode ? 1u : 0u,
-            slowMenuSample ? 1u : 0u);
+            slowMenuSample ? 1u : 0u,
+            g_profilePositionSyncUs,
+            g_profilePositionSyncVertices,
+            g_liveTownSubmissionCount,
+            g_profileSprites.draws,g_profileSprites.worldTagged,g_profileSprites.shaded,
+            static_cast<unsigned long long>(g_profileSprites.bboxPixels),
+            g_profileSprites.cacheHits,g_profileSprites.cacheMisses,
+            g_profileSprites.paletteRefreshes,g_profileSprites.slotSkips,g_gpuPassSample?1u:0u);
     }
 
     if (g_showThreadTimingOsd) {
@@ -14330,6 +14784,8 @@ struct LauncherGpuState {
     SceGxmTexture texture{};
 };
 static LauncherGpuState g_launcherGpuStates[5]; // -1 (no selection), then 0..3
+static LauncherGpuState g_launcherLoading;
+static bool g_launcherEntered = false;
 static azel::DebugTextureVertex* g_launcherGpuVertices = nullptr;
 static std::uint16_t* g_launcherGpuIndices = nullptr;
 static SceUID g_launcherGpuVertexUid = -1, g_launcherGpuIndexUid = -1;
@@ -14352,6 +14808,8 @@ static void launcherReleaseGpu()
         release(state.uid, state.pixels);
         state = {};
     }
+    release(g_launcherLoading.uid, g_launcherLoading.pixels);
+    g_launcherLoading = {};
     void* vertices = g_launcherGpuVertices;
     release(g_launcherGpuVertexUid, vertices);
     g_launcherGpuVertices = nullptr;
@@ -14370,16 +14828,33 @@ static bool launcherPrepareGpu(const bool available[4])
     if (g_launcherGpuReady && mask == g_launcherGpuMask) return true;
     const auto start = sceKernelGetProcessTimeWide();
     // Reuse Neptune's backend. No Azel task or native simulation is started.
+    g_preserveLoadingScanout = true;
     show_game_presentation();
+    g_preserveLoadingScanout = false;
     if (!g_viewerReady || !g_probeContext || !g_textureVertexProgram ||
         !g_textureFragmentProgram || !g_textureWvpParam ||
-        !g_fadeFragmentProgram || !g_fadeVertices || !g_fadeIndices) {
+        !g_fadeFragmentProgram || !g_fadeVertices || !g_fadeIndices ||
+        !g_sceneNbg0OverProgram || !g_vdp2InfoParam) {
+        logging::writef("[DiscSelectorGXM] backend unavailable ready=%u context=%u textureVP=%u textureFP=%u fadeFP=%u overFP=%u info=%u\n",
+            unsigned(g_viewerReady),unsigned(g_probeContext!=nullptr),
+            unsigned(g_textureVertexProgram!=nullptr),unsigned(g_textureFragmentProgram!=nullptr),
+            unsigned(g_fadeFragmentProgram!=nullptr),unsigned(g_sceneNbg0OverProgram!=nullptr),
+            unsigned(g_vdp2InfoParam!=nullptr));
         g_launcherGpuFailed = true;
         g_debugVisible = true;
         g_probeDisplayingGxm = false;
         return false;
     }
     launcherReleaseGpu();
+    g_launcherLoading.pixels = probeGpuAlloc(kFrameBytes, SCE_GXM_MEMORY_ATTRIB_READ,
+        &g_launcherLoading.uid);
+    if (g_launcherLoading.pixels) {
+        std::memcpy(g_launcherLoading.pixels, g_frameBuffer[g_drawBuffer ^ 1], kFrameBytes);
+        sceGxmTextureInitLinear(&g_launcherLoading.texture, g_launcherLoading.pixels,
+            SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, kWidth, kHeight, 0);
+        sceGxmTextureSetMinFilter(&g_launcherLoading.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(&g_launcherLoading.texture, SCE_GXM_TEXTURE_FILTER_POINT);
+    }
     g_launcherGpuVertices = static_cast<azel::DebugTextureVertex*>(probeGpuAlloc(
         4 * sizeof(azel::DebugTextureVertex), SCE_GXM_MEMORY_ATTRIB_READ,
         &g_launcherGpuVertexUid));
@@ -14427,7 +14902,7 @@ static bool launcherPrepareGpu(const bool available[4])
     return true;
 }
 
-static bool launcherDrawGpu(int selected, unsigned brightness)
+static bool launcherDrawGpu(int selected, unsigned brightness, float loadingOpacity = 0.0f)
 {
     if (!g_launcherGpuReady || selected < -1 || selected > 3 ||
         !g_launcherGpuStates[selected + 1].pixels) return false;
@@ -14455,6 +14930,19 @@ static bool launcherDrawGpu(int selected, unsigned brightness)
         sceGxmSetVertexStream(g_probeContext, 0, g_launcherGpuVertices);
         ok = sceGxmDraw(g_probeContext, SCE_GXM_PRIMITIVE_TRIANGLES,
             SCE_GXM_INDEX_FORMAT_U16, g_launcherGpuIndices, 6) >= 0;
+    }
+    if (ok && loadingOpacity > 0.0f && g_launcherLoading.pixels) {
+        // Premultiplied overlay: fade the actual loading pixels over the ready selector.
+        sceGxmSetFragmentProgram(g_probeContext, g_sceneNbg0OverProgram);
+        void* fragmentUniforms = nullptr;
+        ok = sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext, &fragmentUniforms) >= 0 && fragmentUniforms;
+        if (ok) {
+            const float info[4] = {loadingOpacity, 0.0f, 0.0f, 0.0f};
+            sceGxmSetUniformDataF(fragmentUniforms, g_rgbaPresentInfo, 0, 4, info);
+            sceGxmSetFragmentTexture(g_probeContext, 0, &g_launcherLoading.texture);
+            ok = sceGxmDraw(g_probeContext, SCE_GXM_PRIMITIVE_TRIANGLES,
+                SCE_GXM_INDEX_FORMAT_U16, g_launcherGpuIndices, 6) >= 0;
+        }
     }
     if (ok && brightness < 255) {
         for (unsigned i = 0; i < 6; ++i) {
@@ -14507,11 +14995,9 @@ void launcher_fade(int frame, int frames)
         if (launcherDrawGpu(g_launcherGpuSelection, brightness)) {
             if (frame >= frames) {
                 launcherReleaseGpu();
-                // Return to the ordinary loading framebuffer until Azel asks
-                // Neptune to present its first native scene/movie.
-                g_probeDisplayingGxm = false;
-                g_debugVisible = true;
-                fill(0xFF000000u);
+                // Hold the completed black GXM frame until native presentation.
+                g_probeDisplayingGxm = true;
+                g_debugVisible = false;
             }
             return;
         }
@@ -14549,7 +15035,15 @@ void launcher_fade(int frame, int frames)
 void launcher_present(const bool available[4], int selected)
 {
     if (launcherLoadAssets()) {
-        if (launcherPrepareGpu(available) && launcherDrawGpu(selected, 255)) return;
+        if (launcherPrepareGpu(available)) {
+            bool ok = true;
+            if (!g_launcherEntered) {
+                for (int frame = 0; ok && frame <= 30; ++frame)
+                    ok = launcherDrawGpu(selected, 255, (30 - frame) / 30.0f);
+                g_launcherEntered = ok;
+            } else ok = launcherDrawGpu(selected, 255);
+            if (ok) return;
+        }
         launcherReleaseGpu();
         g_launcherGpuFailed = true;
         g_debugVisible = true;
@@ -14864,7 +15358,8 @@ void presentation_publish_frame()
     g_nativeFrameVblanks = g_pendingNativeFrameVblanks;
     g_scenePlayerPresent = g_pendingScenePlayerPresent;
     g_sceneRbg0Enabled = g_pendingSceneRbg0Enabled;
-    if (g_sceneRbg0Enabled) {
+    g_sceneNbg0=g_pendingSceneNbg0;
+    if (g_sceneRbg0Enabled || g_sceneNbg0.enabled) {
         g_sceneRbg0 = g_pendingSceneRbg0;
         // The producer owns the free-slot token here: the previous renderer
         // has finished all CPU/GPU use of this snapshot. Swap ownership,
@@ -14919,6 +15414,7 @@ void presentation_publish_frame()
     g_profileGameWaitUs = g_pendingProfileGameWaitUs;
     std::memcpy(g_sceneColorOffset, g_pendingSceneColorOffset, sizeof(g_sceneColorOffset));
     g_menuNbg2 = g_pendingMenuNbg2;
+    g_spriteColor = g_pendingSpriteColor;
     if (g_pendingVdp2TextValid) {
         std::memcpy(
             g_vdp2TextVram,
@@ -15142,6 +15638,8 @@ void presentation_set_vdp2_text(
     // Each VRAM/text publication starts without an NBG2 plane. Only its
     // native scene capture can attach matching register/scroll state after it.
     g_pendingMenuNbg2 = {};
+    g_pendingSceneNbg0 = {};
+    g_pendingSpriteColor = {};
     if (!vram || !cram || !lineScroll) {
         g_pendingVdp2TextValid = false;
         return;
@@ -15182,6 +15680,26 @@ void presentation_set_vdp2_text(
 void presentation_set_menu_nbg2(const lagi::MenuNbg2State& state)
 {
     g_pendingMenuNbg2 = state;
+}
+
+void presentation_set_scene_nbg0(const lagi::SceneNbg0State& state)
+{
+    g_pendingSceneNbg0=state;
+}
+
+void presentation_set_sprite_color_state(const lagi::Vdp2SpriteColorState& state)
+{
+    g_pendingSpriteColor=state;
+    // Bounded native-state evidence, not a claim that composition is enabled.
+    static unsigned budget=32;
+    static lagi::Vdp2SpriteColorState previous{};
+    if (budget && (state.ccctl!=previous.ccctl || state.spctl!=previous.spctl ||
+        state.ratio[0]!=previous.ratio[0] || state.priority[0]!=previous.priority[0])) {
+        --budget;
+        logging::writef("[VDP2SpriteColor] CCCTL=%04X SPCTL=%04X PRISA=%04X CCRSA=%04X CCRSB=%04X window=%02X selectors=captured\n",
+            state.ccctl,state.spctl,state.priority[0],state.ratio[0],state.ratio[1],state.colorWindow);
+        previous=state;
+    }
 }
 
 void presentation_set_native_frame_vblanks(unsigned int count)

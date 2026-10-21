@@ -1,6 +1,7 @@
 #include "lagi/lagi_compat.h"
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/lagi_live_model_adapter.h"
+#include "lagi/model_snapshot_cache.h"
 #include "lagi/platform.h"
 #include "lagi/lagi_point_light.h"
 #include "lagi/lagi_scene_bridge.h"
@@ -46,6 +47,14 @@ extern s32 pointLightParams[5] __attribute__((weak));
 
 namespace lagi::azel_bridge {
 
+#ifndef LAGI_RENDER_BRIDGE_OPTIMIZED
+#define LAGI_RENDER_BRIDGE_OPTIMIZED 0
+#endif
+#if LAGI_RENDER_BRIDGE_OPTIMIZED
+#define LAGI_BRIDGE_OPTIMIZATION_TEXT "1"
+#else
+#define LAGI_BRIDGE_OPTIMIZATION_TEXT "0"
+#endif
 static std::uint32_t g_submissionCount = 0;
 static std::uint32_t g_modelCacheMisses = 0;
 static std::uint32_t g_publishedModelCacheMisses = 0;
@@ -56,7 +65,8 @@ static std::uint32_t g_publishedExplicitStaticContextsConsumed = 0;
 static sProcessed3dModel* g_lastModel = nullptr;
 static const LiveVdp1Model* g_lastAdaptedModel = nullptr;
 static SubmissionState g_lastState{};
-static std::unordered_map<sProcessed3dModel*, LiveVdp1Model> g_modelCache;
+using NativeModelCache = lagi::ModelSnapshotCache<sProcessed3dModel*, LiveVdp1Model>;
+static NativeModelCache g_modelCache;
 static std::uint64_t g_resourceGeneration = 0;
 static std::unordered_map<std::int8_t, std::uint64_t> g_bundleGenerations;
 static std::unordered_map<std::int8_t,
@@ -67,9 +77,9 @@ static bool g_resourceInventoryDirty = false;
 static std::atomic<std::uint32_t> g_textureWriteEpoch{0};
 static std::unordered_map<std::int8_t, std::uint64_t> g_bundleTextureEpochs;
 static std::uint64_t g_publishedResourceRevision = 0;
-static std::vector<const LiveVdp1Model*> g_adaptedModels;
+static std::vector<NativeModelCache::Handle> g_adaptedModels;
 static std::vector<RenderSubmission> g_submissions;
-static std::vector<const LiveVdp1Model*> g_publishedAdaptedModels;
+static std::vector<NativeModelCache::Handle> g_publishedAdaptedModels;
 static std::vector<RenderSubmission> g_publishedSubmissions;
 static std::vector<Vdp1UiCommand> g_vdp1UiCommands;
 static std::vector<Vdp1UiCommand> g_publishedVdp1UiCommands;
@@ -150,6 +160,16 @@ static void removeViewTransform(
     }
 }
 
+void retire_native_model(sProcessed3dModel* model)
+{
+    if (!model) return;
+    g_modelCache.retire(model);
+    if (g_lastModel == model) {
+        g_lastModel = nullptr;
+        g_lastAdaptedModel = nullptr;
+    }
+}
+
 void begin_frame(bool forceDynamicSubmissions)
 {
     g_fieldEnvironmentPointLight={};
@@ -217,7 +237,7 @@ const std::vector<RenderSubmission>& submissions()
 const LiveVdp1Model* adapted_model(std::uint32_t index)
 {
     return index < g_adaptedModels.size()
-        ? g_adaptedModels[index]
+        ? &g_adaptedModels[index]->value
         : nullptr;
 }
 
@@ -254,13 +274,13 @@ void publish_frame()
         g_publishedResources.swap(snapshot);
         g_resourceInventoryDirty = false;
         ++g_publishedResourceRevision;
-        lagi::platform::logging::writef("[NativeResourceInventory] generation=%llu models=%u\n",
+        lagi::platform::logging::writef("[NativeResourceInventory] generation=%llu models=%u optimizedBridge="
+            LAGI_BRIDGE_OPTIMIZATION_TEXT "\n",
             static_cast<unsigned long long>(g_resourceGeneration),
             static_cast<unsigned>(g_publishedResources.size()));
     }
-    // LiveVdp1Model objects themselves live in g_modelCache and therefore
-    // remain stable across frames. Only the per-frame ordering/state vectors
-    // need to be snapshotted here.
+    // Retain immutable geometry even if the producer retires a native model
+    // before the renderer consumes this frame.
     g_publishedSubmissions = g_submissions;
     g_publishedVdp1UiCommands = g_vdp1UiCommands;
     g_publishedAdaptedModels = g_adaptedModels;
@@ -355,7 +375,7 @@ const std::vector<RenderSubmission>& published_submissions()
 const LiveVdp1Model* published_adapted_model(std::uint32_t index)
 {
     return index < g_publishedAdaptedModels.size()
-        ? g_publishedAdaptedModels[index]
+        ? &g_publishedAdaptedModels[index]->value
         : nullptr;
 }
 
@@ -481,7 +501,13 @@ void capture_current_light(SubmissionState& state)
         // model matrices. When the bridge publishes world-space geometry,
         // rotate the light back through inverse(view) too. Later Neptune's
         // model-space transpose multiply then reproduces the same dot product.
-        if (g_nativeSceneViewValid) {
+        if (g_viewRelativeScope || g_nativeSceneViewValid) {
+            // Geometry removes the scope's own root, which can differ from
+            // the last scene-camera capture for early cinematic actors. Use
+            // that same basis for light so native model-space dot products
+            // survive the view removal; mixing two camera roots rotates light.
+            const auto* lightView = g_viewRelativeScope
+                ? g_viewScopeMatrix : g_nativeSceneViewMatrix;
             const std::int32_t in[3] = {
                 state.lightVector[0],
                 state.lightVector[1],
@@ -489,11 +515,11 @@ void capture_current_light(SubmissionState& state)
             for (unsigned int axis = 0; axis < 3; ++axis) {
                 std::int64_t value = 0;
                 value += static_cast<std::int64_t>(
-                    g_nativeSceneViewMatrix[axis]) * in[0];
+                    lightView[axis]) * in[0];
                 value += static_cast<std::int64_t>(
-                    g_nativeSceneViewMatrix[4u + axis]) * in[1];
+                    lightView[4u + axis]) * in[1];
                 value += static_cast<std::int64_t>(
-                    g_nativeSceneViewMatrix[8u + axis]) * in[2];
+                    lightView[8u + axis]) * in[2];
                 state.lightVector[axis] =
                     static_cast<std::int32_t>(value >> 16);
             }
@@ -745,11 +771,11 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
 
     std::int32_t adaptedIndex = -1;
     auto cached = g_modelCache.find(model);
-    if (cached == g_modelCache.end()) {
+    if (!cached) {
         ++g_modelCacheMisses;
         LiveVdp1Model adapted{};
         if (adapt_processed_model(model, adapted))
-            cached = g_modelCache.emplace(model, std::move(adapted)).first;
+            cached = g_modelCache.insert(model, std::move(adapted));
         else {
             // Bound failure reporting by model identity; a failed actor must
             // not turn this diagnostic into a per-frame logging workload.
@@ -766,9 +792,9 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
             }
         }
     }
-    if (cached != g_modelCache.end()) {
-        g_lastAdaptedModel = &cached->second;
-        g_adaptedModels.push_back(g_lastAdaptedModel);
+    if (cached) {
+        g_lastAdaptedModel = &cached->value;
+        g_adaptedModels.push_back(cached);
         adaptedIndex = static_cast<std::int32_t>(g_adaptedModels.size() - 1u);
 
     } else {
@@ -777,6 +803,7 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
     RenderSubmission submission = g_hasPendingTownSubmission
         ? g_pendingTownSubmission : RenderSubmission{};
     submission.model = model;
+    submission.modelGeneration = cached ? cached->generation : 0;
     submission.adaptedModelIndex = adaptedIndex;
     submission.state = g_lastState;
     g_submissions.push_back(submission);

@@ -1,5 +1,8 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/azel_map_menu.h"
+#if LAGI_TRACK_RESIDENT_VIDEO
+#include "lagi/resident_video.h"
+#endif
 
 LagiAzelMapResources::~LagiAzelMapResources()
 {
@@ -23,6 +26,11 @@ bool LagiAzelMapResources::load(const LagiAzelMapDescriptor& descriptor)
     const auto previousPatterns=patterns_;
     graphicsOffset_=destination;
     active_=true;
+#if LAGI_TRACK_RESIDENT_VIDEO
+    lagi::resident_video::save_scope(this,{
+        {lagi::resident_video::Space::vdp2,destination,graphicsBytes},
+        {lagi::resident_video::Space::vdp2,0x70000,planeBackup_.size()}});
+#endif
     std::uint32_t loadedOffset=0;
     if(!lagiAzelLoadFieldMapResources(descriptor,patterns_.data(),patterns_.size(),loadedOffset) ||
         loadedOffset!=destination) {
@@ -43,6 +51,9 @@ void LagiAzelMapResources::restore()
     // they overlap. A second restore/destructor call is deliberately inert.
     std::memcpy(getVdp2Vram(graphicsOffset_),graphicsBackup_.data(),graphicsBackup_.size());
     std::memcpy(getVdp2Vram(0x70000),planeBackup_.data(),planeBackup_.size());
+#if LAGI_TRACK_RESIDENT_VIDEO
+    lagi::resident_video::restore_scope(this);
+#endif
     graphicsOffset_=0;
     active_=false;
     std::vector<std::uint8_t>().swap(graphicsBackup_);

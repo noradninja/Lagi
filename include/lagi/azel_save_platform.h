@@ -15,6 +15,8 @@ int lagiAzelSaveRead(
     const char* fileName,
     void* destination,
     std::size_t size);
+int lagiAzelSaveReadGrowth(int deviceId, const char* fileName,
+    void* destination, std::size_t size, std::size_t extensionOffset);
 int lagiAzelSaveWrite(
     int deviceId,
     const char* fileName,

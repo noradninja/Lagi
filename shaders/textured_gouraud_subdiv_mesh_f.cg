@@ -1,0 +1,2 @@
+#define LAGI_NATIVE_MESH 1
+#include "textured_gouraud_subdiv_f.cg"

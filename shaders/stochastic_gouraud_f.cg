@@ -12,6 +12,10 @@ float4 main(
 #endif
     uniform float4 textureSize)
 {
+#if LAGI_NATIVE_MESH
+    if (frac((floor(fragCoord.x)+floor(fragCoord.y))*0.5f)>=0.5f)
+        discard;
+#endif
 #if LAGI_DITHER_LOOKUP
     float2 offset = tex2D(ditherOffsets, fragCoord.xy * 0.5f).rg;
 #else

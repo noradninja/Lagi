@@ -1,0 +1,24 @@
+[NeptuneBuild] optimized=1 sharedRbg0=1
+[FrontendRbgResolve] native=352x224 liveRotation=1 liveWindows=1 nbgNative=1
+[VDP2Perf] fb=720x408 frame=1000us gpuWait=300us layout=0
+[VDP2Perf] fb=960x544 frame=31000us gpuWait=20000us layout=2
+[VDP2Perf] fb=960x544 frame=35000us layout=2
+[VDP2Perf] fb=960x544 frame=25000us gpuWait=21000us layout=2 nbg=0
+[VDP2Perf] fb=960x544 frame=26000us gpuWait=22000us layout=2 nbg=0
+[VDP2Perf] fb=960x544 frame=40000us gpuWait=35000us layout=2 nbg=1
+[VDP2Perf] fb=960x544 frame=60000us gpuWait=55000us layout=2 nbg=1
+[RBG0PageCache] active=1 reason=0 rebuilt=1 hits=0 prepUs=24000 uploadBytes=1048576 frontend=1
+[RBG0PageCache] active=1 reason=0 rebuilt=0 hits=1 prepUs=20 uploadBytes=0 frontend=1
+[RBG0PageCache] active=1 reason=0 rebuilt=0 hits=1 prepUs=22 uploadBytes=0 frontend=1
+[RBG0PageCache] active=1 reason=0 rebuilt=0 hits=1 prepUs=50 uploadBytes=0
+[RBG0PageCache] active=0 reason=2 rebuilt=0 hits=0 prepUs=1 uploadBytes=0 frontend=0
+[RBG0PageCache] active=0 reason=3 frontend=1
+[ScenePerf] render=32000 tasks=6000 cpuprep=8000 rbgEnabled=1 uiOnly=0 gpuSerialized=0
+[ScenePerf] render=34000 tasks=6500 cpuprep=9000 rbgEnabled=1 uiOnly=0 gpuSerialized=0
+[ScenePerf] render=99000 rbgEnabled=1 uiOnly=0 gpuSerialized=1
+[ScenePerf] render=5000 rbgEnabled=0 uiOnly=1 gpuSerialized=0
+[ScenePerf] render=7000 rbgEnabled=0
+[GpuPassTiming] serialized=1 mode=4 composite=1 rbgSubmit=100 rbgWait=10000 worldWait=2000 finalWait=3000
+[FlightTimingWindow] frames=120 max=34000 over25=119 over33333=1 rendererOnly=1
+[FlightPresentWindow] intervals=120 max=50000 over2Vblanks=1
+[FlightPresentOutlier] baseline=0 render=34000 build=2000 interval=0 vblanks=0

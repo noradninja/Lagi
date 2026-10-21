@@ -44,6 +44,14 @@ void processTasks(s_task** ppTask)
                 task->getWorkArea()->Delete();
                 --numActiveTask;
             } else {
+#if defined(LAGI_NATIVE_TASK_HEAP_CLEANUP) && LAGI_NATIVE_TASK_HEAP_CLEANUP
+                // Native disposal releases task-owned allocations only after
+                // child/parent Delete callbacks have had their cleanup pass.
+                // freeHeapForTask takes user data and unlinks the owner list;
+                // do not pass its allocation header or follow freed links.
+                while (task->m_heapNode)
+                    freeHeapForTask(task->getWorkArea(), task->m_heapNode->getUserData());
+#endif
                 *ppTask = task->m0_pNextTask;
                 delete task;
                 task = *ppTask;

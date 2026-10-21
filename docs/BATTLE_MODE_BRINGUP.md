@@ -1,0 +1,988 @@
+# Native battle-mode bring-up
+
+Branch: `feature/battle-mode-bringup`, based on accepted menu milestone
+`c2cef69`. Goal: working native battle entry, combat and exit—not a substitute
+battle scene or compile-only completion. Azel decides. Lagi services. Neptune
+renders. Do not edit `extern/Azel` or regress accepted frontend/flight/menu paths.
+
+Combat performance baseline, timing definitions and the measurement-only
+handoff are in [COMBAT_PERFORMANCE.md](COMBAT_PERFORMANCE.md). The first two
+profiled encounters are user-identified Brood Queen fights; do not treat
+renderer mode numbers or submission counts as enemy identity/count.
+
+## Entry audit
+
+The default Vita generation deliberately disconnects battle in these places:
+
+1. `kernel/moduleManager.cpp` overlay dispatch slot 4 is replaced with null.
+2. `battle/battleOverlay.cpp` startup calls for BTL overlays and debug teardown
+   are removed by the source adapter. The explicit A3 option below reconnects
+   only the real `BTL_A3` encounter entry, not other overlays/debug teardown.
+3. Generic battle-data initialization is removed from generated `PDS.cpp`.
+
+Do not merely populate slot 4 and call this complete. Native `loadBattle`
+is in `mainMenuDebugTasks.cpp`; manager/debug-list/overlay tasks and the actual
+field loading transition require a complete ownership/call-order audit.
+`battleManager.cpp` itself contains debug behavior and unfinished Delete.
+The real `loadBattle()` reads signed battle/subbattle IDs from COMMON
+`0x212F96 + 2*r5`, resets temporary allocators and calls `loadBattleOverlay()`.
+The latter requires an already-live `gBattleManager`, remaps the authored IDs,
+rejects an empty PRG name, then creates the overlay task. Restoring slot 4
+alone does not enable ordinary encounters. `moduleManager_Init()` already
+creates the manager with `createBattleManager(pWorkArea, 1)`; the generated
+module retains that call. Do not create a second manager or introduce lazy
+ownership to compensate for a missing audit.
+
+The normal path is `fieldEncounterTask.cpp::encounterTaskUpdate`: pause field,
+back up graphics, run loading setup, then call `loadBattleOverlay(mC,
+battleIndex)` directly in state 3. It does not traverse module dispatch slot 4.
+`startBattleTutorial()` uses this encounter route unless the field debug bit
+is set. Only its debug branch creates `field/battleStart.cpp`'s loading task.
+Read-only original FLD_A3 inspection confirms that task really tests debug
+keyboard toggles; replacing it as the ordinary gameplay path would be wrong.
+
+The experimental entry uses the graphics/resource handback detailed
+in [BATTLE_GRAPHICS_HANDOFF.md](BATTLE_GRAPHICS_HANDOFF.md). The generated battle
+build now uses typed graphics capture/restore at both return sites and discards
+storage on encounter teardown. Shared video-file spans are tracked and staged
+for reload before sound cleanup, including menu backup ownership scopes;
+heap-owned bundles are preserved. Upstream remains untouched. Host service
+tests and both full VPK builds pass, but do not prove native battle/field
+execution or cover every shared-resource path that live integration may expose.
+
+`BTL_A3.cpp::overlayStart_BTL_A3()` loads its real overlay data, selects
+`gCurrentBattleOverlay`, and constructs `createBattleMainTask()`. That task
+waits for native sound loading before resetting 3D/camera/grid and invoking
+the A3 initialization callback. A3 then constructs the battle engine using
+authored overlay data. Preserve that pipeline and real encounter/formation
+selection rather than hardcoding a different encounter.
+
+Battle generic initialization remains stripped from ordinary boot. The A3
+execution option initializes it at overlay preflight, before native fonts and
+engine creation; its native constructor reads `BTL_A3.PRG`.
+Task allocation already zeroes work areas through
+the native task base; audit that contract before inventing extra state resets.
+
+## Ray/resource services: retained-root link now passes
+
+The three initial link gaps listed below are restored. The full-resolution,
+dither-enabled retained-root build now produces a VPK. The ELF test checks
+actual retained A3 entry, engine, HUD, radar, commands, results and service
+functions. This is link evidence, not battle execution.
+The default battle-disabled full-resolution VPK was also rebuilt successfully
+after the shared file-service change; both dithering flags remain enabled.
+
+The ray service uses the pinned native fixed-point projection body copied
+mechanically into a generated include. Verification normalizes line endings
+only. Native distorted-sprite/Gouraud packet fields and zero bucket are
+preserved, with capacity guards and separate Neptune depth metadata. World
+endpoints use the actual current matrix; existing flight ray helpers are
+unchanged. Tests compare 1,024 packet cases with upstream and reject full
+buffers/null colors. Source equality and Vita compilation do not prove native
+projection results or battle occlusion on hardware.
+Visibility still uses the existing shared near/far guard; upstream's
+`isGunShotVisible` is an unimplemented always-visible stub. Original-game
+ray clipping/visibility fidelity remains an explicit runtime validation task.
+
+`isSoundFileLoaded` is a synchronous file-service completion query, not audio.
+It becomes true after raw copy or bundle publication, false during reads,
+failed retries, unknown/null requests, and after selected-disc changes.
+Filename keys are case-insensitive. Production-body tests cover these paths
+with mocked I/O. This tracks the last load's completion, not ownership of a
+destination after later overwrites; callers still own lifetime/error recovery.
+The upstream unconditional-true stub is not used.
+
+Direct module dispatch remains disabled. The explicit A3 option now enables
+the ordinary field encounter's existing overlay/main-task/engine pipeline.
+This is experimental bring-up, not combat or return-path acceptance.
+
+## Experimental native A3 execution
+
+`LAGI_BATTLE_EXECUTE_A3=ON` requires `LAGI_BATTLE_NATIVE_BUILD=ON` and defaults
+OFF. It reconnects the native A3 entry in generated overlay Draw, after a
+resource preflight and before entering the original music/wait/engine pipeline.
+It does not select a different encounter, alter stats, grant rewards, force a
+battle from a timer, or enable module-manager debug dispatch.
+
+Preflight checks the existing manager, COMMON indices and exact authored PRG
+identity. Unsupported overlays wait with a bounded `[BattleStartup]` diagnostic;
+they are not redirected to A3 or treated as victories. Generic-data reads have
+a missing/truncated-file guard before parsing; read failure releases the failed
+owner for retry. This is not a general malformed-disc parser. The native task
+base already clears allocations. Main-task allocation retry keeps the overlay
+in startup and does not push its two fonts twice. A disc change after generic
+initialization is explicitly rejected pending cache-lifetime restoration.
+
+Checks: production preflight plus generated native overlay Draw with mocked
+engine/parser; retry/font ownership; retained startup/generic/engine symbols;
+both full VPK builds (execution ON and default OFF), fullres/dither ON.
+The read-only real-disc test runs the actual generated generic constructor and
+shared quad reader on US Disc 1 `BTL_A3.PRG`: 385044 bytes, 2751 bounded reads
+through `060B08F8`, three 10-node laser tables and nine animation groups.
+No game files are extracted or committed. These checks do not execute combat.
+
+Known remaining work includes audible/native-loader validation of battle audio
+(the opt-in worker stack below is now implemented), other overlays, generic-cache lifecycle
+across discs, live task/allocator/formation correctness, gameplay commands,
+results/rewards and repeated battle-to-field return. Hardware validation is
+still required; neither a retained link nor the data-parser test establishes it.
+
+Experimental hardware build, separate from the accepted normal build:
+
+```powershell
+cd E:\dev\Lagi
+git switch feature/battle-mode-bringup
+git pull --ff-only
+cmake -S . -B build-battle -DLAGI_FULLRES=ON -DLAGI_STOCHASTIC_FILTER=ON -DLAGI_DITHER_LOOKUP=ON -DLAGI_BATTLE_NATIVE_BUILD=ON -DLAGI_BATTLE_LINK_AUDIT=ON -DLAGI_BATTLE_EXECUTE_A3=ON
+cmake --build build-battle -j 4
+```
+
+Retain the matching `build-battle/lagi.velf` and `lagi` ELF. First capture an
+authored A3 encounter entry and its log/video; if it crashes, retain the complete
+dump with those matching symbols. Expected markers are `[BattleStartup] generic
+data ready` and `enter BTL_A3`; neither marker alone proves combat success.
+
+Runtime initialization also logs `[BattleBuild] native=... executeA3=...
+linkAudit=...` from the actual compile options. The experimental command above
+should report all three as 1; default builds report 0. An absent startup marker
+alone cannot distinguish a disabled build from a run with no encounter.
+
+The read-only disc test now also uses the actual COMMON remapper and native
+overlay-entry reader, deriving supported function addresses from A3's source
+dispatch cases. On the inspected disc, all 10 remapped A3 subbattles and their
+10 formation records reference supported map/formation cases and bounded
+position data. This is coverage of authored dispatch data, not execution of
+formation callbacks, enemy attacks, model loading or combat.
+
+## Battle audio sequence return (experimental option only)
+
+The original MAIN routines distinguish a pending marked sequence from a pushed
+child: `0602B3DA` marks the current entry; `0602B29A` clears the parent's mark
+while pushing, retaining its sound IDs and resetting volume sentinels to 0x80.
+The upstream reconstruction incorrectly sets the parent's mark to 1. Pop
+`0602B506` either clears a still-pending mark without a reload or decrements the
+index and restores the previous sequence. Its parameter controls post-load
+replay. `0602BADA` calls replay `0602B962`, which checks sound-config byte +2
+and starts eligible saved sounds at volume 0x7F. Original byte loads sign-extend
+the configuration's return-sequence offset. The read-only disc audit checks
+these instruction anchors; no game resource bytes are committed.
+
+With A3 execution ON, the existing SPSC queue now carries mark/pop events to
+the audio worker. Only that worker owns the eight-entry stack, sound IDs and
+bank transitions. Return uses the existing bank loader and stages saved IDs
+for the authored post-load replay filter; parameter zero does not replay.
+The loading-ready query also counts accepted bank/pop events so an older
+completion cannot acknowledge a newer transition still queued for processing.
+Default builds retain the accepted audio behavior (the new stack is inactive).
+
+`tests/battle_audio_stack_test.ps1` executes production worker load/pop/replay,
+queue/event processing and readiness bodies against mocked SCSP services. It
+checks nesting, bound/underflow behavior, cancel-before-load, signed return
+offset, parent mark clearing, volume sentinels, config-gated/no replay, and
+accepted versus rejected queued control events. Both Vita VPK builds pass.
+No listening, 68K/SCSP execution, concurrent worker scheduling or battle return
+is established by these host tests.
+
+The experimental loader now selects native states 0 (different area/no prior
+sequence), 2 (same area/different sequence), and 8 (same sequence). It preserves
+sound IDs instead of unconditionally clearing them. The push comparison uses
+the authored signed return offset; pop compares with the outgoing child.
+
+Original `0602B790` tests file identity and exact destination via `0600FDCA`,
+ORs missing-file records' +8 masks, then stops only playing old sounds in those
+banks. `0602B8EC` waits on the same bank mask using the driver's high-byte status
+words. These are now service operations over worker-owned sound-RAM residency,
+old-sequence sound configurations, and 68K words at `0x780 + 2*slot`. Matching
+files skip redundant copies; any overlapping successful file write invalidates
+the old whole-file identity. Disc changes/new worker memory epochs clear the
+ledger. Transfer failure retains state 4 and cannot publish loading-ready.
+Post-load replay requires both native config +2 and the stopped-bank mask.
+Default audio retains its previous loader policy.
+
+The expanded stack test executes the actual selective stop/wait and loader
+state bodies, including a still-playing unaffected bank, failed transfer,
+masked replay, and all 65536 driver-status word patterns. The production bank
+loader test (`tests/battle_audio_banks_test.ps1`) checks exact residency skips,
+partial-overwrite invalidation, missing/oversize/out-of-range writes and disc
+change reload with mocked file bytes. Both full Vita builds and original-disc
+instruction anchors pass. This still does not prove real driver handshakes,
+audible continuity, or worker timing on hardware.
+
+Still open: queue overflow remains an explicit logged delivery failure, not a
+successful transition. Modes above 1, pending
+sound requests across transitions, audio timing and repeated encounters need
+native/hardware validation before this can be called complete.
+
+## Battle view and scene publication
+
+Generated `battleGrid.cpp` now captures the native view immediately after
+`generateCameraMatrix`. That function writes `pCurrentMatrix`; the existing
+bridge removes the captured root from model matrices and Neptune reapplies it
+once. Ordinary encounters remain children of the paused field and keep module
+mode 3. They must publish the battle grid's view, not reuse the paused field
+camera. No camera pose, orbit, target or interpolation is recreated in Lagi.
+
+Direct module battle mode 4 now shares the native frame/UI/fade publication,
+material indexing, GPU texture pool, resident geometry capacity and authored
+clip-plane paths. Its presentation adapter has no field/dragon-task pointer
+dependency. Modes 3 and 4 share projected-world-sprite and mesh depth behavior;
+the existing field radar depth/filter exception is unchanged. Field-only probes
+and timing diagnostics remain field-only. Current dithering flags are unchanged.
+
+`tests/battle_presentation_test.ps1` checks the generated camera capture anchor,
+shared capability/depth gates, and production battle view publication against
+a mocked renderer (exact matrix, fixed-point clip conversion, neutral fallback
+camera). Both full Vita VPK configurations and the retained-root A3 link audit
+pass with fullres/dither ON. This is not task-order, camera motion, lighting,
+occlusion or on-device rendering acceptance. Overlay startup and generic data
+are now connected only by the separate experimental A3 option described above.
+
+## Expanded shared/A3 graph and initial retained-root audit
+
+The opt-in source graph now contains all 49 shared battle `.cpp` modules and
+all 14 A3 modules, including formations, enemy bodies, HUD/radar, commands,
+items, Berserks, damage and result screens. It also compiles the real scalar/
+vector fixed-point interpolators and `kernel/monsterPart.cpp`. The latter
+three resolved dependencies exposed by a stronger retained-root audit. Native
+interpolator headers retain their original local include directory per source.
+
+`LAGI_BATTLE_LINK_AUDIT=ON` requires the native-build flag and retains the exact
+compiled `_Z19overlayStart_BTL_A3P10s_workArea` entry through the linker. It does
+not execute that entry or enable overlay dispatch. Unlike a trimmed compile
+build, this follows its real function/vtable dependency graph.
+
+The initial compile-only VPK succeeded with the audit OFF. Its first retained
+root link failed, exposing these boundaries (now restored above):
+
+- `displayRaySegment`: native fixed-point world-to-view/projection and VDP1 ray
+  packet path, not the upstream BGFX immediate-render branch.
+- `sendRaySegmentToVdp1`: projected ray-quad packet emission, Gouraud and
+  native ordering/depth metadata for Neptune.
+- `isSoundFileLoaded`: despite its name, the reachable Berserk scroll caller
+  passes filename pointers for SCB/PNB graphics loaded through `loadFile`.
+  Upstream's implementation simply returns true. Do not invent an audio-bank
+  query or accept an always-ready stub as a faithful restoration; establish
+  the actual resource-completion contract.
+
+Keep the audit enabled when evaluating link readiness; disabling it can hide
+missing services through link trimming:
+
+```powershell
+cmake -S . -B build-battle -DLAGI_FULLRES=ON -DLAGI_STOCHASTIC_FILTER=ON -DLAGI_DITHER_LOOKUP=ON -DLAGI_BATTLE_NATIVE_BUILD=ON -DLAGI_BATTLE_LINK_AUDIT=ON
+cmake --build build-battle
+```
+
+The native battle main-task production-body test checks zero-state factory
+entry, its single music callback, repeated sound-loading waits, parent callback
+ownership, 3D/camera/grid/engine ordering, task completion and allocation failure.
+Services are mocked: this is not native audio, battle or GPU execution.
+
+Generated native sources now retain timestamps when their contents do not
+change, so toggling the link audit does not unnecessarily recompile the entire
+accepted runtime. Output bytes and upstream-source ownership remain unchanged.
+
+## Initial nine-module compile foundation (historical checkpoint)
+
+`LAGI_BATTLE_NATIVE_BUILD` defaults OFF. With ON, the ordinary generated-source
+adapter compiles these real native dependencies into the Vita target:
+
+- battleEngine, battleEngineSub0, battleEngineSub1
+- battleMainTask, battleGenericData, battleDragon, battleGrid
+- BTL_A3 entry and BTL_A3_data
+
+All nine compile under GNU VitaSDK 15.2.0 without modifying upstream sources.
+The initial link caught a duplicate `initVdp1Quad` definition in battle generic
+data and the existing shared service. The generated battle copy now declares
+and reuses that service. A production-body differential test compares both
+readers over 128 synthetic sequences, every field, signed fixed-point values
+and terminal records. The upstream copy is untouched.
+This flag does **not** enable encounters, undo dispatch safeguards, initialize
+battle data, or establish usable combat. Link trimming may discard unreachable
+functions; a successful VPK is not evidence that a reachable engine links or
+runs. Remaining dependencies include HUD/radar, intro/formations/enemies,
+commands/items/Berserks, effects, damage, results and battle teardown.
+The compiled engine's actual undefined-symbol list confirms dependencies on
+`battleEngine_CreateHud1`, `battleEngine_CreateRadar`, `createBattleIntroTask`,
+`createBattleCommandMenu`, `createBattleTextDisplay`, `createBattleEndTask`,
+`createBattleResultScreen` and the native Berserk/effect factories.
+
+`tests/battle_build_boundary_test.ps1` checks the two real configured build
+graphs and compiled objects: opt-in dependencies are present only in the
+battle configuration, and both generated dispatch/overlay safeguards remain.
+It is not a runtime battle test.
+The final opt-in full VPK build passes with full resolution and both existing
+dithering flags ON. No deployment, battle entry, combat or hardware success
+is claimed. The ordinary build's OFF configuration and source graph were
+checked; it was not freshly rebuilt for this compile-only checkpoint.
+
+Use an isolated build directory so the accepted normal configuration is not
+silently changed:
+
+```powershell
+cd E:\dev\Lagi
+git switch feature/battle-mode-bringup
+git pull --ff-only
+cmake -S . -B build-battle -DLAGI_FULLRES=ON -DLAGI_STOCHASTIC_FILTER=ON -DLAGI_DITHER_LOOKUP=ON -DLAGI_BATTLE_NATIVE_BUILD=ON
+cmake --build build-battle
+```
+
+## Required progression and acceptance
+
+Extended hardware capture (2026-10-17, `12-16-55.mp4`): floating numbers and
+gauge fills are visible and multiple A3 battles complete/return. Battle-only
+log intervals (startup/sequence-return boundaries) include renderer samples
+at 31.7..33.8 ms with 992 polygons, ~5.0..5.3 ms scene build,
+~12.8..15.2 ms CPU preparation and ~14.6..19.0 ms GXM wait. Logged scanout
+intervals reach ~50 ms (three vblanks). These are overlapping timing scopes,
+not additive independent costs or proof of one sole bottleneck.
+
+Charge-ray repair: original BTL_A3 `0608523C..060852F0` supplies two contiguous
+endpoints to MAIN `0602F610`, widths {0, animated size}, sprite source base+CF8,
+size 0320, color base+2EF0, mode 8 and Gouraud table `060ACE54`. Upstream passed
+one local vector (the shared service reads a second endpoint beyond it), then
+used the wrong texture and non-tapered sizes. The generated draw now preserves
+the original pair and runtime table. Disc-backed tests execute that actual
+generated draw, verify endpoint ownership/arguments and original literals.
+This routine supplies sprite Gouraud colors; it does not itself establish a
+new point-light source. Device ray appearance remains pending.
+
+The later complete dump `psp2core-1792255547-0x001d662d59-eboot.bin.psp2dmp`
+(187280 bytes), matched to the October 17 12:36 `build-battle-vita/lagi` ELF
+and `lagi.velf`, identifies a deliberate town-dispatch assertion, not a GPU
+fault. Runtime text base is 8103D000; PC offset 1E5BE2 maps to ELF 811E5BE2
+(`_kill_r`), with `raise`, `abort` and `loadTownPrg` on the captured stack.
+The return at runtime 811763E1 maps to ELF 811393E1; the preceding call at
+811393DC invokes `__assert_func` with source line 346. Generated
+`town_town.cpp` line 346 is the unknown-overlay assertion. Stack bytes retain
+`TWN_E011.PRG`; module-manager status 08 also selects E011. The preceding
+TWN_RUIN load is the existing shared-data initialization, not proof that the
+requested destination is Ruins gameplay. The user confirms this exit leads to
+an in-engine cinematic.
+
+The experimental native-battle build now retains E011's authentic dispatch
+and compiles `town/e011/twn_e011.cpp` through the generated adapter boundary.
+Its native overlay data, NPC registration, script task, background task, main
+logic and camera startup are retained; it is not rerouted to E006. The ordinary
+build keeps its prior dispatch and does not compile E011. The fullres/dither
+Vita VPK links successfully, and `battle_build_boundary_test.ps1` verifies
+that isolation and the native startup anchors. This removes the identified
+dispatch assertion in source; the complete cinematic, its special background
+and exit still require device testing. Upstream's unknown object-definition
+assertion and unimplemented subtask factory remain limitations if reached.
+The local parser does not symbolize modules
+named `lagi` automatically: resolve offsets against the original ELF LOAD
+base, not against the relocated VELF symbol addresses.
+
+Color-clear optimization candidate: the capture spends ~3.4 ms clearing the
+960x544 color buffer on the CPU. Native scene rendering now requests an ABGR
+zero fill through the GXM transfer engine and finishes that transfer before
+BeginScene. A rejected submission retains the exact pitch-sized CPU clear;
+failed completion rejects the frame instead of racing GPU writes with CPU
+fallback. No actors, geometry, resolution, filtering or effects are removed.
+
+A3 water wildlife motion: `sWaterfallTask` mode 0 discarded its computed
+orbit, leaving the LCS/model X/Z at zero instead of around its authored origin.
+The generated adapter restores FLD_A3 `06055BF0..06055C60`: amplitude*sine A,
+amplitude*(cosine*shape) B, rotated X/Z offsets about the source position,
+draw heading phase-heading+04000000, followed by the native LCS target update.
+Original stores at 06055C38/54/60 target offsets 14/1C/24 respectively.
+`field_water_wildlife_motion_test.ps1` executes the generated block at sixteen
+cardinal phase/heading combinations and checks that Y remains unchanged.
+The fullres/dither battle VPK compiles this path. Wildlife visibility and
+shooting remain device checks; splash billboard substitution and the missing
+layered water background are separate unfinished rendering paths.
+
+Battle status-light envelope: the generated battle-dragon adapter now replaces
+the no-op tail of `s_battleDragon_UpdateAnimationState` with original
+BTL_A3 `0609F0D8..0609F21C`. The selected slot reads three signed color bytes
+from runtime 32-bit words at `060AE38C + slot*12` (native conversion helper
+0607C914), interpolates between the grid's m1F0 baseline and that color in
+the direction selected by m20C, and calls the ordinary `setupLightColor`.
+Elapsed time is m208 minus remaining m210 in 16.16. MAIN 06035686 computes
+the full signed product divided by the duration, without an intermediate
+fixed-point multiplication truncation. No guessed tint or independent timer
+is introduced. Intermediate native task vectors are calculated locally because
+they are recomputed before every use and are absent from the pinned header.
+`battle_status_light_test.ps1` executes the generated block across four slots,
+both phases, all 31 countdown values and the inactive path. Vita fullres/dither
+VPK compilation passes. This restores status/damage modulation only; it does
+not complete the missing healing/berserk particle producers or establish a
+point-light source for the charge rays. Visual acceptance remains pending.
+
+Shared animated particle geometry now honors each frame's m14_X/m18_Y origin.
+MAIN 0602D12C..0602D186 adds those authored offsets to the transformed
+position, projects that origin, and independently projects full width/height
+for the opposite corner. The scaled service at 0602E47A..0602E4E6 first scales
+the same offsets and dimensions. Lagi previously discarded the offsets and
+projected two half-extents around an assumed center, also forcing a minimum
+extent absent from these native calculations. Ordinary, scaled and Gouraud
+particle emission now share the corrected calculation; per-command world
+depth, source/LUT addressing and Gouraud ownership remain unchanged.
+`particle_origin_service_test.ps1` executes the production emitter for two
+distinct frame origins, two scales and shaded/unshaded variants, plus clipping.
+Existing collection burst and 384 particle color-window tests still pass.
+Both experimental battle and ordinary fullres/dither Vita VPK builds pass.
+This is a shared service correction, not a replacement for missing effect
+task state/particle-array producers. Hardware geometry remains unverified.
+
+Particle-producer recovery in progress: `battle_effect_motion.h` captures the
+original 0x24-byte motion record and initialization at BTL_A3
+0608CAC0..0608CC4C. It preserves independent native trig samples, ten RNG
+draws in order, 00AAAAAA linear speed and signed fixed-point products. Angles
+use the top twelve RNG bits; angular magnitudes use the top sixteen bits
+times 1024. Azel must supply RNG and trig tables; none are replaced or embedded.
+`battle_effect_motion_test.ps1 -DiscImage <original MODE1/2352 bin>` checks
+deterministic state, exact RNG count/order, table indices and arithmetic, plus
+original disc store/literal anchors. These checks pass. This helper is **not
+yet connected to the live effect task**: the native initializer also allocates
+0x38 particle records, initializes animated quads and owns frame/type/scale
+state; update and draw must be restored together before replacing the timer
+stub. This preparatory commit has no runtime visual change and does not call
+for another hardware build by itself.
+
+The follow-on update trace identifies the 0x24 effect record's vectors as
+acceleration, velocity and wrapped angles; the initial names in the recovery
+helper have been corrected accordingly. A distinct `ParticleMotion` holds
+acceleration/velocity/position for the 0x38 particle record. Its recovered
+state-1 update follows 0608D60C..0608D71E: add the target displacement times
+signed FD71 (-655), integrate velocity, subtract velocity times 0CCC (3276),
+integrate position, then clear acceleration. Native 32-bit add/subtract wraps
+are explicit. States other than 1 skip motion but still require the caller's
+shared animated-quad update at 0608D720. Host tests cover both signs, repeated
+steps, inactive states and wrap boundaries; original-disc checks verify the
+signed constants, branch instructions and position stores. Vita syntax
+checking passes. Parent ring-angle forces, frame gates, animation ownership
+and actual draw integration remain pending; this helper is still disconnected.
+
+Parent ring and particle seeds are now recovered in the same helper. The ring
+follows 0608CDA8..0608D40C in place, including the already-updated predecessor
+and first record, signed 28-bit angle differences, 028F neighbor force,
+03D7 damping, 0FFFFFFF angle mask and per-record RNG low-five-bit decision.
+A selected impulse consumes six additional random draws and uses native
+00012345 amplitude, rather than the current stub's frame-based RNG guess.
+Particle startup follows 0608D5A0 plus 0608CC8A..0608CD2C: zero motion,
+native count-1 type sampling, delay 0..49, uninterpreted field2C -40..-203,
+then four independent spherical-position samples. That is seven draws per
+particle in addition to its motion-record initialization. No guessed correction
+to the native type range is applied. Tests cover in-place versus snapshot
+behavior, wrap boundaries, selected/unselected impulse RNG counts, seed bounds
+and deterministic state, with original-disc constant/branch anchors; host
+execution and Vita syntax checks pass. Full live task integration remains
+pending; these additions alone do not change gameplay or require a new build.
+
+Live healing-particle integration now supersedes the disconnected-helper
+checkpoints above. Generated `battleEngine.cpp` replaces its timer/RNG-only
+stub with `lagi_battle_heal_effect.inc`, retaining Azel's original item calls
+and effect data. Native task-owned motion/particle arrays, COMMON quad pointer
+060ABF1C and slot-0 VDP1 allocation feed the shared scaled/Gouraud emitter
+(MAIN 0602E428). Each particle keeps its native type/delay/animation state.
+The motion ring updates only before frame 70; active particles switch to the
+native spring state at frame 70 and continue animating afterwards. At frame
+60, the authored C210/E739/30/E739/C210/10 flash and command-finished flag
+are restored when requested. Draw applies the source position, native Y/X/Z
+rotation and particle position; task completion waits for every particle's
+delay+100 boundary, rather than stopping at the old stub's frame-70 cutoff.
+Quad-vector ownership is released by Delete; POD arrays use Azel's task heap.
+
+`battle_heal_task_test.ps1` executes the production task include through full
+creation/update/draw/deletion with service mocks: 1880 initialization RNG
+draws for four types/40 particles, delayed activation, no ring RNG after frame
+69, one frame-60 flash, state switch at 70, balanced matrix stack and final
+completion. Motion/disc tests and scaled-color emitter forwarding pass, as
+do retained battle linkage, tapered-ray regression checks and both fullres/
+dither Vita VPK builds. These are source/host/build checks, not device proof.
+Use a healing item in an A3 battle to validate appearance, timing and busy-
+scene performance. Status-cure, blast-chip and several berserk producers still
+contain missing paths; this does not complete all battle effects or lighting.
+
+Encounter/radar diagnosis: original US Disc 1 COMMON entry
+`00208710 + field(2)*14h` selects its A3 root with story bit **87 decimal
+(0057h)**, not 0087h. Set selects root 00207624: bounded immediate rows;
+clear selects 002076A0: probability-based rows. Both roots provide subfield
+tables only for subfields 0 and 2; subfields 1 and 3..12 have null entries.
+The probability root's first rows have 8-percent chance, row danger 1 and
+per-row cap 10, with interval 150, initial countdown 120 and forced-attempt
+limit 20 from its selector. This does not establish which root the user's
+save selects, nor prove a random-encounter failure in areas without tables.
+The current radar port separately gates danger display on consumable 56
+(Telepathy Shard); no inventory/story gate has been bypassed.
+
+Experimental builds now report `[NativeEncounterTable]` at selector setup,
+`[NativeEncounter]` only on gate/row/context changes, and
+`[NativeEncounterRoll]` only when the original probability roll occurs.
+Reasons: 0 disabled by field policy, 1 missing area table, 2 outside/exhausted
+rows, 3 valid row. Logs include native field/subfield/status, selected pointer,
+row rate/danger, movement, shard count and countdown/attempt state. The
+observer does not sample RNG or modify counters. `encounter_trace_test.ps1`
+executes its deduplication/null safety and compares the generated encounter
+evaluator with upstream after removing diagnostic calls; all native area,
+probability, RNG and counter code matches. Battle VPK and build-boundary
+checks pass. A fresh flight log through subfields 0/2 is needed to establish
+the runtime cause; the diagnostics alone do not fix or verify encounters.
+
+Status-cure recovery checkpoint: native 06065754 creates a two-model effect
+through 06099504 and a separate eight-sparkle task through 06099AA0; the port
+still has a timer-only model task and omits that sparkle task. The shared
+motion helper now recovers sparkle motion at 06099D06..06099D7A: angular
+acceleration/velocity with zero angular damping and 28-bit wrapping, radial
+integration with 051E damping, and animation-end-only scale decay using
+3334 RNG range plus 0CCC, followed by motion reseeding. Acceleration is not
+cleared by this routine. Host fixtures check signed motion, unchanged RNG on
+non-ending animation steps, decay bounds and callback ordering; original-disc
+instruction/literal checks and Vita syntax checks pass. The live healing task
+regression still passes. These sparkle helpers are not yet wired to gameplay.
+
+The status-cure trace also confirms zero-duration calls to native light setup
+0607C61A/0607C708. Those functions divide through the original hardware helper
+and the grid update completes nonpositive step counts on the next update;
+Lagi's existing saturating divide already handles zero. No speculative
+zero-duration fix was applied. Restoring the two model records still requires
+faithful custom-MCB model initialization and resource ownership, not billboard
+substitutes. This checkpoint alone needs no new device build.
+
+The independent status-cure sparkle task is now connected in experimental
+battle builds through `lagi_battle_status_sparkles.inc`. Original caller
+06065754 selects its quad list from runtime table 060ABEF4 by effect ID and
+requests two cycles. Native reseeding 06099E14 uses nine draws, preserves
+animation/scale, and restores the authored radial/angular accelerations;
+initialization adds the tenth draw for delay 0..11 and scale 8000. Eight
+particles advance their own animations, decay scale only at animation wrap,
+and restart together for the next cycle. Draw retains native source position,
+Y rotation, current radius and per-particle scale. Quad data uses the common
+slot-0 VDP1 allocation and owned parsed metadata is released at task deletion.
+This is a sibling effect owned by the engine, independent of the model task
+and its command-finished flag; it does not replace either missing 3D model.
+
+`battle_status_sparkles_test.ps1` executes the production task through both
+cycles, checks 80 initialization RNG draws, delayed animation, emission,
+matrix-stack balance and cleanup, and confirms no command/flash side effects.
+Motion/disc checks, the live healing regression, retained-link and build-
+boundary checks pass; the fullres/dither battle VPK builds. Device appearance
+and busy-scene performance remain unverified. The user is testing e4cb1d4,
+which predates this sparkle integration; do not attribute those results to
+the new task. The status-cure companion model/lighting sequence remains a
+timer-only stub and is still required for complete effect parity.
+`native_color_clear_test.ps1` checks production API arguments, completion order,
+padding bounds, rejected-transfer fallback and failed-completion behavior with
+a mocked transfer engine. Builds are not hardware API or performance proof;
+compare fresh battle `clear`, CPU preparation, render and scanout intervals on
+the same multi-enemy route before calling this a measured improvement.
+
+Flight/tunnel audio regression: active sounds were stored by shared data-bank
+number (config +0), while native stop/wait/status operates on eight playback
+control slots (config +3). Multiple ambient sounds in one bank overwrite each
+other in that bookkeeping and transitions can stop/wait on the wrong driver
+slot. Sound requests now preserve control-slot ownership, including volumes,
+sound-ID lookup and stack snapshots. Data-bank selection for actual playback
+and residency masks remains independent. The production-request test covers
+two sounds in bank 3 on controls 4/5, volume/stop routing and selective stop/wait
+until both driver slots finish. This shared request fix applies in both builds;
+the experimental same-area loader remains opt-in. Device tunnel audio retest
+is still required.
+
+Missing flight speech is a separate service gap: `fieldPlayPCM` routes script
+filenames to `lagiAzelFieldPlayPCM`, which currently logs only, whereas the
+desktop original plays big-endian signed 16-bit mono PCM at 22050 Hz. The slot
+repair does not implement that raw-file playback/mixing path. Do not treat it
+as restored voice or replace it with a sound-bank/channel guess.
+
+Floating-digit checkpoint: restored the stubbed `damageDisplay_draw` through
+a native VDP1 emitter port of BTL_A3 `0605BCDC..0605BDA8`, called at
+`0605C0DE`. It reads runtime sprite tables `060B1F7C`/`060B1F04` and Gouraud
+colors `060B1FF4`; no game font/color data is embedded. Native formatting,
+timing, positions and HP/BP effects remain Azel-owned. The disc-backed test
+executes the production emitter for all ten digits, both modes and all four
+color sets, checking texture relocation, geometry, color slots and packets
+against original instruction/table anchors. Context storage is mocked, so
+actual floating-number GPU appearance is still a device acceptance item.
+
+Effect scope: shared effect lighting must work for attacks, items, Berserks
+and enemies, not only healing. Existing grid light interpolation and per-draw
+capture are the integration boundary; do not add item-specific substitute
+glows. Current source still stubs healing particle update/draw, portions of
+status/attack effects, and the final dragon effect-light step. These missing
+producer paths and setup/apply/restore ownership require original-code ports
+and device validation; restoring numbers/gauges does not complete them.
+
+First hardware battle acceptance (2026-10-17): user recording/log confirms A3
+combat entry, commands and battle completion execute. It also shows missing
+gauge fills/damage effects and a black field return despite resumed audio.
+This is partial combat evidence, not full battle acceptance.
+
+Return-fade repair: MAIN `0600C888..0600C8AE` starts both native fade channels
+from their current colors to field targets +48/+4A over 0x1E frames, after
+sound readiness and field unpause. The reconstruction omitted these calls and
+left the preceding one-frame black hold active indefinitely, matching the log.
+The generated encounter now restores those calls. `battle_return_fade_test.ps1`
+executes the generated resume case with mocked services and checks audio wait,
+both independent targets, 30-frame duration and one-shot state advance.
+On-device corrected transition appearance remains pending.
+
+Gauge-fill repair: native `drawGaugeVdp1` emits RGB555 VDP1 command 4 for
+HP/BP/power/enemy life fills. These packets appear in the hardware log, but
+Neptune accepted command 4 only when marked as radar-owned. It now draws all
+command-4 solid polygons through the existing GPU solid pipeline, retaining
+the separate radar-only transform and depth/pass ownership. This does not
+implement the stubbed damage-display draw routine or missing healing effects.
+Compilation is verified; actual gauge appearance remains a device check.
+
+Task heap checkpoint: native-battle builds now drain task-owned allocations
+on the scheduler's disposal pass, after child/parent Delete callbacks. The
+production free service receives user data (not allocation headers) and unlinks
+each node. Default builds retain the accepted prior policy. Host coverage in
+`battle_task_heap_test.ps1` executes actual scheduler/heap bodies over 256 nested
+lifecycles, with explicit frees/reallocations, delayed disposal and a paused
+survivor. This fixes tracked raw heap leaks, not C++ work-area destruction,
+placement-object destructors or every resource lifetime. Device repeated-battle
+memory acceptance remains open.
+
+A3 enemy death/sound checkpoint: original BTL_A3 escape and death routines
+read death mode at parameter +2C (`060763CE..060763F6`,
+`06076C5A..06076C60`), hit sound at +2D (`0607750E..06077528`),
+and death sound at +2E (`06076C16..06076C32`). Sound bytes are unsigned
+with FF meaning no sound. Upstream incorrectly reused the +28 quadrant-color
+array for death and sound, including an out-of-bounds index 4. The native
+build generates an expanded formation header shared by all generated consumers,
+parses the three distinct fields and routes only death/sound reads to them.
+Quadrant color consumers and authored gameplay decisions are retained.
+
+The real-disc test verifies original instruction anchors and executes the actual
+generated formation parser for all four formation roots: seven per-type entries
+and ten animation records, including both beam-triggered transitions. Parsed
+death/sound bytes, independent quadrant colors, record counts, animation offsets
+and timers are checked against their source fields. Model/hotspot loading is
+mocked in this host data test. Enemy movement, death effects, sound playback and
+resource lifetime still require device combat validation. No upstream header
+or copyrighted data is edited/committed.
+
+A3 enemy-animation checkpoint: the original table reader loaded exactly one
+record and never advanced its source pointer. Actual Disc 1 beam-response
+records at per-type parameters `060A8A04+20` and `060A7CF8+24` select state 1;
+the latter's subsequent transitions also reach state 2. The four distinct
+Urchin-family parameter sets require 1, 2, 1 and 3 records respectively.
+The generated A3 reader now follows signed next-state indices from state zero
+and both beam overrides, preserving -1 (keep current), and reads each record
+at the native 0x24 stride. Original BTL_A3 instructions `06076234..06076244`
+compute this stride before loading animation offset +1C. No upstream or game
+data is modified or committed.
+
+`battle_generic_disc_test.ps1` checks generated count/stride hooks, executes
+the production reachability helper against real disc records with bounded
+reads, and tests sentinel, recursive transition, cycle and signed-index limits.
+This is data coverage, not enemy AI or beam-hit execution on Vita; full combat
+and repeated returns remain unverified.
+
+Allocator return checkpoint: original MAIN `060315B4` pops the allocator and
+restores the parent's inline file table at +18. Upstream's C++ vector conversion
+only clears the vector at the root and otherwise leaves the child table active.
+The generated native-battle build now moves the parent's vector under its own
+allocator identity during push and restores it on pop, preserving table storage,
+filenames, refcounts and bundle pointers. Native task teardown is child-first;
+this change does not replace task/bundle deletion or reallocate surviving assets.
+Reset clears sidecar metadata. Default builds retain their prior allocator path.
+
+`tests/battle_allocator_tables_test.ps1` executes generated native push/pop/reset
+and the production owner service with mocked heap/resource I/O, covering nested
+empty/nonempty tables, exact storage/bundle identity, root pop and reset. Full
+Vita builds and original allocator instruction anchors pass. Native DRAM resource
+reload, task-heap freeing, allocation exhaustion and repeated on-device returns
+remain unverified; this table-ownership repair does not establish those behaviors.
+
+1. Audit/test combat-relevant persistent player state: inventory healing and
+   quantities, healing Berserk HP/BP costs, equipment, Dragon stat/morph changes.
+   Existing implementations and menu appearance are not device acceptance of
+   their gameplay effects or save/reload persistence.
+2. Compile and link the real reachable battle dependency graph. Restore generic
+   battle data and overlay lifecycle, then the native encounter-to-manager
+   transition using original-game evidence. Keep normal flight safe meanwhile.
+3. Publish native battle camera/models/VDP1 commands/VDP2/HUD to Neptune, with
+   source-faithful priorities, palettes, light/depth and current dithering.
+4. Validate intro, targeting/quadrants, movement, gun/laser/commands, items,
+   Berserks, enemy actions, HP/BP/gauges, audio and win/lose paths.
+5. Restore authentic rewards, persistent stat/item changes, cleanup and return
+   to the correct field state; confirm save/reload and repeated encounters.
+6. Build and run on Vita/Vita TV. Require matching logs and visible gameplay;
+   source/host checks cannot prove rendering, input, audio, timing or combat.
+
+Books, System settings, world travel and Enemy List completion remain separate
+unless a demonstrated battle dependency makes one necessary. Menu transition
+polish is accepted as good enough and is not a prerequisite for this goal.
+
+### Temporary effect model lifetime preparation (2026-10-17)
+
+The status-cure 3D model task remains unfinished. Before wrapping its raw custom
+MCB bundle, inspection found two pointer-reuse hazards: the bridge retained
+adapted geometry solely by native pointer, and Neptune reused material bindings
+by native pointer plus polygon count. Neither distinguishes a replacement model
+allocated at the same address.
+
+The bridge now owns immutable, generation-tagged model snapshots. A producer can
+call `retire_native_model()` before freeing a temporary model: current/published
+frames retain their snapshots, while later submissions at that address adapt
+fresh geometry. Neptune keys material reuse and static mesh signatures by the
+snapshot generation as well; superseded material bindings at a reused address
+are removed. Ordinary persistent models still adapt once, not once per frame.
+
+`tests/model_snapshot_cache_test.ps1` executes the production cache with equal-
+address/equal-size replacement geometry, duplicate insertion, retirement,
+published-frame retention and eventual release. It does not exercise a live
+effect bundle, native parsed-bundle deletion, GPU execution or frame timing.
+No effect task calls retirement yet: connecting the original two-model task and
+explicitly owning its hierarchy/animation/pose allocations is the next step.
+This is infrastructure, not a claim that status-cure model visuals are restored.
+
+Validation: lifetime, native healing task, native status-sparkle task and battle
+build-boundary host tests pass. Both experimental battle and ordinary fullres
+Vita VPK builds pass with stochastic filtering and dither lookup enabled. No
+device run or timing capture exists for this change; reference-counted frame
+retention adds bookkeeping whose on-device cost has not been measured.
+
+### Hardware feedback: e4cb1d4 (2026-10-17 evening)
+
+The user confirms healing particles now look correct; a healing-specific light
+is not established by the reference and must not be invented. The supplied
+21-03-17 video shows NORMAL separating from its panel as the HUD hides. Original
+BTL_A3 `060726B6..060726CA` computes position Y as `-163 - 16 - part1Y + 112`,
+then `06072724` negates it for CMDYA. The generated battle adapter corrects the
+reconstruction from `67 - part1Y` to **`67 + part1Y`**. The authored table words
+are at `060B19AA` (163) and `060AC100` (16). No layout redesign or UI timing
+change is involved. `battle_hud_slide_test.ps1 -DiscImage <disc>` checks generated
+arithmetic at visible/command-menu/hidden offsets and the original anchors;
+Vita battle VPK compilation passes. Hardware slide acceptance remains pending.
+
+Other feedback remains open: a lingering meter, multi-enemy combat performance,
+and the E011 cinematic abort. The new partial core is 2,560 compressed bytes,
+inflating to 7,597 bytes without a gzip trailer. It contains complete THREAD_INFO
+and the first main-thread register record, but no module inventory or stacks.
+Main PC `81236422` / LR `812363EF` match the supplied ELF's `_kill_r` with inferred
+relocation +`4D000`. The matching ELF's `__assert_func` saves line/expression/file
+in r5/r6/r7; those preserved registers are 251, relocated string `"0"`, and
+`E:/dev/Lagi/build-battle-vita/azel_upstream/town_townScript.cpp`. Matching generated
+line 251 asserts on an unregistered **one-argument** town script function. This
+narrows the fault beyond overlay dispatch, but does not recover the missing
+function EA or a call stack. The log confirms E011.EPK opened before the abort.
+
+The E011 script at `060541F4` calls one-argument factory `0605890C` with
+`060600C4`. This is the first unregistered call after the already-observed EPK
+startup. Original `06058884..0605892A` creates an eight-byte callback scheduler,
+reading its schedule through the argument pointer. Its table `0605FD10` contains
+descending remaining-frame thresholds and callbacks `060589E2`, `06058B2A`,
+`06058FF8`, ending at `060600B8`. These callbacks must be restored, not skipped.
+Later script calls also require `0605809E`, `060557E0`, and `06055872`. No E011
+scheduler/callback fix is claimed yet. The Saturn water screenshot is a reference,
+not a Lagi screenshot: transparent surface layers and waterfall splashes remain
+open, as do the lingering combat meter and measured multi-enemy performance.
+
+### Earlier random-battle core: missing animation effect factory
+
+The complete 530,448-byte `psp2core-1792262512-0x00239831ed-eboot.bin.psp2dmp`
+records main-thread PC offset `1E9422` (abort trap), r5=293, and a stack containing
+`06056AF2`. Candidate ELF offsets line up with `_kill_r`, `__assert_func`,
+`BTL_A3_data::invokeCreateEffect`, `urchinUpdateSub2`, and `Urchin_update`; its
+preserved assertion-string addresses resolve to `"0"`, generated
+`battle_BTL_A3_BTL_A3_data.cpp`, and the dispatcher function name. The old core
+does not capture those read-only strings; the supplied later ELF is supporting
+symbol evidence, not a separately archived earlier matching executable.
+Independently, current source lacks that dispatcher case and the original disc
+contains the actual factory at `06056AF2`, update `060569A8`.
+
+The generated battle adapter now registers that factory and compiles its native
+animation-owned particle emitter. It preserves the one-in-eight RNG gate, six
+RNG calls on emission, signed-angle draws, original sine/sine/cosine coordinate
+products (Y reuses the sine radius), radius `A000`, three runtime quad sequences
+at `060A8300/060A84C0/060A87B4`, scale `10000`, animation completion lifetime,
+and slot-12 resource parent. It takes the typed enemy `m8` position rather than
+reading a Saturn byte offset from the C++ object. Descriptor arrays remain alive
+for particles spawned before the emitter's animation ends. No fake effect,
+assertion suppression, game assets, or upstream edits are added.
+
+`battle_urchin_ambient_test.ps1` executes the production emitter with mocked task,
+trig and particle services, covering the gate, RNG count, all descriptors, live
+parent position and descriptor lifetime. `battle_generic_disc_test.ps1` checks
+original factory/update literals and bounded quad reads, then compares all
+non-null animation effect pointers in the four A3 formation readers (seven enemy
+parameter sets, ten animation records) with the **generated live** dispatcher.
+This is not every effect in every battle overlay, nor hardware AI/particle
+acceptance. Host tests, battle-boundary tests, and full battle/ordinary Vita VPK
+builds pass; on-device crash regression testing remains required.
+
+### E011 scheduled effect recovery checkpoint
+
+`lagi_e011_scheduled_effects.inc` recovers the native leaf tasks behind callback
+`060589E2` (animated sprite) and `06058B2A` (animated model). These are compiled
+only with the existing native-battle E011 source, but **not connected to script
+factory 0605890C yet**. Callback `06058FF8` draws ribbon/trail geometry and remains
+unfinished. Wiring only the first two callbacks would postpone the known abort,
+not establish a complete cinematic; this checkpoint deliberately does not do so.
+
+Both leaf tasks use the original remaining-frame clock. The native initial
+branch enters the loop test before the first body: a remaining-time delta of
+zero executes no updates, and stopped/skipped playback supplies one update.
+The second clock sample is retained as the next previous time. Animated sprites
+initialize through MAIN `0602CF2A`, advance through `0602CF38`, and count actual
+animation wraps. Model tasks use `init3DModelRawData`, `stepAnimation`'s returned
+previous frame, authored hierarchy/animation/pose indices and ZYX rotation.
+The file owner is `dramAllocatorEnd[descriptor.s16(0)].mC_fileBundle`, not an NPC
+proxy or an assumed byte offset. Persistent file caches remain file-owned;
+task-owned parsed quad descriptors and model pose/matrix vectors are explicitly
+released by Delete, since upstream work areas lack virtual C++ destructors.
+
+`e011_scheduled_effects_test.ps1 -DiscImage <disc>` executes the production leaf
+task code with mocked native services and checks source instruction/service and
+descriptor anchors from the original E011 overlay. It covers delta-zero/delta-
+one timing, first-state fallthrough differences, loop completion, resource
+inheritance, transforms, skipped playback, cleanup and model-init failure.
+Host test, original anchors, battle build-boundary test and both fullres/dither
+Vita VPK builds pass. This is staged source recovery, **not** an E011 crash fix,
+hardware rendering result, sound result or full playback acceptance.
+# Enemy life-meter typed signals
+
+Replaced all 12 known raw Saturn-offset `[0x31]` meter flag writes in A3
+urchin/queen and the staged A5 single/variant sources with typed `m31` access.
+The C++ task prefix is not the Saturn work-area layout. Incorrect writes lost
+the native reward/damage/death signals after enemies dropped their meter pointer,
+leaving an orphan bar. Native update/drain/shrink behavior remains unchanged;
+there is no results-screen hide workaround. A5 is adapted, not enabled.
+
+`battle_life_meter_test.ps1` extracts the actual adapted statements and native
+update. Checks cover shifted C++ layout, all 12 writes, one-time XP/dyne,
+position detachment, drain/shrink/removal and nonlethal damage. Host checks and
+both fullres/dither Vita VPK builds pass; device acceptance remains pending.
+
+# Battle left-stick directional input
+
+During native manager state 3 (battle running), the Vita bridge supplies the
+same half-travel stick-to-direction mapping as upstream's SDL pad bridge.
+Analog values remain available, physical D-pad bits are retained, and press
+edges are computed from combined controls so a held stick/D-pad handoff does
+not retrigger. Flight and frontend stick behavior are unchanged. The adapter
+is compiled out of nonexperimental builds. Direction/deadzone/diagonal/held
+tests and both Vita VPK builds pass; hardware movement acceptance is pending.
+
+# A3 attack-effect audit gap (082ef0c combat abort)
+
+The 3072-byte partial dump `psp2core-1792288364` expands to 9263 bytes but has no
+stack/module payload. Assertion registers correlate with the matching 082ef0c
+ELF: relocation 0x58000, line 296, expression `0`, generated
+`battle_BTL_A3_BTL_A3_data.cpp` effect-dispatch default. This identifies the
+route, not the requested callback. The accompanying log has no callback EA.
+
+The disc-backed generic test now also walks attack commands in every parsed
+animation state and beam-hit response, rather than checking only animation
+factories. It currently **fails** with missing factories `06056998` and
+`060569A0` (five unique attack descriptors across these generic formations).
+Native disassembly shows these are not aliases: 56998 selects mode 1 of
+5665E (20 projectiles versus 8), while 569A0 selects mode 1 of 567EE (16
+projectiles with different descriptors). Even registered 5699C currently uses
+an approximate constructor. Full recovery requires the native projectile
+descriptor service and typed parent position, not routing all callbacks to
+the existing eight-projectile approximation. Queen/Baldor direct-call routes
+remain outside this generic formation-data audit and need separate coverage.
+
+# Authored enemy hit recoil
+
+Native A3 `060773F6..060774CC` reads fixed-point parameter longs +30/+34.
+The first scales hit-direction velocity (+2C); the second scales three RNG
+values masked to 0xFFFF and adds them to angular velocity (+50/+54/+58).
+The reconstruction incorrectly used byte +18 for both strengths and displaced
+position +14 directly. Generated adapters now read the two native fields and
+restore those destinations, without tuning the authored values or changing
+RNG order. The distinct byte +18 consumers elsewhere remain unchanged.
+
+`battle_recoil_test.ps1` executes the six actual generated statements and
+checks signed direction, authored strengths, RNG order and unchanged position.
+The disc-backed formation test verifies both fields for every parsed type and
+the original SH2 load/destination anchors before its separately known missing-
+attack-effect failure. Recoil fixture and battle Vita VPK build pass; visual
+Saturn/Vita comparison is still pending. This does not fix the attack abort.
+
+# Native projectile descriptor/pattern recovery checkpoint
+
+`lagi_battle_projectile_descriptor.inc` defines the shared +00..+2C descriptor
+and recovers both stack-built attack families from 0605665E/060567EE, including
+the four 56998/5699C/569A0/569A4 entry modes. The first family emits 8 or 20
+model projectiles, with 2 or 3 initial exact targets, then native spread,
+9..24 travel ticks, 30 lifetime, damage 20, gravity -160 and hit quad AE668
+owned by slot 0. The alternate family emits 8 or 16, each with tighter spread,
+two randomized acceleration terms, 30..61 travel, 60 lifetime, damage 9,
+trail A87B4/hit A8680 owned by slot 12. Both use slot 12 hierarchy C/pose DC.
+The descriptor is consumed synchronously, avoiding fabricated game data files.
+
+This is compiled staging code, **not connected to runtime effect dispatch**.
+The shared constructor/lifecycle must first retain the authored quad resources,
+model ownership and native collision semantics. Original 0605D610 loads sphere
+radii at +0C, while the existing reconstructed helper adds X coordinates;
+this is a separate correctness gap, not evidence of the callback abort cause.
+The native update also intentionally emits hit particles in both collision
+and same-tick expiry branches; do not deduplicate without source evidence.
+
+`battle_projectile_descriptor_test.ps1 -DiscImage <disc>` checks original
+entry/count/spread anchors, reads a real descriptor and executes production
+pattern code for all four modes with deterministic RNG. It checks emission
+counts, targets, resource slots, timing/acceleration/damage and draw counts at
+each emit boundary. Host test and both fullres/dither VPK builds pass. The
+broader generic attack audit remains red for the two unregistered callbacks;
+there is no new hardware crash-fix claim or test-build request at this stage.
+
+# Connected native generic A3 projectile routes
+
+The staged pattern recovery is now live for 56998/5699C/569A0/569A4 and the
+single-projectile 54DCE path. All five unique attack descriptors reached by
+the generic formation/response audit now resolve through the live dispatcher;
+that previously failing audit passes. This removes the two known missing
+attack factory cases, but the partial crash dump did not retain the requested
+EA, so on-device confirmation is still required for the reported attack abort.
+
+`lagi_battle_projectile_vita.cpp` recovers 060A486C and 060A44DE through typed
+descriptors and work areas. It uses authored hierarchy/pose/animation or quad,
+authored muzzle/trail/hit resources and slots, native RNG/motion/scroll order,
+signed timer expiry and native collision-plus-expiry particle emission.
+`lagi_battle_projectile_motion.inc` retains fixed-point arithmetic order and
+reads explicit sphere radii (+0C in the original) rather than position X.
+It does not change the separate reconstructed gunshot helper/callers, which
+still need their own full layout audit. No light has been invented for attacks.
+
+Projectile tasks belong to the dragon; native monitor tasks belong to the
+enemy. Cancelling a monitor does not cancel its already emitted projectiles.
+Task-owned model pose/matrix objects are explicitly deleted; file geometry is
+borrowed, not retired. Authored quad metadata is interned by byte content in a
+stable runtime cache so spawned particles can outlive the projectile without
+retaining a dangling overlay pointer. The idle/legacy effect factory's raw
+parent+8 accesses now use a typed sUrchin position accessor as well.
+
+`battle_projectile_runtime_test.ps1` executes production runtime/monitor code
+with mocked native services. It covers radius-based translated collision,
+fixed-point squared-distance quantization, odd negative acceleration shifts,
+scroll, model/sprite draw and animation, trail RNG, no-hit expiry, impact plus
+same-tick expiry, particle metadata lifetime, model init failure/cleanup and
+all four monitor counts/cancellation/completion. Its live-source assertions
+check new dispatcher routes and absence of raw parent-position offsets.
+Descriptor/disc anchors, generic attack audit, build boundary, life-meter,
+recoil and ambient-emitter fixtures pass, as do both fullres/dither VPK builds.
+These are host/source/build checks, not Vita rendering, speed or audio proof.
+Queen/Baldor direct projectile routines, non-A3 overlays, E011 recovery, water
+transparency/splashes and multi-enemy performance remain separate unfinished
+bringup work; this is not completion of the battle goal.
+
+# E011 staged-effect clock correction
+
+Reinspection of the initial branches at 06058964 and 06058A5E corrected an
+off-by-one in the staged quad/model tasks: they jump to the TST/BF-S loop test
+before the first body. A delta of N executes N updates, not N+1. The previous
+checkpoint's host expectations had repeated that mistaken interpretation.
+Normal updates also preserve two original clock samples (the first computes
+delta; the second becomes the next previous time). Stopped playback executes
+one state-machine update without clock reads. Regression tests now cover
+initial-branch plus loop/delay-slot anchors, zero/one/multiple elapsed ticks,
+distinct first/second clock samples, wraps and stopped-state cleanup.
+
+Ribbon recovery evidence: 06058C06 similarly enters at 06058ED6 before its
+first body. It shifts a 20-position history, follows the authored linear path
+plus sine-scaled oriented curvature while fixed-point duration remains, then
+snaps to the endpoint and advances a constant tangent for a separate 30-tick
+tail. Draw 06058F04 emits 19 independently sized two-endpoint strips using
+authored width pairs at 06061F4C and selectors at 06061F38; service 0602E1AA
+transforms both world endpoints before the two-width projection helper.
+These observations are recovery evidence only; the ribbon/scheduler and later
+native script callbacks remain unfinished, so the E011 abort remains unfixed.
+

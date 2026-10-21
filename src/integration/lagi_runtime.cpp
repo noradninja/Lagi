@@ -3,6 +3,8 @@
 
 #include "lagi/lagi_compat.h"
 #include "lagi/platform.h"
+#include "lagi/native_scene_mode.h"
+#include "lagi/play_time_clock.h"
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/lagi_scene_bridge.h"
 #include "lagi/lagi_input_bridge.h"
@@ -28,6 +30,7 @@ void updateFadeInterrupt();
 p_workArea createTitleMenuTask(p_workArea);
 
 namespace lagi::azel {
+static lagi::PlayTimeClock playTimeClock;
 
 static std::array<bool, 1024> radarCommandOwned{};
 static std::array<std::array<float, 4>, 1024> worldCommandViewZ{};
@@ -280,6 +283,8 @@ static void build_rbg0_gpu_parameter(
 
 bool runtime_init()
 {
+    lagi::platform::logging::writef("[BattleBuild] native=%d executeA3=%d linkAudit=%d\n",
+        LAGI_BATTLE_BUILD_NATIVE,LAGI_BATTLE_BUILD_EXECUTE_A3,LAGI_BATTLE_BUILD_LINK_AUDIT);
     if (!lagi::diagnostics::saturn_memory_readers()) {
         std::printf("[Azel] Saturn memory reader smoke test FAILED\n");
         lagi::platform::renderer::failure("[FAIL] SATURN MEMORY READERS");
@@ -301,6 +306,8 @@ bool runtime_init()
     // Lagi provides only the Vita platform services underneath those calls.
     azelInit();
     resetEngine();
+    playTimeClock={};
+    playTimeClock.sample(sceKernelGetProcessTimeWide());
 
     // Native boot can enter the title movie immediately. Stop the CPU loading
     // framebuffer from overwriting GXM/movie presentation; front-end VDP2
@@ -385,7 +392,7 @@ void runtime_frame()
     }
 
     begin_azel_vdp1_frame();
-    lagi::azel_bridge::begin_frame(gGameStatus.m0_gameMode == 3);
+    lagi::azel_bridge::begin_frame(gGameStatus.m0_gameMode == 3 || gGameStatus.m0_gameMode == 4);
 
     // Native 3D scene capability check. Town (1) and field (3) both
     // remain Azel-owned; Lagi only opens their generic presentation boundary.
@@ -393,8 +400,7 @@ void runtime_frame()
     const bool nativeTransitionFrame =
         gGameStatus.m0_gameMode == -1 && lastNativeSceneMode != 0u;
     const bool nativeSceneFrame = nativeTransitionFrame ||
-        gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 2 ||
-        gGameStatus.m0_gameMode == 3;
+        lagi::native_scene_mode(gGameStatus.m0_gameMode);
     if (!nativeTransitionFrame && nativeSceneFrame)
         lastNativeSceneMode = static_cast<unsigned>(gGameStatus.m0_gameMode);
     if (gGameStatus.m0_gameMode == 0)
@@ -421,7 +427,18 @@ void runtime_frame()
             reinterpret_cast<void*>(initialTaskStatus.m_currentTask),
             reinterpret_cast<void*>(initialTaskStatus.m_pendingTask));
 
+    // LAGI_TASK_FRAME_PROFILE_BEGIN: includes native Update AND Draw callbacks,
+    // but excludes producer-slot waiting and frame publication below.
+    const auto taskFrameStartUs = sceKernelGetProcessTimeWide();
+    // The desktop VBlank callback is not run by the Vita loop. Supply elapsed
+    // native 60 Hz units to Azel's existing module-manager time consumer.
+    // Do not call interrupt_VBlankIn(): that also advances fades/VDP state.
+    vblankData.mC_numFramesPresented=playTimeClock.sample(taskFrameStartUs);
     runTasks();
+    vblankData.mC_numFramesPresented=0;
+    lagi::platform::renderer::presentation_profile_tasks_us(
+        static_cast<unsigned int>(sceKernelGetProcessTimeWide() - taskFrameStartUs));
+    // LAGI_TASK_FRAME_PROFILE_END
 
     // Flight Phase 1: record only the transition into and activity around
     // game status 0x50 / game mode 3. This is diagnostic only; field
@@ -675,6 +692,9 @@ void runtime_frame()
         // coefficient generation, windows and sequencing remain Azel-owned.
         const auto* regs = vdp2Controls.m4_pendingVdp2Regs;
         lagi::platform::renderer::FrontendRbg0State state{};
+        // D5 uses a single native back-screen color word. Its white-to-neutral
+        // transition must remain visible after BGON.RBG0 is disabled.
+        state.backColor=*reinterpret_cast<const u16*>(getVdp2Vram((regs->mAC_BKTA&0x7ffffu)*2u));
 
         // Derive page size from the active character/pattern format. Each rotation-map
         // plane uses the authored page size. Derive both parameter A and B
@@ -1208,8 +1228,7 @@ void runtime_frame()
         // fade. Re-submit the retained final frame only while the movie-mode
         // state machine still owns presentation.
         lagi::platform::renderer::movie_republish_frame();
-    } else if (nativeTransitionFrame || gGameStatus.m0_gameMode == 1 || gGameStatus.m0_gameMode == 2 ||
-               gGameStatus.m0_gameMode == 3) {
+    } else if (nativeTransitionFrame || lagi::native_scene_mode(gGameStatus.m0_gameMode)) {
         // The frame that *enters* a native scene began as a movie/module-manager
         // frame and therefore did not acquire the scene producer slot. Release
         // the retained movie immediately, but publish only on a frame that

@@ -1,0 +1,364 @@
+# Battle follow-up, 2026-10-20
+
+Hardware report: Devour now works. Saturn reference shots show hanging
+stippled textured strands, wall-impact debris/smoke and cinematic clouds.
+Rock-break/monster cinematic SFX remain absent. Victory must not visibly dim
+before the results; user requests dimming only when exiting by input/timeout.
+World-map recovery remains separate and unready for hardware testing.
+
+## Recovered strand draw
+
+Upstream `smokePuff_draw` explicitly skipped its draw. Original BTL_A3_2
+0605B412..464 submits its two live world-space endpoints (+28 and +4C) to
+MAIN 0602E136: width 0400, source VRAM-base+0CD0, size 0510, palette
+VRAM-base+2EEC, mode 0108. This is a textured stippled strip, not a model
+hierarchy or replacement smoke sprite. Its draw has no light/Gouraud input.
+The shared Lagi ray service emits neutral Gouraud offsets while preserving
+the native texture/palette/mesh flags and existing world-depth recording.
+
+The generated adapter now restores that draw without changing spawn timing,
+simulation, endpoint attachment, shader colors or pinned Azel source.
+`tests/arachnoth_drool_test.ps1` checks original-disc draw constants/dispatch
+and the actual production adapter. The full Devour dispatcher test still
+passes and the experimental full-resolution Vita VPK builds. Actual strand
+appearance needs device confirmation. This does not restore all mesh effects.
+
+## EXP audit: award exists, progression incomplete
+
+The current generated `battle_battleResultScreen.cpp` does add the modified
+`m474_XPReceivedFromBattle` to `mainGameState.gameStats.m20_XP` in result state
+0, saturating at 99,999,999. Dyne is also awarded. Displaying a reward number
+alone is not the proof; the persistent game-state addition is present.
+
+However `battleResultScreen_checkLevelUp` and the level-up presentation/stat
+branch are unimplemented, as is `battleResultScreen_updateSub5`. The rating
+calculator is also a stub returning Excellent, which affects the multiplier.
+Do not claim leveling works or treat the pause display as the only defect.
+Native thresholds, level-dependent stats and result states must be recovered
+together; no fabricated thresholds or direct level increments were added.
+No new-run log was supplied with these reference screenshots, so this is a
+source-path audit, not a claim about the user's exact saved EXP value.
+
+## Wall-impact animated model restoration
+
+The wall-impact caller 0605A1D0 calls the animated-model factory 06062EAA,
+not the bone-debris factory. Its original arguments select owner slot 8,
+hierarchy 0018, animation 0210 and pose **02CC** (R6=0210+00BC).
+The retained comment incorrectly said 01CC and substituted bone debris.
+The generated adapter now restores the animated model with a copied world
+transform, native YXZ rotation, normal model draw and animation-end lifetime
+(06062F5E). Task deletion releases only its model instance, not bundle assets.
+This restores that specific omitted task, not all smoke/death effects.
+`tests/battle_impact_model_test.cpp` exercises the production task, including
+resource IDs, copy semantics, completion and failed-init cleanup. The earlier
+suspected pose-stride issue was ruled out: sPoseData still has the native B4
+layout. No speculative shared debris patch was made.
+
+## Remaining work
+
+- Other wall-impact mesh/debris effects still need hardware comparison.
+- Cinematic clouds and missing rock-break/monster SFX: trace native scheduled
+  callbacks, resource owners and sound events before declaring audio channels
+  missing or adding hard-coded sound cues.
+- Hardware confirmation of level/stat advancement and result presentation;
+  native ability-learning announcements remain a separate incomplete path.
+
+## Results remain lit until dismissal
+
+Per the requested presentation, the generated result entry no longer starts
+the A94A color offset, forces falloff to -31, or interpolates scene lighting
+to zero ahead of the rating text. Its neutral fade reset, reward timing and
+camera remain intact. This is an intentional presentation change: original
+BTL_A3 0606F752 does request the early offset, not evidence of a missing call.
+The existing BattleEnd task retains ownership of the black exit fade after
+input/timeout. The two dismissal conditions now converge so simultaneous
+button and timeout cannot create duplicate exits or advance past phase 7.
+The generated-phase fixture checks both entry and actual dismissal code.
+Visual timing still needs device confirmation.
+
+## Death bile and descriptor-driven trails
+
+Restored the omitted 0605A4EC factory and death caller 06058C8A..96:
+speed 1000, mode 1, source +2E4, two native RNG samples, pitch in
+[-08000000,0), full-turn yaw, and 120-frame lifetime. The trail descriptor
+060A9624 supplies the VRAM-owner slot; the task does not assume its parent's
+allocation. Mode 1 selects the native per-segment Gouraud draw. Its history
+allocation is released when the new task is deleted.
+
+Shared trail drawing now follows 060A0EAA/060A0DE4: width table at descriptor
++0C, optional Gouraud table at +10, one width/color block per segment,
+texture/CLUT relocation and original segment order. Removed the fabricated
+800-width taper and the incorrect inline color reads at descriptor +18.
+No replacement textures, spawn cadence or invented light were added.
+Production-code fixtures `battle_trail_draw_test.cpp` and
+`arachnoth_death_bile_test.cpp` pass. Experimental full-resolution Vita build
+compiles; actual death strands/colors require hardware confirmation.
+`tests/arachnoth_bile_test.ps1 -DiscImage <original-disc>` additionally checks
+the death call, RNG constants, lifetime and both native draw dispatches
+directly against the original disc. Those checks, the result-dismissal fixture,
+and E011 scheduled-effect production/native-anchor tests pass together.
+
+## Native EXP growth and save compatibility
+
+Restored BTL_A3 0606EF20 (cursor-weighted growth XP), 0606F0A2 (player
+level/stat gains) and 0606F002 (four cumulative proficiency levels). The
+12-byte rows remain in the live COMMON overlay at 0020701C: no threshold
+or copyrighted table is committed. Signed/unsigned byte coefficients,
+fixed-point rounding, growth-counter reset, HP/BP caps and current HP/BP
+increases follow the native path. Result states 3..5 now show level-up
+text/stat gains and advance to dismissal instead of the unimplemented branch.
+The original rating calculator and ability-learning announcements are still
+incomplete; this does not claim every results-screen effect is restored.
+
+The omitted growth fields use an appended 48-byte typed stats extension in
+the generated common header; all Vita consumers share it. Existing fields
+retain their prior offsets. Save version 10001 includes those counters.
+Version 10000 saves are checksum-validated, expanded in memory with zero
+growth history, and rechecksummed. Their inventory, existing stats, battle
+results and button configuration remain intact. Past growth weighting cannot
+be reconstructed from old saves because it was never recorded. Reads do not
+rewrite disk files. The existing temporary-file/rename write path is retained.
+
+`save_growth_migration_test.cpp` checks byte preservation, current-version
+roundtrip and corrupt/truncated rejection. `battle_growth_test.cpp` executes
+the production growth code with synthetic rows to test weighting, multiple
+levels, limits, reset and level cap. These are not on-device save acceptance
+or proof of the pause-menu layout. Keep a backup before testing new saves;
+older builds cannot read version 10001.
+
+## Boss-entry crash after strand draw restoration
+
+The 2026-10-20 12:43 recording/log and partial core
+`psp2core-1792514601-0x003794398b-eboot.bin.psp2dmp.tmp` reach boss battle
+after Start skips E011. The gzip expands to 9,062 bytes: no complete stack
+or module inventory. Available thread entries establish a +4E000 runtime
+relocation, independently matching the SCSP worker and render-thread entry
+addresses in the supplied executable. PC 811BCC9C maps to linked 8116EC9C,
+`smokePuff_draw`; LR maps to its typed Draw wrapper. The fault instruction
+is `ldrh r3,[r3,#4]` with r3=0, reading the null VRAM allocation's base.
+
+This was introduced by restoring the previously skipped strand draw without
+also restoring its factory's allocation assignment. Native 0605A774..780
+loads `dramAllocatorEnd[0]`'s file owner/allocation and assigns task +4.
+The formation parent has no allocation to inherit. The generated spawn now
+performs that explicit assignment; no renderer-side fallback, guessed bank,
+or suppression of the draw was added. Start-skip flow is unchanged.
+
+The strand fixture now extracts and executes the actual generated factory
+with an allocation-less parent, then draws the result. Original-disc checks
+cover both the allocation instructions/global and draw constants. This closes
+the earlier test gap, which assumed an already valid allocation. Strand and
+death-bile/trail fixtures pass; Vita boss-entry acceptance remains pending.
+
+## Status-menu current EXP and next-level bar
+
+Restored the independent `draw level curve` stub in the generated status
+menu. MAIN 0601A05E..19C prints LV at (3,36), current EXP at (3,44), NEXT at
+(3,46), and submits the authored polygon at x=-113 with an 11-pixel height.
+Its fill is floor(63 * (XP-currentThreshold)/(nextThreshold-currentThreshold)),
+using the same live COMMON 0020701C 12-byte rows as battle progression.
+Command 1004, PMOD 04C0, color 8256, NTSC/PAL vertical placement and sorting
+depth match the native caller/0602CAF4 submitter. No replacement font, layout
+shift or world-space rendering is involved. Level 99 omits NEXT/fill; the
+existing Floater branch is unchanged. Out-of-interval legacy data is clamped
+for display only and never changes player EXP or level.
+
+`tests/menu_growth_test.ps1 -DiscImage <disc>` checks original instruction
+anchors and executes the production helper for empty/partial/full progress,
+next-level boundaries, max level, NTSC/PAL, text positions and command bounds.
+Hardware menu appearance remains pending. The menu can be checked directly
+after loading, without entering the boss battle.
+
+### First-charge invalid impact pose (1792520328)
+
+The matching ELF and two thread-entry anchors establish a runtime slide of
+0x2F000. Fault PC 810C596A resolves to READ_BE_S32, with its caller in
+sStaticPoseData construction and pose index 02CC. This is distinct from the
+previous missing strand VRAM allocation. The charge-impact adapter incorrectly
+treated SH-2 instruction 76BC at 0605A23A as an unsigned addition: it actually
+adds signed -68 to animation index 0210, selecting static pose 01CC.
+The generated call now uses 01CC. The disc-backed regression checks the original
+instruction, signed calculation and generated caller before executing the
+production model fixture. No game assets are included. Hardware acceptance is
+pending; persistent mouth strands and belly/enrage presentation remain separate
+investigations, not claimed fixed by this pose correction.
+
+### Idle mouth strand offsets
+
+BTL_A3_2 0605569E/B0/C2 use logical SHLR16 on each RNG result. The
+reconstruction converted the RNG word through signed fixedPoint::toInteger,
+biasing all three offsets for half the RNG range. Restore ordered unsigned
+draws, retaining the original live-battle emission predicate and spring task.
+The strand fixture checks native instruction anchors and low/middle/high RNG
+values against the authored position ranges. Battle VPK compilation and the
+fixture pass; visible persistent mouth strands still need hardware confirmation.
+
+### Authored two-shape boss deformation
+
+Restore omitted BTL_A3_2 06055BEC -> 06054E38 -> MAIN 0601507A.
+The caller targets sub-model +98, uses descriptors 060A9538/540 (hierarchies
+000C/0010, poses 01C0/01C4), and supplies the existing m288[2] spring value.
+The shared native two-source service reproduces 16.16 radius/translation and
+truncated 2.14 vertex/normal/color blends. It leaves bone 0, animation rotations
+and scales unchanged, and ignores native spring overshoot outside [0,1].
+Changed mesh snapshots are invalidated individually; already-published frames
+retain immutable data. No whole-actor scale, new animation timing or replacement
+shape is introduced. Disc-backed fixture and battle VPK pass; swelling and mouth
+deformation appearance remain hardware-pending.
+
+### Shared VDP1 half-transparency
+
+Native PMOD 3/7 (with/without Gouraud) previously reached cutout-only fragment
+programs. Preserve their RGB, encode half alpha in decoded materials, and select
+dedicated GXM source-alpha blend variants for sprites, solid UI polygons,
+textured geometry and Full-mode Gouraud geometry. Transparent holes stay holes;
+mesh bit 8 remains independent and is not converted into alpha transparency.
+Opaque/cutout programs remain unblended to preserve their pixels and fast path.
+Blended commands test world depth but do not write it. In the ordinary native
+mesh-range route, each blended polygon retains its own authored submission
+boundary so texture batching cannot reorder overlapping commands.
+
+This restores VDP1 command semantics, not a cloud-specific proxy or arbitrary
+effect placement. It does not implement all VDP2 CCCTL/CCRSA layer color
+calculation, PMOD shadow/half-luminance operations, or pixel-exact Saturn
+RGB555 destination rounding (GXM uses 8-bit alpha). In particular, a cloud which
+is not emitted, or which uses a VDP2 layer blend, needs further native-path
+tracing. `[NativeColorBlend]` records decoded authored half-transparent material
+descriptors. Host selection/mask tests and both VPK builds are the validation
+gate here, not proof of cloud appearance, order or hardware performance.
+
+### Result-dismissal crash 1792523191
+
+Matching ELF thread entries (SCSP and render) establish slide 0x62000.
+Runtime PC 81260CA2 resolves to newlib SIGABRT; saved line 297 and expression
+identify readSaturnS8's file-range assertion. The truncated core has no usable
+caller stack, so it does not alone prove which caller supplied the bad address.
+Source/disc inspection finds a concrete matching regression: growth phase 3
+passed 060ABAB0 to progressive-text creation. That record has coordinates
+(18,21) and zero at +C, not a string pointer. Native 0606FCAE..B4 calls
+0606E9D2, which clears a 16x2 region and resets print position. Restore that
+typed clear operation; never create a text task from the coordinate record.
+The disc-backed production fixture verifies the original call/record, all 32
+cleared cells and the absence of any +C dereference. Button/timeout dismissal
+fixture also passes; on-device fade/handoff confirmation remains pending.
+
+### Native sprite mesh/stipple coverage
+
+The sprite path previously selected only texture/Gouraud programs, ignoring
+PMOD bit 8 even for the restored drool command 0108. Honor that bit in both
+ordinary and stochastic Gouraud sprite shaders using the existing screen-space
+checkerboard discard. Keep texture masks, Gouraud colors and half-transparency
+independent. Unshaded mesh sprites use the existing mesh shader. Ordinary Full
+geometry explicitly resets the new fragment uniform so a prior mesh sprite
+cannot leak coverage state into the next scene. No actor/effect-name guess
+changes source PMODs. In particular, the native Gouraud trail submitter uses
+color mode 8; it is not silently rewritten globally to 0108. If a remaining
+effect still lacks stipple, `[NativeEffectMaterial]` captures the actual battle
+sprite PMOD/material for further native-producer tracing. This is a shared
+coverage fix, not a claim that all requested effects are hardware-verified.
+
+### Stipple performance follow-up
+
+The new capture has 155 battle ScenePerf samples: median render 31,199 us,
+CPU preparation 8,926 us, GXM wait 20,323 us and submission 1,728 us; render
+p90 is 33,093 us. These overlapping counters are not additive, and wait alone
+does not prove shader cost or exclude scheduling/audio interference. This is
+not a route-matched comparison or a hardware measurement of the new fix.
+
+Remove the last change's uniform-controlled stipple branch from ordinary
+Full geometry. Compile separate ordinary/stochastic Gouraud mesh variants,
+selected only by an actual native mesh sprite command. This also eliminates
+per-material fragment-uniform allocation/reset on every ordinary Full batch.
+Gouraud, dither lookup, mesh coverage and half blending remain supported.
+Compiled base Full GXP is 444 bytes versus the tested build's 608 bytes; base
+stochastic Gouraud is 680 versus 768 bytes. Binary size is not a speed result.
+Source-contract checks and GXM shader/VPK compilation pass; recovery of the
+frame budget must be checked on hardware with the updated tree.
+
+### Charge particle animation ownership
+
+The charge loop selects authored tables 060A9814 and 060A999C. Both contain
+14 frames but differ in delay and PMOD: the former uses delays 2 (last 4)
+and PMOD 0088; the latter uses delay 4 throughout and PMOD 0188. Each call
+previously assigned a new table into the same static vector. Active particles
+borrowed that vector, so later spawns replaced their frame timing and mesh
+flags in mid-animation. Native code borrows immutable overlay tables instead.
+
+Cache decoded frames by persistent BTL_A3_2 file identity and source EA, without
+replacing existing vectors. The overlay is created once on first entry; the
+cache shares that lifetime, not a transient particle's lifetime. Preserve all
+authored delays, last-frame markers, materials, spawn timing, motion and RNG
+calls. The disc-backed fixture checks all 28 source frame headers and executes
+the production cache plus Azel's actual frame-step function with simultaneous
+particles, reproducing independent 44/70 advancement-tick sequences. The
+particle variant's initial hold tick is unchanged. This is not a retuning of
+the separate 3D bone-debris physics or generic impact-model lifetime. Visual
+matching of smoke/rocks still needs hardware confirmation.
+
+### Unchanged morph output retains geometry caches
+
+The next capture contains 124 combat samples: median render 30,933 us,
+CPU preparation 8,835 us, GXM wait 20,402 us; render p90 32,351 us.
+This does not demonstrate recovery versus the previous capture. Counters
+overlap and the runs are not identical.
+
+The two-pose morph unconditionally retired its model snapshot each update.
+Compare the actual computed radius, vertices, normals and colors before
+marking buffers dirty or retiring geometry. Fixed-point interpolation and
+pose updates remain unchanged. This avoids rebuilding identical output,
+including quantized output during small spring changes, without retaining
+pointer/weight caches across actor lifetimes. The fixture verifies repeated
+output keeps the cache and externally modified geometry is still restored.
+Disc-backed host fixture and full-resolution battle VPK build pass. This is
+a bounded CPU/cache optimization, not proof that the reported slowdown is
+resolved; fresh hardware timing remains required.
+
+### Result label palette descriptor width
+
+BTL_A3 0606E858 reads the descriptor palette with MOV.L @(8,R13),R0
+and masks its low nibble. The reconstructed immediate string printer read
+the most significant byte instead. Big-endian descriptors 060ABA20..60
+therefore incorrectly selected bank zero instead of D/C. Correct the shared
+generated printer to read S32, retaining palette restoration and all strings.
+The disc-backed test checks the native load/AND and all five label palette
+fields, then executes the generated printer with caller-palette restoration.
+Host fixture and full-resolution battle VPK pass; screenshot validation is
+pending hardware. No game font or palette data is committed.
+
+### VDP2 sprite color calculation: state boundary, not enabled yet
+
+Capture CCCTL, SPCTL, CRAOFB, all eight sprite priority/ratio selectors and
+rectangular color-calculation window registers with the native frame. Reset
+the pending state with each VRAM publication and consume it with that frame,
+not through a live game-thread register pointer. Bounded VDP2SpriteColor logs
+explicitly report composite=pending.
+
+The Arachnoth environment enables sprite CC, selects priority equality to 4
+and initializes ratios 16/18/20. This is separate from VDP1 PMOD 3/7, which
+already blends against the VDP1 destination. Applying CCRS per primitive
+would incorrectly accumulate background blending across overlapping actors
+and effects. Current Neptune draws RBG0 then native geometry into one target;
+it has no completed-VDP1 surface/selector data to perform the second stage.
+Do not enable a per-material alpha workaround or claim the effect restored.
+
+The new selection/ratio oracle checks enable, all four priority/MSB conditions,
+window rejection, bank packing and all 32x32x32 five-bit ratio combinations.
+These tests validate selection/math, not the unimplemented GPU compositor.
+Next work must preserve VDP1 RGB/index/priority/ratio metadata until final
+composition and blend its visible result against the selected VDP2 layer,
+including window and additive/destination-ratio modes. Existing screenshot
+is a Saturn reference, not a measured Lagi failure frame. Saturation itself
+is not evidence for a global tint or a global additive blend switch.
+
+### Experimental separate world-image composition
+
+`LAGI_VDP2_SPRITE_COMPOSITE=ON` now builds a separate completed VDP1 world
+surface and GPU composition pass for type-3 mixed RGB over RBG0/BACK. Indexed
+palette decoding retains selector bits rather than discarding them at CRAM
+lookup. Selection and ratios use the immutable native register snapshot.
+The pass occurs once after world effects, before the existing text/foreground
+UI path; it does not multiply a new blend into each model/effect draw.
+See `VDP2_SPRITE_COMPOSITION.md` for eligibility, tests, build flag and explicit
+limitations. Default remains OFF pending Vita comparison/profiling. This is
+not the missing NBG0-cloud renderer or proof of missing water coverage, and
+does not claim a complete multi-layer Saturn compositor.

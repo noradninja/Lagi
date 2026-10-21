@@ -1,7 +1,9 @@
 #pragma once
+#include "lagi/scene_nbg0.h"
 #include <cstddef>
 #include <cstdint>
 #include "lagi/lagi_menu_nbg2.h"
+#include "lagi/vdp2_sprite_color.h"
 
 namespace lagi::azel { struct StaticRoomDebugMesh; struct BasicWingDebugMesh; }
 namespace lagi::platform {
@@ -12,9 +14,12 @@ namespace logging { bool init(); void shutdown(); void writef(const char* format
 namespace renderer { void launcher_present(const bool available[4], int selected); void launcher_fade(int frame, int frames); bool init(); void shutdown(); void begin_frame(); void end_frame(); void set_fov(float degrees); void invalidate_cram_range(unsigned int start, unsigned int size); void invalidate_vdp1_texture_range(unsigned int start, unsigned int size); void set_azel_alive(bool alive); void set_disc_alive(bool alive); void status(const char* text, unsigned int color); void failure(const char* text); void show_game_presentation(); void toggle_debug_console(); void toggle_full_debug_screen(); bool debug_console_visible(); bool load_basic_wing_viewer(); bool load_edge_idle_model(lagi::azel::BasicWingDebugMesh&& mesh); bool load_edge_shadow_model(lagi::azel::BasicWingDebugMesh&& mesh); bool load_static_room_viewer(const lagi::azel::StaticRoomDebugMesh& mesh); bool presentation_active(); void presentation_profile_tasks_us(unsigned int microseconds); void presentation_wait_frame_slot(); void presentation_publish_frame(); void presentation_set_scene_color_offset(int red, int green, int blue); void presentation_camera_update(); void presentation_set_scene_mode(unsigned int gameMode); void presentation_set_clip_planes(float nearPlane, float farPlane); void presentation_set_native_view_matrix(const std::int32_t matrix[12]); unsigned presentation_player_animation_frames(unsigned animation); void presentation_set_player(float x, float y, float z, float yaw, bool grounded, unsigned contacts, unsigned animation, unsigned frame, unsigned previousAnimation, unsigned previousFrame, float transition); void presentation_set_camera(const float position[3], const float rawPosition[3], const float target[3], const float up[3], float yaw, float pitch, float distance); void presentation_set_vdp2_text(const unsigned char* vram, const unsigned char* cram, const unsigned char* lineScroll, unsigned int menuId, bool saveLayout, int nbg0ScrollX, int nbg0ScrollY, int nbg1ScrollX, int nbg1ScrollY, int nbg3ScrollX, int nbg3ScrollY); bool movie_present_frame(const std::uint32_t* rgba, unsigned int width, unsigned int height, unsigned int pitchPixels); bool movie_present_cinepak_payload(const std::uint32_t* payload, unsigned int payloadWidth, unsigned int payloadHeight, unsigned int sourceWidth, unsigned int sourceHeight); bool movie_republish_frame(); bool frontend_present_vdp2(const unsigned char* vram, const unsigned char* cram, unsigned int layout, int scrollX, int scrollY, unsigned int flags, unsigned int tvmd);
 // NBG2 state is captured only after its associated text/VRAM snapshot.
 void presentation_set_menu_nbg2(const lagi::MenuNbg2State& state);
+void presentation_set_scene_nbg0(const lagi::SceneNbg0State& state);
+void presentation_set_sprite_color_state(const lagi::Vdp2SpriteColorState& state);
 // Native scene cadence; title and Cinepak retain their separate schedulers.
 void presentation_set_native_frame_vblanks(unsigned int count);
 struct FrontendRbg0State {
+    std::uint16_t backColor=0;
     std::uint32_t planeA[16];
     std::uint32_t planeB[16];
     std::uint32_t rpmd;

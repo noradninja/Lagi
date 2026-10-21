@@ -20,6 +20,15 @@ option(LAGI_DITHER_LOOKUP "Use a repeating FP16 offset texture instead of screen
 option(LAGI_FULLRES "Render native Vita gameplay/movie modes at 960x544 (test only)" OFF)
 option(LAGI_AZEL_PROBE "Compile an Azel source portability probe" ON)
 option(LAGI_AZEL_RUINS_LINK_TRIM "Temporarily discard unreachable Azel code for Ruins bring-up" ON)
+option(LAGI_BATTLE_NATIVE_BUILD "Compile native battle engine/A3 bring-up dependencies (does not enable encounters)" OFF)
+option(LAGI_BATTLE_LINK_AUDIT "Retain native A3 battle entry to audit its full link graph without executing it" OFF)
+option(LAGI_BATTLE_EXECUTE_A3 "Enable experimental native BTL_A3 encounter startup (hardware validation required)" OFF)
+if(LAGI_BATTLE_EXECUTE_A3 AND NOT LAGI_BATTLE_NATIVE_BUILD)
+ message(FATAL_ERROR "LAGI_BATTLE_EXECUTE_A3 requires LAGI_BATTLE_NATIVE_BUILD")
+endif()
+if(LAGI_BATTLE_LINK_AUDIT AND NOT LAGI_BATTLE_NATIVE_BUILD)
+ message(FATAL_ERROR "LAGI_BATTLE_LINK_AUDIT requires LAGI_BATTLE_NATIVE_BUILD")
+endif()
 
 # GXM viewer shaders are compiled from readable Cg source using Sony's
 # psp2cgc so color/debug and texture paths share the same compiler/toolchain.
@@ -116,6 +125,85 @@ set(LAGI_CINEPAK_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_cinepak_f.gxp")
 set(LAGI_CINEPAK_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_cinepak_f_gxp.o")
 set(LAGI_VDP2_NBG_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_nbg_f.gxp")
 set(LAGI_VDP2_NBG_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_nbg_f_gxp.o")
+set(LAGI_RGBA_PRESENT_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_rgba_present_f_gxp.o")
+set(LAGI_SCENE_NBG0_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_scene_nbg0_f_gxp.o")
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_scene_nbg0_f.gxp"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/scene_nbg0_f.cg" -Wperf -fastprecision -O3
+ -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_scene_nbg0_f.gxp"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/scene_nbg0_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/scene_nbg0.cginc"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_common.cginc" VERBATIM)
+add_custom_command(OUTPUT "${LAGI_SCENE_NBG0_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
+ "lagi_scene_nbg0_f.gxp" "${LAGI_SCENE_NBG0_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_scene_nbg0_f.gxp" VERBATIM)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_rgba_present_f.gxp"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rgba_present_f.cg" -Wperf -fastprecision -O3
+ -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_rgba_present_f.gxp"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rgba_present_f.cg" VERBATIM)
+add_custom_command(OUTPUT "${LAGI_RGBA_PRESENT_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
+ "lagi_rgba_present_f.gxp" "${LAGI_RGBA_PRESENT_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_rgba_present_f.gxp" VERBATIM)
+set(LAGI_SPRITE_COMPOSITE_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_sprite_composite_f_gxp.o")
+set(LAGI_RBG_TILE_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f_gxp.o")
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f.gxp"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_tile16_8bit_f.cg" -Wperf -fastprecision -O3
+ -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f.gxp"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_tile16_8bit_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_common.cginc" VERBATIM)
+add_custom_command(OUTPUT "${LAGI_RBG_TILE_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
+ lagi_vdp2_rbg0_tile16_8bit_f.gxp "${LAGI_RBG_TILE_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f.gxp" VERBATIM)
+option(LAGI_VDP2_SPRITE_COMPOSITE "Experimental separate native VDP1/VDP2 composition" OFF)
+option(LAGI_GPU_PASS_TIMING "Sample serialized native GPU pass timing (diagnostic stalls)" OFF)
+option(LAGI_RBG_DECODED_PAGES "Cache native RBG source pages before GPU rotation" OFF)
+option(LAGI_RBG_COEFFICIENT_ROWS "Predecode scanline-constant native RBG coefficients" OFF)
+option(LAGI_FIELD_MOTION_TRACE "Bounded field motion/snapshot cadence diagnostics" OFF)
+set(LAGI_RBG_ROWS_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f_gxp.o")
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_rows_f.cg" -Wperf -fastprecision -O3
+ -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_rows_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_common.cginc" VERBATIM)
+add_custom_command(OUTPUT "${LAGI_RBG_ROWS_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
+ lagi_vdp2_rbg0_rows_f.gxp "${LAGI_RBG_ROWS_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp" VERBATIM)
+set(LAGI_RBG_PAGES_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_pages_f_gxp.o")
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_pages_f.gxp"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_pages_f.cg" -Wperf -fastprecision -O3
+ -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_pages_f.gxp"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_pages_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_common.cginc" VERBATIM)
+add_custom_command(OUTPUT "${LAGI_RBG_PAGES_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
+ lagi_vdp2_rbg0_pages_f.gxp "${LAGI_RBG_PAGES_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_pages_f.gxp" VERBATIM)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_sprite_composite_f.gxp"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sprite_composite_f.cg" -Wperf -fastprecision -O3
+ -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_sprite_composite_f.gxp"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sprite_composite_f.cg" VERBATIM)
+add_custom_command(OUTPUT "${LAGI_SPRITE_COMPOSITE_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
+ lagi_sprite_composite_f.gxp "${LAGI_SPRITE_COMPOSITE_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_sprite_composite_f.gxp" VERBATIM)
 set(LAGI_VDP2_RBG0_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_f.gxp")
 set(LAGI_VDP2_RBG0_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_f_gxp.o")
 
@@ -630,6 +718,7 @@ add_custom_command(
  DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_nbg_f.cg"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_common.cginc"
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/scene_nbg0.cginc"
  COMMENT "Compiling Neptune VDP2 NBG fragment shader"
  VERBATIM
 )
@@ -705,7 +794,24 @@ add_custom_command(
  VERBATIM
 )
 
+set(LAGI_GOURAUD_MESH_OBJECTS)
+foreach(mesh_shader IN ITEMS stochastic_gouraud textured_gouraud_subdiv)
+ set(mesh_name "lagi_${mesh_shader}_mesh_f")
+ set(mesh_gxp "${CMAKE_CURRENT_BINARY_DIR}/${mesh_name}.gxp")
+ set(mesh_obj "${CMAKE_CURRENT_BINARY_DIR}/${mesh_name}_gxp.o")
+ add_custom_command(OUTPUT "${mesh_gxp}"
+  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${mesh_shader}_mesh_f.cg"
+   -DLAGI_DITHER_LOOKUP=$<BOOL:${LAGI_DITHER_LOOKUP}> -Wperf -fastprecision -O3 -o "${mesh_gxp}"
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${mesh_shader}_mesh_f.cg"
+   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${mesh_shader}_f.cg" VERBATIM)
+ add_custom_command(OUTPUT "${mesh_obj}"
+  COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm "${mesh_name}.gxp" "${mesh_obj}"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" DEPENDS "${mesh_gxp}" VERBATIM)
+ list(APPEND LAGI_GOURAUD_MESH_OBJECTS "${mesh_obj}")
+endforeach()
 set_source_files_properties(
+ ${LAGI_GOURAUD_MESH_OBJECTS}
  "${LAGI_COLOR_V_OBJ}" "${LAGI_COLOR_F_OBJ}"
  "${LAGI_GOURAUD_DEBUG_F_OBJ}"
  "${LAGI_TEXTURED_LIT_F_OBJ}"
@@ -727,7 +833,7 @@ set_source_files_properties(
  "${LAGI_STOCHASTIC_GOURAUD_F_OBJ}"
  "${LAGI_MESH_F_OBJ}"
  "${LAGI_CINEPAK_F_OBJ}"
- "${LAGI_VDP2_NBG_F_OBJ}" "${LAGI_VDP2_RBG0_F_OBJ}"
+ "${LAGI_VDP2_NBG_F_OBJ}" "${LAGI_VDP2_RBG0_F_OBJ}" "${LAGI_RGBA_PRESENT_OBJ}" "${LAGI_SCENE_NBG0_OBJ}"
  PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE
 )
 
@@ -743,6 +849,44 @@ set(LAGI_AZEL_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib")
 set(LAGI_AZEL_GENERATED_ROOT "${CMAKE_CURRENT_BINARY_DIR}/azel_upstream")
 file(MAKE_DIRECTORY "${LAGI_AZEL_GENERATED_ROOT}")
 
+# Keep the existing stats prefix byte-for-byte stable. Missing Saturn growth
+# fields are appended as a typed extension, shared by every Vita consumer.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LAGI_AZEL_SOURCE_ROOT}/common.h")
+file(READ "${LAGI_AZEL_SOURCE_ROOT}/common.h" common_native)
+set(growth_anchor "    s16 mC2_dragonSpr; // C2\n};")
+string(FIND "${common_native}" "${growth_anchor}" growth_found)
+if(growth_found LESS 0)
+ message(FATAL_ERROR "Native growth stats boundary changed")
+endif()
+string(REPLACE "${growth_anchor}" [=[    s16 mC2_dragonSpr; // C2
+    // Appended host storage for omitted native fields, not native byte offsets.
+    std::array<u32, 5> m24_growth;
+    std::array<u32, 5> m80_growthXP;
+    std::array<u8, 8> m4_growthLevels;
+};]=] common_native "${common_native}")
+file(CONFIGURE OUTPUT "${LAGI_AZEL_GENERATED_ROOT}/common.h" CONTENT "${common_native}" @ONLY)
+
+if(LAGI_BATTLE_NATIVE_BUILD)
+ file(READ "${LAGI_AZEL_SOURCE_ROOT}/battle/BTL_A3/BTL_A3_UrchinFormation.h" enemy_header)
+ set(enemy_fields_old "    std::array<s8, 4> m28;\n    s8 m38;")
+ string(FIND "${enemy_header}" "${enemy_fields_old}" enemy_fields_found)
+ if(enemy_fields_found LESS 0)
+  message(FATAL_ERROR "Native A3 enemy parameter header boundary changed")
+ endif()
+ string(REPLACE "${enemy_fields_old}"
+  "    std::array<s8, 4> m28; // quadrant colors, not death/sound parameters\n    u8 m2C_deathMode;\n    u8 m2D_hitSound;\n    u8 m2E_deathSound;\n    fixedPoint m30_hitTranslation;\n    fixedPoint m34_hitRotation;\n    s8 m38;"
+  enemy_header "${enemy_header}")
+ set(enemy_header_path "${LAGI_AZEL_GENERATED_ROOT}/BTL_A3_UrchinFormation_native.h")
+ set(existing_enemy_header "")
+ if(EXISTS "${enemy_header_path}")
+  file(READ "${enemy_header_path}" existing_enemy_header)
+ endif()
+ if(NOT enemy_header STREQUAL existing_enemy_header)
+  file(WRITE "${enemy_header_path}" "${enemy_header}")
+ endif()
+endif()
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/LagiLifeMeterFlags.cmake")
 function(lagi_prepare_upstream_azel_source relative_path out_var)
  set(input_path "${LAGI_AZEL_SOURCE_ROOT}/${relative_path}")
  if(NOT EXISTS "${input_path}")
@@ -751,7 +895,51 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
 
  file(READ "${input_path}" source_text)
  set(original_text "${source_text}")
+ if(relative_path STREQUAL "field/field_d5/d5_particles.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_d5_particles.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_d5_particles.inc" source_text)
+ elseif(relative_path STREQUAL "field/field_d5/d5_nameEntry.cpp")
+  string(REPLACE "#include \"d5_particles.h\"" "#include \"lagi/lagi_d5_particles.h\"" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_name_cursor.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_name_cursor.inc" name_cursor_service)
+  string(FIND "${source_text}" "static const s_nameEntrySpriteData nameEntrySpriteData[]" cursor_begin)
+  string(FIND "${source_text}" "// 060231a8" cursor_end)
+  if(cursor_begin LESS 0 OR cursor_end LESS cursor_begin)
+   message(FATAL_ERROR "Native name-entry cursor table anchors changed")
+  endif()
+  math(EXPR cursor_length "${cursor_end}-${cursor_begin}")
+  string(SUBSTRING "${source_text}" ${cursor_begin} ${cursor_length} cursor_table)
+  string(REPLACE "${cursor_table}" "${name_cursor_service}\n" source_text "${source_text}")
+  string(REPLACE "const s_nameEntrySpriteData& sprite = nameEntrySpriteData[spriteIndex & 1];"
+   "const s_nameEntrySpriteData sprite = nameEntryNativeCursor(spriteIndex);" source_text "${source_text}")
+  string(REPLACE "pos[0] = pThis->mA_cursorX * 0x30 + 0xB7;"
+   "pos[0] = pThis->mA_cursorX * 0x30 + readSaturnS16(gCommonFile->getSaturnPtr(0x00210830));" source_text "${source_text}")
+  string(REPLACE "pos[1] = pThis->mC_cursorY * 0x30 + 0x6B;"
+   "pos[1] = pThis->mC_cursorY * 0x30 + readSaturnS16(gCommonFile->getSaturnPtr(0x00210832));" source_text "${source_text}")
+  string(REPLACE "nameEntryUI_drawCursorSprite(pThis->m10_npcHandle, pos, 0);"
+   "nameEntryUI_drawCursorSprite(pThis->m10_npcHandle, pos, 3);" source_text "${source_text}")
+ endif()
+ lagi_adapt_life_meter_flags("${relative_path}" "${source_text}" source_text)
+ if(LAGI_BATTLE_NATIVE_BUILD)
+  # All generated consumers must share the same expanded native layout.
+  foreach(enemy_include "BTL_A3_UrchinFormation.h" "BTL_A3/BTL_A3_UrchinFormation.h" "battle/BTL_A3/BTL_A3_UrchinFormation.h")
+   string(REPLACE "#include \"${enemy_include}\"" "#include \"BTL_A3_UrchinFormation_native.h\"" source_text "${source_text}")
+  endforeach()
+ endif()
  if(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_menu_growth.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_menu_growth.inc" menu_growth_service)
+  set(menu_growth_stub "        PDS_unimplemented(\"draw level curve\");")
+  set(menu_growth_draw "void s_statusMenuTaskWorkArea::Draw(s_statusMenuTaskWorkArea* pWorkArea)")
+  foreach(menu_growth_anchor IN ITEMS menu_growth_stub menu_growth_draw)
+   string(FIND "${source_text}" "${${menu_growth_anchor}}" menu_growth_found)
+   if(menu_growth_found LESS 0)
+    message(FATAL_ERROR "Native menu growth boundary changed: ${menu_growth_anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "${menu_growth_stub}" "        lagiDrawMenuGrowth();" source_text "${source_text}")
+  string(REPLACE "${menu_growth_draw}" "${menu_growth_service}\n${menu_growth_draw}" source_text "${source_text}")
   string(REPLACE
    "void s_FieldSubTaskWorkArea::Init(s_FieldSubTaskWorkArea* pFieldSubTaskWorkArea)\n{"
    "void s_FieldSubTaskWorkArea::Init(s_FieldSubTaskWorkArea* pFieldSubTaskWorkArea)\n{\n    pFieldSubTaskWorkArea->fieldSubTaskStatus = 0; // LAGI_FIELD_ENTRY_ZERO_STATE"
@@ -901,6 +1089,17 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # integration lands, disabling LAGI_AZEL_RUINS_LINK_TRIM restores the upstream
  # dispatch table unchanged.
  if(relative_path STREQUAL "kernel/moduleManager.cpp" AND LAGI_AZEL_RUINS_LINK_TRIM)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_module_exit_fade.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_module_exit_fade.inc" module_exit_fade_service)
+  set(module_exit_fade_anchor "void moduleManager_Draw(s_moduleManager* pWorkArea)\n{")
+  string(FIND "${source_text}" "${module_exit_fade_anchor}" module_exit_fade_found)
+  if(module_exit_fade_found LESS 0)
+   message(FATAL_ERROR "Native module-manager exit-fade boundary changed")
+  endif()
+  string(REPLACE "${module_exit_fade_anchor}"
+   "${module_exit_fade_service}\n${module_exit_fade_anchor}\n    if (pWorkArea->state == 0 && lagiWaitForModuleExitFade(pWorkArea)) return; // LAGI_MODULE_EXIT_FADE"
+   source_text "${source_text}")
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
    "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/platform.h\"\n#include \"lagi/azel_save_platform.h\""
@@ -915,6 +1114,19 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    "        if (gGameStatus.m6_previousGameStatus == 74)"
    "        if (gGameStatus.m6_previousGameStatus == 74 || lagiAzelSaveConsumeInGameLoad())"
    source_text "${source_text}")
+  if(LAGI_BATTLE_EXECUTE_A3)
+   string(REPLACE "p_workArea(*overlayDispatchTable[])"
+    "p_workArea lagiLoadNativeWorldBoundary(p_workArea,s32);\np_workArea(*overlayDispatchTable[])"
+    source_text "${source_text}")
+   string(REPLACE "    NULL,               // 6: unused"
+    "    lagiLoadNativeWorldBoundary, // 6: native WORLD.PRG boundary; display/travel deferred"
+    source_text "${source_text}")
+   string(REPLACE "// 5: worldmap - deferred" "// 5: native CHANGE.PRG - deferred" source_text "${source_text}")
+   string(REPLACE "// 0x4F return to title" "// 0x4F native WORLD.PRG (mode 6)" source_text "${source_text}")
+   string(REPLACE "    NULL,               // 4: battle - deferred until flight milestone"
+    "    loadBattle,         // 4: native story battle, COMMON selects encounter"
+    source_text "${source_text}")
+  endif()
 
   # Trace entry into module-manager state 1 before any transition helper.
   # Bracket-quoted CMake strings keep the generated C++ diagnostics readable
@@ -1186,9 +1398,15 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
   if(NOT source_text MATCHES "sizeof\\(vdp2Ram\\) - 1u")
    message(FATAL_ERROR "VDP2 VRAM address adapter did not apply")
   endif()
+  # MAIN 06032320 clears only 000..10F: reinit retains the color-offset tail.
+  string(REPLACE "memset(pRegisters, 0, sizeof(s_VDP2Regs));"
+   "memset(pRegisters, 0, offsetof(s_VDP2Regs, m110_CLOFEN)); // LAGI_NATIVE_COLOR_TAIL"
+   source_text "${source_text}")
+  # Configuration 45 is a color ratio, despite the reconstructed COEN name.
+  # MAIN NBG1 case45 at 06033382 writes CCRNA's high byte, not CLOFEN.
   string(REPLACE
-   "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA = (vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA & 0xFFE0) | (arg << 0);\n            break;"
-   "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN = (vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN & ~0x1) | (arg << 0);\n            break;"
+   "vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN = (vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN & ~0x2) | (arg << 1);"
+   "vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA = (vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA & 0xE0FF) | (arg << 8); // LAGI_NATIVE_NBG1_RATIO"
    source_text "${source_text}")
 
   # Original setupNBG3 also accepts all seven high-byte WCTLB controls.
@@ -1239,33 +1457,12 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
    "void reinitVdp2()\n{\n    vdp2Controls.m0_doubleBufferIndex = 0;\n    vdp2Controls.m4_pendingVdp2Regs = &vdp2Controls.m20_registers[0];\n\n    resetVdp2RegsCopies();\n\n    const int fadeAR = g_fadeControls.m0_fade0.m0_color[0].getInteger();\n    const int fadeAG = g_fadeControls.m0_fade0.m0_color[1].getInteger();\n    const int fadeAB = g_fadeControls.m0_fade0.m0_color[2].getInteger();\n    const int fadeBR = g_fadeControls.m24_fade1.m0_color[0].getInteger();\n    const int fadeBG = g_fadeControls.m24_fade1.m0_color[1].getInteger();\n    const int fadeBB = g_fadeControls.m24_fade1.m0_color[2].getInteger();\n\n    for (int i = 0; i < 2; ++i) {\n        vdp2Controls.m20_registers[i].m114_COAR = fadeAR;\n        vdp2Controls.m20_registers[i].m116_COAG = fadeAG;\n        vdp2Controls.m20_registers[i].m118_COAB = fadeAB;\n        vdp2Controls.m20_registers[i].m11A_COBR = fadeBR;\n        vdp2Controls.m20_registers[i].m11C_COBG = fadeBG;\n        vdp2Controls.m20_registers[i].m11E_COBB = fadeBB;\n    }\n    vdp2Controls.m4_pendingVdp2Regs->m114_COAR = fadeAR;\n    vdp2Controls.m4_pendingVdp2Regs->m116_COAG = fadeAG;\n    vdp2Controls.m4_pendingVdp2Regs->m118_COAB = fadeAB;\n    vdp2Controls.m4_pendingVdp2Regs->m11A_COBR = fadeBR;\n    vdp2Controls.m4_pendingVdp2Regs->m11C_COBG = fadeBG;\n    vdp2Controls.m4_pendingVdp2Regs->m11E_COBB = fadeBB;\n    VDP2Regs_.m114_COAR = fadeAR;\n    VDP2Regs_.m116_COAG = fadeAG;\n    VDP2Regs_.m118_COAB = fadeAB;\n    VDP2Regs_.m11A_COBR = fadeBR;\n    VDP2Regs_.m11C_COBG = fadeBG;\n    VDP2Regs_.m11E_COBB = fadeBB;"
    source_text "${source_text}")
 
- # The title artwork is NBG0 and the title text is NBG1. Both participate in
- # the Saturn palette/color-offset fade, so make that intent explicit in the
- # reconstructed layer setup rather than faking a fullscreen renderer fade.
- elseif(relative_path STREQUAL "o_title.cpp")
-  string(REPLACE
-   "    m7_CNSM,  1,\n    m0_END, // Character Number Supplementary mode 1 (12bits)"
-   "    m7_CNSM,  1,\n    m45_COEN, 1,\n    m0_END, // Character Number Supplementary mode 1 (12bits)"
-   source_text "${source_text}")
-  string(REPLACE
-   "    m40_CAOS, 7, // palette offset is 7 * 0x200 = 0xE00 (where the palette for the text is stored)\n    m0_END,"
-   "    m40_CAOS, 7, // palette offset is 7 * 0x200 = 0xE00 (where the palette for the text is stored)\n    m45_COEN, 1,\n    m0_END,"
-   source_text "${source_text}")
-
  # The upstream Azel movie task/state machine remains authoritative. For the
  # Vita build copy only, remove the desktop Cinepak/SoLoud stream backend and
  # route those platform-facing calls through Lagi services. The filename table,
  # timing table, countdown, CPK sequencing, fades, skip logic, subtitle task,
  # and task completion all remain the original upstream code.
  elseif(relative_path STREQUAL "movie/movie.cpp")
-  # The movie video is Saturn NBG0 and fadePalette() drives VDP2 color offset
-  # A for that plane. Upstream's reconstructed config omitted COEN, leaving
-  # CLOFEN at zero and forcing the Vita renderer to guess at the fade.
-  string(REPLACE
-   "    {m37_W0A,             1},\n    {m0_END,              0},"
-   "    {m37_W0A,             1},\n    {m45_COEN,            1},\n    {m0_END,              0},"
-   source_text "${source_text}")
-
   # MOVIE1 is the attract/title movie (movie timing entry 0x20). The current
   # reconstruction targets +white (0xFFFF) on exit, but Saturn hardware
   # reference fades to black before the title appears. Correct only this
@@ -1409,6 +1606,35 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
 } while (false)
 ]=])
  elseif(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  # MAIN 06035550 -> 060355F0 returns zero for a zero divisor and
+  # records native arithmetic error 044E; it does not abort the game.
+  foreach(remainder_helper performModulo performModulo2)
+   set(remainder_old "u32 ${remainder_helper}(u32 r0, u32 r1)\n{\n    assert(r0);")
+   string(FIND "${source_text}" "${remainder_old}" remainder_found)
+   if(remainder_found LESS 0)
+    message(FATAL_ERROR "Native remainder helper boundary changed: ${remainder_helper}")
+   endif()
+   string(REPLACE "${remainder_old}"
+    "u32 ${remainder_helper}(u32 r0, u32 r1)\n{\n    if (!r0) {\n        static unsigned reports = 0;\n        if (reports++ < 8) PDS_Log(\"[NativeArithmetic] ${remainder_helper} error=044E divisor=0 result=0\\n\");\n        return 0;\n    }"
+    source_text "${source_text}")
+  endforeach()
+  if(LAGI_BATTLE_NATIVE_BUILD)
+   set(source_text "#include \"lagi/native_allocator_tables.h\"\n${source_text}")
+   set(allocator_push_old "    dramAllocatorHead = pDramAllocator;\n\n    dramAllocatorEnd.clear();")
+   set(allocator_pop_old [=[        if (!dramAllocatorHead)
+        {
+            dramAllocatorEnd.clear();
+        }]=])
+   foreach(allocator_anchor IN ITEMS allocator_push_old allocator_pop_old)
+    string(FIND "${source_text}" "${${allocator_anchor}}" allocator_found)
+    if(allocator_found LESS 0)
+     message(FATAL_ERROR "Native allocator file-table boundary changed: ${allocator_anchor}")
+    endif()
+   endforeach()
+   string(REPLACE "${allocator_push_old}" "    dramAllocatorHead = pDramAllocator;\n    lagiPushDramFileTable(pDramAllocator);\n\n    dramAllocatorEnd.clear();" source_text "${source_text}")
+   string(REPLACE "${allocator_pop_old}" "        lagiPopDramFileTable(prev); // native parent table at allocator +18" source_text "${source_text}")
+   string(REPLACE "void resetTempAllocators()\n{" "void resetTempAllocators()\n{\n    lagiResetDramFileTables();" source_text "${source_text}")
+  endif()
   set(menu_font_delete_old "    // clearSaveText(graphicEngineStatus.m40AC.fontIndex) — unloads menu font")
   set(menu_font_delete_new "    lagiAzelUnloadFontByIndex(graphicEngineStatus.m40AC.fontIndex); // LAGI_MENU_FONT_DELETE: native 0601579A.")
   string(FIND "${source_text}" "${menu_font_delete_old}" menu_font_delete_position)
@@ -1787,6 +2013,14 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  set(cart_smoke_old "config.m0_pPosition = (sVec3_FP*)pThis; // uses m0_position at offset 0")
+  string(FIND "${source_text}" "${cart_smoke_old}" cart_smoke_found)
+  if(cart_smoke_found LESS 0)
+   message(FATAL_ERROR "Native cart smoke position boundary changed")
+  endif()
+  string(REPLACE "${cart_smoke_old}"
+   "config.m0_pPosition = &pThis->m0_position; // Typed native payload, not C++ task header."
+   source_text "${source_text}")
   set(navigator_default_old [=[        //06079234
         assert(0);]=])
   set(navigator_default_new [=[        // LAGI_NATIVE_NAVIGATOR_DEFAULT: 06079234, 060792BA.
@@ -1949,10 +2183,843 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "u32 getFileSizeFromFileId(const char* fileName)"
    "__attribute__((weak)) u32 getFileSizeFromFileId(const char* fileName)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a3/o_fld_a3_2.cpp")
+  set(fish_motion_old [=[            // Compute values using sin/cos tables (results not stored to struct in mode 0,
+            // only used for return value which the task scheduler ignores)
+            u32 angle = ((u32)(s32)pThis->m20_rotAngle >> 16) & 0xFFF;
+            fixedPoint sinResult = MTH_Mul(pThis->m28_amplitude, getSin(angle));
+
+            // MTH_Mul_5_6: m28 * cos(angle) + m2C (result unused in mode 0)
+            fixedPoint cosAngle = getCos(angle);
+            MTH_Mul(pThis->m28_amplitude, cosAngle);
+
+            u32 angle2 = ((u32)(s32)pThis->m30_param2 >> 16) & 0xFFF;
+            MTH_Mul(sinResult, getCos(angle2));]=])
+  string(FIND "${source_text}" "${fish_motion_old}" fish_motion_found)
+  if(fish_motion_found LESS 0)
+   message(FATAL_ERROR "Native A3 water wildlife motion boundary changed")
+  endif()
+  set(fish_motion_new [=[            // FLD_A3 06055BF0..06055C60: retain the native orbit results.
+            const u32 angle = ((u32)(s32)pThis->m20_rotAngle >> 16) & 0xFFF;
+            const fixedPoint a = MTH_Mul(pThis->m28_amplitude, getSin(angle));
+            const fixedPoint b = MTH_Mul_5_6(pThis->m28_amplitude, getCos(angle), pThis->m2C_param);
+            const u32 heading = ((u32)(s32)pThis->m30_param2 >> 16) & 0xFFF;
+            pThis->m14_LCSPosition.m0_X = pThis->m8_position.m0_X + MTH_Mul(a, getCos(heading)) - MTH_Mul(b, getSin(heading));
+            pThis->m14_LCSPosition.m8_Z = pThis->m8_position.m8_Z + MTH_Mul(a, getSin(heading)) + MTH_Mul(b, getCos(heading));
+            pThis->m24_computedY = pThis->m20_rotAngle - pThis->m30_param2 + 0x4000000;
+            updateLCSTarget(&pThis->m40_LCSTarget);]=])
+  string(REPLACE "${fish_motion_old}" "${fish_motion_new}" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/fieldEncounterTask.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  string(REPLACE "void encounterTaskInit(sEncouterTask* pThis, s_workArea* pArg)"
+   "#include \"lagi_encounter_trace.inc\"\n\nvoid encounterTaskInit(sEncouterTask* pThis, s_workArea* pArg)"
+   source_text "${source_text}")
+  string(REPLACE "    if (!getEncounterArea(pThis))\n    {\n        noEncounterData();"
+   "    if (!getEncounterArea(pThis))\n    {\n        lagiReportEncounterState(pThis,sSaturnPtr::getNull(),1);\n        noEncounterData();"
+   source_text "${source_text}")
+  string(REPLACE "    if (readSaturnS32(local_8 + 0xC) < 0)\n    {\n        noEncounterData();"
+   "    if (readSaturnS32(local_8 + 0xC) < 0)\n    {\n        lagiReportEncounterState(pThis,sSaturnPtr::getNull(),2);\n        noEncounterData();"
+   source_text "${source_text}")
+  string(REPLACE "    // if moving and there is a valid entry"
+   "    lagiReportEncounterState(pThis,local_8,3);\n\n    // if moving and there is a valid entry"
+   source_text "${source_text}")
+  string(REPLACE "        if (hasEncounterData == 0)\n        {"
+   "        if (hasEncounterData == 0)\n        {\n            lagiReportEncounterState(pThis,sSaturnPtr::getNull(),0);"
+   source_text "${source_text}")
+  string(REPLACE "        pThis->mC = readSaturnS8(pRandomEncounterData + 1);"
+   "        pThis->mC = readSaturnS8(pRandomEncounterData + 1);\n        PDS_Log(\"[NativeEncounterTable] field=%d storyBit=%u value=%d selector=%08X root=%08X overlay=%d\\n\", fieldTaskPtr->m2C_currentFieldIndex, bitIndex, mainGameState.getBit(bitIndex), pThis->m18.m_offset, readSaturnEA(pThis->m18).m_offset, pThis->mC);"
+   source_text "${source_text}")
+  string(REPLACE "                int randomValue = performModulo2(100, randomNumber());"
+   "                int randomValue = performModulo2(100, randomNumber());\n                PDS_Log(\"[NativeEncounterRoll] row=%08X chance=%d roll=%d attempts=%d/%d\\n\", local_8.m_offset, cVar1, randomValue, pThis->mE, pThis->mF);"
+   source_text "${source_text}")
+  # PDS_Log is intentionally a no-op on Vita. Route only these diagnostic
+  # lines through the platform sink; do not enable global per-task logging.
+  string(REPLACE "PDS_Log(\"[NativeEncounter" "lagi::platform::logging::writef(\"[NativeEncounter" source_text "${source_text}")
+  foreach(encounter_marker NativeEncounterTable NativeEncounterRoll)
+   string(FIND "${source_text}" "lagi::platform::logging::writef(\"[${encounter_marker}]" encounter_log_found)
+   if(encounter_log_found LESS 0)
+    message(FATAL_ERROR "Native encounter logging boundary changed: ${encounter_marker}")
+   endif()
+  endforeach()
+  # Native graphics return 06028668 is absent upstream. Keep native encounter
+  # state decisions; replace only platform storage/copy/resource ownership.
+  string(FIND "${source_text}" "// 0602849a\nstruct sGraphicsBackup" backup_begin)
+  string(FIND "${source_text}" "void encounterTaskUpdate(sEncouterTask* pThis)" backup_end)
+  if(backup_begin LESS 0 OR backup_end LESS backup_begin)
+   message(FATAL_ERROR "Native battle graphics backup boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${backup_begin} backup_prefix)
+  string(SUBSTRING "${source_text}" ${backup_end} -1 backup_suffix)
+  set(source_text "${backup_prefix}#include \"lagi/battle_graphics.h\"\n\nvoid* backupGraphicsToEnterBattle(sEncouterTask*, s32 includeFade)\n{\n    return lagiCaptureBattleGraphics(includeFade != 0);\n}\n\n${backup_suffix}")
+  set(restore_marker "// TODO: restore graphics from backup (FUN_06028668)")
+  string(FIND "${source_text}" "${restore_marker}" restore_found)
+  if(restore_found LESS 0)
+   message(FATAL_ERROR "Native battle graphics restore sites changed")
+  endif()
+  string(REPLACE "${restore_marker}" "if (!lagiRestoreBattleGraphics(pThis->m20)) return;" source_text "${source_text}")
+  # Stage/validate all reload bytes before sound cleanup, so an I/O retry
+  # cannot pop the native sequence stack a second time.
+  string(REPLACE "        s8 battleResult = gBattleManager->mE;" "        if (!lagiPrepareBattleGraphicsRestore(pThis->m20)) return;\n        s8 battleResult = gBattleManager->mE;" source_text "${source_text}")
+  set(capture_marker "        pThis->m20 = backupGraphicsToEnterBattle(pThis, 0);")
+  string(REPLACE "${capture_marker}" "${capture_marker}\n        if (!pThis->m20)\n        {\n            pThis->m4->getTask()->clearPaused();\n            graphicEngineStatus.m40AC.m1_isMenuAllowed = pThis->m1;\n            return; // do not enter battle without restorable graphics\n        }" source_text "${source_text}")
+  string(REPLACE "void encounterTaskDelete(sEncouterTask* pThis)\n{\n    encounterTaskVar0 = 0;" "void encounterTaskDelete(sEncouterTask* pThis)\n{\n    lagiDiscardBattleGraphics(pThis->m20);\n    encounterTaskVar0 = 0;" source_text "${source_text}")
+  set(return_fade_anchor "        encounterTaskVar0 = 2;\n        pThis->m0_status = 1; // reset to idle")
+  string(FIND "${source_text}" "${return_fade_anchor}" return_fade_found)
+  if(return_fade_found LESS 0)
+   message(FATAL_ERROR "Native encounter return fade boundary changed")
+  endif()
+  # MAIN 0600C888..0600C8AE restores both saved field fade targets over 30
+  # frames after audio readiness and field unpause. Zero is black, not clear.
+  string(REPLACE "${return_fade_anchor}"
+   "        fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), g_fadeControls.m_48, 0x1E);\n        fadePalette(&g_fadeControls.m24_fade1, convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color), g_fadeControls.m_4A, 0x1E);\n${return_fade_anchor}"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleGrid.cpp")
+  # Capture the native root immediately after camera generation, before
+  # local model transforms. Field encounters keep module mode 3, so they
+  # must replace that frame's view with the grid's view, not the paused field.
+  set(battle_camera_anchor "    generateCameraMatrix(&cameraProperties2, transformedCameraPosition, transformedCameraTarget, transformedCameraUp);")
+  string(FIND "${source_text}" "${battle_camera_anchor}" battle_camera_found)
+  if(battle_camera_found LESS 0)
+   message(FATAL_ERROR "Native battle camera publication anchor changed")
+  endif()
+  set(source_text "#include \"lagi/lagi_render_bridge.h\"\n${source_text}")
+  string(REPLACE "${battle_camera_anchor}" "${battle_camera_anchor}\n    lagi::azel_bridge::capture_native_scene_view_matrix();" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A3_2/BTL_A3_2.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  string(REPLACE "#include \"BTL_A3_2_data.h\""
+   "#include \"BTL_A3_2_data.h\"\n#include \"audio/soundDriver.h\"\n#include \"battle/battleManager.h\"\n#include \"battle/battleOverlay.h\"\n#include \"lagi_arachnoth_music.inc\"" source_text "${source_text}")
+  string(REPLACE "&battle_A3_initMusic, battle_A3_2_func0" "&lagiArachnothInitMusic, battle_A3_2_func0" source_text "${source_text}")
+ elseif(relative_path STREQUAL "dragonData.cpp")
+  set(vdp_free_start "void vdp1Free(u8* ptr)")
+  string(FIND "${source_text}" "${vdp_free_start}" free_begin)
+  string(FIND "${source_text}" "void loadDragon(s_workArea* pWorkArea)" free_end)
+  if(free_begin LESS 0 OR free_end LESS free_begin)
+   message(FATAL_ERROR "Native VDP1 free boundary changed")
+  endif()
+  math(EXPR free_length "${free_end}-${free_begin}")
+  string(SUBSTRING "${source_text}" ${free_begin} ${free_length} free_body)
+  set(free_original "${free_body}")
+  string(REPLACE "    if (!pNode) return;" [=[    if (!pNode) return;
+    // A delayed task can hold a node from a retired overlay allocator.
+    // Establish ownership BEFORE dereferencing it or clearing shared VRAM.
+    s_vdp1Allocator* lagiOwner = nullptr;
+    const auto lagiAddress = reinterpret_cast<uintptr_t>(pNode);
+    for (auto* allocator = vdp1AllocatorHead; allocator; allocator = allocator->m0_nextAllocator) {
+        const auto first = reinterpret_cast<uintptr_t>(&allocator->m18_list[0]);
+        const auto end = reinterpret_cast<uintptr_t>(&allocator->m18_list[0x40]);
+        if (pNode == &allocator->m10_allocatedHead ||
+            (lagiAddress >= first && lagiAddress < end &&
+             (lagiAddress - first) % sizeof(s_vdp1AllocationNode) == 0)) {
+            lagiOwner = allocator;
+            break;
+        }
+    }
+    if (!lagiOwner) return; // retired allocator: never touch the replacement scene
+]=] free_body "${free_body}")
+  string(REPLACE "vdp1AllocatorHead->" "lagiOwner->" free_body "${free_body}")
+  string(REPLACE "${free_original}" "${free_body}" source_text "${source_text}")
+ elseif(relative_path STREQUAL "kernel/graphicalObject.cpp")
+  # Finished resource tasks can retire after the next overlay replaces this
+  # table. Cleanup still frees their own payload; only detach a live entry
+  # when its index exists AND that entry still belongs to this task.
+  set(deleter_owner_guard "pThis->mC >= 0 && dramAllocatorEnd[pThis->mC].mC_fileBundle == pThis")
+  string(FIND "${source_text}" "${deleter_owner_guard}" deleter_guard_found)
+  if(deleter_guard_found LESS 0)
+   message(FATAL_ERROR "Native resource deleter ownership boundary changed")
+  endif()
+  string(REPLACE "${deleter_owner_guard}"
+   "pThis->mC >= 0 && static_cast<size_t>(pThis->mC) < dramAllocatorEnd.size() && dramAllocatorEnd[pThis->mC].mC_fileBundle == pThis" source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/e014/twn_e014.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(source_text "extern \"C\" void lagiSetE011FatalStage(const char*);\n${source_text}")
+  foreach(e014_stage IN ITEMS "initDramAllocator(pThis, townBuffer, sizeof(townBuffer), listOfFilesToLoad);" "initVdp1Ram(pThis, 0x25C18800, 0x63800);" "registerNpcs(gTWN_E014->mTownSetups, gTWN_E014->getSaturnPtr(0x605414c), arg);" "startScriptTask(pThis);" "startE014BackgroundTask(pThis);" "startMainLogic(pThis);" "startCameraTask(pThis);")
+   string(FIND "${source_text}" "    ${e014_stage}" e014_stage_found)
+   if(e014_stage_found LESS 0)
+    message(FATAL_ERROR "E014 startup stage boundary changed")
+   endif()
+   string(REPLACE "    ${e014_stage}" "    lagiSetE011FatalStage(\"E014: ${e014_stage}\");\n    ${e014_stage}" source_text "${source_text}")
+  endforeach()
+  string(REPLACE "#include \"twn_e014.h\"" "#include \"town/e014/twn_e014.h\"" source_text "${source_text}")
+  set(source_text "int scriptFunction_6056926();\nint scriptFunction_6057470();\n${source_text}")
+  string(REPLACE "    overlayScriptFunctions.m_zeroArg[0x6057724]"
+   "    overlayScriptFunctions.m_zeroArg[0x60577BC] = {&scriptFunction_6057470, \"E014 close cutscene\"};\n    overlayScriptFunctions.m_zeroArg[0x6056C72] = {&scriptFunction_6056926, \"E014 restore main logic\"};\n    overlayScriptFunctions.m_zeroArg[0x6057724]" source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/e011/twn_e011.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # Native MAIN 060324F0 stores R7 as a 16-byte transfer count. The host
+  # helper accepts bytes instead. E011 supplies C0 blocks, not C0 bytes.
+  set(e011_line_setup "setupCinematicBarData(1, *(std::array<u32, 256>*)pThis->m40_heapPtr, 0x25E24000, 0xC0);")
+  string(FIND "${source_text}" "${e011_line_setup}" e011_line_found)
+  if(e011_line_found LESS 0)
+   message(FATAL_ERROR "Native E011 line-table transfer boundary changed")
+  endif()
+  string(REPLACE "${e011_line_setup}"
+   "setupCinematicBarData(1, *(std::array<u32, 256>*)pThis->m40_heapPtr, 0x25E24000, 0xC00); // LAGI_E011_LINE_BYTES"
+   source_text "${source_text}")
+  string(REPLACE "    u8 m80_debugEnabled;"
+   "    u8 m80_debugEnabled;\n    alignas(u32) std::array<u8, 0xC00> lagiLineDma{}; // Stable Saturn-order DMA shadow."
+   source_text "${source_text}")
+  string(REPLACE "drawCinematicBar(1);"
+   "lagi::serializeNativeLineTable(pThis->m40_heapPtr, pThis->lagiLineDma.data(), 224u*3u);\n        vdpVar1[1].m0_source[0] = reinterpret_cast<u32*>(pThis->lagiLineDma.data());\n        drawCinematicBar(1);"
+   source_text "${source_text}")
+  set(source_text "#include \"lagi/native_line_table.h\"\n${source_text}")
+  set(source_text "extern \"C\" void lagiSetE011FatalStage(const char*);\n${source_text}")
+  foreach(e011_stage_anchor IN ITEMS
+    "    loadSoundBanks(-1, 0);"
+    "    initDramAllocator(pThis, townBuffer, sizeof(townBuffer), listOfFilesToLoad);"
+    "    initVdp1Ram(pThis, 0x25C18800, 0x63800);"
+    "    registerNpcs(gTWN_E011->mTownSetups, gTWN_E011->getSaturnPtr(0x605414c), arg);"
+    "    startScriptTask(pThis);"
+    "    startE011BackgroundTask(pThis);"
+    "    startMainLogic(pThis);"
+    "    setupVdp1Proj(0x1c71c71);"
+    "    startCameraTask(pThis);")
+   string(FIND "${source_text}" "${e011_stage_anchor}" e011_stage_found)
+   if(e011_stage_found LESS 0)
+    message(FATAL_ERROR "Native E011 startup diagnostic anchor changed")
+   endif()
+   # Store static text only, with no per-frame logging or clock reads.
+   string(REPLACE "${e011_stage_anchor}"
+    "    lagiSetE011FatalStage(\"${e011_stage_anchor}\");\n${e011_stage_anchor}"
+    source_text "${source_text}")
+  endforeach()
+  # Original E011 06054022 is MOV #0x43,R4 in the loadSoundBanks
+  # delay slot (target literal 060540E4 = 0602B400), not bank 0x44.
+  string(FIND "${source_text}" "    loadSoundBanks(68, 0);" e011_music_found)
+  if(e011_music_found LESS 0)
+   message(FATAL_ERROR "Native E011 music initialization boundary changed")
+  endif()
+  string(REPLACE "    loadSoundBanks(68, 0);"
+   "    loadSoundBanks(67, 0); // Native E011 06054022: E443"
+   source_text "${source_text}")
+  set(e011_constructor "TWN_E011_data::TWN_E011_data() :")
+  string(FIND "${source_text}" "${e011_constructor}" e011_constructor_found)
+  if(e011_constructor_found LESS 0)
+   message(FATAL_ERROR "Native E011 scheduled-effect compilation boundary changed")
+  endif()
+  string(REPLACE "${e011_constructor}"
+   "#include \"kernel/vdp1AnimatedQuad.h\"\n#include \"menu_dragonMorph.h\"\n#include \"audio/systemSounds.h\"\n#include \"lagi_e011_scheduled_effects.inc\"\n#include \"lagi_e011_ribbon_scheduler.inc\"\n\n${e011_constructor}"
+   source_text "${source_text}")
+  string(REPLACE "    overlayScriptFunctions.m_twoArg[0x605cbd0]"
+   "    overlayScriptFunctions.m_oneArg[0x605890C] = {&lagiE011StartSchedule, \"E011 native schedule\"};\n    overlayScriptFunctions.m_oneArg[0x605809E] = {&lagiE011StartPaletteSequence, \"E011 palette sequence\"};\n    overlayScriptFunctions.m_oneArg[0x60557E0] = {&lagiE011SetScreenWave, \"E011 screen wave\"};\n    overlayScriptFunctions.m_oneArg[0x6055872] = {&lagiE011SetScreenTracking, \"E011 screen tracking\"};\n    overlayScriptFunctions.m_twoArg[0x605cbd0]"
+   source_text "${source_text}")
+  set(source_text "static int lagiE011StartPaletteSequence(int);\nstatic int lagiE011SetScreenWave(int);\nstatic int lagiE011SetScreenTracking(int);\nstatic int lagiE011FadeColor(int,int,int);\nint scriptFunction_6056926();\nint scriptFunction_6057470();\n${source_text}\n#include \"lagi_e011_later_callbacks.inc\"\n")
+  string(REPLACE "    overlayScriptFunctions.m_twoArg[0x605cbd0]"
+   "    overlayScriptFunctions.m_zeroArg[0x60584E4] = {&e006_scriptFunction_6057438, \"E011 remaining frames\"};\n    overlayScriptFunctions.m_zeroArg[0x605851C] = {&scriptFunction_6057470, \"E011 close cutscene\"};\n    overlayScriptFunctions.m_zeroArg[0x60579D2] = {&scriptFunction_6056926, \"E011 restore main logic\"};\n    overlayScriptFunctions.m_threeArg[0x605948C] = {&lagiE011FadeColor, \"E011 native color fade\"};\n    overlayScriptFunctions.m_twoArg[0x605cbd0]"
+   source_text "${source_text}")
+  set(e011_attached_draw "    static void Draw(sE011Task1* pThis)\n    {\n        pushCurrentMatrix();")
+  string(FIND "${source_text}" "${e011_attached_draw}" e011_attached_found)
+  if(e011_attached_found LESS 0)
+   message(FATAL_ERROR "Native E011 attached actor draw boundary changed")
+  endif()
+  set(source_text "#include \"lagi/lagi_render_bridge.h\"\n${source_text}")
+  string(REPLACE "${e011_attached_draw}"
+   "    static void Draw(sE011Task1* pThis)\n    {\n        lagi::azel_bridge::begin_view_relative_submission_scope();\n        pushCurrentMatrix();" source_text "${source_text}")
+  string(REPLACE "        pThis->mC_3dModel.m18_drawFunction(&pThis->mC_3dModel);\n        popMatrix();"
+   "        pThis->mC_3dModel.m18_drawFunction(&pThis->mC_3dModel);\n        popMatrix();\n        lagi::azel_bridge::end_view_relative_submission_scope();" source_text "${source_text}")
+  string(REPLACE "    sVec3_FP* m64_positionPtr;"
+   "    sVec3_FP lagiTrackingPoint;\n    sVec3_FP* m64_positionPtr;" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A3/BTL_A3_data.cpp")
+  if(LAGI_BATTLE_NATIVE_BUILD)
+   set(effect_anchor "    case 0x06054dce:\n        return urchinAttack_spawnProjectile(pParent);")
+   string(FIND "${source_text}" "${effect_anchor}" effect_anchor_found)
+   if(effect_anchor_found LESS 0)
+    message(FATAL_ERROR "Native A3 effect dispatcher boundary changed")
+   endif()
+   string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
+    "#include \"lagi/lagi_azel_upstream_prelude.h\"\np_workArea lagiCreateUrchinAmbientEffect(struct s_workAreaCopy*);\np_workArea lagiCreateUrchinProjectileEffect(struct s_workAreaCopy*,bool,bool);\np_workArea lagiCreateUrchinSingleProjectile(struct s_workAreaCopy*);"
+    source_text "${source_text}")
+   string(REPLACE "${effect_anchor}"
+    "${effect_anchor}\n    case 0x06056AF2:\n        return lagiCreateUrchinAmbientEffect(pParent);"
+    source_text "${source_text}")
+   string(REPLACE "return urchinAttack_spawnProjectile(pParent);" "return lagiCreateUrchinSingleProjectile(pParent);" source_text "${source_text}")
+   string(REPLACE "    case 0x0605699c:\n        return createPattergoMultiParticleEffect(pParent);"
+    "    case 0x06056998:\n        return lagiCreateUrchinProjectileEffect(pParent,false,true);\n    case 0x0605699c:\n        return lagiCreateUrchinProjectileEffect(pParent,false,false);\n    case 0x060569A0:\n        return lagiCreateUrchinProjectileEffect(pParent,true,true);\n    case 0x060569A4:\n        return lagiCreateUrchinProjectileEffect(pParent,true,false);"
+    source_text "${source_text}")
+  endif()
+  set(animation_reader_old "            for (int j=0; j<1; j++)\n            {\n                sGenericFormationPerTypeDataSub1C subData1C;")
+  string(FIND "${source_text}" "${animation_reader_old}" animation_reader_found)
+  if(animation_reader_found LESS 0)
+   message(FATAL_ERROR "Native A3 animation reader boundary changed")
+  endif()
+  set(source_text "#include \"lagi/battle_animation_states.h\"\n${source_text}")
+  set(animation_reader_new [=[            const sSaturnPtr animationTable = ptrTo1C;
+            const int animationCount = lagi::battle_animation_state_count(
+                animationTable, readSaturnEA(subEntry + 0x20), readSaturnEA(subEntry + 0x24),
+                [](sSaturnPtr address) { return readSaturnS8(address); });
+            for (int j=0; j<animationCount; j++)
+            {
+                ptrTo1C = animationTable + j * 0x24;
+                sGenericFormationPerTypeDataSub1C subData1C;]=])
+  string(REPLACE "${animation_reader_old}" "${animation_reader_new}" source_text "${source_text}")
+  set(enemy_parse_anchor "            pSubEntry->m38 = readSaturnS8(subEntry + 0x38);")
+  string(FIND "${source_text}" "${enemy_parse_anchor}" enemy_parse_found)
+  if(enemy_parse_found LESS 0)
+   message(FATAL_ERROR "Native A3 enemy parameter reader boundary changed")
+  endif()
+  string(REPLACE "${enemy_parse_anchor}"
+   "            pSubEntry->m2C_deathMode = readSaturnU8(subEntry + 0x2C);\n            pSubEntry->m2D_hitSound = readSaturnU8(subEntry + 0x2D);\n            pSubEntry->m2E_deathSound = readSaturnU8(subEntry + 0x2E);\n            pSubEntry->m30_hitTranslation = readSaturnFP(subEntry + 0x30);\n            pSubEntry->m34_hitRotation = readSaturnFP(subEntry + 0x34);\n${enemy_parse_anchor}"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/fieldParticlePool.cpp")
+  set(pool_billboard_old [=[static void particleDrawBillboard(sParticleSlot* pEntry)
+{
+    drawProjectedParticle(&pEntry->m2C_animQuad, &pEntry->m0_position);
+}]=])
+  set(pool_billboard_new [=[int lagiDrawPoolParticle(sAnimatedQuad*, sVec3_FP*, fixedPoint, fixedPoint);
+static void particleDrawBillboard(sParticleSlot* pEntry)
+{
+    lagiDrawPoolParticle(&pEntry->m2C_animQuad, &pEntry->m0_position,
+        pEntry->m18_velocityScaleX, pEntry->m1C_velocityScaleY);
+}]=])
+  string(FIND "${source_text}" "${pool_billboard_old}" pool_billboard_found)
+  if(pool_billboard_found LESS 0)
+   message(FATAL_ERROR "Native field pool billboard draw boundary changed")
+  endif()
+  string(REPLACE "${pool_billboard_old}" "${pool_billboard_new}" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a3/a3_dynamic_mine_cart.cpp")
+  # Restore the complete shot-cart state machine, not a crash guard or
+  # a switch to the unrelated looping-cart waypoint update.
+  string(FIND "${source_text}" "    static void Update2(s_A3_0_Obj3* pThis)" cart_update_begin)
+  string(FIND "${source_text}" "    s_memoryAreaOutput m0;" cart_update_end)
+  if(cart_update_begin LESS 0 OR cart_update_end LESS cart_update_begin)
+   message(FATAL_ERROR "Native shootable cart update boundary changed")
+  endif()
+  math(EXPR cart_update_length "${cart_update_end}-${cart_update_begin}")
+  string(SUBSTRING "${source_text}" ${cart_update_begin} ${cart_update_length} cart_update_stub)
+  string(REPLACE "${cart_update_stub}" "#include \"lagi_a3_shootable_cart_update.inc\"\n\n" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a3/a3_waterfall.cpp")
+  # Native task offsets are not C++ work-area offsets. Infer each concrete
+  # waterfall type at its call site, retaining the original emission logic.
+  foreach(helper waterfallSpawnRisingMist waterfallSpawnSplashMist waterfallSpawnRisingMistVariant waterfallSpawnDroplet waterfallLargeSpawnFalling waterfallLargeSpawnSplash)
+   set(helper_anchor "static void ${helper}(s_workArea* pThis")
+   string(FIND "${source_text}" "${helper_anchor}" helper_found)
+   if(helper_found LESS 0)
+    message(FATAL_ERROR "Native waterfall helper boundary changed: ${helper}")
+   endif()
+   string(REPLACE "${helper_anchor}" "template<class T>\nstatic void ${helper}(T* pThis" source_text "${source_text}")
+  endforeach()
+  string(REPLACE "*(s_DataTable2Sub0**)((u8*)pThis + 8)" "pThis->m8" source_text "${source_text}")
+  string(REPLACE "*((u8*)pThis + 0xC)" "pThis->mC_frameCounter" source_text "${source_text}")
+  set(small_emit_old "        waterfallSpawnRisingMistVariant(pThis);\n        waterfallSpawnDroplet(pThis);")
+  set(large_emit_old [=[        if ((pThis->m10_frameCounter & 7) == 0)
+        {
+            waterfallLargeSpawnFalling(pThis);
+        }
+
+        u32 rnd = randomNumber();
+        if ((rnd & 3) == 0)
+        {
+            waterfallLargeSpawnSplash(pThis, 0x40000);
+        }]=])
+  foreach(emission_anchor small_emit_old large_emit_old)
+   string(FIND "${source_text}" "${${emission_anchor}}" emission_found)
+   if(emission_found LESS 0)
+    message(FATAL_ERROR "Native waterfall emission boundary changed: ${emission_anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "${small_emit_old}" "        lagiWaterfallSmallVariantEmit(pThis);" source_text "${source_text}")
+  string(REPLACE "${large_emit_old}" "        lagiWaterfallLargeEmit(pThis, alternate);" source_text "${source_text}")
+  string(REPLACE "static const s16 waterfallModelOffsets0[]" "#include \"lagi_waterfall_emission.inc\"\nstatic const s16 waterfallModelOffsets0[]" source_text "${source_text}")
+  set(large_update_old "    static void Update(s_A3_WaterfallLarge* pThis)\n    {")
+  string(FIND "${source_text}" "${large_update_old}" large_update_found)
+  if(large_update_found LESS 0)
+   message(FATAL_ERROR "Native large waterfall update boundary changed")
+  endif()
+  string(REPLACE "${large_update_old}"
+   "    static void Update(s_A3_WaterfallLarge* pThis) { UpdateNative(pThis, false); }\n    static void UpdateType2(s_A3_WaterfallLarge* pThis) { UpdateNative(pThis, true); }\n    static void UpdateNative(s_A3_WaterfallLarge* pThis, bool alternate)\n    {"
+   source_text "${source_text}")
+  string(REPLACE "        pTask->mC_modelOffsets = waterfallModelOffsets2;"
+   "        pTask->mC_modelOffsets = waterfallModelOffsets2;\n        pTask->m_UpdateMethod = &s_A3_WaterfallLarge::UpdateType2;"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A3/BTL_A3_urchinEffects.cpp")
+  if(LAGI_BATTLE_NATIVE_BUILD)
+   set(position_old "(sVec3_FP*)((u8*)pParent + 8)")
+   string(FIND "${source_text}" "${position_old}" position_found)
+   if(position_found LESS 0)
+    message(FATAL_ERROR "A3 effect parent position boundary changed")
+   endif()
+   string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
+    "#include \"lagi/lagi_azel_upstream_prelude.h\"\nsVec3_FP* lagiUrchinEffectPosition(struct s_workAreaCopy*);"
+    source_text "${source_text}")
+   string(REPLACE "${position_old}" "lagiUrchinEffectPosition(pParent)" source_text "${source_text}")
+  endif()
+ elseif(relative_path STREQUAL "battle/BTL_A3/urchin.cpp")
+  if(LAGI_BATTLE_NATIVE_BUILD)
+   # Native 060773F6..060774CC uses two authored fixed-point strengths.
+   # The randomized impulse is angular velocity (+50), not position (+14).
+   foreach(axis RANGE 0 2)
+    set(recoil_old "pThis->m2C_positionDelta[${axis}] += MTH_Mul(fixedPoint(pThis->mCC->m18_knockbackStrength * 0x10000), (*knockbackDir)[${axis}]);")
+    string(FIND "${source_text}" "${recoil_old}" recoil_found)
+    if(recoil_found LESS 0)
+     message(FATAL_ERROR "A3 translation recoil boundary changed")
+    endif()
+    string(REPLACE "${recoil_old}" "pThis->m2C_positionDelta[${axis}] += MTH_Mul(pThis->mCC->m30_hitTranslation, (*knockbackDir)[${axis}]);" source_text "${source_text}")
+    set(recoil_old "pThis->m14_positionCurrent[${axis}] += MTH_Mul(fixedPoint(pThis->mCC->m18_knockbackStrength * 0x10000 + 0x10000), fixedPoint(randomNumber() & 0xFFFF));")
+    string(FIND "${source_text}" "${recoil_old}" recoil_found)
+    if(recoil_found LESS 0)
+     message(FATAL_ERROR "A3 rotation recoil boundary changed")
+    endif()
+    string(REPLACE "${recoil_old}" "pThis->m50_rotationDelta[${axis}] += MTH_Mul(pThis->mCC->m34_hitRotation, fixedPoint(randomNumber() & 0xFFFF));" source_text "${source_text}")
+   endforeach()
+   string(APPEND source_text "\n#include \"battle/particleEffect.h\"\n#include \"battle/battleGenericData.h\"\n#include \"lagi_battle_urchin_ambient.inc\"\n#include \"lagi_battle_projectile_descriptor.inc\"\n#include \"lagi_battle_urchin_projectiles.inc\"\n")
+  endif()
+  foreach(enemy_anchor "pThis->mCC->m28[4] == 4" "s8 deathMode = pThis->mCC->m28[0];" "pThis->mCC->m28[1] != -1" "pThis->mCC->m28[2] != -1")
+   string(FIND "${source_text}" "${enemy_anchor}" enemy_anchor_found)
+   if(enemy_anchor_found LESS 0)
+    message(FATAL_ERROR "Native A3 enemy parameter consumer changed: ${enemy_anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "pThis->mCC->m28[4] == 4" "pThis->mCC->m2C_deathMode == 4" source_text "${source_text}")
+  string(REPLACE "s8 deathMode = pThis->mCC->m28[0];" "u8 deathMode = pThis->mCC->m2C_deathMode;" source_text "${source_text}")
+  string(REPLACE "pThis->mCC->m28[1] != -1" "pThis->mCC->m2D_hitSound != 0xFF" source_text "${source_text}")
+  string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[1]);" "playSystemSoundEffect(pThis->mCC->m2D_hitSound);" source_text "${source_text}")
+  string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
+  string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleTargetable.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # Draw may still run after Update marks a task finished, or while updates
+  # are paused. Honor the native target retirement bit at packet emission too.
+  foreach(cursor_draw IN ITEMS sBaldorSubTask0_draw sBaldorSubTask0_draw1 sBaldorSubTask1_draw)
+   set(cursor_anchor "void ${cursor_draw}(sBaldorSubTask* pThis)\n{")
+   string(FIND "${source_text}" "${cursor_anchor}" cursor_found)
+   if(cursor_found LESS 0)
+    message(FATAL_ERROR "Native target cursor draw boundary changed: ${cursor_draw}")
+   endif()
+   string(REPLACE "${cursor_anchor}"
+    "${cursor_anchor}\n    if (!pThis->m84_pTargetable || (pThis->m84_pTargetable->m50_flags & 0x40000u)) return; // LAGI_RETIRED_TARGET_DRAW"
+    source_text "${source_text}")
+  endforeach()
+ elseif(relative_path STREQUAL "battle/BTL_A3_2/Arachnoth.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(death_cursor_anchor "void arachnoth_enterDeathState(sArachnothFormation* pThis)\n{")
+  string(FIND "${source_text}" "${death_cursor_anchor}" death_cursor_found)
+  if(death_cursor_found LESS 0)
+   message(FATAL_ERROR "Native boss death-state boundary changed")
+  endif()
+  string(REPLACE "${death_cursor_anchor}"
+   "static void arachnoth_disableAllTargetables(sArachnothFormation*);\n${death_cursor_anchor}\n    arachnoth_disableAllTargetables(pThis); // Retire all form cursors when death starts, not after speech."
+   source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_subtitle.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_subtitle.inc" battle_subtitle_service)
+  set(subtitle_anchor "static void arachnoth_updateState9(sArachnothFormation* pThis)\n{")
+  set(subtitle_call "        arachnoth_showBattleText(textIndex, (s16)duration);")
+  foreach(anchor IN ITEMS "${subtitle_anchor}" "${subtitle_call}")
+   string(FIND "${source_text}" "${anchor}" subtitle_found)
+   if(subtitle_found LESS 0)
+    message(FATAL_ERROR "Native post-boss subtitle boundary changed")
+   endif()
+  endforeach()
+  string(REPLACE "${subtitle_anchor}" "${battle_subtitle_service}\n${subtitle_anchor}" source_text "${source_text}")
+  string(REPLACE "${subtitle_call}" "        lagiCreateBattleSubtitle(pThis,textIndex,static_cast<s16>(duration));" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_death_bile.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_death_bile.inc" death_bile_service)
+  set(death_bile_anchor "// 0605a418\nvoid createArachnothDigestiveEffect")
+  string(FIND "${source_text}" "${death_bile_anchor}" death_bile_found)
+  if(death_bile_found LESS 0)
+   message(FATAL_ERROR "Native bile factory boundary changed")
+  endif()
+  string(REPLACE "${death_bile_anchor}" "${death_bile_service}\n${death_bile_anchor}" source_text "${source_text}")
+  set(death_bile_old "Unimplemented(); // FUN_0605a4ec — death bile projectile")
+  string(FIND "${source_text}" "${death_bile_old}" death_bile_found)
+  if(death_bile_found LESS 0)
+   message(FATAL_ERROR "Native death bile caller changed")
+  endif()
+  string(REPLACE "${death_bile_old}" "lagiCreateArachnothBile(pThis, &pThis->m2E4, 0x1000, 1);" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_impact.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_impact.inc" impact_service)
+  set(impact_begin "    // Create impact model at position with animation")
+  set(impact_end "void arachnoth_createSmokeParticle(")
+  string(FIND "${source_text}" "${impact_begin}" impact_start)
+  string(FIND "${source_text}" "${impact_end}" impact_stop)
+  if(impact_start LESS 0 OR impact_stop LESS impact_start)
+   message(FATAL_ERROR "Native Arachnoth impact model boundary changed")
+  endif()
+  math(EXPR impact_length "${impact_stop}-${impact_start}")
+  string(SUBSTRING "${source_text}" ${impact_start} ${impact_length} impact_old)
+  string(REPLACE "${impact_old}"
+   "    lagiCreateBattleImpactModel(dramAllocatorEnd[8].mC_fileBundle, 0x18, 0x1CC, 0x210, position, rotation);\n}\n\n"
+   source_text "${source_text}")
+  string(REPLACE "// 0605a1d0\nvoid arachnoth_createChargeImpact" "${impact_service}\n// 0605a1d0\nvoid arachnoth_createChargeImpact" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_particle_frames.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_particle_frames.inc" particle_frames_service)
+  set(particle_frames_old "    static std::vector<sVdp1Quad> cachedQuads;\n    cachedQuads = initVdp1Quad(spriteDataEA);")
+  string(FIND "${source_text}" "${particle_frames_old}" particle_frames_found)
+  if(particle_frames_found LESS 0)
+   message(FATAL_ERROR "Native charge particle animation boundary changed")
+  endif()
+  string(REPLACE "${particle_frames_old}" "    const auto& cachedQuads = lagiBattleParticleFrames(spriteDataEA);" source_text "${source_text}")
+  string(REPLACE "void arachnoth_createSmokeParticle(npcFileDeleter*" "${particle_frames_service}\nvoid arachnoth_createSmokeParticle(npcFileDeleter*" source_text "${source_text}")
+  # The reconstruction lost the sign of both arena anchors. Keep pointer
+  # lifetime stable, but decode coordinates from the original overlay data.
+  foreach(charge_anchor IN ITEMS "0x1D2000|0x060A909C" "0x230000|0x060A9090")
+   string(REPLACE "|" ";" charge_parts "${charge_anchor}")
+   list(GET charge_parts 0 charge_z)
+   list(GET charge_parts 1 charge_ea)
+   set(charge_old "static sVec3_FP tempVec(0x201000, 0x13000, ${charge_z});")
+   string(FIND "${source_text}" "${charge_old}" charge_found)
+   if(charge_found LESS 0)
+    message(FATAL_ERROR "Native Charge arena-anchor boundary changed: ${charge_z}")
+   endif()
+   string(REPLACE "${charge_old}"
+    "static sVec3_FP tempVec;\n                tempVec = readSaturnVec3(g_BTL_A3_2->getSaturnPtr(${charge_ea})); // LAGI_CHARGE_NATIVE_ANCHOR"
+    source_text "${source_text}")
+  endforeach()
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_devour.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_devour.inc" devour_service)
+  # Native 06057E48..74 branches to the epilogue, not the common timer
+  # increment. A break cancels the countdown and permanently stalls Devour.
+  set(devour_wait_old [=[        // Wait for delay, then switch to eat-dragon model
+        if (--pThis->m2C4_currentAttackDelay < 1)
+        {
+            arachnoth_setEatDragonAnim(pThis, -1);
+            playSystemSoundEffect(0x6F);
+            pThis->m2C4_currentAttackDelay = 0;
+            pThis->m2C0_currentAttackState++;
+        }
+        break;]=])
+  string(REPLACE "        break;" "        return; // Native countdown skips the common increment." devour_wait_new "${devour_wait_old}")
+  set(devour_approach_old [=[        MTH_Mul(gBattleManager->m10_battleOverlay->m18_dragon->m8_position[0] - pThis->m308_eatDragonPosition[0], 0x28F);
+        return; // early return — skip m2C4 increment]=])
+  set(devour_closeup_old [=[            pThis->m2CC = gBattleManager->m10_battleOverlay->m18_dragon->m8_position;
+            pThis->m2CC[1] += 0xA000;
+            pThis->m2CC[0] += MTH_Mul(0x4000, getSin((pThis->m278_targetedQuadrant << 0x1A) >> 16));
+            return;]=])
+  set(devour_definition "static void arachnoth_eatDragonAttack_update(sArachnothFormation* pThis)\n{")
+  foreach(devour_anchor devour_wait_old devour_approach_old devour_closeup_old devour_definition)
+   string(FIND "${source_text}" "${${devour_anchor}}" devour_found)
+   if(devour_found LESS 0)
+    message(FATAL_ERROR "Native Devour boundary changed: ${devour_anchor}")
+   endif()
+  endforeach()
+  string(REPLACE "${devour_definition}" "${devour_service}\n${devour_definition}" source_text "${source_text}")
+  string(REPLACE "${devour_wait_old}" "${devour_wait_new}" source_text "${source_text}")
+  string(REPLACE "${devour_approach_old}" "        lagiArachnothDevourApproach(pThis);\n        break;" source_text "${source_text}")
+  string(REPLACE "${devour_closeup_old}" "            lagiArachnothDevourCloseup(pThis);" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_drool.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_arachnoth_drool.inc" drool_draw_service)
+  set(drool_draw_old [=[static void smokePuff_draw(sSmokePuffTask* pThis)
+{
+    pushCurrentMatrix();
+    translateCurrentMatrix(pThis->m28_position);
+    rotateCurrentMatrixYXZ(*pThis->mC_rotationPtr);
+    // Draw using the model's draw function — but we don't have a model
+    // The smoke puff is a visual-only effect; skip for now
+    popMatrix();
+}]=])
+  string(FIND "${source_text}" "${drool_draw_old}" drool_draw_found)
+  if(drool_draw_found LESS 0)
+   message(FATAL_ERROR "Native Arachnoth strand draw boundary changed")
+  endif()
+  string(REPLACE "${drool_draw_old}" "${drool_draw_service}" source_text "${source_text}")
+  set(drool_offset_old [=[            sVec3_FP temp;
+            temp[0] = MTH_Mul(fixedPoint(randomNumber()).toInteger(), 0x6000) - 0x3000;
+            temp[1] = MTH_Mul(fixedPoint(randomNumber()).toInteger(), 0x2000) - 0x1000;
+            temp[2] = MTH_Mul(fixedPoint(randomNumber()).toInteger(), 0x3000) + 0x2000;]=])
+  string(FIND "${source_text}" "${drool_offset_old}" drool_offset_found)
+  if(drool_offset_found LESS 0)
+   message(FATAL_ERROR "Native idle drool offset boundary changed")
+  endif()
+  string(REPLACE "${drool_offset_old}" "            sVec3_FP temp = lagiArachnothDroolOffset();" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_native_two_pose_morph.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_native_two_pose_morph.inc" arachnoth_morph_service)
+  string(REPLACE "void arachnothFormation_update(sArachnothFormation* pThis)"
+   "${arachnoth_morph_service}\nvoid arachnothFormation_update(sArachnothFormation* pThis)" source_text "${source_text}")
+  set(arachnoth_morph_old "    // TODO: arachnothFormation_updateSub8 — applies m288[2] jaw rotation to sub-model bones")
+  string(FIND "${source_text}" "${arachnoth_morph_old}" arachnoth_morph_found)
+  if(arachnoth_morph_found LESS 0)
+   message(FATAL_ERROR "Native Arachnoth two-pose morph boundary changed")
+  endif()
+  string(REPLACE "${arachnoth_morph_old}"
+   "    lagiNativeTwoPoseMorph(pThis->m98_poisonDart.m0, &pThis->m98_poisonDart.m8_model, g_BTL_A3_2->getSaturnPtr(0x060A9538), g_BTL_A3_2->getSaturnPtr(0x060A9540), pThis->m288[2]);"
+   source_text "${source_text}")
+  set(drool_owner_anchor "    pTask->m8_positionPtr = position;")
+  string(FIND "${source_text}" "${drool_owner_anchor}" drool_owner_found)
+  if(drool_owner_found LESS 0)
+   message(FATAL_ERROR "Native Arachnoth strand allocation boundary changed")
+  endif()
+  string(REPLACE "${drool_owner_anchor}"
+   "    lagiInitArachnothStrandAllocation(pTask); // 0605A774..780\n${drool_owner_anchor}"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleTrail.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_trail_draw.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_trail_draw.inc" trail_draw_service)
+  string(FIND "${source_text}" "// 060a0eaa" trail_draw_start)
+  if(trail_draw_start LESS 0)
+   message(FATAL_ERROR "Native battle trail draw boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${trail_draw_start} source_text)
+  string(APPEND source_text "${trail_draw_service}\n")
+ elseif(relative_path STREQUAL "battle/battleResultScreen.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_growth.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_growth.inc" growth_service)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_result_clear.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_result_clear.inc" result_clear_service)
+  string(APPEND growth_service "\n${result_clear_service}")
+  string(REPLACE "    s16 m4;\n    s8 m72;" "    s16 m4;\n    std::array<u16,6> m6_gains;\n    u8 m73_oldLevel;\n    s8 m72;" source_text "${source_text}")
+  foreach(growth_stub IN ITEMS "void battleResultScreen_updateSub5(int XPReceived)\n{\n    Unimplemented();\n}" "void battleResultScreen_checkLevelUp(sBattleResultScreen* pThis)\n{\n    Unimplemented();\n}")
+   string(FIND "${source_text}" "${growth_stub}" growth_stub_found)
+   if(growth_stub_found LESS 0)
+    message(FATAL_ERROR "Native battle growth stub changed")
+   endif()
+   string(REPLACE "${growth_stub}" "" source_text "${source_text}")
+  endforeach()
+  string(REPLACE "void battleResultScreen_printItemReceived" "#include \"commonOverlay.h\"\n${growth_service}\nvoid battleResultScreen_printItemReceived" source_text "${source_text}")
+  string(REPLACE "                Unimplemented(); // level-up display: applies HP/BP stat increases, shows level-up text"
+   "                lagiApplyBattleGrowth(pThis);\n                pThis->m72 = 3;\n                pThis->m4 = 0x5A;" source_text "${source_text}")
+  set(growth_states [=[    case 3:
+        if ((graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m6_buttonDown & 6) || --pThis->m4 < 0) {
+            clearVdp2TextLargeFont();
+            lagiBattleResultClearArea(g_BTL_GenericData->getSaturnPtr(0x060ABAB0));
+            pThis->m72=4; pThis->m4=9;
+        }
+        break;
+    case 4:
+        if (--pThis->m4 < 0) {
+            playSystemSoundEffect(0x1B);
+            for (unsigned i=0;i<5;++i)
+                battleResultScreenProgressiveText_printString(g_BTL_GenericData->getSaturnPtr(0x060ABA20+i*16));
+            const s32 values[5]={mainGameState.gameStats.m0_level+1,pThis->m6_gains[0],pThis->m6_gains[1],
+                pThis->m6_gains[2]+pThis->m6_gains[4],pThis->m6_gains[3]+pThis->m6_gains[5]};
+            for (unsigned i=0;i<5;++i) {
+                const auto config=g_BTL_GenericData->getSaturnPtr(0x060ABBC0+i*16);
+                std::array<s32,4> data;
+                for(unsigned j=0;j<4;++j)data[j]=readSaturnS32(config+j*4);
+                battleResultScreenProgressiveText_printNumber(data,values[i]);
+            }
+            pThis->m72=5;pThis->m4=15;
+        }
+        break;
+    case 5:
+        if (--pThis->m4 < 0) {pThis->m72=6;pThis->m4=0x5A;}
+        break;
+]=])
+  string(REPLACE "    case 6:" "${growth_states}    case 6:" source_text "${source_text}")
+  # Requested result presentation: retain normal lighting until the result
+  # is dismissed. BattleEnd already owns the actual exit fade to black.
+  set(result_dim_begin "        fadePalette(&g_fadeControls.m0_fade0, 0xC210, 0xa94a, 0x1E);")
+  set(result_dim_end "        pThis->m80_battleRating = battleResultScreen_computeBattleRating(pThis);")
+  string(FIND "${source_text}" "${result_dim_begin}" result_dim_start)
+  string(FIND "${source_text}" "${result_dim_end}" result_dim_stop)
+  if(result_dim_start LESS 0 OR result_dim_stop LESS result_dim_start)
+   message(FATAL_ERROR "Battle result dimming boundary changed")
+  endif()
+  math(EXPR result_dim_length "${result_dim_stop}-${result_dim_start}")
+  string(SUBSTRING "${source_text}" ${result_dim_start} ${result_dim_length} result_dim_old)
+  string(REPLACE "${result_dim_old}"
+   "        // LAGI_RESULT_HOLD_LIGHTING: exit fading belongs to BattleEnd.\n\n"
+   source_text "${source_text}")
+  # Input and timeout can coincide: never create two exit tasks or skip
+  # phase 7. Both paths intentionally converge on the existing exit owner.
+  set(result_exit_old [=[        if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m6_buttonDown & 6)
+        {
+            battleResultScreen_updateSub17(pThis);
+            pThis->m72++;
+        }
+        if (--pThis->m4 < 0)]=])
+  set(result_exit_new [=[        const bool dismiss = (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m6_buttonDown & 6) != 0;
+        if (dismiss || --pThis->m4 < 0)]=])
+  string(FIND "${source_text}" "${result_exit_old}" result_exit_found)
+  if(result_exit_found LESS 0)
+   message(FATAL_ERROR "Battle result dismissal boundary changed")
+  endif()
+  string(REPLACE "${result_exit_old}" "${result_exit_new}" source_text "${source_text}")
+  # Keep declarations scoped to phase 6 rather than crossing case labels.
+  string(REPLACE "    case 6:\n        const bool dismiss" "    case 6: {\n        const bool dismiss" source_text "${source_text}")
+  string(REPLACE "        break;\n    case 7:" "        break;\n    }\n    case 7:" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleHud.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # BTL_A3 060726B6..CA / 0607271E..26: native position is
+  # -(-163 - 16 - part1Y + 112), hence 67 + part1Y, not 67 - part1Y.
+  set(status_y_old "vdp1WriteEA.mE_CMDYA = -((s16)pThis->m18_part1Y - 0x43);")
+  string(FIND "${source_text}" "${status_y_old}" status_y_found)
+  if(status_y_found LESS 0)
+   message(FATAL_ERROR "Native battle status text position boundary changed")
+  endif()
+  string(REPLACE "${status_y_old}"
+   "vdp1WriteEA.mE_CMDYA = static_cast<s16>(pThis->m18_part1Y + 0x43); // Native HUD slide direction"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleResultScreenProgressiveText.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # BTL_A3 0606E858: MOV.L @(8,R13),R0, then AND #15.
+  # The descriptor stores a big-endian long, not its most significant byte.
+  set(result_palette_old "((readSaturnS8(config + 8)) & 0xF)")
+  string(FIND "${source_text}" "${result_palette_old}" result_palette_found)
+  if(result_palette_found LESS 0)
+   message(FATAL_ERROR "Native result text palette boundary changed")
+  endif()
+  string(REPLACE "${result_palette_old}" "((readSaturnS32(config + 8)) & 0xF)" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/berserk_laser.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # 0609DA3E..56: both SRCA and COLR are relative to the owner's VRAM
+  # allocation. Leaving COLR unrelocated samples an unrelated LUT.
+  set(laser_palette_old "u16 charColor = readSaturnU16(config + 0x08);")
+  string(FIND "${source_text}" "${laser_palette_old}" laser_palette_found)
+  if(laser_palette_found LESS 0)
+   message(FATAL_ERROR "Native Chain/Prism trail palette boundary changed")
+  endif()
+  string(REPLACE "${laser_palette_old}"
+   "u16 charColor = pTrail->m14_vdp1Param + readSaturnU16(config + 0x08);"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleEngine.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  string(FIND "${source_text}" "struct sHealVisualEffectTask :" heal_begin)
+  string(FIND "${source_text}" "struct sStatusCureEffectTask :" heal_end)
+  if(heal_begin LESS 0 OR heal_end LESS heal_begin)
+   message(FATAL_ERROR "Native heal particle task boundary changed")
+  endif()
+  math(EXPR heal_length "${heal_end}-${heal_begin}")
+  string(SUBSTRING "${source_text}" ${heal_begin} ${heal_length} heal_stub)
+  string(REPLACE "${heal_stub}" "#include \"lagi_battle_heal_effect.inc\"\n#include \"lagi_battle_status_sparkles.inc\"\n\n" source_text "${source_text}")
+  string(REPLACE "        // TODO: FUN_06099aa0 — creates secondary sparkle particle effect task" "        // The independent native sparkle task is created below." source_text "${source_text}")
+  set(sparkle_anchor "    refreshBattleGaugeAfterHeal();\n}\n\n// BTL_A3::0607f7e4")
+  string(FIND "${source_text}" "${sparkle_anchor}" sparkle_found)
+  if(sparkle_found LESS 0)
+   message(FATAL_ERROR "Native status sparkle creation boundary changed")
+  endif()
+  string(REPLACE "${sparkle_anchor}"
+   "    lagiCreateStatusSparkles(pEngine, &gBattleManager->m10_battleOverlay->m18_dragon->m8_position, readSaturnEA(g_BTL_GenericData->getSaturnPtr(0x060ABEF4 + effectId * 4)), 2);\n${sparkle_anchor}"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleDragon.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(status_light_old [=[    if (local_24)
+    {
+        Unimplemented();
+    }]=])
+  set(status_light_new [=[    if (local_24)
+    {
+        // BTL_A3 0609F0D8..0609F21C: native status/damage color envelope.
+        s_battleGrid* grid = gBattleManager->m10_battleOverlay->m8_gridTask;
+        const auto table = g_BTL_GenericData->getSaturnPtr(0x060AE38C + currentIndex * 12);
+        sVec3_FP effectColor;
+        for (int channel = 0; channel < 3; ++channel)
+            effectColor[channel] = fixedPoint::fromInteger(static_cast<s8>(readSaturnS32(table + channel * 4)));
+        const sVec3_FP start = pThis->m20C ? effectColor : grid->m1F0;
+        const sVec3_FP finish = pThis->m20C ? grid->m1F0 : effectColor;
+        const s32 elapsed = pThis->m208.asS32() - (static_cast<s32>(pThis->m210) * 0x10000);
+        sVec3_FP color;
+        for (int channel = 0; channel < 3; ++channel)
+        {
+            // MAIN 06035686 divides the full signed 64-bit product, without
+            // the intermediate 16-bit truncation of MTH_Mul followed by FP_Div.
+            const s64 product = static_cast<s64>(static_cast<s32>(finish[channel] - start[channel])) * elapsed;
+            color[channel] = start[channel] + fixedPoint::fromS32(product / pThis->m208.asS32());
+        }
+        setupLightColor(s_RGB8::fromVector(color).toU32());
+    }]=])
+  string(FIND "${source_text}" "${status_light_old}" status_light_anchor)
+  if(status_light_anchor LESS 0)
+   message(FATAL_ERROR "Native battle status-light boundary changed")
+  endif()
+  string(REPLACE "${status_light_old}" "${status_light_new}" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battlePowerGauge.cpp")
+  string(FIND "${source_text}" "static void sGaugeIncreaseEffect_Draw(" charge_begin)
+  string(FIND "${source_text}" "static const sGaugeIncreaseEffect::TypedTaskDefinition" charge_end)
+  if(charge_begin LESS 0 OR charge_end LESS charge_begin)
+   message(FATAL_ERROR "Native charge-effect draw boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${charge_begin} charge_prefix)
+  string(SUBSTRING "${source_text}" ${charge_end} -1 charge_suffix)
+  set(charge_draw [=[static void sGaugeIncreaseEffect_Draw(sGaugeIncreaseEffect* pThis)
+{
+    const fixedPoint size = MTH_Mul(fixedPoint(pThis->m10_decayRate), fixedPoint(pThis->m60_alpha));
+    std::array<sVec3_FP, 2> endpoints;
+    endpoints[0] = *pThis->m50_pPosition;
+    pushCurrentMatrix();
+    translateCurrentMatrix(pThis->m50_pPosition);
+    rotateCurrentMatrixShiftedY(fixedPoint(pThis->m5C_rotationY));
+    rotateCurrentMatrixShiftedX(fixedPoint(pThis->m58_rotationX));
+    sVec3_FP offset;
+    transformAndAddVecByCurrentMatrix(&pThis->m64_offset, &offset);
+    transformAndAddVec(offset, endpoints[1], cameraProperties2.m28[0]);
+    popMatrix();
+    std::array<fixedPoint, 2> widths = {0, size};
+    quadColor colors;
+    const auto table = g_BTL_GenericData->getSaturnPtr(0x060ACE54 + pThis->m4C_colorSetIndex * 8);
+    for (unsigned i = 0; i < 4; ++i) colors[i] = readSaturnU16(table + i * 2);
+    const u16 base = dramAllocatorEnd[0].mC_fileBundle->m4_vd1Allocation->m4_vdp1Memory;
+    displayRaySegment_2Width(endpoints, widths, base + 0xCF8, 0x320, base + 0x2EF0, &colors, 8);
+}
+
+]=])
+  set(source_text "${charge_prefix}${charge_draw}${charge_suffix}")
+  string(REPLACE "#include \"kernel/vdp1AnimatedQuad.h\"" "#include \"kernel/vdp1AnimatedQuad.h\"\n#include \"kernel/rayDisplay.h\"\n#include \"battle/battleGenericData.h\"" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleDamageDisplay.cpp")
+  set(damage_draw_old [=[static void damageDisplay_draw(sDamageDisplayTask* pThis)
+{
+    // Renders digits using font tables at 060b1f7c (mode 0) / 060b1f04 (mode 1)
+    // and color table at 060b1ff4 via graphicEngineStatus.vdp1Context_Master
+    Unimplemented();
+}]=])
+  string(FIND "${source_text}" "${damage_draw_old}" damage_draw_found)
+  if(damage_draw_found LESS 0)
+   message(FATAL_ERROR "Native battle damage-display draw boundary changed")
+  endif()
+  set(damage_draw_new [=[static void damageDisplay_draw(sDamageDisplayTask* pThis)
+{
+    const auto* bundle = dramAllocatorEnd[0].mC_fileBundle;
+    lagiDrawBattleDamageDigits(pThis->m24_digits, pThis->m2E_screenX, pThis->m30_screenY,
+        pThis->m32_currentWidth, pThis->m34_currentHeight,
+        bundle->m4_vd1Allocation->m4_vdp1Memory, pThis->m42_colorType, pThis->m44_animMode);
+}]=])
+  string(REPLACE "${damage_draw_old}" "${damage_draw_new}" source_text "${source_text}")
+  string(REPLACE "#include \"battleTargetable.h\"" "#include \"battleTargetable.h\"\n#include \"kernel/graphicalObject.h\"\n#include \"kernel/vdp1Allocator.h\"" source_text "${source_text}")
+  set(source_text "#include \"lagi/battle_damage_digits.h\"\n${source_text}")
+ elseif(relative_path STREQUAL "battle/battleGenericData.cpp")
+  # A failed synchronous read must not feed uninitialized storage into the
+  # native table readers. The execution preflight reports/retries this case.
+  set(generic_guard "BTL_GenericData::BTL_GenericData() : sSaturnMemoryFile(\"BTL_A3.PRG\")\n{")
+  string(FIND "${source_text}" "${generic_guard}" generic_guard_found)
+  if(generic_guard_found LESS 0)
+   message(FATAL_ERROR "Native battle generic-data constructor boundary changed")
+  endif()
+  set(source_text "#include \"lagi/battle_startup.h\"\n${source_text}")
+  string(REPLACE "${generic_guard}" "${generic_guard}\n    if (!m_data || m_dataSize < lagi::battle_generic_minimum_bytes) return;" source_text "${source_text}")
+  # Animated-quad parsing already belongs to the shared native Vita service.
+  # Reuse that identical reader rather than link a second global definition.
+  string(FIND "${source_text}" "std::vector<sVdp1Quad> initVdp1Quad(sSaturnPtr ptr) {" quad_begin)
+  string(FIND "${source_text}" "// Parse a sLaserData from Saturn overlay address" quad_end)
+  if(quad_begin LESS 0 OR quad_end LESS quad_begin)
+   message(FATAL_ERROR "Native battle animated-quad reader boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${quad_begin} quad_prefix)
+  string(SUBSTRING "${source_text}" ${quad_end} -1 quad_suffix)
+  set(source_text "${quad_prefix}std::vector<sVdp1Quad> initVdp1Quad(sSaturnPtr ptr); // shared native service\n\n${quad_suffix}")
  elseif(relative_path STREQUAL "battle/battleOverlay.cpp")
-  # Battle manager stays authentic, but no battle is reachable before the
-  # first-flight milestone. Remove only executable battle-overlay references;
-  # keep declarations and surrounding task structure valid.
+  if(LAGI_BATTLE_EXECUTE_A3)
+   set(source_text "#include \"lagi/battle_startup.h\"\n${source_text}")
+   # Preflight before font stack mutation. Keep all native state decisions
+   # and the authentic A3 entry; do not redirect unsupported overlays to A3.
+   set(startup_anchor "        sBattleOverlayName = gCommonFile->battleOverlaySetup[gBattleManager->m2_currentBattleOverlayId].m4_prg;")
+   string(FIND "${source_text}" "${startup_anchor}" startup_found)
+   if(startup_found LESS 0)
+    message(FATAL_ERROR "Native battle overlay startup boundary changed")
+   endif()
+   string(REPLACE "${startup_anchor}" "        if (!lagiPrepareNativeA3Battle()) return;\n${startup_anchor}" source_text "${source_text}")
+   string(REPLACE "                overlayStart_BTL_A3(pThis);" "                if (!lagiEnterNativeA3Battle(pThis)) return;" source_text "${source_text}")
+   string(REPLACE "                overlayStart_BTL_A3_2(pThis);" "                if (!lagiEnterNativeA3Battle(pThis)) return;" source_text "${source_text}")
+   # A retry after main-task allocation failure must not push fonts twice.
+   set(battle_fonts_old [=[        loadFnt("ITEM.FNT");
+        pThis->m2_numLoadedFnt++;
+        {
+            std::string customFontName = gCommonFile->battleOverlaySetup[gBattleManager->m2_currentBattleOverlayId].m8_fnt;
+            loadFnt(customFontName.c_str());
+            pThis->m2_numLoadedFnt++;]=])
+   set(battle_fonts_new [=[        if (pThis->m2_numLoadedFnt == 0)
+        {
+            loadFnt("ITEM.FNT");
+            pThis->m2_numLoadedFnt++;
+            std::string customFontName = gCommonFile->battleOverlaySetup[gBattleManager->m2_currentBattleOverlayId].m8_fnt;
+            loadFnt(customFontName.c_str());
+            pThis->m2_numLoadedFnt++;
+        }
+        {]=])
+   string(FIND "${source_text}" "${battle_fonts_old}" battle_fonts_found)
+   if(battle_fonts_found LESS 0)
+    message(FATAL_ERROR "Native battle font ownership boundary changed")
+   endif()
+   string(REPLACE "${battle_fonts_old}" "${battle_fonts_new}" source_text "${source_text}")
+  endif()
+  # Keep every unintegrated overlay/debug teardown disconnected. The explicit
+  # A3 execution path above has already replaced its one native call with the
+  # checked service boundary; all other overlay references are removed here.
   string(REPLACE
    "        BattleEnd_deleteSub0();"
    "        /* Lagi 0.040: battle teardown deferred until battle milestone */"
@@ -1993,9 +3060,14 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "    popMatrix();\n    lagi::azel_bridge::end_view_relative_submission_scope();\n}\n\nvoid sEdgeTask::Delete"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "kernel/fade.cpp")
-  # Invert unpackColor() when a running fade becomes a new request's source.
-  # The original >>4 halves negative offsets (-128 becomes -64), making a
-  # black scene pop halfway visible before Azel's next fade has advanced.
+  # Restore MAIN's signed-nine-bit scale, source packing and step direction.
+  string(REPLACE "r4 *= 9;" "r4 *= 17;" source_text "${source_text}")
+  string(REPLACE "r4 *= 8;" "r4 *= 16;" source_text "${source_text}")
+  foreach(channel RANGE 0 2)
+   string(REPLACE "pFadeChannel->m0_color[${channel}] - pFadeChannel->m18_targetColor[${channel}].toFP32()"
+    "pFadeChannel->m18_targetColor[${channel}].toFP32() - pFadeChannel->m0_color[${channel}]"
+    source_text "${source_text}")
+  endforeach()
   string(REPLACE
    [=[    u32 color = ((inColor[0].toInteger() >> 4) + 0x10) << 10;
     color |= ((inColor[1].toInteger() >> 4) + 0x10) << 5;
@@ -2003,17 +3075,12 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
     color |= 0x8000;
     return color;]=]
    [=[    // LAGI_FADE_PACK_INVERSE
-    const auto pack = [](s32 value) -> u32 {
-        const s32 component = value < 0 ? value / 8 : value / 9;
-        return static_cast<u32>(std::clamp(component + 0x10, 0, 0x1f));
-    };
-    return 0x8000u | pack(inColor[0].toInteger()) |
-        (pack(inColor[1].toInteger()) << 5) |
-        (pack(inColor[2].toInteger()) << 10);]=]
+    return lagi::native_fade_pack(inColor[0].toInteger(),
+        inColor[1].toInteger(), inColor[2].toInteger());]=]
    source_text "${source_text}")
   string(REPLACE
    "#include \"fade.h\""
-   "#include \"fade.h\"\n#include <algorithm>"
+   "#include \"fade.h\"\n#include \"lagi/native_fade_color.h\""
    source_text "${source_text}")
   if(NOT source_text MATCHES "LAGI_FADE_PACK_INVERSE")
    message(FATAL_ERROR "Native fade source-color correction did not apply")
@@ -2045,6 +3112,35 @@ static void lagiPatchModelAddresses(sProcessed3dModel* model, u32 offset)
    "lagiPatchModelAddresses(pNewNode->m0_3dModel, mVdp1Offset);"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townCutscene.cpp")
+  set(source_text "#include \"lagi/cutscene_audio.h\"\n${source_text}")
+  set(epk_actor_draw "    static void Draw(sCutsceneCommandDefaultTask* pThis)\n    {\n        pushCurrentMatrix();\n        pThis->m8.m18_drawFunction(&pThis->m8);\n        popMatrix();\n    }")
+  string(FIND "${source_text}" "${epk_actor_draw}" epk_actor_found)
+  if(epk_actor_found LESS 0)
+   message(FATAL_ERROR "Native EPK actor draw boundary changed")
+  endif()
+  string(REPLACE "${epk_actor_draw}" [=[    static void Draw(sCutsceneCommandDefaultTask* pThis)
+    {
+        lagi::azel_bridge::begin_view_relative_submission_scope();
+        pushCurrentMatrix();
+        const unsigned before = lagi::azel_bridge::submission_count();
+        pThis->m8.m18_drawFunction(&pThis->m8);
+        popMatrix();
+        lagi::azel_bridge::end_view_relative_submission_scope();
+        if (pThis->lagiDrawReports < 2) {
+            ++pThis->lagiDrawReports;
+            lagi::platform::logging::writef("[NativeEPKActor] draw=%p bones=%u submissions=%u\n",
+                static_cast<void*>(pThis), unsigned(pThis->m8.m12_numBones), lagi::azel_bridge::submission_count()-before);
+        }
+    }]=] source_text "${source_text}")
+  string(REPLACE "    s_3dModel m8;" "    s_3dModel m8;\n    unsigned lagiDrawReports = 0;" source_text "${source_text}")
+  set(epk_actor_init "    init3DModelRawData(piVar2, &piVar2->m8, 0, piVar2->m0, modelIndex, 0, pStaticPose, 0, 0);")
+  string(FIND "${source_text}" "${epk_actor_init}" epk_actor_init_found)
+  if(epk_actor_init_found LESS 0)
+   message(FATAL_ERROR "Native EPK actor initialization boundary changed")
+  endif()
+  string(REPLACE "${epk_actor_init}"
+   "${epk_actor_init}\n    lagi::platform::logging::writef(\"[NativeEPKActor] create=%p entity=%u model=%u bones=%u\\n\", static_cast<void*>(piVar2), unsigned(READ_BE_U32(local_r13_28+4)-0x10), unsigned(modelIndex), unsigned(piVar2->m8.m12_numBones));"
+   source_text "${source_text}")
   # Generic Vita bring-up for Azel's native in-engine town cutscene subsystem.
   # Azel retains ownership of script ordering, fades, camera commands, entity
   # animation, subtitles and completion. Lagi supplies only disc transport,
@@ -2236,6 +3332,8 @@ GfsHn GFS_Open(const std::string& name)
     if (!iParm1)
         return;
 
+    lagiStopCutscenePCM(iParm1);
+
     LagiGfsHandle* stream = lagiGfsHandle(iParm1->m198.m0_gfsHandle);
     if (stream)
     {
@@ -2398,12 +3496,26 @@ GfsHn GFS_Open(const std::string& name)
     Unimplemented();
     return 0;
 }]=]
-   [=[s32 cutsceneCommand1(sStreamingFile*)
+   [=[s32 cutsceneCommand1(sStreamingFile* stream)
 {
-    // Opcode 1 is Saturn streamed-audio service data. Its packet remains part
-    // of Azel's command stream; Vita currently advances it while the game's
-    // native SCSP/BGM service continues independently.
-    return 0;
+    // Native 0600ED20: sixteen-byte packet header followed by planar PCM.
+    const auto* packet=stream->m28.m34_pBufferRead;
+    const u32 size=READ_BE_U32(packet);
+    if(size<16 || !stream->m194)return -1;
+    const auto* metadata=stream->m194;
+    const auto* payload=packet+16;
+    const auto* boundary=stream->m28.m38;
+    if(payload>=boundary)payload=stream->m28.m3C+(payload-boundary);
+    const auto contiguous=std::min<size_t>(size-16,boundary-payload);
+    const int result=lagiSubmitCutscenePCM(stream,payload,size-16,
+        metadata->m8_sampleRateFP>>16,metadata->m4_channels,metadata->m5_bitDepth,
+        stream->m28.m3C,contiguous);
+    if(result==-2) {
+        lagi::platform::logging::writef("[EPKAudio] invalid packet/format bytes=%u\n",size);
+        updateStreamingFileReadSub0(stream);
+        return -1;
+    }
+    return result; // busy keeps Azel's packet at the read cursor for retry
 }]=]
    source_text "${source_text}")
 
@@ -2412,9 +3524,9 @@ GfsHn GFS_Open(const std::string& name)
 {
     Unimplemented();
 }]=]
-   [=[void pauseCutscene(sStreamingFile*, s32)
+   [=[void pauseCutscene(sStreamingFile* stream, s32 paused)
 {
-    // pauseEngine[] already gates the Vita cutscene timeline.
+    lagiPauseCutscenePCM(stream,paused!=0);
 }]=]
    source_text "${source_text}")
 
@@ -2486,7 +3598,35 @@ void pauseCutscene]=]
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 6)"
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "town/townCamera.cpp")
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  string(REPLACE "void townCamera_update(sCameraTask* pThis)" [=[static void lagiTraceTownLight(const char* source,sSaturnPtr data)
+{
+    lagi::platform::logging::writef(
+        "[NativeCameraLight] source=%s status=%02X rgb=%06X falloff=%06X,%06X,%06X\n",
+        source,unsigned(gGameStatus.m4_gameStatus),unsigned(readSaturnRGB8(data).toU32()),
+        unsigned(readSaturnRGB8(data+3).toU32()),unsigned(readSaturnRGB8(data+6).toU32()),
+        unsigned(readSaturnRGB8(data+9).toU32()));
+}
+
+void townCamera_update(sCameraTask* pThis)]=] source_text "${source_text}")
+  foreach(light_arg IN ITEMS lightData r5Ptr)
+   set(light_line "    generateLightFalloffMap(readSaturnRGB8(${light_arg} + 3).toU32(), readSaturnRGB8(${light_arg} + 6).toU32(), readSaturnRGB8(${light_arg} + 9).toU32());")
+   string(FIND "${source_text}" "${light_line}" camera_light_found)
+   if(camera_light_found LESS 0)
+    message(FATAL_ERROR "Native town light color boundary changed")
+   endif()
+   string(REPLACE "${light_line}" "${light_line}\n    lagiTraceTownLight(\"${light_arg}\",${light_arg});" source_text "${source_text}")
+  endforeach()
  elseif(relative_path STREQUAL "town/town.cpp")
+  # The ring is 8x8, not two rows. Overlay replacement clears the object
+  # list; stale cells in any other row must not survive into its reset.
+  set(town_ring_old "    gWorldGrid.m40_cellTasks[0].fill(nullptr);\n    gWorldGrid.m40_cellTasks[1].fill(nullptr);")
+  string(FIND "${source_text}" "${town_ring_old}" town_ring_found)
+  if(town_ring_found LESS 0)
+   message(FATAL_ERROR "Town grid ring reset boundary changed")
+  endif()
+  string(REPLACE "${town_ring_old}" "    for (auto& row : gWorldGrid.m40_cellTasks) row.fill(nullptr); // LAGI_FULL_TOWN_RING_RESET" source_text "${source_text}")
   # First-flight progression reaches Azel's native E006 cinematic and then
   # the Excavation town. Preserve both authentic dispatches; later unrelated
   # town overlays remain trimmed until their own dependencies are integrated.
@@ -2494,6 +3634,14 @@ void pauseCutscene]=]
    "    else if (overlayFileName == \"TWN_EXCA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_EXCA;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E006;\n    }\n    else if (overlayFileName == \"TWN_E011.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E011;\n    }\n    else if (overlayFileName == \"TWN_E014.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E014;\n    }\n    else if (overlayFileName == \"TWN_CAMP.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CAMP;\n    }\n    else if (overlayFileName == \"TWN_ZOAH.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_ZOAH;\n    }\n    else if (overlayFileName == \"TWN_CARA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CARA;\n    }\n    else if (overlayFileName == \"TWN_SEEK.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_SEEK;\n    }"
    "    else if (overlayFileName == \"TWN_EXCA.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_EXCA;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E006;\n    }"
    source_text "${source_text}")
+
+  if(LAGI_BATTLE_NATIVE_BUILD)
+   # Status 08 after FLD_A3 selects the real E011 cinematic, not E006.
+   string(REPLACE
+    "    else if (overlayFileName == \"TWN_E006.PRG\")"
+    "    else if (overlayFileName == \"TWN_E011.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E011;\n    }\n    else if (overlayFileName == \"TWN_E014.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_E014;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")"
+    source_text "${source_text}")
+  endif()
 
   # Vita bridge for the authentic upstream static world-grid submission path.
   # This modifies only the generated build copy, never extern/Azel.
@@ -2536,6 +3684,11 @@ void pauseCutscene]=]
     "        pWorkArea->m_menu[0].m_isEnabled = (azelCdNumber == 0); // new game enabled only is first disk\n        pWorkArea->m_menu[1].m_isEnabled = hasSaveGame();"
     source_text "${source_text}")
   elseif(relative_path STREQUAL "kernel/loadSavegameScreen.cpp")
+   if(LAGI_BATTLE_NATIVE_BUILD)
+    set(source_text "#include \"lagi/resident_video.h\"\n${source_text}")
+    string(REPLACE "    addToMemoryLayout(buffer, 0x1E800);" "    addToMemoryLayout(buffer, 0x1E800);\n    lagi::resident_video::save_scope(buffer,{{lagi::resident_video::Space::vdp1,0x12000,0x3D00},{lagi::resident_video::Space::vdp2,0x20000,0x1A900},{lagi::resident_video::Space::cram,0xA00,0x200}});" source_text "${source_text}")
+    string(REPLACE "        dramFree(backup);" "        lagi::resident_video::restore_scope(backup);\n        dramFree(backup);" source_text "${source_text}")
+   endif()
    string(REPLACE
     [=[    static void DrawLoad(sSaveTask* pThis)
     {]=]
@@ -2630,6 +3783,11 @@ void pauseCutscene]=]
     "#include \"3dEngine_textureCache.h\""
     "#include \"3dEngine_textureCache.h\"\n#include \"lagi/azel_save_platform.h\""
     source_text "${source_text}")
+   string(REPLACE "m4_version == 0x10000" "m4_version == 0x10001" source_text "${source_text}")
+   string(REPLACE "m4_version = 0x10000" "m4_version = 0x10001" source_text "${source_text}")
+   string(REPLACE "// structure of the save data"
+    "static_assert(sizeof(s_gameStats) - offsetof(s_gameStats, m24_growth) == 48, \"Growth save extension layout\");\n// structure of the save data"
+    source_text "${source_text}")
    # Saturn work areas are cleared before Init. The C++ task host uses plain
    # `new T`, so establish the load-overlay dispatch state explicitly before
    # its first Draw. Otherwise Continue may branch on an indeterminate status.
@@ -2690,7 +3848,7 @@ void pauseCutscene]=]
     [=[s32 readFrombackup(s32 deviceId, const std::string* filename, sSaveDataRaw* buffer)
 {
     return filename && buffer
-        ? lagiAzelSaveRead(deviceId, filename->c_str(), buffer, sizeof(sSaveDataRaw))
+        ? lagiAzelSaveReadGrowth(deviceId, filename->c_str(), buffer, sizeof(sSaveDataRaw), offsetof(sSaveDataRaw, mC_mainGameState) + offsetof(s_mainGameState, gameStats) + offsetof(s_gameStats, m24_growth))
         : -1;
 }]=]
     source_text "${source_text}")
@@ -2729,8 +3887,8 @@ s32 getBupStatus(s32 slotIndex)
 
         return NULL;]=]
     [=[        sSaveDataRaw* pNewGameState = new sSaveDataRaw;
-        if (lagiAzelSaveRead(device, saveFileName.c_str(),
-                pNewGameState, sizeof(sSaveDataRaw)) == 0)
+        if (lagiAzelSaveReadGrowth(device, saveFileName.c_str(),
+                pNewGameState, sizeof(sSaveDataRaw), offsetof(sSaveDataRaw, mC_mainGameState) + offsetof(s_mainGameState, gameStats) + offsetof(s_gameStats, m24_growth)) == 0)
             return pNewGameState;
         delete pNewGameState;
         return NULL;]=]
@@ -3168,8 +4326,20 @@ void inventoryPrintBerserk(s32 row, eItems item, s32 contextFlags)
 
  string(REPLACE "/" "_" generated_name "${relative_path}")
  set(output_path "${LAGI_AZEL_GENERATED_ROOT}/${generated_name}")
- file(WRITE "${output_path}" "${source_text}")
+ # Configuration/link-audit changes must not recompile every unchanged native
+ # translation unit. Preserve the existing output timestamp when bytes match.
+ set(existing_source_text "")
+ if(EXISTS "${output_path}")
+  file(READ "${output_path}" existing_source_text)
+ endif()
+ if(NOT existing_source_text STREQUAL source_text)
+  file(WRITE "${output_path}" "${source_text}")
+ endif()
  set_source_files_properties("${output_path}" PROPERTIES GENERATED TRUE)
+ if(relative_path MATCHES "^battle/interpolators/")
+  set_property(SOURCE "${output_path}" APPEND PROPERTY INCLUDE_DIRECTORIES
+   "${LAGI_AZEL_SOURCE_ROOT}/battle/interpolators")
+ endif()
  set(${out_var} "${output_path}" PARENT_SCOPE)
 endfunction()
 
@@ -3293,6 +4463,58 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  town/ruin/twn_ruin_lock.cpp
 )
 
+if(LAGI_BATTLE_NATIVE_BUILD)
+ list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES town/e011/twn_e011.cpp town/e014/twn_e014.cpp)
+ list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
+  battle/BTL_A3_2/BTL_A3_2.cpp
+  battle/BTL_A3_2/BTL_A3_2_data.cpp
+  battle/BTL_A3_2/BTL_A3_2_map.cpp
+  battle/BTL_A3_2/BTL_A3_2_particles.cpp
+  battle/BTL_A3_2/Arachnoth.cpp
+  battle/BTL_A3_2/ArachnothSubPart.cpp
+  battle/BTL_A3_2/ArachnothTentacle.cpp)
+ file(READ "${LAGI_AZEL_SOURCE_ROOT}/kernel/rayDisplay.cpp" battle_ray_source)
+ string(FIND "${battle_ray_source}" "s32 rayComputeDisplayMatrix_fixedWidth(" battle_ray_begin)
+ string(FIND "${battle_ray_source}" "void sendRaySegmentToVdp1(" battle_ray_end)
+ if(battle_ray_begin LESS 0 OR battle_ray_end LESS battle_ray_begin)
+  message(FATAL_ERROR "Native battle ray projection boundary changed")
+ endif()
+ math(EXPR battle_ray_length "${battle_ray_end}-${battle_ray_begin}")
+ string(SUBSTRING "${battle_ray_source}" ${battle_ray_begin} ${battle_ray_length} battle_ray_projection)
+ set(battle_ray_include "${CMAKE_CURRENT_BINARY_DIR}/lagi_battle_ray_projection.inc")
+ set(battle_ray_existing "")
+ if(EXISTS "${battle_ray_include}")
+  file(READ "${battle_ray_include}" battle_ray_existing)
+ endif()
+ if(NOT battle_ray_existing STREQUAL battle_ray_projection)
+  file(WRITE "${battle_ray_include}" "${battle_ray_projection}")
+ endif()
+ # Real native dependencies, generated through the same Vita adapter boundary.
+ # Dispatch remains disabled until the engine/overlay lifecycle is complete.
+ list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
+  battle/battleEngine.cpp
+  battle/battleEngineSub0.cpp
+  battle/battleEngineSub1.cpp
+  battle/battleMainTask.cpp
+  battle/battleGenericData.cpp
+  battle/battleDragon.cpp
+  battle/battleGrid.cpp
+  battle/BTL_A3/BTL_A3.cpp
+  battle/BTL_A3/BTL_A3_data.cpp
+  battle/interpolators/FPInterpolator.cpp
+  battle/interpolators/vec2FPInterpolator.cpp
+  kernel/monsterPart.cpp
+ )
+ # Include the real shared battle services and every A3 formation/environment
+ # module, rather than replacing unresolved engine factories with stubs.
+ file(GLOB LAGI_BATTLE_SHARED_AND_A3 CONFIGURE_DEPENDS
+  RELATIVE "${LAGI_AZEL_SOURCE_ROOT}"
+  "${LAGI_AZEL_SOURCE_ROOT}/battle/*.cpp"
+  "${LAGI_AZEL_SOURCE_ROOT}/battle/BTL_A3/*.cpp")
+ list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES ${LAGI_BATTLE_SHARED_AND_A3})
+ list(REMOVE_DUPLICATES LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES)
+endif()
+
 set(LAGI_AZEL_UPSTREAM_SOURCES)
 foreach(relative_source IN LISTS LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES)
  lagi_prepare_upstream_azel_source("${relative_source}" generated_source)
@@ -3345,6 +4567,7 @@ add_executable(lagi
  src/platform/vita/neptune_renderer.cpp
  ${LAGI_COLOR_V_OBJ}
  ${LAGI_COLOR_F_OBJ}
+ ${LAGI_GOURAUD_MESH_OBJECTS}
  ${LAGI_GOURAUD_DEBUG_F_OBJ}
  ${LAGI_TEXTURED_LIT_F_OBJ}
  ${LAGI_TEXTURED_LIT_OPAQUE_F_OBJ}
@@ -3368,6 +4591,12 @@ add_executable(lagi
  ${LAGI_MESH_F_OBJ}
  ${LAGI_CINEPAK_F_OBJ}
  ${LAGI_VDP2_NBG_F_OBJ}
+ ${LAGI_RGBA_PRESENT_OBJ}
+ ${LAGI_SCENE_NBG0_OBJ}
+ ${LAGI_SPRITE_COMPOSITE_OBJ}
+ ${LAGI_RBG_TILE_OBJ}
+ ${LAGI_RBG_PAGES_OBJ}
+ ${LAGI_RBG_ROWS_OBJ}
  ${LAGI_VDP2_RBG0_F_OBJ}
  src/platform/vita/vita_audio.cpp
  src/platform/vita/frontend_music.cpp
@@ -3453,6 +4682,18 @@ else()
  )
 endif()
 
+# Isolated A/B candidate: do not change native simulation or renderer shaders.
+# Default OFF until a matched hardware encounter establishes benefit/correctness.
+option(LAGI_OPTIMIZE_RENDER_BRIDGE "Experiment: optimize Lagi scene submission bridge" OFF)
+if(LAGI_OPTIMIZE_RENDER_BRIDGE)
+ set_source_files_properties(src/integration/lagi_render_bridge.cpp
+  PROPERTIES COMPILE_OPTIONS "-O2;-fwrapv;-fno-strict-aliasing;-fno-fast-math;-ffp-contract=off"
+             COMPILE_DEFINITIONS "LAGI_RENDER_BRIDGE_OPTIMIZED=1")
+else()
+ set_source_files_properties(src/integration/lagi_render_bridge.cpp
+  PROPERTIES COMPILE_DEFINITIONS "LAGI_RENDER_BRIDGE_OPTIMIZED=0")
+endif()
+
 # The SCSP DSP interpreter is the measured native-audio hotspot. Optimize only
 # the Lagi-owned replacement; keep the rest of the bring-up build unchanged.
 set_source_files_properties(
@@ -3479,12 +4720,14 @@ set_source_files_properties(
  PROPERTIES COMPILE_OPTIONS "-O2"
 )
 
+target_include_directories(lagi BEFORE PRIVATE "${LAGI_AZEL_GENERATED_ROOT}")
 target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/ruin"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/exca"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/e006"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/town/e011"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/kernel"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/audio"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/ThirdParty/aosdk"
@@ -3495,10 +4738,16 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_d5"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/battle"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/battle/BTL_A3"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/battle/BTL_A3_2"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/menu"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel"
 )
 target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1 LAGI_FULLRES=$<BOOL:${LAGI_FULLRES}> LAGI_STOCHASTIC_FILTER=$<BOOL:${LAGI_STOCHASTIC_FILTER}> LAGI_DITHER_LOOKUP=$<BOOL:${LAGI_DITHER_LOOKUP}>)
+target_compile_definitions(lagi PRIVATE LAGI_VDP2_SPRITE_COMPOSITE=$<BOOL:${LAGI_VDP2_SPRITE_COMPOSITE}>)
+target_compile_definitions(lagi PRIVATE LAGI_GPU_PASS_TIMING=$<BOOL:${LAGI_GPU_PASS_TIMING}>)
+target_compile_definitions(lagi PRIVATE LAGI_RBG_DECODED_PAGES=$<BOOL:${LAGI_RBG_DECODED_PAGES}>)
+target_compile_definitions(lagi PRIVATE LAGI_RBG_COEFFICIENT_ROWS=$<BOOL:${LAGI_RBG_COEFFICIENT_ROWS}>)
+target_compile_definitions(lagi PRIVATE LAGI_FIELD_MOTION_TRACE=$<BOOL:${LAGI_FIELD_MOTION_TRACE}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without
@@ -3506,14 +4755,35 @@ target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDER
 if(LAGI_AZEL_RUINS_LINK_TRIM)
  target_compile_options(lagi PRIVATE -ffunction-sections -fdata-sections)
  target_link_options(lagi PRIVATE -Wl,--gc-sections)
+ if(LAGI_BATTLE_NATIVE_BUILD)
+  target_sources(lagi PRIVATE src/platform/vita/vita_fatal_trace.cpp)
+  target_link_options(lagi PRIVATE -Wl,--wrap=abort -Wl,--wrap=__cxa_throw -Wl,--wrap=_ZSt21__glibcxx_assert_failPKciS0_S0_)
+ endif()
 endif()
 
 # The converter appends SCE metadata to the executable segment. Default page
 # alignment can leave too little space before data for some DSP corpus sizes.
 target_link_options(lagi PRIVATE "-Wl,-T,${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
+if(LAGI_BATTLE_LINK_AUDIT)
+ target_link_options(lagi PRIVATE "-Wl,--undefined=_Z19overlayStart_BTL_A3P10s_workArea")
+endif()
 set_property(TARGET lagi APPEND PROPERTY LINK_DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
+set_property(SOURCE src/integration/lagi_runtime.cpp src/integration/lagi_input_bridge.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+ LAGI_BATTLE_BUILD_NATIVE=$<BOOL:${LAGI_BATTLE_NATIVE_BUILD}>
+ LAGI_BATTLE_BUILD_EXECUTE_A3=$<BOOL:${LAGI_BATTLE_EXECUTE_A3}>
+ LAGI_BATTLE_BUILD_LINK_AUDIT=$<BOOL:${LAGI_BATTLE_LINK_AUDIT}>)
 target_include_directories(lagi PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}/src/integration")
 target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceProcessmgr_stub SceSysmem_stub SceSysmodule_stub)
+if(LAGI_BATTLE_NATIVE_BUILD)
+ target_sources(lagi PRIVATE src/integration/lagi_battle_projectile_vita.cpp)
+ target_sources(lagi PRIVATE src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_battle_graphics_vita.cpp src/integration/lagi_resident_video_vita.cpp src/integration/lagi_allocator_tables_vita.cpp src/integration/lagi_battle_damage_digits_vita.cpp)
+ set_property(SOURCE src/integration/lagi_task_vita.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_NATIVE_TASK_HEAP_CLEANUP=1)
+ set_property(SOURCE src/integration/lagi_disc_file_vita.cpp src/integration/lagi_map_resources_vita.cpp src/integration/lagi_azel_books_menu.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_TRACK_RESIDENT_VIDEO=1)
+endif()
+if(LAGI_BATTLE_EXECUTE_A3)
+ target_sources(lagi PRIVATE src/integration/lagi_battle_startup_vita.cpp src/integration/lagi_world_boundary_vita.cpp src/integration/lagi_world_map_model.cpp src/integration/lagi_world_map_display.cpp)
+ set_property(SOURCE src/integration/lagi_audio_vita.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_BATTLE_AUDIO_STACK=1)
+endif()
 
 if(LAGI_AZEL_PROBE)
  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib")

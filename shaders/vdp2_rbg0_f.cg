@@ -39,6 +39,12 @@ float selectRbg0Plane(
 
 float4 sampleRbg0Cell(
     uniform sampler2D raw,
+#if LAGI_RBG_TILE16_8BIT && !LAGI_RBG_DECODED_PAGES
+    uniform sampler2D rawBytes,
+#endif
+#if LAGI_RBG_DECODED_PAGES
+    uniform sampler2D decodedPages,
+#endif
     float mapX,
     float mapY,
     float4 format,
@@ -55,10 +61,18 @@ float4 sampleRbg0Cell(
     const float plsz = fmod(format.w, 4.0f);
     const float screenOver = fmod(floor(format.w / 4.0f), 4.0f);
 
+#if LAGI_RBG_TILE16_8BIT
+    // Selected only from the published CHCTLB/PNCR format, not scene identity.
+    const float chsz = 1.0f;
+    const float chcn = 1.0f;
+    const float pnb = 1.0f;
+    const float cnsm = 0.0f;
+#else
     const float chsz = fmod(floor(chctlb / 256.0f), 2.0f);
     const float chcn = fmod(floor(chctlb / 4096.0f), 8.0f);
     const float pnb = fmod(floor(pncr / 32768.0f), 2.0f);
     const float cnsm = fmod(floor(pncr / 16384.0f), 2.0f);
+#endif
     const float scn = fmod(pncr, 1024.0f);
     const float caos = fmod(craofb, 8.0f);
 
@@ -114,6 +128,23 @@ float4 sampleRbg0Cell(
 
     const float pageNumber = pageY * (planeWidth / 512.0f) + pageX;
     const float pageBase = planeBase + pageNumber * pageSize;
+#if LAGI_RBG_DECODED_PAGES
+    // The service decodes source resources only. All coordinates, windows,
+    // coefficients and A/B selection above remain live native GPU state.
+    // The service rejects OVPNR mode 1 until its single-pattern resource has
+    // its own cached entry. Modes 0/2/3 are complete here (clipping is above).
+    {
+        // Cache variant plane uniforms hold four packed two-bit page slots,
+        // not physical VRAM addresses. Register-only lookup is done on CPU.
+        const float divisor=pageNumber<0.5f?1.0f:pageNumber<1.5f?4.0f:pageNumber<2.5f?16.0f:64.0f;
+        const float slot=fmod(floor(planeBase/divisor),4.0f);
+        const float2 origin=float2(fmod(slot,2.0f),floor(slot/2.0f))*512.0f;
+        const float4 entry=tex2D(decodedPages,(origin+float2(inPageX,inPageY)+0.5f)/1024.0f);
+        if(entry.a<0.5f)return float4(0,0,0,0);
+        const float index=fmod(dot(floor(entry.rg*255.0f+0.5f),float2(1,256))+caos*256.0f,2048.0f);
+        return rgb555(readRbgAlignedBE16(raw,524288.0f+index*2.0f));
+    }
+#else
     const float patternX = floor(inPageX / patternDim);
     const float patternY = floor(inPageY / patternDim);
     const float patternAddress =
@@ -209,7 +240,19 @@ float4 sampleRbg0Cell(
     } else {
         const float dotAddress =
             characterOffset + py * 8.0f + px;
+#if LAGI_RBG_TILE16_8BIT && !LAGI_RBG_DECODED_PAGES
+        // Same upload, reinterpreted as 2048 byte texels per row. Preserve
+        // selectByte's nearest-lane thresholds even for fractional addresses;
+        // the packed reader clamps lane 3 rather than carrying into lane 4.
+        const float byteGroup=floor(dotAddress*0.25f);
+        const float lane=min(3.0f,floor(dotAddress-byteGroup*4.0f+0.5f));
+        const float address=byteGroup*4.0f+lane;
+        const float byteRow=floor(address/2048.0f);
+        dotColor=floor(tex2D(rawBytes,float2(
+            (address-byteRow*2048.0f+0.5f)/2048.0f,(byteRow+0.5f)/258.0f)).r*255.0f+0.5f);
+#else
         dotColor = readByte(raw, dotAddress);
+#endif
     }
 
     if (dotColor < 0.5f && format.w < 16.0f)
@@ -220,6 +263,7 @@ float4 sampleRbg0Cell(
     // Native getVdp2Cram() wraps at 4 KiB, including palette-bank carry.
     return rgb555(readRbgAlignedBE16(
         raw, 524288.0f + fmod(paletteEntry, 2048.0f) * 2.0f));
+#endif
 }
 
 float readRbgCoefficient(
@@ -257,7 +301,16 @@ float readRbgCoefficient(
 
 float4 main(
     float2 vTexcoord : TEXCOORD0,
-    uniform sampler2D raw,
+    uniform sampler2D raw:TEXUNIT0,
+#if LAGI_RBG_TILE16_8BIT && !LAGI_RBG_DECODED_PAGES
+    uniform sampler2D rawBytes:TEXUNIT1,
+#endif
+#if LAGI_RBG_DECODED_PAGES
+    uniform sampler2D decodedPages:TEXUNIT1,
+#endif
+#if LAGI_RBG_ROW_COEFFICIENTS
+    uniform sampler2D coefficientRows:TEXUNIT2,
+#endif
     uniform float4 rbg0Plane0,
     uniform float4 rbg0Plane1,
     uniform float4 rbg0Plane2,
@@ -312,6 +365,9 @@ float4 main(
     if (rbg0SwitchInfo.w >= 1.5f) {
         bool selectedForB = false;
         if (rbg0SwitchInfo.y >= 0.5f) {
+#if LAGI_RBG_ROW_COEFFICIENTS
+            selectedForB = tex2D(coefficientRows,float2((y+0.5f)/256.0f,0.25f)).g >= 0.5f;
+#else
             float index = fmod(floor(rbg0SwitchCoefficient.x +
                 rbg0SwitchCoefficient.y * y + rbg0SwitchCoefficient.z * x), 65536.0f);
             if (index < 0.0f) index += 65536.0f;
@@ -319,11 +375,20 @@ float4 main(
                 0.0f : rbg0SwitchInfo.x) + index * rbg0SwitchInfo.z;
             address = fmod(address + rbg0SwitchInfo.z - 1.0f, 524288.0f);
             selectedForB = readByte(raw, address) >= 128.0f;
+#endif
         }
         if (!selectedForB) discard;
     }
 
     if (rbg0Info.y >= 0.5f) {
+#if LAGI_RBG_ROW_COEFFICIENTS
+        // Info.x is the primary table selector in this variant only (0=A,
+        // 1=B). The service has already applied KTAOF/wrapping to each row.
+        const float2 rowValue=tex2D(coefficientRows,
+            float2((y+0.5f)/256.0f,rbg0Info.x<0.5f?0.25f:0.75f)).rg;
+        k=rowValue.r;
+        const bool invalid=rowValue.g>=0.5f;
+#else
         const float accum =
             rbg0Coefficient.x +
             rbg0Coefficient.y * y +
@@ -342,6 +407,7 @@ float4 main(
             coeffIndex * rbg0Info.z;
         bool invalid;
         k = readRbgCoefficient(raw, address, rbg0Info.z, invalid);
+#endif
         // In RPMD=2, the CPU publishes A's table/size/accumulator in both
         // selection and scaling uniforms. Reuse this fetch's invalid bit.
         if (rbg0SwitchInfo.w >= 0.5f && rbg0SwitchInfo.w < 1.5f)
@@ -371,6 +437,9 @@ float4 main(
         plane3 = rbg0BPlane3;
         k = 1.0f;
         if (info.y >= 0.5f) {
+#if LAGI_RBG_ROW_COEFFICIENTS
+            k=tex2D(coefficientRows,float2((y+0.5f)/256.0f,0.75f)).r;
+#else
             float index = fmod(floor(coefficient.x + coefficient.y * y +
                 coefficient.z * x), 65536.0f);
             if (index < 0.0f) index += 65536.0f;
@@ -378,6 +447,7 @@ float4 main(
                 0.0f : info.x) + index * info.z;
             bool invalidB;
             k = readRbgCoefficient(raw, address, info.z, invalidB);
+#endif
         }
     }
 
@@ -394,6 +464,13 @@ float4 main(
     const float mapY = k * rotatedY + transform1.w;
 
     return sampleRbg0Cell(
-        raw, mapX, mapY, format, coefficient.w, info.w,
+        raw,
+#if LAGI_RBG_TILE16_8BIT && !LAGI_RBG_DECODED_PAGES
+        rawBytes,
+#endif
+#if LAGI_RBG_DECODED_PAGES
+        decodedPages,
+#endif
+        mapX, mapY, format, coefficient.w, info.w,
         plane0, plane1, plane2, plane3);
 }

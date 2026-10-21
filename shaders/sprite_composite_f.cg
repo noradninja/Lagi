@@ -1,0 +1,19 @@
+// Completed VDP1 image against the resolved RBG0/back screen, never per draw.
+float4 main(float2 uv:TEXCOORD0,uniform sampler2D layer:TEXUNIT0,
+    uniform sampler2D background:TEXUNIT1,uniform sampler2D decisions:TEXUNIT2,
+    uniform float4 geometry,
+    uniform float4 backColor) {
+    float4 src=tex2D(layer,uv*geometry.xy);
+    float4 dst=tex2D(background,uv);
+    float backgroundPresent=(geometry.z>=0.5f && dst.a>=0.5f);
+    if(backgroundPresent<0.5f)dst=backColor;
+    float code=floor(src.a*255.0f+0.5f);
+    float3 decision=floor(tex2D(decisions,float2((code+0.5f)/256.0f,0.5f)).rgb*255+0.5f);
+    float op=backgroundPresent>0.5f?decision.r:decision.g;
+    if(op<0.5f)return float4(dst.rgb,1);
+    if(op<1.5f)return float4(src.rgb,1);
+    float r=decision.b;
+    float3 a=floor(src.rgb*31+0.5f),b=floor(dst.rgb*31+0.5f);
+    float3 color=op>2.5f?min(a+b,31):floor((a*(31-r)+b*(r+1))/32);
+    return float4(color/31,1);
+}

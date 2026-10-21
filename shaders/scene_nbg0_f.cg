@@ -1,0 +1,8 @@
+#include "vdp2_common.cginc"
+#define LAGI_NBG_LINE_ROWS 1
+#include "scene_nbg0.cginc"
+float4 main(float2 vTexcoord : TEXCOORD0, uniform sampler2D raw:TEXUNIT0,
+    uniform float4 nbg0State[8],uniform sampler2D rowData:TEXUNIT1)
+{
+    return sampleSceneNbg0(raw,vTexcoord,nbg0State,rowData);
+}
