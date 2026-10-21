@@ -302,6 +302,14 @@ static SceGxmFragmentProgram* g_vdp2NbgFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_vdp2Rbg0FragmentProgram = nullptr;
 static const SceGxmProgramParameter* g_cinepakMovieInfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2InfoParam = nullptr;
+static const SceGxmProgramParameter* g_sceneNbg0Param = nullptr;
+static SceGxmFragmentProgram* g_sceneNbg0AddProgram = nullptr;
+static SceGxmFragmentProgram* g_sceneNbg0OverProgram = nullptr;
+static lagi::SceneNbg0State g_pendingSceneNbg0{},g_sceneNbg0{};
+static SceUID g_sceneNbg0Uid=-1;
+static void* g_sceneNbg0Pixels=nullptr;
+static SceGxmColorSurface g_sceneNbg0Surface{};
+static SceGxmTexture g_sceneNbg0Texture{};
 static const SceGxmProgramParameter* g_vdp2Rbg0PlaneParam[4] = {
     nullptr, nullptr, nullptr, nullptr
 };
@@ -719,6 +727,7 @@ static unsigned int g_profileGxmFinishUs = 0;
 // Resolve measures command recording and any BeginScene stall, not GPU execution.
 static unsigned int g_profileRbgPrepareUs = 0;
 static unsigned int g_profileRbgResolveUs = 0;
+static unsigned int g_profileNbg0ResolveUs = 0;
 static unsigned int g_profileRenderUs = 0;
 static unsigned int g_profilePresentUs = 0;
 static unsigned int g_profileFramePublishUs = 0;
@@ -2619,6 +2628,8 @@ void shutdown()
     releaseRbgDecodedPages();
     releaseRbgCoefficientRows();
     freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
+    freeSimpleMappedProbe(g_sceneNbg0Uid,g_sceneNbg0Pixels);
+    g_sceneNbg0={};g_pendingSceneNbg0={};
     g_sceneVdp2ByteTextureValid=false;
     freeSimpleMappedProbe(g_ditherOffsetsUid, g_ditherOffsetsPixels);
     g_sceneVdp2GpuRawInitialized = false;
@@ -2782,6 +2793,14 @@ void shutdown()
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_vdp2Rbg0FragmentProgram);
             g_vdp2Rbg0FragmentProgram = nullptr;
+        }
+        if(g_sceneNbg0AddProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_sceneNbg0AddProgram);
+            g_sceneNbg0AddProgram=nullptr;
+        }
+        if(g_sceneNbg0OverProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_sceneNbg0OverProgram);
+            g_sceneNbg0OverProgram=nullptr;
         }
         if (g_vdp2NbgFragmentProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(
@@ -3666,7 +3685,7 @@ void presentation_set_vdp2_background(const FrontendRbg0State& state,
 {
     // Producer staging only; publish transfers ownership with the world frame.
     g_pendingSceneRbg0Enabled = enabled && vram && cram;
-    if (!g_pendingSceneRbg0Enabled)
+    if (!vram || !cram || (!enabled && !(state.bgon&1u)))
         return;
     g_pendingSceneRbg0 = makeRbgGpuState(state);
     std::memcpy(g_pendingSceneVdp2Raw, vram, 0x80000u);
@@ -9940,7 +9959,8 @@ void show_game_presentation()
 
     g_vdp2InfoParam =
         sceGxmProgramFindParameterByName(vdp2NbgFragmentGxp, "vdp2Info");
-    if (!g_vdp2InfoParam) {
+    g_sceneNbg0Param=sceGxmProgramFindParameterByName(vdp2NbgFragmentGxp,"nbg0State");
+    if (!g_vdp2InfoParam || !g_sceneNbg0Param) {
         failure("[FAIL] VDP2 NBG SHADER PARAMS");
         return;
     }
@@ -10716,6 +10736,20 @@ void show_game_presentation()
     }
 
     // Separate blend variants keep the opaque/cutout fast path unchanged.
+    SceGxmBlendInfo nbgAdd{};
+    nbgAdd.colorFunc=SCE_GXM_BLEND_FUNC_ADD;nbgAdd.alphaFunc=SCE_GXM_BLEND_FUNC_ADD;
+    nbgAdd.colorSrc=SCE_GXM_BLEND_FACTOR_ONE;nbgAdd.colorDst=SCE_GXM_BLEND_FACTOR_ONE;
+    nbgAdd.alphaSrc=SCE_GXM_BLEND_FACTOR_ONE;nbgAdd.alphaDst=SCE_GXM_BLEND_FACTOR_ZERO;
+    nbgAdd.colorMask=SCE_GXM_COLOR_MASK_ALL;
+    if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,
+        g_vdp2NbgFragmentProgramId,
+        SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,kMultisampleMode,&nbgAdd,textureVertexGxp,
+        &g_sceneNbg0AddProgram)<0) {failure("[FAIL] NBG0 ADD PROGRAM");return;}
+    nbgAdd.colorDst=SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    nbgAdd.alphaDst=SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_vdp2NbgFragmentProgramId,
+        SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,kMultisampleMode,&nbgAdd,textureVertexGxp,
+        &g_sceneNbg0OverProgram)<0) {failure("[FAIL] NBG0 OVER PROGRAM");return;}
     const auto createNativeBlend = [&](NativeBlendProgram slot,SceGxmShaderPatcherId id,
         const SceGxmProgram* vertex,SceGxmMultisampleMode samples) {
         return sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,id,
@@ -12934,7 +12968,7 @@ static bool prepareSceneVdp2Background()
 {
     g_rbgDecodedPagesReady=false;
     g_rbgCoefficientRowsReady=false;
-    if (!g_sceneRbg0Enabled)
+    if (!g_sceneRbg0Enabled && !g_sceneNbg0.enabled)
         return true;
     if (!g_sceneVdp2GpuRaw) {
         g_sceneVdp2GpuRawInitialized = false;
@@ -13029,8 +13063,10 @@ static bool prepareSceneVdp2Background()
         }
     }
     g_sceneVdp2GpuRawInitialized = true;
-    g_rbgDecodedPagesReady=prepareRbgDecodedPages();
-    g_rbgCoefficientRowsReady=prepareRbgCoefficientRows();
+    if(g_sceneRbg0Enabled) {
+        g_rbgDecodedPagesReady=prepareRbgDecodedPages();
+        g_rbgCoefficientRowsReady=prepareRbgCoefficientRows();
+    }
     return true;
 }
 
@@ -13140,6 +13176,7 @@ static void drawSceneVdp2Background()
 }
 
 #include "neptune_sprite_composite.inc"
+#include "neptune_scene_nbg0.inc"
 
 static bool renderMovieFrame()
 {
@@ -13544,6 +13581,7 @@ static void renderBasicWingViewer()
     g_profileGxmFinishUs = 0u;
     g_profileRbgPrepareUs = 0u;
     g_profileRbgResolveUs = 0u;
+    g_profileNbg0ResolveUs = 0u;
     g_profileRbgRawUpdatedBytes = 0u;
     g_liveTownGouraudPrepValid = false;
 
@@ -13672,6 +13710,13 @@ static void renderBasicWingViewer()
             sceKernelGetProcessTimeWide() - rbgResolveStart);
         if (!resolved)
             return;
+        const auto nbg0Start=sceKernelGetProcessTimeWide();
+        if(!renderSceneNbg0Gpu()) {
+            static unsigned nbgFailures=0;
+            if(nbgFailures++<4)logging::writef("[SceneNBG0] FAIL native GPU resolve\n");
+            return;
+        }
+        g_profileNbg0ResolveUs=static_cast<unsigned>(sceKernelGetProcessTimeWide()-nbg0Start);
         if(g_gpuPassSample) {
             const auto start=sceKernelGetProcessTimeWide();
             sceGxmFinish(g_probeContext);
@@ -13832,6 +13877,7 @@ static void renderBasicWingViewer()
                 sceGxmFinish(g_probeContext);
                 return;
             }
+            drawSceneNbg0Gpu();
             drawAzelVdp2Nbg1Gpu();
             drawAzelVdp2CinematicBarsGpu();
             drawAzelVdp2TextLayerGpu();
@@ -13980,7 +14026,7 @@ static void renderBasicWingViewer()
             "gourIndex=%u gourDraw=%u clear=%u begin=%u submit=%u compose=%u "
             "cpuprep=%u gxmwait=%u gxmend=%u gxmfinish=%u "
             "render=%u polys=%u verts=%u "
-            "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus rbgRawBytes=%u "
+            "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus nbg0Resolve=%uus rbgRawBytes=%u "
             "menuBackingDecode=%u menuTextDecode=%u menuSubmit=%u menuTransfer=%u "
             "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1 tasks=%u uiOnly=%u slowSample=%u "
             "positionSync=%u positionSyncVerts=%u submissions=%u "
@@ -14013,6 +14059,7 @@ static void renderBasicWingViewer()
             g_sceneRbg0Enabled ? 1u : 0u,
             g_profileRbgPrepareUs,
             g_profileRbgResolveUs,
+            g_profileNbg0ResolveUs,
             g_profileRbgRawUpdatedBytes,
             g_profileMenuBackingDecodeUs,
             g_profileMenuTextDecodeUs,
@@ -15201,7 +15248,8 @@ void presentation_publish_frame()
     g_nativeFrameVblanks = g_pendingNativeFrameVblanks;
     g_scenePlayerPresent = g_pendingScenePlayerPresent;
     g_sceneRbg0Enabled = g_pendingSceneRbg0Enabled;
-    if (g_sceneRbg0Enabled) {
+    g_sceneNbg0=g_pendingSceneNbg0;
+    if (g_sceneRbg0Enabled || g_sceneNbg0.enabled) {
         g_sceneRbg0 = g_pendingSceneRbg0;
         // The producer owns the free-slot token here: the previous renderer
         // has finished all CPU/GPU use of this snapshot. Swap ownership,
@@ -15480,6 +15528,7 @@ void presentation_set_vdp2_text(
     // Each VRAM/text publication starts without an NBG2 plane. Only its
     // native scene capture can attach matching register/scroll state after it.
     g_pendingMenuNbg2 = {};
+    g_pendingSceneNbg0 = {};
     g_pendingSpriteColor = {};
     if (!vram || !cram || !lineScroll) {
         g_pendingVdp2TextValid = false;
@@ -15521,6 +15570,11 @@ void presentation_set_vdp2_text(
 void presentation_set_menu_nbg2(const lagi::MenuNbg2State& state)
 {
     g_pendingMenuNbg2 = state;
+}
+
+void presentation_set_scene_nbg0(const lagi::SceneNbg0State& state)
+{
+    g_pendingSceneNbg0=state;
 }
 
 void presentation_set_sprite_color_state(const lagi::Vdp2SpriteColorState& state)

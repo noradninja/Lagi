@@ -694,6 +694,7 @@ add_custom_command(
  DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_nbg_f.cg"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_common.cginc"
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/scene_nbg0.cginc"
  COMMENT "Compiling Neptune VDP2 NBG fragment shader"
  VERBATIM
 )

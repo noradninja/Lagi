@@ -2,6 +2,7 @@
 // This is layer presentation, not a screen-specific state machine.
 // Azel owns maps, text, scrolling, visibility and sequencing.
 #include "vdp2_common.cginc"
+#include "scene_nbg0.cginc"
 
 float4 sampleTitleNbg0Point(
     uniform sampler2D raw,
@@ -184,8 +185,13 @@ float4 main(
     float2 vTexcoord : TEXCOORD0,
     float4 fragCoord : WPOS,
     uniform sampler2D raw,
-    uniform float4 vdp2Info)
+    uniform float4 vdp2Info,
+    uniform float4 nbg0State[8])
 {
+    // Display the already-decoded premultiplied layer with ordinary filtering.
+    // Do not apply the sprite shader's half-alpha cutout to cloud edges.
+    if(vdp2Info.x>2.5f)return tex2D(raw,vTexcoord);
+    if(vdp2Info.x>1.5f)return sampleSceneNbg0(raw,vTexcoord,nbg0State);
     const float logicalX = min(
         351.0f, floor(vTexcoord.x * 352.0f));
     const float logicalY = min(

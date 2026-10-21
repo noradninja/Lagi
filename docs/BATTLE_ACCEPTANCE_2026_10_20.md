@@ -2,6 +2,43 @@
 
 ## 2026-10-21 cloud-line transport prerequisite
 
+### Accelerated NBG0 cloud composition (hardware acceptance pending)
+
+The native scene capture now publishes NBG0 format/map/scroll/zoom, line-table
+address/control/interval, rectangular and line windows, transparency and layer
+priority with the associated frame. It reuses RBG0's retained GPU-local raw
+VRAM/CRAM image and changed-block uploads; no second full image upload or CPU
+pixel rasterizer is added. A GPU pass decodes at 352x224 into a separate
+384-pitch RGBA surface (344064 bytes), using the existing native render target.
+It then composes above world VDP1 and below NBG1/text, matching E011 priorities
+4/5/6/7. Native CCCTL additive mode selects an SGX ONE/ONE blend; opaque mode
+uses premultiplied-over composition. BGON and windows decide whether pixels
+exist. The display pass preserves filtered edge alpha rather than applying the
+sprite shader's half-alpha discard threshold.
+
+NBG0 uses ordinary linear filtering of the decoded texture, NOT stochastic
+sampling. UI, sprites and Cinepak retain their existing stochastic paths.
+
+Capability boundary is explicit: tile16, 4bpp, one-word flip-enabled names,
+legal plane sizes, no vertical-cell-scroll or sprite window, and the supported
+world-to-NBG1 priority band. Ratio color calculation is not approximated as
+additive. Other formats/orderings still require native implementations; this
+does not claim universal VDP2 support. E011's source configuration qualifies.
+
+The host fixture executes the production shader's scalar math (only Cg vector
+swizzle syntax adapted) with synthetic VRAM: flips, negative line scroll,
+zoom, line interval, rectangle/line windows, transparent zero and priority
+eligibility. This is not GPU pixel validation. Device capture must confirm the
+cloud's position, blend/color and motion against the Saturn video and check
+frame cost. Expected bounded evidence: `[SceneNBG0State] enabled=1` and
+`[SceneNBG0] nativeGpu=1 raster=352x224 additive=1 priority=5 ok=1 stochastic=0`.
+`ScenePerf.nbg0Resolve` measures CPU submission time for the native pass, not
+isolated GPU execution time; total renderer timing remains the device gate.
+Both full-resolution stochastic/dither battle and non-battle menu VPK profiles
+compile, and the NBG0/previous frontend/pass-order host fixtures pass.
+Sand occlusion remains a separate visual acceptance item; weak points, Edge's
+subtitle and menu fades are user-confirmed accepted.
+
 Device accepts weak-point retirement and Edge's subtitle; preserve them. Cloud
 work is first priority, followed by remaining sand visual verification/fixes.
 
