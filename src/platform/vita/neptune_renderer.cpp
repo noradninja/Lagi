@@ -12,6 +12,7 @@
 
 unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/debug_mesh.h"
+#include "lagi/shared_color_offset.h"
 #include "lagi/vdp1_renderer.h"
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_render_bridge.h"
@@ -12575,7 +12576,15 @@ static bool frontendHasSharedColorOffset()
     // without tinting transparent texels or applying the fade twice.
     const unsigned enable=g_azelColorOffsetEnable.load(std::memory_order_relaxed)&0x7fu;
     const unsigned select=g_azelColorOffsetSelect.load(std::memory_order_relaxed)&0x7fu;
-    return enable==0x7fu && (select==0u || select==0x7fu);
+    // Mixed bank selectors are still a shared offset when native A/B RGB
+    // values match (D5 selects B for RBG0 and A for its sprite particles).
+    return lagi::shared_color_offset(enable,select,
+        g_azelColorOffsetARed.load(std::memory_order_relaxed),
+        g_azelColorOffsetAGreen.load(std::memory_order_relaxed),
+        g_azelColorOffsetABlue.load(std::memory_order_relaxed),
+        g_azelColorOffsetBRed.load(std::memory_order_relaxed),
+        g_azelColorOffsetBGreen.load(std::memory_order_relaxed),
+        g_azelColorOffsetBBlue.load(std::memory_order_relaxed));
 }
 
 static void drawAzelColorOffsetForLayer(
