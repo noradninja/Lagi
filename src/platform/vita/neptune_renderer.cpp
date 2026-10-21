@@ -955,6 +955,8 @@ static bool g_sceneVdp2GpuRawInitialized = false;
 static unsigned int g_profileRbgRawUpdatedBytes = 0u;
 static SceUID g_sceneVdp2RawUid = -1;
 static SceGxmTexture g_sceneVdp2Texture{};
+static SceGxmTexture g_sceneVdp2ByteTexture{};
+static bool g_sceneVdp2ByteTextureValid=false;
 static azel::DebugTextureVertex* g_sceneVdp2Vertices = nullptr;
 static SceUID g_sceneVdp2VertexUid = -1;
 static std::uint16_t* g_sceneVdp2Indices = nullptr;
@@ -2554,6 +2556,7 @@ void shutdown()
     releaseSpriteComposite();
     releaseRbgTileProgram();
     freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
+    g_sceneVdp2ByteTextureValid=false;
     freeSimpleMappedProbe(g_ditherOffsetsUid, g_ditherOffsetsPixels);
     g_sceneVdp2GpuRawInitialized = false;
     void* sceneVertices = g_sceneVdp2Vertices;
@@ -12574,8 +12577,10 @@ static bool drawVdp2Rbg0Gpu(
     float xExtent, bool frontend)
 {
     bool rbgSubmitted = true;
-    selectRbgTileProgram(!frontend && lagi::rbgTile16EightBit(
+    selectRbgTileProgram(!frontend && g_sceneVdp2ByteTextureValid && lagi::rbgTile16EightBit(
         static_cast<unsigned>(rbg.format[0]),static_cast<unsigned>(rbg.format[1])));
+    if(g_rbgTileBound)
+        sceGxmSetFragmentTexture(g_probeContext,1,&g_sceneVdp2ByteTexture);
 
     const unsigned int rpmd =
         static_cast<unsigned int>(rbg.ctrl[0]) & 3u;
@@ -12987,6 +12992,7 @@ static bool prepareSceneVdp2Background()
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_sceneVdp2IndexUid));
         const auto discard = [] {
             freeMovieMappedBlock(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
+            g_sceneVdp2ByteTextureValid=false;
             g_sceneVdp2GpuRawInitialized = false;
             void* vertices = g_sceneVdp2Vertices;
             freeMovieMappedBlock(g_sceneVdp2VertexUid, vertices);
@@ -13006,6 +13012,16 @@ static bool prepareSceneVdp2Background()
         }
         sceGxmTextureSetMinFilter(&g_sceneVdp2Texture, SCE_GXM_TEXTURE_FILTER_POINT);
         sceGxmTextureSetMagFilter(&g_sceneVdp2Texture, SCE_GXM_TEXTURE_FILTER_POINT);
+        // Alias the identical upload: each 512-RGBA row is 2048 byte texels.
+        // A failed descriptor leaves the generic packed shader available.
+        g_sceneVdp2ByteTextureValid=sceGxmTextureInitLinear(
+            &g_sceneVdp2ByteTexture,g_sceneVdp2GpuRaw,
+            SCE_GXM_TEXTURE_FORMAT_U8_RRRR,2048u,258u,0)>=0;
+        if(g_sceneVdp2ByteTextureValid) {
+            sceGxmTextureSetMinFilter(&g_sceneVdp2ByteTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+            sceGxmTextureSetMagFilter(&g_sceneVdp2ByteTexture,SCE_GXM_TEXTURE_FILTER_POINT);
+        }
+        logging::writef("[RBG0ByteView] available=%u sharedUpload=1\n",g_sceneVdp2ByteTextureValid?1u:0u);
         const azel::DebugTextureVertex vertices[4] = {
             {-1,1,0.5f,0,0}, {1,1,0.5f,1,0},
             {-1,-1,0.5f,0,1}, {1,-1,0.5f,1,1}

@@ -172,3 +172,34 @@ RBG shader across its enlarged 4:3 frontend quad. That remains another possible
 cost; this commit does not change sampling resolution or claim to fix name
 entry's frame rate. A short name-entry log with `[VDP2Perf] ... layout=2`
 will establish its remaining cost. Source checks verify the VDP2-only scope.
+
+## Active goal: efficient native VDP2 restoration
+
+Resolve the measured RBG bottleneck while preserving restored water/blending,
+then use that efficient foundation for additional authored VDP2 effects.
+Target ordinary gameplay frame time ideally 25 ms, maximum 33 ms. Source,
+shader compilation and allocation success do not establish device acceptance.
+Keep atomic commits and retain Azel-owned state; no proxy scene/effect rules.
+
+After CDRAM placement, nine serialized samples average RBG wait 15,116 us,
+world wait 5,405 us and final wait 7,691 us. Prior values were 14,852 / 7,216 /
+7,779 us. Scenes are not exactly matched; the user reports some improvement.
+RBG remains the dominant unresolved pass. All three CDRAM markers are present.
+
+### Native 8-bit RBG byte-view candidate
+
+Alias the existing 512x258 RGBA raw upload as a 2048x258 R8 texture. No extra
+pixel allocation, copy, decode or upload. Only the eligible native 8-bit/16x16
+variant uses this view for character bytes; coefficients, pattern names,
+palette lookup, rotation, windows and final RGB remain unchanged. Generic
+formats and frontend RBG stay on the packed path. Failed alias initialization
+or variant creation retains the generic path.
+
+The byte address matches the current packed decoder's lane-selection thresholds,
+including fractional rotation coordinates and lane-3 clamping without carry.
+Host fixture covers every uploaded byte and eighth-byte positions, row
+boundaries and normalized point-sampling centers. Shader/descriptor contracts
+and existing format tests pass. Hardware equivalence and performance remain
+pending. Expected markers: `[RBG0ByteView] available=1 sharedUpload=1` and
+`[RBG0TileFormat] specialized8bit16=1`. Keep pass timing ON for the next short
+flight log, then disable serialization for final deadline/visual acceptance.

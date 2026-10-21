@@ -39,6 +39,9 @@ float selectRbg0Plane(
 
 float4 sampleRbg0Cell(
     uniform sampler2D raw,
+#if LAGI_RBG_TILE16_8BIT
+    uniform sampler2D rawBytes,
+#endif
     float mapX,
     float mapY,
     float4 format,
@@ -217,7 +220,19 @@ float4 sampleRbg0Cell(
     } else {
         const float dotAddress =
             characterOffset + py * 8.0f + px;
+#if LAGI_RBG_TILE16_8BIT
+        // Same upload, reinterpreted as 2048 byte texels per row. Preserve
+        // selectByte's nearest-lane thresholds even for fractional addresses;
+        // the packed reader clamps lane 3 rather than carrying into lane 4.
+        const float byteGroup=floor(dotAddress*0.25f);
+        const float lane=min(3.0f,floor(dotAddress-byteGroup*4.0f+0.5f));
+        const float address=byteGroup*4.0f+lane;
+        const float byteRow=floor(address/2048.0f);
+        dotColor=floor(tex2D(rawBytes,float2(
+            (address-byteRow*2048.0f+0.5f)/2048.0f,(byteRow+0.5f)/258.0f)).r*255.0f+0.5f);
+#else
         dotColor = readByte(raw, dotAddress);
+#endif
     }
 
     if (dotColor < 0.5f && format.w < 16.0f)
@@ -265,7 +280,10 @@ float readRbgCoefficient(
 
 float4 main(
     float2 vTexcoord : TEXCOORD0,
-    uniform sampler2D raw,
+    uniform sampler2D raw:TEXUNIT0,
+#if LAGI_RBG_TILE16_8BIT
+    uniform sampler2D rawBytes:TEXUNIT1,
+#endif
     uniform float4 rbg0Plane0,
     uniform float4 rbg0Plane1,
     uniform float4 rbg0Plane2,
@@ -402,6 +420,10 @@ float4 main(
     const float mapY = k * rotatedY + transform1.w;
 
     return sampleRbg0Cell(
-        raw, mapX, mapY, format, coefficient.w, info.w,
+        raw,
+#if LAGI_RBG_TILE16_8BIT
+        rawBytes,
+#endif
+        mapX, mapY, format, coefficient.w, info.w,
         plane0, plane1, plane2, plane3);
 }
