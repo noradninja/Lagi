@@ -71,3 +71,11 @@ coordinates, packed nibbles and palette wrap with exact binary floor-based
 remainder, following the existing RBG0 optimization. Tests exhaust all 16-bit
 nonnegative inputs for the divisors and bit positions used, in addition to
 the production raw/row shader comparisons. Hardware gain remains unverified.
+
+The binary-wrap device log gives seven cloud render samples between 31.313
+and 32.745 ms. These sampled frames meet 33 ms, but do not prove a run-wide
+maximum or the 25 ms ideal. Next, aligned pattern-name, palette and line-window
+word reads bypass generic byte-boundary logic. Native even addresses select
+either XY or ZW from one packed texel; exhaustive tests cover every 16-bit
+value in both lanes and verify a single fetch. Line longword handling and all
+native addressing remain unchanged. Device validation remains required.

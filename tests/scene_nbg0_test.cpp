@@ -7,7 +7,7 @@
 #include <cstdio>
 struct float2 {float x,y;float2(float a,float b):x(a),y(b){};};
 struct float3 {float x,y,z;float3(float a,float b,float c):x(a),y(b),z(c){};};
-struct float4 {float x,y,z,w;float4(float a=0,float b=0,float c=0,float d=0):x(a),y(b),z(c),w(d){};float2 xy()const{return {x,y};}};
+struct float4 {float x,y,z,w;float4(float a=0,float b=0,float c=0,float d=0):x(a),y(b),z(c),w(d){};float2 xy()const{return {x,y};}float2 zw()const{return {z,w};}};
 float2 operator*(float2 a,float2 b){return {a.x*b.x,a.y*b.y};}
 float2 operator+(float2 a,float2 b){return {a.x+b.x,a.y+b.y};}
 float2 operator/(float2 a,float b){return {a.x/b,a.y/b};}
@@ -34,6 +34,12 @@ static std::array<unsigned char,0x81000> memory{};
 void word(unsigned a,unsigned v){memory[a]=v>>8;memory[a+1]=v;}
 void longword(unsigned a,unsigned v){word(a,v>>16);word(a+2,v);}
 int main(){
+    for(unsigned v=0;v<65536;++v)for(unsigned lane: {0u,2u}){
+        word(0x24000+lane,v);packedReads=halfReads=0;
+        assert(nbgAlignedWord(memory.data(),float(0x24000+lane))==float(v));
+        assert(packedReads==1 && halfReads==0);
+    }
+    memory.fill(0);
     for(unsigned v=0;v<65536;++v){
         for(unsigned divisor: {2u,4u,8u,16u,32u,1024u,2048u})
             assert(nbgWrap(float(v),float(divisor))==std::fmod(float(v),float(divisor)));

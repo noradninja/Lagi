@@ -3,7 +3,7 @@ $repo=Split-Path $PSScriptRoot -Parent
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-nbg0-'+[guid]::NewGuid())
 New-Item -ItemType Directory $scratch | Out-Null
 # Swizzle syntax is the only adaptation; execute the production shader math.
-$shader=(Get-Content -Raw "$repo/shaders/scene_nbg0.cginc").Replace('.xy','.xy()')
+$shader=(Get-Content -Raw "$repo/shaders/scene_nbg0.cginc").Replace('.xy','.xy()').Replace('.zw','.zw()')
 [IO.File]::WriteAllText("$scratch/scene_shader.inc",$shader)
 $pipeline=Get-Content -Raw "$repo/src/platform/vita/neptune_scene_nbg0.inc"
 if($pipeline.Contains('setStochastic(')){throw 'NBG0 must not use stochastic sampling'}
