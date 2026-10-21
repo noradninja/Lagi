@@ -367,7 +367,7 @@ and menu fallback compilation path. Neither build substitutes for device tests.
 
 ```powershell
 git pull --ff-only
-cmake -S . -B build-battle-vita -DLAGI_RBG_DECODED_PAGES=ON -DLAGI_GPU_PASS_TIMING=ON
+cmake -S . -B build-battle-vita -DLAGI_RBG_DECODED_PAGES=ON -DLAGI_RBG_COEFFICIENT_ROWS=ON -DLAGI_GPU_PASS_TIMING=OFF
 cmake --build build-battle-vita -j 32
 ```
 
@@ -585,3 +585,48 @@ performance goal: this capture contains no ordinary-flight timing windows.
 The earlier water capture's approximately 27.8 ms renderer median and route
 outliers remain outstanding. This acceptance update changes no runtime code
 and does not require rebuilding the tested executable.
+
+## Next ordinary-flight experiment: coefficient rows, normal pacing
+
+The earlier coefficient-row handoff command accidentally omitted the enabling
+option. The corrected command above explicitly enables it and leaves serialized
+GPU timing OFF, so the first capture measures normal pacing rather than
+diagnostic stalls. Keep the accepted fullres/dither/native battle/compositor
+options unchanged. This is an experimental comparison, not a default change.
+
+For an existing Vita-configured build directory in PowerShell:
+
+```powershell
+cd E:\dev\Lagi
+$env:VITASDK='E:/dev/VitaSDK'
+$env:PSP2CGC='E:/PSVITA/sdk/host_tools/bin/psp2cgc.exe'
+$env:PATH="$env:VITASDK/bin;$env:PATH"
+git switch feature/battle-mode-bringup
+git pull --ff-only
+cmake -S . -B build-battle-vita -DLAGI_RBG_DECODED_PAGES=ON -DLAGI_RBG_COEFFICIENT_ROWS=ON -DLAGI_GPU_PASS_TIMING=OFF
+cmake --build build-battle-vita -j 32
+```
+
+Capture normal flight through water, turns and a tunnel transition; an exact
+replay is not required. Check water layers, animated palette, transparency and
+clipping. The log must show `[RBG0CoefficientRows] active=1 reason=0` in an
+eligible scene before attributing any speed change to this path. Reason 1 is
+an ineligible/precision-ambiguous table, reason 2 an allocation/descriptor
+failure; both retain the existing renderer. Name entry uses per-pixel
+coefficients and is intentionally unaffected. Compare warm samples separately
+from page fills, rebuilds and transitions, preserving presentation outliers.
+
+To return to the accepted baseline, reconfigure with
+`-DLAGI_RBG_COEFFICIENT_ROWS=OFF -DLAGI_GPU_PASS_TIMING=OFF` and rebuild.
+Only if pass attribution remains necessary, make a separate short diagnostic
+capture with GPU_PASS_TIMING=ON; do not mix its serialized samples with the
+normal-pacing comparison. No visual or device performance win is claimed yet.
+
+Local verification at runtime source 1a22f1d: the exact fullres/dither/native
+battle/compositor/pages-ON, rows-ON, serialized-timing-OFF profile compiles,
+links and packages successfully. Coefficient exhaustive/native-oracle,
+production program-switch, page-service and diagnostic-timing contract tests
+pass. Local artifacts (not the user's installed build identity):
+
+- Lagi.vpk SHA256 `55F35C272C4C4460E983594981C3BCB283A44ECEBBE772296C07A0C14F540B14`.
+- lagi.velf SHA256 `2756AADE28CFF4E5904B10C5AD60EC0847686DEDE8536264F26418910EF0F63B`.
