@@ -125,3 +125,18 @@ cmake --build build-battle-vita -j 32
 
 Turn the option OFF after diagnostic capture. The source-contract fixture
 checks default-OFF, sampling cadence and completed-scene barrier placement.
+
+## Pass isolation and RBG memory placement
+
+The supplied diagnostic capture has 20 mode-3 compositor samples. RBG remaining
+wait is 13.7-15.35 ms, world 6.52-7.93 ms, final 7.07-8.12 ms. These serialized
+wall intervals identify RBG as the largest pass, not the exact GPU execution
+time or a controlled A/B result.
+
+The RBG raw VRAM/CRAM texture was allocated in uncached system RAM. Prefer
+CDRAM for this unchanged 512x258 RGBA byte image; retain the same generation
+updates, format, shader and cleanup. Fall back to the prior system allocation
+if CDRAM allocation fails. The 528,384-byte payload rounds to 768 KiB CDRAM
+(vs 516 KiB system allocation). `[RBG0Memory] cdram=1` confirms placement only,
+not a performance win. Source-contract test verifies allocation, fallback,
+descriptor and cleanup ordering. Device timing remains required.

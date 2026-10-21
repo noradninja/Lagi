@@ -12962,8 +12962,16 @@ static bool prepareSceneVdp2Background()
         return true;
     if (!g_sceneVdp2GpuRaw) {
         g_sceneVdp2GpuRawInitialized = false;
-        g_sceneVdp2GpuRaw = probeGpuAlloc(kRawVdp2Bytes,
+        // The RBG shader makes dependent VRAM/CRAM reads per output pixel.
+        // Keep the unchanged raw image in GPU-local memory, not system RAM.
+        g_sceneVdp2GpuRaw = probeCdramAlloc(kRawVdp2Bytes,
             SCE_GXM_MEMORY_ATTRIB_READ, &g_sceneVdp2RawUid);
+        const bool rawInCdram=g_sceneVdp2GpuRaw!=nullptr;
+        if(!g_sceneVdp2GpuRaw)
+            g_sceneVdp2GpuRaw=probeGpuAlloc(kRawVdp2Bytes,
+                SCE_GXM_MEMORY_ATTRIB_READ,&g_sceneVdp2RawUid);
+        logging::writef("[RBG0Memory] cdram=%u payloadBytes=%u\n",
+            rawInCdram?1u:0u,kRawVdp2Bytes);
         g_sceneVdp2Vertices = static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(4u * sizeof(azel::DebugTextureVertex),
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_sceneVdp2VertexUid));
