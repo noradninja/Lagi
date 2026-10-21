@@ -44,21 +44,38 @@ int main() {
         for(unsigned mask=0;mask<4;++mask)for(unsigned bits=0;bits<(scenario?32u:256u);++bits) {
             ctrl[4]=float(scenario?((bits&15)|((bits&16)<<3)):bits);ctrl[7]=float(mask);
             std::array<unsigned char,352*224> owner;owner.fill(255);
+            lagi::RbgWindowRectCoalescer coalescer;
+            struct Rect {int first=0,last=0,top=0,bottom=0;};
+            std::array<std::array<Rect,lagi::RbgWindowMaxSpans>,2> rectangles{};
             unsigned counts[2]{},area[2]{};
             assert(lagi::emitRbgWindowSpans(ctrl,raw,[&](unsigned p,int y,int first,int last){
                 assert(p<2 && y>=0 && y<224 && first>=0 && last<352 && first<=last);
                 ++counts[p];area[p]+=last-first+1;
+                const auto merged=coalescer.add(p,y,first,last);assert(merged.valid);
+                auto& rectangle=rectangles[p][merged.quad];
+                if(merged.fresh)rectangle={first,last,y,y};else rectangle.bottom=y;
                 for(int x=first;x<=last;++x) {
                     auto& pixel=owner[y*352+x];assert(pixel==255);pixel=static_cast<unsigned char>(p);
                 }
             }));
             assert(counts[0]<=lagi::RbgWindowMaxSpans && counts[1]<=lagi::RbgWindowMaxSpans);
             assert(area[0]+area[1]==352*224);
+            std::array<unsigned char,352*224> mergedOwner;mergedOwner.fill(255);
+            for(unsigned p=0;p<2;++p) {
+                assert(coalescer.count(p)<=counts[p]);
+                for(unsigned q=0;q<coalescer.count(p);++q) {
+                    const auto& r=rectangles[p][q];
+                    for(int y=r.top;y<=r.bottom;++y)for(int x=r.first;x<=r.last;++x) {
+                        auto& pixel=mergedOwner[y*352+x];assert(pixel==255);pixel=static_cast<unsigned char>(p);
+                    }
+                }
+            }
+            assert(owner==mergedOwner);
             for(int y=0;y<224;++y)for(int x=0;x<352;++x)assert(owner[y*352+x]==(oracle(ctrl,x,y)?0:1));
             ++cases;pixels+=owner.size();
         }
     }
     const auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
-    std::printf("PASS %u window states, %llu pixel decisions, A/B coverage exact and exclusive (%lld ms host; not Vita timing)\n",
+    std::printf("PASS %u window states, %llu pixel decisions, spans/coalesced rectangles exact and exclusive (%lld ms host; not Vita timing)\n",
         cases,static_cast<unsigned long long>(pixels),static_cast<long long>(ms));
 }

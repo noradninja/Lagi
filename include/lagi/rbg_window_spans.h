@@ -5,6 +5,28 @@
 
 namespace lagi {
 constexpr unsigned RbgWindowMaxSpans=224u*3u;
+// Match only equal horizontal spans on immediately adjacent rows. Six active
+// slots per parameter hold the previous row's three spans plus the current
+// row's three, so a new span cannot evict a later match on the same row.
+class RbgWindowRectCoalescer {
+    struct Run {int first=0,last=0,lastY=-2;unsigned quad=0;};
+    std::array<std::array<Run,6>,2> active_{};
+    unsigned counts_[2]{};
+public:
+    struct Result {unsigned quad;bool fresh,valid;};
+    Result add(unsigned parameter,int y,int first,int last) {
+        for(auto& run:active_[parameter])if(run.lastY==y-1 && run.first==first && run.last==last) {
+            run.lastY=y;return {run.quad,false,true};
+        }
+        if(counts_[parameter]>=RbgWindowMaxSpans)return {0,false,false};
+        for(auto& run:active_[parameter])if(run.lastY<y-1) {
+            const unsigned quad=counts_[parameter]++;
+            run={first,last,y,quad};return {quad,true,true};
+        }
+        return {0,false,false};
+    }
+    unsigned count(unsigned parameter)const{return counts_[parameter];}
+};
 // Partition each scanline at the two windows' boundaries. The native WCTLD
 // predicate is constant between boundaries, so this replaces a 352-pixel
 // CPU scan without moving rotation or coefficient decisions off the GPU.

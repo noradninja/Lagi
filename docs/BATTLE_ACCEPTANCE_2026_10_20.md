@@ -518,3 +518,47 @@ The remote branch was independently checked with ls-remote at 1df2378.
 No further runtime change is made by this verification. A fresh capture with
 the complementary-coverage/nbgNative markers, native gameplay pass/workload
 timings and visual acceptance of water/transparency are still required.
+
+## Fresh name-entry and water captures; rectangle-coalescing follow-up
+
+The user supplied separate captures after 7545157:
+
+- Name-entry log SHA256 `FA57641123EDF89CA24E698EDDF452643EC76FD9236B43783326792C01E3E48F`.
+  Complementary coverage (112 A strips/112 B strips) and nbgNative=1 markers
+  are present. Six keyboard-visible samples have median 44765 us, maximum
+  46804 us; the one NBG-hidden sample is 41643 us. Three cache-hit records
+  have median 21 us, maximum 22 us, with no uploads. The screenshot shows the
+  reflected background and keyboard still present; this is static visual
+  evidence, not proof of animation/palette correctness throughout the route.
+- Water log SHA256 `D510DD27C6CC7B726EF57AB80C61B0AA6905EA21544B95D41AC66F1132B8729E`.
+  The 34 RBG-enabled, non-menu, non-serialized ScenePerf samples have median
+  render 27764.5 us, maximum 30294 us; none exceed 33000 us. Median task time
+  is 7116 us, but it must not be blindly added to overlapping renderer work.
+  Across 19 complete renderer windows/2280 frames, 2041 exceed 25000 us,
+  two exceed 33333 us, and the maximum is 108020 us. Two baseline-less
+  rebuild outliers are 64598/108020 us. Completed presentation windows have
+  eight intervals over two vblanks; further outliers exist outside those
+  complete windows. Thus the whole-route deadline is not established.
+  The screenshot shows layered water, waterfall streams and impact splashes
+  at a displayed 30 FPS; this does not erase the logged outliers.
+
+The next change coalesces only horizontally identical, vertically adjacent
+RPMD3 spans. D5's native geometry becomes two rectangles rather than 224
+one-row quads; no pixel selection, coefficient, texture, palette, scroll or
+shader precision changes. Both ranges are built/extended before either is
+submitted to GXM. Six active slots per parameter prevent a new span from
+evicting a later match from the previous row. No cross-frame geometry cache
+or new GPU allocation is introduced. Non-rectangular windows remain exact.
+
+The existing 2944-state/232128512-pixel differential test now rasterizes both
+spans and coalesced rectangles and compares them. The actual renderer draw
+fixture verifies the two D5 quads and 128 split/moving window cases, including
+coverage exclusivity and native pixel-center UV mapping. This is host proof
+of geometry construction, not a measured GPU win. New device marker:
+`[RBG0WindowCoverage] ... aSpans=1 bSpans=1 ... coalesced=1`.
+The 25/33 ms goal remains active; name entry and route outliers still need work.
+
+The coalesced final tree links/packages in both the exact recommended native
+battle/cache-ON/rows-OFF/timing-OFF profile and the menu/cache-OFF fallback.
+Its device timing and visual acceptance remain pending. Native water scenes
+using RPMD0/2 do not receive this RPMD3-only geometry optimization.

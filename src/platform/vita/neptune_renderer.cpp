@@ -12779,27 +12779,35 @@ static bool drawVdp2Rbg0Gpu(
     const std::uint16_t* parameterBIndices = indices;
 
     if (rpmd == 3u) {
-        unsigned counts[2]{};
+        lagi::RbgWindowRectCoalescer rectangles;
         bool overflow = false;
         const bool covered = lagi::emitRbgWindowSpans(rbg.ctrl,
             static_cast<const unsigned char*>(rawTextureData),
             [&](unsigned parameter, int y, int x0, int x1) {
-                if (counts[parameter] >= lagi::RbgWindowMaxSpans) {
+                const auto rectangle=rectangles.add(parameter,y,x0,x1);
+                if (!rectangle.valid) {
                     overflow = true;
                     return;
                 }
                 // Separate A/B ranges remain immutable until both GPU draws
                 // finish. No rewriting geometry already submitted for B.
-                const unsigned quad = parameter * lagi::RbgWindowMaxSpans + counts[parameter]++;
+                const unsigned quad = parameter * lagi::RbgWindowMaxSpans + rectangle.quad;
                 const unsigned base = quad * 4u;
+                const float v1 = static_cast<float>(y + 1) / 224.0f;
+                const float py1 = 1.0f - 2.0f * v1;
+                if(!rectangle.fresh) {
+                    for(unsigned corner:{2u,3u}) {
+                        g_vdp2WindowVertices[base+corner].y=py1;
+                        g_vdp2WindowVertices[base+corner].v=v1;
+                    }
+                    return;
+                }
                 const float u0 = static_cast<float>(x0) / 352.0f;
                 const float u1 = static_cast<float>(x1 + 1) / 352.0f;
                 const float v0 = static_cast<float>(y) / 224.0f;
-                const float v1 = static_cast<float>(y + 1) / 224.0f;
                 const float px0 = -xExtent + 2.0f * xExtent * u0;
                 const float px1 = -xExtent + 2.0f * xExtent * u1;
                 const float py0 = 1.0f - 2.0f * v0;
-                const float py1 = 1.0f - 2.0f * v1;
                 g_vdp2WindowVertices[base + 0] = {px0,py0,0.5f,u0,v0};
                 g_vdp2WindowVertices[base + 1] = {px1,py0,0.5f,u1,v0};
                 g_vdp2WindowVertices[base + 2] = {px0,py1,0.5f,u0,v1};
@@ -12814,12 +12822,12 @@ static bool drawVdp2Rbg0Gpu(
         parameterAVertices = parameterBVertices = g_vdp2WindowVertices;
         parameterAIndices = g_vdp2WindowIndices;
         parameterBIndices = g_vdp2WindowIndices + lagi::RbgWindowMaxSpans * 6u;
-        parameterAIndexCount = counts[0] * 6u;
-        parameterBIndexCount = counts[1] * 6u;
+        parameterAIndexCount = rectangles.count(0) * 6u;
+        parameterBIndexCount = rectangles.count(1) * 6u;
         static bool loggedCoverage = false;
         if (frontend && !loggedCoverage) {
-            logging::writef("[RBG0WindowCoverage] complementary=1 aSpans=%u bSpans=%u nativePixels=78848\n",
-                counts[0],counts[1]);
+            logging::writef("[RBG0WindowCoverage] complementary=1 aSpans=%u bSpans=%u nativePixels=78848 coalesced=1\n",
+                rectangles.count(0),rectangles.count(1));
             loggedCoverage = true;
         }
     }
