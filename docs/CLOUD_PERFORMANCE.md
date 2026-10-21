@@ -23,3 +23,11 @@ layers. World cloud resolve now explicitly uses mode 8; frontend layouts 0,
 1 and 2 retain their original title/keyboard routing. Obsolete display modes
 were removed because resolved RGBA now has its own shader. This dispatch fix
 does not change native cloud math or the independent display optimization.
+
+The next device run confirms name entry restored and clouds improved to 20
+FPS, but cloud render samples remain about 45 ms with 32-34 ms GPU waits.
+The next isolated optimization fetches each aligned native line longword from
+one packed RGBA texel rather than two BE16 helpers. A production-math fixture
+compares all 65,536 signed high words with varied fractional bits, verifies
+one packed fetch/no halfword reads, and retains unaligned/wrapped addressing.
+No device timing improvement is claimed until the next run.
