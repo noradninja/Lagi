@@ -349,3 +349,16 @@ composition and blend its visible result against the selected VDP2 layer,
 including window and additive/destination-ratio modes. Existing screenshot
 is a Saturn reference, not a measured Lagi failure frame. Saturation itself
 is not evidence for a global tint or a global additive blend switch.
+
+### Experimental separate world-image composition
+
+`LAGI_VDP2_SPRITE_COMPOSITE=ON` now builds a separate completed VDP1 world
+surface and GPU composition pass for type-3 mixed RGB over RBG0/BACK. Indexed
+palette decoding retains selector bits rather than discarding them at CRAM
+lookup. Selection and ratios use the immutable native register snapshot.
+The pass occurs once after world effects, before the existing text/foreground
+UI path; it does not multiply a new blend into each model/effect draw.
+See `VDP2_SPRITE_COMPOSITION.md` for eligibility, tests, build flag and explicit
+limitations. Default remains OFF pending Vita comparison/profiling. This is
+not the missing NBG0-cloud renderer or proof of missing water coverage, and
+does not claim a complete multi-layer Saturn compositor.

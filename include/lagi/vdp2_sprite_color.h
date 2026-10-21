@@ -7,7 +7,14 @@ struct Vdp2SpriteColorState {
     std::uint16_t ccctl=0,spctl=0,craofb=0;
     std::uint16_t priority[4]{},ratio[4]{};
     std::uint16_t colorWindow=0,window[8]{};
+    std::uint16_t bgon=0,prir=0;
 };
+// Type-3 indexed VDP1 pixels: retain PRIS/CCRS selectors after CRAM lookup.
+// 128 is reserved for a VDP1 half-transparent RGB result; 255 is direct RGB.
+constexpr std::uint32_t spriteType3Metadata(std::uint32_t rgba,unsigned code) {
+    return (rgba&0xFF000000u) ? (rgba&0xFFFFFFu) |
+        ((129u+(((code>>13)&3u)*8u)+((code>>11)&3u))<<24) : 0u;
+}
 constexpr unsigned spritePriority(const Vdp2SpriteColorState& s,unsigned bank) {
     return (s.priority[(bank&7)/2]>>((bank&1)*8))&7;
 }

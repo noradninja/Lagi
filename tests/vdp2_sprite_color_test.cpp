@@ -19,5 +19,20 @@ int main() {
         assert(lagi::spriteRatioRgb555(a|(a<<5)|(a<<10),b|(b<<5)|(b<<10),r)==
             (0x8000|expected|(expected<<5)|(expected<<10)));
     }
-    puts("PASS VDP2 sprite register selection and exhaustive RGB555 ratio oracle; rendering not enabled");
+    for(unsigned code=0;code<0x8000;++code) {
+        const auto encoded=lagi::spriteType3Metadata(0xFF123456,code);
+        assert((encoded&0xFFFFFF)==0x123456);
+        const unsigned selectors=(encoded>>24)-129;
+        assert(selectors/8==((code>>13)&3));
+        assert(selectors%8==((code>>11)&3));
+        assert((encoded>>24)>=129&&(encoded>>24)<=156);
+    }
+    assert(lagi::spriteType3Metadata(0,0x6801)==0);
+    // Once-per-completed-VDP1 composition is observably different from
+    // applying a second-stage ratio after each overlapping primitive.
+    const auto once=lagi::spriteRatioRgb555(31,31<<10,16);
+    const auto twice=lagi::spriteRatioRgb555(31,
+        lagi::spriteRatioRgb555(31,31<<10,16),16);
+    assert(once!=twice);
+    puts("PASS VDP2 sprite selection, exhaustive RGB555 ratio and type-3 selector preservation; GPU appearance pending");
 }

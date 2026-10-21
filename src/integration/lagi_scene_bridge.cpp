@@ -196,6 +196,7 @@ void sync_presentation_state()
         if (regs) {
             lagi::Vdp2SpriteColorState sprite;
             sprite.ccctl=regs->mEC_CCCTL;
+            sprite.bgon=regs->m20_BGON; sprite.prir=regs->mFC_PRIR;
             sprite.spctl=regs->mE0_SPCTL;
             sprite.craofb=regs->mE6_CRAOFB;
             sprite.priority[0]=regs->mF0_PRISA; sprite.priority[1]=regs->mF2_PRISB;

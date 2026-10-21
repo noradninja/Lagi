@@ -1,0 +1,28 @@
+// Completed VDP1 image against the resolved RBG0/back screen, never per draw.
+float4 main(float2 uv:TEXCOORD0,uniform sampler2D layer:TEXUNIT0,
+    uniform sampler2D background:TEXUNIT1,uniform float4 control,
+    uniform float4 priorities,uniform float4 ratios,uniform float4 geometry,
+    uniform float4 backColor) {
+    float4 src=tex2D(layer,uv*geometry.xy);
+    float4 dst=tex2D(background,uv);
+    float backgroundPresent=(geometry.z>=0.5f && dst.a>=0.5f);
+    if(backgroundPresent<0.5f)dst=backColor;
+    float code=floor(src.a*255.0f+0.5f);
+    if(code<127.5f)return float4(dst.rgb,1);
+    float p=priorities.x,r=ratios.x,msb=1;
+    if(code>128.5f && code<254.5f) {
+        float selectors=code-129;
+        float pi=floor(selectors/8),ri=fmod(selectors,8);
+        p=pi<0.5f?priorities.x:pi<1.5f?priorities.y:pi<2.5f?priorities.z:priorities.w;
+        r=ri<0.5f?ratios.x:ri<1.5f?ratios.y:ri<2.5f?ratios.z:ratios.w;
+        msb=0;
+    }
+    if(p<0.5f)return float4(dst.rgb,1);
+    if(backgroundPresent>0.5f && geometry.w>p)
+        return float4(dst.rgb,1);
+    float selected=control.x<0.5f?(p<=control.y):control.x<1.5f?(p==control.y):control.x<2.5f?(p>=control.y):msb;
+    if(selected<0.5f)return float4(src.rgb,1);
+    float3 a=floor(src.rgb*31+0.5f),b=floor(dst.rgb*31+0.5f);
+    float3 color=control.z>0.5f?min(a+b,31):floor((a*(31-r)+b*(r+1))/32);
+    return float4(color/31,1);
+}

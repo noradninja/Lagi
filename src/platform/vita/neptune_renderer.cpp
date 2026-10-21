@@ -41,6 +41,9 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #ifndef LAGI_NEPTUNE_OPTIMIZED
 #define LAGI_NEPTUNE_OPTIMIZED 0
 #endif
+#ifndef LAGI_VDP2_SPRITE_COMPOSITE
+#define LAGI_VDP2_SPRITE_COMPOSITE 0
+#endif
 
 namespace lagi::platform::renderer {
 
@@ -56,6 +59,7 @@ extern const unsigned char _binary_lagi_textured_gouraud_subdiv_mesh_f_gxp_start
 extern const unsigned char _binary_lagi_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_cinepak_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
+extern const unsigned char _binary_lagi_sprite_composite_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_subdiv_v_gxp_start[];
@@ -210,7 +214,7 @@ static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_stochasticFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_stochasticGouraudFragmentProgram = nullptr;
 enum NativeBlendProgram { BlendTexture, BlendStochastic, BlendSubdiv,
-    BlendStochasticGouraud, BlendMesh, BlendMeshSubdiv, BlendLitHalf, BlendCount };
+    BlendStochasticGouraud, BlendMesh, BlendMeshSubdiv, BlendLitHalf, BlendSolid, BlendCount };
 static SceGxmFragmentProgram* g_nativeBlendPrograms[BlendCount]{};
 static const SceGxmProgramParameter* g_stochasticTextureSizeParam = nullptr;
 static const SceGxmProgramParameter* g_stochasticGouraudTextureSizeParam = nullptr;
@@ -1107,6 +1111,10 @@ static std::uint8_t g_vdp2Cram[kVdp2CramSnapshotBytes]{};
 static bool g_pendingVdp2TextValid = false;
 static lagi::MenuNbg2State g_pendingMenuNbg2{},g_menuNbg2{};
 static lagi::Vdp2SpriteColorState g_pendingSpriteColor{},g_spriteColor{};
+static std::uint32_t nativeSpriteMetadata(std::uint32_t rgba,unsigned code) {
+    return LAGI_VDP2_SPRITE_COMPOSITE ? lagi::spriteType3Metadata(rgba,code) : rgba;
+}
+static void releaseSpriteComposite();
 static bool g_vdp2TextValid = false;
 static unsigned int g_pendingVdp2MenuId = 0u;
 static unsigned int g_vdp2MenuId = 0u;
@@ -2531,6 +2539,7 @@ void shutdown()
     void* fadeIndexPtr = g_fadeIndices;
     freeSimpleMappedProbe(g_fadeIndexUid, fadeIndexPtr);
     g_fadeIndices = nullptr;
+    releaseSpriteComposite();
     freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
     freeSimpleMappedProbe(g_ditherOffsetsUid, g_ditherOffsetsPixels);
     g_sceneVdp2GpuRawInitialized = false;
@@ -4578,11 +4587,13 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                 }
 
                 std::uint16_t color = 0u;
+                unsigned spriteCode=0x8000u;
                 if (colorMode == 0u) {
                     const unsigned int paletteIndex =
-                        (static_cast<unsigned int>(command.cmdColr) & 0x07F0u) |
+                        (static_cast<unsigned int>(command.cmdColr) & 0xFFF0u) |
                         dot;
-                    const unsigned int cramByte = paletteIndex * 2u;
+                    spriteCode=paletteIndex;
+                    const unsigned int cramByte = (paletteIndex & 0x7FFu) * 2u;
                     if (cramByte + 1u >= sizeof(g_vdp2Cram))
                         continue;
                     color = readVdp2Be16(g_vdp2Cram, cramByte);
@@ -4607,6 +4618,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                     if (lutValue & 0x8000u) {
                         color = lutValue;
                     } else {
+                        spriteCode=lutValue;
                         const unsigned int cramByte =
                             (static_cast<unsigned int>(lutValue) & 0x07FFu) * 2u;
                         if (cramByte + 1u >= sizeof(g_vdp2Cram))
@@ -4614,8 +4626,10 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                         color = readVdp2Be16(g_vdp2Cram, cramByte);
                     }
                 }
-                if (color)
-                    decoded.rgba[pixel] = vdp2Rgb555ToAbgr(color);
+                if (color) {
+                    const auto rgba=vdp2Rgb555ToAbgr(color);
+                    decoded.rgba[pixel] = (spriteCode&0x8000u)?rgba:nativeSpriteMetadata(rgba,spriteCode);
+                }
             }
         }
 
@@ -4985,7 +4999,9 @@ static void drawPublishedVdp1Ui(
                     expand(c & 31u), expand((c >> 5) & 31u), expand((c >> 10) & 31u),
                     static_cast<std::uint8_t>(lagi::vdp1_half_transparent(command.cmdPmod) ? 128u : 255u)};
             sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
-            sceGxmSetFragmentProgram(g_probeContext, lagi::vdp1_half_transparent(command.cmdPmod) ? g_fadeFragmentProgram : g_probeFragmentProgram);
+            sceGxmSetFragmentProgram(g_probeContext, lagi::vdp1_half_transparent(command.cmdPmod)
+                ? (LAGI_VDP2_SPRITE_COMPOSITE ? g_nativeBlendPrograms[BlendSolid] : g_fadeFragmentProgram)
+                : g_probeFragmentProgram);
             const auto solidPolygonMode = commandType == 6u
                 ? SCE_GXM_POLYGON_MODE_LINE : SCE_GXM_POLYGON_MODE_TRIANGLE_FILL;
             sceGxmSetFrontPolygonMode(g_probeContext, solidPolygonMode);
@@ -6756,11 +6772,11 @@ static bool decodeLiveVdp1Texture(
         const unsigned block = (byte & 0x0fffu) / 32u;
         out.nativeCramDependencies[block / 32u] |= 1u << (block % 32u);
     };
-    auto cramColor = [&](unsigned index) -> std::uint32_t {
+    auto cramColor = [&](unsigned index,bool retainZero=false) -> std::uint32_t {
         const unsigned byte = (index * 2u) & 0x0FFFu;
         trackCramRead(byte);
         const std::uint16_t c = readVdp2Be16(g_vdp2Cram, byte);
-        return c ? vdp2Rgb555ToAbgr(c) : 0u;
+        return (c || retainZero) ? nativeSpriteMetadata(vdp2Rgb555ToAbgr(c),index) : 0u;
     };
 
     // A descriptor's palette/LUT is fixed throughout this decode. Resolve
@@ -6815,7 +6831,7 @@ static bool decodeLiveVdp1Texture(
     switch (mode) {
     case 0u: {
         const unsigned bank =
-            static_cast<unsigned>(record.cmdColr) & 0x07F0u;
+            static_cast<unsigned>(record.cmdColr) & 0xFFF0u;
         decodeDot4([&](unsigned dot) {
             return cramColor(bank | dot);
         }, true);
@@ -6840,7 +6856,7 @@ static bool decodeLiveVdp1Texture(
                     static_cast<unsigned>(lut[dot * 2u + 1u]));
             if (entry & 0x8000u)
                 return vdp2Rgb555ToAbgr(entry);
-            return entry ? cramColor(entry & 0x07FFu) : 0u;
+            return entry ? cramColor(entry) : 0u;
         }, lutAddress <= 0x80000u - 32u);
         return finishDecode();
     }
@@ -6849,7 +6865,7 @@ static bool decodeLiveVdp1Texture(
     case 3u:
     case 4u: {
         const unsigned mask = mode == 2u ? 0x3Fu : mode == 3u ? 0x7Fu : 0xFFu;
-        const unsigned bank = record.cmdColr & (0x7FFu & ~mask);
+        const unsigned bank = record.cmdColr & (0xFFFFu & ~mask);
         for (unsigned y = 0; y < height; ++y) {
             unsigned endCount = 0u;
             for (unsigned x = 0; x < width; ++x) {
@@ -6863,9 +6879,7 @@ static bool decodeLiveVdp1Texture(
                 const unsigned dot = rawDot & mask;
                 if (!dot && !spd) continue;
                 storePixel(p, cachedDotColor(dot, [&](unsigned value) {
-                    trackCramRead(((bank | value) * 2u) & 0xFFFu);
-                    return vdp2Rgb555ToAbgr(readVdp2Be16(
-                        g_vdp2Cram, ((bank | value) * 2u) & 0xFFFu));
+                    return cramColor(bank | value,true);
                 }));
             }
         }
@@ -10580,13 +10594,20 @@ void show_game_presentation()
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,samples,&fadeBlend,vertex,
             &g_nativeBlendPrograms[slot])>=0;
     };
+    // Native half-transparency produces a new RGB framebuffer pixel. Retain
+    // its reserved RGB selector instead of the overwritten destination's bank.
+    if (LAGI_VDP2_SPRITE_COMPOSITE) {
+        fadeBlend.alphaSrc = SCE_GXM_BLEND_FACTOR_ONE;
+        fadeBlend.alphaDst = SCE_GXM_BLEND_FACTOR_ZERO;
+    }
     if (!createNativeBlend(BlendTexture,g_textureFragmentProgramId,textureVertexGxp,kMultisampleMode) ||
         !createNativeBlend(BlendStochastic,g_stochasticFragmentProgramId,textureVertexGxp,SCE_GXM_MULTISAMPLE_NONE) ||
         !createNativeBlend(BlendSubdiv,g_texturedGouraudSubdivFragmentProgramId,gouraudSubdivVertexGxp,kMultisampleMode) ||
         !createNativeBlend(BlendStochasticGouraud,g_stochasticGouraudFragmentProgramId,gouraudSubdivVertexGxp,SCE_GXM_MULTISAMPLE_NONE) ||
         !createNativeBlend(BlendMesh,g_meshFragmentProgramId,textureVertexGxp,kMultisampleMode) ||
         !createNativeBlend(BlendMeshSubdiv,g_meshFragmentProgramId,gouraudSubdivVertexGxp,kMultisampleMode) ||
-        !createNativeBlend(BlendLitHalf,g_texturedLitHalfFragmentProgramId,gouraudPayloadVertexGxp,kMultisampleMode)) {
+        !createNativeBlend(BlendLitHalf,g_texturedLitHalfFragmentProgramId,gouraudPayloadVertexGxp,kMultisampleMode) ||
+        (LAGI_VDP2_SPRITE_COMPOSITE && !createNativeBlend(BlendSolid,g_probeFragmentProgramId,vertexProgram,kMultisampleMode))) {
         failure("[FAIL] NATIVE VDP1 BLEND PROGRAMS"); return;
     }
     const SceGxmProgram* meshGxp[2]={
@@ -13093,6 +13114,8 @@ static void drawSceneVdp2Background()
     }
 }
 
+#include "neptune_sprite_composite.inc"
+
 static bool renderMovieFrame()
 {
     const std::uint64_t frameStartUs =
@@ -13601,6 +13624,8 @@ static void renderBasicWingViewer()
     }
 
     const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
+    const bool spriteComposite=prepareSpriteComposite(nativeSceneMode &&
+        (roomAuthenticLitMode || roomAuthenticTexturedMode),nativeMenuFrame);
     if (!clearNativeSceneColorBuffer(colorBuffer, viewerRenderWidth(), viewerRenderHeight(), gxmPitch))
         return;
     // GXM initializes tile-local depth/stencil from these background values.
@@ -13617,8 +13642,8 @@ static void renderBasicWingViewer()
     g_overlayVertexSlot = 0;
     const int beginSceneResult = sceGxmBeginScene(
             g_probeContext, 0, renderTarget,
-            nullptr, nullptr, syncObject,
-            colorSurface, depthSurface);
+            nullptr, nullptr, spriteComposite ? nullptr : syncObject,
+            spriteComposite ? &g_spriteLayerSurface : colorSurface, depthSurface);
     g_profileBeginSceneUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - beginSceneStartUs);
     if (beginSceneResult < 0)
@@ -13626,7 +13651,7 @@ static void renderBasicWingViewer()
 
     unsigned int vdp1UiSpriteSlot = 0u;
     if (nativeSceneMode) {
-        drawSceneVdp2Background();
+        if (!spriteComposite) drawSceneVdp2Background();
         // Azel's far-plane VDP1 sprites (for example the flight horizon
         // strip) sit above RBG0 but behind world geometry. Foreground VDP1
         // commands remain in the normal late composition pass below.
@@ -13743,6 +13768,12 @@ static void renderBasicWingViewer()
             // Share slots so later overlay draws cannot overwrite queued data.
             drawPublishedVdp1Ui(
                 Vdp1UiPass::WorldEffects, &vdp1UiSpriteSlot);
+            if (spriteComposite && !finishSpriteComposite(renderTarget,colorSurface,syncObject)) {
+                logging::writef("[VDP2SpriteComposite] FAIL finishing world layer\n");
+                sceGxmEndScene(g_probeContext,nullptr,nullptr);
+                sceGxmFinish(g_probeContext);
+                return;
+            }
             drawAzelVdp2Nbg1Gpu();
             drawAzelVdp2CinematicBarsGpu();
             drawAzelVdp2TextLayerGpu();
@@ -15433,7 +15464,7 @@ void presentation_set_sprite_color_state(const lagi::Vdp2SpriteColorState& state
     if (budget && (state.ccctl!=previous.ccctl || state.spctl!=previous.spctl ||
         state.ratio[0]!=previous.ratio[0] || state.priority[0]!=previous.priority[0])) {
         --budget;
-        logging::writef("[VDP2SpriteColor] CCCTL=%04X SPCTL=%04X PRISA=%04X CCRSA=%04X CCRSB=%04X window=%02X composite=pending\n",
+        logging::writef("[VDP2SpriteColor] CCCTL=%04X SPCTL=%04X PRISA=%04X CCRSA=%04X CCRSB=%04X window=%02X selectors=captured\n",
             state.ccctl,state.spctl,state.priority[0],state.ratio[0],state.ratio[1],state.colorWindow);
         previous=state;
     }
