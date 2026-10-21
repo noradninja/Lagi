@@ -230,3 +230,29 @@ compare any decoded-page implementation with that source, not merely the
 current float packed-sampler's fractional-lane behavior. Existing generation
 tracking must distinguish source-page/character/palette dependencies from
 changing coefficient blocks. This pipeline is not implemented or accepted yet.
+
+### Decoded-page resource component (not yet connected to rendering)
+
+`include/lagi/rbg_decoded_page.h` implements a native 512x512 source page for
+16x16, 8-bit, one-word flip-enabled pattern names. It retains SCN character
+extension, four flip modes, CAOS/palette wrapping and transparent-dot behavior.
+It outputs normalized RGB555 in RGBA8, matching the current RBG resolve's
+color representation rather than changing the five-bit color content.
+
+Cache validity records exact dependencies at the renderer's existing 4 KiB
+generation granularity: pattern-name page, referenced character spans, CRAM.
+An unrelated coefficient-block change is a hit; referenced writes rebuild.
+Invalid/unsupported addressing returns Unsupported and never marks a partial
+decode ready. Allocation and GPU scene policy remain outside the component.
+This implementation conservatively invalidates on any CRAM block change;
+fine palette-bank invalidation remains future work if animated palettes make
+that necessary. Caller must verify the fixed supported CHCTLB format.
+
+`tests/rbg_decoded_page_test.ps1` extracts the actual upstream
+`sampleTileAtCoordinate` into a generated scratch fixture (no upstream edits
+or committed duplicate). Pixel comparisons cover 64 SCN/CAOS configurations,
+all page pixels, authored-pattern flip/palette combinations and transparency;
+five-bit colors match after RGBA channel-order/normalization conversion.
+Separate checks exercise opaque zero, dependency hits/rebuilds and safe
+unsupported-state caching. Host tests pass. No device rendering or performance
+change is claimed until the GPU route is integrated and tested on hardware.
