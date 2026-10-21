@@ -1,7 +1,7 @@
 #include <cassert>
 #include <cstdio>
 #include <initializer_list>
-enum class Vdp1UiPass {All,Background,WorldEffects,Foreground};
+enum class Vdp1UiPass {All,Background,WorldEffects,Foreground,FrontendProjected,FrontendOverlay};
 #include "pickup_pass_production.inc"
 int main(){
  for(bool background:{false,true}) for(bool world:{false,true}) {

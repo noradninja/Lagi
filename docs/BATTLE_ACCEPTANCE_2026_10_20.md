@@ -752,3 +752,14 @@ the native action origin at 00210830, rather than committing a replacement
 sprite table. The underline/grid callers retain their distinct indices.
 Production-reader tests cover all four records and signed offsets; the Vita
 battle build links/packages. Appearance remains pending device verification.
+
+## Frontend choice-window backing
+
+The native drawBlueBox path writes 16x16 NBG1 cells at 0x5800. Native scene
+composition already draws these resource-backed tiles, but the D5/movie
+frontend drew only NBG3 glyphs. D5 now retains the full BGON snapshot and
+calls the existing NBG1 atlas renderer only while that native plane is enabled,
+before text/cursors. No window is synthesized from text bounds. Layer source
+contracts and the production gameplay pass-partition fixture pass; the Vita
+build links/packages. The latter fixture now recognizes the frontend pass
+enumerators added with native particles. Hardware appearance remains pending.

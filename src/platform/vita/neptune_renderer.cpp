@@ -936,6 +936,7 @@ static float g_movieVdp2Info[4] = {};
 static unsigned int g_movieVdp2Tvmd = 0u;
 struct RbgGpuState {
     bool enabled=true;
+    unsigned layerEnable=0;
     float parameterFormat[2]{};
     float planesA[16]{}, planesB[16]{}, ctrl[16]{}, plsz = 0.0f;
     float format[4]{}, transformA[8]{}, transformB[8]{};
@@ -3599,6 +3600,7 @@ static RbgGpuState makeRbgGpuState(const FrontendRbg0State& state)
 {
     RbgGpuState rbg{};
     rbg.enabled=(state.bgon&0x10u)!=0;
+    rbg.layerEnable=state.bgon;
     for (unsigned int i = 0; i < 16u; ++i) {
         rbg.planesA[i] =
             static_cast<float>(state.planeA[i]);
@@ -13354,6 +13356,10 @@ static bool renderMovieFrame()
     if (submitted && !g_movieUsesVdp2Title)
         drawAzelVdp2CinematicBarsGpu();
 
+    // Native NBG1 contains the authored dialogue/choice window tiles. The
+    // glyph-only pass below cannot supply its backing or border graphics.
+    if (submitted && frontendRbg && (g_movieRbg0.layerEnable&2u))
+        drawAzelVdp2Nbg1Gpu();
     if (submitted)
         drawAzelVdp2TextLayerGpu(movieOutputWidth, movieOutputHeight);
 
