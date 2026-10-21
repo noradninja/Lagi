@@ -1,5 +1,25 @@
 # Latest battle acceptance and follow-up
 
+## 2026-10-21 cloud-line transport prerequisite
+
+Device accepts weak-point retirement and Edge's subtitle; preserve them. Cloud
+work is first priority, followed by remaining sand visual verification/fixes.
+
+E011's native NBG0 line table has 224 rows of X/Y/zoom words. Native E011
+06054EE6 reads 0xC0 at 06054F26 and calls MAIN 060324F0; that function stores
+R7 directly as the sixteen-byte DMA block count (06032510). The host helper
+instead divides a byte count by 16. Adapt the E011 call to 0xC00 bytes, retaining
+the native 0xC0-block transfer. Previously only 192 bytes (16 rows) were copied.
+Other helper callers retain their existing byte-count interface.
+
+E011 computes its table using host integers. A task-owned, aligned, zero-filled
+0xC00-byte shadow now serializes its 672 words in Saturn byte order at the DMA
+boundary. Math continues reading/writing the original native task buffer. The
+shadow remains alive for deferred transfers; no temporary pointer is queued.
+Host test covers all 224 rows, negative scroll, zoom, padding and unchanged
+source words. This is a data-transport prerequisite, not a claim that NBG0 cloud
+GPU composition is complete. No per-pixel CPU renderer is introduced.
+
 ## 2026-10-21 cinematic particle occlusion
 
 Projected sprites retain producer view-Z, but native_scene_depth_mode excluded

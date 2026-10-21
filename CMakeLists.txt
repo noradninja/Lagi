@@ -2316,6 +2316,23 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "    overlayScriptFunctions.m_zeroArg[0x6057724]"
    "    overlayScriptFunctions.m_zeroArg[0x60577BC] = {&scriptFunction_6057470, \"E014 close cutscene\"};\n    overlayScriptFunctions.m_zeroArg[0x6056C72] = {&scriptFunction_6056926, \"E014 restore main logic\"};\n    overlayScriptFunctions.m_zeroArg[0x6057724]" source_text "${source_text}")
  elseif(relative_path STREQUAL "town/e011/twn_e011.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # Native MAIN 060324F0 stores R7 as a 16-byte transfer count. The host
+  # helper accepts bytes instead. E011 supplies C0 blocks, not C0 bytes.
+  set(e011_line_setup "setupCinematicBarData(1, *(std::array<u32, 256>*)pThis->m40_heapPtr, 0x25E24000, 0xC0);")
+  string(FIND "${source_text}" "${e011_line_setup}" e011_line_found)
+  if(e011_line_found LESS 0)
+   message(FATAL_ERROR "Native E011 line-table transfer boundary changed")
+  endif()
+  string(REPLACE "${e011_line_setup}"
+   "setupCinematicBarData(1, *(std::array<u32, 256>*)pThis->m40_heapPtr, 0x25E24000, 0xC00); // LAGI_E011_LINE_BYTES"
+   source_text "${source_text}")
+  string(REPLACE "    u8 m80_debugEnabled;"
+   "    u8 m80_debugEnabled;\n    alignas(u32) std::array<u8, 0xC00> lagiLineDma{}; // Stable Saturn-order DMA shadow."
+   source_text "${source_text}")
+  string(REPLACE "drawCinematicBar(1);"
+   "lagi::serializeNativeLineTable(pThis->m40_heapPtr, pThis->lagiLineDma.data(), 224u*3u);\n        vdpVar1[1].m0_source[0] = reinterpret_cast<u32*>(pThis->lagiLineDma.data());\n        drawCinematicBar(1);"
+   source_text "${source_text}")
+  set(source_text "#include \"lagi/native_line_table.h\"\n${source_text}")
   set(source_text "extern \"C\" void lagiSetE011FatalStage(const char*);\n${source_text}")
   foreach(e011_stage_anchor IN ITEMS
     "    loadSoundBanks(-1, 0);"
