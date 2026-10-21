@@ -155,7 +155,10 @@ void checkA3Dispatch(){
             if(std::find(std::begin(formationFunctions),std::end(formationFunctions),address)==std::end(formationFunctions)){
                 std::fprintf(stderr,"sub=%d missing formation dispatch %08X\n",sub,address);throw std::runtime_error("Unimplemented authored A3 formation");
             }
-            readSaturnU32(formation+4);readSaturnU32(formation+8);++formations;formation+=0xC;
+            const auto argument=readSaturnU32(formation+4);
+            const auto mask=readSaturnU32(formation+8);
+            std::printf("[A3FormationAudit] sub=%d function=%08X argument=%u quadrantMask=%08X\n",sub,address,argument,mask);
+            ++formations;formation+=0xC;
         }
     }
     std::printf("PASS: native COMMON remapper reaches %zu A3 subbattles and %u formation records; all map/formation functions match native dispatch cases. Data coverage only, not callback execution.\n",subbattles.size(),formations);

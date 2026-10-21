@@ -80,6 +80,27 @@ routine exercised by the host fixture. This is an instruction/data audit,
 not a whole-system SH2 execution comparison. The existing encounter
 observer/evaluation-equivalence test also passes.
 
+Further original MAIN checks cover 0600CB3E..0600CB8A: load countdown,
+decrement once, signed positive test and delay-slot store; unsigned chance
+versus modulo-100 roll; failed-attempt increment/maximum compare; signed
+16-bit reset reload. RNG and modulo literals are 060361F4 and 06035550.
+Thus there is no extra wall-clock encounter timer to accelerate independently.
+The Vita task host calls Update once per unpaused task traversal; rendering
+slowdown can reduce checks per real second. Do not compensate by adding extra
+RNG calls or changing native reset values. A full native task-scheduler timing
+comparison is not claimed by these bounded checks.
+
+The disc-backed production COMMON remapper/BTL_A3 entry parser now reports
+all ten reachable A3 subbattle mappings. IDs 0/1/2 call Baldor formation;
+3 and 5 call Urchin configuration 3; 4 calls Urchin configuration 4;
+6/7 call Patergo configurations 6/7; 8/9 call Baldor Queen formation.
+Consequently the first tested row's 50/50 IDs 5/7 are Urchins/Patergo, and the
+later row's 10/90 IDs 2/4 are Baldor/mixed Urchins. The supplied run's absence
+of Patergo/Baldor is compatible with those weights, not evidence that their
+native dispatch is absent. No enemy appearance guarantee or rate tuning is
+introduced. Original instruction/data checks and reconstructed task/gate code
+are separate evidence; full scheduler parity remains outside these fixtures.
+
 ## First shared optimization
 
 Dynamic model append previously resized default-initialized polygon/light

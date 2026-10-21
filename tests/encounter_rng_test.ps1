@@ -28,6 +28,19 @@ try {
     @(0x60361F0,0x0604),@(0x60361F2,0xB02C),@(0x603621C,0x0604),@(0x603621E,0xB02C),
     @(0x6036220,0x2A6D),@(0x6036222,0x365B))){if((MainWord $pair[0]) -ne $pair[1]){throw 'Original RNG seed/literal contract differs'}}
  Write-Output 'PASS original MAIN seed initializer, complete RNG arithmetic/branch/store sequence and zero-low-word constant'
+ # Encounter update decrements the native count once, stores it in the delay
+ # slot, checks unsigned roll < chance, increments failed attempts, compares
+ # against the maximum, and reloads the signed 16-bit reset counter.
+ foreach($pair in @(@(0x600CB3E,0x52D4),@(0x600CB40,0x72FF),@(0x600CB42,0x4215),
+    @(0x600CB44,0x8D22),@(0x600CB46,0x1D24),@(0x600CB4C,0x68E0),
+    @(0x600CB54,0xE064),@(0x600CB56,0x3806),@(0x600CB58,0x8B07),
+    @(0x600CB6A,0x84DE),@(0x600CB6C,0x7001),@(0x600CB70,0x80DE),
+    @(0x600CB72,0x84DF),@(0x600CB74,0x3303),@(0x600CB76,0x8B07),
+    @(0x600CB88,0x85DB),@(0x600CB8A,0x1D04),@(0x600CBEC,0x0603),@(0x600CBEE,0x61F4),
+    @(0x600CBF0,0x0603),@(0x600CBF2,0x5550))){
+    if((MainWord $pair[0]) -ne $pair[1]){throw ('Original encounter counter/probability instruction differs at {0:X8}' -f $pair[0])}
+ }
+ Write-Output 'PASS original encounter countdown, unsigned probability, failure cap, reset and RNG/modulo call literals'
  function NativeByte([long]$ea){$o=$ea-0x200000;$stream.Position=(182+[long][math]::Floor($o/2048))*2352+16+($o%2048);$b=$stream.ReadByte();if($b -lt 0){throw 'Short COMMON read'};return $b}
  foreach($pair in @(@(0x208748,0),@(0x208749,150),@(0x20874A,120),@(0x20874B,20),
     @(0x207660,8),@(0x207680,8),@(0x207658,5),@(0x207659,50),@(0x20765A,7),@(0x20765B,50),
