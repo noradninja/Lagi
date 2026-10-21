@@ -1373,9 +1373,15 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
   if(NOT source_text MATCHES "sizeof\\(vdp2Ram\\) - 1u")
    message(FATAL_ERROR "VDP2 VRAM address adapter did not apply")
   endif()
+  # MAIN 06032320 clears only 000..10F: reinit retains the color-offset tail.
+  string(REPLACE "memset(pRegisters, 0, sizeof(s_VDP2Regs));"
+   "memset(pRegisters, 0, offsetof(s_VDP2Regs, m110_CLOFEN)); // LAGI_NATIVE_COLOR_TAIL"
+   source_text "${source_text}")
+  # Configuration 45 is a color ratio, despite the reconstructed COEN name.
+  # MAIN NBG1 case45 at 06033382 writes CCRNA's high byte, not CLOFEN.
   string(REPLACE
-   "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA = (vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA & 0xFFE0) | (arg << 0);\n            break;"
-   "        case m45_COEN:\n            vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN = (vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN & ~0x1) | (arg << 0);\n            break;"
+   "vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN = (vdp2Controls.m4_pendingVdp2Regs->m110_CLOFEN & ~0x2) | (arg << 1);"
+   "vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA = (vdp2Controls.m4_pendingVdp2Regs->m108_CCRNA & 0xE0FF) | (arg << 8); // LAGI_NATIVE_NBG1_RATIO"
    source_text "${source_text}")
 
   # Original setupNBG3 also accepts all seven high-byte WCTLB controls.
@@ -1426,33 +1432,12 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
    "void reinitVdp2()\n{\n    vdp2Controls.m0_doubleBufferIndex = 0;\n    vdp2Controls.m4_pendingVdp2Regs = &vdp2Controls.m20_registers[0];\n\n    resetVdp2RegsCopies();\n\n    const int fadeAR = g_fadeControls.m0_fade0.m0_color[0].getInteger();\n    const int fadeAG = g_fadeControls.m0_fade0.m0_color[1].getInteger();\n    const int fadeAB = g_fadeControls.m0_fade0.m0_color[2].getInteger();\n    const int fadeBR = g_fadeControls.m24_fade1.m0_color[0].getInteger();\n    const int fadeBG = g_fadeControls.m24_fade1.m0_color[1].getInteger();\n    const int fadeBB = g_fadeControls.m24_fade1.m0_color[2].getInteger();\n\n    for (int i = 0; i < 2; ++i) {\n        vdp2Controls.m20_registers[i].m114_COAR = fadeAR;\n        vdp2Controls.m20_registers[i].m116_COAG = fadeAG;\n        vdp2Controls.m20_registers[i].m118_COAB = fadeAB;\n        vdp2Controls.m20_registers[i].m11A_COBR = fadeBR;\n        vdp2Controls.m20_registers[i].m11C_COBG = fadeBG;\n        vdp2Controls.m20_registers[i].m11E_COBB = fadeBB;\n    }\n    vdp2Controls.m4_pendingVdp2Regs->m114_COAR = fadeAR;\n    vdp2Controls.m4_pendingVdp2Regs->m116_COAG = fadeAG;\n    vdp2Controls.m4_pendingVdp2Regs->m118_COAB = fadeAB;\n    vdp2Controls.m4_pendingVdp2Regs->m11A_COBR = fadeBR;\n    vdp2Controls.m4_pendingVdp2Regs->m11C_COBG = fadeBG;\n    vdp2Controls.m4_pendingVdp2Regs->m11E_COBB = fadeBB;\n    VDP2Regs_.m114_COAR = fadeAR;\n    VDP2Regs_.m116_COAG = fadeAG;\n    VDP2Regs_.m118_COAB = fadeAB;\n    VDP2Regs_.m11A_COBR = fadeBR;\n    VDP2Regs_.m11C_COBG = fadeBG;\n    VDP2Regs_.m11E_COBB = fadeBB;"
    source_text "${source_text}")
 
- # The title artwork is NBG0 and the title text is NBG1. Both participate in
- # the Saturn palette/color-offset fade, so make that intent explicit in the
- # reconstructed layer setup rather than faking a fullscreen renderer fade.
- elseif(relative_path STREQUAL "o_title.cpp")
-  string(REPLACE
-   "    m7_CNSM,  1,\n    m0_END, // Character Number Supplementary mode 1 (12bits)"
-   "    m7_CNSM,  1,\n    m45_COEN, 1,\n    m0_END, // Character Number Supplementary mode 1 (12bits)"
-   source_text "${source_text}")
-  string(REPLACE
-   "    m40_CAOS, 7, // palette offset is 7 * 0x200 = 0xE00 (where the palette for the text is stored)\n    m0_END,"
-   "    m40_CAOS, 7, // palette offset is 7 * 0x200 = 0xE00 (where the palette for the text is stored)\n    m45_COEN, 1,\n    m0_END,"
-   source_text "${source_text}")
-
  # The upstream Azel movie task/state machine remains authoritative. For the
  # Vita build copy only, remove the desktop Cinepak/SoLoud stream backend and
  # route those platform-facing calls through Lagi services. The filename table,
  # timing table, countdown, CPK sequencing, fades, skip logic, subtitle task,
  # and task completion all remain the original upstream code.
  elseif(relative_path STREQUAL "movie/movie.cpp")
-  # The movie video is Saturn NBG0 and fadePalette() drives VDP2 color offset
-  # A for that plane. Upstream's reconstructed config omitted COEN, leaving
-  # CLOFEN at zero and forcing the Vita renderer to guess at the fade.
-  string(REPLACE
-   "    {m37_W0A,             1},\n    {m0_END,              0},"
-   "    {m37_W0A,             1},\n    {m45_COEN,            1},\n    {m0_END,              0},"
-   source_text "${source_text}")
-
   # MOVIE1 is the attract/title movie (movie timing entry 0x20). The current
   # reconstruction targets +white (0xFFFF) on exit, but Saturn hardware
   # reference fades to black before the title appears. Correct only this
@@ -3011,9 +2996,14 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    "    popMatrix();\n    lagi::azel_bridge::end_view_relative_submission_scope();\n}\n\nvoid sEdgeTask::Delete"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "kernel/fade.cpp")
-  # Invert unpackColor() when a running fade becomes a new request's source.
-  # The original >>4 halves negative offsets (-128 becomes -64), making a
-  # black scene pop halfway visible before Azel's next fade has advanced.
+  # Restore MAIN's signed-nine-bit scale, source packing and step direction.
+  string(REPLACE "r4 *= 9;" "r4 *= 17;" source_text "${source_text}")
+  string(REPLACE "r4 *= 8;" "r4 *= 16;" source_text "${source_text}")
+  foreach(channel RANGE 0 2)
+   string(REPLACE "pFadeChannel->m0_color[${channel}] - pFadeChannel->m18_targetColor[${channel}].toFP32()"
+    "pFadeChannel->m18_targetColor[${channel}].toFP32() - pFadeChannel->m0_color[${channel}]"
+    source_text "${source_text}")
+  endforeach()
   string(REPLACE
    [=[    u32 color = ((inColor[0].toInteger() >> 4) + 0x10) << 10;
     color |= ((inColor[1].toInteger() >> 4) + 0x10) << 5;
@@ -3021,17 +3011,12 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
     color |= 0x8000;
     return color;]=]
    [=[    // LAGI_FADE_PACK_INVERSE
-    const auto pack = [](s32 value) -> u32 {
-        const s32 component = value < 0 ? value / 8 : value / 9;
-        return static_cast<u32>(std::clamp(component + 0x10, 0, 0x1f));
-    };
-    return 0x8000u | pack(inColor[0].toInteger()) |
-        (pack(inColor[1].toInteger()) << 5) |
-        (pack(inColor[2].toInteger()) << 10);]=]
+    return lagi::native_fade_pack(inColor[0].toInteger(),
+        inColor[1].toInteger(), inColor[2].toInteger());]=]
    source_text "${source_text}")
   string(REPLACE
    "#include \"fade.h\""
-   "#include \"fade.h\"\n#include <algorithm>"
+   "#include \"fade.h\"\n#include \"lagi/native_fade_color.h\""
    source_text "${source_text}")
   if(NOT source_text MATCHES "LAGI_FADE_PACK_INVERSE")
    message(FATAL_ERROR "Native fade source-color correction did not apply")

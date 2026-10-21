@@ -781,3 +781,23 @@ five-minute totals at all three cadences, fractional accumulation and clock
 reset/regression handling. Vita fullres linking/packaging passes. Verify a new
 save after at least one minute and reload it; previously lost play time cannot
 be recovered from a save containing zero. App-suspend behavior is not tested.
+# 2026-10-21 native fade correction
+
+The name-entry background/window tiles are device-confirmed correct. White
+transitions remain pending device verification with this change. Earlier COEN
+and half-scale interpretations are superseded: MAIN register reset preserves
+the color-offset tail beginning at 0x110; native NBG1 setup case 45 writes the
+CCRNA ratio high byte, not CLOFEN. Generated adapters now retain those semantics.
+Native fade endpoints use -256..255 (negative times 16, positive times 17),
+target-minus-current steps and arithmetic-shift RGB packing. Renderer offsets
+no longer double native values. The D5 single BACK color is composed underneath
+frontend layers and receives its own native color offset, including when RBG0
+is disabled. This does not implement per-line BACK color tables.
+
+Validation: exhaustive RGB555 round trips and signed component packing pass;
+full-resolution stochastic/dither Vita battle VPK builds successfully. Hardware
+white-out/white-in, title/movie fades and scene fades still require testing.
+No changes to water motion are included in this commit. The supplied field trace
+shows matched view/RBG changes without publication gaps in the first water
+window, but that alone does not establish visually smooth movement.
+

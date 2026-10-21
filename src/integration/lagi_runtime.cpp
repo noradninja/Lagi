@@ -692,6 +692,9 @@ void runtime_frame()
         // coefficient generation, windows and sequencing remain Azel-owned.
         const auto* regs = vdp2Controls.m4_pendingVdp2Regs;
         lagi::platform::renderer::FrontendRbg0State state{};
+        // D5 uses a single native back-screen color word. Its white-to-neutral
+        // transition must remain visible after BGON.RBG0 is disabled.
+        state.backColor=*reinterpret_cast<const u16*>(getVdp2Vram((regs->mAC_BKTA&0x7ffffu)*2u));
 
         // Derive page size from the active character/pattern format. Each rotation-map
         // plane uses the authored page size. Derive both parameter A and B

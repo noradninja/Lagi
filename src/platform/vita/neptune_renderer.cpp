@@ -937,6 +937,7 @@ static unsigned int g_movieVdp2Tvmd = 0u;
 struct RbgGpuState {
     bool enabled=true;
     unsigned layerEnable=0;
+    unsigned backColor=0;
     float parameterFormat[2]{};
     float planesA[16]{}, planesB[16]{}, ctrl[16]{}, plsz = 0.0f;
     float format[4]{}, transformA[8]{}, transformB[8]{};
@@ -3601,6 +3602,7 @@ static RbgGpuState makeRbgGpuState(const FrontendRbg0State& state)
     RbgGpuState rbg{};
     rbg.enabled=(state.bgon&0x10u)!=0;
     rbg.layerEnable=state.bgon;
+    rbg.backColor=state.backColor;
     for (unsigned int i = 0; i < 16u; ++i) {
         rbg.planesA[i] =
             static_cast<float>(state.planeA[i]);
@@ -12543,18 +12545,14 @@ static void drawAzelColorOffsetForLayer(
             : static_cast<int>(raw);
     };
 
-    // Azel's fade reconstruction expands Saturn's signed 5-bit color
-    // endpoints to approximately -128..+135 (see unpackColor(): negative
-    // values * 8, positive values * 9). Neptune blends in an 8-bit display
-    // domain, so expand that contribution once here. With the CLOFEN/CLOFSL
-    // layer mapping now corrected this reaches true black/white without
-    // incorrectly washing unrelated layers.
+    // Native fade endpoints already span signed-nine-bit -256..+255.
+    // Do not multiply them again in the display domain.
     const int displayRed =
-        std::clamp(hardwareSigned9(red) * 2, -255, 255);
+        std::clamp(hardwareSigned9(red), -255, 255);
     const int displayGreen =
-        std::clamp(hardwareSigned9(green) * 2, -255, 255);
+        std::clamp(hardwareSigned9(green), -255, 255);
     const int displayBlue =
-        std::clamp(hardwareSigned9(blue) * 2, -255, 255);
+        std::clamp(hardwareSigned9(blue), -255, 255);
 
     drawColorOffsetPass(
         g_colorOffsetAddFragmentProgram,
@@ -13257,6 +13255,13 @@ static bool renderMovieFrame()
         g_probeContext, SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
 
     void* uniformBuffer = nullptr;
+    if(frontendRbg) {
+        const unsigned c=g_movieRbg0.backColor;
+        drawColorOffsetPass(g_colorOffsetAddFragmentProgram,
+            (c&31)*255/31,((c>>5)&31)*255/31,((c>>10)&31)*255/31);
+        drawAzelColorOffsetForLayer(0x20u,true);
+        sceGxmSetVertexProgram(g_probeContext,g_textureVertexProgram);
+    }
     bool submitted = false;
     if (sceGxmReserveVertexDefaultUniformBuffer(
             g_probeContext, &uniformBuffer) >= 0 && uniformBuffer) {
@@ -13825,13 +13830,13 @@ static void renderBasicWingViewer()
     // composes it after world/UI; Azel alone advances the color and countdown.
     if (!nativeMenuFrame && roomAuthenticCameraMode) {
         drawColorOffsetPass(g_colorOffsetAddFragmentProgram,
-            std::clamp(g_sceneColorOffset[0] * 2, 0, 255),
-            std::clamp(g_sceneColorOffset[1] * 2, 0, 255),
-            std::clamp(g_sceneColorOffset[2] * 2, 0, 255));
+            std::clamp(g_sceneColorOffset[0], 0, 255),
+            std::clamp(g_sceneColorOffset[1], 0, 255),
+            std::clamp(g_sceneColorOffset[2], 0, 255));
         drawColorOffsetPass(g_colorOffsetSubtractFragmentProgram,
-            std::clamp(-g_sceneColorOffset[0] * 2, 0, 255),
-            std::clamp(-g_sceneColorOffset[1] * 2, 0, 255),
-            std::clamp(-g_sceneColorOffset[2] * 2, 0, 255));
+            std::clamp(-g_sceneColorOffset[0], 0, 255),
+            std::clamp(-g_sceneColorOffset[1], 0, 255),
+            std::clamp(-g_sceneColorOffset[2], 0, 255));
     }
     g_profileComposeUs = menuBackingUs + static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - composeStartUs);
