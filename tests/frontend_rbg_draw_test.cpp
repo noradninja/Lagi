@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <vector>
+#include "../include/lagi/rbg_window_spans.h"
 namespace azel {struct DebugTextureVertex {float x,y,z,u,v;};}
 namespace lagi {static bool rbgTile16EightBit(unsigned,unsigned){return false;}}
 namespace logging {template<class... T>static void writef(const char*,T...){} }
@@ -29,8 +30,8 @@ static int g_vdp2Rbg0CoefficientParam=0,g_vdp2Rbg0InfoParam=0;
 static int g_vdp2Rbg0FormatParam=0,g_vdp2Rbg0LayerWindowParam=0;
 static int g_vdp2Rbg0LayerWindowInfoParam=0,g_vdp2Rbg0SwitchCoefficientParam=0;
 static int g_vdp2Rbg0SwitchInfoParam=0;
-static azel::DebugTextureVertex coverage[224*3*4];
-static std::uint16_t coverageIndices[224*3*6];
+static azel::DebugTextureVertex coverage[lagi::RbgWindowMaxSpans*2*4];
+static std::uint16_t coverageIndices[lagi::RbgWindowMaxSpans*2*6];
 static azel::DebugTextureVertex* g_vdp2WindowVertices=coverage;
 static std::uint16_t* g_vdp2WindowIndices=coverageIndices;
 static void selectRbgTileProgram(bool,bool,bool){}
@@ -45,8 +46,11 @@ static const azel::DebugTextureVertex* stream=nullptr;
 struct Draw {std::vector<azel::DebugTextureVertex> quads;unsigned indices;};
 static std::vector<Draw> draws;
 static int sceGxmSetVertexStream(void*,int,const azel::DebugTextureVertex* v){stream=v;return 0;}
-static int sceGxmDraw(void*,int,int,const std::uint16_t*,unsigned n) {
-    draws.push_back({{stream,stream+n/6*4},n});return 0;
+static int sceGxmDraw(void*,int,int,const std::uint16_t* indices,unsigned n) {
+    Draw capture{{},n};
+    for(unsigned q=0;q<n/6;++q)for(unsigned v=0;v<4;++v)
+        capture.quads.push_back(stream[indices[q*6]+v]);
+    draws.push_back(std::move(capture));return 0;
 }
 // Actual production draw function extracted by the runner, not a replica.
 #include "frontend_rbg_draw.inc"
@@ -63,28 +67,29 @@ int main() {
     for(bool frontend:{true,false}) {
         draws.clear();
         assert(drawVdp2Rbg0Gpu(r,raw,quad,indices,1,frontend));
-        assert(draws.size()==2 && draws[0].indices==6 && draws[1].indices==112*6);
+        assert(draws.size()==2 && draws[0].indices==112*6 && draws[1].indices==112*6);
         for(unsigned y=0;y<112;++y) {
             auto& q=draws[1].quads;
             assert(q[y*4].u==0 && q[y*4+1].u==1);
             assert(std::abs(q[y*4].v-float(y)/224)<1e-6f);
             assert(std::abs(q[y*4+2].v-float(y+1)/224)<1e-6f);
+            assert(std::abs(draws[0].quads[y*4].v-float(y+112)/224)<1e-6f);
         }
     }
     // No coverage storage must fail before either draw, never fullscreen A.
     draws.clear();g_vdp2WindowVertices=nullptr;
     assert(!drawVdp2Rbg0Gpu(r,raw,quad,indices,1,true) && draws.empty());
     g_vdp2WindowVertices=coverage;
-    // Entirely disabled inside-window: B only.
+    // Entirely disabled inside-window: B only, selected geometry covers all rows.
     for(unsigned y=0;y<224;++y)put16(0x3c002+y*4,0xffff);
     draws.clear();assert(drawVdp2Rbg0Gpu(r,raw,quad,indices,1,true));
-    assert(draws.size()==1 && draws[0].indices==6);
-    // Disabled outside-window: adjacent spans cover every pixel, no overlap.
+    assert(draws.size()==1 && draws[0].indices==224*6);
+    // Disabled outside-window: A only, exactly one full span per row.
     r.ctrl[4]=8;draws.clear();assert(drawVdp2Rbg0Gpu(r,raw,quad,indices,1,true));
-    assert(draws.size()==2 && draws[1].indices==224*2*6);
+    assert(draws.size()==1 && draws[0].indices==224*6);
     for(unsigned y=0;y<224;++y) {
-        const auto& q=draws[1].quads;
-        assert(q[y*8].u==0 && q[y*8+1].u==q[y*8+4].u && q[y*8+5].u==1);
+        const auto& q=draws[0].quads;
+        assert(q[y*4].u==0 && q[y*4+1].u==1);
     }
-    std::puts("PASS actual frontend/native RBG draw: B base, exact 112-row A coverage, empty windows, missing-buffer failure");
+    std::puts("PASS actual frontend/native RBG draw: complementary A/B 112-row coverage, empty windows, missing-buffer failure");
 }

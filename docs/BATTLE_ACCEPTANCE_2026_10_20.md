@@ -420,3 +420,28 @@ Expected capture: `[RBG0PageCache] active=1 reason=0 ... frontend=1`, then
 stable `rebuilt=0`, `uploadBytes=0`, and `[VDP2Perf] ... layout=2`.
 Build the existing Vita cache with decoded pages ON and GPU timing OFF;
 leave LAGI_RBG_COEFFICIENT_ROWS OFF to isolate this name-entry test.
+
+## RPMD3 complementary coverage
+
+The next supplied cache-enabled device log confirms a one-page frontend
+cache: initial fill 23679 us, subsequent hits 20-21 us with zero upload bytes.
+Layout=2 frames have two plateaus: 33019-34298 us and 61337-65265 us. The
+remaining display-resolution keyboard decoder is a separate next target;
+these measurements do not include the changes below.
+
+RPMD3 now submits mutually exclusive A/B geometry, matching the upstream
+CPU renderer's parameter selection. Previously B shaded fullscreen before
+A overlaid its selected region. This also let transparent A pixels expose
+B, rather than the underlying lower layer. Source windows now partition
+the native raster into intervals once per row. Both parameters get immutable
+geometry ranges; no already-submitted vertices are overwritten. There is no
+scene-specific split: rectangular/line windows, area bits, AND/OR selection,
+disabled windows and wrapped line-table addresses remain live native state.
+
+For captured D5 coverage, the shader domain drops from 118272 to 78848
+native pixels (one third fewer invocations); this is not a measured time win.
+The host differential fixture checks 2944 window states and 232128512 pixel
+decisions against the prior general predicate, requiring complete exclusive
+A/B coverage. The actual production draw fixture verifies both 112-row
+parameter submissions. Marker: `[RBG0WindowCoverage] complementary=1`.
+Device visuals/timing are still required.

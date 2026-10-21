@@ -56,6 +56,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #define LAGI_RBG_COEFFICIENT_ROWS 0
 #endif
 #include "lagi/rbg_coefficient_rows.h"
+#include "lagi/rbg_window_spans.h"
 
 // Diagnostic samples drain at scene boundaries. These are CPU wall/wait
 // intervals, not GPU timestamp queries or normal overlapping frame timings.
@@ -3311,11 +3312,10 @@ bool movie_present_frame(
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_movieIndexUid));
 
-        // A Saturn line window can expose up to two horizontal spans on each
-        // of 224 scanlines (outside-window mode). Build that coverage as
-        // reusable textured geometry instead of branching/reading VRAM inside
-        // the RBG0 fragment shader.
-        constexpr unsigned int kWindowMaxQuads = 224u * 3u;
+        // Each of the two complementary parameters can expose up to three
+        // spans per row with two windows. Keep both geometry ranges immutable
+        // until their GPU submissions finish.
+        constexpr unsigned int kWindowMaxQuads = lagi::RbgWindowMaxSpans * 2u;
         g_vdp2WindowVertices = static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(
                 kWindowMaxQuads * 4u * sizeof(azel::DebugTextureVertex),
@@ -3703,10 +3703,10 @@ bool frontend_present_vdp2(
         // frontend must own this allocation too, not depend on a prior RGBA
         // movie having allocated it. Otherwise A silently covers B's pixels.
         g_vdp2WindowVertices = static_cast<azel::DebugTextureVertex*>(
-            probeGpuAlloc(224u * 3u * 4u * sizeof(azel::DebugTextureVertex),
+            probeGpuAlloc(lagi::RbgWindowMaxSpans * 2u * 4u * sizeof(azel::DebugTextureVertex),
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowVertexUid));
         g_vdp2WindowIndices = static_cast<std::uint16_t*>(
-            probeGpuAlloc(224u * 3u * 6u * sizeof(std::uint16_t),
+            probeGpuAlloc(lagi::RbgWindowMaxSpans * 2u * 6u * sizeof(std::uint16_t),
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowIndexUid));
         g_movieVertices = static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(
@@ -12655,11 +12655,6 @@ static bool drawVdp2Rbg0Gpu(
         static_cast<unsigned int>(rbg.ctrl[1]);
     const unsigned int ktaof =
         static_cast<unsigned int>(rbg.ctrl[2]);
-    const unsigned int wctld =
-        static_cast<unsigned int>(rbg.ctrl[4]);
-    const unsigned int lineWindowMask =
-        static_cast<unsigned int>(rbg.ctrl[7]);
-
     auto submitRbgParameter =
         [&](const float* planes,
             const float* transform,
@@ -12776,234 +12771,63 @@ static bool drawVdp2Rbg0Gpu(
             indexCount) >= 0;
     };
 
-    if (rpmd == 1u || rpmd == 3u) {
-        // Parameter B is the base for RPMD=3.
-        rbgSubmitted = submitRbgParameter(
-            rbg.planesB,
-            rbg.transformB,
-            rbg.coefficientB,
-            0x100u, 0x200u, 8u,
-            vertices, indices, 6u);
-    }
-
     unsigned int parameterAIndexCount = 6u;
-    const azel::DebugTextureVertex* parameterAVertices =
-        vertices;
-    const std::uint16_t* parameterAIndices =
-        indices;
+    const azel::DebugTextureVertex* parameterAVertices = vertices;
+    const std::uint16_t* parameterAIndices = indices;
+    unsigned int parameterBIndexCount = 6u;
+    const azel::DebugTextureVertex* parameterBVertices = vertices;
+    const std::uint16_t* parameterBIndices = indices;
 
-    if (rbgSubmitted && rpmd == 3u &&
-        g_vdp2WindowVertices && g_vdp2WindowIndices) {
-        unsigned int lineAddress = 0u;
-        bool drawInside = true;
-        int yStart = 0;
-        int yEnd = 223;
-        bool haveSingleLineWindow = false;
-
-        if ((wctld & 0x8u) != 0u &&
-            (lineWindowMask & 0x2u) != 0u) {
-            lineAddress =
-                static_cast<unsigned int>(rbg.ctrl[6]);
-            drawInside = (wctld & 0x4u) != 0u;
-            yStart = static_cast<int>(rbg.ctrl[13]);
-            yEnd = static_cast<int>(rbg.ctrl[15]);
-            haveSingleLineWindow = true;
-        } else if ((wctld & 0x2u) != 0u &&
-                   (lineWindowMask & 0x1u) != 0u) {
-            lineAddress =
-                static_cast<unsigned int>(rbg.ctrl[5]);
-            drawInside = (wctld & 0x1u) != 0u;
-            yStart = static_cast<int>(rbg.ctrl[9]);
-            yEnd = static_cast<int>(rbg.ctrl[11]);
-            haveSingleLineWindow = true;
-        }
-
-        if (haveSingleLineWindow || !frontend) {
-            const auto* rawBytes =
-                static_cast<const unsigned char*>(
-                    rawTextureData);
-
-            // Hardware bring-up diagnostic: D5 currently uses
-            // RPMD=3 with line window 1. Preserve the last
-            // hardware-good B-base/A-overlay compositor while we
-            // inspect the authored line-window coverage before
-            // changing parameter ownership semantics.
-            static bool loggedD5RpWindow = false;
-            if (frontend && !loggedD5RpWindow) {
-                logging::writef(
-                    "[NeptuneVDP2] RPMD3 window WCTLD=%04X "
-                    "mask=%u addr=%05X y=%d..%d inside=%u\n",
-                    wctld, lineWindowMask, lineAddress,
-                    yStart, yEnd, drawInside ? 1u : 0u);
-                const int sampleY[] = {
-                    0, 32, 64, 96, 112, 128, 160, 192, 223
-                };
-                for (unsigned int si = 0;
-                     si < sizeof(sampleY) / sizeof(sampleY[0]);
-                     ++si) {
-                    const int sy = sampleY[si];
-                    const unsigned int addr =
-                        (lineAddress +
-                         static_cast<unsigned int>(sy) * 4u) &
-                        0x7FFFFu;
-                    const unsigned int xsRaw =
-                        static_cast<unsigned int>(rawBytes[addr]) |
-                        (static_cast<unsigned int>(
-                            rawBytes[(addr + 1u) & 0x7FFFFu]) << 8);
-                    const unsigned int xeRaw =
-                        static_cast<unsigned int>(
-                            rawBytes[(addr + 2u) & 0x7FFFFu]) |
-                        (static_cast<unsigned int>(
-                            rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
-                    logging::writef(
-                        "[NeptuneVDP2] LW1 y=%d raw=%04X..%04X "
-                        "x=%u..%u\n",
-                        sy, xsRaw, xeRaw,
-                        (xsRaw >> 1) & 0x1FFu,
-                        (xeRaw >> 1) & 0x1FFu);
+    if (rpmd == 3u) {
+        unsigned counts[2]{};
+        bool overflow = false;
+        const bool covered = lagi::emitRbgWindowSpans(rbg.ctrl,
+            static_cast<const unsigned char*>(rawTextureData),
+            [&](unsigned parameter, int y, int x0, int x1) {
+                if (counts[parameter] >= lagi::RbgWindowMaxSpans) {
+                    overflow = true;
+                    return;
                 }
-                loggedD5RpWindow = true;
-            }
-
-
-
-            unsigned int quadCount = 0u;
-            auto emitSpan =
-                [&](int y, int x0, int x1) {
-                if (quadCount >= 224u * 3u)
-                    return;
-                x0 = std::max(x0, 0);
-                x1 = std::min(x1, 351);
-                if (x1 < x0)
-                    return;
-
-                const float u0 =
-                    static_cast<float>(x0) / 352.0f;
-                const float u1 =
-                    static_cast<float>(x1 + 1) / 352.0f;
-                const float v0 =
-                    static_cast<float>(y) / 224.0f;
-                const float v1 =
-                    static_cast<float>(y + 1) / 224.0f;
-                const float px0 =
-                    -xExtent + 2.0f * xExtent * u0;
-                const float px1 =
-                    -xExtent + 2.0f * xExtent * u1;
+                // Separate A/B ranges remain immutable until both GPU draws
+                // finish. No rewriting geometry already submitted for B.
+                const unsigned quad = parameter * lagi::RbgWindowMaxSpans + counts[parameter]++;
+                const unsigned base = quad * 4u;
+                const float u0 = static_cast<float>(x0) / 352.0f;
+                const float u1 = static_cast<float>(x1 + 1) / 352.0f;
+                const float v0 = static_cast<float>(y) / 224.0f;
+                const float v1 = static_cast<float>(y + 1) / 224.0f;
+                const float px0 = -xExtent + 2.0f * xExtent * u0;
+                const float px1 = -xExtent + 2.0f * xExtent * u1;
                 const float py0 = 1.0f - 2.0f * v0;
                 const float py1 = 1.0f - 2.0f * v1;
-
-                const unsigned int base = quadCount * 4u;
-                g_vdp2WindowVertices[base + 0u] =
-                    {px0, py0, 0.5f, u0, v0};
-                g_vdp2WindowVertices[base + 1u] =
-                    {px1, py0, 0.5f, u1, v0};
-                g_vdp2WindowVertices[base + 2u] =
-                    {px0, py1, 0.5f, u0, v1};
-                g_vdp2WindowVertices[base + 3u] =
-                    {px1, py1, 0.5f, u1, v1};
-
-                const unsigned int ii = quadCount * 6u;
-                g_vdp2WindowIndices[ii + 0u] =
-                    static_cast<std::uint16_t>(base + 0u);
-                g_vdp2WindowIndices[ii + 1u] =
-                    static_cast<std::uint16_t>(base + 1u);
-                g_vdp2WindowIndices[ii + 2u] =
-                    static_cast<std::uint16_t>(base + 2u);
-                g_vdp2WindowIndices[ii + 3u] =
-                    static_cast<std::uint16_t>(base + 2u);
-                g_vdp2WindowIndices[ii + 4u] =
-                    static_cast<std::uint16_t>(base + 1u);
-                g_vdp2WindowIndices[ii + 5u] =
-                    static_cast<std::uint16_t>(base + 3u);
-                ++quadCount;
-            };
-
-            if (!frontend) {
-                // Window coverage is geometry; GXM still performs every pixel's
-                // rotation, coefficient lookup, tile decode and palette fetch.
-                const auto accepted = [&](unsigned w, int x, int y) {
-                    const unsigned enable = w ? 8u : 2u;
-                    if (!(wctld & enable)) return 3;
-                    const unsigned base = 8u + w * 4u;
-                    int xs = static_cast<int>(rbg.ctrl[base]);
-                    int xe = static_cast<int>(rbg.ctrl[base + 2u]);
-                    if (lineWindowMask & (1u << w)) {
-                        const unsigned address =
-                            (static_cast<unsigned>(rbg.ctrl[5u + w]) + y * 4u) & 0x7FFFFu;
-                        const unsigned start = rawBytes[address] |
-                            (rawBytes[(address + 1u) & 0x7FFFFu] << 8);
-                        const unsigned end = rawBytes[(address + 2u) & 0x7FFFFu] |
-                            (rawBytes[(address + 3u) & 0x7FFFFu] << 8);
-                        xs = (start >> 1) & 0x1FFu;
-                        xe = (end >> 1) & 0x1FFu;
-                        if (end == 0xFFFFu) { xs = 1; xe = 0; }
-                    }
-                    const bool inside = x >= xs && x <= xe &&
-                        y >= static_cast<int>(rbg.ctrl[base + 1u]) &&
-                        y <= static_cast<int>(rbg.ctrl[base + 3u]);
-                    return inside == ((wctld & (w ? 4u : 1u)) != 0) ? 1 : 0;
-                };
-                for (int y = 0; y < 224; ++y) {
-                    int span = -1;
-                    for (int x = 0; x <= 352; ++x) {
-                        bool draw = false;
-                        if (x < 352) {
-                            const int a = accepted(0, x, y), b = accepted(1, x, y);
-                            draw = (a & 2) ? (b & 1) : (b & 2) ? (a & 1) :
-                                (wctld & 0x80u) ? (a || b) : (a && b);
-                        }
-                        if (draw && span < 0) span = x;
-                        if (!draw && span >= 0) { emitSpan(y, span, x - 1); span = -1; }
-                    }
+                g_vdp2WindowVertices[base + 0] = {px0,py0,0.5f,u0,v0};
+                g_vdp2WindowVertices[base + 1] = {px1,py0,0.5f,u1,v0};
+                g_vdp2WindowVertices[base + 2] = {px0,py1,0.5f,u0,v1};
+                g_vdp2WindowVertices[base + 3] = {px1,py1,0.5f,u1,v1};
+                const unsigned ii = quad * 6u;
+                for (unsigned i = 0; i < 6; ++i) {
+                    constexpr unsigned order[6] = {0,1,2,2,1,3};
+                    g_vdp2WindowIndices[ii + i] = static_cast<std::uint16_t>(base + order[i]);
                 }
-            } else {
-            for (int y = 0; y < 224; ++y) {
-                const unsigned int addr =
-                    (lineAddress +
-                     static_cast<unsigned int>(y) * 4u) &
-                    0x7FFFFu;
-                const unsigned int xsRaw =
-                    static_cast<unsigned int>(rawBytes[addr]) |
-                    (static_cast<unsigned int>(
-                        rawBytes[(addr + 1u) & 0x7FFFFu]) << 8);
-                const unsigned int xeRaw =
-                    static_cast<unsigned int>(
-                        rawBytes[(addr + 2u) & 0x7FFFFu]) |
-                    (static_cast<unsigned int>(
-                        rawBytes[(addr + 3u) & 0x7FFFFu]) << 8);
-
-                int xs = 1;
-                int xe = 0;
-                if (xeRaw != 0xFFFFu) {
-                    xs = static_cast<int>((xsRaw >> 1) & 0x1FFu);
-                    xe = static_cast<int>((xeRaw >> 1) & 0x1FFu);
-                }
-
-                const bool yInside =
-                    y >= yStart && y <= yEnd;
-                if (drawInside) {
-                    if (yInside)
-                        emitSpan(y, xs, xe);
-                } else {
-                    if (!yInside) {
-                        emitSpan(y, 0, 351);
-                    } else {
-                        emitSpan(y, 0, xs - 1);
-                        emitSpan(y, xe + 1, 351);
-                    }
-                }
-            }
-
-            }
-
-            if (quadCount) {
-                parameterAVertices = g_vdp2WindowVertices;
-                parameterAIndices = g_vdp2WindowIndices;
-                parameterAIndexCount = quadCount * 6u;
-            } else {
-                parameterAIndexCount = 0u;
-            }
+            });
+        if (!covered || overflow) return false;
+        parameterAVertices = parameterBVertices = g_vdp2WindowVertices;
+        parameterAIndices = g_vdp2WindowIndices;
+        parameterBIndices = g_vdp2WindowIndices + lagi::RbgWindowMaxSpans * 6u;
+        parameterAIndexCount = counts[0] * 6u;
+        parameterBIndexCount = counts[1] * 6u;
+        static bool loggedCoverage = false;
+        if (frontend && !loggedCoverage) {
+            logging::writef("[RBG0WindowCoverage] complementary=1 aSpans=%u bSpans=%u nativePixels=78848\n",
+                counts[0],counts[1]);
+            loggedCoverage = true;
         }
+    }
+    if ((rpmd == 1u || rpmd == 3u) && parameterBIndexCount) {
+        rbgSubmitted = submitRbgParameter(
+            rbg.planesB, rbg.transformB, rbg.coefficientB,
+            0x100u, 0x200u, 8u,
+            parameterBVertices, parameterBIndices, parameterBIndexCount);
     }
 
     if (rbgSubmitted && rpmd != 1u &&
@@ -13114,10 +12938,10 @@ static bool prepareSceneVdp2Background()
         void* oldIndices = g_vdp2WindowIndices;
         freeMovieMappedBlock(g_vdp2WindowIndexUid, oldIndices);
         g_vdp2WindowVertices = static_cast<azel::DebugTextureVertex*>(
-            probeGpuAlloc(224u * 3u * 4u * sizeof(azel::DebugTextureVertex),
+            probeGpuAlloc(lagi::RbgWindowMaxSpans * 2u * 4u * sizeof(azel::DebugTextureVertex),
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowVertexUid));
         g_vdp2WindowIndices = static_cast<std::uint16_t*>(
-            probeGpuAlloc(224u * 3u * 6u * sizeof(std::uint16_t),
+            probeGpuAlloc(lagi::RbgWindowMaxSpans * 2u * 6u * sizeof(std::uint16_t),
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowIndexUid));
         if (!g_vdp2WindowVertices || !g_vdp2WindowIndices) return false;
     }
