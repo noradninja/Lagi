@@ -4,6 +4,15 @@ float nbgBit(float v,float bit) { return fmod(floor(v/bit),2.0f); }
 float nbgWrap(float v,float size) { return v-floor(v/size)*size; }
 float nbgFixed(uniform sampler2D raw,float address) {
     address=nbgWrap(address,524288.0f);
+    // A native line longword fits exactly in one packed RGBA texel. Avoid
+    // repeated byte-lane selection and dependent reads for both halfwords.
+    if(fmod(address,4.0f)<0.5f) {
+        float4 bytes=rawTexel(raw,address*0.25f);
+        float hi=floor(bytes.x*255.0f+0.5f)*256.0f+floor(bytes.y*255.0f+0.5f);
+        if(hi>=32768.0f)hi-=65536.0f;
+        float lo=floor(bytes.z*255.0f+0.5f)*256.0f+floor(bytes.w*255.0f+0.5f);
+        return hi+lo/65536.0f;
+    }
     float hi=readBE16(raw,address);
     if(hi>=32768.0f)hi-=65536.0f;
     return hi+readBE16(raw,address+2.0f)/65536.0f;

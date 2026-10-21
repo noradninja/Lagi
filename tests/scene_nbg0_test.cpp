@@ -13,8 +13,10 @@ float2 operator/(float2 a,float b){return {a.x/b,a.y/b};}
 float2 floor(float2 a){return {std::floor(a.x),std::floor(a.y)};}
 float2 min(float2 a,float2 b){return {std::min(a.x,b.x),std::min(a.y,b.y)};}
 using sampler2D=const unsigned char*;
+static unsigned packedReads=0,halfReads=0;
+float4 rawTexel(sampler2D b,float i){++packedReads;unsigned a=unsigned(i)*4;return {b[a]/255.0f,b[a+1]/255.0f,b[a+2]/255.0f,b[a+3]/255.0f};}
 float readByte(sampler2D b,float a){assert(a>=0&&a<0x81000);return b[unsigned(a)];}
-float readBE16(sampler2D b,float a){return readByte(b,a)*256+readByte(b,a+1);}
+float readBE16(sampler2D b,float a){++halfReads;return readByte(b,a)*256+readByte(b,a+1);}
 float4 rgb555(float c){unsigned v=unsigned(c);return {float(v&31),float((v>>5)&31),float((v>>10)&31),1};}
 #define uniform
 #include "scene_shader.inc"
@@ -23,6 +25,21 @@ static std::array<unsigned char,0x81000> memory{};
 void word(unsigned a,unsigned v){memory[a]=v>>8;memory[a+1]=v;}
 void longword(unsigned a,unsigned v){word(a,v>>16);word(a+2,v);}
 int main(){
+    // Exercise the production aligned path and compare all signed high-word
+    // values against the old two-halfword formula, including fractional bits.
+    for(unsigned hi=0;hi<65536;++hi){
+        unsigned lo=(hi*40503u+17u)&65535u;
+        longword(0x24000,(hi<<16)|lo);
+        packedReads=halfReads=0;
+        float got=nbgFixed(memory.data(),0x24000);
+        float expected=float(hi>=32768?int(hi)-65536:int(hi))+lo/65536.0f;
+        assert(got==expected && packedReads==1 && halfReads==0);
+    }
+    longword(0x24002,0xfff88000);
+    assert(nbgFixed(memory.data(),0x24002)==-7.5f); // Unaligned fallback.
+    longword(0,0x00018000);
+    assert(nbgFixed(memory.data(),524288)==1.5f); // Wrapped aligned address.
+    memory.fill(0);
     assert(lagi::sceneNbg0Supported(1,0x8000,0x101,0));
     assert(lagi::sceneNbg0Supported(1,0x8000,0,0));
     assert(!lagi::sceneNbg0Supported(1,0x8000,1,0)); // Not a fake ratio-to-add substitute.
