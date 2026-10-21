@@ -314,6 +314,32 @@ No coefficients, rotation, palette, layout, or upstream Azel sources change.
 The source-contract regression test is `tests/frontend_rbg_window_test.ps1`;
 it is not proof of Vita pixels. A fresh name-entry screenshot is required to
 accept the reflection. Performance remains a separate unresolved issue.
+
+## Frontend RBG native-size resolve
+
+The raw VDP2 frontend now shares the native 352x224 GPU resolve target and
+pass implementation with gameplay. Its mapped vertex allocation contains a
+second fullscreen quad for that target; the existing 4:3 presentation quad
+is unchanged. Live frontend state, coefficients and window selection still
+run every frame, using the generic shader (no scene cache contamination).
+Only completed RGBA is scaled with the existing presentation filter.
+Raw VRAM/CRAM is rebound before NBG, and text/cursors remain separate. The
+RBG-only color offset runs in the resolve, not twice. Title, selector and
+Cinepak retain their own paths. No upstream Azel sources or game data change.
+
+`tests/frontend_rbg_resolve_test.ps1` checks source wiring, not GPU execution.
+Expected device marker: `[FrontendRbgResolve] native=352x224 ...`.
+Compare `[VDP2Perf] ... layout=2` against the 189248/185241 us frame/wait
+baseline. No speed or reflection acceptance is claimed without that capture.
+
+Validation: battle/cache-on and menu/cache-off Vita configurations both link
+and package successfully with FULLRES and the existing dithering enabled.
+`frontend_rbg_draw_test.ps1` extracts and executes the actual production draw
+routine against mocked GXM: captured D5 state submits B fullscreen, then A
+for exactly 112 rows; disabled inside windows submit B only; outside windows
+cover all pixels without overlap; missing coverage storage fails before draw.
+Program-switch and page-service executable regressions also pass. These tests
+prove CPU submission behavior, not the device reflection or timing target.
 Device pixel equivalence, warm/cold behavior and performance are still pending.
 Final fullres/dither Vita VPK builds pass for battle/compositor/cache/timing ON
 and battle/compositor/cache/timing OFF. The latter retains the generic frontend

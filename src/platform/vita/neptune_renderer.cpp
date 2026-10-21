@@ -3695,7 +3695,7 @@ bool frontend_present_vdp2(
                 SCE_GXM_MEMORY_ATTRIB_READ, &g_vdp2WindowIndexUid));
         g_movieVertices = static_cast<azel::DebugTextureVertex*>(
             probeGpuAlloc(
-                4u * sizeof(azel::DebugTextureVertex),
+                8u * sizeof(azel::DebugTextureVertex),
                 SCE_GXM_MEMORY_ATTRIB_READ,
                 &g_movieVertexUid));
         g_movieIndices = static_cast<std::uint16_t*>(
@@ -3737,6 +3737,12 @@ bool frontend_present_vdp2(
         g_movieVertices[1] = { xExtent,  yExtent, 0.5f, 1.0f, 0.0f};
         g_movieVertices[2] = {-xExtent, -yExtent, 0.5f, 0.0f, 1.0f};
         g_movieVertices[3] = { xExtent, -yExtent, 0.5f, 1.0f, 1.0f};
+        // A separate mapped quad fills the native RBG resolve target; the
+        // first quad retains the accepted 4:3 frontend presentation layout.
+        g_movieVertices[4] = {-1, 1, 0.5f, 0, 0};
+        g_movieVertices[5] = { 1, 1, 0.5f, 1, 0};
+        g_movieVertices[6] = {-1,-1, 0.5f, 0, 1};
+        g_movieVertices[7] = { 1,-1, 0.5f, 1, 1};
         const std::uint16_t indices[6] = {0, 1, 2, 2, 1, 3};
         std::memcpy(g_movieIndices, indices, sizeof(indices));
 
@@ -13102,11 +13108,11 @@ static bool prepareSceneVdp2Background()
     return true;
 }
 
-static bool renderSceneVdp2BackgroundPass()
+static bool renderSceneVdp2BackgroundPass(bool frontend = false)
 {
-    if (!g_sceneRbg0Enabled)
+    if (!frontend && !g_sceneRbg0Enabled)
         return true;
-    if (!g_sceneVdp2GpuRaw || !g_vdp2Rbg0Available ||
+    if (!(frontend ? g_movieTextureData : g_sceneVdp2GpuRaw) || !g_vdp2Rbg0Available ||
         !g_sceneRbg0RenderTarget || !g_sceneRbg0ColorBuffer)
         return false;
 
@@ -13145,10 +13151,12 @@ static bool renderSceneVdp2BackgroundPass()
         sceGxmSetUniformDataF(
             uniforms, g_textureWvpParam, 0, 16, identity.m);
         sceGxmSetFragmentTexture(
-            g_probeContext, 0, &g_sceneVdp2Texture);
+            g_probeContext, 0, frontend ? &g_movieTexture : &g_sceneVdp2Texture);
         submitted = drawVdp2Rbg0Gpu(
-            g_sceneRbg0, g_sceneVdp2Raw,
-            g_sceneVdp2Vertices, g_sceneVdp2Indices, 1.0f, false);
+            frontend ? g_movieRbg0 : g_sceneRbg0,
+            frontend ? g_movieTextureData : g_sceneVdp2Raw,
+            frontend ? g_movieVertices + 4 : g_sceneVdp2Vertices,
+            frontend ? g_movieIndices : g_sceneVdp2Indices, 1.0f, frontend);
     }
     sceGxmEndScene(g_probeContext, nullptr, nullptr);
     return submitted;
@@ -13266,6 +13274,17 @@ static bool renderMovieFrame()
     if (g_movieUsesCinepakPayload && !renderCinepakResolvePass())
         return true;
 
+    // RBG's native output domain is 352x224. Resolve each native pixel once,
+    // then scale ordinary RGBA; NBG/text/cursors remain separate live layers.
+    const bool frontendRbg = g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f;
+    if (frontendRbg && !renderSceneVdp2BackgroundPass(true))
+        return true;
+    static bool loggedFrontendRbgResolve = false;
+    if (frontendRbg && !loggedFrontendRbgResolve) {
+        logging::writef("[FrontendRbgResolve] native=352x224 liveRotation=1 liveWindows=1\n");
+        loggedFrontendRbgResolve = true;
+    }
+
     std::memset(
         colorBuffer,
         0,
@@ -13348,22 +13367,20 @@ static bool renderMovieFrame()
                 g_movieIndices,
                 6) >= 0;
         } else if (streamReady && g_movieUsesVdp2Title) {
-            // D5 still consumes live raw VDP2 state for RBG0/NBG0 composition.
+            // Only the expensive RBG lookup was resolved at native size.
             bool rbgSubmitted = true;
             if (g_movieVdp2Info[0] >= 0.5f && g_vdp2Rbg0Available &&
                 g_vdp2Rbg0FragmentProgram && g_vdp2Rbg0InfoParam) {
-                const float displayAspect =
-                    static_cast<float>(viewerRenderWidth()) /
-                    static_cast<float>(viewerRenderHeight());
-                rbgSubmitted = drawVdp2Rbg0Gpu(
-                    g_movieRbg0, g_movieTextureData,
-                    g_movieVertices, g_movieIndices,
-                    (4.0f / 3.0f) / displayAspect, true);
-                // NBG uses the normal fullscreen front-end quad.
-                sceGxmSetVertexStream(
-                    g_probeContext, 0, g_movieVertices);
+                sceGxmSetFragmentTexture(g_probeContext, 0, &g_sceneRbg0ResolvedTexture);
+                sceGxmSetFragmentProgram(g_probeContext, g_movieTextureFragmentProgram);
+                if (kStochastic) setStochastic(kSceneRbg0Width, kSceneRbg0Height);
+                rbgSubmitted = sceGxmDraw(g_probeContext,
+                    SCE_GXM_PRIMITIVE_TRIANGLES, SCE_GXM_INDEX_FORMAT_U16,
+                    g_movieIndices, 6u) >= 0;
             }
 
+            // NBG must sample raw VRAM/CRAM, not the resolved background.
+            sceGxmSetFragmentTexture(g_probeContext, 0, &g_movieTexture);
             sceGxmSetFragmentProgram(
                 g_probeContext, g_vdp2NbgFragmentProgram);
             void* nbgUniforms = nullptr;
