@@ -2378,6 +2378,15 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
     "    lagiSetE011FatalStage(\"${e011_stage_anchor}\");\n${e011_stage_anchor}"
     source_text "${source_text}")
   endforeach()
+  # Original E011 06054022 is MOV #0x43,R4 in the loadSoundBanks
+  # delay slot (target literal 060540E4 = 0602B400), not bank 0x44.
+  string(FIND "${source_text}" "    loadSoundBanks(68, 0);" e011_music_found)
+  if(e011_music_found LESS 0)
+   message(FATAL_ERROR "Native E011 music initialization boundary changed")
+  endif()
+  string(REPLACE "    loadSoundBanks(68, 0);"
+   "    loadSoundBanks(67, 0); // Native E011 06054022: E443"
+   source_text "${source_text}")
   set(e011_constructor "TWN_E011_data::TWN_E011_data() :")
   string(FIND "${source_text}" "${e011_constructor}" e011_constructor_found)
   if(e011_constructor_found LESS 0)
