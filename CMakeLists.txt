@@ -140,6 +140,7 @@ add_custom_command(OUTPUT "${LAGI_RBG_TILE_OBJ}"
  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f.gxp" VERBATIM)
 option(LAGI_VDP2_SPRITE_COMPOSITE "Experimental separate native VDP1/VDP2 composition" OFF)
+option(LAGI_GPU_PASS_TIMING "Sample serialized native GPU pass timing (diagnostic stalls)" OFF)
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_sprite_composite_f.gxp"
  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sprite_composite_f.cg" -Wperf -fastprecision -O3
@@ -4637,6 +4638,7 @@ target_include_directories(lagi PRIVATE include
 )
 target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDERER=1 USE_NULL_RENDERER=1 SHIPPING_BUILD=1 LAGI_FULLRES=$<BOOL:${LAGI_FULLRES}> LAGI_STOCHASTIC_FILTER=$<BOOL:${LAGI_STOCHASTIC_FILTER}> LAGI_DITHER_LOOKUP=$<BOOL:${LAGI_DITHER_LOOKUP}>)
 target_compile_definitions(lagi PRIVATE LAGI_VDP2_SPRITE_COMPOSITE=$<BOOL:${LAGI_VDP2_SPRITE_COMPOSITE}>)
+target_compile_definitions(lagi PRIVATE LAGI_GPU_PASS_TIMING=$<BOOL:${LAGI_GPU_PASS_TIMING}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without

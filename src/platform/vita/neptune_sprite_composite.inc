@@ -96,6 +96,12 @@ static bool prepareSpriteComposite(bool native,bool menu) {
 static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface* destination,
     SceGxmSyncObject* sync) {
     sceGxmEndScene(g_probeContext,nullptr,nullptr);
+    if(g_gpuPassSample) {
+        const auto start=sceKernelGetProcessTimeWide();
+        sceGxmFinish(g_probeContext);
+        g_gpuPassWorldWaitUs=static_cast<unsigned>(sceKernelGetProcessTimeWide()-start);
+        g_gpuPassFinalStartUs=sceKernelGetProcessTimeWide();
+    }
     if(sceGxmBeginScene(g_probeContext,0,target,nullptr,nullptr,sync,destination,nullptr)<0)return false;
     sceGxmSetVertexProgram(g_probeContext,g_textureVertexProgram);
     sceGxmSetFragmentProgram(g_probeContext,g_spriteCompositeProgram);

@@ -91,3 +91,37 @@ The exhaustive host fixture compares every alpha byte across all conditions,
 thresholds, background priorities and rotated bank priority/ratio values against
 the previous shader's independent decision oracle. Existing RGB555 ratio tests
 also pass. Expected new device marker: `register decision lookup ready`.
+
+## Follow-up: lookup did not recover 30 FPS
+
+User reports the same 20 FPS outside cinematics with 503ab29. The new log
+contains both specialization and lookup success markers; do not treat either
+as a measured optimization win. Sampled final GPU waits still reach 21-25 ms.
+The 55 compositor-active non-menu, non-rebuild samples average 33,452 us
+renderer time, 22,824 us final finish wait and 5,694 us game tasks. These are
+mixed-scene heartbeat samples, not a matched A/B comparison. Nevertheless
+they confirm the deadline is still missed and cannot establish a lookup win.
+
+Add opt-in `LAGI_GPU_PASS_TIMING=ON`, default OFF. Every 120 eligible native
+frames drain after the RBG resolve EndScene and after the world EndScene,
+before starting final composition. The existing final finish supplies the
+third wait. `[GpuPassTiming] serialized=1` reports CPU submission and remaining
+wait separately for RBG, world and final passes. These are wall intervals,
+not hardware timestamp queries; serialization changes overlap. Sample frames
+may hitch and must not be used as ordinary frame-rate acceptance samples.
+Any coincident ScenePerf heartbeat carries `gpuSerialized=1` for exclusion.
+Non-compositor samples have no separate world boundary and report that fact
+with `composite=0`; interpret three-pass attribution only for `composite=1`.
+The next device log can distinguish dominant pass cost without removing
+water/effects or guessing at another shader change.
+
+PowerShell (preserve the existing Vita toolchain/build cache):
+
+```powershell
+git pull --ff-only
+cmake -S . -B build-battle-vita -DLAGI_GPU_PASS_TIMING=ON
+cmake --build build-battle-vita -j 32
+```
+
+Turn the option OFF after diagnostic capture. The source-contract fixture
+checks default-OFF, sampling cadence and completed-scene barrier placement.

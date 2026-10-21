@@ -45,6 +45,15 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #ifndef LAGI_VDP2_SPRITE_COMPOSITE
 #define LAGI_VDP2_SPRITE_COMPOSITE 0
 #endif
+#ifndef LAGI_GPU_PASS_TIMING
+#define LAGI_GPU_PASS_TIMING 0
+#endif
+
+// Diagnostic samples drain at scene boundaries. These are CPU wall/wait
+// intervals, not GPU timestamp queries or normal overlapping frame timings.
+static bool g_gpuPassSample=false;
+static unsigned g_gpuPassWorldWaitUs=0;
+static std::uint64_t g_gpuPassFinalStartUs=0;
 
 namespace lagi::platform::renderer {
 
@@ -13613,6 +13622,12 @@ static void renderBasicWingViewer()
     SceGxmDepthStencilSurface* const depthSurface =
         g_halfResolution ? &g_probeDepthSurfaceHalf : &g_probeDepthSurface;
 
+    static unsigned gpuPassFrame=0;
+    g_gpuPassSample=LAGI_GPU_PASS_TIMING && nativeSceneMode && !nativeMenuFrame &&
+        (g_spriteColor.ccctl&0x40) && !(g_spriteColor.bgon&5) && (++gpuPassFrame%120u==0);
+    g_gpuPassWorldWaitUs=0;
+    g_gpuPassFinalStartUs=0;
+    unsigned gpuPassRbgWaitUs=0;
     if (nativeSceneMode) {
         const std::uint64_t rbgPrepStart = sceKernelGetProcessTimeWide();
         const bool prepared = prepareSceneVdp2Background();
@@ -13627,6 +13642,11 @@ static void renderBasicWingViewer()
             sceKernelGetProcessTimeWide() - rbgResolveStart);
         if (!resolved)
             return;
+        if(g_gpuPassSample) {
+            const auto start=sceKernelGetProcessTimeWide();
+            sceGxmFinish(g_probeContext);
+            gpuPassRbgWaitUs=static_cast<unsigned>(sceKernelGetProcessTimeWide()-start);
+        }
     }
 
     const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
@@ -13823,6 +13843,16 @@ static void renderBasicWingViewer()
     sceGxmFinish(g_probeContext);
     g_profileGxmFinishUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - finishStartUs);
+    if(g_gpuPassSample) {
+        const unsigned worldWall=g_gpuPassFinalStartUs?static_cast<unsigned>(
+            g_gpuPassFinalStartUs-beginSceneStartUs):0;
+        const unsigned finalSubmit=g_gpuPassFinalStartUs?static_cast<unsigned>(
+            finishStartUs-g_gpuPassFinalStartUs):0;
+        logging::writef("[GpuPassTiming] serialized=1 mode=%d composite=%u rbgSubmit=%u rbgWait=%u worldSubmit=%u worldWait=%u finalSubmit=%u finalWait=%u\n",
+            g_sceneGameMode,spriteComposite?1u:0u,g_profileRbgResolveUs,gpuPassRbgWaitUs,
+            worldWall>=g_gpuPassWorldWaitUs?worldWall-g_gpuPassWorldWaitUs:0,
+            g_gpuPassWorldWaitUs,finalSubmit,g_profileGxmFinishUs);
+    }
     if (preparedMaterial) {
         // Upload only an appended suffix after GPU completion. Never refresh
         // retained payloads or mutate descriptors used by an in-flight scene.
@@ -13925,7 +13955,7 @@ static void renderBasicWingViewer()
             "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1 tasks=%u uiOnly=%u slowSample=%u "
             "positionSync=%u positionSyncVerts=%u submissions=%u "
             "spriteDraws=%u spriteWorldTagged=%u spriteShaded=%u spriteBboxPixels=%llu "
-            "spriteCacheHits=%u spriteCacheMisses=%u spritePaletteRefresh=%u spriteSlotSkips=%u\n",
+            "spriteCacheHits=%u spriteCacheMisses=%u spritePaletteRefresh=%u spriteSlotSkips=%u gpuSerialized=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -13970,7 +14000,7 @@ static void renderBasicWingViewer()
             g_profileSprites.draws,g_profileSprites.worldTagged,g_profileSprites.shaded,
             static_cast<unsigned long long>(g_profileSprites.bboxPixels),
             g_profileSprites.cacheHits,g_profileSprites.cacheMisses,
-            g_profileSprites.paletteRefreshes,g_profileSprites.slotSkips);
+            g_profileSprites.paletteRefreshes,g_profileSprites.slotSkips,g_gpuPassSample?1u:0u);
     }
 
     if (g_showThreadTimingOsd) {
