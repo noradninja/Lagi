@@ -315,3 +315,16 @@ fallback paths available. The goal remains active until device measurements
 and visual acceptance prove the requested result; broader cache capacity,
 OVPNR optimization and efficient remaining VDP2 effect coverage are not yet
 complete.
+
+### Shader-transition fallback audit
+
+`tests/rbg_program_switch_test.cpp` executes the production shader-selector
+include against mocked GXM program/reflection calls. It checks all 22 active
+uniform pointers through generic -> byte -> cache -> generic -> cache -> byte
+switches, including frontend/unsupported selection. It also injects a missing
+cache uniform and fragment-program creation failure, proving restoration of
+generic bindings and cleanup of registered resources. Host fixture passes.
+This supplements actual compiled-resource reflection tests; it is not a GPU
+pixel/timing test and introduces no new device-rendering change after 8084b3c.
+The available Downloads log still has no cache-enabled marker. Hardware cache
+hit behavior, water correctness and the frame deadline remain unverified.
