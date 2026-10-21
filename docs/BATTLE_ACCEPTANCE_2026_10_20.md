@@ -739,3 +739,16 @@ fade and exit garbage require a fresh name-entry completion capture. This
 does not establish hardware acceptance or claim the whole fade pipeline is
 complete: D5's BACK-only color offset and final sprite transition still need
 on-device observation after restoring the missing sprites.
+
+## Native name-entry action selection
+
+The paired 09:03 Lagi/13:05 Saturn videos show a thin text underline used as
+the Back/Space/Enter selection. MAIN 060235E0-0602363C explicitly selects
+sprite record 3 there, whereas the reconstruction passed 0 and masked every
+index to one bit. MAIN 060231A8 reads the four 0x1C-byte records from COMMON
+00210768, including their leading animation bytes, texture, palette and signed
+geometry. The generated adapter now reads those live resource records and
+the native action origin at 00210830, rather than committing a replacement
+sprite table. The underline/grid callers retain their distinct indices.
+Production-reader tests cover all four records and signed offsets; the Vita
+battle build links/packages. Appearance remains pending device verification.
