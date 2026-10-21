@@ -3183,6 +3183,9 @@ void status(const char* text, unsigned int color)
 
 void failure(const char* text)
 {
+    // Startup may still be showing the loading scanout: never hide the only
+    // explanation for a failed native renderer behind the debug-screen toggle.
+    logging::writef("[RendererFailure] %s\n", text ? text : "unknown");
     // If GXM initialization fails, stop suppressing its status stream so the
     // failure remains visible and future diagnostics are not hidden.
     g_suppressGxmInitPassStatus = false;
@@ -14766,6 +14769,11 @@ static bool launcherPrepareGpu(const bool available[4])
         !g_textureFragmentProgram || !g_textureWvpParam ||
         !g_fadeFragmentProgram || !g_fadeVertices || !g_fadeIndices ||
         !g_sceneNbg0OverProgram || !g_vdp2InfoParam) {
+        logging::writef("[DiscSelectorGXM] backend unavailable ready=%u context=%u textureVP=%u textureFP=%u fadeFP=%u overFP=%u info=%u\n",
+            unsigned(g_viewerReady),unsigned(g_probeContext!=nullptr),
+            unsigned(g_textureVertexProgram!=nullptr),unsigned(g_textureFragmentProgram!=nullptr),
+            unsigned(g_fadeFragmentProgram!=nullptr),unsigned(g_sceneNbg0OverProgram!=nullptr),
+            unsigned(g_vdp2InfoParam!=nullptr));
         g_launcherGpuFailed = true;
         g_debugVisible = true;
         g_probeDisplayingGxm = false;
