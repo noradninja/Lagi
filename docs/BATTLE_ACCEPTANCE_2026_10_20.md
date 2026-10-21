@@ -256,3 +256,62 @@ five-bit colors match after RGBA channel-order/normalization conversion.
 Separate checks exercise opaque zero, dependency hits/rebuilds and safe
 unsupported-state caching. Host tests pass. No device rendering or performance
 change is claimed until the GPU route is integrated and tested on hardware.
+
+### Opt-in indexed-page GPU route
+
+`LAGI_RBG_DECODED_PAGES=ON` connects the resource cache to a separate RBG
+fragment program. Default remains OFF for a controlled device comparison.
+The live route stores source palette indices and transparent-dot coverage,
+not baked colors. CRAM contents and CAOS bank selection remain live on GPU;
+neither triggers a full resource-page rebuild. Rotation coefficients, A/B
+selection (RPMD), layer/parameter windows, native screen-over clipping and
+final sprite/RBG color calculation continue through the existing pipeline.
+
+The bounded first allocation is a 1024x1024 RGBA8 CDRAM atlas (4 MiB) holding
+four 512x512 pages and a 1 MiB CPU scratch page. Source page/pattern/character
+writes invalidate referenced slots using existing 4 KiB generation counters.
+Unrelated coefficient blocks do not. Allocation failures (including scratch),
+unsupported source addressing or more than four distinct required pages use
+the raw renderer for the whole frame. There is no dropped-page approximation.
+OVPNR screen-over mode 1 also falls back until its single-pattern resource is
+cached; modes 0/2/3 are supported. The captured flight uses RPMD=2, PLSZ=0000,
+mapA=60000/mapB=60800. No game-mode-specific layout or water position is used.
+
+All active A/B pages are validated before the route becomes ready. Required
+surviving slots are reserved before eviction. Native plane uniforms encode
+four two-bit cache slots only in the cache shader; generic/byte-view shaders
+retain physical VRAM addresses. Each shader reflects its own 22 uniforms and
+restores the generic bindings on fallback/frontend draws. Palette indices are
+decoded and colored from current CRAM after sampling the cached source image.
+
+Telemetry: `[RBG0PageCache] active=1 reason=0 pages=... rebuilt=... hits=...`
+reports preparation, uploads and cache behavior. Reasons 1/2/3/4/5 mean format,
+layout/capacity, allocation, source-address decode, OVPNR respectively.
+`[RBG0TileFormat] ... decodedPages=1 genericFallback=0` confirms the matching
+shader was created. A ready resource cache alone does not prove shader success.
+Rebuild/upload telemetry includes cold-cache cost; ordinary warm-frame deadline
+acceptance must still include preparation plus game tasks, not only GPU waits.
+
+Tests execute the production cache service with mock allocations/textures to
+exercise cache hits, live palette/bank changes, referenced character rebuilds,
+surviving-slot reservation, four-page encoding, capacity rejection, unsupported
+addresses, allocation failure and cleanup. Upstream pixel-oracle comparisons
+cover the indexed path with live CRAM reconstruction in addition to RGBA mode.
+All three actual compiled shaders pass uniform/sampler reflection checks.
+Device pixel equivalence, warm/cold behavior and performance are still pending.
+Final fullres/dither Vita VPK builds pass for battle/compositor/cache/timing ON
+and battle/compositor/cache/timing OFF. The latter retains the generic frontend
+and menu fallback compilation path. Neither build substitutes for device tests.
+
+```powershell
+git pull --ff-only
+cmake -S . -B build-battle-vita -DLAGI_RBG_DECODED_PAGES=ON -DLAGI_GPU_PASS_TIMING=ON
+cmake --build build-battle-vita -j 32
+```
+
+Capture a short flight after the initial cache fill, checking water geometry,
+palette animation, transparency and clipping. Keep the native scene/menu
+fallback paths available. The goal remains active until device measurements
+and visual acceptance prove the requested result; broader cache capacity,
+OVPNR optimization and efficient remaining VDP2 effect coverage are not yet
+complete.

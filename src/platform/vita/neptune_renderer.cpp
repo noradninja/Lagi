@@ -3,6 +3,7 @@
 #include "lagi/ui_texture_cache_index.h"
 #include "lagi/vdp1_color_calculation.h"
 #include "lagi/rbg_format.h"
+#include "lagi/rbg_decoded_page.h"
 #include "lagi/native_scene_mode.h"
 #include "lagi/frontend_font.h"
 
@@ -48,6 +49,9 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #ifndef LAGI_GPU_PASS_TIMING
 #define LAGI_GPU_PASS_TIMING 0
 #endif
+#ifndef LAGI_RBG_DECODED_PAGES
+#define LAGI_RBG_DECODED_PAGES 0
+#endif
 
 // Diagnostic samples drain at scene boundaries. These are CPU wall/wait
 // intervals, not GPU timestamp queries or normal overlapping frame timings.
@@ -71,6 +75,7 @@ extern const unsigned char _binary_lagi_cinepak_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
 extern const unsigned char _binary_lagi_sprite_composite_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_tile16_8bit_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_rbg0_pages_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_f_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_payload_v_gxp_start[];
 extern const unsigned char _binary_lagi_gouraud_subdiv_v_gxp_start[];
@@ -957,6 +962,10 @@ static SceUID g_sceneVdp2RawUid = -1;
 static SceGxmTexture g_sceneVdp2Texture{};
 static SceGxmTexture g_sceneVdp2ByteTexture{};
 static bool g_sceneVdp2ByteTextureValid=false;
+static bool g_rbgDecodedPagesReady=false;
+static SceGxmTexture g_rbgDecodedAtlasTexture{};
+static float g_rbgDecodedPlanesA[16]{},g_rbgDecodedPlanesB[16]{};
+static void releaseRbgDecodedPages();
 static azel::DebugTextureVertex* g_sceneVdp2Vertices = nullptr;
 static SceUID g_sceneVdp2VertexUid = -1;
 static std::uint16_t* g_sceneVdp2Indices = nullptr;
@@ -2555,6 +2564,7 @@ void shutdown()
     g_fadeIndices = nullptr;
     releaseSpriteComposite();
     releaseRbgTileProgram();
+    releaseRbgDecodedPages();
     freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
     g_sceneVdp2ByteTextureValid=false;
     freeSimpleMappedProbe(g_ditherOffsetsUid, g_ditherOffsetsPixels);
@@ -12577,10 +12587,14 @@ static bool drawVdp2Rbg0Gpu(
     float xExtent, bool frontend)
 {
     bool rbgSubmitted = true;
-    selectRbgTileProgram(!frontend && g_sceneVdp2ByteTextureValid && lagi::rbgTile16EightBit(
-        static_cast<unsigned>(rbg.format[0]),static_cast<unsigned>(rbg.format[1])));
+    selectRbgTileProgram(!frontend && (g_sceneVdp2ByteTextureValid || g_rbgDecodedPagesReady) && lagi::rbgTile16EightBit(
+        static_cast<unsigned>(rbg.format[0]),static_cast<unsigned>(rbg.format[1])),
+        !frontend && g_rbgDecodedPagesReady);
     if(g_rbgTileBound)
         sceGxmSetFragmentTexture(g_probeContext,1,&g_sceneVdp2ByteTexture);
+    if(g_rbgDecodedBound) {
+        sceGxmSetFragmentTexture(g_probeContext,1,&g_rbgDecodedAtlasTexture);
+    }
 
     const unsigned int rpmd =
         static_cast<unsigned int>(rbg.ctrl[0]) & 3u;
@@ -12614,7 +12628,7 @@ static bool drawVdp2Rbg0Gpu(
                 rbgUniforms,
                 g_vdp2Rbg0PlaneParam[i],
                 0, 4,
-                &planes[i * 4u]);
+                g_rbgDecodedBound?((coefficientEnableBit==1u?g_rbgDecodedPlanesA:g_rbgDecodedPlanesB)+i*4u):&planes[i*4u]);
         }
 
         const float coefficientSize =
@@ -12686,7 +12700,10 @@ static bool drawVdp2Rbg0Gpu(
             rbg.format[0], rbg.format[1], rbg.format[2], rbg.parameterFormat[1]
         };
         const float* bValues[9] = {
-            rbg.planesB, rbg.planesB + 4, rbg.planesB + 8, rbg.planesB + 12,
+            g_rbgDecodedBound?g_rbgDecodedPlanesB:rbg.planesB,
+            g_rbgDecodedBound?g_rbgDecodedPlanesB+4:rbg.planesB+4,
+            g_rbgDecodedBound?g_rbgDecodedPlanesB+8:rbg.planesB+8,
+            g_rbgDecodedBound?g_rbgDecodedPlanesB+12:rbg.planesB+12,
             rbg.transformB, rbg.transformB + 4, rbg.coefficientB, bInfo, bFormat
         };
         for (unsigned i = 0; i < 9u; ++i)
@@ -12968,8 +12985,11 @@ static bool drawVdp2Rbg0Gpu(
     return rbgSubmitted;
 }
 
+#include "neptune_rbg_decoded_pages.inc"
+
 static bool prepareSceneVdp2Background()
 {
+    g_rbgDecodedPagesReady=false;
     if (!g_sceneRbg0Enabled)
         return true;
     if (!g_sceneVdp2GpuRaw) {
@@ -13065,6 +13085,7 @@ static bool prepareSceneVdp2Background()
         }
     }
     g_sceneVdp2GpuRawInitialized = true;
+    g_rbgDecodedPagesReady=prepareRbgDecodedPages();
     return true;
 }
 

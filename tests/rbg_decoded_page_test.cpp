@@ -61,5 +61,14 @@ int main() {
     assert(cache.update(image.data(),generations,key,pixels.data(),pixels.size())==lagi::RbgPageResult::Unsupported);
     key.base=0x70001;
     assert(cache.update(image.data(),generations,key,pixels.data(),pixels.size())==lagi::RbgPageResult::Unsupported);
+    key={base,0x8000,7,false,true};layer.SCN=0;layer.CAOS=7;
+    assert(cache.update(image.data(),generations,key,pixels.data(),pixels.size())==lagi::RbgPageResult::Rebuilt);
+    for(unsigned y=0;y<512;++y)for(unsigned x=0;x<512;++x) {
+        auto native=sampleTileAtCoordinate(x,y,layer,dimensions),entry=pixels[y*512+x];
+        assert(bool(native>>24)==bool(entry>>24));
+        if(native)assert(native555(native)==(getVdp2CramU16(((entry&2047)+layer.CAOS*256)*2)&0x7fff));
+    }
+    assert(!cache.dependsOn(128));++generations[128];
+    assert(cache.update(image.data(),generations,key,pixels.data(),pixels.size())==lagi::RbgPageResult::Hit);
     std::puts("PASS native decoded page oracle, flips, palette wrap, invalidation and fallback");
 }

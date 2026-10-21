@@ -10,6 +10,7 @@ struct RbgPageKey {
     std::uint32_t base=0;
     std::uint16_t pncr=0,craofb=0;
     bool opaqueZero=false;
+    bool indexed=false; // Retain palette index; animated CRAM stays live on GPU.
     bool operator==(const RbgPageKey&) const = default;
 };
 enum class RbgPageResult { Hit, Rebuilt, Unsupported };
@@ -33,9 +34,9 @@ public:
         if((key.base&2047u) || key.base>0x80000u-2048u || (key.pncr&0xC000u)!=0x8000u)
             return RbgPageResult::Unsupported;
         depend(key.base,2048); // Pattern names: changing them can change dependencies.
-        depend(0x80000,4096); // Palette banks wrap through native 4 KiB CRAM.
+        if(!key.indexed)depend(0x80000,4096);
         std::array<std::uint32_t,2048> colors{};
-        for(unsigned i=0;i<colors.size();++i)colors[i]=rgba(word(raw+0x80000+i*2));
+        if(!key.indexed)for(unsigned i=0;i<colors.size();++i)colors[i]=rgba(word(raw+0x80000+i*2));
         const unsigned scn=key.pncr&0x3ff,caos=(key.craofb&7)*256;
         for(unsigned tile=0;tile<1024;++tile) {
             const unsigned name=word(raw+key.base+tile*2);
@@ -54,8 +55,9 @@ public:
                 if(flip&1){if(!(px&8))py+=8;px=7-(px&7);}
                 else {if(px&8)py+=8;px&=7;}
                 const unsigned dot=raw[characterBase+py*8+px];
+                const unsigned index=((key.indexed?0:caos)+(palette|dot))&2047;
                 pixels[(tileY+y)*Width+tileX+x]=(!dot && !key.opaqueZero)?0:
-                    colors[(caos+(palette|dot))&2047];
+                    (key.indexed?(0xff000000u|index):colors[index]);
             }
         }
         ready_=true;
