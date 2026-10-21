@@ -83,6 +83,7 @@ extern const unsigned char _binary_lagi_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_cinepak_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
 extern const unsigned char _binary_lagi_rgba_present_f_gxp_start[];
+extern const unsigned char _binary_lagi_scene_nbg0_f_gxp_start[];
 extern const unsigned char _binary_lagi_sprite_composite_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_tile16_8bit_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_pages_f_gxp_start[];
@@ -235,6 +236,9 @@ static bool g_stochasticGouraudFragmentRegistered = false;
 static bool g_cinepakFragmentRegistered = false;
 static bool g_vdp2NbgFragmentRegistered = false;
 static bool g_rgbaPresentRegistered = false;
+static bool g_sceneNbg0Registered = false;
+static SceGxmShaderPatcherId g_sceneNbg0Id{};
+static SceGxmFragmentProgram* g_sceneNbg0ResolveProgram = nullptr;
 static SceGxmShaderPatcherId g_rgbaPresentId{};
 static const SceGxmProgramParameter* g_rgbaPresentInfo = nullptr;
 static bool g_vdp2Rbg0FragmentRegistered = false;
@@ -2804,6 +2808,10 @@ void shutdown()
             sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_sceneNbg0AddProgram);
             g_sceneNbg0AddProgram=nullptr;
         }
+        if(g_sceneNbg0ResolveProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_sceneNbg0ResolveProgram);
+            g_sceneNbg0ResolveProgram=nullptr;
+        }
         if(g_sceneNbg0OverProgram) {
             sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_sceneNbg0OverProgram);
             g_sceneNbg0OverProgram=nullptr;
@@ -2941,6 +2949,10 @@ void shutdown()
         if(g_rgbaPresentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_rgbaPresentId);
             g_rgbaPresentRegistered=false;
+        }
+        if(g_sceneNbg0Registered) {
+            sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_sceneNbg0Id);
+            g_sceneNbg0Registered=false;
         }
         if (g_cinepakFragmentRegistered) {
             sceGxmShaderPatcherUnregisterProgram(
@@ -9974,8 +9986,7 @@ void show_game_presentation()
 
     g_vdp2InfoParam =
         sceGxmProgramFindParameterByName(vdp2NbgFragmentGxp, "vdp2Info");
-    g_sceneNbg0Param=sceGxmProgramFindParameterByName(vdp2NbgFragmentGxp,"nbg0State");
-    if (!g_vdp2InfoParam || !g_sceneNbg0Param) {
+    if (!g_vdp2InfoParam) {
         failure("[FAIL] VDP2 NBG SHADER PARAMS");
         return;
     }
@@ -10751,6 +10762,18 @@ void show_game_presentation()
     }
 
     // Separate blend variants keep the opaque/cutout fast path unchanged.
+    const auto* sceneNbgGxp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_scene_nbg0_f_gxp_start);
+    if(sceGxmProgramCheck(sceneNbgGxp)<0 || sceGxmShaderPatcherRegisterProgram(
+        g_probeShaderPatcher,sceneNbgGxp,&g_sceneNbg0Id)<0) {
+        failure("[FAIL] SCENE NBG0 REGISTER");return;
+    }
+    g_sceneNbg0Registered=true;
+    g_sceneNbg0Param=sceGxmProgramFindParameterByName(sceneNbgGxp,"nbg0State");
+    if(!g_sceneNbg0Param || sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,
+        g_sceneNbg0Id,SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,
+        &vdp2NbgBlend,textureVertexGxp,&g_sceneNbg0ResolveProgram)<0) {
+        failure("[FAIL] SCENE NBG0 RESOLVE PROGRAM");return;
+    }
     const auto* rgbaGxp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_rgba_present_f_gxp_start);
     if(sceGxmProgramCheck(rgbaGxp)<0 || sceGxmShaderPatcherRegisterProgram(
         g_probeShaderPatcher,rgbaGxp,&g_rgbaPresentId)<0) {

@@ -1,0 +1,7 @@
+#include "vdp2_common.cginc"
+#include "scene_nbg0.cginc"
+float4 main(float2 vTexcoord : TEXCOORD0, uniform sampler2D raw,
+    uniform float4 nbg0State[8])
+{
+    return sampleSceneNbg0(raw,vTexcoord,nbg0State);
+}

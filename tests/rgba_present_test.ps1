@@ -12,9 +12,12 @@ if($display -notmatch 'g_rgbaPresentInfo' -or $display -match 'g_vdp2InfoParam')
 }
 Write-Output 'PASS: independent single-sample premultiplied display contract; not GPU timing evidence'
 $decode=Get-Content "$root/shaders/vdp2_nbg_f.cg" -Raw
-if($decode -notmatch 'if\(vdp2Info.x>7.5f\)return sampleSceneNbg0' -or
-    $draw -notmatch 'const float info\[4\]=\{8,0,0,0\}') {
-    throw 'Cloud resolve mode must not alias frontend layouts 1 or 2.'
+if($decode -match 'sampleSceneNbg0|nbg0State|scene_nbg0.cginc' -or
+    $draw -notmatch 'g_sceneNbg0ResolveProgram') {
+    throw 'Cloud resolve must be independent of the frontend shader.'
 }
-foreach($layout in 0,1,2){if($layout -gt 7.5){throw 'Frontend layout entered cloud decoder'}}
-Write-Output 'PASS: cloud resolve dispatch is separate from frontend layouts 0, 1 and 2'
+$cloud=Get-Content "$root/shaders/scene_nbg0_f.cg" -Raw
+if($cloud -notmatch 'return sampleSceneNbg0\(raw,vTexcoord,nbg0State\)' -or $cloud -match 'vdp2Info') {
+    throw 'Cloud shader must call the tested production decoder without a frontend mode selector.'
+}
+Write-Output 'PASS: cloud resolve program is independent of frontend layouts 0, 1 and 2'

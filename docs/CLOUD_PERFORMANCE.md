@@ -31,3 +31,12 @@ one packed RGBA texel rather than two BE16 helpers. A production-math fixture
 compares all 65,536 signed high words with varied fractional bits, verifies
 one packed fetch/no halfword reads, and retains unaligned/wrapped addressing.
 No device timing improvement is claimed until the next run.
+
+The following run confirms particle fade recovery but still reports 20 FPS:
+cloud render samples are roughly 39-41 ms with 28-30 ms completion waits.
+Next, native cloud resolve uses an independent fragment program calling the
+same tested sampleSceneNbg0 implementation. Frontend title/keyboard decoding
+is no longer compiled into the cloud program, and cloud state is no longer
+part of the frontend shader. Raster size, blends, window/line math and output
+remain unchanged. This removes unrelated code and register pressure without
+reducing resolution or effect fidelity; actual speedup remains device-gated.

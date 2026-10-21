@@ -26,7 +26,7 @@ static bool renderSceneNbg0Gpu()
         &g_sceneNbg0Surface,nullptr)<0)return false;
     sceGxmSetDefaultRegionClipAndViewport(g_probeContext,kSceneRbg0Width-1,kSceneRbg0Height-1);
     sceGxmSetVertexProgram(g_probeContext,g_textureVertexProgram);
-    sceGxmSetFragmentProgram(g_probeContext,g_vdp2NbgFragmentProgram);
+    sceGxmSetFragmentProgram(g_probeContext,g_sceneNbg0ResolveProgram);
     sceGxmSetFrontDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetBackDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
@@ -38,9 +38,8 @@ static bool renderSceneNbg0Gpu()
     bool ok=sceGxmReserveVertexDefaultUniformBuffer(g_probeContext,&vertex)>=0 && vertex &&
         sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext,&fragment)>=0 && fragment;
     if(ok) {
-        const auto identity=viewerIdentity();const float info[4]={8,0,0,0};
+        const auto identity=viewerIdentity();
         sceGxmSetUniformDataF(vertex,g_textureWvpParam,0,16,identity.m);
-        sceGxmSetUniformDataF(fragment,g_vdp2InfoParam,0,4,info);
         sceGxmSetUniformDataF(fragment,g_sceneNbg0Param,0,32,&g_sceneNbg0.gpu[0][0]);
         sceGxmSetFragmentTexture(g_probeContext,0,&g_sceneVdp2Texture);
         ok=sceGxmSetVertexStream(g_probeContext,0,g_sceneVdp2Vertices)>=0 &&

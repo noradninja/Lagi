@@ -2,7 +2,6 @@
 // This is layer presentation, not a screen-specific state machine.
 // Azel owns maps, text, scrolling, visibility and sequencing.
 #include "vdp2_common.cginc"
-#include "scene_nbg0.cginc"
 
 float4 sampleTitleNbg0Point(
     uniform sampler2D raw,
@@ -185,12 +184,8 @@ float4 main(
     float2 vTexcoord : TEXCOORD0,
     float4 fragCoord : WPOS,
     uniform sampler2D raw,
-    uniform float4 vdp2Info,
-    uniform float4 nbg0State[8])
+    uniform float4 vdp2Info)
 {
-    // Frontend layouts 1 and 2 both use the native keyboard decoder. Never
-    // alias those live layout values with a world-layer resolve mode.
-    if(vdp2Info.x>7.5f)return sampleSceneNbg0(raw,vTexcoord,nbg0State);
     const float logicalX = min(
         351.0f, floor(vTexcoord.x * 352.0f));
     const float logicalY = min(
