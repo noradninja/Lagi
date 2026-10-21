@@ -79,3 +79,11 @@ word reads bypass generic byte-boundary logic. Native even addresses select
 either XY or ZW from one packed texel; exhaustive tests cover every 16-bit
 value in both lanes and verify a single fetch. Line longword handling and all
 native addressing remain unchanged. Device validation remains required.
+
+Aligned-word device samples improve to 29.678-31.204 ms (nine cloud samples),
+still above the 25 ms ideal and not proof of a run-wide 33 ms maximum. The
+next cloud-only helper replaces rawTexel's signed remainder with binary row
+addressing for the packed 512x258 VRAM/CRAM texture. Every byte across the
+0x81000-byte source is sampled in the host texture-coordinate fixture, along
+with the existing word/value, raw/row shader and native window tests. Shared
+frontend/raw helpers are untouched. Actual timing remains device-gated.

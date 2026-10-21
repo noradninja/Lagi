@@ -4,11 +4,19 @@
 // floor avoid the GPU's general signed-remainder correction sequence.
 float nbgBit(float v,float bit) { return floor(v/bit)-2.0f*floor(v/(bit*2.0f)); }
 float nbgWrap(float v,float size) { return v-floor(v/size)*size; }
+float4 nbgRawTexel(uniform sampler2D raw,float index) {
+    float texelY=floor(index/512.0f);
+    return tex2D(raw,float2((index-texelY*512.0f+0.5f)/512.0f,(texelY+0.5f)/258.0f));
+}
+float nbgReadByte(uniform sampler2D raw,float address) {
+    float index=floor(address*0.25f);
+    return selectByte(nbgRawTexel(raw,index),address-index*4.0f);
+}
 float nbgAlignedWord(uniform sampler2D raw,float address) {
     // Native pattern names, CRAM words and window endpoints are even-aligned.
     // Both bytes therefore reside in one RGBA texel, never across its edge.
     float index=floor(address*0.25f);
-    float4 bytes=rawTexel(raw,index);
+    float4 bytes=nbgRawTexel(raw,index);
     float2 pair=address-index*4.0f<1.5f?bytes.xy:bytes.zw;
     return floor(pair.x*255.0f+0.5f)*256.0f+floor(pair.y*255.0f+0.5f);
 }
@@ -17,7 +25,7 @@ float nbgFixed(uniform sampler2D raw,float address) {
     // A native line longword fits exactly in one packed RGBA texel. Avoid
     // repeated byte-lane selection and dependent reads for both halfwords.
     if(nbgWrap(address,4.0f)<0.5f) {
-        float4 bytes=rawTexel(raw,address*0.25f);
+        float4 bytes=nbgRawTexel(raw,address*0.25f);
         float hi=floor(bytes.x*255.0f+0.5f)*256.0f+floor(bytes.y*255.0f+0.5f);
         if(hi>=32768.0f)hi-=65536.0f;
         float lo=floor(bytes.z*255.0f+0.5f)*256.0f+floor(bytes.w*255.0f+0.5f);
@@ -79,7 +87,7 @@ float4 sampleSceneNbg0(uniform sampler2D raw,float2 uv,uniform float4 state[8]
     float character=nbgWrap(name,1024.0f)*4.0f+nbgWrap(scn,4.0f)+floor(nbgWrap(scn,32.0f)/4.0f)*4096.0f;
     float cell=floor(within.y/8.0f)*2.0f+floor(within.x/8.0f);
     float byteAddress=character*32.0f+cell*32.0f+nbgWrap(within.y,8.0f)*4.0f+floor(nbgWrap(within.x,8.0f)/2.0f);
-    float packedByte=readByte(raw,nbgWrap(byteAddress,524288.0f));
+    float packedByte=nbgReadByte(raw,nbgWrap(byteAddress,524288.0f));
     float dotIndex=nbgWrap(within.x,2.0f)>0.5f?nbgWrap(packedByte,16.0f):floor(packedByte/16.0f);
     if(dotIndex<0.5f && state[0].z<0.5f)return float4(0,0,0,0);
     float palette=state[0].y*256.0f+floor(name/4096.0f)*16.0f+floor(scn/32.0f)*256.0f+dotIndex;

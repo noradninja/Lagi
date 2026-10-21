@@ -19,7 +19,12 @@ float4 rawTexel(sampler2D b,float i){++packedReads;unsigned a=unsigned(i)*4;retu
 float readByte(sampler2D b,float a){assert(a>=0&&a<0x81000);return b[unsigned(a)];}
 float readBE16(sampler2D b,float a){++halfReads;return readByte(b,a)*256+readByte(b,a+1);}
 float4 rgb555(float c){unsigned v=unsigned(c);return {float(v&31),float((v>>5)&31),float((v>>10)&31),1};}
-float4 tex2D(sampler2D b,float2 uv){const auto* f=reinterpret_cast<const float*>(b);unsigned i=(unsigned(uv.y*2)*256+unsigned(uv.x*256))*2;return {f[i],f[i+1],0,1};}
+static std::array<unsigned char,0x81000> memory{};
+float selectByte(float4 b,float lane){float v=lane<.5f?b.x:lane<1.5f?b.y:lane<2.5f?b.z:b.w;return std::floor(v*255+.5f);}
+float4 tex2D(sampler2D b,float2 uv){
+    if(b==memory.data())return rawTexel(b,float(unsigned(uv.y*258)*512+unsigned(uv.x*512)));
+    const auto* f=reinterpret_cast<const float*>(b);unsigned i=(unsigned(uv.y*2)*256+unsigned(uv.x*256))*2;return {f[i],f[i+1],0,1};
+}
 #define uniform
 #include "scene_shader.inc"
 namespace row_shader {
@@ -30,10 +35,13 @@ namespace row_shader {
 #undef LAGI_NBG_LINE_ROWS
 }
 #undef uniform
-static std::array<unsigned char,0x81000> memory{};
 void word(unsigned a,unsigned v){memory[a]=v>>8;memory[a+1]=v;}
 void longword(unsigned a,unsigned v){word(a,v>>16);word(a+2,v);}
 int main(){
+    for(unsigned i=0;i<memory.size();++i)memory[i]=unsigned char(i*73u+11u);
+    for(unsigned i=0;i<memory.size();++i)
+        assert(nbgReadByte(memory.data(),float(i))==float(memory[i]));
+    memory.fill(0);
     for(unsigned v=0;v<65536;++v)for(unsigned lane: {0u,2u}){
         word(0x24000+lane,v);packedReads=halfReads=0;
         assert(nbgAlignedWord(memory.data(),float(0x24000+lane))==float(v));
