@@ -694,3 +694,17 @@ in a tunnel, and send the log/video. Set the trace OFF for final performance
 acceptance. Host tests cover exact repeats, sequence gaps, signed step extremes,
 clock/key resets and inter-window interval accounting. Device diagnosis is
 still pending; this is instrumentation, not a claimed judder fix.
+
+## Name-entry exit: honor native RBG0 disable
+
+D5's native fade-out task explicitly clears BGON bit 4 before the final
+sprite sequence. The frontend previously continued decoding RBG0 regardless,
+including VRAM subsequently repurposed by native tasks. RbgGpuState now retains
+that enable bit. The native-sized target is still cleared and NBG can still
+draw, but the disabled RBG pass and its page-cache preparation are skipped.
+This does not invent a fade clock or suppress an enabled layer. Source-order
+contracts and native NBG tests pass; fullres Vita linking/packaging passes.
+Device exit validation remains pending. The separate D5 particle task still
+needs its original position/update/transform behavior restored: the supplied
+name-entry log records depth rejection, and original SH-2 code proves the
+upstream positive-Z/random-velocity reconstruction is not faithful.

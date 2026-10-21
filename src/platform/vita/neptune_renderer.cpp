@@ -935,6 +935,7 @@ static bool g_movieFrameVisible = false;
 static float g_movieVdp2Info[4] = {};
 static unsigned int g_movieVdp2Tvmd = 0u;
 struct RbgGpuState {
+    bool enabled=true;
     float parameterFormat[2]{};
     float planesA[16]{}, planesB[16]{}, ctrl[16]{}, plsz = 0.0f;
     float format[4]{}, transformA[8]{}, transformB[8]{};
@@ -3596,6 +3597,7 @@ bool movie_republish_frame()
 static RbgGpuState makeRbgGpuState(const FrontendRbg0State& state)
 {
     RbgGpuState rbg{};
+    rbg.enabled=(state.bgon&0x10u)!=0;
     for (unsigned int i = 0; i < 16u; ++i) {
         rbg.planesA[i] =
             static_cast<float>(state.planeA[i]);
@@ -13051,8 +13053,11 @@ static bool renderSceneVdp2BackgroundPass(bool frontend = false)
         static_cast<int>(kSceneRbg0Width) - 1,
         static_cast<int>(kSceneRbg0Height) - 1);
     void* uniforms = nullptr;
-    bool submitted = false;
-    if (sceGxmReserveVertexDefaultUniformBuffer(
+    // D5 disables RBG0 before its final sprite/fade sequence. Its VRAM may
+    // then be reused: a disabled native plane must not decode those bytes.
+    const bool rbgEnabled=!frontend || g_movieRbg0.enabled;
+    bool submitted = !rbgEnabled;
+    if (rbgEnabled && sceGxmReserveVertexDefaultUniformBuffer(
             g_probeContext, &uniforms) >= 0 && uniforms) {
         const ViewerMat4 identity = viewerIdentity();
         sceGxmSetUniformDataF(
@@ -13186,7 +13191,7 @@ static bool renderMovieFrame()
     // then composite native NBG before scaling. Text/cursors remain separate.
     const bool frontendRbg = g_movieUsesVdp2Title && g_movieVdp2Info[0] >= 0.5f;
     g_frontendRbgDecodedReady=false;
-    if(frontendRbg && g_frontendVdp2RawInitialized)
+    if(frontendRbg && g_movieRbg0.enabled && g_frontendVdp2RawInitialized)
         g_frontendRbgDecodedReady=prepareRbgDecodedPagesFor(g_movieRbg0,
             g_frontendVdp2RawShadow,g_frontendVdp2Generations,true);
     if (frontendRbg && !renderSceneVdp2BackgroundPass(true))
