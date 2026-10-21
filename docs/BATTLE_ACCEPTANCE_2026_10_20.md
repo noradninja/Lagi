@@ -56,3 +56,15 @@ subtitle. This changes presentation, not speech playback or its audio clock.
 The disc-backed fixture verifies native region/call anchors and descriptor,
 then runs the production task through display, duration and cleanup. Host
 fixture and battle VPK pass; hardware positioning remains pending.
+
+## Boss target retirement
+
+Retire all three Arachnoth form target lists at death-state entry using the
+existing native `0x40000` retirement flag and distance-sort invalidation.
+Previously this cleanup ran only after the death dialogue finished. This is
+an intentional lifetime correction after Azel decides death, not a recovered
+original call at that address. The generic cursor task already stops drawing
+when this flag is set; no renderer-specific boss filtering is added. Retain
+the later cleanup as an idempotent safety net. The host fixture exercises all
+three lists and repeated cleanup. Host test and battle VPK pass; device
+confirmation of indicator removal remains pending.

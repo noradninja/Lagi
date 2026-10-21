@@ -2481,6 +2481,14 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A3_2/Arachnoth.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(death_cursor_anchor "void arachnoth_enterDeathState(sArachnothFormation* pThis)\n{")
+  string(FIND "${source_text}" "${death_cursor_anchor}" death_cursor_found)
+  if(death_cursor_found LESS 0)
+   message(FATAL_ERROR "Native boss death-state boundary changed")
+  endif()
+  string(REPLACE "${death_cursor_anchor}"
+   "static void arachnoth_disableAllTargetables(sArachnothFormation*);\n${death_cursor_anchor}\n    arachnoth_disableAllTargetables(pThis); // Retire all form cursors when death starts, not after speech."
+   source_text "${source_text}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_subtitle.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_subtitle.inc" battle_subtitle_service)
