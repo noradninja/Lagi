@@ -34,6 +34,12 @@ static std::array<unsigned char,0x81000> memory{};
 void word(unsigned a,unsigned v){memory[a]=v>>8;memory[a+1]=v;}
 void longword(unsigned a,unsigned v){word(a,v>>16);word(a+2,v);}
 int main(){
+    for(unsigned v=0;v<65536;++v){
+        for(unsigned divisor: {2u,4u,8u,16u,32u,1024u,2048u})
+            assert(nbgWrap(float(v),float(divisor))==std::fmod(float(v),float(divisor)));
+        for(unsigned bit: {1u,2u,4u,8u,128u,1024u,2048u})
+            assert(nbgBit(float(v),float(bit))==std::fmod(std::floor(float(v)/bit),2.0f));
+    }
     lagi::SceneNbg0State clipState{};clipState.gpu[6][0]=3;
     for(int top=0;top<224;++top)for(int bottom=top;bottom<224;++bottom){
         clipState.gpu[4][0]=19;clipState.gpu[4][1]=float(top);

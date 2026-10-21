@@ -63,3 +63,11 @@ resolve work to 32-pixel tiles enclosing a single rectangular inside window.
 The existing exact pixel window test stays in the shader. Line windows,
 outside windows and multi-window cases retain full-raster fallback. No cloud
 resolution, blending, palette or placement changes are made.
+
+The window-clip run reports full-raster bounds (0,0,351,223), so no work is
+excluded in the tested cloud scene. Samples remain 32.812-34.195 ms. The next
+shader-only change replaces general signed fmod in register bits, tile/cell
+coordinates, packed nibbles and palette wrap with exact binary floor-based
+remainder, following the existing RBG0 optimization. Tests exhaust all 16-bit
+nonnegative inputs for the divisors and bit positions used, in addition to
+the production raw/row shader comparisons. Hardware gain remains unverified.
