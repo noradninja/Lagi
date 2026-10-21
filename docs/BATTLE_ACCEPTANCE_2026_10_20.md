@@ -44,3 +44,15 @@ not a frame-time result. Exhaustive format eligibility and existing composition
 tests pass. Hardware timing recovery remains unmeasured. A fresh log should
 include `[RBG0TileFormat] specialized8bit16=1`; retain compositor ON for the
 water/combat comparison.
+
+## Post-boss subtitle presentation
+
+Native 060590AE..B6 passes the speech descriptor to 0606D68A, not the boxed
+attack-name helper. 0606D7A4 writes directly to text region (3,25,38,4);
+0606D9D0 clears that region at timer completion. Restore this text-only task
+for the post-boss descriptor, keeping its original index/duration and leaving
+other battle announcements unchanged. Parent-task teardown also clears the
+subtitle. This changes presentation, not speech playback or its audio clock.
+The disc-backed fixture verifies native region/call anchors and descriptor,
+then runs the production task through display, duration and cleanup. Host
+fixture and battle VPK pass; hardware positioning remains pending.
