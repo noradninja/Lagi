@@ -7351,13 +7351,15 @@ static void appendLiveTownModel(
     g_liveTownCpuMesh.vertices.resize(vertexBase + model.vertices.size());
     g_liveTownCpuMesh.lightingVertices.resize(
         vertexBase + model.vertices.size());
-    g_liveTownCpuMesh.polygonRecords.resize(
-        polygonBase + model.polygons.size());
+    // Copy immutable descriptors directly into their final slots. resize()
+    // first value-initialized their full lighting payload only to overwrite
+    // it below for every dynamic model, on every frame.
+    g_liveTownCpuMesh.polygonRecords.insert(g_liveTownCpuMesh.polygonRecords.end(),
+        model.polygons.begin(),model.polygons.end());
     g_liveTownCpuMesh.polygonTextureIndices.resize(
         polygonBase + model.polygons.size());
     g_liveTownCpuMesh.gouraud555.resize(
         polygonBase + model.polygons.size());
-    g_liveTownPolygonLights.resize(polygonBase + model.polygons.size());
 
     float projectionOffset[3]{};
     if (g_nativeSceneViewValid &&
@@ -7467,10 +7469,14 @@ static void appendLiveTownModel(
         polygonLight.valid = true;
     }
 
+    // Every polygon in this submission shares the captured model-space light.
+    // Construct the final values once rather than zeroing then assigning.
+    g_liveTownPolygonLights.insert(g_liveTownPolygonLights.end(),
+        model.polygons.size(),polygonLight);
     std::size_t runStart = 0u;
     std::size_t runCount = 0u;
     for (std::size_t p = 0; p < model.polygons.size(); ++p) {
-        auto record = model.polygons[p];
+        auto& record = g_liveTownCpuMesh.polygonRecords[polygonBase+p];
 
         if (lagi::vdp1_half_transparent(record.cmdPmod)) {
             // Color calculation reads the existing destination. Do not let
@@ -7512,15 +7518,14 @@ static void appendLiveTownModel(
             runCount = 0u;
         }
         record.model = static_cast<unsigned int>(polygonBase);
-        g_liveTownCpuMesh.polygonRecords[polygonBase + p] = record;
         const std::uint16_t textureIndex =
             resolvedTextureIndices && p < resolvedTextureIndexCount
                 ? resolvedTextureIndices[p]
                 : liveTownTextureIndex(record);
         g_liveTownCpuMesh.polygonTextureIndices[polygonBase + p] =
             textureIndex;
-        g_liveTownCpuMesh.gouraud555[polygonBase + p] = {};
-        g_liveTownPolygonLights[polygonBase + p] = polygonLight;
+        // resize above already constructed fresh zero Gouraud payloads for
+        // the appended range; cached static prefixes are reset separately.
     }
 
     // Preserve the exact positions of Azel-authored VDP1 color/mesh commands in the
