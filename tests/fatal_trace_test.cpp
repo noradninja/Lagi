@@ -32,6 +32,9 @@ extern "C" [[noreturn]] void __real___cxa_throw(void* object,std::type_info* typ
     ++throws;thrownObject=object;thrownType=type;thrownDestroy=destroy;throw Stop{};
 }
 static void destroy(void*) {}
+extern "C" [[noreturn]] void __real___assert_func(const char* file,int line,const char* function,const char* condition) {
+    assert(std::string(file)=="dsp.c"&&line==666&&std::string(function)=="step"&&std::string(condition)=="op->IRA < 0x32");throw Stop{};
+}
 extern "C" [[noreturn]] void __real__ZSt21__glibcxx_assert_failPKciS0_S0_(const char* file,int line,const char* function,const char* condition) {
     assert(std::string(file)=="vector.h"&&line==123&&std::string(function)=="operator[]"&&std::string(condition)=="index < size");throw Stop{};
 }
@@ -48,8 +51,11 @@ int main() {
     output.clear();
     try { __wrap__ZSt21__glibcxx_assert_failPKciS0_S0_("vector.h",123,"operator[]","index < size"); }catch(Stop&){}
     assert(output.find("kind=cxx-assert")!=std::string::npos && output.find("file=vector.h line=123 function=operator[] condition=index < size")!=std::string::npos);
+    output.clear();
+    try { __wrap___assert_func("dsp.c",666,"step","op->IRA < 0x32"); }catch(Stop&){}
+    assert(output.find("kind=c-assert")!=std::string::npos && output.find("file=dsp.c line=666 function=step condition=op->IRA < 0x32")!=std::string::npos);
     output.clear();failOpen=true;
     try { __wrap_abort(); }catch(Stop&){}
-    assert(aborts==2 && output.empty() && opened==4 && closed==3);
+    assert(aborts==2 && output.empty() && opened==5 && closed==4);
     puts("PASS fatal-only synchronous trace, C++ assertion details, 32-frame bound, original failure forwarding, file failure and stage context");
 }

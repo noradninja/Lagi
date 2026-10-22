@@ -61,6 +61,15 @@ extern "C" [[noreturn]] void __wrap_abort()
     __real_abort();
 }
 extern "C" [[noreturn]] void __real___cxa_throw(void*,std::type_info*,void(*)(void*));
+extern "C" [[noreturn]] void __real___assert_func(const char*,int,const char*,const char*);
+extern "C" [[noreturn]] void __wrap___assert_func(const char* file,int line,const char* function,const char* condition)
+{
+    char context[480];
+    std::snprintf(context,sizeof(context),"file=%.128s line=%d function=%.128s condition=%.128s",
+        file?file:"none",line,function?function:"none",condition?condition:"none");
+    report("c-assert",condition,__builtin_return_address(0),context);
+    __real___assert_func(file,line,function,condition);
+}
 extern "C" [[noreturn]] void __real__ZSt21__glibcxx_assert_failPKciS0_S0_(const char*,int,const char*,const char*);
 extern "C" [[noreturn]] void __wrap__ZSt21__glibcxx_assert_failPKciS0_S0_(const char* file,int line,const char* function,const char* condition)
 {

@@ -4757,7 +4757,7 @@ if(LAGI_AZEL_RUINS_LINK_TRIM)
  target_link_options(lagi PRIVATE -Wl,--gc-sections)
  if(LAGI_BATTLE_NATIVE_BUILD)
   target_sources(lagi PRIVATE src/platform/vita/vita_fatal_trace.cpp)
-  target_link_options(lagi PRIVATE -Wl,--wrap=abort -Wl,--wrap=__cxa_throw -Wl,--wrap=_ZSt21__glibcxx_assert_failPKciS0_S0_)
+  target_link_options(lagi PRIVATE -Wl,--wrap=abort -Wl,--wrap=__assert_func -Wl,--wrap=__cxa_throw -Wl,--wrap=_ZSt21__glibcxx_assert_failPKciS0_S0_)
  endif()
 endif()
 
