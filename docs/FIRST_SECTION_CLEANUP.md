@@ -125,6 +125,23 @@ Goal 1 remains open, and goal 2 must not begin merely because this patch builds.
 
 ## User-directed rewards work (performance validation still open)
 
+Latest hardware log (Downloads/lagi.log, 2026-10-22 00:29) has six completed
+combat spans. First Urchin sub 5: append median 3.602 ms, build 5.741 ms,
+renderer 29.190 ms, 1635 polygons / 209 submissions; 270/960 presentation
+intervals exceed two VBlanks. The earlier first-Urchin baseline was append
+5.207 ms at 1616 polygons / 204.5 submissions, with 826/1680 missed intervals.
+These are workload-aware observations, not exact matched A/B proof. Patergo
+sub 7 fights still miss 330/1080 and 138/960 intervals. Later sub 5 misses
+11/720; sub 8 and sub 4 miss one each. Goal 1 is not complete.
+
+Second shared append correction constructs final transformed vertex payloads
+without first zero-initializing their render and lighting buffers. Both retain
+geometric capacity growth and canonical A,B,C/A,C,D order, with generic-layout
+fallback unchanged. The production/baseline equivalence test now repeats 65
+submissions per case to exercise buffer growth and reuse. No transforms,
+materials, lighting math, blending or actor selection are removed. Any timing
+gain from this second change still requires a new hardware log.
+
 The user requested moving forward with rewards after confirming the latest
 run did not reproduce the audio-worker assertion. This does not close the
 performance target or prove that the assertion is fixed.

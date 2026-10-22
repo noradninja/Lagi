@@ -76,8 +76,8 @@ int main(){
   state.nativeViewDepthRaw=0x12345;state.hasNativeViewDepth=true;state.additionalLight.active=true;state.additionalLight.vector[1]=4;state.additionalLight.color[2]=19;
   for(bool generic: {false,true}){
    if(generic)model.vertices.pop_back();
-   reset();appendLiveTownModelReference(model,state,resolved,variant&16?3:7);appendLiveTownModelReference(model,state);auto expected=capture();
-   reset();appendLiveTownModel(model,state,resolved,variant&16?3:7);appendLiveTownModel(model,state);same(expected,capture());
+   reset();appendLiveTownModelReference(model,state,resolved,variant&16?3:7);for(unsigned repeat=0;repeat<64;++repeat)appendLiveTownModelReference(model,state);auto expected=capture();
+   reset();appendLiveTownModel(model,state,resolved,variant&16?3:7);for(unsigned repeat=0;repeat<64;++repeat)appendLiveTownModel(model,state);same(expected,capture());
    if(generic)model.vertices.push_back({});
   }
  }

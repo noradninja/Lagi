@@ -7348,9 +7348,16 @@ static void appendLiveTownModel(
 
     const std::size_t vertexBase = g_liveTownCpuMesh.vertices.size();
     const std::size_t polygonBase = g_liveTownCpuMesh.polygonRecords.size();
-    g_liveTownCpuMesh.vertices.resize(vertexBase + model.vertices.size());
-    g_liveTownCpuMesh.lightingVertices.resize(
-        vertexBase + model.vertices.size());
+    // Append final transformed vertices, without value-initializing every
+    // attribute first. Retain geometric capacity growth for new high-water
+    // marks; reserving the exact size per actor would repeatedly reallocate.
+    const std::size_t neededVertices=vertexBase+model.vertices.size();
+    if(neededVertices>g_liveTownCpuMesh.vertices.capacity())
+        g_liveTownCpuMesh.vertices.reserve(std::max(neededVertices,
+            g_liveTownCpuMesh.vertices.capacity()*2u));
+    if(neededVertices>g_liveTownCpuMesh.lightingVertices.capacity())
+        g_liveTownCpuMesh.lightingVertices.reserve(std::max(neededVertices,
+            g_liveTownCpuMesh.lightingVertices.capacity()*2u));
     // Copy immutable descriptors directly into their final slots. resize()
     // first value-initialized their full lighting payload only to overwrite
     // it below for every dynamic model, on every frame.
@@ -7409,31 +7416,22 @@ static void appendLiveTownModel(
     if (model.vertices.size() == model.polygons.size() * 6u) {
         for (std::size_t p = 0; p < model.polygons.size(); ++p) {
             const std::size_t srcBase = p * 6u;
-            const std::size_t dstBase = vertexBase + srcBase;
             const auto a = transformVertex(model.vertices[srcBase + 0u]);
             const auto b = transformVertex(model.vertices[srcBase + 1u]);
             const auto c = transformVertex(model.vertices[srcBase + 2u]);
             const auto d = transformVertex(model.vertices[srcBase + 5u]);
 
-            g_liveTownCpuMesh.vertices[dstBase + 0u] = a;
-            g_liveTownCpuMesh.vertices[dstBase + 1u] = b;
-            g_liveTownCpuMesh.vertices[dstBase + 2u] = c;
-            g_liveTownCpuMesh.vertices[dstBase + 3u] = a;
-            g_liveTownCpuMesh.vertices[dstBase + 4u] = c;
-            g_liveTownCpuMesh.vertices[dstBase + 5u] = d;
-
-            g_liveTownCpuMesh.lightingVertices[dstBase + 0u] = a;
-            g_liveTownCpuMesh.lightingVertices[dstBase + 1u] = b;
-            g_liveTownCpuMesh.lightingVertices[dstBase + 2u] = c;
-            g_liveTownCpuMesh.lightingVertices[dstBase + 3u] = a;
-            g_liveTownCpuMesh.lightingVertices[dstBase + 4u] = c;
-            g_liveTownCpuMesh.lightingVertices[dstBase + 5u] = d;
+            const azel::DebugColorVertex quad[6]={a,b,c,a,c,d};
+            g_liveTownCpuMesh.vertices.insert(g_liveTownCpuMesh.vertices.end(),
+                quad,quad+6);
+            g_liveTownCpuMesh.lightingVertices.insert(
+                g_liveTownCpuMesh.lightingVertices.end(),quad,quad+6);
         }
     } else {
         for (std::size_t i = 0; i < model.vertices.size(); ++i) {
             const auto v = transformVertex(model.vertices[i]);
-            g_liveTownCpuMesh.vertices[vertexBase + i] = v;
-            g_liveTownCpuMesh.lightingVertices[vertexBase + i] = v;
+            g_liveTownCpuMesh.vertices.push_back(v);
+            g_liveTownCpuMesh.lightingVertices.push_back(v);
         }
     }
 
