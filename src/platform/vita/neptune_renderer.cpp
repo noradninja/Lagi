@@ -714,6 +714,10 @@ static unsigned int g_profileEdgeCopyUs = 0;
 static unsigned int g_profileEdgeAnimUs = 0;
 static unsigned int g_profileEdgeAppendUs = 0;
 static unsigned int g_profileObjectAppendUs = 0;
+static bool g_profileAppendSample = false;
+static std::uint64_t g_profileAppendSetupUs = 0, g_profileAppendStorageUs = 0;
+static std::uint64_t g_profileAppendTransformUs = 0, g_profileAppendLightUs = 0;
+static std::uint64_t g_profileAppendBindingUs = 0;
 static unsigned int g_profileObjectMaterialResolveUs = 0;
 static unsigned int g_profileObjectMaterialCacheMisses = 0;
 static unsigned int g_profileLightingUs = 0;
@@ -7311,6 +7315,15 @@ static void appendLiveTownModel(
     if (!state.hasModelMatrix)
         return;
 
+    // One sampled frame per 120 publications, not per-vertex instrumentation.
+    // Sampled totals include clock overhead and must not be treated as free.
+    std::uint64_t appendPhaseStart=g_profileAppendSample
+        ? sceKernelGetProcessTimeWide():0;
+    const auto appendPhase=[&](std::uint64_t& total) {
+        if(!g_profileAppendSample)return;
+        const auto now=sceKernelGetProcessTimeWide();
+        total+=now-appendPhaseStart;appendPhaseStart=now;
+    };
     const float invFixed = 1.0f / 65536.0f;
     float m[12]{};
     for (unsigned i = 0; i < 12; ++i)
@@ -7348,6 +7361,7 @@ static void appendLiveTownModel(
 
     const std::size_t vertexBase = g_liveTownCpuMesh.vertices.size();
     const std::size_t polygonBase = g_liveTownCpuMesh.polygonRecords.size();
+    appendPhase(g_profileAppendSetupUs);
     // Append final transformed vertices, without value-initializing every
     // attribute first. Retain geometric capacity growth for new high-water
     // marks; reserving the exact size per actor would repeatedly reallocate.
@@ -7367,6 +7381,7 @@ static void appendLiveTownModel(
         polygonBase + model.polygons.size());
     g_liveTownCpuMesh.gouraud555.resize(
         polygonBase + model.polygons.size());
+    appendPhase(g_profileAppendStorageUs);
 
     float projectionOffset[3]{};
     if (g_nativeSceneViewValid &&
@@ -7435,6 +7450,7 @@ static void appendLiveTownModel(
         }
     }
 
+    appendPhase(g_profileAppendTransformUs);
     LivePolygonLightState polygonLight{};
     polygonLight.additionalLight=state.additionalLight;
     if (state.hasLight) {
@@ -7471,6 +7487,7 @@ static void appendLiveTownModel(
     // Construct the final values once rather than zeroing then assigning.
     g_liveTownPolygonLights.insert(g_liveTownPolygonLights.end(),
         model.polygons.size(),polygonLight);
+    appendPhase(g_profileAppendLightUs);
     std::size_t runStart = 0u;
     std::size_t runCount = 0u;
     for (std::size_t p = 0; p < model.polygons.size(); ++p) {
@@ -7534,6 +7551,7 @@ static void appendLiveTownModel(
     if (runCount != 0u)
         g_liveTownMeshRanges.push_back(
             {polygonBase + runStart, runCount});
+    appendPhase(g_profileAppendBindingUs);
 }
 
 static void appendLiveTownEdge()
@@ -7903,6 +7921,7 @@ static bool buildLiveTownFrame()
     g_profilePrepareReusedGeometry = false;
     g_profilePrepareSkippedBasePayload = false;
     g_profileObjectAppendUs = 0u;
+    g_profileAppendSample=(azel_bridge::published_frame_number()%120u)==0u;
     g_profileObjectMaterialResolveUs = 0u;
     g_profileObjectMaterialCacheMisses = 0u;
     g_liveTownStaticIdentityHits = 0u;
@@ -8129,6 +8148,8 @@ static bool buildLiveTownFrame()
     // reuses its already-resolved mapping. Only transforms/normals are rebuilt
     // per instance each frame.
     const std::uint64_t tObjects = sceKernelGetProcessTimeWide();
+    g_profileAppendSetupUs=g_profileAppendStorageUs=0;
+    g_profileAppendTransformUs=g_profileAppendLightUs=g_profileAppendBindingUs=0;
     for (const auto& submission : azel_bridge::published_submissions()) {
         if (!submissionIsDynamic(submission) ||
             submission.adaptedModelIndex < 0)
@@ -8148,6 +8169,17 @@ static bool buildLiveTownFrame()
     }
     g_profileObjectAppendUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tObjects);
+    if(g_profileAppendSample) {
+        logging::writef("[LiveAppendPerf] frame=%llu submissions=%u setup=%llu storage=%llu transform=%llu light=%llu binding=%llu total=%u sampled=1\n",
+            static_cast<unsigned long long>(azel_bridge::published_frame_number()),
+            g_liveTownSubmissionCount,
+            static_cast<unsigned long long>(g_profileAppendSetupUs),
+            static_cast<unsigned long long>(g_profileAppendStorageUs),
+            static_cast<unsigned long long>(g_profileAppendTransformUs),
+            static_cast<unsigned long long>(g_profileAppendLightUs),
+            static_cast<unsigned long long>(g_profileAppendBindingUs),
+            g_profileObjectAppendUs);
+    }
 
     const std::uint64_t tEdge = sceKernelGetProcessTimeWide();
     // Town mode owns Edge. Field mode publishes its dragon/rider hierarchy

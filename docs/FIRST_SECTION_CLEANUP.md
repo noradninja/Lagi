@@ -125,6 +125,24 @@ Goal 1 remains open, and goal 2 must not begin merely because this patch builds.
 
 ## User-directed rewards work (performance validation still open)
 
+The 2026-10-22 13:25 log contains one completed Patergo sub 7 span:
+22 renderer samples, 10 complete presentation windows, 353/1200 intervals
+over two VBlanks, 22.131..29.970 FPS. Median renderer 29.748 ms, preparation
+14.268 ms, append 4.492 ms, 1690 polygons / 209.5 submissions. Compared to
+the preceding Patergo captures, this does not demonstrate a vertex-append
+speedup. The reported known crash is explicitly deferred by the user.
+
+New LiveAppendPerf observations split the shared dynamic-model append into
+matrix/billboard setup, storage/descriptor construction, vertex transformation
+(including projection setup), per-submission lighting/payload replication and
+binding/ordered-range bookkeeping. Only publications divisible by 120 read
+these extra clocks. Counters reset immediately before the dynamic submission
+loop, excluding static rebuilds and the separate town Edge injection. The
+total includes the dynamic loop/material-cache lookup, while the stage values
+cover append calls only. Clock overhead is present on sampled frames; these
+are diagnostic attribution samples, not timing gains. The analyzer exposes
+their count and medians, leaving absent fields null for older captures.
+
 Latest hardware log (Downloads/lagi.log, 2026-10-22 00:29) has six completed
 combat spans. First Urchin sub 5: append median 3.602 ms, build 5.741 ms,
 renderer 29.190 ms, 1635 polygons / 209 submissions; 270/960 presentation

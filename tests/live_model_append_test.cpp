@@ -11,6 +11,10 @@ namespace azel=lagi::azel;
 namespace azel_bridge=lagi::azel_bridge;
 #include "append_types.inc"
 static azel::BasicWingDebugMesh g_liveTownCpuMesh;
+static bool g_profileAppendSample=false;
+static std::uint64_t g_profileAppendSetupUs=0,g_profileAppendStorageUs=0;
+static std::uint64_t g_profileAppendTransformUs=0,g_profileAppendLightUs=0,g_profileAppendBindingUs=0;
+static std::uint64_t sceKernelGetProcessTimeWide(){static std::uint64_t clock=0;return ++clock;}
 static std::vector<LivePolygonLightState> g_liveTownPolygonLights;
 struct LiveTownMeshRange {std::size_t first,count;};
 static std::vector<LiveTownMeshRange> g_liveTownMeshRanges;
@@ -67,6 +71,7 @@ int main(){
  }
  std::uint16_t resolved[7]={7,6,5,4,3,2,1};
  for(unsigned variant=0;variant<32;++variant){
+  g_profileAppendSample=(variant&16)!=0;
   azel_bridge::SubmissionState state{};state.hasModelMatrix=variant!=0;state.hasLight=variant&1;state.billboard=variant&2;state.hasNativeModelLight=variant&4;
   state.localCoordinatesX=variant&8?190:176;state.localCoordinatesY=variant&8?99:112;
   state.modelMatrix[0]=state.modelMatrix[5]=state.modelMatrix[10]=65536;state.modelMatrix[3]=65536;state.modelMatrix[7]=-131072;state.modelMatrix[11]=196608;

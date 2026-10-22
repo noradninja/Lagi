@@ -20,10 +20,11 @@ foreach($line in [IO.File]::ReadLines((Resolve-Path -LiteralPath $Path).Path)){
  ++$lineNumber
  if($line.Contains('[BattleStartup] enter')){
   $f=Read-Fields $line
-  $active=@{Start=$lineNumber;End=$null;Sub=$f.sub;Overlay=$f.overlay;Samples=[Collections.Generic.List[object]]::new();Windows=[Collections.Generic.List[object]]::new();FirstWindow=$true}
+  $active=@{Start=$lineNumber;End=$null;Sub=$f.sub;Overlay=$f.overlay;Samples=[Collections.Generic.List[object]]::new();AppendSamples=[Collections.Generic.List[object]]::new();Windows=[Collections.Generic.List[object]]::new();FirstWindow=$true}
   $runs.Add($active)
  }
  if($null -eq $active){continue}
+ if($line.Contains('[LiveAppendPerf]')){$active.AppendSamples.Add((Read-Fields $line))}
  if($line.Contains('[ScenePerf]')){
   $f=Read-Fields $line
   if(!$f.uiOnly){$active.Samples.Add($f)}
@@ -42,6 +43,11 @@ $result=@(foreach($run in $runs){
   $median[$field]=Get-Median $values
  }
  $workload=[ordered]@{}
+ $append=[ordered]@{}
+ foreach($field in @('setup','storage','transform','light','binding','total')){
+  $values=@($run.AppendSamples | Where-Object {$_.ContainsKey($field)} | ForEach-Object {$_[$field]})
+  $append[$field]=Get-Median $values
+ }
  foreach($field in @('polys','verts','positionSyncVerts','submissions','spriteDraws','spriteWorldTagged','spriteShaded','spriteBboxPixels','spriteCacheHits','spriteCacheMisses','spritePaletteRefresh','spriteSlotSkips')){
   $values=@($run.Samples | Where-Object {$_.ContainsKey($field)} | ForEach-Object {$_[$field]})
   $workload[$field]=Get-Median $values
@@ -55,6 +61,7 @@ $result=@(foreach($run in $runs){
   WindowFpsMin=($fps | Measure-Object -Minimum).Minimum;WindowFpsMax=($fps | Measure-Object -Maximum).Maximum
   MedianUs=[pscustomobject]$median
   WorkloadMedian=[pscustomobject]$workload
+  AppendSamples=$run.AppendSamples.Count;SampledAppendMedianUs=[pscustomobject]$append
   Notes='Startup-to-audio-restore span can include intro/results. Heartbeat medians are sampled, not whole-frame averages. cpuprep/build/sync overlap; GPU finish is wait time. tasks=0 in older logs is uninstrumented. ReturnedAudio does not prove encounter correctness.'
  }
 })
