@@ -2752,6 +2752,15 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(APPEND source_text "${trail_draw_service}\n")
  elseif(relative_path STREQUAL "battle/battleResultScreen.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_rating.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_rating.inc" rating_service)
+  set(rating_stub "eBattleRating battleResultScreen_computeBattleRating(sBattleResultScreen* pThis)\n{\n    Unimplemented();\n    return eBattleRating::m4_excellent;\n}")
+  string(FIND "${source_text}" "${rating_stub}" rating_stub_found)
+  if(rating_stub_found LESS 0)
+   message(FATAL_ERROR "Native battle rating stub changed")
+  endif()
+  string(REPLACE "${rating_stub}" "${rating_service}" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_growth.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_growth.inc" growth_service)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS

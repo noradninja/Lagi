@@ -122,3 +122,25 @@ preferably including an Urchin formation when naturally encountered. Exact
 run matches are not required. Compare workload-aware append/build/render and
 presentation-window distributions; confirm effects/lighting remain intact.
 Goal 1 remains open, and goal 2 must not begin merely because this patch builds.
+
+## User-directed rewards work (performance validation still open)
+
+The user requested moving forward with rewards after confirming the latest
+run did not reproduce the audio-worker assertion. This does not close the
+performance target or prove that the assertion is fixed.
+
+First atomic correction: restore the rank decision from BTL_A3
+0606EA44..0606EBA4. The table pointer is selected at 060AB010 by overlay,
+then a 16-byte row by subbattle. Signed 16-bit thresholds score m190[0]/30
+and damage-received m190[1] independently; equality advances to the next
+band. Combined scores 0,1,2,3..6,7..8 select Excellent, Great Fight,
+Good Fight, Close Call, Narrow Escape respectively. A null table uses
+score 8, not Excellent. The existing result path applies the rank XP modifier.
+
+The adapter reads live disc-backed thresholds; no fabricated rank cutoffs.
+battle_rating_test.cpp executes the production include across all 25 band
+combinations, overlay/subbattle indices, equality, division and null-table
+cases. Vita build/package passes; on-device rank changes remain unverified.
+The later native enemy-record bookkeeping at 0606EBC8..0606EC8C, item
+selection/award routine at 0606ECA2, and learned-Berserk announcements and
+persistence are not claimed implemented by this first correction.
