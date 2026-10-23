@@ -13,12 +13,21 @@ namespace lagi::platform::frontend_music {
 namespace {
 std::atomic<bool> stopRequested{false};
 SceUID worker = -1;
-constexpr const char* kPath = "ux0:data/lagi/frontend/bgm.mp3";
+constexpr const char* kPackaged = "app0:frontend/bgm.mp3";
+constexpr const char* kLegacy = "ux0:data/lagi/frontend/bgm.mp3";
+const char* g_musicPath = kPackaged;
+FILE* open_music()
+{
+    FILE* f = std::fopen(kPackaged, "rb");
+    g_musicPath = kPackaged;
+    if (!f) { f = std::fopen(kLegacy, "rb"); g_musicPath = kLegacy; }
+    return f;
+}
 constexpr int kBufferCapacity = 16384;
 
 int run(SceSize, void*)
 {
-    FILE* file = std::fopen(kPath, "rb");
+    FILE* file = open_music();
     if (!file) return 0;
     mp3dec_t decoder{};
     mp3dec_init(&decoder);
@@ -27,7 +36,7 @@ int run(SceSize, void*)
     int buffered = 0;
     bool audioReady = false;
     unsigned sampleRate = 0, channels = 0;
-    logging::writef("[FrontendMusic] opened %s\n", kPath);
+    logging::writef("[FrontendMusic] opened %s\n", g_musicPath);
     while (!stopRequested.load(std::memory_order_acquire)) {
         if (buffered < 4096) {
             const int amount = static_cast<int>(
@@ -89,9 +98,9 @@ int run(SceSize, void*)
 void start()
 {
     if (worker >= 0) return;
-    FILE* test = std::fopen(kPath, "rb");
+    FILE* test = open_music();
     if (!test) {
-        logging::writef("[FrontendMusic] optional file absent: %s\n", kPath);
+        logging::writef("[FrontendMusic] optional file absent: %s\n", g_musicPath);
         return;
     }
     std::fclose(test);
