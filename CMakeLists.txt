@@ -1851,6 +1851,22 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "    // FLD_A3.PRG contains shared field infrastructure data (camera configs, etc.)\n    static sFieldOverlay* lagiSharedA3Data = nullptr;\n    if (lagiSharedA3Data == nullptr)\n    {\n        lagiSharedA3Data = new sFieldOverlay(\"FLD_A3.PRG\");\n    }\n    gFieldCameraConfigEA = { 0x6092EF0, lagiSharedA3Data };\n    gFieldDragonAnimTableEA = { 0x06094134, lagiSharedA3Data };\n    gFieldCameraDrawFunc = &cameraFollowMode_default;\n    gCurrentFieldOverlay = lagiSharedA3Data;"
    source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "o_title.cpp")
+  set(source_text "#include \"lagi/title_cdda.h\"\n${source_text}")
+  set(cdda_title_anchor "        //fileInfoStruct.m_1 = 3;\n        //fileInfoStruct.m_2 = 0;\n        //fileInfoStruct.m_4 = 0xF;")
+  string(FIND "${source_text}" "${cdda_title_anchor}" cdda_title_found)
+  if(cdda_title_found LESS 0)
+   message(FATAL_ERROR "Native title CD request boundary changed")
+  endif()
+  string(REPLACE "${cdda_title_anchor}" "        lagiAzelTitleCddaPlay(); // original title track 3, repeat" source_text "${source_text}")
+ elseif(relative_path STREQUAL "dummy.cpp")
+  set(source_text "#include \"lagi/title_cdda.h\"\n${source_text}")
+  set(cdda_stop_stub "void titleScreenDrawSub3(u32) { PDS_unimplemented(\"titleScreenDrawSub3\"); }")
+  string(FIND "${source_text}" "${cdda_stop_stub}" cdda_stop_found)
+  if(cdda_stop_found LESS 0)
+   message(FATAL_ERROR "Native title CD stop stub changed")
+  endif()
+  string(REPLACE "${cdda_stop_stub}" "void titleScreenDrawSub3(u32 command) { lagiAzelTitleCddaStop(command == 1 ? 0 : 22050); }" source_text "${source_text}")
  elseif(relative_path STREQUAL "titleScreen.cpp")
   # Hardware-validated front-end sequencing correction for the generated Vita
   # copy. The reconstructed title menu currently queues the selected module in

@@ -12,6 +12,8 @@
 #include "lagi/streamed_pcm.h"
 #include "lagi/cutscene_audio.h"
 #include "lagi/audio_output_owner.h"
+#include "lagi/cdda_stream.h"
+#include "lagi/title_cdda.h"
 #ifndef LAGI_BATTLE_AUDIO_STACK
 #define LAGI_BATTLE_AUDIO_STACK 0
 #endif
@@ -174,7 +176,9 @@ enum class AudioEventType : std::uint8_t {
     Sound,
     FadeAll,
     BattleMark,
-    PopSequence
+    PopSequence,
+    CddaPlay,
+    CddaStop
 };
 
 struct AudioEvent {
@@ -192,6 +196,7 @@ std::atomic<unsigned long long> g_audioTraceSerial{0};
 bool g_scspInitialized = false;
 const sSequenceConfig* g_sequence = nullptr;
 lagi::StreamedPCM<> g_cutscenePCM;
+lagi::CddaStream g_cdda;
 const void* g_cutscenePCMOwner=nullptr; // parser-thread owned
 unsigned g_cutscenePCMPackets=0;
 s32 g_sequenceNumber = -1;
@@ -759,13 +764,14 @@ void render_scsp_audio()
 {
     // EPK PCM owns an independent lane, including after fade-all has muted
     // gameplay synthesis. Keep driver clocks running without leaking old BGM.
-    if (!g_gameplayRenderEnabled && g_cutscenePCM.active()) {
+    if ((!g_gameplayRenderEnabled || !g_sequence) && (g_cutscenePCM.active() || g_cdda.active())) {
         ensure_output_stream();
         if (lagi::platform::audio::pcm_stream_active() &&
             lagi::platform::audio::queued_pcm_frames() < kTargetQueuedFrames) {
             if (g_scspInitialized && g_sequence) clock_scsp_discard(false);
             std::fill(g_mixBuffer.begin(), g_mixBuffer.end(), 0);
             g_cutscenePCM.mix(g_mixBuffer.data(), kRenderChunkFrames, kScspRate);
+            g_cdda.mix(g_mixBuffer.data(), kRenderChunkFrames);
             lagi::platform::audio::write_pcm_frames(g_mixBuffer.data(), kRenderChunkFrames);
         }
         return;
@@ -936,6 +942,7 @@ void render_scsp_audio()
         }
 
         g_cutscenePCM.mix(g_mixBuffer.data(), kRenderChunkFrames, kScspRate);
+        g_cdda.mix(g_mixBuffer.data(), kRenderChunkFrames);
         const std::size_t written =
             lagi::platform::audio::write_pcm_frames(
                 g_mixBuffer.data(), kRenderChunkFrames);
@@ -1069,6 +1076,20 @@ void process_audio_events()
     AudioEvent event{};
     while (pop_audio_event(event)) {
         switch (event.type) {
+        case AudioEventType::CddaPlay: {
+            g_cdda.stop();
+            lagi::CddaTrack track;
+            const bool ready=lagi::disc::audio_track(3,track)&&g_cdda.start(track,true);
+            lagi::platform::logging::writef("[CDDA] disc=%d track=3 ready=%u start=%llu end=%llu file=%s\n",
+                lagi::disc::selected_disc(),unsigned(ready),
+                static_cast<unsigned long long>(track.firstByte),
+                static_cast<unsigned long long>(track.endByte),track.file.c_str());
+            break;
+        }
+        case AudioEventType::CddaStop:
+            g_cdda.fade(static_cast<unsigned>(event.a));
+            lagi::platform::logging::writef("[CDDA] stop fadeFrames=%d\n",int(event.a));
+            break;
         case AudioEventType::LoadBanks:
             worker_load_banks(event.a, event.b);
             break;
@@ -1132,7 +1153,7 @@ int audio_worker_thread(SceSize, void*)
 
         g_cutscenePCM.service();
         if (!lagi::audio::movieOwnsOutput.load(std::memory_order_acquire) &&
-            ((g_gameplayRenderEnabled && g_sequence) || g_cutscenePCM.active())) {
+            ((g_gameplayRenderEnabled && g_sequence) || g_cutscenePCM.active() || g_cdda.active())) {
             {
                 lagi::audio::OutputLease lease;
                 if (!lagi::audio::movieOwnsOutput.load(std::memory_order_acquire))
@@ -1149,6 +1170,7 @@ int audio_worker_thread(SceSize, void*)
         }
     }
 
+    g_cdda.stop();
     g_audioWorkerRunning.store(false, std::memory_order_release);
     return 0;
 }
@@ -1252,6 +1274,14 @@ extern "C" void lagi_audio_stop_worker_for_shutdown() {
         sceKernelDeleteThread(g_audioWorkerThread);
         g_audioWorkerThread=-1;
     }
+}
+
+extern "C" void lagiAzelTitleCddaPlay() {
+    AudioEvent event{};event.type=AudioEventType::CddaPlay;push_audio_event(event);
+}
+extern "C" void lagiAzelTitleCddaStop(unsigned fadeFrames) {
+    AudioEvent event{};event.type=AudioEventType::CddaStop;
+    event.a=static_cast<s32>(std::min(fadeFrames,44100u));push_audio_event(event);
 }
 
 

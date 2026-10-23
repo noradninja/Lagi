@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+namespace lagi { struct CddaTrack; }
 
 namespace lagi::disc {
 struct FileHandle {
@@ -17,6 +18,8 @@ bool disc_available(int discNumber);
 int selected_disc();
 bool mounted();
 const char* image_path();
+// Selected disc's CUE-defined BINARY/AUDIO range, never an ISO file extent.
+bool audio_track(unsigned track, CddaTrack& out);
 bool has_file(const char* name);
 bool file_size(const char* name, std::uint32_t& out);
 bool open_file(const char* name, FileHandle& handle);
