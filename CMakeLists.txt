@@ -1868,6 +1868,15 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${cdda_title_anchor}" "        lagiAzelTitleCddaPlay(); // original title track 3, repeat" source_text "${source_text}")
  elseif(relative_path STREQUAL "dummy.cpp")
   set(source_text "#include \"lagi/title_cdda.h\"\n${source_text}")
+  string(REPLACE "#include \"titleScreen.h\"" "#include \"titleScreen.h\"\n#include \"audio/soundDriver.h\"" source_text "${source_text}")
+  set(native_sound_stop_stub "void soundFunc(int) { PDS_unimplemented(\"soundFunc\"); }")
+  string(FIND "${source_text}" "${native_sound_stop_stub}" native_sound_stop_found)
+  if(native_sound_stop_found LESS 0)
+   message(FATAL_ERROR "Native soundFunc stop boundary changed")
+  endif()
+  # MAIN 0602C32A tail-calls enqueuePlaySoundEffect(sound,2,0,0).
+  # Every authored tunnel entry already calls this for sounds 100 and 101.
+  string(REPLACE "${native_sound_stop_stub}" "void soundFunc(int sound) { enqueuePlaySoundEffect(sound,2,0,0); }" source_text "${source_text}")
   set(cdda_stop_stub "void titleScreenDrawSub3(u32) { PDS_unimplemented(\"titleScreenDrawSub3\"); }")
   string(FIND "${source_text}" "${cdda_stop_stub}" cdda_stop_found)
   if(cdda_stop_found LESS 0)

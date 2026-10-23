@@ -27,3 +27,20 @@ timing acceptance. Audio quanta near its end exceed the 5804-us budget with
 DSP backend 0, so the music slowdown is not evidence that the main-thread
 assertion occurred inside audio. That independent performance issue remains
 under investigation.
+
+## Tunnel music stop
+
+Authored cave entries already call soundFunc(100) and soundFunc(101). The
+reconstruction's dummy.cpp implements soundFunc as a no-op. FLD_A3's
+subfield dispatch at 06081C2C selects tunnel 4 entry 06054718; calls at
+0605472E/06054734 use literal 060547A8 = 0602C32A for IDs 100/101.
+MAIN 0602C32A sets R7=0, R6=0, R5=2, and tail-calls the enqueue service at
+0602B188. The generated adapter now supplies exactly that shared stop request.
+No tunnel-ID mute list or extra bank reload is added. Native same-sequence
+load state 8 remains valid: silence no longer depends on a bank-change stop.
+The existing queued-request service delivers the authored stops after an
+in-progress load, preserving its worker ownership and command ordering.
+
+Hardware checks required: first and subsequent tunnel silence, outside BGM
+restart, tunnel ambience/switch sounds, and the reported exit route/crash.
+Do not call these source/build checks device acceptance.
