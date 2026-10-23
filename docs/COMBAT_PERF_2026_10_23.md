@@ -34,3 +34,15 @@ topology and noncanonical geometry retain the accepted path. This applies to
 all native models, not Patergo IDs. The production topology adapter test and
 bitwise append-versus-baseline fixture pass for repeated appends, lights,
 billboards, offsets, blend ordering, face colors and fallback layouts.
+
+## Cinematic model registration
+
+Inventory registration previously adapted every model into a private snapshot;
+the first draw then adapted the same model again into the draw cache. Fresh
+registration now creates the cache snapshot once and aliases immutable model
+ownership for inventory. Registration replaces old pointer identity, duplicate
+registration is still a no-op, and published inventory keeps old snapshots
+alive after retirement. Production-function extraction tests verify reuse,
+generation/address replacement, duplicate registration and lifetime. This
+removes duplicate work at resource introductions but does not prove every
+cinematic task/rebuild spike is eliminated; capture the same sequence again.

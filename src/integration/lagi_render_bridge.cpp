@@ -328,11 +328,18 @@ void register_native_model_resource(std::int8_t bundleIndex,
         modelOffset;
     if (g_registeredResources.find(key) != g_registeredResources.end())
         return;
-    auto adapted = std::make_shared<LiveVdp1Model>();
-    if (!adapt_processed_model(model, *adapted))
+    LiveVdp1Model adapted;
+    if (!adapt_processed_model(model, adapted))
         return;
+    // Registration has fresh native resource authority. Replace any old
+    // address identity, then let inventory and first draw share this immutable
+    // adaptation. Aliasing ownership retains the entire snapshot for published
+    // inventory even after native retirement/address reuse.
+    g_modelCache.retire(model);
+    auto snapshot=g_modelCache.insert(model,std::move(adapted));
+    std::shared_ptr<const LiveVdp1Model> sharedModel(snapshot,&snapshot->value);
     g_registeredResources.emplace(key, RegisteredModelResource{
-        generation->second, bundleIndex, modelOffset, std::move(adapted), memory->second,
+        generation->second, bundleIndex, modelOffset, std::move(sharedModel), memory->second,
         g_bundleTextureEpochs.at(bundleIndex)});
     g_resourceInventoryDirty = true;
 }
