@@ -14525,8 +14525,13 @@ static constexpr const char* kLauncherSpriteNames[10] = {
 static bool launcherLoadSprite(LauncherSprite& sprite, const char* name)
 {
     char path[160];
-    std::snprintf(path, sizeof(path), "ux0:data/lagi/frontend/%s.rgba", name);
+    std::snprintf(path, sizeof(path), "app0:frontend/%s.rgba", name);
     FILE* f = std::fopen(path, "rb");
+    if (!f) {
+        // Preserve older installs and quick VitaShell asset overrides.
+        std::snprintf(path, sizeof(path), "ux0:data/lagi/frontend/%s.rgba", name);
+        f = std::fopen(path, "rb");
+    }
     if (!f) return false;
     std::uint32_t dimensions[2]{};
     const bool headerOk = std::fread(dimensions, sizeof(dimensions), 1, f) == 1;
