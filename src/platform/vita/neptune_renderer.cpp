@@ -14796,7 +14796,7 @@ static void launcherTextured(const bool available[4], int selected)
     }
     // The source plaque is vertically compressed: restore its round fittings
     // with a 3:2 vertical correction, independently of the unscaled font.
-    launcherBlit(8, 548, 330, 180);
+    launcherBlit(8, 548, 356); // authored 1:1; do not stretch the info plaque
     drawFrontendText(641, 389, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
         0xFFFFFFFFu);
     if (selected >= 0) {
