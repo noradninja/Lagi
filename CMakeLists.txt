@@ -1511,6 +1511,13 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
  # fallbacks in generated sources, while the strong Vita adapter supplies the
  # same engine API without changing extern/Azel.
  elseif(relative_path STREQUAL "PDS.cpp")
+  set(source_text "#include \"lagi/saturn_divide.h\"\n${source_text}")
+  set(saturn_divide_stub "s32 setDividend(s32 r4, s32 r5, s32 divisor)\n{\n    assert(divisor);\n    s64 divident = (s64)r4 * (s64)r5;\n    return (s32)(divident / divisor);\n}")
+  string(FIND "${source_text}" "${saturn_divide_stub}" saturn_divide_found)
+  if(saturn_divide_found LESS 0)
+   message(FATAL_ERROR "Native setDividend boundary changed")
+  endif()
+  string(REPLACE "${saturn_divide_stub}" "s32 setDividend(s32 r4, s32 r5, s32 divisor)\n{\n    return lagi::saturn_mul_div(r4,r5,divisor);\n}" source_text "${source_text}")
   # Upstream labels this battle generic-data initialization as "not in
   # original". 0.040 now enters through Azel's native azelInit()/resetEngine()
   # path, so omit only that desktop reconstruction helper rather than making
