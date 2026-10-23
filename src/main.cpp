@@ -54,9 +54,12 @@ int main()
         else if (pressed & 0x0080u) direction = 1; // D-pad right
         else if (pressed & 0x0020u) direction = 2; // D-pad down
         else if (pressed & 0x0040u) direction = 3; // D-pad left
-        if (direction >= 0 && discAvailable[direction])
+        if (direction >= 0 && discAvailable[direction] && direction != selection) {
             selection = direction;
+            lagi::platform::frontend_music::play_navigation();
+        }
         if (selection >= 0 && (pressed & 0x0002u)) {
+            lagi::platform::frontend_music::play_confirm();
             selectedDiscMounted = lagi::disc::mount_disc(selection + 1);
             if (!selectedDiscMounted) {
                 discAvailable[selection] = false;
@@ -71,8 +74,8 @@ int main()
         }
     }
 
-    lagi::platform::frontend_music::stop();
     if (!selectedDiscMounted) {
+        lagi::platform::frontend_music::stop();
         lagi::platform::shutdown();
         sceKernelExitProcess(0);
         return 0;
@@ -88,6 +91,7 @@ int main()
         lagi::platform::renderer::launcher_fade(frame, 30);
         lagi::platform::end_frame();
     }
+    lagi::platform::frontend_music::stop();
     lagi::platform::logging::writef("[DiscSelector] fade complete; initialize Azel\n");
 
     if (!lagi::azel::runtime_init()) {

@@ -217,9 +217,23 @@ sprites from `assets/frontend/`. When present at configure time, it also
 includes `bgm.mp3`, `navigate.wav`, and `confirm.wav`. Missing optional
 audio files are not silently synthesized: add the files to the repo and
 rerun `cmake -S . -B build-fullres -DLAGI_FULLRES=ON` before building.
-The WAV menu cues are reserved packaging names, **not yet wired** to
-input/audio playback. Source/rights verification is still required for
-original PDS menu sounds.
+The WAV menu cues now contain PCM rendered from the user's Disc 1 game data
+through the same 68K/SCSP sound core used by Lagi. Native Azel's title menu
+calls system effect 10 for movement (COMMON config: bank 1, sound 2) and
+effect 0 for confirmation (bank 0, sound 0). The render loads the original
+`SDDRVS.TSK`, `AREAMAP.SND`, `SYS_SE.SEQ`, `SYS_SE.BIN`, `DRG_SE.SEQ`,
+`DRG1SE.BIN`, and `A5DSP.EXB`, then follows the native initialize/map/effect/
+mixer commands and area-map enable sequence. Only the trailing digital silence
+is removed from each 44.1-kHz stereo 16-bit WAV. No video-capture audio is
+used in the package.
+
+Disc-selection changes queue the movement cue only when the selected disc
+actually changes. X queues the confirmation cue before mounting; the existing
+music stream carries both cues through the 30-vblank fade and releases audio
+before Azel initializes. Frontend music is held to a 4096-frame input queue
+so the mixer does not hide cues behind the normal long PCM ring backlog.
+Local PCM and build checks do not establish Vita
+audibility or the final balance against BGM; device verification remains open.
 
 The 960×544 fitted radial asset can be authored offline as a complete
 full-resolution transparent atlas, which the renderer presents at 1:1 scale.

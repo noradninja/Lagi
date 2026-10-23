@@ -62,7 +62,12 @@ void set_azel_color_offset_state(
     unsigned int selectMask,
     int aRed, int aGreen, int aBlue,
     int bRed, int bGreen, int bBlue); void movie_clear_frame(); }
-namespace frontend_music { void start(); void stop(); }
+namespace frontend_music {
+void start();
+void stop();
+void play_navigation();
+void play_confirm();
+}
 namespace audio {
 bool init();
 void shutdown();
