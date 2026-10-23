@@ -6,6 +6,24 @@
 
 Lagi is not a Sega Saturn emulator and does not use VitaGL.
 
+## Disc loader
+
+Lagi now opens with a four-disc selector before handing control to Azel. Put each
+game CUE/BIN in its matching `ux0:data/lagi/Disc 1` through `Disc 4` folder;
+the selector shows which discs are present and skips missing ones. Use the
+D-pad or left stick to choose a disc, then press X to load it. The menu uses
+the approved Saga-inspired artwork, the original PDS font and character art,
+looping music, and menu sounds rendered from the original game data.
+
+![Accepted 960x544 disc loader on Vita](docs/images/iso-loader-accepted-960x544.png)
+
+The selector, audio, mount, and fade into the native game were tested and
+accepted on Vita at 960x544 with `LAGI_FULLRES=ON`. Game state remains Azel's;
+the loader only chooses and mounts a disc. See the
+[disc-loader guide](docs/DISC_SELECTION_FRONTEND.md) for setup and the
+[acceptance handoff](docs/ISO_LOADER_ACCEPTANCE_2026_10_23.md) for the exact
+checkpoint.
+
 ## Current status
 
 Current main extends the authentic Azel boot path through the opening movies, title, New Game, D5 name entry, playable Ruins, elevator/Cinepak handoff, native FLD_A3 flight, E006 in-engine cinematic and Excavation arrival. Azel owns the native field task graph, camera, visibility cells and transitions. This development state extends the earlier public v0.3.0alpha release; it does not imply a new packaged release or complete game support.
@@ -18,7 +36,7 @@ Working systems include:
 - native actor placement through cinematic and Excavation camera changes
 - reusable texture residency, a CDRAM-preferred upload arena, and range-aware image/LUT/palette invalidation
 
-- Disc 1 CUE/BIN and ISO9660 access
+- four-disc CUE/BIN selection and ISO9660 access
 - `COMMON.DAT` and town resource loading
 - authentic Azel boot through title, New Game, D5 name entry, and the pre-Ruins cinematic
 - native module-manager load of `TWN_RUIN.PRG`
@@ -48,7 +66,7 @@ Working systems include:
 - hardware-accepted screen-space 2x2 coordinate dithering for final Cinepak presentation
 - Edge's original textured/stippled VDP1 mesh shadow
 - Saturn-accurate Azel-driven black/white fade direction, timing, and color-offset presentation bridged through Neptune
-- native 980x544 gameplay presentation with MSAA disabled
+- optional native 960x544 gameplay presentation with MSAA disabled
 - native 720x408 high-resolution title presentation
 - stable 30 Hz presentation through the supported 3D sequence
 
@@ -79,7 +97,9 @@ The game-side runtime owns tasks, scripts, game modes, scene selection, collisio
 The current native boot path is:
 
 ```text
-Disc 1 BIN/CUE
+Selected Disc 1-4 BIN/CUE
+    |
+Vita disc selector and mount
     |
 azelInit() / resetEngine()
     |

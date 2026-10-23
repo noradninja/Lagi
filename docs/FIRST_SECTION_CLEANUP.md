@@ -1,5 +1,15 @@
 # First-section cleanup goals
 
+## 2026-10-23 handoff note
+
+The separate ISO loader work is complete and accepted on Vita, including its
+visuals, four-disc mount path, music, and both original sound effects. It has
+been brought into main while `feature/first-section-cleanup` stays the working
+branch. The accepted screenshot and a short technical handoff are in
+[ISO_LOADER_ACCEPTANCE_2026_10_23.md](ISO_LOADER_ACCEPTANCE_2026_10_23.md).
+Do not reopen the loader as part of the goals below. Goal 1's combat timing
+gate is still open; loader acceptance does not close it or the later goals.
+
 Work branch: feature/first-section-cleanup, from accepted main merge 92470e9.
 One numbered goal is active at a time. Replace it with the next only after
 the required evidence is accepted; do not call source/build tests Vita proof.
