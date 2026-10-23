@@ -14525,8 +14525,13 @@ static constexpr const char* kLauncherSpriteNames[10] = {
 static bool launcherLoadSprite(LauncherSprite& sprite, const char* name)
 {
     char path[160];
-    std::snprintf(path, sizeof(path), "ux0:data/lagi/frontend/%s.rgba", name);
+    std::snprintf(path, sizeof(path), "app0:frontend/%s.rgba", name);
     FILE* f = std::fopen(path, "rb");
+    if (!f) {
+        // Preserve older installs and quick VitaShell asset overrides.
+        std::snprintf(path, sizeof(path), "ux0:data/lagi/frontend/%s.rgba", name);
+        f = std::fopen(path, "rb");
+    }
     if (!f) return false;
     std::uint32_t dimensions[2]{};
     const bool headerOk = std::fread(dimensions, sizeof(dimensions), 1, f) == 1;
@@ -14763,7 +14768,13 @@ static void launcherTextured(const bool available[4], int selected)
     }
     launcherBlit(0, 0, 0);   // wallpaper
     launcherBlit(1, 0, 0);   // carved frame behind the radial socket rings
-    launcherBlitRadialFitted(); // complete circle fits between frame borders
+    // New full-panel radial atlas is authored at 960x544 and needs no
+    // runtime resizing. Legacy 492px art remains supported until replaced.
+    if (g_launcherSprites[2].width == static_cast<unsigned>(kWidth) &&
+        g_launcherSprites[2].height == static_cast<unsigned>(kHeight))
+        launcherBlit(2, 0, 0);
+    else
+        launcherBlitRadialFitted();
     // Positions measured from the actual mechanical sockets at native 960x544.
     static constexpr int nodeX[4] = {248, 395, 248, 102};
     static constexpr int nodeY[4] = {98, 247, 381, 247};
@@ -14779,17 +14790,24 @@ static void launcherTextured(const bool available[4], int selected)
                       i + 1, available[i] ? "FOUND" : "NOT FOUND");
         drawFrontendText(rowX + 80, rowY[i] + 29, label,
                          available[i] ? 0xFFD4CEC0u : 0xFF959595u);
+        // Presence marker belongs to the list oval, never the radial.
+        // O = available, X = absent. No selection-dependent highlighting.
+        drawFrontendText(rowX + 26, rowY[i] + 29,
+                         available[i] ? "O" : "X",
+                         available[i] ? 0xFFE3B765u : 0xFF858585u);
         // The same disc artwork is used for both states. Selected artwork
         // receives a gold tint, rather than swapping to a different emblem.
-        const int icon = !available[i] ? 5 :
-            (!g_launcherSprites[10 + i].rgba.empty() ? 10 + i :
-             (i == 0 && selected == 0 ? 3 : 4));
-        launcherBlitCentered(icon, nodeX[i], nodeY[i], 71,
-                            available[i] && selected == i && icon != 3);
+        // Unavailable discs reveal the radial artwork's empty sockets.
+        if (available[i]) {
+            const int icon = !g_launcherSprites[10 + i].rgba.empty()
+                ? 10 + i : (i == 0 && selected == 0 ? 3 : 4);
+            launcherBlitCentered(icon, nodeX[i], nodeY[i], 71,
+                                selected == i && icon != 3);
+        }
     }
     // The source plaque is vertically compressed: restore its round fittings
     // with a 3:2 vertical correction, independently of the unscaled font.
-    launcherBlit(8, 548, 330, 180);
+    launcherBlit(8, 548, 356); // authored 1:1; do not stretch the info plaque
     drawFrontendText(641, 389, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
         0xFFFFFFFFu);
     if (selected >= 0) {

@@ -4824,6 +4824,29 @@ if(LAGI_AZEL_PROBE)
 endif()
 
 vita_create_self(lagi.self lagi UNSAFE)
+# Frontend files live in app0:frontend after VPK install. The game BIN/CUE
+# images deliberately remain external in ux0:data/lagi/Disc N.
+set(LAGI_FRONTEND_VPK_FILES)
+foreach(frontend_file IN ITEMS
+ background outer_frame radial gold ivory missing highlight
+ row info legend disc_1 disc_2 disc_3 disc_4)
+ set(frontend_path "${CMAKE_CURRENT_SOURCE_DIR}/assets/frontend/${frontend_file}.rgba")
+ if(NOT EXISTS "${frontend_path}")
+  message(FATAL_ERROR "Required frontend asset missing: ${frontend_path}")
+ endif()
+ list(APPEND LAGI_FRONTEND_VPK_FILES
+      "${frontend_path}" "frontend/${frontend_file}.rgba")
+endforeach()
+# Music and sound-effect assets are optional during development. When supplied
+# in assets/frontend they are bundled automatically on reconfigure.
+foreach(frontend_audio IN ITEMS bgm.mp3 navigate.wav confirm.wav)
+ set(frontend_path "${CMAKE_CURRENT_SOURCE_DIR}/assets/frontend/${frontend_audio}")
+ if(EXISTS "${frontend_path}")
+  list(APPEND LAGI_FRONTEND_VPK_FILES
+       "${frontend_path}" "frontend/${frontend_audio}")
+ endif()
+endforeach()
+
 vita_create_vpk(Lagi.vpk ${VITA_TITLEID} lagi.self
  VERSION ${VITA_VERSION}
  NAME ${VITA_APP_NAME}
@@ -4832,4 +4855,5 @@ vita_create_vpk(Lagi.vpk ${VITA_TITLEID} lagi.self
   "${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/bg0.png" sce_sys/livearea/contents/bg0.png
   "${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/startup.png" sce_sys/livearea/contents/startup.png
   "${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/template.xml" sce_sys/livearea/contents/template.xml
+  ${LAGI_FRONTEND_VPK_FILES}
 )

@@ -202,3 +202,29 @@ font rendering. All other VDP2 font ownership remains with Azel.
 ## Font validation failure and rollback (2026-10-16)
 
 Hardware testing showed corrupted text from the experimental `resetVdp2StringsData` glyph path. That type-5 table represents extended character sprites, **not** the ordinary ASCII font. Azel loads the regular character graphics from `ASCII.CGZ` using `loadFont()` and `unpackGraphicsToVDP2()`. The incorrect preboot glyph renderer was removed, and the prior readable text plus its baseline coordinates were restored. Implement the real `ASCII.CGZ` decoding path and confirm mapping on Vita before enabling it for either selector or `Loading...`. The left and right portrait centers were independently adjusted 2 pixels left and 2 pixels up per hardware feedback.
+
+
+## VPK-installed frontend resources (October 2026)
+
+The shipping VPK now installs frontend RGBA assets at `app0:frontend/`.
+The frontend renderer first opens these packaged assets, falling back to
+`ux0:data/lagi/frontend/` for older installs. The optional looping music
+uses the same preference order for `bgm.mp3`. BIN/CUE game discs are **not**
+bundled and still belong in `ux0:data/lagi/Disc N/`.
+
+On CMake configure, the packager includes all required PNG-converted RGBA
+sprites from `assets/frontend/`. When present at configure time, it also
+includes `bgm.mp3`, `navigate.wav`, and `confirm.wav`. Missing optional
+audio files are not silently synthesized: add the files to the repo and
+rerun `cmake -S . -B build-fullres -DLAGI_FULLRES=ON` before building.
+The WAV menu cues are reserved packaging names, **not yet wired** to
+input/audio playback. Source/rights verification is still required for
+original PDS menu sounds.
+
+The 960×544 fitted radial asset can be authored offline as a complete
+full-resolution transparent atlas, which the renderer presents at 1:1 scale.
+Legacy smaller radial art still uses the old fitted composition. Row art is
+also presented 1:1. Avoid runtime enlargement or reduction for the new
+assets. Existing image files must be replaced in `assets/frontend/` and
+rebuilt to change the installed look; packaged assets have priority over
+legacy ux0 overrides.
