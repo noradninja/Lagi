@@ -102,6 +102,7 @@ int main(int argc,char** argv){
   std::uint32_t header[2];assert(std::fread(header,sizeof(header),1,asset)==1);
   auto& sprite=g_launcherSprites[i];sprite.width=header[0];sprite.height=header[1];sprite.rgba.resize(sprite.width*sprite.height);
   assert(std::fread(sprite.rgba.data(),4,sprite.rgba.size(),asset)==sprite.rgba.size());std::fclose(asset);
+  if(i>=10 && i<14)assert(sprite.width==64 && sprite.height==64);
  }
  auto saveFrame=[&](const std::string& path){FILE* out=nullptr;assert(!fopen_s(&out,path.c_str(),"wb"));std::fprintf(out,"P6\n960 544\n255\n");for(auto pixel:frame0){const u8 rgb[]={u8(pixel),u8(pixel>>8),u8(pixel>>16)};std::fwrite(rgb,1,3,out);}std::fclose(out);};
  const bool available[4]={true,true,false,false};

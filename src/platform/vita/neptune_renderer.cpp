@@ -14799,8 +14799,9 @@ static void launcherTextured(const bool available[4], int selected)
     else
         launcherBlitRadialFitted();
     // Positions measured from the actual mechanical sockets at native 960x544.
-    static constexpr int nodeX[4] = {254, 404, 254, 99};
-    static constexpr int nodeY[4] = {108, 270, 402, 270};
+    // The 64px medallions fit the four inner circles of the radial artwork.
+    static constexpr int nodeX[4] = {254, 406, 254, 102};
+    static constexpr int nodeY[4] = {116, 265, 394, 265};
     const int rowX = 515;
     static constexpr int rowY[4] = {75, 150, 225, 300};
     // Populate only available entries; the radial nodes show locked state.
@@ -14822,7 +14823,7 @@ static void launcherTextured(const bool available[4], int selected)
         if (available[i]) {
             const int icon = !g_launcherSprites[10 + i].rgba.empty()
                 ? 10 + i : (i == 0 && selected == 0 ? 3 : 4);
-            launcherBlitCentered(icon, nodeX[i], nodeY[i], 71,
+            launcherBlitCentered(icon, nodeX[i], nodeY[i], 64,
                                 selected == i && icon != 3);
         }
     }

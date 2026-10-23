@@ -12,8 +12,11 @@ control icons inside the dark inset.
 The matching `.rgba` files in `assets/frontend/` have an 8-byte little-endian
 width/height header followed by tightly packed RGBA8888 pixels. Each PNG and
 raw payload is pixel-identical. The original, unscaled disc medallions are
-preserved in `assets/frontend/source_portraits/{png,rgba}/`; the four 71 x 71
-runtime portraits are derived from those same images for a 1:1 blit.
+preserved in `assets/frontend/source_portraits/{png,rgba}/`. The replacement
+preproduction images and the approved prior rim sample are preserved unmodified
+in `assets/frontend/source_portraits/png/`. The four 64 x 64 runtime portraits,
+including their 4-pixel circular rims, are derived from those sources for a
+1:1 blit.
 
 The screen uses the existing `ASCII.CGZ` decode and PDS palette at runtime;
 no font or game BIN/CUE is bundled. The row and heading glyphs use 10 x 22
@@ -25,7 +28,7 @@ D-pad, and left-stick prompts are separate transparent sprites.
 | Element | Destination |
 | --- | --- |
 | Background, frame, radial | (0, 0), 960 x 544 |
-| Radial portrait centers, discs 1-4 | (254,108), (404,270), (254,402), (99,270) |
+| Radial portrait centers, discs 1-4 | (254,116), (406,265), (254,394), (102,265) |
 | Status plaques | x=515; y=75,150,225,300; 380 x 68 |
 | O/X markers | plaque offset (+25,+10); 48 x 48 |
 | Information plaque | (400,370); 560 x 155 |
@@ -44,7 +47,9 @@ and Azel/Neptune responsibilities are unchanged.
 - The compiled host selector frame differs from the approved composite by no
   more than 2 levels in any color channel; this is alpha-blend rounding.
 - All 19 PNG/raw pairs match pixel-for-pixel, all transparent pixels have zero
-  RGB, and the four original medallions match the prior branch assets.
+  RGB, and the four original medallions match the prior branch assets. The
+  approved 64 x 64 replacements retain the supplied preproduction images in
+  disc order and fit the four 64-pixel inner circles of the radial artwork.
 - Vita build and on-device visual/input/audio checks are **not** claimed here.
 
 Build with `LAGI_FULLRES=ON`, install the VPK, and inspect the selector at
