@@ -67,10 +67,12 @@ int main(){
  const unsigned modes[]={0,0x100,0x100,3,0,0x100,7};
  for(unsigned p=0;p<7;++p){auto& r=model.polygons[p];r.cmdPmod=modes[p];r.cmdSrca=p*17;r.cmdColr=p*3;r.cmdSize=0x210;r.lightingControl=0x200;r.lightingCount=4;
   for(unsigned c=0;c<4;++c){r.indices[c]=c;r.lighting[c].normal[0]=p*9+c;r.lighting[c].color[1]=p*11+c;r.lighting[c].hasColor=true;}
-  for(unsigned c=0;c<6;++c)model.vertices[p*6+c]={float(p+c),float(p)-c,float(p*c),17,29,41,255};
+  for(unsigned c=0;c<6;++c)model.vertices[p*6+c]={float(c),-float(c),float(c*2),std::uint8_t(17+p),std::uint8_t(29+p),41,255};
  }
  std::uint16_t resolved[7]={7,6,5,4,3,2,1};
  for(unsigned variant=0;variant<32;++variant){
+  model.positionSources.clear();
+  if(variant&1)for(unsigned p=0;p<7;++p)for(unsigned c=0;c<6;++c)model.positionSources.push_back(c);
   g_profileAppendSample=(variant&16)!=0;
   azel_bridge::SubmissionState state{};state.hasModelMatrix=variant!=0;state.hasLight=variant&1;state.billboard=variant&2;state.hasNativeModelLight=variant&4;
   state.localCoordinatesX=variant&8?190:176;state.localCoordinatesY=variant&8?99:112;
@@ -80,10 +82,11 @@ int main(){
   state.lightColor[0]=20;state.lightColor[1]=30;state.lightColor[2]=40;state.lightFalloff[0]=12;state.lightFalloff[1]=23;state.lightFalloff[2]=34;
   state.nativeViewDepthRaw=0x12345;state.hasNativeViewDepth=true;state.additionalLight.active=true;state.additionalLight.vector[1]=4;state.additionalLight.color[2]=19;
   for(bool generic: {false,true}){
+   const auto last=model.vertices.back();
    if(generic)model.vertices.pop_back();
    reset();appendLiveTownModelReference(model,state,resolved,variant&16?3:7);for(unsigned repeat=0;repeat<64;++repeat)appendLiveTownModelReference(model,state);auto expected=capture();
    reset();appendLiveTownModel(model,state,resolved,variant&16?3:7);for(unsigned repeat=0;repeat<64;++repeat)appendLiveTownModel(model,state);same(expected,capture());
-   if(generic)model.vertices.push_back({});
+   if(generic)model.vertices.push_back(last);
   }
  }
  puts("PASS production model append versus accepted baseline: geometry, materials, lighting, blend/mesh order, repeated appends and fallback layout; not Vita timing");

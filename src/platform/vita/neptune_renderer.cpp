@@ -7429,12 +7429,27 @@ static void appendLiveTownModel(
     // transforms per quad. Keep a defensive generic fallback for any future
     // adapter that does not use the canonical six-vertices-per-quad layout.
     if (model.vertices.size() == model.polygons.size() * 6u) {
+        const bool hasPositionSources=model.positionSources.size()==model.vertices.size();
         for (std::size_t p = 0; p < model.polygons.size(); ++p) {
             const std::size_t srcBase = p * 6u;
-            const auto a = transformVertex(model.vertices[srcBase + 0u]);
-            const auto b = transformVertex(model.vertices[srcBase + 1u]);
-            const auto c = transformVertex(model.vertices[srcBase + 2u]);
-            const auto d = transformVertex(model.vertices[srcBase + 5u]);
+            const auto corner=[&](unsigned k) {
+                const auto& source=model.vertices[srcBase+k];
+                const auto prior=hasPositionSources?model.positionSources[srcBase+k]:srcBase;
+                // Earlier quads are already appended with this submission's
+                // matrix, billboard basis and projection offset. Never reuse
+                // across submissions or frames, or copy a prior face's color.
+                if(prior<srcBase) {
+                    auto v=source;
+                    const auto& position=g_liveTownCpuMesh.vertices[vertexBase+prior];
+                    v.x=position.x;v.y=position.y;v.z=position.z;
+                    return v;
+                }
+                return transformVertex(source);
+            };
+            const auto a = corner(0u);
+            const auto b = corner(1u);
+            const auto c = corner(2u);
+            const auto d = corner(5u);
 
             const azel::DebugColorVertex quad[6]={a,b,c,a,c,d};
             g_liveTownCpuMesh.vertices.insert(g_liveTownCpuMesh.vertices.end(),

@@ -22,3 +22,15 @@ is a separate hitch candidate, not evidence of sustained cloud GPU overload.
 Hardware validation remains required for each change: battle entry fades,
 both Patergo variants including Regenerate, the pre-boss cinematic, name
 entry, water, and clouds. A build or pixel test is not a timing acceptance.
+
+## Shared dynamic model positions
+
+The adapter now retains each expanded vertex's first native position-index
+occurrence. During a submission the renderer may copy XYZ from an earlier
+quad already transformed under the same current matrix/projection/billboard
+basis. RGBA is retained from the current face; normals, lighting and material
+records are not shared. Nothing is reused across actors or frames. Missing
+topology and noncanonical geometry retain the accepted path. This applies to
+all native models, not Patergo IDs. The production topology adapter test and
+bitwise append-versus-baseline fixture pass for repeated appends, lights,
+billboards, offsets, blend ordering, face colors and fallback layouts.
