@@ -14779,13 +14779,20 @@ static void launcherTextured(const bool available[4], int selected)
                       i + 1, available[i] ? "FOUND" : "NOT FOUND");
         drawFrontendText(rowX + 80, rowY[i] + 29, label,
                          available[i] ? 0xFFD4CEC0u : 0xFF959595u);
+        // Presence marker belongs to the list oval, never the radial.
+        // O = available, X = absent. No selection-dependent highlighting.
+        drawFrontendText(rowX + 26, rowY[i] + 29,
+                         available[i] ? "O" : "X",
+                         available[i] ? 0xFFE3B765u : 0xFF858585u);
         // The same disc artwork is used for both states. Selected artwork
         // receives a gold tint, rather than swapping to a different emblem.
-        const int icon = !available[i] ? 5 :
-            (!g_launcherSprites[10 + i].rgba.empty() ? 10 + i :
-             (i == 0 && selected == 0 ? 3 : 4));
-        launcherBlitCentered(icon, nodeX[i], nodeY[i], 71,
-                            available[i] && selected == i && icon != 3);
+        // Unavailable discs reveal the radial artwork's empty sockets.
+        if (available[i]) {
+            const int icon = !g_launcherSprites[10 + i].rgba.empty()
+                ? 10 + i : (i == 0 && selected == 0 ? 3 : 4);
+            launcherBlitCentered(icon, nodeX[i], nodeY[i], 71,
+                                selected == i && icon != 3);
+        }
     }
     // The source plaque is vertically compressed: restore its round fittings
     // with a 3:2 vertical correction, independently of the unscaled font.
