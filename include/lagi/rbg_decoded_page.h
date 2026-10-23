@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 namespace lagi {
 // Resource decoding only. Rotation, windows, priorities and composition do
@@ -38,6 +39,10 @@ public:
         std::array<std::uint32_t,2048> colors{};
         if(!key.indexed)for(unsigned i=0;i<colors.size();++i)colors[i]=rgba(word(raw+0x80000+i*2));
         const unsigned scn=key.pncr&0x3ff,caos=(key.craofb&7)*256;
+        // Memoize exact pattern names within this rebuild. The destination
+        // page itself owns the decoded tiles: no persistent pixel cache or
+        // hash-only equality, and all dependencies are still collected below.
+        std::array<unsigned,256> decodedTiles{};
         for(unsigned tile=0;tile<1024;++tile) {
             const unsigned name=word(raw+key.base+tile*2);
             // renderer_vdp2.cpp::sampleTileAtCoordinate: CHSZ=1, CHCN=1,
@@ -48,6 +53,16 @@ public:
             depend(characterBase,256);
             const unsigned palette=(name&0x7000)>>4,flip=(name>>10)&3;
             const unsigned tileX=(tile%32)*16,tileY=(tile/32)*16;
+            const unsigned bucket=((name*2654435761u)>>24);
+            const unsigned prior=decodedTiles[bucket];
+            if(prior && word(raw+key.base+(prior-1)*2)==name) {
+                const unsigned source=((prior-1)/32)*16*Width+((prior-1)%32)*16;
+                for(unsigned y=0;y<16;++y)
+                    std::memcpy(pixels+(tileY+y)*Width+tileX,
+                        pixels+source+y*Width,16*sizeof(*pixels));
+                continue;
+            }
+            decodedTiles[bucket]=tile+1;
             for(unsigned y=0;y<16;++y)for(unsigned x=0;x<16;++x) {
                 unsigned px=x,py=y;
                 if(flip&2)py=(py&8)?15-py:23-py;

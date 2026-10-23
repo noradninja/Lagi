@@ -70,5 +70,23 @@ int main() {
     }
     assert(!cache.dependsOn(128));++generations[128];
     assert(cache.update(image.data(),generations,key,pixels.data(),pixels.size())==lagi::RbgPageResult::Hit);
+    // Repeated names exercise page-local reuse, including flip/palette bits.
+    // Alternating many names also forces direct-map collisions: equality must
+    // use the full pattern name, never just the bucket.
+    for(unsigned tile=0;tile<1024;++tile) {
+        const unsigned n=(tile%73)|(((tile/73)&3)<<10)|(((tile/29)&7)<<12);
+        image[base+tile*2]=u8(n>>8);image[base+tile*2+1]=u8(n);
+    }
+    ++generations[base/4096];
+    for(bool indexed:{false,true})for(bool opaque:{false,true}) {
+        key.indexed=indexed;key.opaqueZero=opaque;
+        assert(cache.update(image.data(),generations,key,pixels.data(),pixels.size())==lagi::RbgPageResult::Rebuilt);
+        for(unsigned y=0;y<512;++y)for(unsigned x=0;x<512;++x) {
+            const auto native=sampleTileAtCoordinate(x,y,layer,dimensions),entry=pixels[y*512+x];
+            if(native)assert(native555(native)==(indexed?
+                (getVdp2CramU16(((entry&2047)+layer.CAOS*256)*2)&0x7fff):cached555(entry)));
+            if(!opaque)assert(bool(native>>24)==bool(entry>>24));
+        }
+    }
     std::puts("PASS native decoded page oracle, flips, palette wrap, invalidation and fallback");
 }
