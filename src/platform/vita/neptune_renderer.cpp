@@ -14514,12 +14514,15 @@ struct LauncherSprite {
     std::vector<std::uint32_t> rgba;
 };
 
-static LauncherSprite g_launcherSprites[14];
+static LauncherSprite g_launcherSprites[19];
 static bool g_launcherAssetsChecked = false;
 static bool g_launcherAssetsReady = false;
 static constexpr const char* kLauncherSpriteNames[10] = {
     "background", "outer_frame", "radial", "gold", "ivory",
     "missing", "highlight", "row", "info", "legend"
+};
+static constexpr const char* kLauncherSymbolNames[5] = {
+    "status_o", "status_x", "control_cross", "control_dpad", "control_lstick"
 };
 
 static bool launcherLoadSprite(LauncherSprite& sprite, const char* name)
@@ -14560,6 +14563,16 @@ static bool launcherLoadAssets()
                 logging::writef("[DiscSelector] missing/bad launcher asset %s\\n", kLauncherSpriteNames[i]);
                 g_launcherAssetsReady = false;
                 break;
+            }
+        }
+        if (g_launcherAssetsReady) {
+            for (int i = 0; i < 5; ++i) {
+                if (!launcherLoadSprite(g_launcherSprites[14 + i], kLauncherSymbolNames[i])) {
+                    logging::writef("[DiscSelector] missing/bad launcher symbol %s\n",
+                        kLauncherSymbolNames[i]);
+                    g_launcherAssetsReady = false;
+                    break;
+                }
             }
         }
         if (g_launcherAssetsReady) {
@@ -14750,11 +14763,21 @@ static void launcherBlitStatusRow(int dstX, int dstY, bool available)
     }
 }
 
+static void launcherDrawDesignText(int x, int y, const char* text,
+                                   std::uint32_t color, int cellWidth, int cellHeight)
+{
+    const auto& font = lagi::frontend::font();
+    if (font.ready())
+        font.drawScaled(g_frameBuffer[g_drawBuffer], kWidth, kHeight, kPitch,
+                        x, y, text, cellWidth, cellHeight, color);
+    else
+        drawFrontendText(x, y, text, color);
+}
+
 static void launcherTextured(const bool available[4], int selected)
 {
     // Static screens are identical until selection/availability changes.
-    // Cache a completed frame so idle menu frames only copy one framebuffer
-    // instead of repeatedly alpha-compositing all ten large RGBA assets.
+    // Cache a completed frame so idle menu frames only copy one framebuffer.
     static std::vector<std::uint32_t> composed;
     static int previousSelection = -2;
     static unsigned previousMask = ~0u;
@@ -14776,25 +14799,23 @@ static void launcherTextured(const bool available[4], int selected)
     else
         launcherBlitRadialFitted();
     // Positions measured from the actual mechanical sockets at native 960x544.
-    static constexpr int nodeX[4] = {248, 395, 248, 102};
-    static constexpr int nodeY[4] = {98, 247, 381, 247};
-    const int rowX = 548;
-    static constexpr int rowY[4] = {58, 123, 188, 253};
+    static constexpr int nodeX[4] = {254, 404, 254, 99};
+    static constexpr int nodeY[4] = {108, 270, 402, 270};
+    const int rowX = 515;
+    static constexpr int rowY[4] = {75, 150, 225, 300};
     // Populate only available entries; the radial nodes show locked state.
     for (int i = 0; i < 4; ++i) {
         // This list reports disc presence; selection is shown only by the
         // gold radial portrait. No opaque backing behind the oval aperture.
         launcherBlitStatusRow(rowX, rowY[i], available[i]);
-        char label[24];
-        std::snprintf(label, sizeof(label), "DISC %d %s",
-                      i + 1, available[i] ? "FOUND" : "NOT FOUND");
-        drawFrontendText(rowX + 80, rowY[i] + 29, label,
-                         available[i] ? 0xFFD4CEC0u : 0xFF959595u);
-        // Presence marker belongs to the list oval, never the radial.
-        // O = available, X = absent. No selection-dependent highlighting.
-        drawFrontendText(rowX + 26, rowY[i] + 29,
-                         available[i] ? "O" : "X",
-                         available[i] ? 0xFFE3B765u : 0xFF858585u);
+        launcherBlit(available[i] ? 14 : 15, rowX + 25, rowY[i] + 10);
+        char label[16];
+        std::snprintf(label, sizeof(label), "DISC %d", i + 1);
+        launcherDrawDesignText(rowX + 116, rowY[i] + 22, label,
+                               available[i] ? 0xFFC0CED4u : 0xFF959595u, 10, 22);
+        launcherDrawDesignText(rowX + 269, rowY[i] + 22,
+                               available[i] ? "FOUND" : "NOT FOUND",
+                               available[i] ? 0xFF65B7E3u : 0xFF959595u, 10, 22);
         // The same disc artwork is used for both states. Selected artwork
         // receives a gold tint, rather than swapping to a different emblem.
         // Unavailable discs reveal the radial artwork's empty sockets.
@@ -14805,20 +14826,24 @@ static void launcherTextured(const bool available[4], int selected)
                                 selected == i && icon != 3);
         }
     }
-    // The source plaque is vertically compressed: restore its round fittings
-    // with a 3:2 vertical correction, independently of the unscaled font.
-    launcherBlit(8, 548, 356); // authored 1:1; do not stretch the info plaque
-    drawFrontendText(641, 389, selected >= 0 ? "CONTINUE FROM DISC" : "NO DISC FOUND",
-        0xFFFFFFFFu);
+    launcherBlit(8, 400, 370); // approved 560x155 plaque, authored 1:1
+    launcherDrawDesignText(546, 417,
+        selected >= 0 ? "CONTINUE FROM DISC " : "NO DISC FOUND",
+        0xFFFFFFFFu, 10, 22);
     if (selected >= 0) {
         char digit[] = "1";
         digit[0] = static_cast<char>('1' + selected);
-        const int digitX=std::max(780,641+measureFrontendText("CONTINUE FROM DISC "));
-        drawFrontendText(digitX, 389, digit, 0xFFFFFFFFu);
+        launcherDrawDesignText(546 + 19 * 10, 417, digit,
+                               0xFFFFFFFFu, 10, 22);
     }
-    drawFrontendText(641, 427, selected >= 0 ? "CROSS: LOAD DISC" : "ADD A CUE/BIN IMAGE",
-        0xFFE1DDD2u);
-    drawFrontendText(641, 443, "DPAD / L STICK: SELECT", 0xFFE1DDD2u);
+    launcherBlit(16, 545, 453);
+    launcherDrawDesignText(573, 455,
+        selected >= 0 ? "LOAD DISC" : "ADD A CUE/BIN IMAGE",
+        0xFFD2DDE1u, 8, 16);
+    launcherBlit(17, 545, 472);
+    launcherDrawDesignText(568, 474, "/", 0xFF9AABB4u, 8, 16);
+    launcherBlit(18, 583, 472);
+    launcherDrawDesignText(610, 474, "SELECT", 0xFFD2DDE1u, 8, 16);
     composed.assign(g_frameBuffer[g_drawBuffer],
                     g_frameBuffer[g_drawBuffer] + kWidth * kHeight);
     previousSelection = selected;

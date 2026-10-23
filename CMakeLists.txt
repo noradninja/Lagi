@@ -4829,7 +4829,8 @@ vita_create_self(lagi.self lagi UNSAFE)
 set(LAGI_FRONTEND_VPK_FILES)
 foreach(frontend_file IN ITEMS
  background outer_frame radial gold ivory missing highlight
- row info legend disc_1 disc_2 disc_3 disc_4)
+ row info legend disc_1 disc_2 disc_3 disc_4
+ status_o status_x control_cross control_dpad control_lstick)
  set(frontend_path "${CMAKE_CURRENT_SOURCE_DIR}/assets/frontend/${frontend_file}.rgba")
  if(NOT EXISTS "${frontend_path}")
   message(FATAL_ERROR "Required frontend asset missing: ${frontend_path}")

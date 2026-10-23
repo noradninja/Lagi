@@ -17,7 +17,7 @@ static std::uint32_t* g_frameBuffer[2]={frame0.data(),frame1.data()};
 static int g_drawBuffer=0,fallbackX=0,fallbackY=0,fallbackCalls=0;
 static void drawTextSmall(int x,int y,const char*,std::uint32_t){fallbackX=x;fallbackY=y;++fallbackCalls;}
 struct LauncherSprite {unsigned width=0,height=0;std::vector<std::uint32_t> rgba;};
-static LauncherSprite g_launcherSprites[14];
+static LauncherSprite g_launcherSprites[19];
 #include "frontend_text.inc"
 #include "frontend_rect.inc"
 #include "frontend_launcher.inc"
@@ -71,6 +71,14 @@ int main(int argc,char** argv){
  for(std::size_t n=0;n<real.consumed;++n)assert(!unpackFont(compressed.data(),n,decoded.data(),decoded.size()).ok);
  auto& font=lagi::frontend::testFont;assert(font.load(compressed.data(),compressed.size(),defaultFontPalettes+12*32));
  assert(font.measure("DISC 1")==48 && font.measure("Loading...")==80 && font.measure("AA\nA")==16);
+ std::array<std::uint32_t,80*32> nativeCell{},scaledNativeCell{};
+ font.draw(nativeCell.data(),80,32,80,3,4,"DISC 1",0xFF65B7E3u);
+ font.drawScaled(scaledNativeCell.data(),80,32,80,3,4,"DISC 1",8,16,0xFF65B7E3u);
+ assert(nativeCell==scaledNativeCell);
+ std::array<std::uint32_t,10*22> enlarged{};
+ font.drawScaled(enlarged.data(),10,22,10,0,0,"D",10,22);
+ for(int y=0;y<22;++y)for(int x=0;x<10;++x)
+  assert((enlarged[y*10+x]!=0)==(font.pixel('D',unsigned(x*8/10),unsigned(y*16/22))!=0));
  unsigned compared=0,ink=0;
  for(unsigned c=32;c<127;++c)for(unsigned y=0;y<16;++y)for(unsigned x=0;x<8;++x){
   const auto tile=0x63+2*(c-32)+y/8;const auto byte=reference[tile*32+(y&7)*4+x/2];
@@ -88,15 +96,15 @@ int main(int argc,char** argv){
  for(unsigned row=0;row<4;++row)for(unsigned x=4;x<6;++x)assert(clipped[6+row*6+x]==0x12345678);
  std::array<std::uint32_t,128> question{},unknown{};
  font.draw(question.data(),8,16,8,0,0,"?");font.draw(unknown.data(),8,16,8,0,0,"\xFF");assert(question==unknown);
- const char* assets[]={"background","outer_frame","radial","gold","ivory","missing","highlight","row","info","legend","disc_1","disc_2","disc_3","disc_4"};
- for(unsigned i=0;i<14;++i){
+ const char* assets[]={"background","outer_frame","radial","gold","ivory","missing","highlight","row","info","legend","disc_1","disc_2","disc_3","disc_4","status_o","status_x","control_cross","control_dpad","control_lstick"};
+ for(unsigned i=0;i<19;++i){
   FILE* asset=nullptr;assert(!fopen_s(&asset,(std::string(argv[3])+"/"+assets[i]+".rgba").c_str(),"rb"));
   std::uint32_t header[2];assert(std::fread(header,sizeof(header),1,asset)==1);
   auto& sprite=g_launcherSprites[i];sprite.width=header[0];sprite.height=header[1];sprite.rgba.resize(sprite.width*sprite.height);
   assert(std::fread(sprite.rgba.data(),4,sprite.rgba.size(),asset)==sprite.rgba.size());std::fclose(asset);
  }
  auto saveFrame=[&](const std::string& path){FILE* out=nullptr;assert(!fopen_s(&out,path.c_str(),"wb"));std::fprintf(out,"P6\n960 544\n255\n");for(auto pixel:frame0){const u8 rgb[]={u8(pixel),u8(pixel>>8),u8(pixel>>16)};std::fwrite(rgb,1,3,out);}std::fclose(out);};
- const bool available[4]={true,true,true,true};
+ const bool available[4]={true,true,false,false};
  for(int selected=0;selected<4;++selected){
   g_drawBuffer=0;launcherTextured(available,selected);
   if(selected==0)saveFrame(std::string(argv[2])+".selector.ppm");

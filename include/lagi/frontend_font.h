@@ -23,6 +23,9 @@ public:
     std::uint8_t pixel(unsigned character,unsigned x,unsigned y)const;
     void draw(std::uint32_t* pixels,int width,int height,int pitch,int x,int y,
         const char* text,std::uint32_t tint=0xFFFFFFFFu)const;
+    void drawScaled(std::uint32_t* pixels,int width,int height,int pitch,int x,int y,
+        const char* text,int cellWidth,int cellHeight,
+        std::uint32_t tint=0xFFFFFFFFu)const;
 private:
     std::array<std::uint8_t,95*8*16> glyphs_{};
     std::array<std::uint32_t,16> palette_{};

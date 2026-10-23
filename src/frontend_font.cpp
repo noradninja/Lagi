@@ -116,4 +116,32 @@ void LatinFont::draw(std::uint32_t* pixels,int surfaceWidth,int surfaceHeight,
         penX+=advance;
     }
 }
+
+void LatinFont::drawScaled(std::uint32_t* pixels,int surfaceWidth,int surfaceHeight,
+    int pitch,int x,int y,const char* text,int cellWidth,int cellHeight,
+    std::uint32_t tint)const
+{
+    if(!ready_ || !pixels || !text || cellWidth<=0 || cellHeight<=0 ||
+       surfaceWidth<=0 || surfaceHeight<=0 || pitch<surfaceWidth)return;
+    std::array<std::uint32_t,16> colors;
+    for(unsigned i=0;i<16;++i) {
+        unsigned color=0;
+        for(unsigned shift:{0u,8u,16u})
+            color|=((((palette_[i]>>shift)&255u)*((tint>>shift)&255u))/255u)<<shift;
+        colors[i]=0xFF000000u|color;
+    }
+    std::int64_t penX=x,penY=y;
+    for(const auto* p=reinterpret_cast<const unsigned char*>(text);*p;++p) {
+        if(*p=='\n'){penX=x;penY+=cellHeight;continue;}
+        for(int dy=0;dy<cellHeight;++dy)for(int dx=0;dx<cellWidth;++dx) {
+            const auto px=penX+dx,py=penY+dy;
+            if(px<0 || py<0 || px>=surfaceWidth || py>=surfaceHeight)continue;
+            const unsigned index=pixel(*p,static_cast<unsigned>(dx*8/cellWidth),
+                                       static_cast<unsigned>(dy*16/cellHeight));
+            if(index)pixels[static_cast<std::size_t>(py)*pitch+
+                            static_cast<std::size_t>(px)]=colors[index];
+        }
+        penX+=cellWidth;
+    }
+}
 }
