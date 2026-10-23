@@ -14768,7 +14768,13 @@ static void launcherTextured(const bool available[4], int selected)
     }
     launcherBlit(0, 0, 0);   // wallpaper
     launcherBlit(1, 0, 0);   // carved frame behind the radial socket rings
-    launcherBlitRadialFitted(); // complete circle fits between frame borders
+    // New full-panel radial atlas is authored at 960x544 and needs no
+    // runtime resizing. Legacy 492px art remains supported until replaced.
+    if (g_launcherSprites[2].width == static_cast<unsigned>(kWidth) &&
+        g_launcherSprites[2].height == static_cast<unsigned>(kHeight))
+        launcherBlit(2, 0, 0);
+    else
+        launcherBlitRadialFitted();
     // Positions measured from the actual mechanical sockets at native 960x544.
     static constexpr int nodeX[4] = {248, 395, 248, 102};
     static constexpr int nodeY[4] = {98, 247, 381, 247};
