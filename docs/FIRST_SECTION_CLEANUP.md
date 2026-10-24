@@ -53,6 +53,17 @@ label or change DSP/audio semantics without inspecting its dispatch boundary.
 
 ## Encounter audit so far
 
+**2026-10-24 native story-selector correction:** the older field-2 selector
+example below describes the previously selected reconstruction branch, not
+the correct native choice for a clear story bit. Original MAIN's
+TST/MOVT/XOR/SHLL2/SHLL sequence selects offset zero for clear and eight for
+set. The generated adapter now removes the reconstruction's extra XOR on
+getBit. Clear story bit 87 selects 0020873C/root 00207624 (reset 120,
+initial 90, failure limit 10); set selects 00208744/root 002076A0 (150,
+120, 20). No encounter chance/weight/countdown constants are tuned. The
+disc-backed production selector test covers both branches and all 5040
+game-state bit positions; hardware branch/encounter acceptance is pending.
+
 The generated runtime compiles Azel dummy.cpp's RNG and titleScreen.cpp's
 seeding path, not a platform rand() replacement. Title initialization seeds
 zero and advances the generator as the native title task runs; user timing

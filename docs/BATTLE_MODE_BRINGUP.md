@@ -497,8 +497,10 @@ contain missing paths; this does not complete all battle effects or lighting.
 
 Encounter/radar diagnosis: original US Disc 1 COMMON entry
 `00208710 + field(2)*14h` selects its A3 root with story bit **87 decimal
-(0057h)**, not 0087h. Set selects root 00207624: bounded immediate rows;
-clear selects 002076A0: probability-based rows. Both roots provide subfield
+(0057h)**, not 0087h. Correction from original MAIN instruction audit on
+2026-10-24: clear selects root 00207624 (bounded immediate rows); set selects
+002076A0 (probability-based rows). The earlier opposite statement followed
+the reconstruction's erroneous extra XOR. Both roots provide subfield
 tables only for subfields 0 and 2; subfields 1 and 3..12 have null entries.
 The probability root's first rows have 8-percent chance, row danger 1 and
 per-row cap 10, with interval 150, initial countdown 120 and forced-attempt

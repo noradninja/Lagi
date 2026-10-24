@@ -2242,6 +2242,17 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
             updateLCSTarget(&pThis->m40_LCSTarget);]=])
   string(REPLACE "${fish_motion_old}" "${fish_motion_new}" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldEncounterTask.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # MAIN 0600C748..0600C75A: TST/MOVT/XOR produces 0 for a clear
+  # story bit, 1 for a set bit, then multiplies by eight. Azel's getBit
+  # returns true for set, so the reconstruction's extra XOR reverses it.
+  set(encounter_selector_old "pRandomEncounterData + 4 + (mainGameState.getBit(bitIndex) ^ 1) * 8")
+  string(FIND "${source_text}" "${encounter_selector_old}" encounter_selector_found)
+  if(encounter_selector_found LESS 0)
+   message(FATAL_ERROR "Native encounter story selector boundary changed")
+  endif()
+  string(REPLACE "${encounter_selector_old}"
+   "pRandomEncounterData + 4 + (mainGameState.getBit(bitIndex) ? 8 : 0)"
+   source_text "${source_text}")
   string(REPLACE "void encounterTaskInit(sEncouterTask* pThis, s_workArea* pArg)"
    "#include \"lagi_encounter_trace.inc\"\n\nvoid encounterTaskInit(sEncouterTask* pThis, s_workArea* pArg)"
    source_text "${source_text}")
