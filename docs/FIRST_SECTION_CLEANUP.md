@@ -15,11 +15,11 @@ One numbered goal is active at a time. Replace it with the next only after
 the required evidence is accepted; do not call source/build tests Vita proof.
 Independent corrections remain atomic commits.
 
-1. **Active: shared combat performance and encounter logic.** Target ideal
+1. **Accepted baseline: shared combat performance and encounter logic.** Target ideal
    25 ms/frame, maximum 33 ms/frame; investigate the first slow Gelata encounter
    without enemy-specific shortcuts. Audit RNG/seeding, accumulation, story
    gates, selection and cadence without arbitrary rate increases.
-2. Combat bonus rewards and earned Berserk progression: eligibility, native
+2. **Active: combat bonus rewards and earned Berserk progression:** eligibility, native
    calculation, inventory/unlock state, display and save persistence.
 3. Saved-game fade/black hold; Valley-to-Excavation fade; keep-awake ticking
    during in-engine cinematics as well as Cinepak, without changing simulation.
@@ -31,6 +31,27 @@ Independent corrections remain atomic commits.
    exit and save/reload correctness.
 7. Native battle tutorials and first-section item/Berserk coverage, including
    Blast Chip and Energy Prism trails, lighting, camera, timing and cleanup.
+
+## Goal 2 activation after user acceptance
+
+The user accepted a2bdf46's corrected loading sequence and agreed to move
+forward with present combat performance as the baseline. This is an explicit
+acceptance change, not a claim that the ideal 25 ms / absolute 33 ms target
+was achieved. Occasional visible-frame misses remain documented in
+BATTLE_ENTRY_TIMING.md. Goal 2 now replaces Goal 1; do not keep tuning combat
+or generalize every transition while implementing rewards.
+
+Initial inspection: native rank calculation is already supplied by
+lagi_battle_rating.inc, and XP/level services by lagi_battle_growth.inc via
+guarded generated-source replacements. The upstream result-screen item
+announcement/award function remains a stub; existing native stubs are not
+proof that XP is also absent from the generated build. First audit the
+original enemy-result bookkeeping at 0606EBC8..0606EC8C and item-selection/
+award routine at 0606ECA2, trace the producer of the engine's reward records,
+and restore that shared path before implementing earned-Berserk announcement
+and persistence. Use original disc tables/flags and actual inventory/save
+consumers. Keep independent corrections atomic, extern/Azel unchanged, and
+require host boundary tests plus hardware rewards/save-reload evidence.
 
 ## Goal 1 baseline (complete-run H:/data/lagi/lagi.log)
 
