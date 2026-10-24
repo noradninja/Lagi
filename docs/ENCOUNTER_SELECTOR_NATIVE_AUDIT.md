@@ -50,3 +50,26 @@ Hardware should now report selector=0020873C, root=00207624 when field=2,
 storyBit=87, value=0. Verify normal encounters, danger display with a Telepathy
 Shard, repeated/subfield transitions and return from battle. A set bit must
 instead select 00208744; do not alter save flags merely to force a test.
+
+## Executable cadence and accumulation coverage
+
+encounter_cadence_test extracts the actual Vita processTasks/runTasks bodies,
+the generated getEncounterArea/evaluateRandomEncounterRate/evaluateRandomEncounterRateSub,
+the task's encounter-enable/preselection gate, and the generated A3 field
+enable producer. It verifies:
+
+- One Update and Draw per unpaused traversal, with parent/child/sibling tasks.
+- Global pause suppresses Update but retains Draw; task pause suppresses both.
+- Stopped movement, zero rate, missing subfield/area, and disabled encounters
+  do not consume random numbers or decrement countdown incorrectly.
+- Initial countdown, failure increment, reset interval and forced-attempt cap.
+- Negative-rate immediate selection, row quota exhaustion, subfield counter
+  reset and weighted-selection boundary (49/50 for a 50/50 test table).
+- Field enable policy across modes 0/1/2/3 and status high/low-word combinations.
+  Its generated producer is also compared byte-for-byte ignoring whitespace
+  with the pinned Azel source; no enable-policy adapter is added.
+
+This closes missing executable coverage of these production paths. Original
+RNG, counter and selector instruction checks remain separate evidence. It is
+not a complete emulation/comparison of Saturn's scheduler or wall-clock frame
+dispatch, and does not justify changing rates to counter a slow renderer.
