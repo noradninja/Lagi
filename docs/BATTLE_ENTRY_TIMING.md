@@ -167,3 +167,38 @@ encounters and existing graphics restoration. Both Vita configurations build.
 Hardware must verify the complete outgoing fade, white hold, incoming fade,
 normal HUD/particles/camera, audio and repeated random/story entries. This is
 not declared visually fixed until that test; Goal 1 remains incomplete.
+
+## a2bdf46 loading sequence accepted on hardware
+
+The subsequent 1,632,905-byte log contains eight completed encounters, each
+with `BattleLoadingCover loadUnderWhite=1` before overlay startup. Fade traces
+show 59..0 advancing to (255,255,255) and stopped before synchronous loading.
+The long 1.85..1.92-second publication intervals end under full white. The
+user confirms the transition now looks and behaves as expected and explicitly
+accepts this fix. Do not reopen the accepted loading sequence without new
+regression evidence.
+
+Combat render medians in this run are 26.963..27.610 ms. The eight complete
+spans contain 125/6720 intervals exceeding two VBlanks. The span windows
+include covered loading, intro and results, so the 20.09 FPS minimum is not
+evidence of sustained combat slowdown. The user reports excellent combat
+frame rates. Ideal 25 ms and an absolute 33 ms maximum are nevertheless not
+proven; outlier records include roughly 50 ms intervals both at neutral color
+and during visible offsets. Earlier wording suggesting only fade-in misses
+remained was too narrow. Neutral color does not independently identify an
+active-combat submode, either.
+
+The analysis tool now exposes OutliersByFadeEndpoint (White, Black, Neutral,
+VisibleOffset, Unknown), including record counts, timed interval count, maximum
+interval and sampled outlier render median. It parses signed RGB values and
+keeps legacy absent fields unknown. Baseline-zero records are not timed
+intervals. No intervals are subtracted from original window/FPS statistics.
+The endpoint color cannot prove that the entire preceding interval was covered;
+the accompanying fade chronology/user observation supplies that context here.
+
+The user also agrees that authored fade/loading/fade handoffs should follow
+this principle elsewhere. General transition cleanup should retain the outgoing
+presentation until the authored cover is reached, load/prepare while covered,
+and hand off to the ready native destination. Preserve native colors and timing;
+do not impose battle-white behavior on black fades or crossfades. This is not a
+claim that other transition routes are wired or hardware-validated by this fix.
