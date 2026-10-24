@@ -26,7 +26,7 @@ Independent corrections remain atomic commits.
 4. **Accepted: native switch color/gloss behavior through shared model color
    animation.** Tunnel enter/leave audio and switch audio are user-confirmed
    fixed; do not reopen them. Restore the shared pipeline efficiently with GXM.
-5. Excavation cinematic/town floor corruption: shared source/native black
+5. **Active:** Excavation cinematic/town floor corruption: shared source/native black
    behavior, not a scene-specific mask.
 6. Second field-map acquisition/entry failure, visited-area marking, selection,
    exit and save/reload correctness.
