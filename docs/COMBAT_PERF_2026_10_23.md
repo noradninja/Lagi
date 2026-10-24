@@ -95,3 +95,27 @@ The production policy fixture checks every supported count and native mode,
 unchanged diagnostic/unreserved behavior and unsupported-subdivision fallback
 without clamping away geometry. Device memory pressure, mode switching, first
 random entry, repeated enemies and returns must still be tested.
+
+## Hardware follow-up at 4b1f473 and shared CPU lighting source
+
+The user's 1714144-byte log has Patergo windows 27.04–29.97 FPS,
+55/960 intervals late, sampled render median 28.248 ms; Gelata 29.358–29.97,
+11/1200 late, median 28.188 ms. The trailing Queen span is incomplete but its
+six complete windows are 29.97 FPS, zero late. Position sync is 0.562/0.506 ms
+for Patergo/Gelata. Legacy vertex writes are zero in every sampled combat
+frame. First entry reports reuseGeom=1 and baseAlloc/texAlloc/subAlloc=0;
+cold scene build is 26.875 ms and render 70.148 ms. This confirms the removed
+work, not the 25/33-ms acceptance gate, and is not an exact-scene A/B. That
+build predates 191f844's story-selector correction.
+
+Live append also maintained an identical second CPU vertex vector solely
+for liveTownVdp1Source().lightingVertices. The next shared optimization aliases
+that source pointer to the existing transformed vertex vector and removes
+the duplicate reserve, append and static-prefix resize. Native normals,
+lighting state, Gouraud payloads, materials and draw ordering remain separate.
+The production-source fixture extracts both accepted/current source builders
+and append bodies, compares renderer-visible lighting bytes and geometry,
+and asserts the live duplicate vector stays empty. It covers noncanonical
+layout, billboards, projected offsets, native light and repeated appends.
+No other mesh type's lighting storage is changed. Fresh hardware timing and
+visual validation are still required; this is not a claim of solved combat.

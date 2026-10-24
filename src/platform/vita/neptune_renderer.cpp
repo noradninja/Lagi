@@ -7179,7 +7179,10 @@ static Vdp1ModelSource liveTownVdp1Source()
 {
     Vdp1ModelSource source{};
     source.vertices = g_liveTownCpuMesh.vertices.data();
-    source.lightingVertices = g_liveTownCpuMesh.lightingVertices.data();
+    // Live append previously copied every transformed vertex into an identical
+    // second array. The lighting source needs the same immutable positions;
+    // normals and current Gouraud payload remain in their separate records.
+    source.lightingVertices = source.vertices;
     source.vertexCount = g_liveTownCpuMesh.vertices.size();
     source.polygons = g_liveTownCpuMesh.polygonRecords.data();
     source.gouraud555 = g_liveTownCpuMesh.gouraud555.data();
@@ -7370,9 +7373,6 @@ static void appendLiveTownModel(
     if(neededVertices>g_liveTownCpuMesh.vertices.capacity())
         g_liveTownCpuMesh.vertices.reserve(std::max(neededVertices,
             g_liveTownCpuMesh.vertices.capacity()*2u));
-    if(neededVertices>g_liveTownCpuMesh.lightingVertices.capacity())
-        g_liveTownCpuMesh.lightingVertices.reserve(std::max(neededVertices,
-            g_liveTownCpuMesh.lightingVertices.capacity()*2u));
     // Copy immutable descriptors directly into their final slots. resize()
     // first value-initialized their full lighting payload only to overwrite
     // it below for every dynamic model, on every frame.
@@ -7455,14 +7455,11 @@ static void appendLiveTownModel(
             const azel::DebugColorVertex quad[6]={a,b,c,a,c,d};
             g_liveTownCpuMesh.vertices.insert(g_liveTownCpuMesh.vertices.end(),
                 quad,quad+6);
-            g_liveTownCpuMesh.lightingVertices.insert(
-                g_liveTownCpuMesh.lightingVertices.end(),quad,quad+6);
         }
     } else {
         for (std::size_t i = 0; i < model.vertices.size(); ++i) {
             const auto v = transformVertex(model.vertices[i]);
             g_liveTownCpuMesh.vertices.push_back(v);
-            g_liveTownCpuMesh.lightingVertices.push_back(v);
         }
     }
 
@@ -8105,7 +8102,6 @@ static bool buildLiveTownFrame()
     if (g_liveTownStaticRebuilt) {
         g_sceneSubdivPositionValid.clear();
         g_liveTownCpuMesh.vertices.clear();
-        g_liveTownCpuMesh.lightingVertices.clear();
         g_liveTownCpuMesh.polygonRecords.clear();
         g_liveTownCpuMesh.gouraud555.clear();
         g_liveTownCpuMesh.polygonTextureIndices.clear();
@@ -8139,7 +8135,6 @@ static bool buildLiveTownFrame()
         g_liveTownStaticMeshRanges = g_liveTownMeshRanges;
     } else {
         g_liveTownCpuMesh.vertices.resize(g_liveTownStaticVertexCount);
-        g_liveTownCpuMesh.lightingVertices.resize(g_liveTownStaticVertexCount);
         g_liveTownCpuMesh.polygonRecords.resize(g_liveTownStaticPolygonCount);
         g_liveTownCpuMesh.gouraud555.resize(g_liveTownStaticPolygonCount);
 

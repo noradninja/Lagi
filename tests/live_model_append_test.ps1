@@ -14,8 +14,12 @@ $light=Slice $current 'struct LivePolygonLightState {' 'static std::vector<LiveP
 $transform=Slice $current 'static void transformLiveLightVectorToModelSpace(' 'static void appendLiveTownModel('
 $body=Slice $current 'static void appendLiveTownModel(' 'static void appendLiveTownEdge()'
 $reference=(Slice $baseline 'static void appendLiveTownModel(' 'static void appendLiveTownEdge()').Replace('appendLiveTownModel(','appendLiveTownModelReference(')
+$currentSource=Slice $current 'static Vdp1ModelSource liveTownVdp1Source()' 'static bool prepareRegisteredNativeMaterial()'
+$referenceSource=(Slice $baseline 'static Vdp1ModelSource liveTownVdp1Source()' 'static bool prepareRegisteredNativeMaterial()').Replace('liveTownVdp1Source()','liveTownVdp1SourceReference()')
+if($current.Contains('g_liveTownCpuMesh.lightingVertices')){throw 'Live frame regained an independent lighting-position consumer; re-audit source alias'}
 [IO.File]::WriteAllText("$scratch/append_types.inc",$light)
 [IO.File]::WriteAllText("$scratch/append_body.inc",$transform+$body+$reference)
+[IO.File]::WriteAllText("$scratch/live_source.inc",$currentSource+$referenceSource)
 & cl /nologo /O2 /std:c++20 /EHsc "/I$repo/include" "/I$scratch" "$PSScriptRoot/live_model_append_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
 if($LASTEXITCODE -ne 0){throw 'Production model append fixture compile failed'}
 & "$scratch/test.exe"

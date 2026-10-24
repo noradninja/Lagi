@@ -9,8 +9,10 @@
 #include <cstdio>
 namespace azel=lagi::azel;
 namespace azel_bridge=lagi::azel_bridge;
+using Vdp1ModelSource=lagi::platform::renderer::Vdp1ModelSource;
 #include "append_types.inc"
 static azel::BasicWingDebugMesh g_liveTownCpuMesh;
+static azel::BasicWingDebugMesh g_staticRoomCpuMesh;
 static bool g_profileAppendSample=false;
 static std::uint64_t g_profileAppendSetupUs=0,g_profileAppendStorageUs=0;
 static std::uint64_t g_profileAppendTransformUs=0,g_profileAppendLightUs=0,g_profileAppendBindingUs=0;
@@ -27,12 +29,19 @@ void azelProjectionScales(float,unsigned,float& x,float& y){x=1.2f;y=1.4f;}
 std::uint16_t liveTownTextureIndex(const azel::SaturnPolygonRecord& r){return (r.cmdSrca+r.cmdColr)&0xffff;}
 namespace logging {void writef(const char*,...) {}}
 #include "append_body.inc"
+#include "live_source.inc"
 struct Output {
  azel::BasicWingDebugMesh mesh;std::vector<LivePolygonLightState> lights;
  std::vector<LiveTownMeshRange> ranges;
 };
 void reset(){g_liveTownCpuMesh={};g_liveTownPolygonLights.clear();g_liveTownMeshRanges.clear();}
-Output capture(){return {g_liveTownCpuMesh,g_liveTownPolygonLights,g_liveTownMeshRanges};}
+Output capture(bool reference=false){
+ Output result{g_liveTownCpuMesh,g_liveTownPolygonLights,g_liveTownMeshRanges};
+ const auto source=reference?liveTownVdp1SourceReference():liveTownVdp1Source();
+ if(!reference){assert(g_liveTownCpuMesh.lightingVertices.empty());assert(source.lightingVertices==source.vertices);}
+ if(source.vertexCount)result.mesh.lightingVertices.assign(source.lightingVertices,source.lightingVertices+source.vertexCount);
+ return result;
+}
 void same(const Output& a,const Output& b){
  assert(a.mesh.vertices.size()==b.mesh.vertices.size());
  assert(a.mesh.lightingVertices.size()==b.mesh.lightingVertices.size());
@@ -84,7 +93,7 @@ int main(){
   for(bool generic: {false,true}){
    const auto last=model.vertices.back();
    if(generic)model.vertices.pop_back();
-   reset();appendLiveTownModelReference(model,state,resolved,variant&16?3:7);for(unsigned repeat=0;repeat<64;++repeat)appendLiveTownModelReference(model,state);auto expected=capture();
+   reset();appendLiveTownModelReference(model,state,resolved,variant&16?3:7);for(unsigned repeat=0;repeat<64;++repeat)appendLiveTownModelReference(model,state);auto expected=capture(true);
    reset();appendLiveTownModel(model,state,resolved,variant&16?3:7);for(unsigned repeat=0;repeat<64;++repeat)appendLiveTownModel(model,state);same(expected,capture());
    if(generic)model.vertices.push_back(last);
   }
