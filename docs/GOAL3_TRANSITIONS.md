@@ -59,3 +59,31 @@ test and generated before-deletion placement check pass. It intentionally
 excludes standalone Continue mode 9 and ordinary field-to-field transitions.
 Do not broaden that gate or add a Valley-specific timer without tracing the
 actual destination path. Valley route mapping and video acceptance remain open.
+
+## Valley-to-Excavation route mapped
+
+Generated field_field_a3_o_fld_a3_1.cpp retains exit index 2's authored camera
+cutscene 06091CC4. Its Update2 waits until m48_cutsceneTask is null; with story
+bit 86 clear it calls fieldA3_1_checkExitsTaskUpdate2Sub1(6). When m35 permits
+direct module changes, that helper requests status 06; otherwise it delegates
+to the native tutorial/field-dispatch path and records m3D. A set story bit
+also delegates through native dispatch. These gates are not overridden.
+
+Original Disc 1 COMMON (LBA 182, base 00200000), table 00212EAC, contains
+status06=(mode1,param19), status08=(mode1,param20), status53=(mode3,param2).
+Thus Excavation's cinematic is distinct from the later status08 boss cinematic.
+The direct status06 handoff is inside the existing source-mode3/destination-mode1
+module fade gate. No additional Valley-specific fade rule is warranted by this
+source/data audit. The delegated branch and hardware visual acceptance remain
+open; the test run supplied so far does not capture a new status06 handoff.
+
+## Current saved-game lifecycle evidence
+
+The supplied load trace reaches A/B=-256 in state4 while mode9 still publishes
+the save layout, then both channels report stopped before mode -1. Module state1
+subsequently changes status4A to status53 and issues the existing 30-step black
+request. This proves black is requested before overlay loading, not that it was
+visible: the old menu renderer skipped offsets. fde6409 addresses that gap.
+The runtime leaves the previous published frame in place while synchronous
+loading blocks; field entry requests its native fade-in afterward. Verify the
+new capture before adding another cover or changing native fade duration.
