@@ -8799,15 +8799,6 @@ static void prepareLiveTownGouraudVisibility(const ViewerMat4& wvp)
                 projectable = false;
                 continue;
             }
-
-            const float invW = 1.0f / clipW;
-            prep.screen[corner].x =
-                (clipX * invW * 0.5f + 0.5f) *
-                static_cast<float>(viewerRenderWidth());
-            prep.screen[corner].y =
-                (0.5f - clipY * invW * 0.5f) *
-                static_cast<float>(viewerRenderHeight());
-            prep.screen[corner].valid = true;
         }
 
         prep.visible = projectable && sharedOutcode == 0u;
@@ -8817,6 +8808,27 @@ static void prepareLiveTownGouraudVisibility(const ViewerMat4& wvp)
 
     g_profileGouraudPrepUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - prepStartUs);
+}
+
+// The GPU subdivision path needs only homogeneous clip visibility. Recover
+// screen payload lazily for the nonsubdivided Gouraud fallback, preserving
+// the original reciprocal/multiply order rather than changing its rounding.
+static void projectLiveTownGouraudScreen(const ViewerMat4& wvp,
+    std::size_t polygon, GouraudQuadPrep& prep)
+{
+    if (!prep.visible || prep.screen[0].valid)
+        return;
+    static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
+    for (unsigned corner = 0; corner < 4u; ++corner) {
+        const auto& v = g_liveTownCpuMesh.vertices[polygon * 6u + cornerVertex[corner]];
+        const float clipX = v.x*wvp.m[0] + v.y*wvp.m[4] + v.z*wvp.m[8] + wvp.m[12];
+        const float clipY = v.x*wvp.m[1] + v.y*wvp.m[5] + v.z*wvp.m[9] + wvp.m[13];
+        const float clipW = v.x*wvp.m[3] + v.y*wvp.m[7] + v.z*wvp.m[11] + wvp.m[15];
+        const float invW = 1.0f / clipW;
+        prep.screen[corner].x = (clipX * invW * 0.5f + 0.5f) * static_cast<float>(viewerRenderWidth());
+        prep.screen[corner].y = (0.5f - clipY * invW * 0.5f) * static_cast<float>(viewerRenderHeight());
+        prep.screen[corner].valid = true;
+    }
 }
 
 static void generateAzelFalloff(
@@ -12212,9 +12224,10 @@ bool submit_vdp1_model(
 
             ViewerScreenPoint screen[4];
             if (useLiveTownPrep) {
-                const auto& prep = g_liveTownGouraudPrep[p];
+                auto& prep = g_liveTownGouraudPrep[p];
                 if (!prep.visible)
                     continue;
+                projectLiveTownGouraudScreen(wvp, p, prep);
                 std::memcpy(screen, prep.screen, sizeof(screen));
             } else {
                 const std::uint64_t tProject = sceKernelGetProcessTimeWide();

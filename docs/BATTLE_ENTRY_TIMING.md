@@ -94,3 +94,38 @@ per implementation and workload. One host run measured baseline/candidate
 160.958/31.665 ms (repeat 1024). These are totals on the Windows host, not
 Vita frame times or a promised speedup factor. Hardware must confirm entry
 timing, fade coverage, and unchanged water/name-entry presentation.
+
+## b90d201 hardware result and next shared preparation change
+
+The fresh user-supplied log (2,318,228 bytes, host file timestamp 02:01)
+contains eleven completed fights plus a partial final encounter. The user
+reports all combat frame rates excellent once loaded. Complete-span window
+rates range 28.771..29.970 FPS, with 91/9720 intervals over two VBlanks;
+these spans include intros/results, not only active combat. Encounter render
+medians are 23.321..28.021 ms. This is good steady-combat evidence, not proof
+that every frame meets 33 ms or that ideal 25 ms is consistently achieved.
+
+Cold entry frames report RGB fade (255,255,255), confirming full-white
+composition during those renderer stalls. Visible fade-in frames still show
+50 ms presentation intervals, render 31..33 ms, CPU preparation 13..16 ms,
+and background preparation roughly 0.2..0.3 ms. Thus repeated cold page
+decoding is not the cause of those later fade-frame misses. The early rebuilt
+page records show decode 11..13 ms and atlas copy about 13 ms. Do not claim
+the host decoder benchmark's speedup factor materialized on Vita.
+
+The next candidate removes eager screen-coordinate projection from shared
+live Gouraud visibility preparation. The GPU subdivision, lighting and
+textured paths consume only homogeneous visibility there. The single
+nonsubdivided Gouraud screen-payload consumer now requests projection lazily,
+using the exact original reciprocal/multiply order and the same WVP. Each
+preparation resets payload validity, preventing reuse across frames/views.
+Visibility/culling, geometry, shader selection, fades and simulation remain
+unchanged; diagnostic/fallback screen payload is still available.
+
+live_visibility_test extracts the actual production functions and b90d201
+baseline. It verifies 16,112 synthetic quads (2497 visible, 13,615 hidden),
+exact visible fallback XY bytes, identical visibility, full/half resolution,
+near/behind-camera cases, invalid layouts, and repeated lazy requests. The
+fixture also guards the single screen-copy consumer. The subdivision route
+fixture passes. These are correctness checks, not a measured timing gain;
+fresh Vita evidence must establish fade-in behavior and rendering correctness.
