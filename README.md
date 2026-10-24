@@ -1,278 +1,72 @@
 # Lagi
 
-**Current development milestone (October 2026): first-section gameplay through the opening boss, native combat, shared Neptune VDP1/VDP2 rendering, and hardware-accepted four-disc loader**
+**Panzer Dragoon Saga / Azel — native PlayStation Vita runtime**
 
-**Lagi** is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed game logic runs directly on the Vita's ARM CPU, while Saturn-era rendering and platform behavior are translated to VitaSDK and native SceGxm.
+Lagi runs reconstructed *Panzer Dragoon Saga* game logic directly on the Vita's ARM CPU, translating Sega Saturn graphics and platform behavior to native Vita services and SceGxm through the **Neptune** renderer. It is **not a Sega Saturn emulator** and does **not use VitaGL**.
 
-Lagi is not a Sega Saturn emulator and does not use VitaGL.
+> **Development status (October 2026):** Gameplay has progressed through the first boss fight on real Vita hardware. The current development branch is ahead of the latest public release, **v0.3.0alpha**; the game is not yet fully playable.
 
-## Disc loader
+## Current progress
 
-Lagi now opens with a four-disc selector before handing control to Azel. Put each
-game CUE/BIN in its matching `ux0:data/lagi/Disc 1` through `Disc 4` folder;
-the selector shows which discs are present and skips missing ones. Use the
-D-pad or left stick to choose a disc, then press X to load it. The menu uses
-the approved Saga-inspired artwork, the original PDS font and character art,
-looping music, and menu sounds rendered from the original game data.
+The native game path includes opening movies, title and name entry, playable Ruins, elevator cinematics, FLD_A3 flight, the E006 in-engine cinematic, Excavation, random encounters, and the opening boss fight.
+
+Major working systems:
+
+- **Gameplay and combat:** Azel-owned tasks, scripts, camera, movement, collision, LCS, enemy encounters, battle logic, and scene transitions. Encounter RNG and formation selection have been checked against original disc-backed routines.
+- **Neptune graphics:** Native GXM translation of VDP1 geometry, sprites, polylines, Gouraud lighting, mesh transparency, UI and effects; VDP2 normal/rotation backgrounds (including RBG0), tile maps, scrolling, line-scroll, palettes, priority composition, color offsets and fades. Most VDP2 behavior needed by the supported first-section scenes is implemented, but full hardware coverage is not claimed.
+- **Audio and movies:** Native BGM and effects, runtime ARM translation of Saturn SCSP DSP programs, Sega FILM/Cinepak playback, and GPU-assisted presentation.
+- **Display:** 480×272 default gameplay rendering, optional **native 960×544** geometry rendering with `LAGI_FULLRES=ON`, high-resolution title presentation, and screen-space lookup dithering.
+- **Disc access:** CUE/BIN mounting, ISO9660 reads, and a hardware-accepted four-disc selection frontend.
+
+Performance targets the original **30 Hz** presentation rate. Supported town and field sections can reach it; complex battles still experience frame-time spikes.
+
+Current priorities include combat rewards and Berserk progression, field-map completion, VDP2 composition corrections in Excavation, transition accuracy, and battle/audio performance. See [first-section cleanup](docs/FIRST_SECTION_CLEANUP.md) and [development status](docs/STATUS.md) for detailed progress and validation notes.
+
+## Disc selection
+
+The 960×544 frontend detects available game discs, provides D-pad/left-stick selection, and mounts the chosen CUE/BIN before native Azel startup. It uses Saga-inspired artwork, the original PDS font and character art, music, and menu sounds derived from original game data. The selector, audio, mounting and fade handoff have been accepted on Vita hardware.
 
 ![Accepted 960x544 disc loader on Vita](docs/images/iso-loader-accepted-960x544.png)
 
-The selector, audio, mount, and fade into the native game were tested and
-accepted on Vita at 960x544 with `LAGI_FULLRES=ON`. Game state remains Azel's;
-the loader only chooses and mounts a disc. See the
-[disc-loader guide](docs/DISC_SELECTION_FRONTEND.md) for setup and the
-[acceptance handoff](docs/ISO_LOADER_ACCEPTANCE_2026_10_23.md) for the exact
-checkpoint.
+Place your own disc images in matching folders:
 
-## Current status
+```text
+ux0:data/lagi/
+  Disc 1/
+    <disc>.cue
+    <disc>.bin
+  Disc 2/
+  Disc 3/
+  Disc 4/
+```
 
-The current development branch extends the authentic Azel boot path through the opening movies, title, New Game, D5 name entry, playable Ruins, elevator/Cinepak handoff, native FLD_A3 flight, E006 in-engine cinematic, Excavation arrival, random encounters, and the first boss fight (completed on Vita hardware). Combat is operational across multiple encounter formations, including Gelata Urchins and Patergo; the original disc data also maps Baldor and Baldor Queen formations. This is a development milestone beyond the public v0.3.0alpha release, **not** a new packaged release or a claim of complete game support. Azel remains responsible for game state, tasks, camera, encounter selection, and transitions.
-
-Working systems include:
-
-- native FLD_A3 entry, dragon/rider, radar, LCS and cell-driven environment rendering
-- first-section random encounters and completed opening boss fight on Vita; native battle dispatch, formation data, camera and result flow
-- original-disc-backed encounter selection, RNG and story-gate instruction audits; native battle-rank calculation restored in development (on-device rank verification pending)
-- shared native VDP2 normal/rotation backgrounds (including RBG0), scrolling layers, tile maps, live VRAM/CRAM, line-scroll, priority-aware composition and color offsets; most effects needed for the supported first-section scenes are implemented, not complete VDP2 hardware coverage
-- native image particles, collection orbs/trails, save-station effects and destructible-object effects
-- native actor placement through cinematic and Excavation camera changes
-- reusable texture residency, a CDRAM-preferred upload arena, and range-aware image/LUT/palette invalidation
-
-- four-disc CUE/BIN selection and ISO9660 access
-- `COMMON.DAT` and town resource loading
-- authentic Azel boot through title, New Game, D5 name entry, and the pre-Ruins cinematic
-- native module-manager load of `TWN_RUIN.PRG`
-- Azel task scheduling and town task/script flow
-- world-grid and cell ownership
-- static and task-owned dynamic object submission
-- native Edge hierarchy submission through Azel's normal render boundary
-- native town collision
-- Edge movement and animation
-- Azel-style follow camera
-- town visibility and LOD selection
-- textured SceGxm rendering
-- live Azel directional/falloff lighting carried through the presentation bridge
-- RGB555-style Gouraud lighting
-- Ruins lock/switch objects
-- Saturn-style physical pad input translated from Vita controls
-- town LCS / lock-on state and target selection
-- native Neptune translation of VDP1 normal/scaled sprites and polyline UI commands
-- original LCS cursor, target marker, and selection-box behavior
-- Azel-authored VDP2 text, framed windows, and cinematic matte presentation
-- area-name, item-pickup, interaction, subtitle, and multi-choice text
-- native Vita BGM and sound-effect playback
-- runtime ARM translation of Sega Saturn SCSP DSP programs
-- hardware-validated SCSP DSP execution, with ARM now the normal default backend
-- Sega FILM demuxing and Cinepak playback with native SceAudio
-- SGX-assisted Cinepak reconstruction at source resolution
-- hardware-accepted screen-space 2x2 coordinate dithering for final Cinepak presentation
-- Edge's original textured/stippled VDP1 mesh shadow
-- Saturn-accurate Azel-driven black/white fade direction, timing, and color-offset presentation bridged through Neptune
-- optional native 960x544 gameplay presentation with MSAA disabled
-- native 720x408 high-resolution title presentation
-- stable 30 Hz presentation through the supported 3D sequence
-
-The public **v0.3.0alpha** release remains the latest packaged public release; the current development branch is substantially further along. Its main additions are native audio, the runtime ARM SCSP DSP translator, and the cleaned-up Cinepak presentation path. The renderer and platform layers continue to follow the same ownership rule: Azel decides game state and timing, Lagi provides Vita services, and Neptune renders the published Saturn-era presentation state.
+Only present discs are selectable. Four-disc selection does **not** imply full four-disc gameplay or in-game disc switching. See the [frontend guide](docs/DISC_SELECTION_FRONTEND.md) and [hardware acceptance notes](docs/ISO_LOADER_ACCEPTANCE_2026_10_23.md).
 
 ## Architecture
 
-The 2026-10-11 Cinepak follow-up uses direct 640x368 framebuffer scanout and centered exact 2x video scaling, superseding movie width-fit/full-resolution presentation. Gameplay/title modes are restored by their normal presentation paths. Lookup dithering, subtitles/matte and keep-awake ticks are retained. This scanout-mode change still needs Vita validation and does not replace physical display-system scaling.
-
-The 2026-10-10 development checkpoint adds optional native 960x544 gameplay/movie presentation (`LAGI_FULLRES=ON`; default OFF) and accepted lookup-based dithering (`LAGI_STOCHASTIC_FILTER=ON`, `LAGI_DITHER_LOOKUP=ON`; both default ON). The user accepted Vita build `508bf75` as effectively free versus hardware bilinear in tested gameplay. Full-screen menus still fall below 30 fps with either filter; that existing limitation is not resolved by this merge. See [dither performance](docs/DITHER_PERFORMANCE.md) for scope and evidence boundaries.
-
 ```text
-PDS disc data
-    |
-Azel / ATOLM reconstructed logic
-    |
-Lagi native runtime (ARMv7)
-    |
-VDP1 / VDP2 translation + Vita platform layer
-    |
-SceGxm / SceCtrl / SceAudioOut
-    |
-PlayStation Vita
+Original PDS disc data
+         |
+  Azel reconstructed logic (ARM)
+         |
+  Lagi platform and presentation bridge
+         |
+  Neptune VDP1/VDP2 -> SceGxm
+         |
+      PS Vita
 ```
 
-The game-side runtime owns tasks, scripts, game modes, scene selection, collision, camera state, animation, visibility, object lifetimes, and transition timing. Lagi owns the boundary between that runtime and the Vita: input, filesystem/disc access, timing/VBlank services, audio, memory/resource adaptation, frame synchronization, and presentation snapshots. Neptune renders those snapshots.
+**Azel decides. Lagi services. Neptune renders.**
 
-The current native boot path is:
+Azel owns gameplay state, tasks, scripts, timing, and scene decisions. Lagi supplies Vita input, disc access, memory, audio, synchronization, and other platform services. Neptune renders Azel's presentation state through the Vita GPU, without duplicating game logic in the renderer.
 
-```text
-Selected Disc 1-4 BIN/CUE
-    |
-Vita disc selector and mount
-    |
-azelInit() / resetEngine()
-    |
-native Azel startup task graph
-    |
-MOVIE1.CPK -> title -> New Game
-    |
-FLD_D5 name-entry sequence
-    |
-EVT002.CPK
-    |
-Azel module manager
-    |
-TWN_RUIN.PRG + native town task graph
-    |
-playable Ruins sequence -> elevator choice
-    |
-EVT004_1.CPK / EVT004_2.CPK
-    |
-FLD_A3 native flight / field tasks
-    |
-E006 in-engine cinematic -> Excavation
-    |
-first-section encounters -> opening boss fight
-    |
-generic Lagi scene/presentation bridge
-    |
-Neptune
-    |
-SceGxm
-```
+More implementation detail: [flight/rendering handoff](docs/FLIGHT_MODE_BRINGUP.md) · [dither performance](docs/DITHER_PERFORMANCE.md).
 
-The runtime architecture is summarized as:
+## Building and controls
 
-```text
-Azel decides.
-Lagi services.
-Neptune renders.
-```
+A working VitaSDK installation and Sony `psp2cgc` are required. See [building instructions](docs/BUILDING.md).
 
-## Rendering
-
-Lagi uses multiple Vita display framebuffer modes according to Azel's presentation state. Native 3D gameplay currently renders and scans out at 480x272 with MSAA disabled. When Azel switches the title screen into its 704-dot high-resolution VDP2 mode through TVMD, Neptune renders and scans out a 720x408 framebuffer directly. The title path therefore preserves substantially more of the source VDP2 raster instead of reducing it through the gameplay framebuffer mode.
-
-### Gouraud lighting
-
-The exact four-edge Saturn-style fragment reconstruction remains in the project as a reference path. On Vita hardware it was too expensive in close views, so the active `Full` mode uses a cached 3x3 subdivision of each Saturn quad.
-
-Each source quad is represented by:
-
-- 9 unique subdivision vertices
-- 8 GXM triangles
-- four-corner Gouraud values interpolated across the subdivision
-- RGB555-style add, clamp, and quantization
-
-Static topology, UVs, and positions are cached where possible. Dynamic polygons update only the data that changes.
-
-This approximation exists only in the Vita renderer. The Azel-side model and scene structures remain unchanged.
-
-### VDP1 mesh shadow
-
-Edge's shadow uses the original shadow model from `COMMON3.MCB` and its real texture mask from `COMMON3.CGB`.
-
-The texture supplies the oval silhouette. VDP1 `CMDPMOD` mesh mode supplies the alternating-pixel stipple. The Vita backend renders that primitive two-sided and with ordered VDP1-style depth behavior so it remains visible over the floor.
-
-### VDP1 town UI
-
-Azel retains ownership of town LCS and menu state and emits its original VDP1 command stream. Neptune currently translates the command types required by the first Ruins sequence directly to native GXM:
-
-- normal sprites -> cached textured screen-space quads
-- scaled sprites -> cached textured screen-space quads
-- polylines -> native GXM line primitives
-- independent white free cursor and selected target marker
-- original shrinking selection rectangle during target acquisition
-- animated selector for the elevator multi-choice menu
-- screen-space 2x2 lookup dithering for decoded title, text, VDP1 UI/particle sprites, menu/window graphics and UI backgrounds; radar remains point-filtered
-
-The current authentic-boot path no longer depends on a direct-Ruins loader to establish scene ownership. The bridge translates Azel's commands rather than recreating lock-on gameplay or UI behavior in Vita-specific code.
-
-### VDP2 presentation
-
-Azel's live VDP2 state supplies front-end and in-game presentation. Neptune translates VDP2 layers used across the supported boot, town, field, cinematic and combat paths:
-
-- NBG3 font/text map for area names, item pickups, interactions, subtitles, and choices
-- NBG1 16x16-character window map through a cached GPU tile atlas
-- the animated lower cinematic matte from Azel's vertical line-scroll table
-- live CRAM palette data for the VDP2 layers and bank-color VDP1 UI sprites
-
-Composition preserves Azel's authored layer relationships while allowing decoded presentation assets to use hardware filtering. Front-end/menu text is reconstructed into a 352x224 RGBA text layer and composited by SGX with linear filtering; decoded VDP1 selector/cursor sprites are likewise linearly filtered after palette decode. The title NBG0 artwork is decoded once into an RGBA presentation surface and then scaled by SGX with hardware linear filtering, avoiding repeated raw VDP2 decode work per output fragment. Azel remains responsible for the strings, window contents, choice state, cursor animation, fades, and scripted timing.
-
-## Renderer diagnostic views
-
-Vita D-pad Left/Right cycles through:
-
-```text
-Full -> Texture -> Lighting -> Quads -> Wires
-```
-
-- **Full** — textured scene with the active Gouraud path
-- **Texture** — texture-only reference
-- **Lighting** — lighting-only diagnostic
-- **Quads** — filled polygon diagnostic
-- **Wires** — original Saturn quad perimeter view
-
-The older dragon/demo views remain in the source tree as regression/reference code but are not part of the normal mode cycle.
-
-Normal startup enters **Full** with the diagnostic console hidden.
-
-## Controls
-
-The public 0.3.0-alpha build exposes the controls currently needed for the supported boot/Ruins/movie path:
-
-- **Right analog stick** — walk
-- **Square** — run / action
-- **Cross** — lock on / cancel
-- **Select** — cycle Neptune rendering debug views
-- **Start** — start the game / skip FMV
-
-The underlying Vita input bridge still presents Saturn-style input state to Azel. As additional game modes come online, the public mapping will continue to follow the actions Azel expects rather than duplicating gameplay decisions in Vita-specific code.
-
-## Performance
-
-The simulation targets 30 Hz presentation. Town and supported field sequences can meet that target, but heavier combat encounters still miss frames; a universal locked 30 FPS is **not** claimed.
-
-The authentic first-Ruins path is hardware-proven at the intended **30 Hz** presentation rate with live world geometry, Edge, task-owned objects, textures, and Gouraud lighting active. Static geometry/material caching is kept independent from live lighting state so normal light updates do not invalidate and rebuild the room.
-
-The 30 Hz cap remains in place because the game/simulation timing path has not been converted to a variable-rate model.
-
-On 2026-10-10 the user accepted the rendering milestone after reporting smooth play and no visual/performance regression on the tested range-invalidation route. The latest hardware capture has a sampled native render median of 23.887 ms; 3960 completed field frames contain two cold frames of 39.078/41.906 ms. Those spikes are accepted for now, not evidence of universal 33.3 ms compliance. The final captured-palette dependency refinement has host/syntax validation but no separate hardware capture yet.
-
-Known remaining work includes combat frame-time spikes, battle rewards and item awards, earned Berserk progression and persistence, first-section tutorials and item/effect coverage, the second field map, E006/Excavation VDP2 floor corruption, some transitions and audio behavior, and broader scene coverage. Battle ranking has a disc-backed implementation and host tests but still needs on-device verification. See [first-section cleanup](docs/FIRST_SECTION_CLEANUP.md) and [battle timing](docs/BATTLE_ENTRY_TIMING.md) for evidence and open acceptance gates. See [the detailed rendering handoff](docs/FLIGHT_MODE_BRINGUP.md).
-
-## Game data
-
-No Panzer Dragoon Saga game data is included in this repository.
-
-Current development builds use user-supplied CUE/BIN dumps in disc-numbered folders (only discs present can be selected):
-
-```text
-ux0:data/lagi/Disc 1/ ... Disc 4/
-    <disc>.cue
-    <disc>.bin
-```
-
-The frontend selects an available disc; the runtime parses its CUE, mounts the supported MODE1 data track, and reads original files directly from ISO9660. Selecting a disc does not imply in-game disc swapping or full four-disc gameplay coverage.
-
-## Source lineage
-
-Lagi builds on several community reverse-engineering projects:
-
-- **Azel** — primary reconstructed PDS runtime and source-level behavior reference
-- **ATOLM** — decompilation and accuracy reference
-- **pds-tools** — asset and format documentation/tooling
-- **Yabause / Vita Yabause** — Saturn hardware and behavior reference
-
-The current Azel reference is pinned under `extern/Azel`. Vita-specific adaptations live in the Lagi repository.
-
-## Building
-
-A working VitaSDK installation and Sony `psp2cgc` are required.
-
-See:
-
-- [docs/BUILDING.md](docs/BUILDING.md)
-- [docs/STATUS.md](docs/STATUS.md)
-
-## Legal
-
-Lagi is an independent community reimplementation project. Sega, Panzer Dragoon, Panzer Dragoon Saga, and related names and assets belong to their respective owners.
-
-This repository does not distribute copyrighted game data. Users are responsible for supplying required files from copies they are legally entitled to use.
+Controls are mapped from Vita input to the Saturn input state expected by Azel; available actions depend on the game mode. The public alpha's Ruins/movie controls are documented in [development status](docs/STATUS.md). Neptune retains Full, Texture, Lighting, Quads, and Wires diagnostic views.
 
 ## AI-Assisted Development
 
@@ -284,6 +78,10 @@ The project's architecture, technical direction, and implementation requirements
 
 Automated tests and builds support development, but correctness is ultimately validated on real PlayStation Vita hardware.
 
-## Acknowledgements
+## Source lineage and acknowledgements
 
-Lagi exists because of years of Saturn and Panzer Dragoon reverse-engineering work by the Azel, ATOLM, pds-tools, Yabause, and wider Sega Saturn development communities.
+Lagi builds on work from **Azel** (reconstructed game logic), **ATOLM** (decompilation and accuracy reference), **pds-tools** (formats and tooling), **Yabause / Vita Yabause** (hardware references), and the wider Sega Saturn reverse-engineering community. The Azel source reference is pinned under `extern/Azel`; Vita-specific adaptations live in Lagi.
+
+## Legal
+
+Lagi is an independent community project. Sega and the respective rights holders retain ownership of *Panzer Dragoon Saga* and its assets. **No copyrighted game data is distributed here.** Users must supply game files they are legally entitled to use.
