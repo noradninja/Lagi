@@ -30,13 +30,18 @@ static bool lagiWaitForModuleExitFade(s_moduleManager* owner)
             return false; // e.g. battle victory already completed its blackout
         if (g_fadeControls.m_4D < g_fadeControls.m_4C)
             return true; // do not steal a higher-priority native fade
+        // A3 Above Excavation's completed camera sequence (status50 -> 06)
+        // cuts to black on Saturn. The generic pre-teardown interpolation
+        // incorrectly added a second of visible outgoing camera here.
+        // Keep the authored request point; publish black before freeing VRAM.
+        const int steps=(mode==3 && gGameStatus.m4_gameStatus==0x50 && next==6)?1:30;
         fadePalette(&g_fadeControls.m0_fade0,
-            convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), 0, 30);
+            convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), 0, steps);
         fadePalette(&g_fadeControls.m24_fade1,
-            convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color), 0, 30);
+            convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color), 0, steps);
         waitingOwner = owner;
         waitingStatus = next;
-        PDS_Log("[ModuleExitFade] start mode=%d next=%02X frames=30\n", mode, next);
+        PDS_Log("[ModuleExitFade] start mode=%d next=%02X frames=%d\n", mode, next, steps);
         return true; // publish at least one frame before allowing deletion
     }
     const bool waiting = !g_fadeControls.m0_fade0.m20_stopped ||

@@ -112,3 +112,26 @@ comparison test strips the observer lines and reproduces all three original
 function bodies exactly. Vita build passes. This build is diagnostic, not a
 claimed correction of the late fade. Reproduce the same tunnel transition and
 retain its log/video to establish ordering of the native events.
+
+## Reference correction: native hard cut, not an earlier interpolated fade
+
+The user's 8.277-second Saturn reference (2026-10-24 16-37-00) shows the tunnel
+camera view is expected, followed by a cut to black after the dragon enters.
+The user explicitly corrects the earlier request: remove the added fade here.
+The diagnostic run confirms the camera lasts its authored 91 updates and ends
+with no script fade active, then our module gate adds 30 updates. Thus the
+earlier missing-fade hypothesis is superseded, not a reason to move the trigger.
+
+The verified field-mode3/status50 -> status06 handoff now requests black on both
+native fade controllers in one update, then retains the existing publish and
+both-channel completion barrier before teardown. Camera keys, durations,
+readiness query and status request point are unchanged. This is an explicit
+authored-transition policy correction based on the reference, not a renderer
+scene mask or a new countdown. Other module transitions retain their prior
+policy, including the boss cinematic; no global field-to-cinematic cut rule.
+
+The production gate fixture checks one-step requests, no restart, both-channel
+completion and existing fade/priority/exclusion cases. The generated timeline
+body comparison and Vita build pass. Hardware acceptance of the final cut and
+black hold remains pending. Saved-load visual acceptance and keep-awake idle-
+timeout confirmation are also still outstanding.
