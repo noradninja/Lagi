@@ -7,6 +7,7 @@
 #include <cstring>
 #include <vector>
 #include <cstdio>
+#include <string>
 #define LAGI_RBG_DECODED_PAGES 1
 using SceUID=int;
 struct SceGxmTexture {void* data=nullptr;};
@@ -20,7 +21,10 @@ static int sceGxmTextureInitLinear(SceGxmTexture* t,void* p,int,unsigned,unsigne
 static void sceGxmTextureSetMinFilter(SceGxmTexture*,int){}
 static void sceGxmTextureSetMagFilter(SceGxmTexture*,int){}
 static unsigned long long sceKernelGetProcessTimeWide(){static unsigned long long time=0;return ++time;}
-namespace logging {template<class... T>void writef(const char*,T...){};}
+static std::string lastPageLog;
+namespace logging {template<class... T>void writef(const char* format,T... args){
+    char text[512];std::snprintf(text,sizeof(text),format,args...);lastPageLog=text;
+};}
 static bool g_rbgDecodedPagesReady=false;
 static SceGxmTexture g_rbgDecodedAtlasTexture{};
 static float g_rbgDecodedPlanesA[16]{},g_rbgDecodedPlanesB[16]{};
@@ -39,6 +43,8 @@ int main() {
     planes(g_sceneRbg0.planesA,0x70000);planes(g_sceneRbg0.planesB,0x70800);
     g_sceneRbg0.ctrl[0]=2;
     assert(prepareRbgDecodedPages());assert(slot(0x70000)!=slot(0x70800));
+    // Mock clock advances once per read: two decoded and copied pages.
+    assert(lastPageLog.find("decodeUs=2 atlasCopyUs=2")!=std::string::npos);
     assert(unsigned(g_rbgDecodedPlanesA[0])==slot(0x70000));
     assert(unsigned(g_rbgDecodedPlanesB[0])==slot(0x70800));
     const auto original=slot(0x70000);

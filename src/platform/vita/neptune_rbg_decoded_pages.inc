@@ -27,14 +27,16 @@ template<class State> static bool prepareRbgDecodedPagesFor(const State& rbg,
         g_rbgPageFrontend=frontend;
     }
     const auto start=sceKernelGetProcessTimeWide();
+    unsigned decodeUs=0,atlasCopyUs=0;
     static unsigned frame=0,lastReason=~0u,logBudget=32;
     ++frame;
     auto status=[&](unsigned reason,unsigned pages,unsigned rebuilt,unsigned hits) {
         if((reason!=lastReason && logBudget) || (frame%120==0) || (rebuilt && logBudget)) {
             if(logBudget)--logBudget;
-            logging::writef("[RBG0PageCache] active=%u reason=%u pages=%u rebuilt=%u hits=%u prepUs=%u uploadBytes=%u frontend=%u\n",
+            logging::writef("[RBG0PageCache] active=%u reason=%u pages=%u rebuilt=%u hits=%u prepUs=%u uploadBytes=%u frontend=%u decodeUs=%u atlasCopyUs=%u\n",
                 reason==0?1u:0u,reason,pages,rebuilt,hits,
-                static_cast<unsigned>(sceKernelGetProcessTimeWide()-start),rebuilt*512u*512u*4u,frontend?1u:0u);
+                static_cast<unsigned>(sceKernelGetProcessTimeWide()-start),rebuilt*512u*512u*4u,frontend?1u:0u,
+                decodeUs,atlasCopyUs);
         }
         lastReason=reason;
         return reason==0;
@@ -102,15 +104,19 @@ template<class State> static bool prepareRbgDecodedPagesFor(const State& rbg,
         const unsigned slot=slots[i];
         const lagi::RbgPageKey key{required[i],static_cast<std::uint16_t>(rbg.format[1]),
             0,(static_cast<unsigned>(rbg.parameterFormat[0])&16)!=0,true}; // CAOS remains live on GPU.
+        const auto decodeStart=sceKernelGetProcessTimeWide();
         const auto result=g_rbgPages[slot].update(raw,generations,key,
             g_rbgPageScratch,lagi::RbgDecodedPage::Pixels);
+        decodeUs+=static_cast<unsigned>(sceKernelGetProcessTimeWide()-decodeStart);
         if(result==lagi::RbgPageResult::Unsupported)return status(4,count,rebuilt,hits);
         if(result==lagi::RbgPageResult::Rebuilt) {
             ++rebuilt;
+            const auto copyStart=sceKernelGetProcessTimeWide();
             auto* atlas=static_cast<std::uint32_t*>(g_rbgAtlasPixels);
             const unsigned origin=(slot/2)*512*kRbgAtlasWidth+(slot%2)*512;
             for(unsigned y=0;y<512;++y)std::memcpy(atlas+origin+y*kRbgAtlasWidth,
                 g_rbgPageScratch+y*512,512*4);
+            atlasCopyUs+=static_cast<unsigned>(sceKernelGetProcessTimeWide()-copyStart);
         } else ++hits;
         g_rbgPageLookup[required[i]/2048]=slot;
     }

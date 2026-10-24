@@ -1372,7 +1372,7 @@ static void recordFlightPresentation(
             "[FlightPresentOutlier] mode=%u baseline=%u render=%uus "
             "build=%uus interval=%lluus vblanks=%u present=%uus "
             "rebuild=%u rbg=%u cpuprep=%u submit=%u compose=%u "
-            "gxmend=%u gxmfinish=%u rbgPrep=%u rbgResolve=%u\n",
+            "gxmend=%u gxmfinish=%u rbgPrep=%u rbgResolve=%u fadeR=%d fadeG=%d fadeB=%d\n",
             static_cast<unsigned int>(g_viewMode), window.lastUs != 0u ? 1u : 0u,
             g_profileRenderUs, g_profileBuildUs,
             static_cast<unsigned long long>(intervalUs), intervalVblanks,
@@ -1380,7 +1380,8 @@ static void recordFlightPresentation(
             g_sceneRbg0Enabled ? 1u : 0u,
             g_profileRenderCpuPrepUs, g_profileSubmitUs, g_profileComposeUs,
             g_profileGxmEndSceneUs, g_profileGxmFinishUs,
-            g_profileRbgPrepareUs, g_profileRbgResolveUs);
+            g_profileRbgPrepareUs, g_profileRbgResolveUs,
+            g_sceneColorOffset[0], g_sceneColorOffset[1], g_sceneColorOffset[2]);
     }
     if (window.lastUs != 0u) {
         const std::uint64_t intervalUs = nowUs - window.lastUs;

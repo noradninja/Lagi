@@ -13,6 +13,10 @@ if($LASTEXITCODE -ne 0){throw 'Task profiler fixture compile failed'}
 & "$scratch/test.exe"
 if($LASTEXITCODE -ne 0){throw 'Task profiler fixture failed'}
 $renderer=Get-Content -Raw "$repo/src/platform/vita/neptune_renderer.cpp"
+if($renderer -notmatch 'rbgResolve=%u fadeR=%d fadeG=%d fadeB=%d' -or
+   $renderer -notmatch 'g_profileRbgPrepareUs, g_profileRbgResolveUs,\s*g_sceneColorOffset\[0\], g_sceneColorOffset\[1\], g_sceneColorOffset\[2\]'){
+ throw 'Outlier must record the same published RGB fade state used by scene composition'
+}
 if($renderer -notmatch 'positionSync=%u positionSyncVerts=%u positionSyncLegacyVerts=%u submissions=%u'){throw 'Combat geometry timings missing from ScenePerf'}
 $start=$renderer.IndexOf('const std::uint64_t renderStartUs =')
 $reset=$renderer.IndexOf('g_profilePositionSyncUs = 0u;', $start)
