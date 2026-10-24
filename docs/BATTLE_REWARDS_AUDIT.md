@@ -121,3 +121,27 @@ check the learned-name result and availability in the combat Berserk menu, then
 save/reload and recheck ownership. The existing mainGameState ownership bits
 remain the persistence owner; no duplicate unlock store or new save fields.
 Vita reward/save-reload acceptance is still pending; Goal 2 is not complete.
+
+## Generated save roundtrip coverage
+
+tests/reward_save_roundtrip_test.ps1 extracts the current build's generated
+s_gameStats and s_mainGameState definitions, the original save-status layout,
+and generated sSaveDataRaw/saveData/readSave/checksum functions. It compiles
+those production definitions rather than a separately maintained layout model.
+Run after configuring the native battle build; BuildDirectory defaults to
+build-battle-dev. It requires the MSVC developer environment.
+
+The host platform shim writes a real temporary disk file and invokes the
+production expand_growth migration when reading. Assertions cover consumable
+counts, two Berserk ownership flags via actual inventory methods, level/XP/dyne,
+all four proficiency/XP counters, enemy count/best-rank bytes and trailing button
+configuration. After clearing live state, generated readSave restores them.
+Corruption is rejected without replacing live progression. A legacy-sized file
+with the extension removed preserves reward flags/counts, XP and trailing
+records/controls while initializing the absent growth extension to zero.
+
+This verifies generated serialization and migration, not Vita sceIo behavior,
+the complete combat-to-save UI workflow, or naturally earned reward acceptance.
+The test initializes rewards through existing state methods; eligibility is
+covered by the separate production reward fixtures. No on-device evidence has
+yet been supplied for the new Goal 2 commits.
