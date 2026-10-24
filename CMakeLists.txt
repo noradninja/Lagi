@@ -1447,6 +1447,16 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
   endif()
   string(REPLACE "${nbg2_window_old}" "${nbg2_window_new}" source_text "${source_text}")
 
+  # MAIN 06032348..0603234A stores 0x00001300 at register offset0x0C:
+  # VRSIZE=0, RAMCTL=0x1300 (CRAM mode1, split VRAM A and B).
+  # The reconstruction's memset omitted RAMCTL. Restore the shared native
+  # default before overlay-specific low-byte rotation-bank roles are applied.
+  set(vdp2_reset_anchor "    memset(pRegisters, 0, offsetof(s_VDP2Regs, m110_CLOFEN)); // LAGI_NATIVE_COLOR_TAIL")
+  string(FIND "${source_text}" "${vdp2_reset_anchor}" vdp2_reset_found)
+  if(vdp2_reset_found LESS 0)
+   message(FATAL_ERROR "Native VDP2 reset register boundary changed")
+  endif()
+  string(REPLACE "${vdp2_reset_anchor}" "${vdp2_reset_anchor}\n    pRegisters->mE_RAMCTL = 0x1300; // MAIN 060323DE" source_text "${source_text}")
   # reinitVdp2() resets the register copies to zero, but the fade controller
   # intentionally survives across module/front-end setup. Republish the live
   # fade-channel colors immediately so newly constructed layers remain at the

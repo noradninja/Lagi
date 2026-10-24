@@ -51,3 +51,18 @@ validation over extra per-pixel tests or another GXM pass. Retain screen-over
 pattern semantics: an out-of-map OVPNR fetch does not read pattern-name VRAM.
 Hardware acceptance requires E006 plus town floor, and unchanged name-entry,
 field water/sky and combat performance. No rendering change in this audit.
+
+## Native reset prerequisite verified
+
+MAIN06032292 calls shared reset060322DE, which calls06032320 for both native
+register copies. At06032348 opcode9049 loads word1300 from060323DE. OpcodeC203
+at0603234A stores the resulting long00001300 atGBR+0C: VRSIZE0, RAMCTL1300.
+The reconstructed resetVdp2RegsCopy instead memset-clears RAMCTL and never
+restores it. Excavation therefore reconstructs00B4 instead of native13B4.
+Enforcing bank roles before correcting this would misclassify valid B1 data.
+
+The generated shared reset now restores RAMCTL1300 after clearing registers.
+No overlay-specific reset value or extern/Azel edit. The disc-backed reset
+test checks the actual original load/store/literal and generated default for
+both register banks. This is a prerequisite, not the floor fix: Neptune still
+needs native bank state and no-fetch handling in raw and cached sampling.
