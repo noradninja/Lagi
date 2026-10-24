@@ -145,3 +145,19 @@ the complete combat-to-save UI workflow, or naturally earned reward acceptance.
 The test initializes rewards through existing state methods; eligibility is
 covered by the separate production reward fixtures. No on-device evidence has
 yet been supplied for the new Goal 2 commits.
+
+## Reward-name font color correction
+
+The 2026-10-24 hardware screenshot confirms an awarded Macral Liquid, but its
+name uses unrelated colored font entries. The adapter incorrectly interpreted
+the descriptor's logical color selector as a raw palette bank. Original
+0606E984 calls 0606E89C, which enters MAIN 060253E4/06025334's window text path;
+that path uses the font-color lookup, unlike direct vdp2PrintfLargeFont.
+Selector 0 in 060ABAB8 therefore means font bank 12, not bank 0.
+
+Item and learned-Berserk names now share nativeFontPalette(), backed by Azel's
+existing printVdp2StringTable rather than a duplicate runtime palette table or
+an item-specific white override. Raw-bank APIs and existing result-label paths
+are unchanged. Fixtures now use selector 0 as on disc, check bank 12, and cover
+all ten lookup entries. The screenshot establishes award display, not durable
+save/reload or earned-Berserk hardware acceptance; those gates remain open.

@@ -6,6 +6,7 @@
 #include <cstdio>
 using s32=std::int32_t;using s16=std::int16_t;using s8=std::int8_t;using u32=std::uint32_t;
 enum eItems:s16{};
+std::uint32_t printVdp2StringTable[10]={12,13,7,8,9,10,11,13,7,14};
 enum eBattleRating:s8 {m0_narrowEscape,m1_closeCall,m2_goodFight,m3_greatFight,m4_excellent};
 static std::vector<std::uint8_t> memory(385044);
 struct sSaturnPtr{u32 address;bool isNull()const{return !address;}sSaturnPtr operator+(int n)const{return {address+u32(n)};}};
@@ -43,7 +44,7 @@ template<class... T>static void PDS_Log(const char*,T...){}
 int main(){
  longword(0x60AAFD8,0x60A9824);
  for(unsigned i=0;i<sizeof(nativeRows);++i)memory[0x60A9824-0x6054000+i]=nativeRows[i];
- longword(0x60ABAB0,10);longword(0x60ABAB4,14);longword(0x60ABAB8,12);
+ longword(0x60ABAB0,10);longword(0x60ABAB4,14);longword(0x60ABAB8,0);
  for(int sub=0;sub<8;++sub)for(int rank=0;rank<5;++rank)for(roll=0;roll<100;++roll){
   manager.m8_previousSubBattleId=sub;engine.m480={-1,-1};mainGameState={};
   const auto calls=rngCalls;const auto prints=labels;

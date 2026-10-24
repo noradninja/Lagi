@@ -1,4 +1,5 @@
 // BTL_A3 0606F308..0606F4C6: table-authored proficiency requirements.
+#include "lagi/native_font_palette.h"
 static void lagiUnlockBattleBerserks(sBattleResultScreen* result)
 {
     for(auto& list:result->m12_learnedBerserks)list.fill(0);
@@ -35,7 +36,7 @@ static void lagiPrintLearnedBattleBerserks(sBattleResultScreen* result)
             const s32 x=readSaturnS32(config),y=readSaturnS32(config+4);
             displayObjectIcon(0,x,y,getObjectIcon(static_cast<eItems>(id)));
             vdp2PrintStatus.m14_oldPalette=vdp2PrintStatus.m10_palette;
-            vdp2PrintStatus.m10_palette=(readSaturnS32(config+8)&15)<<12;
+            vdp2PrintStatus.m10_palette=lagi::nativeFontPalette(readSaturnS32(config+8));
             vdp2DebugPrintSetPosition(x+2,y);
             vdp2PrintfLargeFont("%s",getObjectListEntry(static_cast<eItems>(id))->m4_name.c_str());
             vdp2PrintStatus.m10_palette=vdp2PrintStatus.m14_oldPalette;

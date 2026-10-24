@@ -25,7 +25,7 @@ $common=Get-Content -Raw "$repo/extern/Azel/AzelLib/common.h"
 $a=$common.IndexOf('    s8 getItemCount(eItems');$b=$common.IndexOf('    void addItemCount(eItems',$a)
 if($a -lt 0 -or $b -le $a){throw 'Actual inventory method boundary changed'}
 [IO.File]::WriteAllText("$scratch/inventory.inc",$common.Substring($a,$b-$a))
-& cl /nologo /O2 /std:c++20 /EHsc "/I$scratch" "$PSScriptRoot/battle_berserk_rewards_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
+& cl /nologo /O2 /std:c++20 /EHsc "/I$scratch" "/I$repo/include" "$PSScriptRoot/battle_berserk_rewards_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
 if($LASTEXITCODE -ne 0){throw 'Berserk fixture compile failed'}
 & "$scratch/test.exe"
 if($LASTEXITCODE -ne 0){throw 'Berserk fixture failed'}

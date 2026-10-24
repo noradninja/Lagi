@@ -6,6 +6,7 @@
 #include <vector>
 using s16=std::int16_t;using s32=std::int32_t;using u32=std::uint32_t;using s8=std::int8_t;
 enum eItems:s16{};
+std::uint32_t printVdp2StringTable[10]={12,13,7,8,9,10,11,13,7,14};
 static std::array<unsigned char,4096> memory{};
 struct Ptr {unsigned offset;Ptr operator+(unsigned n)const{return {offset+n};}};
 static unsigned readSaturnU8(Ptr p){return memory.at(p.offset);}
@@ -42,12 +43,14 @@ void vdp2DebugPrintSetPosition(int x,int y){assert(x==int(names)+12&&y==20);}
 void vdp2PrintfLargeFont(const char*,const char*){assert(vdp2PrintStatus.m10_palette==0xc000);++names;}
 #include "../src/integration/lagi_battle_berserk_rewards.inc"
 int main(){
+ const unsigned banks[10]={12,13,7,8,9,10,11,13,7,14};
+ for(unsigned i=0;i<10;++i)assert(lagi::nativeFontPalette(i)==banks[i]*0x1000);
  for(unsigned c=0;c<4;++c){number(c*4,100+c*80);for(unsigned i=0;i<5;++i){
   auto p=100+c*80+i*8;memory[p]=255; // byte zero is not an eligibility input
   for(unsigned k=1;k<5;++k)memory[p+k]=3;
   word(p+6,0x4d+c*5+i);
  }}
- for(unsigned i=0;i<4;++i){number(2100+i*16,10+i);number(2104+i*16,20);number(2108+i*16,12);}
+ for(unsigned i=0;i<4;++i){number(2100+i*16,10+i);number(2104+i*16,20);number(2108+i*16,0);}
  sBattleResultScreen r;
  lagiUnlockBattleBerserks(&r);assert(unlocked.empty());
  for(unsigned k=1;k<5;++k)mainGameState.gameStats.m4_growthLevels[k]=2;
