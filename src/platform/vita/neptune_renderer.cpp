@@ -7379,6 +7379,19 @@ static void appendLiveTownModel(
     // it below for every dynamic model, on every frame.
     g_liveTownCpuMesh.polygonRecords.insert(g_liveTownCpuMesh.polygonRecords.end(),
         model.polygons.begin(),model.polygons.end());
+    // Apply sparse frame-owned material updates to the final descriptors,
+    // never the cached model. Existing Gouraud payload/GXM draw does the rest:
+    // no extra draw pass, texture upload, mesh adaptation or GPU synchronization.
+    const auto& animated=azel_bridge::published_animated_colors();
+    if(state.animatedColorStart<=animated.size() &&
+       state.animatedColorCount<=animated.size()-state.animatedColorStart) {
+        for(std::size_t i=0;i<state.animatedColorCount;++i) {
+            const auto& color=animated[state.animatedColorStart+i];
+            if(color.polygon<model.polygons.size())
+                lagi::applyNativeAnimatedColor(
+                    g_liveTownCpuMesh.polygonRecords[polygonBase+color.polygon],color);
+        }
+    }
     g_liveTownCpuMesh.polygonTextureIndices.resize(
         polygonBase + model.polygons.size());
     g_liveTownCpuMesh.gouraud555.resize(

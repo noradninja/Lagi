@@ -4,8 +4,10 @@
 #include <vector>
 #include <memory>
 #include "lagi/lagi_additive_light.h"
+#include "lagi/native_color_animation.h"
 
 struct sProcessed3dModel;
+void addObjectToDrawListWithColorAnimation(sProcessed3dModel*,const std::uint8_t*);
 
 namespace lagi::azel_bridge {
 
@@ -33,6 +35,7 @@ std::uint64_t native_texture_write_epoch();
 std::uint64_t published_resource_revision();
 
 struct SubmissionState {
+    std::uint32_t animatedColorStart=0,animatedColorCount=0;
     // VDP1 local origin at the draw boundary, not the restored end-frame state.
     std::int16_t localCoordinatesX = 176;
     std::int16_t localCoordinatesY = 112;
@@ -149,6 +152,7 @@ void record_vdp1_ui_command(const Vdp1UiCommand& command);
 const std::vector<Vdp1UiCommand>& published_vdp1_ui_commands();
 
 const std::vector<RenderSubmission>& published_submissions();
+const std::vector<lagi::NativeAnimatedPolygonColor>& published_animated_colors();
 const LiveVdp1Model* published_adapted_model(std::uint32_t index);
 std::uint64_t published_frame_number();
 

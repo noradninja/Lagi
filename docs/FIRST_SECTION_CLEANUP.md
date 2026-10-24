@@ -23,8 +23,9 @@ Independent corrections remain atomic commits.
    calculation, inventory/unlock state, display and save persistence.
 3. **Accepted:** Saved-game fade/black hold; Valley-to-Excavation cut; keep-awake ticking
    during in-engine cinematics as well as Cinepak, without changing simulation.
-4. All tunnel enter/leave audio, immediate switch sound fade, native switch
-   color/gloss behavior.
+4. **Active: native switch color/gloss behavior through shared model color
+   animation.** Tunnel enter/leave audio and switch audio are user-confirmed
+   fixed; do not reopen them. Restore the shared pipeline efficiently with GXM.
 5. Excavation cinematic/town floor corruption: shared source/native black
    behavior, not a scene-specific mask.
 6. Second field-map acquisition/entry failure, visited-area marking, selection,

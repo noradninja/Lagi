@@ -79,6 +79,7 @@ static std::unordered_map<std::int8_t, std::uint64_t> g_bundleTextureEpochs;
 static std::uint64_t g_publishedResourceRevision = 0;
 static std::vector<NativeModelCache::Handle> g_adaptedModels;
 static std::vector<RenderSubmission> g_submissions;
+static std::vector<lagi::NativeAnimatedPolygonColor> g_animatedColors,g_publishedAnimatedColors;
 static std::vector<NativeModelCache::Handle> g_publishedAdaptedModels;
 static std::vector<RenderSubmission> g_publishedSubmissions;
 static std::vector<Vdp1UiCommand> g_vdp1UiCommands;
@@ -186,6 +187,7 @@ void begin_frame(bool forceDynamicSubmissions)
     g_lastState = {};
     g_adaptedModels.clear();
     g_submissions.clear();
+    g_animatedColors.clear();
     g_vdp1UiCommands.clear();
     g_pendingTownSubmission = {};
     g_hasPendingTownSubmission = false;
@@ -283,6 +285,7 @@ void publish_frame(bool retainPreviousScene)
     // before the renderer consumes this frame.
     if (!retainPreviousScene) {
         g_publishedSubmissions = g_submissions;
+        g_publishedAnimatedColors = g_animatedColors;
         g_publishedVdp1UiCommands = g_vdp1UiCommands;
         g_publishedAdaptedModels = g_adaptedModels;
     }
@@ -640,7 +643,13 @@ static void capture_runtime_state(bool billboard)
     capture_current_light(g_lastState);
 }
 
-static void record_submission(sProcessed3dModel* model, bool billboard)
+const std::vector<lagi::NativeAnimatedPolygonColor>& published_animated_colors()
+{
+    return g_publishedAnimatedColors;
+}
+
+static void record_submission(sProcessed3dModel* model, bool billboard,
+    const std::uint8_t* animatedColors=nullptr)
 {
     if (!model)
         return;
@@ -815,6 +824,23 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
     submission.modelGeneration = cached ? cached->generation : 0;
     submission.adaptedModelIndex = adaptedIndex;
     submission.state = g_lastState;
+    if(animatedColors && cached) {
+        const auto start=g_animatedColors.size();
+        const bool valid=lagi::nativeColorRecords(animatedColors,cached->value.polygons.size(),
+            [](const lagi::NativeAnimatedPolygonColor& c){g_animatedColors.push_back(c);});
+        if(!valid)g_animatedColors.resize(start);
+        submission.state.animatedColorStart=static_cast<std::uint32_t>(start);
+        submission.state.animatedColorCount=static_cast<std::uint32_t>(g_animatedColors.size()-start);
+        submission.state.dynamic=true;
+        static unsigned colorReports=0;
+        if(colorReports<8 && (!valid || submission.state.animatedColorCount)) {
+            ++colorReports;
+            lagi::platform::logging::writef(
+                "[NativeColorAnimation] valid=%u polygons=%u updates=%u extraPasses=0\n",
+                valid?1u:0u,static_cast<unsigned>(cached->value.polygons.size()),
+                submission.state.animatedColorCount);
+        }
+    }
     g_submissions.push_back(submission);
     g_pendingTownSubmission = {};
     g_hasPendingTownSubmission = false;
@@ -845,6 +871,11 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
 void addObjectToDrawList(sProcessed3dModel* model)
 {
     lagi::azel_bridge::record_submission(model, false);
+}
+
+void addObjectToDrawListWithColorAnimation(sProcessed3dModel* model,const std::uint8_t* colors)
+{
+    lagi::azel_bridge::record_submission(model,false,colors);
 }
 
 void addBillBoardToDrawList(sProcessed3dModel* model)
