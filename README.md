@@ -1,6 +1,6 @@
 # Lagi
 
-**Current development milestone: native FLD_A3 flight and shared Neptune rendering**
+**Current development milestone (October 2026): first-section gameplay through the opening boss, native combat, shared Neptune VDP1/VDP2 rendering, and hardware-accepted four-disc loader**
 
 **Lagi** is a native PlayStation Vita runtime for *Panzer Dragoon Saga* / *Azel*. Reconstructed game logic runs directly on the Vita's ARM CPU, while Saturn-era rendering and platform behavior are translated to VitaSDK and native SceGxm.
 
@@ -26,12 +26,14 @@ checkpoint.
 
 ## Current status
 
-Current main extends the authentic Azel boot path through the opening movies, title, New Game, D5 name entry, playable Ruins, elevator/Cinepak handoff, native FLD_A3 flight, E006 in-engine cinematic and Excavation arrival. Azel owns the native field task graph, camera, visibility cells and transitions. This development state extends the earlier public v0.3.0alpha release; it does not imply a new packaged release or complete game support.
+The current development branch extends the authentic Azel boot path through the opening movies, title, New Game, D5 name entry, playable Ruins, elevator/Cinepak handoff, native FLD_A3 flight, E006 in-engine cinematic, Excavation arrival, random encounters, and the first boss fight (completed on Vita hardware). Combat is operational across multiple encounter formations, including Gelata Urchins and Patergo; the original disc data also maps Baldor and Baldor Queen formations. This is a development milestone beyond the public v0.3.0alpha release, **not** a new packaged release or a claim of complete game support. Azel remains responsible for game state, tasks, camera, encounter selection, and transitions.
 
 Working systems include:
 
 - native FLD_A3 entry, dragon/rider, radar, LCS and cell-driven environment rendering
-- shared native VDP2 rotation-background and priority-aware composition
+- first-section random encounters and completed opening boss fight on Vita; native battle dispatch, formation data, camera and result flow
+- original-disc-backed encounter selection, RNG and story-gate instruction audits; native battle-rank calculation restored in development (on-device rank verification pending)
+- shared native VDP2 normal/rotation backgrounds (including RBG0), scrolling layers, tile maps, live VRAM/CRAM, line-scroll, priority-aware composition and color offsets; most effects needed for the supported first-section scenes are implemented, not complete VDP2 hardware coverage
 - native image particles, collection orbs/trails, save-station effects and destructible-object effects
 - native actor placement through cinematic and Excavation camera changes
 - reusable texture residency, a CDRAM-preferred upload arena, and range-aware image/LUT/palette invalidation
@@ -70,7 +72,7 @@ Working systems include:
 - native 720x408 high-resolution title presentation
 - stable 30 Hz presentation through the supported 3D sequence
 
-The public **v0.3.0alpha** release is the current hardware milestone. Its main additions are native audio, the runtime ARM SCSP DSP translator, and the cleaned-up Cinepak presentation path. The renderer and platform layers continue to follow the same ownership rule: Azel decides game state and timing, Lagi provides Vita services, and Neptune renders the published Saturn-era presentation state.
+The public **v0.3.0alpha** release remains the latest packaged public release; the current development branch is substantially further along. Its main additions are native audio, the runtime ARM SCSP DSP translator, and the cleaned-up Cinepak presentation path. The renderer and platform layers continue to follow the same ownership rule: Azel decides game state and timing, Lagi provides Vita services, and Neptune renders the published Saturn-era presentation state.
 
 ## Architecture
 
@@ -118,6 +120,12 @@ TWN_RUIN.PRG + native town task graph
 playable Ruins sequence -> elevator choice
     |
 EVT004_1.CPK / EVT004_2.CPK
+    |
+FLD_A3 native flight / field tasks
+    |
+E006 in-engine cinematic -> Excavation
+    |
+first-section encounters -> opening boss fight
     |
 generic Lagi scene/presentation bridge
     |
@@ -175,7 +183,7 @@ The current authentic-boot path no longer depends on a direct-Ruins loader to es
 
 ### VDP2 presentation
 
-Azel's live VDP2 state supplies front-end and in-game presentation. Neptune translates the layers currently required by the authentic boot and first-Ruins path:
+Azel's live VDP2 state supplies front-end and in-game presentation. Neptune translates VDP2 layers used across the supported boot, town, field, cinematic and combat paths:
 
 - NBG3 font/text map for area names, item pickups, interactions, subtitles, and choices
 - NBG1 16x16-character window map through a cached GPU tile atlas
@@ -216,7 +224,7 @@ The underlying Vita input bridge still presents Saturn-style input state to Azel
 
 ## Performance
 
-The game is currently presented at 30 FPS.
+The simulation targets 30 Hz presentation. Town and supported field sequences can meet that target, but heavier combat encounters still miss frames; a universal locked 30 FPS is **not** claimed.
 
 The authentic first-Ruins path is hardware-proven at the intended **30 Hz** presentation rate with live world geometry, Edge, task-owned objects, textures, and Gouraud lighting active. Static geometry/material caching is kept independent from live lighting state so normal light updates do not invalidate and rebuild the room.
 
@@ -224,21 +232,21 @@ The 30 Hz cap remains in place because the game/simulation timing path has not b
 
 On 2026-10-10 the user accepted the rendering milestone after reporting smooth play and no visual/performance regression on the tested range-invalidation route. The latest hardware capture has a sampled native render median of 23.887 ms; 3960 completed field frames contain two cold frames of 39.078/41.906 ms. Those spikes are accepted for now, not evidence of universal 33.3 ms compliance. The final captured-palette dependency refinement has host/syntax validation but no separate hardware capture yet.
 
-Known remaining work includes the incorrect VDP2 floor in E006/Excavation, cold resource preparation, broader scene coverage and deferred native ray/laser rendering. See [the detailed rendering handoff](docs/FLIGHT_MODE_BRINGUP.md).
+Known remaining work includes combat frame-time spikes, battle rewards and item awards, earned Berserk progression and persistence, first-section tutorials and item/effect coverage, the second field map, E006/Excavation VDP2 floor corruption, some transitions and audio behavior, and broader scene coverage. Battle ranking has a disc-backed implementation and host tests but still needs on-device verification. See [first-section cleanup](docs/FIRST_SECTION_CLEANUP.md) and [battle timing](docs/BATTLE_ENTRY_TIMING.md) for evidence and open acceptance gates. See [the detailed rendering handoff](docs/FLIGHT_MODE_BRINGUP.md).
 
 ## Game data
 
 No Panzer Dragoon Saga game data is included in this repository.
 
-Current development builds use a user-supplied Disc 1 dump:
+Current development builds use user-supplied CUE/BIN dumps in disc-numbered folders (only discs present can be selected):
 
 ```text
-ux0:data/lagi/Disc 1/
+ux0:data/lagi/Disc 1/ ... Disc 4/
     <disc>.cue
     <disc>.bin
 ```
 
-The runtime parses the CUE, mounts the MODE1 data track, and reads the original files directly from ISO9660.
+The frontend selects an available disc; the runtime parses its CUE, mounts the supported MODE1 data track, and reads original files directly from ISO9660. Selecting a disc does not imply in-game disc swapping or full four-disc gameplay coverage.
 
 ## Source lineage
 
