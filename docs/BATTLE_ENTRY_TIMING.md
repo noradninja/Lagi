@@ -72,3 +72,25 @@ mock-clock attribution on two rebuilt pages. Native pixel-oracle tests
 check output. Combat profiling tests check that the logged fade values
 match the composition source. None proves a speed improvement or Vita
 transition smoothness. Goal 1 remains active pending hardware evidence.
+
+## Shared cold-decoder work reduction
+
+The next candidate replaces per-output-pixel native character flip arithmetic
+with an immutable, compile-time 4 x 256 byte address table. Palette wrapping,
+indexed/RGBA selection and transparent dot-zero handling are resolved in the
+existing 2048-entry color table once per rebuild. The table still occupies
+8 KiB of local storage; the immutable offsets add 1 KiB. No persistent page,
+actor or encounter cache is introduced. Indexed pages retain GPU-live CAOS
+and CRAM, and unchanged pages still use the existing generation hit path.
+Dependency collection, exact tile-name memoization and unsupported fallback
+are unchanged. GPU composition, rotation, fades and simulation are untouched.
+
+Validation includes the actual Azel pixel oracle plus exact baseline RGBA/index
+bytes for repeated/unique names, four flips, all eight CAOS values, opaque and
+transparent zero, and indexed/nonindexed output. The work fixture compares
+against fc94097, alternates measurement order, and forces 192 cold rebuilds
+per implementation and workload. One host run measured baseline/candidate
+24.374/13.749 ms (repeat 1), 155.038/30.335 ms (repeat 73), and
+160.958/31.665 ms (repeat 1024). These are totals on the Windows host, not
+Vita frame times or a promised speedup factor. Hardware must confirm entry
+timing, fade coverage, and unchanged water/name-entry presentation.

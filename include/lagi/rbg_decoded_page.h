@@ -37,8 +37,13 @@ public:
         depend(key.base,2048); // Pattern names: changing them can change dependencies.
         if(!key.indexed)depend(0x80000,4096);
         std::array<std::uint32_t,2048> colors{};
-        if(!key.indexed)for(unsigned i=0;i<colors.size();++i)colors[i]=rgba(word(raw+0x80000+i*2));
         const unsigned scn=key.pncr&0x3ff,caos=(key.craofb&7)*256;
+        // Resolve format, palette wrap and transparent dot zero once per
+        // palette entry, not once per output pixel. Indexed pages still keep
+        // CAOS/CRAM live on the GPU and do not depend on CPU palette data.
+        for(unsigned i=0;i<colors.size();++i)
+            colors[i]=(!(i&255) && !key.opaqueZero)?0:
+                (key.indexed?(0xff000000u|i):rgba(word(raw+0x80000+((i+caos)&2047)*2)));
         // Memoize exact pattern names within this rebuild. The destination
         // page itself owns the decoded tiles: no persistent pixel cache or
         // hash-only equality, and all dependencies are still collected below.
@@ -63,22 +68,30 @@ public:
                 continue;
             }
             decodedTiles[bucket]=tile+1;
+            const auto* offsets=characterOffsets[flip].data();
             for(unsigned y=0;y<16;++y)for(unsigned x=0;x<16;++x) {
-                unsigned px=x,py=y;
-                if(flip&2)py=(py&8)?15-py:23-py;
-                else if(py&8)py+=8;
-                if(flip&1){if(!(px&8))py+=8;px=7-(px&7);}
-                else {if(px&8)py+=8;px&=7;}
-                const unsigned dot=raw[characterBase+py*8+px];
-                const unsigned index=((key.indexed?0:caos)+(palette|dot))&2047;
-                pixels[(tileY+y)*Width+tileX+x]=(!dot && !key.opaqueZero)?0:
-                    (key.indexed?(0xff000000u|index):colors[index]);
+                const unsigned dot=raw[characterBase+offsets[y*16+x]];
+                pixels[(tileY+y)*Width+tileX+x]=colors[palette|dot];
             }
         }
         ready_=true;
         return RbgPageResult::Rebuilt;
     }
 private:
+    // Exact native four-cell character layout for all flip combinations.
+    // Immutable 1 KiB table, computed at compile time; no per-tile allocation.
+    inline static constexpr auto characterOffsets=[] {
+        std::array<std::array<std::uint8_t,256>,4> result{};
+        for(unsigned flip=0;flip<4;++flip)for(unsigned y=0;y<16;++y)for(unsigned x=0;x<16;++x) {
+            unsigned px=x,py=y;
+            if(flip&2)py=(py&8)?15-py:23-py;
+            else if(py&8)py+=8;
+            if(flip&1){if(!(px&8))py+=8;px=7-(px&7);}
+            else {if(px&8)py+=8;px&=7;}
+            result[flip][y*16+x]=static_cast<std::uint8_t>(py*8+px);
+        }
+        return result;
+    }();
     RbgPageKey key_{};
     Generations generations_{};
     std::array<bool,Blocks> dependencies_{};
