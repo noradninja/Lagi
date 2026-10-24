@@ -14038,6 +14038,14 @@ static void renderBasicWingViewer()
         }
     }
 
+    // Menu composition previously skipped native fading altogether. Apply
+    // it once after backing, models, text and VDP1 UI only when the native
+    // registers prove every layer uses the same offset. Mixed per-layer
+    // offsets must not be flattened into a replacement fullscreen fade.
+    if (nativeMenuFrame && frontendHasSharedColorOffset()) {
+        drawAzelColorOffsetForLayer(1u, true);
+    }
+
     // All native scenes share Azel's published primary fade state. Neptune
     // composes it after world/UI; Azel alone advances the color and countdown.
     if (!nativeMenuFrame && roomAuthenticCameraMode) {

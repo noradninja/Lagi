@@ -19,9 +19,9 @@ Independent corrections remain atomic commits.
    25 ms/frame, maximum 33 ms/frame; investigate the first slow Gelata encounter
    without enemy-specific shortcuts. Audit RNG/seeding, accumulation, story
    gates, selection and cadence without arbitrary rate increases.
-2. **Active: combat bonus rewards and earned Berserk progression:** eligibility, native
+2. **Accepted with deferred menu check: combat bonus rewards and earned Berserk progression:** eligibility, native
    calculation, inventory/unlock state, display and save persistence.
-3. Saved-game fade/black hold; Valley-to-Excavation fade; keep-awake ticking
+3. **Active:** Saved-game fade/black hold; Valley-to-Excavation fade; keep-awake ticking
    during in-engine cinematics as well as Cinepak, without changing simulation.
 4. All tunnel enter/leave audio, immediate switch sound fade, native switch
    color/gloss behavior.
@@ -33,6 +33,12 @@ Independent corrections remain atomic commits.
    Blast Chip and Energy Prism trails, lighting, camera, timing and cleanup.
 
 ## Goal 2 activation after user acceptance
+
+2026-10-24: user accepts Goal 2 as practically complete: item/Berserk awards,
+leveling, palettes, corrected level page and save/load work on hardware. Earned
+Berserk ownership after reload remains deferred to Goal 7 because the unfinished
+menu crashes before inspection. That limitation is not a verified pass.
+Goal 3 is now active; preserve Goal 1's accepted performance baseline.
 
 The user accepted a2bdf46's corrected loading sequence and agreed to move
 forward with present combat performance as the baseline. This is an explicit
