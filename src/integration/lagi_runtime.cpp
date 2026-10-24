@@ -4,6 +4,7 @@
 #include "lagi/lagi_compat.h"
 #include "lagi/platform.h"
 #include "lagi/native_scene_mode.h"
+#include "lagi/battle_loading_cover.h"
 #include "lagi/play_time_clock.h"
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/lagi_scene_bridge.h"
@@ -20,6 +21,8 @@
 #include "titleScreen.h"
 #include "kernel/moduleManager.h"
 #include "battle/BTL_A3/BTL_A3_map6.h"
+#include "battle/battleManager.h"
+#include "battle/battleOverlay.h"
 #include "audio/soundDriver.h"
 
 extern int numActiveTask;
@@ -474,7 +477,12 @@ void runtime_frame()
     // snapshot only after it owns the front-end render slot.
     capture_azel_vdp1_frontend_commands();
 
-    if (nativeSceneFrame) {
+    const bool incomingBattleSceneReady=lagi::battleLoadingCover.active &&
+        gBattleManager && gBattleManager->m10_battleOverlay &&
+        gBattleManager->m10_battleOverlay->m4_battleEngine;
+    const bool retainBattleLoadingScene=lagi::battleLoadingCover.retainPreviousScene(
+        lagi::azel_bridge::submission_count(),incomingBattleSceneReady);
+    if (nativeSceneFrame && !retainBattleLoadingScene) {
         // Azel owns the active scene and all of its task/gameplay state.
         // Lagi snapshots only renderer-facing state through the generic scene
         // bridge after the native task pass.
@@ -1239,7 +1247,7 @@ void runtime_frame()
             // only at the publish boundary so a scene->movie/module transition
             // inside runTasks() cannot deadlock against movie presentation.
             lagi::platform::renderer::presentation_wait_frame_slot();
-            lagi::azel_bridge::publish_frame();
+            lagi::azel_bridge::publish_frame(retainBattleLoadingScene);
             lagi::platform::renderer::presentation_publish_frame();
 
             static unsigned int sceneHeartbeat = 0;

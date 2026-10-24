@@ -1,4 +1,5 @@
 #include "lagi/battle_startup.h"
+#include "lagi/battle_loading_cover.h"
 #include <cassert>
 #include <cstdio>
 #include <string>
@@ -12,6 +13,8 @@ struct Common{std::vector<Entry> battleOverlaySetup;}common;
 Common* gCommonFile=nullptr;
 int selectedDisc=1,initializations=0,entries=0,reports=0;
 bool loadSucceeds=true,allocationSucceeds=true;
+struct FadeValue{int value=255;int getInteger()const{return value;}};
+struct {struct {bool m20_stopped=true;FadeValue m0_color[3];}m0_fade0;}g_fadeControls;
 unsigned resourceBytes=lagi::battle_generic_minimum_bytes;
 unsigned getFileSize(const char* name){assert(std::string(name)=="BTL_A3.PRG");return resourceBytes;}
 struct BTL_GenericData{u8* m_data=nullptr;unsigned m_dataSize=0;static void staticInit();};
@@ -55,10 +58,23 @@ int main(){
     ++selectedDisc;assert(!lagiPrepareNativeA3Battle() && initializations==2);
     --selectedDisc;
     sBattleOverlayTask task;expectedParent=&task;allocationSucceeds=false;
+    lagi::battleLoadingCover.begin();g_fadeControls.m0_fade0.m20_stopped=false;
+    const int entriesBeforeCover=entries;
+    for(int i=0;i<60;++i){
+        battleOverlayTask_Draw(&task);
+        assert(task.m0==1 && fontLoads==0 && entries==entriesBeforeCover);
+        assert(lagi::battleLoadingCover.retainPreviousScene(12)); // Old outgoing geometry cannot release cover.
+    }
+    g_fadeControls.m0_fade0.m20_stopped=true;
+    g_fadeControls.m0_fade0.m0_color[1].value=254;
+    battleOverlayTask_Draw(&task);assert(fontLoads==0);
+    g_fadeControls.m0_fade0.m0_color[1].value=255;
     battleOverlayTask_Draw(&task);assert(task.m0==1 && fontLoads==2);
+    assert(lagi::battleLoadingCover.retainPreviousScene(0));
     battleOverlayTask_Draw(&task);assert(task.m0==1 && fontLoads==2);
     allocationSucceeds=true;battleOverlayTask_Draw(&task);
     assert(task.m0==2 && fontLoads==2);const int started=entries;
+    assert(!lagi::battleLoadingCover.retainPreviousScene(1));
     battleOverlayTask_Draw(&task);assert(entries==started && task.m0==2);
     manager.m2_currentBattleOverlayId=1;manager.m6_subBattleId=0;expectedParent=&parent;
     assert(lagiEnterNativeA3Battle(&parent) && bossEntries==1 && entries==started);

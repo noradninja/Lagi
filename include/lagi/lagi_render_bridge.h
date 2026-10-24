@@ -144,7 +144,7 @@ const LiveVdp1Model* adapted_model(std::uint32_t index);
 // Publish the completed task frame for renderer consumption. The published
 // vectors are not modified by the next begin_frame()/task pass, which gives
 // the renderer a stable frame boundary for the later threaded handoff.
-void publish_frame();
+void publish_frame(bool retainPreviousScene=false);
 void record_vdp1_ui_command(const Vdp1UiCommand& command);
 const std::vector<Vdp1UiCommand>& published_vdp1_ui_commands();
 

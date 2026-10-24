@@ -241,7 +241,7 @@ const LiveVdp1Model* adapted_model(std::uint32_t index)
         : nullptr;
 }
 
-void publish_frame()
+void publish_frame(bool retainPreviousScene)
 {
     // This is the game-side publication boundary. Refresh immutable texture
     // bytes once per write epoch, not per model. No renderer container is
@@ -281,9 +281,11 @@ void publish_frame()
     }
     // Retain immutable geometry even if the producer retires a native model
     // before the renderer consumes this frame.
-    g_publishedSubmissions = g_submissions;
-    g_publishedVdp1UiCommands = g_vdp1UiCommands;
-    g_publishedAdaptedModels = g_adaptedModels;
+    if (!retainPreviousScene) {
+        g_publishedSubmissions = g_submissions;
+        g_publishedVdp1UiCommands = g_vdp1UiCommands;
+        g_publishedAdaptedModels = g_adaptedModels;
+    }
     g_publishedModelCacheMisses = g_modelCacheMisses;
     g_publishedExplicitStaticContextsSet = g_explicitStaticContextsSet;
     g_publishedExplicitStaticContextsConsumed =

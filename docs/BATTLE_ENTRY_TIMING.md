@@ -129,3 +129,41 @@ near/behind-camera cases, invalid layouts, and repeated lazy requests. The
 fixture also guards the single screen-copy consumer. The subdivision route
 fixture passes. These are correctness checks, not a measured timing gain;
 fresh Vita evidence must establish fade-in behavior and rendering correctness.
+
+## Supplied a414440 video: outgoing cover failure
+
+The next supplied log is 841,891 bytes. A close review of the supplied
+`2026-10-23 22-58-51 - Lagi - Lagi` video, sampled at eight frames/second
+around 23..30 seconds, shows the flight scene disappearing into a dark/gray
+empty screen, held for roughly two seconds, followed by white and battle
+fade-in. That is not a smooth outgoing scene-to-white fade. Log lines
+1346 onward show fade count 59/color (4,4,4), immediately followed by two
+BTL_A3.PRG reads, font/overlay/music setup and actor resource loading.
+The later first full scene render at white does not cover those earlier
+blocking operations. Previous interpretation of renderer-only outliers was
+therefore incomplete; the user's video establishes the missing visible phase.
+
+Platform correction: start a loading cover at successful native battle graphics
+capture (and at overlay init for entries without field capture). While the
+native field task is paused, preserve the prior immutable geometry/UI snapshot
+and camera instead of publishing empty submissions. Continue normal frame/fade
+publication. Delay synchronous preflight/file/font/overlay work until Azel's
+primary fade is stopped at full white. There is no invented frame delay or
+second fade clock. Retain through sound/resource loading until the native battle
+engine exists and produces geometry; replace the outgoing snapshot then, under
+the engine's own white cover. Azel retains the existing intro/fade-in sequence.
+
+This barrier is a Vita loading/presentation adaptation justified by the supplied
+visual sequence and synchronous host I/O. It is not a claim that original MAIN
+has an explicit fade-complete test in its overlay callback; the original
+instruction audit above still stands. A native interrupt-driven blocking loader
+and this platform's frame-driven fade updates are not interchangeable.
+
+Tests execute the production cover state, actual immutable publication block,
+and generated overlay Draw. They check no early font/factory calls, incomplete
+RGB rejection, retained geometry/UI/model ownership, continued frame serials,
+empty-frame hold, engine-readiness gating, incoming replacement, repeated
+encounters and existing graphics restoration. Both Vita configurations build.
+Hardware must verify the complete outgoing fade, white hold, incoming fade,
+normal HUD/particles/camera, audio and repeated random/story entries. This is
+not declared visually fixed until that test; Goal 1 remains incomplete.

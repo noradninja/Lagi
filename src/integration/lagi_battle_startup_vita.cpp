@@ -1,5 +1,6 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/battle_startup.h"
+#include "lagi/battle_loading_cover.h"
 #include "lagi/platform.h"
 #include "lagi/disc_image.h"
 #include "battle/battleManager.h"
@@ -23,6 +24,13 @@ bool reject(const std::string& error)
 
 bool lagiPrepareNativeA3Battle()
 {
+    const auto& fade=g_fadeControls.m0_fade0;
+    const bool startingCoveredLoad=lagi::battleLoadingCover.active && !lagi::battleLoadingCover.loading;
+    if(!lagi::battleLoadingCover.allowLoad(fade.m20_stopped,
+        fade.m0_color[0].getInteger(),fade.m0_color[1].getInteger(),fade.m0_color[2].getInteger()))
+        return false; // Keep publishing the outgoing scene while Azel fades it.
+    if(startingCoveredLoad)
+        lagi::platform::logging::writef("[BattleLoadingCover] loadUnderWhite=1\n");
     if(!gBattleManager || !gCommonFile)return reject("native manager/COMMON unavailable");
     const int overlay=gBattleManager->m2_currentBattleOverlayId;
     const int sub=gBattleManager->m6_subBattleId;
