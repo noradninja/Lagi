@@ -3,6 +3,7 @@
 #include "lagi/azel_movie_bridge.h"
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/platform.h"
+#include "lagi/playback_power_tick.h"
 
 #include <psp2/kernel/processmgr.h>
 
@@ -19,6 +20,17 @@ void clear_backend_marker()
 }
 
 } // namespace
+
+void lagiAzelCinematicKeepAwake()
+{
+    static lagi::PlaybackPowerTick tick;
+    const bool first=!tick.started;
+    if(!tick.due(sceKernelGetProcessTimeWide()))return;
+    const int result=sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+    if(first)lagi::platform::logging::writef(
+        "[AzelCinematic] keepAwake=power-tick intervalUs=1000000 result=0x%08X\n",
+        static_cast<unsigned>(result));
+}
 
 void lagiAzelMovieStreamOpen(const char* cpkFileName)
 {
