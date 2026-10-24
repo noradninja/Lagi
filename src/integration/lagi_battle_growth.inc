@@ -66,6 +66,8 @@ static void lagiApplyBattleGrowth(sBattleResultScreen* result)
     // table but consume their own cumulative growth XP, not the player XP.
     for (unsigned i=1;i<5;++i) {
         auto& level=s.m4_growthLevels[i];
+        // F002 preserves these before advancing proficiency, for result UI.
+        result->m75_oldGrowthLevels[i]=level;
         while(level<98 && readSaturnU32(lagiGrowthRow(level+1))<=s.m80_growthXP[i])++level;
     }
 }

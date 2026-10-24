@@ -82,3 +82,19 @@ no best-rank downgrade, and null-table behavior. Original tail constants/
 instructions and saved-array load/store assignments are checked separately.
 Those source checks establish ownership, not durable on-device roundtrip.
 Hardware save/reload and earned-Berserk work remain open.
+
+## Earned Berserk audit (in progress)
+
+Native 0606F308 scans class tables from 060AC094 in descending class order
+3..0, stopping each table at a zero item ID (word +6 of each eight-byte row).
+Requirements are bytes +1..+4 compared with the four saved proficiency levels
++1; byte +0 is not checked by this routine. Already owned abilities are skipped.
+Unlocks set the existing inventory ownership bit, then enqueue the item in the
+result's class-specific list and increment that class's count. No extra RNG.
+0606F270 presents up to four queued entries in ascending class order.
+
+The growth adapter now preserves pre-update proficiency levels, as native
+0606F002 does at result +75+i. Host tests cover both advancing and unchanged
+levels. This is result-local state, not a new save format. The unlock scanner
+and learned-ability presentation are not wired yet; this change alone does not
+claim that earned Berserks work. Vita reward/save-reload acceptance is pending.
