@@ -19,14 +19,14 @@ static int16_t readSaturnS16(sSaturnPtr ptr){int index=(ptr.offset-1000-formatio
 static s32 performDivision(s32 divisor,s32 dividend){return dividend/divisor;}
 struct Engine{s32 m190[2];} engine;
 struct Overlay{Engine* m4_battleEngine=&engine;} overlay;
-struct Manager{int m2_currentBattleOverlayId=0,m6_subBattleId=0;Overlay* m10_battleOverlay=&overlay;} manager;
+struct Manager{int m2_currentBattleOverlayId=99,m6_subBattleId=99,m4_previousBattleOverlayId=0,m8_previousSubBattleId=0;Overlay* m10_battleOverlay=&overlay;} manager;
 static auto* gBattleManager=&manager;
 #include "../src/integration/lagi_battle_rating.inc"
 int main(){
     const int result[9]={4,3,2,1,1,1,1,0,0};
     for(int ov=0;ov<17;++ov)for(int sub=0;sub<10;++sub){
-        overlayIndex=manager.m2_currentBattleOverlayId=ov;
-        formationIndex=manager.m6_subBattleId=sub;
+        overlayIndex=manager.m4_previousBattleOverlayId=ov;
+        formationIndex=manager.m8_previousSubBattleId=sub;
         for(int a=0;a<5;++a)for(int b=0;b<5;++b){
             engine.m190[0]=a*10*30;engine.m190[1]=b*100;
             assert(battleResultScreen_computeBattleRating(nullptr)==result[a+b]);

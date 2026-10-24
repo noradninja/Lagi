@@ -9,10 +9,10 @@ static s32 lagiBattleRatingBand(s32 value,sSaturnPtr thresholds)
 eBattleRating battleResultScreen_computeBattleRating(sBattleResultScreen*)
 {
     const auto table=readSaturnEA(g_BTL_GenericData->getSaturnPtr(0x060AB010)
-        +gBattleManager->m2_currentBattleOverlayId*4);
+        +gBattleManager->m4_previousBattleOverlayId*4);
     s32 score=8;
     if(!table.isNull()) {
-        const auto row=table+gBattleManager->m6_subBattleId*16;
+        const auto row=table+gBattleManager->m8_previousSubBattleId*16;
         const auto* engine=gBattleManager->m10_battleOverlay->m4_battleEngine;
         score=lagiBattleRatingBand(performDivision(30,engine->m190[0]),row)
             +lagiBattleRatingBand(engine->m190[1],row+8);
