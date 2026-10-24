@@ -2794,6 +2794,17 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(SUBSTRING "${source_text}" 0 ${trail_draw_start} source_text)
   string(APPEND source_text "${trail_draw_service}\n")
  elseif(relative_path STREQUAL "battle/battleResultScreen.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"items.h\"" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_rewards.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_rewards.inc" reward_service)
+  set(reward_stub "void battleResultScreen_printItemReceived(eBattleRating)\n{\n    Unimplemented();\n}")
+  string(FIND "${source_text}" "${reward_stub}" reward_found)
+  if(reward_found LESS 0)
+   message(FATAL_ERROR "Native battle item reward boundary changed")
+  endif()
+  string(REPLACE "${reward_stub}" "${reward_service}" source_text "${source_text}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_rating.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_rating.inc" rating_service)

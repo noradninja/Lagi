@@ -19,3 +19,44 @@ include. The fixture deliberately makes current IDs 99/99, different from
 the previous IDs, while checking all 25 score combinations over 17 overlays
 and ten subbattles, threshold equality, update division and null tables.
 This is a bounded source/instruction check, not whole-battle Vita acceptance.
+
+## Native bonus-item selection and award
+
+The guarded generated adapter replaces only the result-screen award stub.
+Original 0606ECA2 selects the table at 060AAFD8 using previous overlay/subbattle
+IDs. Rows are six bytes: two item words, then two chance bytes. A nonnull
+table consumes one modulo-100 native RNG roll even for a low rank. Great Fight
+uses the first item/chance; Excellent uses the second. Equality fails. Lower
+ranks do not choose a bonus, and a null table consumes no RNG. A previously
+recorded m480[0] is preserved if the roll does not choose a new bonus.
+
+Native helper 0605B302 writes reward slot m480[0] via 0605B2CC; it does not
+increment inventory there. The result routine then displays that reward and
+updates inventory, with a 99 consumable cap or an ownership bit at F3+item
+for IDs >=4D. This uses the existing game-state methods, not a separate reward
+inventory. Native label config 060ABA00 and name/icon config 060ABAB0 drive
+the announcement. The icon/name services read the existing COMMON item table.
+The name is at config X+2; palette is restored afterward. The native debug-only
+table dump controlled by battle debug flag 17 is not implemented here.
+
+The first eight A3 rows from the disc are Macral Liquid (1C) for Great Fight,
+Macral Shell (1D) for Excellent, both chance 30. These are read from the disc,
+not installed as per-enemy constants in the adapter. Later rows retain their
+authored values. A successful rank does not guarantee a bonus.
+
+battle_rewards_test checks original instructions/literals and feeds those
+eight rows to the actual production include for all five ranks and all 100
+rolls, deliberately using different current/previous IDs. It additionally
+tests asymmetric thresholds, equality, 0/100 chance, negative reward, null
+table, pre-recorded reward, actual common.h inventory methods, 98->99 and
+99->99, flag-backed items, and native-layout label/icon/name publication.
+RNG/UI/disc-memory services are mocked; this is not whole-Saturn execution.
+Existing growth/migration and corrected rank tests pass. Both Vita build
+configurations pass, with the battle configuration compiling the award adapter.
+
+Hardware gate: normal victories should sometimes show/award these items when
+rank and roll qualify. Inspect [BattleRewardRoll] and [BattleReward], check the
+inventory, then save/reload and check again. Do not force RNG or alter ranks to
+obtain an award. Goal 2 is not complete: enemy-result count/best-rank records,
+earned Berserk eligibility/unlocks/announcements, and hardware persistence
+validation remain. The existing XP/growth path was not replaced by this work.
