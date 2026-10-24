@@ -93,8 +93,31 @@ Unlocks set the existing inventory ownership bit, then enqueue the item in the
 result's class-specific list and increment that class's count. No extra RNG.
 0606F270 presents up to four queued entries in ascending class order.
 
-The growth adapter now preserves pre-update proficiency levels, as native
+The growth adapter preserves pre-update proficiency levels, as native
 0606F002 does at result +75+i. Host tests cover both advancing and unchanged
-levels. This is result-local state, not a new save format. The unlock scanner
-and learned-ability presentation are not wired yet; this change alone does not
-claim that earned Berserks work. Vita reward/save-reload acceptance is pending.
+levels. This is result-local state, not a new save format.
+
+The unlock scanner now runs immediately after proficiency advancement on the
+native level-up result path (original calls at 0606FC50 and 0606FC54). The
+existing no-level-up branch remains unchanged; this does not introduce a scan
+on every frame or an independent unlock condition. All qualifying items are
+owned immediately, even if more than four names qualify for the result page.
+The learned-name label/configs are 060ABA70 and 060ABAD0+displayIndex*16;
+names/icons are published alongside the existing stat-increase presentation
+(native call 0606FD30). The adapter uses existing large-font services rather
+than implementing the separate result particle flourish.
+
+tests/battle_berserk_rewards_test.ps1 checks original instructions, call order,
+table/config pointers, and the capacity of all four authored native tables.
+Its fixture executes the production scan/presentation with actual common.h
+inventory methods: all four requirements independently, equality, ignored row
+byte zero, sentinel termination, pre-owned flags, repeated scans, descending
+unlock order, ascending display order, four-name cap and palette restoration.
+Synthetic rows exercise boundaries; this is not original-CPU execution.
+The Vita battle build compiles the generated scan and presentation calls.
+
+Hardware gate: earn proficiency/player levels naturally, capture [BattleBerserk],
+check the learned-name result and availability in the combat Berserk menu, then
+save/reload and recheck ownership. The existing mainGameState ownership bits
+remain the persistence owner; no duplicate unlock store or new save fields.
+Vita reward/save-reload acceptance is still pending; Goal 2 is not complete.

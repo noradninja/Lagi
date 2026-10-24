@@ -2822,7 +2822,11 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_result_clear.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_result_clear.inc" result_clear_service)
   string(APPEND growth_service "\n${result_clear_service}")
-  string(REPLACE "    s16 m4;\n    s8 m72;" "    s16 m4;\n    std::array<u16,6> m6_gains;\n    u8 m73_oldLevel;\n    std::array<u8,5> m75_oldGrowthLevels;\n    s8 m72;" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_berserk_rewards.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_berserk_rewards.inc" berserk_reward_service)
+  string(APPEND growth_service "\n${berserk_reward_service}")
+  string(REPLACE "    s16 m4;\n    s8 m72;" "    s16 m4;\n    std::array<u16,6> m6_gains;\n    u8 m73_oldLevel;\n    std::array<u8,5> m75_oldGrowthLevels;\n    std::array<std::array<s16,8>,6> m12_learnedBerserks;\n    std::array<u8,6> m7A_learnedCounts;\n    s8 m72;" source_text "${source_text}")
   foreach(growth_stub IN ITEMS "void battleResultScreen_updateSub5(int XPReceived)\n{\n    Unimplemented();\n}" "void battleResultScreen_checkLevelUp(sBattleResultScreen* pThis)\n{\n    Unimplemented();\n}")
    string(FIND "${source_text}" "${growth_stub}" growth_stub_found)
    if(growth_stub_found LESS 0)
@@ -2832,7 +2836,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   endforeach()
   string(REPLACE "void battleResultScreen_printItemReceived" "#include \"commonOverlay.h\"\n${growth_service}\nvoid battleResultScreen_printItemReceived" source_text "${source_text}")
   string(REPLACE "                Unimplemented(); // level-up display: applies HP/BP stat increases, shows level-up text"
-   "                lagiApplyBattleGrowth(pThis);\n                pThis->m72 = 3;\n                pThis->m4 = 0x5A;" source_text "${source_text}")
+   "                lagiApplyBattleGrowth(pThis);\n                lagiUnlockBattleBerserks(pThis);\n                pThis->m72 = 3;\n                pThis->m4 = 0x5A;" source_text "${source_text}")
   set(growth_states [=[    case 3:
         if ((graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m6_buttonDown & 6) || --pThis->m4 < 0) {
             clearVdp2TextLargeFont();
@@ -2853,6 +2857,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
                 for(unsigned j=0;j<4;++j)data[j]=readSaturnS32(config+j*4);
                 battleResultScreenProgressiveText_printNumber(data,values[i]);
             }
+            lagiPrintLearnedBattleBerserks(pThis);
             pThis->m72=5;pThis->m4=15;
         }
         break;
