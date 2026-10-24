@@ -46,3 +46,34 @@ alive after retirement. Production-function extraction tests verify reuse,
 generation/address replacement, duplicate registration and lifetime. This
 removes duplicate work at resource introductions but does not prove every
 cinematic task/rebuild spike is eliminated; capture the same sequence again.
+
+## Next capture: repeated enemies and unused stream updates
+
+The user accepts the cinematic hitch correction. The next full run still has
+Patergo at 21.28–29.97 FPS (440/1320 intervals over two VBlanks) and Gelata at
+24.80–29.97 (119/960). Other ordinary fights have 0–1 late intervals. Sampled
+renderer medians are 30.10/29.48 ms. No exact-run A/B gain is inferred.
+The smooth boss transition is user-observed, not proof all startup work is gone.
+Random entry RBG preparation is now about 21–25 ms, down from 56–60 ms; total
+cold render remains about 60–65 ms, with the first 120.65-ms entry also doing
+78.08 ms of scene building. That first allocation includes base buffers 8.55,
+textured buffers 22.36 and subdivision buffers 10.09 ms. Loading and renderer
+metrics overlap; do not add all fields. Random-entry performance is still open.
+
+Full-subdivision drawing builds positions from the current CPU model, yet
+steady position sync also wrote the unused base texture and Gouraud streams.
+The next change skips just those two streams when mode, lighting, textures,
+shaders, capacity and buffer readiness prove subdivision is selected. A shared
+readiness predicate is used by draw and update. Base color vertices remain
+current. Diagnostics, missing shaders/resources, insufficient capacity and
+unlit fallback still perform the original updates; fallback immediately writes
+current dynamic positions. No animation, culling, enemy identity or simulation
+cadence changes. ScenePerf positionSyncLegacyVerts is zero when the legacy
+streams are skipped; positionSyncVerts still counts base color vertices.
+Production extraction tests cover gates, untouched legacy bytes, current base
+positions, fallback catch-up, static prefixes and attributes. Hardware speed
+and render-mode switching remain validation gates, not host-test claims.
+
+The generated RNG/observer tests and original Disc 1 RNG/countdown/table-data
+checks were rerun successfully. These do not close the independent original
+story-gate and whole-task-scheduler equivalence audit. Goal 1 remains active.

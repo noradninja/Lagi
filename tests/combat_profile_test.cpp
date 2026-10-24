@@ -1,6 +1,9 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdint>
+#include "../include/lagi/play_time_clock.h"
+lagi::PlayTimeClock playTimeClock;
+struct {unsigned mC_numFramesPresented=0;} vblankData;
 unsigned clockReads=0,runs=0,publications=0;
 unsigned published=0;
 uint64_t sceKernelGetProcessTimeWide(){return (++clockReads==1)?1000:2345;}

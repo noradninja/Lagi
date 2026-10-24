@@ -687,6 +687,7 @@ static unsigned int g_liveTownStaticIdentityMisses = 0u;
 static unsigned int g_profileTasksUs = 0;
 static unsigned int g_profilePositionSyncUs = 0;
 static unsigned int g_profilePositionSyncVertices = 0;
+static unsigned int g_profilePositionSyncLegacyVertices = 0;
 static unsigned int g_profileGameWaitUs = 0;
 static unsigned int g_profileRenderCpuPrepUs = 0;
 static unsigned int g_profileBuildUs = 0;
@@ -7902,6 +7903,17 @@ static void refreshLiveTownStaticLighting()
     }
 }
 
+// Shared with submission: do not infer a subdivision route from view mode
+// alone. Allocation, shader availability and capacity may require fallback.
+static bool liveSubdivisionBuffersReady(const Vdp1ModelSource& model)
+{
+    return g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+        g_vdp1SubdivVertices && g_vdp1SubdivIndices &&
+        g_vdp1SubdivVertexCapacity >= model.polygonCount * 9u &&
+        g_vdp1SubdivIndexCapacity >= model.polygonCount * 24u &&
+        g_gouraudSubdivVertexProgram;
+}
+
 static bool buildLiveTownFrame()
 {
     g_profileFieldStreamLogUs = 0u;
@@ -8299,6 +8311,7 @@ static bool buildLiveTownFrame()
     const std::uint64_t tUpload = sceKernelGetProcessTimeWide();
     g_profilePositionSyncUs = 0u;
     g_profilePositionSyncVertices = 0u;
+    g_profilePositionSyncLegacyVertices = 0u;
     const bool fullSubdivMode = g_viewMode == 7;
     const bool changed = !g_liveTownPrepared ||
         g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
@@ -8316,6 +8329,14 @@ static bool buildLiveTownFrame()
         g_residentVdp1Model = ResidentVdp1Model::LiveTown;
         g_liveTownPrepared = true;
     } else {
+        const bool subdivisionOnly = fullSubdivMode &&
+            liveSubdivisionBuffersReady(liveTownVdp1Source()) &&
+            g_vdp1TexturedReady && g_vdp1GouraudVertices &&
+            g_vdp1TextureIndices && liveTownVdp1Source().texturesValid() &&
+            g_texturedGouraudSubdivFragmentProgram &&
+            ((g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid) || std::any_of(
+                g_liveTownPolygonLights.begin(),g_liveTownPolygonLights.end(),
+                [](const LivePolygonLightState& light){return light.valid;}));
         // LAGI_LIVE_POSITION_SYNC_BEGIN
         const std::size_t firstDynamicVertex = g_liveTownStaticRebuilt
             ? 0u : g_liveTownStaticVertexCount;
@@ -8328,23 +8349,28 @@ static bool buildLiveTownFrame()
                 (g_liveTownCpuMesh.vertices.size() - firstDynamicVertex) *
                     sizeof(g_liveTownCpuMesh.vertices[0]));
         }
-        for (std::size_t i = firstDynamicVertex;
-             i < g_liveTownCpuMesh.vertices.size(); ++i) {
-            const auto& v = g_liveTownCpuMesh.vertices[i];
-            g_vdp1TextureVertices[i].x = v.x;
-            g_vdp1TextureVertices[i].y = v.y;
-            g_vdp1TextureVertices[i].z = v.z;
-        }
-        for (std::size_t i = firstDynamicVertex;
-             i < g_liveTownCpuMesh.vertices.size(); ++i) {
-            const auto& v = g_liveTownCpuMesh.vertices[i];
-            g_vdp1GouraudVertices[i].x = v.x;
-            g_vdp1GouraudVertices[i].y = v.y;
-            g_vdp1GouraudVertices[i].z = v.z;
+        // Subdivision uploads its own current positions from model.vertices.
+        // These legacy streams are used only by base/diagnostic fallback.
+        if (!subdivisionOnly) {
+            for (std::size_t i = firstDynamicVertex;
+                 i < g_liveTownCpuMesh.vertices.size(); ++i) {
+                const auto& v = g_liveTownCpuMesh.vertices[i];
+                g_vdp1TextureVertices[i].x = v.x;
+                g_vdp1TextureVertices[i].y = v.y;
+                g_vdp1TextureVertices[i].z = v.z;
+            }
+            for (std::size_t i = firstDynamicVertex;
+                 i < g_liveTownCpuMesh.vertices.size(); ++i) {
+                const auto& v = g_liveTownCpuMesh.vertices[i];
+                g_vdp1GouraudVertices[i].x = v.x;
+                g_vdp1GouraudVertices[i].y = v.y;
+                g_vdp1GouraudVertices[i].z = v.z;
+            }
         }
         g_profilePositionSyncVertices = static_cast<unsigned int>(
             g_liveTownCpuMesh.vertices.size() > firstDynamicVertex
                 ? g_liveTownCpuMesh.vertices.size() - firstDynamicVertex : 0u);
+        g_profilePositionSyncLegacyVertices = subdivisionOnly ? 0u : g_profilePositionSyncVertices;
         g_profilePositionSyncUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - positionSyncStartUs);
         // LAGI_LIVE_POSITION_SYNC_END
@@ -11438,11 +11464,7 @@ bool submit_vdp1_model(
     const bool subdividedTexturedLit =
         texturedLit &&
         g_viewMode == 7 &&
-        g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-        g_vdp1SubdivVertices && g_vdp1SubdivIndices &&
-        g_vdp1SubdivVertexCapacity >= model.polygonCount * 9u &&
-        g_vdp1SubdivIndexCapacity >= model.polygonCount * 24u &&
-        g_gouraudSubdivVertexProgram &&
+        liveSubdivisionBuffersReady(model) &&
         g_texturedGouraudSubdivFragmentProgram;
     const bool subdividedGouraudGray =
         gouraudGray &&
@@ -13689,6 +13711,7 @@ static void renderBasicWingViewer()
     // No scene build on some menu/transition frames: never report old sync work.
     g_profilePositionSyncUs = 0u;
     g_profilePositionSyncVertices = 0u;
+    g_profilePositionSyncLegacyVertices = 0u;
     g_profileMenuBackingDecodeUs = 0u;
     g_profileMenuTextDecodeUs = 0u;
     g_profileMenuSubmitUs = 0u;
@@ -14149,7 +14172,7 @@ static void renderBasicWingViewer()
             "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus nbg0Resolve=%uus rbgRawBytes=%u "
             "menuBackingDecode=%u menuTextDecode=%u menuSubmit=%u menuTransfer=%u "
             "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1 tasks=%u uiOnly=%u slowSample=%u "
-            "positionSync=%u positionSyncVerts=%u submissions=%u "
+            "positionSync=%u positionSyncVerts=%u positionSyncLegacyVerts=%u submissions=%u "
             "spriteDraws=%u spriteWorldTagged=%u spriteShaded=%u spriteBboxPixels=%llu "
             "spriteCacheHits=%u spriteCacheMisses=%u spritePaletteRefresh=%u spriteSlotSkips=%u gpuSerialized=%u\n",
             g_profileBuildUs,
@@ -14193,6 +14216,7 @@ static void renderBasicWingViewer()
             slowMenuSample ? 1u : 0u,
             g_profilePositionSyncUs,
             g_profilePositionSyncVertices,
+            g_profilePositionSyncLegacyVertices,
             g_liveTownSubmissionCount,
             g_profileSprites.draws,g_profileSprites.worldTagged,g_profileSprites.shaded,
             static_cast<unsigned long long>(g_profileSprites.bboxPixels),

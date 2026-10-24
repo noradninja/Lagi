@@ -13,14 +13,14 @@ if($LASTEXITCODE -ne 0){throw 'Task profiler fixture compile failed'}
 & "$scratch/test.exe"
 if($LASTEXITCODE -ne 0){throw 'Task profiler fixture failed'}
 $renderer=Get-Content -Raw "$repo/src/platform/vita/neptune_renderer.cpp"
-if($renderer -notmatch 'positionSync=%u positionSyncVerts=%u submissions=%u'){throw 'Combat geometry timings missing from ScenePerf'}
+if($renderer -notmatch 'positionSync=%u positionSyncVerts=%u positionSyncLegacyVerts=%u submissions=%u'){throw 'Combat geometry timings missing from ScenePerf'}
 $start=$renderer.IndexOf('const std::uint64_t renderStartUs =')
 $reset=$renderer.IndexOf('g_profilePositionSyncUs = 0u;', $start)
 if($reset -lt $start -or $reset -gt $start+300){throw 'Position-sync metrics can leak from preceding frame'}
 $copy=$renderer.IndexOf('const auto positionSyncStartUs =')
 $finish=$renderer.IndexOf('sceKernelGetProcessTimeWide() - positionSyncStartUs)', $copy)
 if($copy -lt 0 -or $finish -le $copy){throw 'Position sync loop is not timed'}
-foreach($name in @('g_vdp1Vertices[i] = v;','g_vdp1TextureVertices[i].z = v.z;','g_vdp1GouraudVertices[i].z = v.z;')){
+foreach($name in @('std::memcpy(g_vdp1Vertices + firstDynamicVertex,','if (!subdivisionOnly)', 'g_vdp1TextureVertices[i].z = v.z;','g_vdp1GouraudVertices[i].z = v.z;')){
  if(!$renderer.Substring($copy,$finish-$copy).Contains($name)){throw "Existing sync path changed without verification: $name"}
 }
 Write-Output 'PASS frame-reset and active geometry-copy profiling boundary (not a performance result).'
