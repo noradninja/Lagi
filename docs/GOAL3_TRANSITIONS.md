@@ -1,5 +1,13 @@
 # Goal 3: transition presentation and cinematic idle service
 
+## Accepted on hardware, 2026-10-24
+
+User confirms the corrected Valley-to-Excavation cut after ee74725, followed
+by explicit confirmation of saved-load black hold and cinematic keep-awake.
+All three Goal 3 acceptance gates are therefore closed. The pending statements
+below are historical checkpoints, superseded by this user acceptance; host
+tests alone were not used as hardware proof.
+
 Scope: saved-game black transition/hold, Valley-to-Excavation fade, in-engine
 cinematic keep-awake. Azel owns simulation, fade endpoints and readiness;
 Neptune presents them. Independent corrections remain atomic.

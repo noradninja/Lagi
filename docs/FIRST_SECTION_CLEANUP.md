@@ -21,7 +21,7 @@ Independent corrections remain atomic commits.
    gates, selection and cadence without arbitrary rate increases.
 2. **Accepted with deferred menu check: combat bonus rewards and earned Berserk progression:** eligibility, native
    calculation, inventory/unlock state, display and save persistence.
-3. **Active:** Saved-game fade/black hold; Valley-to-Excavation fade; keep-awake ticking
+3. **Accepted:** Saved-game fade/black hold; Valley-to-Excavation cut; keep-awake ticking
    during in-engine cinematics as well as Cinepak, without changing simulation.
 4. All tunnel enter/leave audio, immediate switch sound fade, native switch
    color/gloss behavior.
@@ -31,6 +31,15 @@ Independent corrections remain atomic commits.
    exit and save/reload correctness.
 7. Native battle tutorials and first-section item/Berserk coverage, including
    Blast Chip and Energy Prism trails, lighting, camera, timing and cleanup.
+
+## Goal 3 hardware acceptance
+
+2026-10-24: user confirms the Valley-to-Excavation transition is correct after
+ee74725, then explicitly confirms both remaining checks: saved-load black hold
+and in-engine cinematic keep-awake. Goal 3 is complete on that hardware
+acceptance, together with the recorded host checks and Vita build. No later
+goal is implied complete. Goal 4 (tunnel audio and native switch color/gloss)
+is next in the agreed sequence.
 
 ## Goal 2 activation after user acceptance
 
