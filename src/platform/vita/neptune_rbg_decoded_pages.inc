@@ -103,7 +103,7 @@ template<class State> static bool prepareRbgDecodedPagesFor(const State& rbg,
     for(unsigned i=0;i<count;++i) {
         const unsigned slot=slots[i];
         const lagi::RbgPageKey key{required[i],static_cast<std::uint16_t>(rbg.format[1]),
-            0,(static_cast<unsigned>(rbg.parameterFormat[0])&16)!=0,true}; // CAOS remains live on GPU.
+            0,(static_cast<unsigned>(rbg.parameterFormat[0])&16)!=0,true,rbg.ramctl,true}; // CAOS remains live on GPU.
         const auto decodeStart=sceKernelGetProcessTimeWide();
         const auto result=g_rbgPages[slot].update(raw,generations,key,
             g_rbgPageScratch,lagi::RbgDecodedPage::Pixels);

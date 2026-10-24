@@ -336,6 +336,8 @@ static const SceGxmProgramParameter* g_vdp2Rbg0InfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0FormatParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0LayerWindowParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0LayerWindowInfoParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0PatternBanksParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0CharacterBanksParam = nullptr;
 static void releaseRbgTileProgram();
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
@@ -967,6 +969,7 @@ struct RbgGpuState {
     unsigned backColor=0;
     float parameterFormat[2]{};
     float planesA[16]{}, planesB[16]{}, ctrl[16]{}, plsz = 0.0f;
+    std::uint16_t ramctl=0;
     float format[4]{}, transformA[8]{}, transformB[8]{};
     float coefficientA[4]{}, coefficientB[4]{};
 };
@@ -3658,6 +3661,15 @@ static RbgGpuState makeRbgGpuState(const FrontendRbg0State& state)
     rbg.enabled=(state.bgon&0x10u)!=0;
     rbg.layerEnable=state.bgon;
     rbg.backColor=state.backColor;
+    rbg.ramctl=state.ramctl;
+    static unsigned bankReports=0,lastRamctl=~0u;
+    if(rbg.enabled && lastRamctl!=state.ramctl && bankReports<16) {
+        ++bankReports;lastRamctl=state.ramctl;
+        logging::writef("[RBG0BankAccess] RAMCTL=%04X mapA=%05X nameRoleA=%u mapB=%05X nameRoleB=%u\n",
+            unsigned(state.ramctl),unsigned(state.planeA[0]),
+            lagi::rbgBankRole(state.ramctl,state.planeA[0]),unsigned(state.planeB[0]),
+            lagi::rbgBankRole(state.ramctl,state.planeB[0]));
+    }
     for (unsigned int i = 0; i < 16u; ++i) {
         rbg.planesA[i] =
             static_cast<float>(state.planeA[i]);
@@ -10144,6 +10156,10 @@ void show_game_presentation()
                 vdp2Rbg0FragmentGxp, "rbg0LayerWindow");
             g_vdp2Rbg0LayerWindowInfoParam = sceGxmProgramFindParameterByName(
                 vdp2Rbg0FragmentGxp, "rbg0LayerWindowInfo");
+            g_vdp2Rbg0PatternBanksParam = sceGxmProgramFindParameterByName(
+                vdp2Rbg0FragmentGxp,"rbg0PatternBanks");
+            g_vdp2Rbg0CharacterBanksParam = sceGxmProgramFindParameterByName(
+                vdp2Rbg0FragmentGxp,"rbg0CharacterBanks");
             if (!g_vdp2Rbg0Transform0Param ||
                 !g_vdp2Rbg0Transform1Param ||
                 !g_vdp2Rbg0CoefficientParam ||
@@ -10151,7 +10167,8 @@ void show_game_presentation()
                 !g_vdp2Rbg0SwitchCoefficientParam ||
                 !g_vdp2Rbg0SwitchInfoParam ||
                 !g_vdp2Rbg0FormatParam ||
-                !g_vdp2Rbg0LayerWindowParam || !g_vdp2Rbg0LayerWindowInfoParam) {
+                !g_vdp2Rbg0LayerWindowParam || !g_vdp2Rbg0LayerWindowInfoParam ||
+                !g_vdp2Rbg0PatternBanksParam || !g_vdp2Rbg0CharacterBanksParam) {
                 logging::writef(
                     "[NeptuneVDP2] RBG0 compact uniforms unavailable; "
                     "disabling RBG0\n");
@@ -12978,6 +12995,13 @@ static bool drawVdp2Rbg0Gpu(
             0, 4, &rbg.ctrl[8]);
         sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0LayerWindowInfoParam,
             0, 4, layerWindowInfo);
+        float patternBanks[4],characterBanks[4];
+        lagi::rbgBankPermissions(rbg.ramctl,2,patternBanks);
+        lagi::rbgBankPermissions(rbg.ramctl,3,characterBanks);
+        if(g_vdp2Rbg0PatternBanksParam) sceGxmSetUniformDataF(rbgUniforms,
+            g_vdp2Rbg0PatternBanksParam,0,4,patternBanks);
+        if(g_vdp2Rbg0CharacterBanksParam) sceGxmSetUniformDataF(rbgUniforms,
+            g_vdp2Rbg0CharacterBanksParam,0,4,characterBanks);
         const float switchSize = (ktctl & 0x2u) ? 2.0f : 4.0f;
         const float switchInfo[4] = {
             static_cast<float>(ktaof & 7u) * switchSize * 65536.0f,

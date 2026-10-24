@@ -37,6 +37,15 @@ float selectRbg0Plane(
     return lane < 2.5f ? plane.z : plane.w;
 }
 
+#if !LAGI_RBG_DECODED_PAGES
+float rbgBankReadable(float address,float4 banks)
+{
+    if(address<0.0f || address>=524288.0f)return 0.0f;
+    if(address<262144.0f)return address<131072.0f?banks.x:banks.y;
+    return address<393216.0f?banks.z:banks.w;
+}
+#endif
+
 float4 sampleRbg0Cell(
     uniform sampler2D raw,
 #if LAGI_RBG_TILE16_8BIT && !LAGI_RBG_DECODED_PAGES
@@ -50,6 +59,10 @@ float4 sampleRbg0Cell(
     float4 format,
     float overPattern,
     float sharedPlane,
+#if !LAGI_RBG_DECODED_PAGES
+    float4 patternBanks,
+    float4 characterBanks,
+#endif
     float4 p0,
     float4 p1,
     float4 p2,
@@ -149,6 +162,10 @@ float4 sampleRbg0Cell(
     const float patternY = floor(inPageY / patternDim);
     const float patternAddress =
         pageBase + (patternY * pageDimension + patternX) * patternSize;
+    // OVPNR is a register, not a pattern-name VRAM fetch. Only ordinary map
+    // reads require the RAMCTL name-bank role. Never sample unrelated UI RAM.
+    if(!(outside && screenOver>=0.5f) && rbgBankReadable(patternAddress,patternBanks)<0.5f)
+        return float4(0,0,0,0);
 
     // D5 uses one-word pattern names. Keep the generic state live, but avoid
     // inventing a two-word decode until a scene actually requires it.
@@ -232,6 +249,7 @@ float4 sampleRbg0Cell(
     if (chcn < 0.5f) {
         const float packedAddress =
             characterOffset + floor((py * 8.0f + px) * 0.5f);
+        if(rbgBankReadable(packedAddress,characterBanks)<0.5f)return float4(0,0,0,0);
         const float packedByte = readByte(raw, packedAddress);
         if (fmod(px, 2.0f) < 0.5f)
             dotColor = floor(packedByte / 16.0f);
@@ -240,6 +258,7 @@ float4 sampleRbg0Cell(
     } else {
         const float dotAddress =
             characterOffset + py * 8.0f + px;
+        if(rbgBankReadable(dotAddress,characterBanks)<0.5f)return float4(0,0,0,0);
 #if LAGI_RBG_TILE16_8BIT && !LAGI_RBG_DECODED_PAGES
         // Same upload, reinterpreted as 2048 byte texels per row. Preserve
         // selectByte's nearest-lane thresholds even for fractional addresses;
@@ -328,6 +347,10 @@ float4 main(
     uniform float4 rbg0Info,
     // {CHCTLB, PNCR, CRAOFB, RBG0 PLSZ}
     uniform float4 rbg0Format,
+#if !LAGI_RBG_DECODED_PAGES
+    uniform float4 rbg0PatternBanks,
+    uniform float4 rbg0CharacterBanks,
+#endif
     uniform float4 rbg0BPlane0,
     uniform float4 rbg0BPlane1,
     uniform float4 rbg0BPlane2,
@@ -472,5 +495,8 @@ float4 main(
         decodedPages,
 #endif
         mapX, mapY, format, coefficient.w, info.w,
+#if !LAGI_RBG_DECODED_PAGES
+        rbg0PatternBanks,rbg0CharacterBanks,
+#endif
         plane0, plane1, plane2, plane3);
 }

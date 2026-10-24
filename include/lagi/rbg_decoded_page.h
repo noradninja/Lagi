@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include "rbg_bank_access.h"
 
 namespace lagi {
 // Resource decoding only. Rotation, windows, priorities and composition do
@@ -12,6 +13,8 @@ struct RbgPageKey {
     std::uint16_t pncr=0,craofb=0;
     bool opaqueZero=false;
     bool indexed=false; // Retain palette index; animated CRAM stays live on GPU.
+    std::uint16_t ramctl=0;
+    bool bankAccess=false; // Standalone format-oracle callers may omit hardware access.
     bool operator==(const RbgPageKey&) const = default;
 };
 enum class RbgPageResult { Hit, Rebuilt, Unsupported };
@@ -34,6 +37,12 @@ public:
         dependencies_.fill(false);generations_=generations;
         if((key.base&2047u) || key.base>0x80000u-2048u || (key.pncr&0xC000u)!=0x8000u)
             return RbgPageResult::Unsupported;
+        if(key.bankAccess && !rbgBankReadable(key.ramctl,key.base,2)) {
+            // No name fetch: do not expose unrelated VRAM as rotation image
+            // data. Empty coverage reveals the native back screen beneath.
+            std::memset(pixels,0,Pixels*sizeof(*pixels));ready_=true;
+            return RbgPageResult::Rebuilt;
+        }
         depend(key.base,2048); // Pattern names: changing them can change dependencies.
         if(!key.indexed)depend(0x80000,4096);
         std::array<std::uint32_t,2048> colors{};
@@ -55,6 +64,13 @@ public:
             const unsigned character=((name&0x3ff)<<2)|(scn&3)|((scn&0x1c)<<10);
             const unsigned characterBase=character*32;
             if(characterBase>0x80000u-256u)return RbgPageResult::Unsupported;
+            const bool characterCrossesBank=(characterBase>>17)!=((characterBase+255)>>17);
+            if(key.bankAccess && !characterCrossesBank && !rbgBankReadable(key.ramctl,characterBase,3)) {
+                const unsigned tileX=(tile%32)*16,tileY=(tile/32)*16;
+                for(unsigned y=0;y<16;++y)
+                    std::memset(pixels+(tileY+y)*Width+tileX,0,16*sizeof(*pixels));
+                continue;
+            }
             depend(characterBase,256);
             const unsigned palette=(name&0x7000)>>4,flip=(name>>10)&3;
             const unsigned tileX=(tile%32)*16,tileY=(tile/32)*16;
@@ -70,8 +86,10 @@ public:
             decodedTiles[bucket]=tile+1;
             const auto* offsets=characterOffsets[flip].data();
             for(unsigned y=0;y<16;++y)for(unsigned x=0;x<16;++x) {
-                const unsigned dot=raw[characterBase+offsets[y*16+x]];
-                pixels[(tileY+y)*Width+tileX+x]=colors[palette|dot];
+                const unsigned address=characterBase+offsets[y*16+x];
+                const bool readable=!key.bankAccess || !characterCrossesBank ||
+                    rbgBankReadable(key.ramctl,address,3);
+                pixels[(tileY+y)*Width+tileX+x]=readable?colors[palette|raw[address]]:0;
             }
         }
         ready_=true;

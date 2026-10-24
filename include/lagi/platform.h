@@ -19,6 +19,7 @@ void presentation_set_sprite_color_state(const lagi::Vdp2SpriteColorState& state
 // Native scene cadence; title and Cinepak retain their separate schedulers.
 void presentation_set_native_frame_vblanks(unsigned int count);
 struct FrontendRbg0State {
+    std::uint16_t ramctl=0;
     std::uint16_t backColor=0;
     std::uint32_t planeA[16];
     std::uint32_t planeB[16];

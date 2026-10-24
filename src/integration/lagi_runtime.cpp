@@ -747,6 +747,7 @@ void runtime_frame()
         state.overPatternA = regs->mB8_OVPNRA;
         state.overPatternB = regs->mBA_OVPNRB;
         state.bgon = regs->m20_BGON;
+        state.ramctl = regs->mE_RAMCTL;
         // Bounded transition-only evidence for native composition. Camera
         // matrices/coefficients are intentionally excluded from this key.
         static unsigned compositeMode = ~0u;
