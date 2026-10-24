@@ -274,6 +274,16 @@ Lagi is an independent community reimplementation project. Sega, Panzer Dragoon,
 
 This repository does not distribute copyrighted game data. Users are responsible for supplying required files from copies they are legally entitled to use.
 
+## AI-Assisted Development
+
+Lagi uses AI-assisted development for code analysis, implementation, debugging, optimization, and documentation.
+
+This includes translating Sega Saturn VDP1/VDP2 rendering behavior into native SceGxm operations, analyzing reconstructed Azel game logic, and developing platform-specific implementations.
+
+The project's architecture, technical direction, and implementation requirements remain developer-directed. AI-assisted code is not assumed to be correct simply because it compiles. Changes are evaluated for architectural consistency, compatibility with the original game logic, and fidelity to Sega Saturn hardware behavior.
+
+Automated tests and builds support development, but correctness is ultimately validated on real PlayStation Vita hardware.
+
 ## Acknowledgements
 
 Lagi exists because of years of Saturn and Panzer Dragoon reverse-engineering work by the Azel, ATOLM, pds-tools, Yabause, and wider Sega Saturn development communities.
