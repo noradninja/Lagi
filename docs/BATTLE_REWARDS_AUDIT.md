@@ -60,3 +60,25 @@ inventory, then save/reload and check again. Do not force RNG or alter ranks to
 obtain an award. Goal 2 is not complete: enemy-result count/best-rank records,
 earned Berserk eligibility/unlocks/announcements, and hardware persistence
 validation remain. The existing XP/growth path was not replaced by this work.
+
+## Saved enemy-record bookkeeping
+
+Original rank computation does not return immediately after choosing a rank:
+0606EBC8..0606EC8C walks ten engine m484 entries, stops at the first negative
+entry, and updates byte pairs at 0024BCA0. Count saturates at 255; best rank
+only increases. Null rank tables still take this bookkeeping tail with rank
+zero. The first implementation omitted that tail.
+
+The adapter now updates the existing battleResults array (104 hex bytes,
+130 pairs), using the existing native load/save ownership, not new storage.
+The life-meter factory already records unique encountered type IDs in m484;
+these counts are per encountered type per result, not one increment for each
+individual killed actor. The native ten-slot/sentinel traversal is retained.
+The debug-only rank print remains outside this implementation.
+
+Tests execute the production rank+tail with empty/sparse/full lists, first
+negative sentinel, highest valid record ID, all five rank values, 255 cap,
+no best-rank downgrade, and null-table behavior. Original tail constants/
+instructions and saved-array load/store assignments are checked separately.
+Those source checks establish ownership, not durable on-device roundtrip.
+Hardware save/reload and earned-Berserk work remain open.

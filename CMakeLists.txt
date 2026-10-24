@@ -2806,7 +2806,8 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   endif()
   string(REPLACE "${reward_stub}" "${reward_service}" source_text "${source_text}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_rating.inc")
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_rating.inc"
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_records.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_rating.inc" rating_service)
   set(rating_stub "eBattleRating battleResultScreen_computeBattleRating(sBattleResultScreen* pThis)\n{\n    Unimplemented();\n    return eBattleRating::m4_excellent;\n}")
   string(FIND "${source_text}" "${rating_stub}" rating_stub_found)

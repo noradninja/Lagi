@@ -1,5 +1,6 @@
 // BTL_A3 0606EA44..0606EBA4: thresholds remain in the original overlay.
 // m190[0] is counted in battle updates; m190[1] is damage received.
+#include "lagi_battle_records.inc"
 static s32 lagiBattleRatingBand(s32 value,sSaturnPtr thresholds)
 {
     for(s32 band=0;band<4;++band)
@@ -18,5 +19,6 @@ eBattleRating battleResultScreen_computeBattleRating(sBattleResultScreen*)
             +lagiBattleRatingBand(engine->m190[1],row+8);
     }
     const s32 rating=score==0?4:score==1?3:score==2?2:score>=7?0:1;
+    lagiRecordBattleResult(rating);
     return static_cast<eBattleRating>(rating);
 }
