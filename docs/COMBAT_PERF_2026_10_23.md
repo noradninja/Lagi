@@ -77,3 +77,21 @@ and render-mode switching remain validation gates, not host-test claims.
 The generated RNG/observer tests and original Disc 1 RNG/countdown/table-data
 checks were rerun successfully. These do not close the independent original
 story-gate and whole-task-scheduler equivalence audit. Goal 1 remains active.
+
+## Bounded native-scene reservation
+
+Flight previously reserved at least 2048 quads, growing by 25 percent. The
+first captured Patergo needs 2222 quads and grows the reservation to 2730;
+one combined reuse check then frees/reallocates every geometry stream.
+The next independent correction reserves that same existing 16-bit subdivision
+index ceiling (65535/24 = 2730 quads) at first native-scene preparation. It is
+not a formation-specific pool, and active draw counts remain unchanged.
+It reserves 919336 extra payload bytes versus the old 2048 floor, before 4-KiB
+allocation rounding, rather than allocating this capacity mid-fade in combat.
+Initial allocation cost is moved to first scene preparation, not eliminated.
+This does not remove the remaining RBG page rebuild, cold material resolution
+or task-side native startup work; random-entry timing still needs hardware.
+The production policy fixture checks every supported count and native mode,
+unchanged diagnostic/unreserved behavior and unsupported-subdivision fallback
+without clamping away geometry. Device memory pressure, mode switching, first
+random entry, repeated enemies and returns must still be tested.

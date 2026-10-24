@@ -6113,15 +6113,15 @@ bool prepare_vdp1_model(
         model.texturesValid() && subdivVertexCount &&
         subdivVertexCount <= 65535u && subdivIndexCount <= 65535u;
 
-    // Allocate field capacity ahead of ordinary cell visibility growth.
-    // 2048 quads exceeds the observed FLD_A3 traversal peak; retain exact
-    // active counts everywhere below. Cap subdivision capacity at its existing
-    // 16-bit index-count limit, and preserve other modes' allocation behavior.
+    // Reserve the bounded native-scene subdivision capacity at first use.
+    // A flight-only 2048-quad reservation forced every mapped geometry stream
+    // to be released/reallocated as soon as a larger combat formation arrived.
+    // The existing 16-bit index-count ceiling is only 2730 quads. Reserve that
+    // same ceiling for every native scene; retain exact active counts below.
     const bool reserveSceneCapacity = preserveResidentTextures &&
         lagi::native_scene_mode(g_sceneGameMode) && subdivBuffersRequired;
     const std::size_t allocationPolygons = reserveSceneCapacity
-        ? std::min<std::size_t>(65535u / 24u,
-            std::max<std::size_t>(2048u, model.polygonCount + model.polygonCount / 4u))
+        ? 65535u / 24u
         : model.polygonCount;
     const unsigned int allocationVertices = reserveSceneCapacity
         ? std::max(vertexCount, static_cast<unsigned int>(allocationPolygons * 6u))
