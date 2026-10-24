@@ -2045,6 +2045,15 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  set(script_fade_trace "void scriptFunction_6067E68_fadeOut(s32 arg0)\n{")
+  string(FIND "${source_text}" "${script_fade_trace}" script_fade_found)
+  if(script_fade_found LESS 0)
+   message(FATAL_ERROR "Field script fade timeline boundary changed")
+  endif()
+  string(REPLACE "${script_fade_trace}"
+   "${script_fade_trace}\n    static unsigned timelineBudget=16;\n    if(timelineBudget){--timelineBudget;lagi::platform::logging::writef(\"[FieldExitTimeline] event=scriptFade duration=%d field=%d sub=%d\\n\",int(arg0*2),int(getFieldTaskPtr()->m2C_currentFieldIndex),int(getFieldTaskPtr()->m2E_currentSubFieldIndex));}"
+   source_text "${source_text}")
   set(cart_smoke_old "config.m0_pPosition = (sVec3_FP*)pThis; // uses m0_position at offset 0")
   string(FIND "${source_text}" "${cart_smoke_old}" cart_smoke_found)
   if(cart_smoke_found LESS 0)
@@ -3192,6 +3201,15 @@ static void lagiPatchModelAddresses(sProcessed3dModel* model, u32 offset)
    "lagiPatchModelAddresses(pNewNode->m0_3dModel, mVdp1Offset);"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldCutsceneTask.cpp")
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  set(cinematic_start_trace "    r14->m1EE = r14->m1EC;")
+  string(FIND "${source_text}" "${cinematic_start_trace}" cinematic_start_found)
+  if(cinematic_start_found LESS 0)
+   message(FATAL_ERROR "Field cinematic timeline start boundary changed")
+  endif()
+  string(REPLACE "${cinematic_start_trace}"
+   "${cinematic_start_trace}\n    static unsigned timelineBudget=16;\n    if(timelineBudget){--timelineBudget;lagi::platform::logging::writef(\"[FieldExitTimeline] event=cameraStart duration=%d flags=%u field=%d sub=%d\\n\",int(r14->m1EC),unsigned(pCutsceneData->m8),int(getFieldTaskPtr()->m2C_currentFieldIndex),int(getFieldTaskPtr()->m2E_currentSubFieldIndex));}"
+   source_text "${source_text}")
   set(field_cinematic_tick "    if (r13->m1E4_cutsceneKeyFrame == NULL)")
   string(FIND "${source_text}" "${field_cinematic_tick}" field_cinematic_tick_found)
   if(field_cinematic_tick_found LESS 0)
@@ -3199,6 +3217,16 @@ static void lagiPatchModelAddresses(sProcessed3dModel* model, u32 offset)
   endif()
   set(source_text "#include \"lagi/azel_movie_runtime_hooks.h\"\n${source_text}")
   string(REPLACE "${field_cinematic_tick}" "    lagiAzelCinematicKeepAwake();\n${field_cinematic_tick}" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/fieldCutsceneTask2.cpp")
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  set(cinematic_end_trace "void s_cutsceneTask2::UpdateSub1()\n{")
+  string(FIND "${source_text}" "${cinematic_end_trace}" cinematic_end_found)
+  if(cinematic_end_found LESS 0)
+   message(FATAL_ERROR "Field cinematic timeline end boundary changed")
+  endif()
+  string(REPLACE "${cinematic_end_trace}"
+   "${cinematic_end_trace}\n    static unsigned timelineBudget=16;\n    if(timelineBudget){--timelineBudget;lagi::platform::logging::writef(\"[FieldExitTimeline] event=cameraEnd frames=%d flags=%u fadeStopped=%d field=%d sub=%d\\n\",int(m60),unsigned(m0),int(g_fadeControls.m0_fade0.m20_stopped),int(getFieldTaskPtr()->m2C_currentFieldIndex),int(getFieldTaskPtr()->m2E_currentSubFieldIndex));}"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townCutscene.cpp")
   set(epk_cinematic_tick "void sCutsceneTask::Draw(sCutsceneTask* pThis)\n{")
   string(FIND "${source_text}" "${epk_cinematic_tick}" epk_cinematic_tick_found)

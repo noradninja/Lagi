@@ -87,3 +87,28 @@ visible: the old menu renderer skipped offsets. fde6409 addresses that gap.
 The runtime leaves the previous published frame in place while synchronous
 loading blocks; field entry requests its native fade-in afterward. Verify the
 new capture before adding another cover or changing native fade duration.
+
+## Late tunnel fade: corrected diagnosis and timeline build
+
+The 44.352-second 2026-10-24 16-09-19 recording confirms that the camera changes
+before the blackout hides it. The accompanying log has next=06 followed by
+the 30-update module fade. The user clarifies that black must be reached at
+tunnel entry; proving a pre-teardown fade is insufficient acceptance.
+
+Original A3 descriptor 06091CC4 points to dragon keys 06091BEC and camera keys
+06091C4C, flags01. The camera table contains one 91-update row then a zero
+sentinel. Original readiness query 0606AD1C..0606AD34 really does test the
+field script camera-task pointer at +48 for null; it is not an early remaining-
+frames threshold. Original shared Init0607501C and Update060750F6 do not request
+a fade. Therefore the prior explanation of a missing earlier trigger remains
+a hypothesis, not a demonstrated native omission. Camera teardown/restoration
+and field-script dispatch must also be considered.
+
+Bounded [FieldExitTimeline] diagnostics now record cameraStart (duration/flags),
+cameraEnd (frames/flags/fadeStopped), and scriptFade (native requested duration),
+each with field/subfield and a maximum of 16 events per observer per launch.
+There are no per-frame logs or changed thresholds/timers. The production-body
+comparison test strips the observer lines and reproduces all three original
+function bodies exactly. Vita build passes. This build is diagnostic, not a
+claimed correction of the late fade. Reproduce the same tunnel transition and
+retain its log/video to establish ordering of the native events.
