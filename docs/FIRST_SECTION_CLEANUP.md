@@ -23,7 +23,7 @@ Independent corrections remain atomic commits.
    calculation, inventory/unlock state, display and save persistence.
 3. **Accepted:** Saved-game fade/black hold; Valley-to-Excavation cut; keep-awake ticking
    during in-engine cinematics as well as Cinepak, without changing simulation.
-4. **Active: native switch color/gloss behavior through shared model color
+4. **Accepted: native switch color/gloss behavior through shared model color
    animation.** Tunnel enter/leave audio and switch audio are user-confirmed
    fixed; do not reopen them. Restore the shared pipeline efficiently with GXM.
 5. Excavation cinematic/town floor corruption: shared source/native black
@@ -41,6 +41,16 @@ and in-engine cinematic keep-awake. Goal 3 is complete on that hardware
 acceptance, together with the recorded host checks and Vita build. No later
 goal is implied complete. Goal 4 (tunnel audio and native switch color/gloss)
 is next in the agreed sequence.
+
+## Goal 4 hardware acceptance
+
+2026-10-24: user confirms 3010904 with a fresh lagi.log after the requested
+running/off/restart test. NativeColorAnimation reports valid sparse updates
+on the 11-polygon model. Eight subsequent tunnel presentation windows each
+contain 120 intervals at 29.970 FPS with zero intervals over two VBlanks.
+Renderer means are 10.602-12.220 ms, maximum 23.239 ms. These are tunnel
+measurements, not a matched whole-game A/B or a global frame-time guarantee.
+Goal 4 is accepted; Goal 5 (Excavation cinematic/town floor corruption) is next.
 
 ## Goal 2 activation after user acceptance
 

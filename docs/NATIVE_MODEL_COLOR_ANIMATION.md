@@ -1,5 +1,17 @@
 # Shared native model color animation
 
+## Hardware acceptance
+
+2026-10-24: user confirms the effect after testing 3010904 and supplies a fresh
+lagi.log. NativeColorAnimation reports eight valid submissions, 11 polygons,
+1-3 sparse updates each. The eight following tunnel windows cover 960
+presentation intervals at 29.970 FPS, zero over two VBlanks; renderer-window
+means 10.602-12.220 ms, maximum 23.239 ms. Combined with the user's visual
+confirmation, Goal 4 is accepted. This does not prove a matched global
+performance improvement or eliminate the separately recorded outdoor misses.
+Pending hardware language below describes the original implementation handoff
+and is superseded by this acceptance.
+
 Goal 4, 2026-10-24. Tunnel audio is accepted by the user; the remaining switch
 color/gloss effect must use the general native pipeline, not a visual proxy.
 
