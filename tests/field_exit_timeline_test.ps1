@@ -15,7 +15,7 @@ foreach($case in $cases){
  $native=Slice (Get-Content -Raw "$repo/extern/Azel/AzelLib/$($case[0])") $case[2] $case[3]
  $generated=Slice (Get-Content -Raw "$repo/$BuildDirectory/azel_upstream/$($case[1])") $case[2] $case[3]
  if(!$generated.Contains('static unsigned timelineBudget=16;') -or !$generated.Contains('[FieldExitTimeline]')){throw 'Bounded timeline observer missing'}
- $stripped=($generated -split "`n" | Where-Object {$_ -notmatch 'timelineBudget'}) -join "`n"
+ $stripped=($generated -split "`n" | Where-Object {$_ -notmatch 'timelineBudget|^    lagiCutCompletedExcavationCamera\(\);'}) -join "`n"
  if($stripped.Trim() -cne $native){throw "Timeline observer changed simulation body: $($case[0])"}
 }
-'PASS all three generated timeline observers are bounded additions; removing observer lines reproduces original function bodies exactly'
+'PASS timeline observers and explicit camera-cut hook leave original simulation bodies intact'

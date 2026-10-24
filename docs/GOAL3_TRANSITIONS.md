@@ -135,3 +135,27 @@ completion and existing fade/priority/exclusion cases. The generated timeline
 body comparison and Vita build pass. Hardware acceptance of the final cut and
 black hold remains pending. Saved-load visual acceptance and keep-awake idle-
 timeout confirmation are also still outstanding.
+
+## Camera-completion flash correction
+
+The 16-44-15 hardware capture and highlighted contact-sheet frame show an
+unwanted normal flight/sky view between the authored tunnel camera and held
+black. The matching log places cameraEnd before next=06 and the module fade.
+UpdateSub1 restores the flight camera before the exit checker/module Draw can
+request black. Merely reducing the later request to one update was insufficient.
+
+The generated fieldCutsceneTask2 adapter now requests both native fade channels
+with equal black endpoints (0 -> 0, one update) at camera completion, before
+restoration. fadePalette initializes current color from its first endpoint,
+so the completed scene snapshot is black immediately without advancing another
+fade interrupt or changing camera keys, task scheduling, or the status request.
+The existing native completion/module teardown barrier remains in place.
+Gating requires mode3/status50, field1/sub0, authored exit flag2, and the same
+unvisited story-bit branch that requests status06. No global camera-end mask.
+
+The production-helper fixture covers all six route exclusions, both black
+requests and pending native completion flags; generated-source checks verify
+the call precedes flight-camera restoration. Existing timeline-body and module
+fade tests and the Vita VPK build pass. This is not hardware acceptance: verify
+the final tunnel view cuts directly to black, with no intervening sky/dragon
+view. Saved-load visual and cinematic idle-timeout gates remain outstanding.
