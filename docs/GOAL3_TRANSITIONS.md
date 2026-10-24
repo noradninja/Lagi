@@ -41,3 +41,21 @@ locations and the full Vita build pass. A bounded first-use log is
 Hardware acceptance still requires an uninterrupted in-engine cinematic longer
 than the device idle timeout, without controller activity, plus confirmation
 that ordinary gameplay idle/suspend behavior remains normal afterward.
+
+## Shared field/module exit ordering audit
+
+The generated field.cpp exitCutsceneTaskUpdateSub0Sub1Sub0 task sets the field
+transition bit, requests both fades using its authored endpoint and 20-update
+duration, waits on native primary fade completion, then invokes field teardown.
+It waits for replacement subfield data before releasing its transition bit.
+tests/field_exit_fade_test.ps1 extracts and executes that actual generated task;
+it verifies requests occur once, no teardown while fading, one teardown after
+completion, and replacement-data wait. This verifies the reconstruction's
+ordering, not original-CPU equivalence or that a particular Valley exit uses it.
+
+The existing lagi_module_exit_fade.inc also gates destruction for source modes
+1/2/3/4 going to cinematic/movie/town destination modes 0/1/2. Its production
+test and generated before-deletion placement check pass. It intentionally
+excludes standalone Continue mode 9 and ordinary field-to-field transitions.
+Do not broaden that gate or add a Valley-specific timer without tracing the
+actual destination path. Valley route mapping and video acceptance remain open.
