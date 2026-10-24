@@ -51,6 +51,29 @@ storyBit=87, value=0. Verify normal encounters, danger display with a Telepathy
 Shard, repeated/subfield transitions and return from battle. A set bit must
 instead select 00208744; do not alter save flags merely to force a test.
 
+### Hardware confirmation: 191f844
+
+The Downloads log written 2026-10-24 01:28, explicitly identified by the user
+as 191f844, reports at line 438:
+
+```
+[NativeEncounterTable] field=2 storyBit=87 value=0 selector=0020873C root=00207624 overlay=0
+```
+
+Subsequent observer records report initial=90, reset=120, attempts=0/10,
+and row 00207584 with rate=14. This confirms the corrected clear-bit branch
+on hardware, not merely the generated initializer in a fixture. This run
+also contains six completed random battles with audio restored after each;
+the user reports steady 30 FPS once loaded. No Telepathy Shard is present
+in the cited early records (shard=0), so unchanged radar color there is not
+evidence against the danger-color policy. The set-bit branch remains covered
+by the disc-backed fixture, not a new hardware capture.
+
+On the b90d201 tree, encounter_rng_test, encounter_selector_test,
+encounter_cadence_test and encounter_trace_test pass again against the current
+generated sources. The tests cover their documented bounded contracts; they
+do not prove complete Saturn scheduler/interrupt wall-clock equivalence.
+
 ## Executable cadence and accumulation coverage
 
 encounter_cadence_test extracts the actual Vita processTasks/runTasks bodies,
