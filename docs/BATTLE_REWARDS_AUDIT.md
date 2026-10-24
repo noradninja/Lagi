@@ -161,3 +161,21 @@ an item-specific white override. Raw-bank APIs and existing result-label paths
 are unchanged. Fixtures now use selector 0 as on disc, check bank 12, and cover
 all ten lookup entries. The screenshot establishes award display, not durable
 save/reload or earned-Berserk hardware acceptance; those gates remain open.
+
+## Hardware-confirmed awards; level-page replacement correction
+
+The subsequent user test confirms leveling, item awards, Berserk awards and
+correct name palettes. Save/reload persistence has not yet been confirmed.
+The screenshot still shows prior DYNE/numeric tiles under the level page and
+a stray colored glyph after the heading. Original heading bytes at 060AB990
+are exactly `LEVEL UP to` followed by NUL; there is no embedded L/control code.
+
+At 0606FCAA the native transition calls MAIN 06024384 (pointer 0606FDA4),
+which clears the entire text plane and resets character maps. The generated
+state mistakenly called cursor-local clearVdp2TextLargeFont instead. It now
+uses the existing clearVdp2TextMemory service before the original item-area
+clear, preserving native sequencing and replacing rather than overlaying the
+reward page. A production transition fixture starts with a fully populated
+tile map and checks full clearing plus the original coordinate-record path.
+The heading is not patched or translated: its authored string is retained.
+Vita confirmation of the replaced page/stray glyph correction remains pending.

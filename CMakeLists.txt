@@ -2839,8 +2839,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    "                lagiApplyBattleGrowth(pThis);\n                lagiUnlockBattleBerserks(pThis);\n                pThis->m72 = 3;\n                pThis->m4 = 0x5A;" source_text "${source_text}")
   set(growth_states [=[    case 3:
         if ((graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m6_buttonDown & 6) || --pThis->m4 < 0) {
-            clearVdp2TextLargeFont();
-            lagiBattleResultClearArea(g_BTL_GenericData->getSaturnPtr(0x060ABAB0));
+            lagiBattleResultBeginLevelPage();
             pThis->m72=4; pThis->m4=9;
         }
         break;

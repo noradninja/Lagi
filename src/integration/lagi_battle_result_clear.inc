@@ -14,3 +14,11 @@ static void lagiBattleResultClearArea(sSaturnPtr config)
     vdp2DebugPrintSetPosition(x,y);
     clearVdp2TextLargeFont();
 }
+
+static void lagiBattleResultBeginLevelPage()
+{
+    // 0606FCAA calls MAIN 06024384: clear the complete text map and
+    // reset character maps, not only the line at the current print cursor.
+    clearVdp2TextMemory();
+    lagiBattleResultClearArea(g_BTL_GenericData->getSaturnPtr(0x060ABAB0));
+}
