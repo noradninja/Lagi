@@ -179,3 +179,19 @@ reward page. A production transition fixture starts with a fully populated
 tile map and checks full clearing plus the original coordinate-record path.
 The heading is not patched or translated: its authored string is retained.
 Vita confirmation of the replaced page/stray glyph correction remains pending.
+
+## Latest hardware acceptance (2026-10-24)
+
+The user confirms item awards, Berserk awards, level-page appearance and its
+replacement transition are correct, and saving/loading works. This accepts
+the 14b0757 presentation correction on hardware. The supplied 2,388,776-byte
+lagi.log includes successful 1,252-byte writes to PANDRA_3_02 and subsequent
+slot reads. Slot-preview reads alone are not proof of live-state restoration;
+the user's gameplay confirmation supplies the save/load acceptance.
+
+One requirement remains explicitly unverified: earned Berserk ownership after
+reloading. Opening the unfinished Berserk menu crashes, so the user cannot
+inspect it. The host generated-save roundtrip covers the ownership bits, but
+does not substitute for that Vita check. Track this acceptance dependency with
+the later Berserk-menu implementation; do not claim Goal 2 fully complete or
+reopen confirmed reward/presentation fixes solely because this check is blocked.
