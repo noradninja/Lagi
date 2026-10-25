@@ -27,8 +27,8 @@ static int sceGxmProgramCheck(const SceGxmProgram*){return 0;}
 static const SceGxmProgramParameter* sceGxmProgramFindParameterByName(const SceGxmProgram* p,const char*) {
     unsigned i=nextParameter[p->id]++;
     assert(i<24);
-    if(p->id>=2 && i>=22)return nullptr;
-    if(p->id==3 && (i==10 || i==15 || i==18))return nullptr;
+    if(p->id>=2 && i==22)return nullptr;
+    if(p->id==3 && i==18)return nullptr;
     if(p->id==missingUniformProgram && i==7)return nullptr;
     parameters[p->id][i]={p->id,i};return &parameters[p->id][i];
 }
@@ -69,7 +69,7 @@ static void initialize() {
 }
 static void check(unsigned id) {
     assert(current==&fragments[id]);
-    for(unsigned i=0;i<24;++i)assert(*slots()[i]==((id>=2 && i>=22) || (id==3 && (i==10 || i==15 || i==18))?nullptr:&parameters[id][i]));
+    for(unsigned i=0;i<24;++i)assert(*slots()[i]==((id>=2 && i==22) || (id==3 && i==18)?nullptr:&parameters[id][i]));
     assert(g_rbgTileBound==(id==1));assert(g_rbgDecodedBound==(id>=2));
     assert(g_rbgRowsBound==(id==3));
 }

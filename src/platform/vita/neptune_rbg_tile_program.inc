@@ -41,8 +41,9 @@ static void selectRbgTileProgram(bool eligible,bool decoded=false,bool rows=fals
         bool valid=sceGxmProgramCheck(fp)>=0;
         for(unsigned i=0;i<24;++i){
             g_rbgBindings[v][i]=sceGxmProgramFindParameterByName(fp,names[i]);
-            // Rows remove both raw accumulators and the A-selector address.
-            if(!(v==2 && (i==10 || i==15 || i==18)) && !(decoded && i>=22))valid&=g_rbgBindings[v][i]!=nullptr;
+            // Rows remove the A-selector accumulator; coefficient.w still
+            // carries each parameter's live OVPNR register.
+            if(!(v==2 && i==18) && !(decoded && i==22))valid&=g_rbgBindings[v][i]!=nullptr;
         }
         if(valid && sceGxmShaderPatcherRegisterProgram(g_probeShaderPatcher,fp,&g_rbgIds[v])>=0) {
             g_rbgRegistered[v]=true;

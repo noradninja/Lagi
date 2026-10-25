@@ -57,9 +57,8 @@ template<class State> static bool prepareRbgDecodedPagesFor(const State& rbg,
         return true;
     };
     const unsigned mode=static_cast<unsigned>(rbg.ctrl[0])&3;
-    const auto overMode=[](float format){return (static_cast<unsigned>(format)>>2)&3;};
-    if((mode!=1 && overMode(rbg.parameterFormat[0])==1) ||
-       (mode!=0 && overMode(rbg.parameterFormat[1])==1))return status(5,0,0,0);
+    // OVPNR mode 1 uses a direct single-character GPU sample outside the
+    // map. Its register/character state needs no decoded-page cache slot.
     if((mode!=1 && !collect(rbg.planesA,static_cast<unsigned>(rbg.parameterFormat[0])&3)) ||
        (mode!=0 && !collect(rbg.planesB,static_cast<unsigned>(rbg.parameterFormat[1])&3)))
         return status(2,count,0,0);

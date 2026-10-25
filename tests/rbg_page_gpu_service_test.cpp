@@ -28,7 +28,7 @@ namespace logging {template<class... T>void writef(const char* format,T... args)
 static bool g_rbgDecodedPagesReady=false;
 static SceGxmTexture g_rbgDecodedAtlasTexture{};
 static float g_rbgDecodedPlanesA[16]{},g_rbgDecodedPlanesB[16]{};
-static struct {float format[4]{},planesA[16]{},planesB[16]{},ctrl[16]{},parameterFormat[2]{};} g_sceneRbg0;
+static struct {float format[4]{},planesA[16]{},planesB[16]{},ctrl[16]{},parameterFormat[2]{};std::uint16_t ramctl=0x2B3;} g_sceneRbg0;
 static std::array<std::uint8_t,0x81000> image{};
 static const std::uint8_t* g_sceneVdp2Raw=image.data();
 static std::uint32_t g_sceneVdp2BlockGenerations[129]{};
@@ -77,7 +77,13 @@ int main() {
     planes(g_sceneRbg0.planesA,0x70000);
     g_sceneRbg0.format[1]=0x801f;assert(!prepareRbgDecodedPages());
     g_sceneRbg0.format[1]=0x8000;assert(prepareRbgDecodedPages());
-    g_sceneRbg0.parameterFormat[0]=4;assert(!prepareRbgDecodedPages());
+    const auto allocationCount=allocations;
+    g_sceneRbg0.parameterFormat[0]=4;assert(prepareRbgDecodedPages());
+    assert(allocations==allocationCount); // OVPNR needs no additional pages.
+    g_sceneRbg0.ctrl[0]=2;g_sceneRbg0.parameterFormat[1]=4;
+    assert(prepareRbgDecodedPages());
+    assert(allocations==allocationCount);
+    g_sceneRbg0.parameterFormat[1]=0;g_sceneRbg0.ctrl[0]=0;
     g_sceneRbg0.parameterFormat[0]=0;assert(prepareRbgDecodedPages());
     g_sceneRbg0.parameterFormat[0]=3; // Four 512x512 pages per plane.
     assert(prepareRbgDecodedPages());

@@ -35,3 +35,29 @@ yet supported by decoded pages, so it takes the complete raw decoder. Add
 general resource support without dropping screen-over semantics. The current
 log does not isolate that shader's exact GPU cost. Keep VDP2 priorities,
 normal-combat acceptance and quadrant visibility as separate checks.
+
+## Screen-over acceleration implemented, device acceptance pending
+
+The decoded-page route now accepts OVPNR mode 1. Ordinary map pixels use
+the existing indexed page atlas. Outside samples use the authored OVPNR
+register directly with native 16x16 character addressing and the live raw
+character/CRAM texture. Pattern-name RAM permissions do not apply to this
+register-selected name; character-bank permissions, transparent zero, CAOS,
+palette wrapping and flips still apply. No additional textures, cache slots,
+GXM scenes or approximate replacement effects are introduced. Unsupported
+formats, page capacity and allocation failures retain the complete fallback.
+
+The production scalar shader address helper runs against the original Azel
+tile decoder for all 65536 pattern words, eight supplement settings, every
+16x16 dot and signed-repeat coordinates. Production cache-service and shader
+switch fixtures pass. Actual compiler reflection passes for generic, byte,
+page and row variants (including live OVPNR uniforms in row mode). Vita
+package compilation passes. These checks are not hardware frame-time proof.
+
+The next device log should show the tutorial using RBG0PageCache active=1
+instead of reason=5, and RBG0TileFormat decodedPages=1 genericFallback=0.
+Compare output and frame times in tutorial and normal field/combat/name entry.
+
+The user confirmed background ordering corrected on e2bfcb7, but weak-point
+icons/text still overlap. Do not mark that fixed or conflate it with quadrant
+visibility: the two remaining contracts need separate native-state tracing.

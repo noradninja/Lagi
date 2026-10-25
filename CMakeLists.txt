@@ -175,6 +175,7 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp
  -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp"
  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_rows_f.cg"
  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg_over_pattern.cginc"
  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_common.cginc" VERBATIM)
 add_custom_command(OUTPUT "${LAGI_RBG_ROWS_OBJ}"
  COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
@@ -188,6 +189,7 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_pages_f.gx
  -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_pages_f.gxp"
  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_pages_f.cg"
  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg_over_pattern.cginc"
  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_common.cginc" VERBATIM)
 add_custom_command(OUTPUT "${LAGI_RBG_PAGES_OBJ}"
  COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm

@@ -37,13 +37,15 @@ float selectRbg0Plane(
     return lane < 2.5f ? plane.z : plane.w;
 }
 
-#if !LAGI_RBG_DECODED_PAGES
 float rbgBankReadable(float address,float4 banks)
 {
     if(address<0.0f || address>=524288.0f)return 0.0f;
     if(address<262144.0f)return address<131072.0f?banks.x:banks.y;
     return address<393216.0f?banks.z:banks.w;
 }
+
+#if LAGI_RBG_DECODED_PAGES
+#include "vdp2_rbg_over_pattern.cginc"
 #endif
 
 float4 sampleRbg0Cell(
@@ -61,8 +63,8 @@ float4 sampleRbg0Cell(
     float sharedPlane,
 #if !LAGI_RBG_DECODED_PAGES
     float4 patternBanks,
-    float4 characterBanks,
 #endif
+    float4 characterBanks,
     float4 p0,
     float4 p1,
     float4 p2,
@@ -105,6 +107,21 @@ float4 sampleRbg0Cell(
     if (outside && screenOver >= 1.5f)
         return float4(0.0f, 0.0f, 0.0f, 0.0f);
 
+#if LAGI_RBG_DECODED_PAGES
+    if(outside && screenOver>=0.5f) {
+        // OVPNR is one register-selected character, not a pattern-name page.
+        // Keep its raw character/CRAM live while ordinary map pixels use
+        // decoded pages. No additional cache slots, textures or scene passes.
+        const float address=rbgOverPatternDotAddress(overPattern,scn,mapX,mapY);
+        if(rbgBankReadable(address,characterBanks)<0.5f)return float4(0,0,0,0);
+        const float dotColor=readByte(raw,address);
+        if(dotColor<0.5f && format.w<16.0f)return float4(0,0,0,0);
+        const float palette=fmod(floor(overPattern/4096.0f),8.0f)*256.0f;
+        return rgb555(readRbgAlignedBE16(raw,524288.0f+
+            fmod(caos*256.0f+palette+dotColor,2048.0f)*2.0f));
+    }
+#endif
+
     float planeBase;
     float inPlaneX;
     float inPlaneY;
@@ -144,8 +161,8 @@ float4 sampleRbg0Cell(
 #if LAGI_RBG_DECODED_PAGES
     // The service decodes source resources only. All coordinates, windows,
     // coefficients and A/B selection above remain live native GPU state.
-    // The service rejects OVPNR mode 1 until its single-pattern resource has
-    // its own cached entry. Modes 0/2/3 are complete here (clipping is above).
+    // OVPNR outside samples are resolved above; ordinary map coordinates
+    // retain the same page lookup for all four screen-over modes.
     {
         // Cache variant plane uniforms hold four packed two-bit page slots,
         // not physical VRAM addresses. Register-only lookup is done on CPU.
@@ -349,8 +366,8 @@ float4 main(
     uniform float4 rbg0Format,
 #if !LAGI_RBG_DECODED_PAGES
     uniform float4 rbg0PatternBanks,
-    uniform float4 rbg0CharacterBanks,
 #endif
+    uniform float4 rbg0CharacterBanks,
     uniform float4 rbg0BPlane0,
     uniform float4 rbg0BPlane1,
     uniform float4 rbg0BPlane2,
@@ -496,7 +513,8 @@ float4 main(
 #endif
         mapX, mapY, format, coefficient.w, info.w,
 #if !LAGI_RBG_DECODED_PAGES
-        rbg0PatternBanks,rbg0CharacterBanks,
+        rbg0PatternBanks,
 #endif
+        rbg0CharacterBanks,
         plane0, plane1, plane2, plane3);
 }

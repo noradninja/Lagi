@@ -2,6 +2,10 @@
 #include <cassert>
 #include <cstdio>
 #include <vector>
+#include <cmath>
+using std::floor;using std::fmod;
+static float frac(float v){return v-std::floor(v);}
+#include "../shaders/vdp2_rbg_over_pattern.cginc"
 using u8=std::uint8_t;using u16=std::uint16_t;using u32=std::uint32_t;
 static std::vector<u8> image(0x81000);
 static u8 getVdp2VramU8(u32 a){assert(a<0x80000);return image[a];}
@@ -88,5 +92,27 @@ int main() {
             if(!opaque)assert(bool(native>>24)==bool(entry>>24));
         }
     }
-    std::puts("PASS native decoded page oracle, flips, palette wrap, invalidation and fallback");
+    // Run the production shader's scalar OVPNR address routine against the
+    // original tile decoder. A register-selected name bypasses name VRAM;
+    // place that name at the oracle's first tile to compare character pixels.
+    for(unsigned scn:{0u,1u,2u,3u,4u,7u,8u,11u}) {
+        layer.SCN=scn;
+        for(unsigned name=0;name<65536;++name) {
+            const unsigned character=((name&1023)*4)|(scn&3)|((scn&28)<<10);
+            if(character*32>0x80000-256)continue;
+            image[base]=u8(name>>8);image[base+1]=u8(name);
+            for(unsigned y=0;y<16;++y)for(unsigned x=0;x<16;++x) {
+                const unsigned address=unsigned(rbgOverPatternDotAddress(float(name),float(scn),float(x),float(y)));
+                assert(address>=character*32 && address<character*32+256);
+                const unsigned dot=image[address];
+                const auto native=sampleTileAtCoordinate(x,y,layer,dimensions);
+                assert(bool(native>>24)==bool(dot));
+                if(dot)assert(native555(native)==(getVdp2CramU16(
+                    (layer.CAOS*256+((name&0x7000)>>4)+dot)*2)&0x7fff));
+                // Screen-over uses positive modulo for negative coordinates.
+                assert(address==unsigned(rbgOverPatternDotAddress(float(name),float(scn),float(x)-32,float(y)-32)));
+            }
+        }
+    }
+    std::puts("PASS native decoded page oracle and production OVPNR addresses: all pattern words, flips, palette wrap, signed repeat, invalidation and fallback");
 }
