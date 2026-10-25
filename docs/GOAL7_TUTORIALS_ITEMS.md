@@ -38,6 +38,26 @@ dispatch before its required resources/callbacks are serviced.
 
 ## Implementation and acceptance sequence
 
+### Title route and selector lifecycle coverage
+
+A3's original overlayStart default branch is confirmed at native
+060540E8: fields other than1/2 use subfieldTable1[0], so title BT0 field15hex
+must not be redirected to a fabricated battle-only entry. Its existing
+dispatchTutorialMultiChoice selects B..F battle indices for choices0..4,
+text script children for5..7, and Quit8. In field2 Quit sets native tutorial
+story bit and releases the choice allocations; outside field2 it fades audio
+and invokes native field exit (state7/result-1). Text/battle selection sets
+the original choice-state byte and marks an entry seen only after dispatch.
+The production-source selector fixture passes all nine choices in fields
+1,2,21, checking call order and the exit distinction. Services are mocked;
+this does not prove actual task teardown, visual output or device input.
+
+Title Tutorial2 is a distinct FLD_A7 route (field16hex). Its selector handles
+five dialogue topics and Quit5 through a7DialogChoice_spawn_0605ea52 rather
+than the A3/T0 lesson selector. CMake currently strips its field-overlay
+assignment, so T0 integration alone cannot make Tutorial2 work. Restore its
+actual field/dialogue dependencies separately; do not use A3 as a substitute.
+
 ### T0 startup connected for initial hardware testing
 
 Native T0 entry is now force-retained in the existing link-audit configuration;
