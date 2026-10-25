@@ -31,13 +31,20 @@ try {
  if (!$dragon.Contains('transformAndAddVecByCurrentMatrix(&varC, &lightLocation); // LAGI_NATIVE_POINT_POSITION') -or
      !$dragon.Contains('transformVecByCurrentMatrix(varC, lightLocation);')) {throw 'Point position translation or directional vector transform missing'}
  if ($lcs.Contains('pDragon->m_EC = rotation;') -or !$lcs.Contains('LAGI_SPARKLE_FLAGS_PRESERVED')) {throw 'Sparkle orbit corrupts dragon lighting flags'}
- if (!$dragon.Contains('lightLocation = pTypedWorkArea->mD8_sparklePosition; // LAGI_COLLECTION_ANIMATED_LIGHT') -or
-     !$dragon.Contains('LAGI_COLLECTION_LIGHT_TRACE') -or
-     $dragon.Contains('mE4_sparkleScale.m_value == 0x10000')) {throw 'Animated collection light incorrectly gated or missing draw trace'}
+ if (!$dragon.Contains('transformAndAddVecByCurrentMatrix(') -or
+     !$dragon.Contains('&pTypedWorkArea->mD8_sparklePosition, &lightLocation); // LAGI_COLLECTION_ANIMATED_LIGHT') -or
+     !$dragon.Contains('[CollectionLight] world=') -or
+     $dragon.Contains('lightLocation = pTypedWorkArea->mD8_sparklePosition;') -or
+     $dragon.Contains('mE4_sparkleScale.m_value == 0x10000')) {throw 'Collection light must use native view-space point coordinates without scale gating'}
  foreach($token in @('LAGI_TRAIL_LIGHT_START','LAGI_TRAIL_LIGHT_FOLLOW','lagiStartCollectionTrailLight(s32 colorIndex)',
                     's_LCSLaser_DeleteTrailSub0Data0[colorIndex]','pThis->m154 < 0x11',
                     'pThis->m24_receivedItemId >= 0')) {
   if (!$dispatcher.Contains($token)) {throw "Collection light missing native trail ownership: $token"}
+ }
+ if ([regex]::Matches($dispatcher, 'LAGI_NATIVE_TRAIL_LAST_WRITTEN').Count -ne 2 -or
+     !$dispatcher.Contains('const s32 index = (pThis->m154 - 1) & 0xF;') -or
+     $dispatcher.Contains('trailIndex = pThis->m154;')) {
+  throw 'LCS primary sprite, secondary particles and moving light do not use the last-written trail position'
  }
  if (!$lcs.Contains('LAGI_TRAIL_LIGHT_CLEANUP') -or
      !$lcs.Contains('mD8_sparklePosition') -or
