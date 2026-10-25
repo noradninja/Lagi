@@ -16,4 +16,10 @@ Base: `feature/first-section-cleanup`; branch: `feature/laser-point-lights`.
 5. **Battle follow-up:** connect native `sHomingLaserTask_Draw` node head and `sGunShotTask` trajectory/color; enforce the **same four** source cap for all shots. Profile a many-enemy battle before enabling additional attack types.
 
 ## Current status
-The branch and bounded four-slot payload plus unit test are committed. **No laser lights are emitted or consumed yet.** No visual changes are expected until stages 1–3 are implemented, compiled, and tested.
+The branch now includes an **experimental field-only end-to-end integration**:
+- The LCS beam update publishes the last-written `m6C` head position and native LCS color index (`m27`) while the beam is active. Source identity is the actual LCS task address; the four-source pool is reset each frame.
+- The bridge transforms each source's native world position through the captured field camera and evaluates the unchanged fixed-point point-light routine once per submitted model. Out-of-range and overflow cases are skipped. Model submission snapshots own the result across asynchronous rendering.
+- The renderer adds up to four model-space point contributions before the existing Gouraud RGB555 clamp and quantization, preserving the baseline collection light and directional setup.
+- Run `tests/field_laser_point_light_test.ps1` for source-level checks and `tests/transient_laser_light_test.cpp` as a host-native unit test.
+
+**Not yet validated:** VitaSDK compilation, runtime illumination, correct color interpretation of the native LCS palette, shot/draw ordering, multiple simultaneous beams, and frame-time impact. Battle lasers remain disconnected. This is not yet a hardware-accepted rendering change.
