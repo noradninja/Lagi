@@ -46,4 +46,23 @@ inline void stepNativeFormationSpring(NativeFormationSpringAxis& axis,
     axis.world = formationAdd(center, axis.current);
     axis.acceleration = 0;
 }
+// BTL_T0 0609DDB4: ordinary positional interpolation. Unlike the spring,
+// this neither sign-extends a 28-bit delta nor clears accumulated acceleration.
+inline void stepNativeFormationInterpolation(NativeFormationSpringAxis& axis,
+                                            std::int32_t center,
+                                            std::int32_t rate) {
+    axis.velocity=formationMultiply(rate,formationSubtract(axis.target,axis.current));
+    axis.current=formationAdd(axis.current,axis.velocity);
+    axis.world=formationAdd(center,axis.current);
+}
+// BTL_T0 0609E01E: angular spring uses the same signed-28-bit recurrence,
+// then wraps the current angle before adding the parent's rotation.
+inline void stepNativeFormationAngularSpring(NativeFormationSpringAxis& axis,
+                                            std::int32_t center,
+                                            std::int32_t spring,
+                                            std::int32_t damping) {
+    stepNativeFormationSpring(axis,center,spring,damping);
+    axis.current=formationSignedBits(std::uint32_t(axis.current)&0x0fffffffu);
+    axis.world=formationAdd(center,axis.current);
+}
 } // namespace lagi

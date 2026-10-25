@@ -32,12 +32,20 @@ static lagi::NativeFormationSpringAxis reference(lagi::NativeFormationSpringAxis
     s.acceleration=0;
     return s;
 }
+static size_t angularCases=0;
 static void check(lagi::NativeFormationSpringAxis initial,int32_t center,int32_t spring,int32_t damping) {
+    auto angular=initial;
     auto expected=reference(initial,center,spring,damping);
     lagi::stepNativeFormationSpring(initial,center,spring,damping);
     assert(initial.target==expected.target&&initial.current==expected.current);
     assert(initial.velocity==expected.velocity&&initial.acceleration==expected.acceleration);
     assert(initial.world==expected.world);
+    expected.current=bits(uint32_t(expected.current)&0x0fffffffu);
+    expected.world=bits(uint32_t(center)+uint32_t(expected.current));
+    lagi::stepNativeFormationAngularSpring(angular,center,spring,damping);
+    assert(angular.target==expected.target&&angular.current==expected.current);
+    assert(angular.velocity==expected.velocity&&angular.acceleration==expected.acceleration&&angular.world==expected.world);
+    ++angularCases;
 }
 int main() {
     const std::array<int32_t,15> edge={0,1,-1,65535,65536,-65536,
@@ -63,5 +71,14 @@ int main() {
             assert(s.current==r.current&&s.velocity==r.velocity&&s.world==r.world);++count;
         }
     }
-    std::printf("PASS: %zu native formation spring boundary/random/trajectory cases; scalar SH2 recurrence, not device execution\n",count);
+    size_t interpolationCases=0;
+    for(auto target:edge)for(auto current:edge)for(auto rate:edge)for(auto center:edge){
+        lagi::NativeFormationSpringAxis s{target,current,123,-456,789};
+        const auto velocity=mul(rate,bits(uint32_t(target)-uint32_t(current)));
+        const auto next=bits(uint32_t(current)+uint32_t(velocity));
+        lagi::stepNativeFormationInterpolation(s,center,rate);
+        assert(s.target==target&&s.current==next&&s.velocity==velocity&&s.acceleration==-456);
+        assert(s.world==bits(uint32_t(center)+uint32_t(next)));++interpolationCases;
+    }
+    std::printf("PASS: %zu spring, %zu angular spring and %zu positional interpolation cases; scalar SH2 recurrence, not device execution\n",count,angularCases,interpolationCases);
 }
