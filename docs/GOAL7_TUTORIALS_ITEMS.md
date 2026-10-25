@@ -42,8 +42,9 @@ dispatch before its required resources/callbacks are serviced.
 
 Follow-up native service audits: `FIELD_SPLINE_NATIVE_RECOVERY.md` records
 the recovered coefficient solver and unresolved evaluator endpoint bounds;
-`NATIVE_WORLD_RAY_RECOVERY.md` records the projected-quad clip component and
-remaining world-helper integration. Neither means Tutorial2 is enabled.
+`NATIVE_WORLD_RAY_RECOVERY.md` records the recovered projected-quad clipper
+and now-integrated unshaded world-ray service, with production-wrapper tests
+and retained Vita linkage. Neither means Tutorial2 is enabled.
 
 FLD_A7 sources compile in the battle build (722b693), but unused-function
 garbage collection is not a live dependency proof. Temporarily restoring the

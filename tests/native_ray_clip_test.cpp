@@ -40,5 +40,18 @@ int main(){
  for(const auto& p:q)assert(p[0]>=-10&&p[0]<=10&&p[1]>=-10&&p[1]<=10);
  q={{{-20,20,0},{-15,20,0},{-15,-20,0},{-20,-20,0}}};
  assert(!lagi::nativeClipRayQuad(q,-10,10,10,-10));
+ for(bool reversed:{false,true}) {
+  std::array<std::array<std::int32_t,3>,2> line={{{-100,200,0},{100,-200,200}}};
+  if(reversed)std::swap(line[0],line[1]);
+  assert(lagi::nativeClipRayDepth(line,100,300));
+  const auto& clipped=line[reversed?1:0];
+  assert(clipped[0]==0 && clipped[1]==0 && clipped[2]==100);
+ }
+ for(int a:{0,99,100,101,299,300,301})for(int b:{0,99,100,101,299,300,301}) {
+  std::array<std::array<std::int32_t,3>,2> line={{{0,0,a},{0,0,b}}};
+  const bool expected=(a>=100||b>=100) && a<300 && b<300;
+  assert(lagi::nativeClipRayDepth(line,100,300)==expected);
+  if(expected)for(const auto& p:line)assert(p[2]>=100 && p[2]<300);
+ }
  puts("PASS native screen-ray clipper: eight-step signed fractions, all 16 masks/both axes/sides, unchanged/rejected ownership and four-plane sequence; renderer integration/device pending");
 }

@@ -41,3 +41,32 @@ camera/input/animation ownership. Test the whole production call chain,
 capacity and visibility failures, then full Vita link/package and hardware
 beam/ray output/performance. Tutorial2 dispatch remains disabled until its
 other shared dependencies and spline endpoint bounds are resolved as well.
+
+## World service integrated (supersedes component-only status above)
+
+`lagi_world_ray_vita.cpp` now provides the actual six-argument service. It
+uses a generated copy of the shared fixed-width projection body, changing
+only its function name and visibility boundary. The new visibility service
+implements MAIN0602D912: mutate one near-clipped endpoint with the native
+DIV0U eight-step fraction (0602CA9C), reject two below-near endpoints, then
+reject if either endpoint is at/beyond far. This does not replace the accepted
+shaded battle-ray service or change its existing projection/packet behavior.
+
+The projected quad passes the recovered screen action table, then emits
+the unshaded packet described above without advancing Gouraud storage.
+Renderer-only reciprocal depths follow the same quantized screen edge and
+are converted back to per-vertex view Z at publication; they never decide
+native XY, flags or sort keys. Command and packet capacities are checked.
+No new texture, GXM scene, renderer-specific geometry solver or source-zero
+solid-line fallback is introduced.
+
+The production wrapper fixture tests packet fields, sort key, source-zero,
+mesh/mode propagation, near/screen/far rejection, input ownership, capacity
+guards and renderer depth metadata. Transform/projection services are mocked
+in that fixture; a separate check requires the generated projection body to
+equal the native source except the two declared substitutions. The existing
+1024-case shaded battle-ray fixture still passes. Near/far boundary fixtures
+and all screen-mask/fraction checks pass. Full Vita package build and ELF
+retention of displayRaySegmentFromWorldSpace pass. No device visual or timing
+acceptance is claimed. A7 remains disabled pending its remaining services and
+the spline endpoint audit.
