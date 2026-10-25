@@ -4,6 +4,11 @@ Active. User requests tutorials first, including their relationship to the
 title-screen tutorials. Goals1-6 are accepted; preserve their behavior and
 performance. No tutorial execution or device acceptance claimed yet.
 
+Additional user-reported combat issue: weak-point icons and text currently
+show from every angle. Audit original target/quadrant visibility and restore
+the shared native condition as a separate atomic correction after tutorial
+bring-up; do not add enemy-specific facing rules.
+
 ## Current source entry audit
 
 moduleManager_Init(menuID) initializes normal game/dragon/rider/field/battle
@@ -32,6 +37,23 @@ Do not redirect unsupported tutorials into normal A3 fights or enable the
 dispatch before its required resources/callbacks are serviced.
 
 ## Implementation and acceptance sequence
+
+### Tutorial source compilation checkpoint
+
+BTL_T0.cpp is now included in the battle Vita source list, using the same
+generated adapter boundary as A3. Its local header is qualified for the
+flattened generated directory. The native panel replacement consequently
+compiles against actual Vita task, allocator and VDP1 command types now.
+Full Vita VPK build passes. Dispatch/preflight remain intentionally disabled:
+this is not a playable tutorial or proof its retained symbols all link when
+the entry becomes reachable (dead-section elimination still applies).
+
+Restored font member access: original0606C5DE..0606C60E selects signed font
+byte+18 for argument0, otherwise+17. The reconstruction read raw bytes from
+the host task pointer; its task header/pointer layout is not Saturn's. The
+generated adapter selects pText->m18/m17 instead. A generated-function test
+passes all65536 signed font pairs, nonzero argument variants and a deliberately
+padded host task object. Panel's512 cases also pass again. No extern edits.
 
 ### Native panel component checkpoint
 

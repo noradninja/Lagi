@@ -2003,6 +2003,16 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${point_activate_old}" "${point_activate_new}" source_text "${source_text}")
 
  elseif(relative_path STREQUAL "battle/BTL_T0/BTL_T0.cpp")
+  string(REPLACE "#include \"BTL_T0.h\"" "#include \"battle/BTL_T0/BTL_T0.h\"" source_text "${source_text}")
+  set(tutorial_font_old [=[    s32 idx = (param_1 == '\0') ? 0x18 : 0x17;
+    setActiveFont((s32)(s8)((u8*)pText)[idx]);]=])
+  string(FIND "${source_text}" "${tutorial_font_old}" tutorial_font_offset)
+  if(tutorial_font_offset LESS 0)
+   message(FATAL_ERROR "Native tutorial font member boundary changed")
+  endif()
+  string(REPLACE "${tutorial_font_old}"
+   "    setActiveFont(param_1 == '\\0' ? pText->m18 : pText->m17); // Native work-area fields, not host task-header bytes."
+   source_text "${source_text}")
   set(tutorial_panel_begin "static void tutorialDisplay_draw(sTutorialDisplayTask* pThis)")
   set(tutorial_panel_end "// 0605ace6")
   string(FIND "${source_text}" "${tutorial_panel_begin}" tutorial_panel_start)
@@ -4701,6 +4711,7 @@ if(LAGI_BATTLE_NATIVE_BUILD)
   battle/battleGrid.cpp
   battle/BTL_A3/BTL_A3.cpp
   battle/BTL_A3/BTL_A3_data.cpp
+  battle/BTL_T0/BTL_T0.cpp
   battle/interpolators/FPInterpolator.cpp
   battle/interpolators/vec2FPInterpolator.cpp
   kernel/monsterPart.cpp
