@@ -38,6 +38,36 @@ dispatch before its required resources/callbacks are serviced.
 
 ## Implementation and acceptance sequence
 
+### T0 startup connected for initial hardware testing
+
+Native T0 entry is now force-retained in the existing link-audit configuration;
+the full ELF/VPK links its transitive code and the retained-symbol check
+requires overlayStart_BTL_T0. This supersedes the earlier compile-only gate.
+Checked battle preflight admits the exact BTL_T0.PRG name, validates the
+COMMON subbattle bound and a minimum392928-byte native program before font
+allocation, and dispatches explicitly to overlayStart_BTL_T0. Unsupported
+names are rejected by the entry service too, never silently mapped to A3.
+The generated overlay's T0 call passes through the existing white loading
+hold, generic-data setup and font retry guards used by A3.
+
+The original T0 first formation at060A76F4 has one type config060A76B8,
+state060A7694, with null initialization effect pointer. This narrow audit does
+not prove all future effect invocations are serviced. Remaining virtual
+default callbacks still need execution coverage/native mapping as encountered.
+
+moduleManager's existing status71/72 return branches return-1 and finish its
+normal parent rather than advancing ordinary game story; in-game battle end
+uses the original manager teardown and field-script return. Source trace is
+not completed device lifecycle validation. Title Tutorial2 also needs its
+FLD_A7 route verified; do not assume T0 integration implements A7.
+
+Production startup tests pass tutorial indices0..5, out-of-range/negative,
+truncated program and allocation failures, explicit factory selection without
+A3 fallback, plus accepted cover/font ownership cases. Retained-link audit
+and full Vita build pass. First hardware gate: title Tutorial1 and/or the
+native in-game tutorial prompt, including text/panel/input and exit, with a
+fresh log. All lessons, performance and title Tutorial2 remain unverified.
+
 ### Tutorial environment drawing callback
 
 T0 06054260..060544A0 now emits its original tiled/rolled distorted sprite

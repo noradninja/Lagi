@@ -3208,6 +3208,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    string(REPLACE "${startup_anchor}" "        if (!lagiPrepareNativeA3Battle()) return;\n${startup_anchor}" source_text "${source_text}")
    string(REPLACE "                overlayStart_BTL_A3(pThis);" "                if (!lagiEnterNativeA3Battle(pThis)) return;" source_text "${source_text}")
    string(REPLACE "                overlayStart_BTL_A3_2(pThis);" "                if (!lagiEnterNativeA3Battle(pThis)) return;" source_text "${source_text}")
+   string(REPLACE "                overlayStart_BTL_T0(pThis);" "                if (!lagiEnterNativeA3Battle(pThis)) return;" source_text "${source_text}")
    # A retry after main-task allocation failure must not push fonts twice.
    set(battle_fonts_old [=[        loadFnt("ITEM.FNT");
         pThis->m2_numLoadedFnt++;
@@ -5021,6 +5022,7 @@ endif()
 target_link_options(lagi PRIVATE "-Wl,-T,${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
 if(LAGI_BATTLE_LINK_AUDIT)
  target_link_options(lagi PRIVATE "-Wl,--undefined=_Z19overlayStart_BTL_A3P10s_workArea")
+ target_link_options(lagi PRIVATE "-Wl,--undefined=_Z19overlayStart_BTL_T0P10s_workArea")
 endif()
 set_property(TARGET lagi APPEND PROPERTY LINK_DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
 set_property(SOURCE src/integration/lagi_runtime.cpp src/integration/lagi_input_bridge.cpp APPEND PROPERTY COMPILE_DEFINITIONS

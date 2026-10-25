@@ -10,7 +10,7 @@ if(!$Nm) {
 }
 $symbols=(& $Nm -C --defined-only "$build/lagi") -join "`n"
 if($LASTEXITCODE -ne 0){throw 'Cannot inspect battle ELF'}
-$required=@('overlayStart_BTL_A3','createBattleEngineTask','battleEngine_CreateHud1',
+$required=@('overlayStart_BTL_A3','overlayStart_BTL_T0','createBattleEngineTask','battleEngine_CreateHud1',
  'battleEngine_CreateRadar','createBattleCommandMenu','createBattleResultScreen',
  'displayRaySegment','sendRaySegmentToVdp1','isSoundFileLoaded')
 if($cache -match 'LAGI_BATTLE_EXECUTE_A3:BOOL=ON'){$required+=@('lagiPrepareNativeA3Battle','lagiEnterNativeA3Battle','BTL_GenericData::staticInit')}
@@ -19,4 +19,4 @@ foreach($name in $required) {
   throw "Expected retained native code missing: $name"
  }
 }
-Write-Output 'PASS: retained-root ELF contains native A3 entry, engine, HUD/radar/commands/results and restored ray/resource code. Link evidence only, not battle execution.'
+Write-Output 'PASS: retained-root ELF contains native A3/T0 entries, engine, HUD/radar/commands/results and restored ray/resource code. Link evidence only, not battle execution.'
