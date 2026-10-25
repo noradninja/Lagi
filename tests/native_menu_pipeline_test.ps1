@@ -32,7 +32,8 @@ try {
      !$dragon.Contains('transformVecByCurrentMatrix(varC, lightLocation);')) {throw 'Point position translation or directional vector transform missing'}
  if ($lcs.Contains('pDragon->m_EC = rotation;') -or !$lcs.Contains('LAGI_SPARKLE_FLAGS_PRESERVED')) {throw 'Sparkle orbit corrupts dragon lighting flags'}
  if (!$dragon.Contains('lightLocation = pTypedWorkArea->mD8_sparklePosition; // LAGI_COLLECTION_ANIMATED_LIGHT') -or
-     !$dragon.Contains('mE4_sparkleScale.m_value == 0x10000')) {throw 'Animated collection light does not reach native A11D draw'}
+     !$dragon.Contains('LAGI_COLLECTION_LIGHT_TRACE') -or
+     $dragon.Contains('mE4_sparkleScale.m_value == 0x10000')) {throw 'Animated collection light incorrectly gated or missing draw trace'}
  foreach($token in @('LAGI_TRAIL_LIGHT_START','LAGI_TRAIL_LIGHT_FOLLOW','lagiStartCollectionTrailLight(s32 colorIndex)',
                     's_LCSLaser_DeleteTrailSub0Data0[colorIndex]','pThis->m154 < 0x11',
                     'pThis->m24_receivedItemId >= 0')) {
