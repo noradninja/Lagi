@@ -33,6 +33,27 @@ dispatch before its required resources/callbacks are serviced.
 
 ## Implementation and acceptance sequence
 
+### Native panel component checkpoint
+
+Disc1 directory: BTL_T0.PRG LBA262947, size392928, base06054000;
+BTL_T0.FNT LBA263146, size7154. Native0605AD40..0605AE72 confirms
+the panel frame counter wraps as a word, updates the controller's bit4
+acknowledgement from bit2/substate, and emits only while bit1 is set.
+With bit4 set it masks frame to7FFF and selects sprite1 for modulo8<4,
+otherwise sprite0. COMMON/global UI guesses are not used: the two sprite
+record pointers are overlay060AADE8, and texture/palette offsets are added
+to native DRAM file entry14's VDP1 base. Position is parent(C-192,E-144).
+Native PMOD and size come directly from the selected descriptor.
+
+`lagi_tutorial_panel.inc` restores that routine through a guarded T0
+generated-source replacement. The overlay is **not yet in the runtime
+source list or dispatch**, so this component does not change device output
+yet. Its production-include host fixture passes512 flag/substate/frame
+cases plus wrap, packet-capacity and missing-allocation guards. Existing
+Vita package build is checked separately; that does not compile/validate
+the disconnected T0 overlay as a whole. Continue with its actual integration
+and remaining stubs before requesting a playable tutorial test.
+
 1. Trace title/field script selection through authored overlay and subbattle
    records; audit generated/shared battle services and native return behavior.
 2. Integrate the actual tutorial overlay data/controller, panel/text/input,

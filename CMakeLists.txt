@@ -2002,6 +2002,21 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   endif()
   string(REPLACE "${point_activate_old}" "${point_activate_new}" source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "battle/BTL_T0/BTL_T0.cpp")
+  set(tutorial_panel_begin "static void tutorialDisplay_draw(sTutorialDisplayTask* pThis)")
+  set(tutorial_panel_end "// 0605ace6")
+  string(FIND "${source_text}" "${tutorial_panel_begin}" tutorial_panel_start)
+  string(FIND "${source_text}" "${tutorial_panel_end}" tutorial_panel_stop)
+  if(tutorial_panel_start LESS 0 OR tutorial_panel_stop LESS tutorial_panel_start)
+   message(FATAL_ERROR "Native tutorial panel boundary changed")
+  endif()
+  math(EXPR tutorial_panel_length "${tutorial_panel_stop}-${tutorial_panel_start}")
+  string(SUBSTRING "${source_text}" ${tutorial_panel_start} ${tutorial_panel_length} tutorial_panel_old)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_tutorial_panel.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_tutorial_panel.inc" tutorial_panel_native)
+  string(REPLACE "${tutorial_panel_old}" "${tutorial_panel_native}\n" source_text "${source_text}")
+
  elseif(relative_path STREQUAL "field/fieldDragon.cpp")
   set(map_exploration_old [=[static void fieldTerrainCallback(s32 subFieldIndex, sVec3_FP* pPos, sVec3_FP* pAngle)
 {
