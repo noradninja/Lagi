@@ -2,6 +2,12 @@
 
 ## Hardware visual acceptance
 
+Final acceptance, 2026-10-24: user additionally confirms performance is unchanged.
+Goal5 is complete on the combined cinematic/town visual and performance
+acceptance. This is user-observed hardware performance acceptance, not a new
+instrumented A/B measurement. Earlier pending statements below are historical
+and superseded by this confirmation.
+
 2026-10-24: user explicitly confirms the floor is correct in both the cinematic
 and Excavation area after07686a9. This closes the two visual acceptance cases.
 The locally available lagi.log has no RBG0BankAccess marker and cannot prove
