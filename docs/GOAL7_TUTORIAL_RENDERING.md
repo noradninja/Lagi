@@ -128,3 +128,8 @@ shader compilations/reflection checks cover stochastic/plain and lookup/ALU
 sampling. Full Vita package builds. Hardware acceptance of the weak-marker
 overlap, above-panel cursors, unchanged field/combat/menu output and timing
 remains pending. Expected bounded log: VDP2UiPriority active=1 in T0.
+
+Follow-up `NATIVE_TARGET_VISIBILITY_AUDIT.md` records native target-system
+ownership and production execution tests. Authored quadrant filtering is
+present. A separate native debug-only viewport Y-bound defect is corrected;
+it is not claimed to resolve the user's normal-mode all-angle report.

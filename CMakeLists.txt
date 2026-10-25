@@ -2786,6 +2786,20 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(SUBSTRING "${source_text}" 0 ${spline_start} spline_prefix)
   string(SUBSTRING "${source_text}" ${spline_end} -1 spline_suffix)
   set(source_text "${spline_prefix}${spline_coefficients}\n${spline_suffix}")
+ elseif(relative_path STREQUAL "battle/battleOverlay_C.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # Native 0605C8AE..0605C8DC: screen bounds are left/top/right/bottom,
+  # so projected Y is <= top and >= bottom, not the reverse interval.
+  set(target_viewport_anchor "(screenResolution[1] <= projY) &&\n                    (projY <= screenResolution[3])")
+  string(FIND "${source_text}" "${target_viewport_anchor}" target_viewport_found)
+  if(target_viewport_found LESS 0)
+   message(FATAL_ERROR "Native gun-target debug viewport boundary changed")
+  endif()
+  string(REPLACE "${target_viewport_anchor}"
+   "(projY <= screenResolution[1]) &&\n                    (screenResolution[3] <= projY)"
+   source_text "${source_text}")
+  string(REPLACE "s16 screenResolution[4];  // [left, bottom, right, top]"
+   "s16 screenResolution[4];  // Native [left, top, right, bottom]"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleTargetable.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set(indicator_bucket_anchor "m20_pCurrentVdp1Packet->m4_bucketTypes = 0;")
   string(REGEX MATCHALL "m20_pCurrentVdp1Packet->m4_bucketTypes = 0" indicator_bucket_sites "${source_text}")
