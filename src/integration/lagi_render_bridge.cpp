@@ -5,6 +5,7 @@
 #include "lagi/platform.h"
 #include "lagi/lagi_point_light.h"
 #include "lagi/lagi_scene_bridge.h"
+#include "lagi/native_sprite_order.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -287,6 +288,7 @@ void publish_frame(bool retainPreviousScene)
         g_publishedSubmissions = g_submissions;
         g_publishedAnimatedColors = g_animatedColors;
         g_publishedVdp1UiCommands = g_vdp1UiCommands;
+        lagi::orderNativeSprites(g_publishedVdp1UiCommands);
         g_publishedAdaptedModels = g_adaptedModels;
     }
     g_publishedModelCacheMisses = g_modelCacheMisses;
