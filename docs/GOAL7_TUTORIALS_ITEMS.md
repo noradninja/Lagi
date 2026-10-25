@@ -38,6 +38,25 @@ dispatch before its required resources/callbacks are serviced.
 
 ## Implementation and acceptance sequence
 
+### Tutorial environment projection update
+
+T0 06054156..06054216 restored through lagi_tutorial_water_update.inc.
+The generated task exposes original signed offsets+8/+C instead of padding.
+Camera height is arithmetic-shifted twice, including negative heights; native
+atan2, FP division, ordered multiplies and setDividend determine the vertical
+projection. Pitch wraps as a signed word and trig indices mask toFFF. Yaw
+uses native staged multiply, division by800, width projection and remainder.
+MAIN06035488 uses DIV0S/sign correction; reconstructed performModulo takes
+unsigned arguments, so the adapter preserves signed remainder directly
+without changing unrelated callers. No floating-point projection replacement.
+
+The production helper fixture passes320 signed height/pitch/yaw/angle cases
+with mocked trig services, native fixed-point stage-order checks and word
+wrap. Full Vita compilation/package passes. The task's Draw callback remains
+unimplemented; this checkpoint alone does not restore environment output or
+enable tutorial dispatch. Continue with its rotated strip quads and native
+startup/return checks before hardware lesson testing.
+
 ### Contextual prompt condition restoration
 
 Original T0 0605A214..0605A53A specifies all nine text sets. Sets0..3 retire

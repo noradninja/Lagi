@@ -2003,6 +2003,29 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${point_activate_old}" "${point_activate_new}" source_text "${source_text}")
 
  elseif(relative_path STREQUAL "battle/BTL_T0/BTL_T0.cpp")
+  set(tutorial_water_old [=[    static void Update(sBTL_T0_WaterEffect* pThis)
+    {
+        Unimplemented();
+    }]=])
+  set(tutorial_water_layout "    u8  m0_pad[0x10];   // 0x00..0x0F")
+  foreach(tutorial_water_anchor IN ITEMS tutorial_water_old tutorial_water_layout)
+   string(FIND "${source_text}" "${${tutorial_water_anchor}}" tutorial_water_offset)
+   if(tutorial_water_offset LESS 0)
+    message(FATAL_ERROR "Native tutorial water boundary changed: ${tutorial_water_anchor}")
+   endif()
+  endforeach()
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_tutorial_water_update.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_tutorial_water_update.inc" tutorial_water_update)
+  # Make the class complete before the helper dereferences its named fields.
+  string(REPLACE "struct sBTL_T0_WaterEffect :"
+   "struct sBTL_T0_WaterEffect;\nstatic void lagiTutorialWaterUpdate(sBTL_T0_WaterEffect*);\nstruct sBTL_T0_WaterEffect :" source_text "${source_text}")
+  string(REPLACE "${tutorial_water_old}"
+   "    static void Update(sBTL_T0_WaterEffect* pThis) { lagiTutorialWaterUpdate(pThis); }" source_text "${source_text}")
+  string(REPLACE "${tutorial_water_layout}"
+   "    u8 m0_pad[8];\n    s32 m8_offsetX;\n    s32 mC_offsetY;" source_text "${source_text}")
+  string(REPLACE "// 060544a2\nstatic void BTL_T0_createWaterEffect"
+   "${tutorial_water_update}\n// 060544a2\nstatic void BTL_T0_createWaterEffect" source_text "${source_text}")
   set(tutorial_condition_begin "static void tutorialController_checkTextCondition(sTutorialControllerTask* pThis)")
   set(tutorial_condition_end "// 0605a134")
   string(FIND "${source_text}" "${tutorial_condition_begin}" tutorial_condition_start)
