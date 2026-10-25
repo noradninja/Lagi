@@ -2218,8 +2218,9 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   endif()
   string(REPLACE "${animated_point_anchor}"
    "${animated_point_anchor}
-            if (pTypedWorkArea->mE4_sparkleScale.m_value == 0x10000)
-                lightLocation = pTypedWorkArea->mD8_sparklePosition; // LAGI_COLLECTION_ANIMATED_LIGHT"
+            // Azel's special-light lifetime is already gated by m_EB.
+            // Do not tie its position to the unrelated sparkle-scale value.
+            lightLocation = pTypedWorkArea->mD8_sparklePosition; // LAGI_COLLECTION_ANIMATED_LIGHT"
    source_text "${source_text}")
   # Original FLD_A3 06074026 loads R7=00014000 before calling
   # point-light setup at 0601E200. The reconstruction omitted R7.
