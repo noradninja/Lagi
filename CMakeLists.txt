@@ -4768,6 +4768,10 @@ if(LAGI_BATTLE_NATIVE_BUILD)
   "${LAGI_AZEL_SOURCE_ROOT}/battle/*.cpp"
   "${LAGI_AZEL_SOURCE_ROOT}/battle/BTL_A3/*.cpp")
  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES ${LAGI_BATTLE_SHARED_AND_A3})
+ file(GLOB LAGI_TUTORIAL_A7_SOURCES CONFIGURE_DEPENDS
+  RELATIVE "${LAGI_AZEL_SOURCE_ROOT}"
+  "${LAGI_AZEL_SOURCE_ROOT}/field/field_a7/*.cpp")
+ list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES ${LAGI_TUTORIAL_A7_SOURCES})
  list(REMOVE_DUPLICATES LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES)
 endif()
 
@@ -4991,6 +4995,7 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/shared"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_a3"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_a7"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_d5"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/battle"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/battle/BTL_A3"
