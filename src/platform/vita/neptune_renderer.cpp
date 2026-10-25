@@ -15519,7 +15519,7 @@ static void updateLiveTownAzelLighting()
                     "[PointGouraudTrace] litFrame=%u polygon=%u mode=%u depthIndex=%d "
                     "normal=%d,%d,%d baseDot=%d pointDot=%lld "
                     "base=%d,%d,%d add=%d,%d,%d summed=%d,%d,%d "
-                    "rgb555=%u,%u,%u clipped=%u,%u,%u pointColor=%u,%u,%u\\n",
+                    "rgb555=%u,%u,%u clipped=%u,%u,%u pointColor=%u,%u,%u\n",
                     pointTraceLitFrames, static_cast<unsigned>(p), mode, depthIndex,
                     int(lighting.normal[0]), int(lighting.normal[1]), int(lighting.normal[2]),
                     dotProduct, static_cast<long long>(pointDot),
