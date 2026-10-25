@@ -2749,6 +2749,16 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleTargetable.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(indicator_bucket_anchor "m20_pCurrentVdp1Packet->m4_bucketTypes = 0;")
+  string(REGEX MATCHALL "m20_pCurrentVdp1Packet->m4_bucketTypes = 0" indicator_bucket_sites "${source_text}")
+  list(LENGTH indicator_bucket_sites indicator_bucket_count)
+  if(NOT indicator_bucket_count EQUAL 9)
+   message(FATAL_ERROR "Native target indicator packet boundaries changed")
+  endif()
+  string(PREPEND source_text "#include \"lagi/native_indicator_sort_key.h\"\n")
+  string(REPLACE "${indicator_bucket_anchor}"
+   "m20_pCurrentVdp1Packet->m4_bucketTypes = lagi::nativeIndicatorSortKey(static_cast<u32>(graphicEngineStatus.m405C.m38_oneOverFarClip.asS32()));"
+   source_text "${source_text}")
   # Draw may still run after Update marks a task finished, or while updates
   # are paused. Honor the native target retirement bit at packet emission too.
   foreach(cursor_draw IN ITEMS sBaldorSubTask0_draw sBaldorSubTask0_draw1 sBaldorSubTask1_draw)

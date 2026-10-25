@@ -61,3 +61,30 @@ Compare output and frame times in tutorial and normal field/combat/name entry.
 The user confirmed background ordering corrected on e2bfcb7, but weak-point
 icons/text still overlap. Do not mark that fixed or conflate it with quadrant
 visibility: the two remaining contracts need separate native-state tracing.
+
+## Native indicator packet keys recovered
+
+Original US Disc 1 BTL_A3.PRG (LBA 258144, 385044 bytes, base 06054000)
+reticle draw 06069094 and weak-marker draw 0606970C assign their sprite
+packet keys by loading graphicEngineStatus+4094 (far reciprocal), SHLL8,
+SHLL2, SHLL2, then logical SHLR16. Examples: 060691A6..B2,
+06069886..92 and 06069A56..62. This is unsigned 32-bit wrapped arithmetic,
+not GXM geometry depth. The upstream targetable source instead assigns
+zero at all nine sprite packet sites. A guarded generated-source adapter
+restores the calculation at exactly those nine boundaries, retaining the
+retirement guards, native visibility/state gates, materials and coordinates.
+Combined with stable packet ordering, indicators now precede zero-key panel
+sprites even when their task emits later. Native VDP2 layer priorities remain
+a separate compositor requirement; do not call the whole overlap fixed yet.
+
+The production helper is tested over the full low 20-bit domain and 100000
+32-bit overflow cases against the SH2 instruction sequence, plus shared
+packet-sort integration. Generated output must contain nine replacements
+and no remaining zero-key sites. Hardware confirmation remains required.
+
+Native weak-marker update 060695F0..0606970A agrees with the upstream gate:
+retired bit40000 finishes the task, disabled bit100000 clears bit200000,
+and absent bit200000 suppresses drawing. It does not directly test a quadrant.
+Trace the producer of bit200000 and the selectable-target/quadrant contract
+rather than inventing an extra marker-only filter. Normal target cursors use
+the selectable index m5A; weak-marker visibility is a distinct path.
