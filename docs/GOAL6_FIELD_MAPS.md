@@ -1,6 +1,24 @@
 # Goal 6: field-map lifecycle
 
-Status: active; no hardware acceptance or runtime correction claimed yet.
+Status: complete. User confirms field-map functions work as expected,
+including multiple maps, with no regression.
+
+## Hardware acceptance
+
+The user supplied a fresh lagi.log and explicitly accepted all field-map
+functions and multiple-map behavior with no regression. The capture contains
+native parent entry for field1, slots(1,-1), selected0 at line1297, and later
+field2, slots(1,1), selected0 at line7801. Both use native=1, standalone=0;
+the later map no longer falls into the placeholder despite the enabled world
+slot. The broad visual/behavior acceptance comes from the user's device test,
+not from those log lines alone. Earlier production host tests cover the
+exploration bit range, save/load and migration, selection/exit and resource
+reuse. Vita package build passes. No new matched performance benchmark is
+claimed; the user reports no regression.
+
+Goal6 is closed on this acceptance. WORLD.PRG display/travel remains a
+separate unfinished feature, not a newly completed part of this goal.
+The investigation and checkpoint limitations below are retained as history.
 
 Required acceptance: first and second map pickups, visible menu entry and
 selection, native blue visited-area markings, normal cancellation, and the
