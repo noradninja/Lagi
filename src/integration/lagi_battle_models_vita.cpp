@@ -4,6 +4,7 @@
 #include "lagi/native_tutorial_laser_enemy.h"
 #include "battle/battleTargetable.h"
 #include "battle/battleDebris.h"
+#include "battle/battleEnemyLifeMeter.h"
 #include "kernel/graphicalObject.h"
 #include "kernel/animation.h"
 #include "kernel/fileBundle.h"
@@ -14,3 +15,4 @@ void clearLightColor();
 #include "lagi_battle_model_draw.inc"
 #include "lagi_tutorial_model_motion.inc"
 #include "lagi_tutorial_laser_enemy.inc"
+#include "lagi_tutorial_laser_enemy_init.inc"

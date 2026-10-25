@@ -227,6 +227,55 @@ setup, concrete RNG/sound/statistic/hit-effect/draw-disable bindings, formation
 ownership/state transitions and lifecycle. The last three lessons remain
 unaccepted and disabled at those missing callbacks; Goal 7 is not complete.
 
+## First missing enemy initialization recovered
+
+`lagi_tutorial_laser_enemy_init.inc` restores the initialization after native
+task allocation in 060587F0..06058994, using named references rather than
+casting a host task to native byte offsets. The task creator still must bind
+the original parent/group, slot-14 resources and typed callbacks before use.
+
+The initializer sets the owner's file bundle, entity index and health 300;
+creates the life meter from the actor's world-position/health addresses with
+maximum 300 and type -1; then creates one authored model. T0 descriptor
+060AADA8 is `{model 0004, pose 0088, hotpoints 060AAD40}`. It initializes
+animation from the bundle's pointer-table entry 009C, selects a starting frame
+with native **unsigned remainder `(frames - 1)`**, and steps animation once
+after selection (in addition to the shared model constructor's first step).
+
+MAIN 06035550..060355F0 confirms this is remainder, not quotient or signed `%`.
+Absent animation means frame count zero and unsigned divisor FFFFFFFF; one
+frame means divisor zero. The existing generated `performModulo2` adapter
+returns zero and bounds arithmetic-error-044E diagnostics in that latter case,
+matching the original nonfatal helper. The unchanged upstream assertion is
+not the production adapter; both the generated adapter and constructor fixture
+were checked.
+
+Target setup receives the entity index and overlay-specific callback EAs,
+then overrides quadrant values to `{30,1,10,1}`. The authored position offset
+is copied into target/current position, rate becomes 0F5C, and world/current/
+target rotation becomes `{0,08000000,0}`. Other native fields (world position,
+velocity, acceleration, task header) are deliberately left untouched. The
+actual task's zero-initialization remains responsible for their initial state.
+
+On failed model/target setup, finish the already-created life meter as well
+as its failed actor. Life meters are dragon-owned tasks; leaving one active
+would retain a pointer to failed actor health. Missing bundle or life meter
+also fails before exposing a half-created actor. No replacement resources or
+guessed fallback animations are introduced.
+
+`tests/tutorial_laser_enemy_init_test.ps1` executes the production initializer
+for all 65536 frame-count words and seven unsigned RNG boundary values
+(458752 combinations), null animation and resource/life-meter/model failures.
+It checks native setup order, two animation steps, target defaults, unchanged
+adjacent named fields and padded task headers. Engine/resource services are
+mocked, not a real disc model or device execution. Existing model/damage/draw,
+integrated actor update and generated-remainder fixtures pass. The constructor
+is a forced Vita link root, resolving real animation and life-meter services.
+
+Remaining: actual typed task creation, original formation/group binding and
+ownership, concrete hit-effect/statistic service bindings, formation controller
+and dispatch, then full on-device lesson/title-return/performance acceptance.
+
 ## Shared formation spring recovered
 
 `include/lagi/native_formation_motion.h` recovers one axis of native

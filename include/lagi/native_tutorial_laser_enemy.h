@@ -1,6 +1,23 @@
 #pragma once
 #include "lagi/native_battle_models.h"
 struct npcFileDeleter;
+struct sEnemyLifeMeterTask;
+struct LagiTutorialLaserEnemyInitView {
+    s_workAreaCopy* owner;
+    s_fileBundle* bundle;
+    std::vector<s_3dModel>& models;
+    std::uint8_t& modelCount;
+    LagiBattleModelTargetState& targets;
+    sEnemyLifeMeterTask*& lifeMeter;
+    std::int16_t& health;
+    std::int32_t& entityIndex;
+    LagiBattleModelMotionView motion;
+    std::int32_t& interpolationRate;
+};
+bool lagiInitTutorialLaserEnemy(const LagiTutorialLaserEnemyInitView& actor,
+    std::int32_t entityIndex, const sVec3_FP& authoredOffset,
+    sSaturnPtr modelDescriptors, const std::array<std::uint32_t,4>& callbacks,
+    std::uint32_t (*random)(void*), void* randomContext);
 struct LagiTutorialLaserEnemyView {
     LagiBattleModelMotionView motion;
     LagiBattleModelDamageView damage;

@@ -6,7 +6,7 @@
 #include <vector>
 #include "lagi/native_battle_models.h"
 struct Task {bool finished=false;void markFinished(){finished=true;}};
-struct s_workAreaCopy {std::array<uint8_t,192> header;Task task;Task* getTask(){return &task;}};
+struct s_workAreaCopy {std::array<uint8_t,192> header;s_fileBundle* m0_fileBundle=nullptr;Task task;Task* getTask(){return &task;}};
 struct sSaturnPtr {uint32_t ea=0;bool isNull()const{return ea==0;}sSaturnPtr operator+(unsigned n)const{return {ea+n};}};
 struct sVec3_FP {
  int32_t x=0,y=0,z=0;
@@ -19,8 +19,10 @@ struct sBattleTargetable {s_workAreaCopy* owner; sVec3_FP* position;int32_t radi
 struct s_hotpoinEntry {int32_t m0;sVec3_FP m4;int32_t m10;};
 struct s_hotpointDefinition {std::vector<s_hotpoinEntry> m0;uint32_t m4_count=0;};
 struct sHotpointBundle {sSaturnPtr address;explicit sHotpointBundle(sSaturnPtr p):address(p){}};
+struct sAnimationData {uint16_t m4_numFrames=0;};
 struct s_3dModel {
  void (*m18_drawFunction)(s_3dModel*)=nullptr;
+ sAnimationData* m30_pCurrentAnimation=nullptr;
  uint16_t m12_numBones=0,m50_targetBoneCount=0,m52_targetableCount=0;
  std::vector<s_hotpointDefinition>* m40=nullptr;
  std::vector<std::vector<sVec3_FP>> m44_hotpointData;
@@ -29,7 +31,7 @@ struct s_3dModel {
 };
 struct Hierarchy {unsigned countNumberOfBones(){return 2;}};
 struct Pose{};
-struct s_fileBundle {Hierarchy hierarchy;Pose pose;Hierarchy* getModelHierarchy(unsigned){return &hierarchy;}Pose* getStaticPose(unsigned,unsigned count){assert(count==2);return &pose;}};
+struct s_fileBundle {Hierarchy hierarchy;Pose pose;sAnimationData* animation=nullptr;Hierarchy* getModelHierarchy(unsigned){return &hierarchy;}Pose* getStaticPose(unsigned,unsigned count){assert(count==2);return &pose;}sAnimationData* getAnimation(unsigned offset){assert(offset==0x9c);return animation;}};
 static std::array<uint8_t,64> disc{};
 static uint16_t readSaturnU16(sSaturnPtr p){assert(p.ea+1<disc.size());return uint16_t(disc[p.ea])*256+disc[p.ea+1];}
 static sSaturnPtr readSaturnEA(sSaturnPtr p){assert(p.ea+3<disc.size());return {uint32_t(disc[p.ea])*0x1000000u+uint32_t(disc[p.ea+1])*0x10000u+uint32_t(disc[p.ea+2])*256u+disc[p.ea+3]};}
