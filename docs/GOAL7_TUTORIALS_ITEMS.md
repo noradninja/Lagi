@@ -2,7 +2,9 @@
 
 Active. User requests tutorials first, including their relationship to the
 title-screen tutorials. Goals1-6 are accepted; preserve their behavior and
-performance. No tutorial execution or device acceptance claimed yet.
+performance. The first part of Tutorial1 executes on hardware per user feedback;
+full lesson/title lifecycle, recent priority/performance corrections and Tutorial2
+remain unaccepted. This document retains earlier component checkpoints below.
 
 Additional user-reported combat issue: weak-point icons and text currently
 show from every angle. Audit original target/quadrant visibility and restore
@@ -46,7 +48,9 @@ the recovered coefficient solver and unresolved evaluator endpoint bounds;
 and now-integrated unshaded world-ray service, with production-wrapper tests
 and retained Vita linkage. Neither means Tutorial2 is enabled.
 `NATIVE_BEAM_SPARK_RECOVERY.md` records the corrected native draw/update
-callback ownership and tests; its two visual callbacks remain unfinished.
+callback ownership, both restored draw callbacks and production geometry tests.
+The shared world-polygon service and solid-mesh GXM material are integrated;
+this does not mean Tutorial2 is enabled or hardware visuals/performance accepted.
 
 FLD_A7 sources compile in the battle build (722b693), but unused-function
 garbage collection is not a live dependency proof. Temporarily restoring the
@@ -57,8 +61,8 @@ drawHorizon. The dispatch remains disabled; the experimental link change was
 removed after identifying these boundaries. Do not add empty link stubs or
 claim Tutorial 2 playable from compilation alone.
 
-Shared upstream sources exist for these services, but fieldBeamSpark's draw
-and both fieldAnimRingSubTask draw modes are unfinished. rayDisplay's desktop
+Shared upstream sources exist for these services; both fieldAnimRingSubTask
+draw modes remain unfinished. rayDisplay's desktop
 world helper includes a color-line fallback and must be connected to the
 existing native packet/depth service, not its desktop renderer. Model context
 registration needs its actual LCS/callback contract audited before exposure.

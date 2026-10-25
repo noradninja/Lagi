@@ -36,5 +36,5 @@ int main(){
   }
   assert(spark->m0_pos==arg.m0_pos);delete spark;
  }
- puts("PASS production spark lifecycle: zero/nonzero angle branches preserve update, masked fade/accumulator math and exact 1/20/255-frame retirement; draw bodies/device pending");
+ puts("PASS production spark lifecycle: zero/nonzero angle branches preserve update, masked fade/accumulator math and exact 1/20/255-frame retirement; draws tested separately, device pending");
 }

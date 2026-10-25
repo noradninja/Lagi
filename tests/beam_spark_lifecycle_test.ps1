@@ -7,7 +7,10 @@ $source=Get-Content -Raw "$repo/$BattleBuild/azel_upstream/field_fieldBeamSpark.
 if(!$source.Contains('pThis->m_DrawMethod = &beamSpark_UpdateAlt;') -or $source.Contains('pThis->m_UpdateMethod = &beamSpark_UpdateAlt;')){throw 'Generated native spark callback ownership incorrect'}
 $start=$source.IndexOf('// Beam spark effect')
 if($start-lt 0){throw 'Generated spark body boundary changed'}
-[IO.File]::WriteAllText("$scratch/spark_service.inc",$source.Substring($start))
+# Lifecycle fixture intentionally mocks draws; the draw fixture separately
+# executes this production include with original table/matrix math.
+$lifecycle=$source.Substring($start).Replace('#include "lagi_field_beam_spark_draw.inc"','void beamSpark_UpdateAlt(sBeamSpark*) {} void beamSpark_Draw(sBeamSpark*) {}')
+[IO.File]::WriteAllText("$scratch/spark_service.inc",$lifecycle)
 $header=(Get-Content -Raw "$repo/extern/Azel/AzelLib/field/fieldBeamSpark.h").Replace('#pragma once','')
 [IO.File]::WriteAllText("$scratch/spark_header.inc",$header)
 & cl /nologo /O2 /std:c++20 /EHsc "/I$scratch" "$PSScriptRoot/beam_spark_lifecycle_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
