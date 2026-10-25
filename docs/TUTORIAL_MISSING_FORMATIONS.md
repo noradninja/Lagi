@@ -6,6 +6,25 @@ formation dispatch/implementations and must not be reported playable.
 
 ## Original Disc 1 evidence
 
+### Persistent death statistic checkpoint
+
+Native 0605D6E4 tail-calls 0606B160 with selector 8. The latter increments
+the 32-bit word at gameStats+54; the existing typed field is `m54`.
+The shared `increaseStatsCount` previously asserted for that selector.
+Its generated-source adapter now restores case 8, preserves existing
+item/gun/laser/other-attack cases 0..3, takes the native unsigned-byte
+selector and implements explicit 32-bit wrap without signed-overflow UB.
+No extra save fields, layout change, fabricated counter or audio event is
+introduced. Native selectors 4..7 remain outside this checkpoint and are
+not claimed restored; they are not used by this tutorial death wrapper.
+
+The build includes this adapter in the actual battle engine translation
+unit. `tests/battle_stat_count_test.ps1` checks that generated inclusion and
+exercises 6400 selector-byte, wrap and independent-counter cases. The full
+Vita package and retained-link audit pass; these are not on-device evidence.
+The tutorial service table/dispatch and death-state ownership still need
+completion before the restored formation is enabled.
+
 ### Shared hit-effect binding checkpoint
 
 `lagiDispatchTutorialModelHit` explicitly maps the T0 callback identities:
