@@ -9,7 +9,7 @@ struct Task {bool finished=false;void markFinished(){finished=true;}};
 struct s_workAreaCopy {std::array<uint8_t,192> header;Task task;Task* getTask(){return &task;}};
 struct sSaturnPtr {uint32_t ea=0;bool isNull()const{return ea==0;}sSaturnPtr operator+(unsigned n)const{return {ea+n};}};
 struct sVec3_FP {int32_t x=0,y=0,z=0;};
-struct sBattleTargetable {s_workAreaCopy* owner; sVec3_FP* position;int32_t radius;uint32_t flags,index,a,b;};
+struct sBattleTargetable {s_workAreaCopy* owner; sVec3_FP* position;int32_t radius;uint32_t m50_flags,index,a,b;int16_t m58=0;int8_t m60=0,m5E_impactForce=0;};
 struct s_hotpoinEntry {int32_t m0;sVec3_FP m4;int32_t m10;};
 struct s_hotpointDefinition {std::vector<s_hotpoinEntry> m0;uint32_t m4_count=0;};
 struct sHotpointBundle {sSaturnPtr address;explicit sHotpointBundle(sSaturnPtr p):address(p){}};
@@ -40,7 +40,7 @@ static void* allocateHeapForTask(s_workAreaCopy*,unsigned bytes){if(!bytes)retur
 static void initTargetable(sBattleTargetable* t,s_workAreaCopy* owner,sVec3_FP* pos,int32_t radius,uint32_t flags,uint32_t index,uint32_t a,uint32_t b){
  assert(pos->x==0&&pos->y==0&&pos->z==0);*t={owner,pos,radius,flags,index,a,b};++targetCalls;
 }
-static void deleteTargetable(sBattleTargetable* t){assert(t->owner);t->flags|=0x40000;++retired;}
+static void deleteTargetable(sBattleTargetable* t){assert(t->owner);t->m50_flags|=0x40000;++retired;}
 #include "../src/integration/lagi_battle_models.inc"
 static void release(){for(auto p:allocations)std::free(p);allocations.clear();targetCalls=retired=0;}
 static void descriptor(unsigned entry,unsigned model,uint32_t hotspots){
@@ -70,14 +70,15 @@ int main(){
   data[2].m4_count=1;data[2].m0={{int32_t(entity*0x01010101u),{0,0,0},-1}};
   std::vector<s_3dModel> models(2);auto& m=models[0];m.m12_numBones=3;m.m40=&data;m.m44_hotpointData={{{1,2,3},{4,5,6}},{},{{7,8,9}}};
   models[1].m12_numBones=7;
-  LagiBattleModelTargetState state;state.damageAccumulator=99;state.hitboxValues.fill(-99);state.auxiliaryCount=7;state.auxiliaryData=&owner;
+  LagiBattleTargetOverride oldOverride{};
+  LagiBattleModelTargetState state;state.healthFloor=99;state.hitboxValues.fill(-99);state.auxiliaryCount=7;state.auxiliaryData=&oldOverride;
   const std::array<uint32_t,4> ea={0x0609f440,0x0609f444,0x0609f468,0x0609f48c};
   assert(lagiInitBattleEnemyModelTargets(&owner,entity,models,state,ea));
-  assert(!owner.task.finished&&state.damageAccumulator==0&&state.damageCallbackEA==ea&&state.auxiliaryCount==0&&!state.auxiliaryData);
+  assert(!owner.task.finished&&state.healthFloor==0&&state.damageCallbackEA==ea&&state.auxiliaryCount==0&&!state.auxiliaryData);
   for(auto v:state.hitboxValues)assert(v==10);
   assert(targetCalls==3&&m.m50_targetBoneCount==3&&m.m52_targetableCount==3);
   assert(models[1].m50_targetBoneCount==7&&!models[1].m54_targetables&&!models[1].m58_targetablePositions);
-  unsigned j=0;for(auto& bone:data)for(auto& point:bone.m0){auto& t=m.m54_targetables[j];assert(t.owner==&owner&&t.position==m.m58_targetablePositions+j&&t.index==entity&&t.radius==point.m10&&t.flags==uint32_t(point.m0)&&t.a==0&&t.b==10);++j;}
+  unsigned j=0;for(auto& bone:data)for(auto& point:bone.m0){auto& t=m.m54_targetables[j];assert(t.owner==&owner&&t.position==m.m58_targetablePositions+j&&t.index==entity&&t.radius==point.m10&&t.m50_flags==uint32_t(point.m0)&&t.a==0&&t.b==10);++j;}
   uint32_t flags=0x40808005u;callbackFlags=&flags;callbacks=0;clearGate=false;
   lagiRetireBattleEnemyModelTargets(&owner,flags,models,callback);assert(retired==3&&callbacks==1&&flags==0x90808005u);
   auto* storage=m.m54_targetables;lagiRetireBattleEnemyModelTargets(&owner,flags,models,callback);assert(retired==3&&callbacks==2&&m.m54_targetables==storage);
@@ -93,4 +94,5 @@ int main(){
   assert(!lagiInitBattleEnemyModelTargets(&owner,1,models,state,{}));assert(owner.task.finished&&targetCalls==0&&allocations.empty());
  }
  std::printf("PASS: native model creation/failure and %zu metadata/identity/retirement cases; mocked engine and task services, not hardware\n",cases);
+ return 0;
 }

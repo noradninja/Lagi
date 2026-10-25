@@ -36,7 +36,7 @@ bool lagiInitBattleEnemyModelTargets(s_workAreaCopy* owner,
 {
     // EE42: only the named native fields are initialized; don't overwrite
     // health, task headers, model vectors or adjacent actor state.
-    state.damageAccumulator=0;
+    state.healthFloor=0;
     state.damageCallbackEA=damageCallbackEA;
     state.hitboxValues.fill(10);
     state.auxiliaryCount=0;

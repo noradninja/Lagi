@@ -5,3 +5,4 @@
 #include "kernel/animation.h"
 #include "kernel/fileBundle.h"
 #include "lagi_battle_models.inc"
+#include "lagi_battle_model_damage.inc"

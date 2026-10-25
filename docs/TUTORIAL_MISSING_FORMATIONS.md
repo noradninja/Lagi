@@ -50,7 +50,7 @@ accepted Baldor/Urchin paths. No missing formation is dispatched yet.
 - 0609ED96 reads eight-byte model descriptors, creates each model with the
   authored static pose/hotpoint bundle and steps animation once. Creation
   failure finishes the owner and stops before later models.
-- 0609EE42 initializes only named target state: accumulator zero, four
+- 0609EE42 initializes only named target state: health floor zero, four
   caller-supplied **overlay-specific** callback EAs, four hitbox values of 10,
   auxiliary count zero and auxiliary data null. The callback EAs are data,
   never native addresses invoked as host function pointers. T0 uses F440,
@@ -84,6 +84,55 @@ are mocked. The Vita VELF/SELF/VPK build and retained-root ELF audit pass with
 all three services forced into the link; this proves compile/link closure,
 not model rendering, frame time or on-device lesson execution. Next restore
 the actor's damage/animation/draw path and its original formation controller.
+
+## Shared model damage pipeline recovered
+
+`lagi_battle_model_damage.inc` restores 0609F0CA..0609F43E using a named
+actor view and explicit native service hooks. `B4` is a signed **health floor**
+(zero disables it), not a damage accumulator; `B6` is the separate pending
+damage accumulator. The target-state member was corrected accordingly.
+
+The native operation order is preserved:
+
+1. Actor flag 10000000 returns before position/scale/hit processing.
+2. For every model with targets, copy transformed per-bone hotpoints into
+   stable target-position storage. Set each target's byte `m60` from the
+   actor's quadrant-indexed word table. Apply matching auxiliary model/target
+   overrides in row order; the last matching row wins. Model and target row
+   indices are signed bytes, table entries are words truncated to bytes.
+3. Actor flag 80000000 skips hit consumption for that model, but not the
+   preceding position/table updates. This gate is once per model: a callback
+   raising it does not abort remaining hits in the current model.
+4. Consume target flags 80000 and 20000, set actor hit-flash flag 800000,
+   set actor light value from unsigned target `m60`, and invoke the selected
+   non-null damage callback for signed impact kinds 0..3 **before** health
+   subtraction. Callback EAs remain data handled by the actor's typed adapter.
+5. Subtract signed damage with native 16-bit wrap. Display the per-hit result
+   only if that intermediate health is nonnegative. Then apply a nonzero
+   health floor, notify life-meter byte bit 2 and accumulate damage with
+   16-bit wrap. Callback/display mutations remain visible in subsequent steps.
+6. After all models, nonpositive health flushes the pending damage even if
+   it is zero or negative. Alive actors flush only while engine flag 1000 is
+   set and pending damage is positive. The native world-position number
+   presentation uses mode 1, then clears pending damage.
+
+Quadrant/status hooks query live state instead of capturing it before hit
+callbacks. There is no new hit timing, damage formula, renderer work, per-frame
+allocation, callback address cast or enemy-specific substitute behavior.
+The existing accepted enemy paths are not redirected through this service.
+
+`tests/native_battle_model_damage_test.ps1` executes the production include
+against 29040 signed health/damage/floor/kind/quadrant/status combinations,
+plus ordered overrides, invalid target-index protection, live callback changes,
+per-model death gates and retirement. It also reruns the 8192 model/target
+lifecycle cases. Task/engine/presentation hooks are mocked: these are host
+ordering/arithmetic tests, not original SH2 execution or a hardware fight.
+The Vita build retains this damage function as an explicit link-audit root.
+
+Still required: bind the original per-enemy hit callbacks and model movement,
+animation/draw updates, create the original formations and enable their exact
+dispatch callbacks. The last three lessons still immediately complete until
+that integration is finished. No new playable-lesson acceptance is claimed.
 
 ## Shared formation spring recovered
 
