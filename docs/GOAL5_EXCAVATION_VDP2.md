@@ -1,5 +1,14 @@
 # Goal 5: Excavation ground corruption
 
+## Hardware visual acceptance
+
+2026-10-24: user explicitly confirms the floor is correct in both the cinematic
+and Excavation area after07686a9. This closes the two visual acceptance cases.
+The locally available lagi.log has no RBG0BankAccess marker and cannot prove
+final-build timing. Performance/regression acceptance remains pending a fresh
+log or explicit user confirmation; do not reuse the Goal4 tunnel measurements
+as evidence for the changed raw RBG shaders.
+
 Active 2026-10-24. Goal4 is accepted. Both E006 and Excavation use
 startExcaBackgroundTask; original Saturn reference has a black ground region.
 Do not force mapA to60800 or mask an Excavation scene in the renderer.
