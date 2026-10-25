@@ -39,8 +39,9 @@ bool lagiAzelResolveMapParentSource(LagiAzelMapParentSource& source)
 
 bool lagiAzelMapWorldDispatchAvailable()
 {
-    // Read the actual module-manager table. The current trimmed build leaves
-    // entry5 null; do not expose an enabled transition into that empty slot.
+    // MAIN0601798C requests status4F; the module-manager status table routes
+    // that to mode6 (WORLD.PRG), not mode5 (CHANGE.PRG). This checks dispatch
+    // presence only: the existing mode6 boundary is not yet a playable map.
     extern s_workArea*(*overlayDispatchTable[])(s_workArea*,std::int32_t);
-    return overlayDispatchTable[5]!=nullptr;
+    return overlayDispatchTable[6]!=nullptr;
 }

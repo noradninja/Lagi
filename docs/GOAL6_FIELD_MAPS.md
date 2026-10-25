@@ -87,6 +87,30 @@ state and resource lifetimes; do not add a pickup-specific workaround.
 
 ## Remaining acceptance and integration
 
+### Correct native destination guard
+
+Further trace found the backend guard itself checked the wrong entry.
+`lagiAzelCommitMapWorldConfirmation` restores MAIN0601798C's
+setNextGameStatus(4F); moduleManager's status4F row is mode6/parameter0.
+Mode5 is CHANGE.PRG and is not that destination. The guard now checks6,
+which has the existing WORLD.PRG boundary, instead of5. It does not alter
+authored availability, disable a world slot or redirect travel elsewhere.
+This removes a concrete cause of falling back to the nonfunctional page
+when a valid world route exists. Confirmation can still reach the existing
+non-playable WORLD boundary: **world display/travel remain unported**.
+
+Source/dispatch tests distinguish slot5-only (reject) from slot6-only
+(accept). Parent and resource ownership tests pass; the resource fixture
+also reopens four maps with alternating large/small SCB destinations on
+the same owner. Full battle Vita VPK build passes. Hardware reproduction is still needed to establish whether
+this fully resolves the reported subsequent-pickup failure.
+
+Save audit: loadSavegameScreen.cpp saveData copies the complete
+mainGameState into sSaveDataRaw.mC_mainGameState (line117); readSave restores
+that same member (line79). The callback writes its existing bitField through
+setBit566, so no additional map sidecar or save-layout change is needed.
+This is source evidence of inclusion, not on-device round-trip acceptance.
+
 Trace map pickup state, parent/backend coupling and resource lifetimes;
 reproduce the second-map path with fresh diagnostics; implement narrow
 source-faithful corrections and tests; build Vita; obtain pickup/menu/save

@@ -75,6 +75,8 @@ int main(){
  assert(contextCalls==calls && townCalls>0);
  assert(!lagiAzelMapWorldDispatchAvailable() && createMapTask(&parent)==&placeholder);
  overlayDispatchTable[5]=worldBackend;
+ assert(!lagiAzelMapWorldDispatchAvailable() && createMapTask(&parent)==&placeholder);
+ overlayDispatchTable[5]=nullptr;overlayDispatchTable[6]=worldBackend;
  assert(lagiAzelMapWorldDispatchAvailable() && createMapTask(&parent)==&nativeTask && captured.availability.slots[1]==1);
  townOk=false;assert(createMapTask(&parent)==&placeholder);townOk=true;
  for(int scene:{1,3}){

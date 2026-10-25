@@ -93,7 +93,7 @@ p_workArea createMapTask(p_workArea parent)
     if(lagiAzelResolveMapParentSource(source)) {
         const bool backendReady=source.availability.slots[1]!=1 || lagiAzelMapWorldDispatchAvailable();
         if(!backendReady) lagi::platform::logging::writef(
-            "[MapParent] enabled world route deferred: overlayDispatchTable[5] is null\n");
+            "[MapParent] enabled world route deferred: status4F overlayDispatchTable[6] is null\n");
         if(auto* task=backendReady ? lagiAzelCreateMapParent(parent,source) : nullptr) {
             lagi::platform::logging::writef(
                 "[MapParent] native=1 standalone=%u field=%d slots=(%d,%d) selected=%d\n",
