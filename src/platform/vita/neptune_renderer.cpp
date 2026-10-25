@@ -86,6 +86,7 @@ extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
 extern const unsigned char _binary_lagi_rgba_present_f_gxp_start[];
 extern const unsigned char _binary_lagi_scene_nbg0_f_gxp_start[];
 extern const unsigned char _binary_lagi_sprite_composite_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_ui_priority_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_tile16_8bit_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_pages_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_rows_f_gxp_start[];
@@ -286,6 +287,8 @@ static void setStochastic(unsigned w, unsigned h, bool blended=false)
             ub, g_stochasticTextureSizeParam, 0, 4, size);
     }
 }
+static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority);
+static bool g_spriteUiPriorityActive=false;
 
 static void setStochasticGouraud(unsigned w, unsigned h, bool blended=false, bool mesh=false)
 {
@@ -2296,6 +2299,8 @@ static void drawAzelVdp2TextLayerGpu(int outputWidth = 0, int outputHeight = 0)
         sceGxmTextureSetMagFilter(
             &g_vdp2TextLayerTexture, SCE_GXM_TEXTURE_FILTER_POINT);
     }
+    if(!setVdp2UiPriority(kVdp2TextLayerWidth,kVdp2TextLayerHeight,
+        (g_spriteColor.bgon&8)?(g_spriteColor.prinb>>8)&7:0))return;
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
 
     void* uniforms = nullptr;
@@ -4526,6 +4531,8 @@ static void drawAzelVdp2Nbg1Gpu()
         sceGxmTextureSetMagFilter(
             &g_vdp2Nbg1AtlasTexture, SCE_GXM_TEXTURE_FILTER_POINT);
     }
+    if(!setVdp2UiPriority(kVdp2Nbg1AtlasWidth,kVdp2Nbg1AtlasHeight,
+        (g_spriteColor.bgon&2)?(g_spriteColor.prina>>8)&7:0))return;
 
     void* uniforms = nullptr;
     if (sceGxmReserveVertexDefaultUniformBuffer(
@@ -14060,18 +14067,26 @@ static void renderBasicWingViewer()
             // Share slots so later overlay draws cannot overwrite queued data.
             drawPublishedVdp1Ui(
                 Vdp1UiPass::WorldEffects, &vdp1UiSpriteSlot);
+            // VDP1 priority belongs to the completed framebuffer pixel, not
+            // to individual commands. Finish foreground emission before the
+            // one existing resolve, then let NBG1/3 compare against that image.
+            const bool priorityUi=spriteComposite && g_spriteUiPriorityFrame;
+            if(priorityUi)drawPublishedVdp1Ui(
+                Vdp1UiPass::Foreground, &vdp1UiSpriteSlot);
             if (spriteComposite && !finishSpriteComposite(renderTarget,colorSurface,syncObject)) {
                 logging::writef("[VDP2SpriteComposite] FAIL finishing world layer\n");
                 sceGxmEndScene(g_probeContext,nullptr,nullptr);
                 sceGxmFinish(g_probeContext);
                 return;
             }
+            g_spriteUiPriorityActive=priorityUi;
             drawSceneNbg0Gpu();
             drawAzelVdp2Nbg1Gpu();
             drawAzelVdp2CinematicBarsGpu();
             drawAzelVdp2TextLayerGpu();
-            drawPublishedVdp1Ui(
+            if(!priorityUi)drawPublishedVdp1Ui(
                 Vdp1UiPass::Foreground, &vdp1UiSpriteSlot);
+            g_spriteUiPriorityActive=false;
         }
     }
 

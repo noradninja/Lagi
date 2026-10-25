@@ -150,6 +150,21 @@ add_custom_command(OUTPUT "${LAGI_RGBA_PRESENT_OBJ}"
  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_rgba_present_f.gxp" VERBATIM)
 set(LAGI_SPRITE_COMPOSITE_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_sprite_composite_f_gxp.o")
+set(LAGI_VDP2_UI_PRIORITY_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_ui_priority_f_gxp.o")
+set_source_files_properties("${LAGI_VDP2_UI_PRIORITY_OBJ}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_ui_priority_f.gxp"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_ui_priority_f.cg"
+ -DLAGI_DITHER_LOOKUP=$<BOOL:${LAGI_DITHER_LOOKUP}>
+ -DLAGI_UI_DITHER=$<BOOL:${LAGI_STOCHASTIC_FILTER}> -Wperf -fastprecision -O3
+ -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_ui_priority_f.gxp"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_ui_priority_f.cg"
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_f.cg" VERBATIM)
+add_custom_command(OUTPUT "${LAGI_VDP2_UI_PRIORITY_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
+ lagi_vdp2_ui_priority_f.gxp "${LAGI_VDP2_UI_PRIORITY_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_ui_priority_f.gxp" VERBATIM)
 set(LAGI_RBG_TILE_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f_gxp.o")
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f.gxp"
  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
@@ -4909,6 +4924,7 @@ add_executable(lagi
  ${LAGI_RGBA_PRESENT_OBJ}
  ${LAGI_SCENE_NBG0_OBJ}
  ${LAGI_SPRITE_COMPOSITE_OBJ}
+ ${LAGI_VDP2_UI_PRIORITY_OBJ}
  ${LAGI_RBG_TILE_OBJ}
  ${LAGI_RBG_PAGES_OBJ}
  ${LAGI_RBG_ROWS_OBJ}

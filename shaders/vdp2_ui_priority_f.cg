@@ -1,0 +1,3 @@
+// Keep exactly the established UI sampler; add only native VDP1 occlusion.
+#define LAGI_VDP2_UI_PRIORITY 1
+#include "stochastic_f.cg"

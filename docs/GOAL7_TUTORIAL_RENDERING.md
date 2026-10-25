@@ -88,3 +88,43 @@ and absent bit200000 suppresses drawing. It does not directly test a quadrant.
 Trace the producer of bit200000 and the selectable-target/quadrant contract
 rather than inventing an extra marker-only filter. Normal target cursors use
 the selectable index m5A; weak-marker visibility is a distinct path.
+
+## Completed-image UI priority recovery
+
+The remaining overlap also has a confirmed composition cause: the normal
+scene route drew NBG1 backing and NBG3 glyphs, then every foreground VDP1
+command. Native T0 sets PRINA=0600, PRINB=0700, PRISA=0405 and PRISB=0507.
+Thus some sprite pixels are below the backing, while bank 2 pixels deliberately
+remain above it. A command-wide reorder or angle-dependent hiding is not an
+equivalent replacement. Original Azel VDP2_composite_ps.sc assigns equal-priority
+ties to Sprite > RBG0 > NBG0 > NBG1 > NBG3.
+
+The published frame now retains PRINA/PRINB. The existing 256-entry sprite
+decision texture also retains each decoded pixel's native priority in alpha.
+For supported register states, foreground emission completes in the existing
+VDP1 surface before its existing single resolve. NBG1 and NBG3 then sample
+that immutable completed image and discard only where a sprite pixel wins
+their native priority comparison. This preserves mixed priorities within LUT
+sprites, transparent holes, and tie precedence; no source IDs, tutorial IDs,
+camera guesses or new visibility rules are used.
+
+There are no new render surfaces, fullscreen draws, GPU waits or CPU raster
+passes. The two existing UI draws use a shared sampler variant with two
+additional point fetches per covered fragment. Existing stochastic sampling
+is retained (and a non-stochastic variant is compiled/tested). Actual device
+timing is not established by shader or package compilation.
+
+The fast path proves its register domain: type 3 mixed RGB, NBG1/3 above RBG0,
+glyphs above backing, no other enabled normal planes/color windows, and no
+selected VDP2 color-calculated sprite above those UI layers. It does not claim
+the general additional-layer second-color resolver. Cinematic line-scroll
+bars retain their existing route. Unsupported states and resource failures
+retain the previous path rather than using an incorrect blend approximation.
+
+Host fixtures cover all 4096 four-bank priority combinations and alpha codes,
+plus accepted layer/condition combinations against original compositor
+priority/tie keys with every transparent-hole combination. Four actual Vita
+shader compilations/reflection checks cover stochastic/plain and lookup/ALU
+sampling. Full Vita package builds. Hardware acceptance of the weak-marker
+overlap, above-panel cursors, unchanged field/combat/menu output and timing
+remains pending. Expected bounded log: VDP2UiPriority active=1 in T0.

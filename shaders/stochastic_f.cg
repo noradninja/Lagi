@@ -10,8 +10,21 @@ float4 main(float2 uv : TEXCOORD0, float4 fragCoord : WPOS,
 #if LAGI_DITHER_LOOKUP
             uniform sampler2D ditherOffsets : TEXUNIT1,
 #endif
+#if LAGI_VDP2_UI_PRIORITY
+            uniform sampler2D spriteLayer : TEXUNIT2,
+            uniform sampler2D spriteDecisions : TEXUNIT3,
+            uniform float4 priorityGeometry,
+#endif
             uniform float4 textureSize)
 {
+#if LAGI_VDP2_UI_PRIORITY
+    // WPOS samples the completed VDP1 pixel, independently of atlas UVs and
+    // stochastic source sampling. Equal priorities favour VDP1.
+    float code=floor(tex2D(spriteLayer,fragCoord.xy*priorityGeometry.xy).a*255+0.5f);
+    float priority=floor(tex2D(spriteDecisions,float2((code+0.5f)/256,0.5f)).a*255+0.5f);
+    if(priority>=priorityGeometry.z)discard;
+#endif
+#if !LAGI_VDP2_UI_PRIORITY || LAGI_UI_DITHER
 #if LAGI_DITHER_LOOKUP
     // REPEAT + POINT chooses floor(WPOS.xy) modulo two. FP16 stores the
     // exact quarter-texel offsets already biased by -0.5.
@@ -34,6 +47,9 @@ float4 main(float2 uv : TEXCOORD0, float4 fragCoord : WPOS,
         saturate(uv) + offset * textureSize.zw,
         halfTexel, 1.0f - halfTexel);
     float4 color = tex2D(tex, sampleUv);
+#else
+    float4 color = tex2D(tex,uv);
+#endif
     if (color.a < 0.5f) discard;
     return color;
 }
