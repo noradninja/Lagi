@@ -38,6 +38,33 @@ dispatch before its required resources/callbacks are serviced.
 
 ## Implementation and acceptance sequence
 
+### Tutorial 2 live-link dependency audit (2026-10-25)
+
+FLD_A7 sources compile in the battle build (722b693), but unused-function
+garbage collection is not a live dependency proof. Temporarily restoring the
+original mainMenuDebugTasks FLD_A7 dispatch exposes unresolved native services:
+fieldSpline_alloc/finalize/eval, init/updateFieldModelRenderContext,
+displayRaySegmentFromWorldSpace, beamSpark_spawn, spawnAnimRingSubTask and
+drawHorizon. The dispatch remains disabled; the experimental link change was
+removed after identifying these boundaries. Do not add empty link stubs or
+claim Tutorial 2 playable from compilation alone.
+
+Shared upstream sources exist for these services, but fieldBeamSpark's draw
+and both fieldAnimRingSubTask draw modes are unfinished. rayDisplay's desktop
+world helper includes a color-line fallback and must be connected to the
+existing native packet/depth service, not its desktop renderer. Model context
+registration needs its actual LCS/callback contract audited before exposure.
+The title route's field22/sub0 startup omits some story-specific tasks but
+retains a full field object graph; do not strip it down to a topic-only mock.
+
+Production-source host fixtures now cover get/handleMultiChoiceResult_A7
+for all five topics and Quit, choice-4 refresh, seen/sound call order and the
+field4 story-bit/release versus field22 fade/exit distinction. The complete
+production a7_dialogChoiceTask source is exercised for all opcodes, pointer
+alignment, all five topic spawns, confirmation, parent pause/resume, cleanup,
+text-context restoration, eight archetype table reloads and failed allocation.
+These fixtures mock services; no hardware lifecycle acceptance is claimed.
+
 ### Title route and selector lifecycle coverage
 
 A3's original overlayStart default branch is confirmed at native
