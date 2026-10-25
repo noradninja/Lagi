@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 #include <vector>
 #include <memory>
 #include "lagi/lagi_additive_light.h"
+#include "lagi/lagi_transient_laser_lights.h"
 #include "lagi/native_color_animation.h"
 
 struct sProcessed3dModel;
@@ -46,6 +48,8 @@ struct SubmissionState {
     std::int16_t nativeModelLight[3]{};
     bool hasNativeModelLight = false;
     AdditionalModelLight additionalLight{};
+    std::array<AdditionalModelLight, lagi::kMaxTransientLaserLights> transientLaserLights{};
+    std::uint8_t transientLaserLightCount = 0;
     std::uint16_t lightColor[3]{};
     std::uint32_t lightFalloff[3]{};
 
@@ -116,6 +120,10 @@ void retire_native_model(sProcessed3dModel* model);
 // Called after native point setup/color/falloff, before its normal cleanup.
 // Frame-owned: begin_frame clears it, leaving menus/towns and later frames alone.
 void capture_field_environment_point_light();
+// Producer thread only: Azel owns shot position, color and lifetime.
+// The shared transient-light frame is cleared at begin_frame().
+void record_transient_field_laser_light(std::uint64_t source,
+    std::int32_t x,std::int32_t y,std::int32_t z,std::uint32_t packedColor);
 // Native setupLight inputs for the ordinary actor directional light. Preserve
 // its direction and packed RGB while the point selector is temporarily active.
 void capture_field_actor_base_light(std::int32_t x,std::int32_t y,
