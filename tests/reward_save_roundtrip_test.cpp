@@ -36,6 +36,17 @@ int main(){
  mainGameState.setItemCount(static_cast<eItems>(0x1d),17);
  mainGameState.setItemCount(static_cast<eItems>(0x4d),1);
  mainGameState.setItemCount(static_cast<eItems>(0x60),1);
+ // Disc1 COMMON20A650 field->item IDs, including the shared 06/07 and
+ // 0F/12 maps. Keep multiple acquired maps through native save and migration.
+ constexpr std::array<int,10> maps={0xB3,0xB4,0xB5,0xB6,0xB7,0xB8,0xBA,0xBB,0xBC,0xBD};
+ for(int item:maps)mainGameState.setItemCount(static_cast<eItems>(item),1);
+ for(unsigned flag=0x95A;flag<0x10D8;++flag)
+  if((flag-0x95A)%5==0 || flag==0x10D7)mainGameState.setBit566(flag);
+ const auto checkMaps=[&]{
+  for(int item:maps)assert(mainGameState.getItemCount(static_cast<eItems>(item))==1);
+  for(unsigned flag=0x95A;flag<0x10D8;++flag)
+   assert(mainGameState.getBit566(flag)==((flag-0x95A)%5==0 || flag==0x10D7));
+ };
  auto& s=mainGameState.gameStats;s.m0_level=7;s.m20_XP=12345;s.m38_dyne=8765;
  for(unsigned i=1;i<5;++i){s.m24_growth[i]=i*7;s.m80_growthXP[i]=i*111;s.m4_growthLevels[i]=i+2;}
  battleResults[8]=255;battleResults[9]=4;
@@ -43,6 +54,7 @@ int main(){
  assert(saveData(0,&slot)==0);
  mainGameState={};battleResults.fill(0);graphicEngineStatus={};
  assert(readSave(0,slot)==0);
+ checkMaps();
  assert(mainGameState.getItemCount(static_cast<eItems>(0x1d))==17);
  assert(mainGameState.getItemCount(static_cast<eItems>(0x4d))==1);
  assert(mainGameState.getItemCount(static_cast<eItems>(0x60))==1);
@@ -53,6 +65,7 @@ int main(){
  // Corrupt data must not replace live progression or ownership.
  std::fseek(disk,100,SEEK_SET);std::fputc(255,disk);std::fflush(disk);
  assert(readSave(0,slot)!=0&&s.m20_XP==12345&&mainGameState.getItemCount(static_cast<eItems>(0x4d))==1);
+ checkMaps();
  std::fclose(disk);
  // Model an older save by removing only the appended 48-byte extension.
  disk=std::tmpfile();assert(disk);assert(saveData(0,&slot)==0);
@@ -67,11 +80,12 @@ int main(){
  assert(std::fwrite(legacy.data(),1,legacy.size(),disk)==legacy.size());std::fflush(disk);
  mainGameState={};battleResults.fill(0);graphicEngineStatus={};
  assert(readSave(0,slot)==0&&s.m20_XP==12345);
+ checkMaps();
  assert(mainGameState.getItemCount(static_cast<eItems>(0x1d))==17);
  assert(mainGameState.getItemCount(static_cast<eItems>(0x4d))==1);
  assert(mainGameState.getItemCount(static_cast<eItems>(0x60))==1);
  for(unsigned i=0;i<5;++i)assert(!s.m24_growth[i]&&!s.m80_growthXP[i]&&!s.m4_growthLevels[i]);
  assert(battleResults[8]==255&&battleResults[9]==4&&graphicEngineStatus.m4514.mD8_buttonConfig[2][15]==0x1234);
  std::fclose(disk);
- puts("PASS generated save/read disk roundtrip: consumables, Berserk flags, XP, growth, enemy records, controls and corrupt-file rejection; host I/O shim, not Vita validation");
+ puts("PASS generated save/read disk roundtrip: multiple field maps, complete sparse exploration range, legacy migration, consumables, Berserk flags, XP, growth, enemy records, controls and corrupt-file rejection; host I/O shim, not Vita validation");
 }

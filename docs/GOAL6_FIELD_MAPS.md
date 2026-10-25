@@ -111,6 +111,24 @@ that same member (line79). The callback writes its existing bitField through
 setBit566, so no additional map sidecar or save-layout change is needed.
 This is source evidence of inclusion, not on-device round-trip acceptance.
 
+### Current-tree regression and save round trip
+
+The context, view-task, transition, pickup-lifecycle, exploration, parent
+source/dispatch, parent-task and resource-owner fixtures all pass together.
+The generated production save/read fixture now includes all ten distinct
+Disc1 COMMON20A650 map-item IDs (B3..B8, BA..BD) and a sparse pattern across
+the entire [095A,10D8) exploration range. Ownership and both marked/unmarked
+cells survive the temporary-file save/read round trip and legacy growth
+migration; corrupt-file rejection preserves the existing live state.
+The file transport is a host shim, not the Vita filesystem. No save-format
+change was made and no device persistence or visual acceptance is claimed.
+
+Next device acceptance on d93b9e1 or later: open/close the first map, acquire
+another map, open/close and reopen the map page, verify newly travelled cells
+are blue, save and reload, then verify ownership and blue markings remain.
+Check input/cancel behavior and rendering/performance along the same route.
+Do not test unfinished world travel as though it were part of this fix.
+
 Trace map pickup state, parent/backend coupling and resource lifetimes;
 reproduce the second-map path with fresh diagnostics; implement narrow
 source-faithful corrections and tests; build Vita; obtain pickup/menu/save
