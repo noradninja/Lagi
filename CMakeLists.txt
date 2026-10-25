@@ -2359,6 +2359,15 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_tex
    message(FATAL_ERROR "Native LCS beam-head light update boundary changed")
   endif()
   string(REPLACE "${field_laser_update_anchor}" [=[    pThis->m144 = var4 - r5;
+    static unsigned lagiFieldLaserSourceReports = 0;
+    if (lagiFieldLaserSourceReports < 28) {
+        lagi::platform::logging::writef(
+            "[FieldLaserSource] index=%u head=%08X,%08X,%08X id=%u\\n",
+            unsigned(pThis->m27),
+            unsigned(var4[0].asS32()), unsigned(var4[1].asS32()),
+            unsigned(var4[2].asS32()), unsigned(pThis->m154));
+        ++lagiFieldLaserSourceReports;
+    }
     if (pThis->m27 < 7) {
         // Azel owns m6C, m154 and m27; light colors match the item LCS
         // palette already used by the accepted native collection effect.
