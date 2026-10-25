@@ -1,0 +1,7 @@
+#include "lagi/lagi_azel_upstream_prelude.h"
+#include "lagi/native_battle_models.h"
+#include "battle/battleTargetable.h"
+#include "kernel/graphicalObject.h"
+#include "kernel/animation.h"
+#include "kernel/fileBundle.h"
+#include "lagi_battle_models.inc"

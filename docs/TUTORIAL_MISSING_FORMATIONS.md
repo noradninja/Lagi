@@ -40,6 +40,51 @@ reward counters, and delayed group dead-count increment. These must be restored
 before enabling the formation. Raw native work-area offsets cannot be applied
 to C++ task pointers: task headers, pointers and vectors have different layout.
 
+## Shared model/target lifecycle recovered
+
+`native_battle_models.h` and `lagi_battle_models.inc` now provide typed model
+creation, target initialization and retirement, compiled in the battle build.
+They are opt-in services for the missing actors, not replacements for already
+accepted Baldor/Urchin paths. No missing formation is dispatched yet.
+
+- 0609ED96 reads eight-byte model descriptors, creates each model with the
+  authored static pose/hotpoint bundle and steps animation once. Creation
+  failure finishes the owner and stops before later models.
+- 0609EE42 initializes only named target state: accumulator zero, four
+  caller-supplied **overlay-specific** callback EAs, four hitbox values of 10,
+  auxiliary count zero and auxiliary data null. The callback EAs are data,
+  never native addresses invoked as host function pointers. T0 uses F440,
+  F444, F468, F48C under base 06090000, not A5's hard-coded addresses.
+- 0609EE7C/EFB0 count targets from `m40` authored bone definitions. Each
+  target uses the entry's `m0` flags and `m10` radius. Transformed
+  `m44_hotpointData` consists of three-component positions; its element 3 is
+  not a radius. The old shared reconstruction indexed that nonexistent
+  component and used a position component as flags.
+- Native target initialization passes the actor's entity index as argument 6
+  (target `m5F`), plus owner and task-owned target-position storage. The old
+  shared reconstruction discarded that index. A model without hotpoint data
+  has zero targets, bone count preserved and null target arrays.
+- 0609F4B0 sets actor flag 80000000, clears 40000000, invokes an optional
+  callback **before** testing flag 10000000, and retires model targets only
+  on the first ungated call. The callback still runs on repeat calls and may
+  affect the gate. Arrays remain in the owner task heap for native deferred
+  shot/target cleanup; retirement does not free referenced storage.
+
+Malformed host-vector metadata is rejected before any target is registered,
+including when a later model is malformed. The actor is marked finished
+rather than exposing partial target registration. Authored valid metadata
+follows the original ordering. This adds no renderer, GXM pass or per-frame
+model allocation; all allocations belong to setup and task cleanup.
+
+`tests/native_battle_models_test.ps1` compiles the exact production include.
+It checks first/middle/last model failure, authored descriptor EAs, one initial
+animation step, 8192 target metadata/identity/retirement combinations, malformed
+metadata and a deliberately padded task header. Engine/allocator/model services
+are mocked. The Vita VELF/SELF/VPK build and retained-root ELF audit pass with
+all three services forced into the link; this proves compile/link closure,
+not model rendering, frame time or on-device lesson execution. Next restore
+the actor's damage/animation/draw path and its original formation controller.
+
 ## Shared formation spring recovered
 
 `include/lagi/native_formation_motion.h` recovers one axis of native

@@ -5274,6 +5274,10 @@ endif()
 # alignment can leave too little space before data for some DSP corpus sizes.
 target_link_options(lagi PRIVATE "-Wl,-T,${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
 if(LAGI_BATTLE_LINK_AUDIT)
+ target_link_options(lagi PRIVATE
+  "-Wl,--undefined=_Z27lagiCreateBattleEnemyModelsP14s_workAreaCopyP12s_fileBundleRhRSt6vectorI9s_3dModelSaIS5_EE10sSaturnPtrh"
+  "-Wl,--undefined=_Z31lagiInitBattleEnemyModelTargetsP14s_workAreaCopyjRSt6vectorI9s_3dModelSaIS2_EER26LagiBattleModelTargetStateRKSt5arrayIjLj4EE"
+  "-Wl,--undefined=_Z33lagiRetireBattleEnemyModelTargetsP14s_workAreaCopyRjRSt6vectorI9s_3dModelSaIS3_EEPFvS0_E")
  target_link_options(lagi PRIVATE "-Wl,--undefined=_Z19overlayStart_BTL_A3P10s_workArea")
  target_link_options(lagi PRIVATE "-Wl,--undefined=_Z19overlayStart_BTL_T0P10s_workArea")
  target_link_options(lagi PRIVATE "-Wl,--undefined=_Z31displayRaySegmentFromWorldSpaceP8sVec3_FPitttt")
@@ -5289,7 +5293,7 @@ target_include_directories(lagi PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DI
 target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceProcessmgr_stub SceSysmem_stub SceSysmodule_stub)
 if(LAGI_BATTLE_NATIVE_BUILD)
  target_sources(lagi PRIVATE src/integration/lagi_battle_projectile_vita.cpp)
- target_sources(lagi PRIVATE src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_world_ray_vita.cpp src/integration/lagi_world_polygon_vita.cpp src/integration/lagi_battle_graphics_vita.cpp src/integration/lagi_resident_video_vita.cpp src/integration/lagi_allocator_tables_vita.cpp src/integration/lagi_battle_damage_digits_vita.cpp)
+ target_sources(lagi PRIVATE src/integration/lagi_battle_models_vita.cpp src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_world_ray_vita.cpp src/integration/lagi_world_polygon_vita.cpp src/integration/lagi_battle_graphics_vita.cpp src/integration/lagi_resident_video_vita.cpp src/integration/lagi_allocator_tables_vita.cpp src/integration/lagi_battle_damage_digits_vita.cpp)
  set_property(SOURCE src/integration/lagi_task_vita.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_NATIVE_TASK_HEAP_CLEANUP=1)
  set_property(SOURCE src/integration/lagi_disc_file_vita.cpp src/integration/lagi_map_resources_vita.cpp src/integration/lagi_azel_books_menu.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_TRACK_RESIDENT_VIDEO=1)
 endif()
