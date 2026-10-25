@@ -12,10 +12,6 @@ float4 main(
 #endif
     uniform float4 textureSize)
 {
-#if LAGI_NATIVE_MESH
-    if (frac((floor(fragCoord.x)+floor(fragCoord.y))*0.5f)>=0.5f)
-        discard;
-#endif
 #if LAGI_DITHER_LOOKUP
     float2 offset = tex2D(ditherOffsets, fragCoord.xy * 0.5f).rg;
 #else
@@ -42,5 +38,13 @@ float4 main(
 
     float3 base5 = floor(color.rgb * 31.0f + 0.5f);
     float3 result5 = clamp(base5 + correction5, 0.0f, 31.0f);
+    // Texture selection, transparency and Gouraud correction precede the
+    // destination-pixel mesh mask. Mesh is a final screen-space coverage test,
+    // never part of the stochastic sample coordinates or alpha calculation.
+#if LAGI_NATIVE_MESH
+    float parity = frac((floor(fragCoord.x) + floor(fragCoord.y)) * 0.5f);
+    if (parity >= 0.5f)
+        discard;
+#endif
     return float4(result5 / 31.0f, color.a);
 }

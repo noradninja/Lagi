@@ -1032,6 +1032,15 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   string(REPLACE "pDragon->m_EC = rotation;"
    "// LAGI_SPARKLE_FLAGS_PRESERVED: orbit angle is not dragon lighting flags."
    source_text "${source_text}")
+  set(sparkle_light_cleanup "getFieldTaskPtr()->m8_pSubFieldData->m338_pDragonTask->m_EB_useSpecialColor = 0;")
+  string(FIND "${source_text}" "${sparkle_light_cleanup}" sparkle_cleanup_found)
+  if(sparkle_cleanup_found LESS 0)
+   message(FATAL_ERROR "Collection sparkle light cleanup anchor changed")
+  endif()
+  string(REPLACE "${sparkle_light_cleanup}"
+   "${sparkle_light_cleanup}
+    getFieldTaskPtr()->m8_pSubFieldData->m338_pDragonTask->mE4_sparkleScale = 0; // LAGI_TRAIL_LIGHT_CLEANUP"
+   source_text "${source_text}")
   set(collection_offset_old "pThis->m2C_localOffset[2] = 0;")
   set(collection_offset_new "pThis->m2C_localOffset[2] = pThis->m34_randomizedLifetime; // LAGI_NATIVE_COLLECTION_RADIUS: 0607BAE4")
   set(collection_draw_old [=[        // TODO: FUN_0602f610 — draw billboard sprite at cameraSpacePos with scaledOpacity
@@ -2158,6 +2167,18 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    message(FATAL_ERROR "Native point position transform anchor changed")
   endif()
   string(REPLACE "${point_position_old}" "${point_position_new}" source_text "${source_text}")
+  # Collection trail and sparkle already publish camera-space coordinates into
+  # the native dragon work area. Keep the original transform as the fallback.
+  set(animated_point_anchor "transformAndAddVecByCurrentMatrix(&varC, &lightLocation); // LAGI_NATIVE_POINT_POSITION")
+  string(FIND "${source_text}" "${animated_point_anchor}" animated_point_found)
+  if(animated_point_found LESS 0)
+   message(FATAL_ERROR "Animated collection light position anchor changed")
+  endif()
+  string(REPLACE "${animated_point_anchor}"
+   "${animated_point_anchor}
+            if (pTypedWorkArea->mE4_sparkleScale.m_value == 0x10000)
+                lightLocation = pTypedWorkArea->mD8_sparklePosition; // LAGI_COLLECTION_ANIMATED_LIGHT"
+   source_text "${source_text}")
   # Original FLD_A3 06074026 loads R7=00014000 before calling
   # point-light setup at 0601E200. The reconstruction omitted R7.
   set(lagi_point_setup_original "dragonFieldTaskDrawSub1Sub1(lightLocation[0], lightLocation[1], lightLocation[2]);")
@@ -2200,6 +2221,72 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
   set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  # Follow the existing Azel trail sprite and final sparkle with the native
+  # A11D special light; no new path, light color or attenuation calculation.
+  set(trail_light_declaration [=[void s_LCSLaser::InitTrail(s_LCSLaser* pThis, sLaserArgs* arg)]=])
+  string(FIND "${source_text}" "${trail_light_declaration}" trail_light_found)
+  if(trail_light_found LESS 0)
+   message(FATAL_ERROR "Collection trail light initialization anchor changed")
+  endif()
+  string(REPLACE "${trail_light_declaration}"
+   "static void lagiStartCollectionTrailLight(s32 colorIndex); // LAGI_TRAIL_LIGHT_FORWARD
+${trail_light_declaration}"
+   source_text "${source_text}")
+  # Both the traveling sprite and the native sparkle use camera-space
+  # coordinates. Reuse the already-updated dragon sparkle-position payload.
+  set(trail_light_init_anchor [=[    pThis->m154++;
+    particleInitSub(&pThis->m58, (pThis->m0.m4_characterArea - (0x25C00000)) >> 3, &gFLD_A3->m_0x06095330_animatedQuad);]=])
+  string(FIND "${source_text}" "${trail_light_init_anchor}" trail_init_found)
+  if(trail_init_found LESS 0)
+   message(FATAL_ERROR "Collection trail light initial position anchor changed")
+  endif()
+  string(REPLACE "${trail_light_init_anchor}"
+   "${trail_light_init_anchor}
+    if (pThis->m24_receivedItemId >= 0) {
+        auto* dragon = getFieldTaskPtr()->m8_pSubFieldData->m338_pDragonTask;
+        dragon->mD8_sparklePosition = pThis->m6C[0];
+        dragon->mE4_sparkleScale = 0x10000;
+        lagiStartCollectionTrailLight(pThis->m27); // LAGI_TRAIL_LIGHT_START
+    }"
+   source_text "${source_text}")
+  set(trail_light_update_anchor [=[        pThis->m2C_laserUpdate(pThis);
+        pThis->m158--;
+    }
+}
+
+static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=])
+  string(FIND "${source_text}" "${trail_light_update_anchor}" trail_update_found)
+  if(trail_update_found LESS 0)
+   message(FATAL_ERROR "Collection trail light update boundary changed")
+  endif()
+  string(REPLACE "${trail_light_update_anchor}" [=[        pThis->m2C_laserUpdate(pThis);
+        if (pThis->m24_receivedItemId >= 0) {
+            // Same indexed sprite position as LaserTrailDraw, not a
+            // separately integrated or guessed travel path.
+            const s32 index = pThis->m154 < 0x11
+                ? pThis->m154 : ((pThis->m154 - 1) & 0xF);
+            auto* dragon = getFieldTaskPtr()->m8_pSubFieldData->m338_pDragonTask;
+            dragon->mD8_sparklePosition = pThis->m6C[index & 0xF]; // LAGI_TRAIL_LIGHT_FOLLOW
+        }
+        pThis->m158--;
+    }
+}
+
+static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_text "${source_text}")
+  set(trail_light_palette_anchor "void s_LCSLaser_DeleteTrailSub0(s32 r4)")
+  string(FIND "${source_text}" "${trail_light_palette_anchor}" trail_palette_found)
+  if(trail_palette_found LESS 0)
+   message(FATAL_ERROR "Collection trail light color palette anchor changed")
+  endif()
+  string(REPLACE "${trail_light_palette_anchor}" [=[static void lagiStartCollectionTrailLight(s32 colorIndex)
+{
+    if (colorIndex < 0 || colorIndex >= 7) return;
+    auto* dragon = getFieldTaskPtr()->m8_pSubFieldData->m338_pDragonTask;
+    dragon->m_E8_specialColor = s_LCSLaser_DeleteTrailSub0Data0[colorIndex];
+    dragon->m_EB_useSpecialColor = 1;
+}
+void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
+   source_text "${source_text}")
   set(script_fade_trace "void scriptFunction_6067E68_fadeOut(s32 arg0)\n{")
   string(FIND "${source_text}" "${script_fade_trace}" script_fade_found)
   if(script_fade_found LESS 0)

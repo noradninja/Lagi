@@ -31,6 +31,16 @@ try {
  if (!$dragon.Contains('transformAndAddVecByCurrentMatrix(&varC, &lightLocation); // LAGI_NATIVE_POINT_POSITION') -or
      !$dragon.Contains('transformVecByCurrentMatrix(varC, lightLocation);')) {throw 'Point position translation or directional vector transform missing'}
  if ($lcs.Contains('pDragon->m_EC = rotation;') -or !$lcs.Contains('LAGI_SPARKLE_FLAGS_PRESERVED')) {throw 'Sparkle orbit corrupts dragon lighting flags'}
+ if (!$dragon.Contains('lightLocation = pTypedWorkArea->mD8_sparklePosition; // LAGI_COLLECTION_ANIMATED_LIGHT') -or
+     !$dragon.Contains('mE4_sparkleScale.m_value == 0x10000')) {throw 'Animated collection light does not reach native A11D draw'}
+ foreach($token in @('LAGI_TRAIL_LIGHT_START','LAGI_TRAIL_LIGHT_FOLLOW','lagiStartCollectionTrailLight(s32 colorIndex)',
+                    's_LCSLaser_DeleteTrailSub0Data0[colorIndex]','pThis->m154 < 0x11',
+                    'pThis->m24_receivedItemId >= 0')) {
+  if (!$dispatcher.Contains($token)) {throw "Collection light missing native trail ownership: $token"}
+ }
+ if (!$lcs.Contains('LAGI_TRAIL_LIGHT_CLEANUP') -or
+     !$lcs.Contains('mD8_sparklePosition') -or
+     !$lcs.Contains('mE4_sparkleScale = 0;')) {throw 'Collection light sparkle handoff/cleanup missing'}
  if (!$lcs.Contains('lagiDrawFieldRadarObjectMarkers(r4);')) {throw 'Object-marker traversal hook missing'}
  if (!$lcs.Contains('pThis->m2C_localOffset[2] = pThis->m34_randomizedLifetime;') -or
      !$lcs.Contains('displayRaySegment_2Width(radial, widths, base + 0x6B0, 0x031E, base + 0x1780, &colors, 8);')) {throw 'Native radial collection burst hooks missing'}
