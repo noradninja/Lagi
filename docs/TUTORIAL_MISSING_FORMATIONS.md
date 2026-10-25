@@ -23,7 +23,7 @@ dummy persistent task to hide their missing formations.
 Sub-battle 2's initializer allocates NPC/file slot 0x14, sets the enemy turn
 timer's m2 to 120, invokes 06067B28 with zero, and displays formation name 6,
 mode 0, argument 9. Its entity group has two entries, zero dead count,
-position block at native formation +0x2C and data table 060ACCC8. Each entity
+position block at native formation +0x2C and data table 060AACC8. Each entity
 is created through 060587F0; null creation increments the group's dead count.
 The constructor sets state zero and callback +0xD8 to the empty 060586DC.
 
@@ -133,6 +133,46 @@ Still required: bind the original per-enemy hit callbacks and model movement,
 animation/draw updates, create the original formations and enable their exact
 dispatch callbacks. The last three lessons still immediately complete until
 that integration is finished. No new playable-lesson acceptance is claimed.
+
+## Shared motion variants and model draw recovered
+
+The model task descriptor at 060AAD98 is `{0, 06058996, 0609F5B4, 0}`:
+the missing enemy uses shared draw service 0609F5B4. The new
+`lagiDrawBattleEnemyModels` calls the existing native services in exact order:
+conditional lighting if actor flag 800000, then for each model matrix push,
+translation by actor position, Y-X-Z rotation, the model's actual draw callback,
+and matrix pop. It rereads the live flag after model callbacks and, if set,
+clears it and calls the existing `clearLightColor`. It does not unconditionally
+restore lighting from a saved pre-draw flag or skip models based on death flags.
+It adds no geometry, textures, allocation or GXM pass.
+
+`native_formation_motion.h` additionally recovers:
+
+- 0609DDB4 positional interpolation: wrapped 32-bit difference times fixed-point
+  rate, stored as velocity, then integrated into current/world position. This
+  variant does **not** sign-extend a 28-bit difference and does **not** clear
+  accumulated acceleration.
+- 0609E01E angular spring: the signed-28-bit spring recurrence, current angle
+  masked to 0FFFFFFF after integration, then parent rotation added to produce
+  world rotation. Velocity is not masked; acceleration is cleared.
+
+The formation initializer's literal at 06058728 is 060AACC8, not 060ACCC8;
+the earlier note was a transcription error and has been corrected above.
+Read the actual table/descriptor before binding a new actor.
+
+Host checks exercise 10752 production draw-service call-order cases, including
+zero models, signed light values and callbacks mutating the live lighting flag.
+Matrix/renderer calls are mocked, so this is not a pixel/render test. Motion
+checks cover 897775 positional spring, 859375 angular spring and 50625 ordinary
+interpolation cases against scalar instruction recurrences, plus Vita syntax.
+Existing model/target/damage tests still pass. The draw service is a forced
+link-audit root in the full Vita build, resolving the existing matrix and
+lighting implementations. Hardware performance is not established.
+
+Remaining first missing actor work includes actual construction/state update,
+animation selection/step, original hit callback bindings and death effect,
+formation lifecycle and dispatch. Shared services existing does not make that
+actor or its lesson playable yet.
 
 ## Shared formation spring recovered
 

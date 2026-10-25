@@ -6,3 +6,6 @@
 #include "kernel/fileBundle.h"
 #include "lagi_battle_models.inc"
 #include "lagi_battle_model_damage.inc"
+void setupConditionalLightColor(int);
+void clearLightColor();
+#include "lagi_battle_model_draw.inc"

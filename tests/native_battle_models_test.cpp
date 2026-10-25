@@ -14,6 +14,7 @@ struct s_hotpoinEntry {int32_t m0;sVec3_FP m4;int32_t m10;};
 struct s_hotpointDefinition {std::vector<s_hotpoinEntry> m0;uint32_t m4_count=0;};
 struct sHotpointBundle {sSaturnPtr address;explicit sHotpointBundle(sSaturnPtr p):address(p){}};
 struct s_3dModel {
+ void (*m18_drawFunction)(s_3dModel*)=nullptr;
  uint16_t m12_numBones=0,m50_targetBoneCount=0,m52_targetableCount=0;
  std::vector<s_hotpointDefinition>* m40=nullptr;
  std::vector<std::vector<sVec3_FP>> m44_hotpointData;

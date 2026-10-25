@@ -59,3 +59,6 @@ struct LagiBattleModelDamageHooks {
 };
 bool lagiUpdateBattleEnemyModelDamage(LagiBattleModelDamageView actor,
     const LagiBattleModelDamageHooks& hooks);
+void lagiDrawBattleEnemyModels(std::uint32_t& flags, std::int16_t lightColor,
+    const sVec3_FP& position, const sVec3_FP& rotation,
+    std::vector<s_3dModel>& models);
