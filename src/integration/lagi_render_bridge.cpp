@@ -421,6 +421,27 @@ static void capture_native_point_light(SubmissionState& state)
     std::int32_t nativeMatrix[12];
     copyMatrixRaw(*pCurrentMatrix, nativeMatrix);
     const auto light = lagi::native_point_light(nativeMatrix, pointLightParams);
+    // Sampling is limited to the first 48 point-lit model submissions
+    // selected every 13th eligible submission; preserve the native evaluator.
+    static unsigned pointFalloffEligible = 0;
+    static unsigned pointFalloffReports = 0;
+    if (pointFalloffReports < 48u && (pointFalloffEligible++ % 13u) == 0u) {
+        lagi::platform::logging::writef(
+            "[PointFalloffTrace] sample=%u environment=%u distance=%08X divisor=%08X "
+            "zone=%s outside=%u overflow=%u source=%08X,%08X,%08X "
+            "modelOrigin=%08X,%08X,%08X radius2=%08X maxDistance2=%08X "
+            "vector=%d,%d,%d\\n",
+            pointFalloffReports, unsigned(state.fieldEnvironment),
+            light.distance, light.divisor,
+            light.distance < std::uint32_t(pointLightParams[4]) ? "near" : "outer",
+            unsigned(light.outside), unsigned(light.divisionOverflow),
+            unsigned(pointLightParams[0]), unsigned(pointLightParams[1]),
+            unsigned(pointLightParams[2]),
+            unsigned(nativeMatrix[3]), unsigned(nativeMatrix[7]), unsigned(nativeMatrix[11]),
+            unsigned(pointLightParams[4]), unsigned(pointLightParams[3]),
+            int(light.vector[0]), int(light.vector[1]), int(light.vector[2]));
+        ++pointFalloffReports;
+    }
     const auto* pointColor=&currentLightVector_M ? currentLightVector_M.color : state.lightColor;
     if(g_fieldActorBaseLight.active && !state.fieldEnvironment) {
         state.additionalLight={};
