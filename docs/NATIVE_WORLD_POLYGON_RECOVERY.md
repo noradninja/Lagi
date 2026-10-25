@@ -34,5 +34,6 @@ native scalar projection arithmetic, exact polygon packet fields, sort-key
 overflow/default depth, input ownership, current-transform use, world-depth
 metadata and command/packet capacity guards. Its transform service is mocked;
 this is not a device geometry or performance claim. The full Vita VPK builds
-and the ELF retains the service. Solid-polygon mesh-bit handling and both
-native spark draw callbacks still need completion before device testing.
+and the ELF retains the service. `NATIVE_SOLID_MESH_MATERIAL.md` records the
+subsequent shared GXM material correction. Both native spark draw callbacks
+still need completion before device testing.

@@ -40,4 +40,7 @@ and frame-time acceptance. Other A7 services and spline bounds remain open.
 `NATIVE_WORLD_POLYGON_RECOVERY.md` now records the restored shared clipping,
 projection and untextured packet service. Its production-wrapper fixture,
 near-plane quad coverage, existing ray regressions and Vita link/package pass.
-The GXM solid mesh material and actual spark draw callbacks remain open.
+`NATIVE_SOLID_MESH_MATERIAL.md` records shared GXM command4/6 mesh and
+mesh+half material support, exhaustive production-selector/coverage tests and
+shader resource checks. Actual spark draw callbacks remain open; no visible
+ring or Tutorial2 execution is claimed yet.

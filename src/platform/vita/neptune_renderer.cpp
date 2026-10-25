@@ -74,6 +74,7 @@ namespace lagi::platform::renderer {
 extern "C" {
 extern const unsigned char _binary_lagi_color_v_gxp_start[];
 extern const unsigned char _binary_lagi_color_f_gxp_start[];
+extern const unsigned char _binary_lagi_color_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
 extern const unsigned char _binary_lagi_stochastic_f_gxp_start[];
@@ -213,6 +214,9 @@ static bool g_probeVertexRegistered = false;
 static bool g_probeFragmentRegistered = false;
 static SceGxmVertexProgram* g_probeVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_probeFragmentProgram = nullptr;
+static SceGxmShaderPatcherId g_solidMeshFragmentProgramId{};
+static bool g_solidMeshFragmentRegistered=false;
+static SceGxmFragmentProgram* g_solidMeshFragmentProgram=nullptr;
 static SceGxmFragmentProgram* g_fadeFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_colorOffsetAddFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_colorOffsetSubtractFragmentProgram = nullptr;
@@ -253,8 +257,9 @@ static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_stochasticFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_stochasticGouraudFragmentProgram = nullptr;
 enum NativeBlendProgram { BlendTexture, BlendStochastic, BlendSubdiv,
-    BlendStochasticGouraud, BlendMesh, BlendMeshSubdiv, BlendLitHalf, BlendSolid, BlendCount };
+    BlendStochasticGouraud, BlendMesh, BlendMeshSubdiv, BlendLitHalf, BlendSolid, BlendSolidMesh, BlendCount };
 static SceGxmFragmentProgram* g_nativeBlendPrograms[BlendCount]{};
+#include "neptune_solid_material.inc"
 static const SceGxmProgramParameter* g_stochasticTextureSizeParam = nullptr;
 static const SceGxmProgramParameter* g_stochasticGouraudTextureSizeParam = nullptr;
 // Subdiv opaque/blended, then stochastic opaque/blended. Only mesh sprites
@@ -3038,6 +3043,14 @@ void shutdown()
                 g_probeShaderPatcher, g_probeFragmentProgram);
             g_probeFragmentProgram = nullptr;
         }
+        if(g_solidMeshFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_solidMeshFragmentProgram);
+            g_solidMeshFragmentProgram=nullptr;
+        }
+        if(g_solidMeshFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_solidMeshFragmentProgramId);
+            g_solidMeshFragmentRegistered=false;
+        }
         if (g_probeVertexProgram) {
             sceGxmShaderPatcherReleaseVertexProgram(
                 g_probeShaderPatcher, g_probeVertexProgram);
@@ -5201,9 +5214,7 @@ static void drawPublishedVdp1Ui(
                     expand(c & 31u), expand((c >> 5) & 31u), expand((c >> 10) & 31u),
                     static_cast<std::uint8_t>(lagi::vdp1_half_transparent(command.cmdPmod) ? 128u : 255u)};
             sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
-            sceGxmSetFragmentProgram(g_probeContext, lagi::vdp1_half_transparent(command.cmdPmod)
-                ? (LAGI_VDP2_SPRITE_COMPOSITE ? g_nativeBlendPrograms[BlendSolid] : g_fadeFragmentProgram)
-                : g_probeFragmentProgram);
+            sceGxmSetFragmentProgram(g_probeContext,nativeSolidFragmentProgram(command.cmdPmod));
             const auto solidPolygonMode = commandType == 6u
                 ? SCE_GXM_POLYGON_MODE_LINE : SCE_GXM_POLYGON_MODE_TRIANGLE_FILL;
             sceGxmSetFrontPolygonMode(g_probeContext, solidPolygonMode);
@@ -9933,6 +9944,18 @@ void show_game_presentation()
 
     status("[PASS] GXM CREATE FRAGMENT PROGRAM", 0xFF80E0FFu);
 
+    const auto* solidMeshGxp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_color_mesh_f_gxp_start);
+    if(sceGxmProgramCheck(solidMeshGxp)<0 || sceGxmShaderPatcherRegisterProgram(
+        g_probeShaderPatcher,solidMeshGxp,&g_solidMeshFragmentProgramId)<0) {
+        failure("[FAIL] SOLID MESH REGISTER");return;
+    }
+    g_solidMeshFragmentRegistered=true;
+    if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_solidMeshFragmentProgramId,
+        SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,kMultisampleMode,nullptr,vertexProgram,
+        &g_solidMeshFragmentProgram)<0) {
+        failure("[FAIL] SOLID MESH PROGRAM");return;
+    }
+
     SceGxmBlendInfo fadeBlend{};
     fadeBlend.colorFunc = SCE_GXM_BLEND_FUNC_ADD;
     fadeBlend.alphaFunc = SCE_GXM_BLEND_FUNC_ADD;
@@ -10948,6 +10971,7 @@ void show_game_presentation()
         !createNativeBlend(BlendMesh,g_meshFragmentProgramId,textureVertexGxp,kMultisampleMode) ||
         !createNativeBlend(BlendMeshSubdiv,g_meshFragmentProgramId,gouraudSubdivVertexGxp,kMultisampleMode) ||
         !createNativeBlend(BlendLitHalf,g_texturedLitHalfFragmentProgramId,gouraudPayloadVertexGxp,kMultisampleMode) ||
+        !createNativeBlend(BlendSolidMesh,g_solidMeshFragmentProgramId,vertexProgram,kMultisampleMode) ||
         (LAGI_VDP2_SPRITE_COMPOSITE && !createNativeBlend(BlendSolid,g_probeFragmentProgramId,vertexProgram,kMultisampleMode))) {
         failure("[FAIL] NATIVE VDP1 BLEND PROGRAMS"); return;
     }
