@@ -430,7 +430,7 @@ static void capture_native_point_light(SubmissionState& state)
             "[PointFalloffTrace] sample=%u environment=%u distance=%08X divisor=%08X "
             "zone=%s outside=%u overflow=%u source=%08X,%08X,%08X "
             "modelOrigin=%08X,%08X,%08X radius2=%08X maxDistance2=%08X "
-            "vector=%d,%d,%d\\n",
+            "vector=%d,%d,%d\n",
             pointFalloffReports, unsigned(state.fieldEnvironment),
             light.distance, light.divisor,
             light.distance < std::uint32_t(pointLightParams[4]) ? "near" : "outer",
