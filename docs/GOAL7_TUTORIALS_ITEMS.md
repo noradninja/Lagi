@@ -38,6 +38,22 @@ dispatch before its required resources/callbacks are serviced.
 
 ## Implementation and acceptance sequence
 
+### Tutorial environment drawing callback
+
+T0 06054260..060544A0 now emits its original tiled/rolled distorted sprite
+quads through native VDP1 packets. It reads grid+6C (camera-rotation target Z),
+uses fixed-point sine/cosine and per-multiply truncation, rotates about the
+computed horizon and retains the native inclusive right-edge tile condition.
+Texture, size, palette and PMOD come from the task's authored fields; shared
+native helper0602D9BC confirms CTRL1002, PMOD480|argument and the packed
+depth bucket. No extra GPU pass, replacement plane or invented blending.
+
+Production-include host tests verify all emitted coordinates and packet
+fields at four cardinal roll angles and three signed horizontal offsets,
+tile continuity/count, draw-enable equality and capacity/stride guards.
+Vita compiles the actual generated task. This is not rendered device proof;
+the lesson launch path is still disconnected pending startup/return audit.
+
 ### Tutorial environment projection update
 
 T0 06054156..06054216 restored through lagi_tutorial_water_update.inc.
