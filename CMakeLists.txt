@@ -2367,7 +2367,10 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_tex
             static_cast<u64>(reinterpret_cast<uintptr_t>(pThis)),
             beamHead[0].asS32(), beamHead[1].asS32(),
             beamHead[2].asS32(),
-            s_LCSLaser_DeleteTrailSub0Data0[pThis->m27].toU32()); // LAGI_FIELD_LASER_LIGHT
+            [&]() {
+                s_RGB8 nativeColor = s_LCSLaser_DeleteTrailSub0Data0[pThis->m27];
+                return nativeColor.toU32();
+            }()); // LAGI_FIELD_LASER_LIGHT
     }
 }]=] source_text "${source_text}")
   set(trail_light_palette_anchor "void s_LCSLaser_DeleteTrailSub0(s32 r4)")
