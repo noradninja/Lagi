@@ -501,7 +501,7 @@ void record_transient_field_laser_light(std::uint64_t source,
     static unsigned emitted=0;
     if (emitted<28u) {
         lagi::platform::logging::writef(
-            "[FieldLaserEmit] src=%08X accepted=%u count=%u pos=%08X,%08X,%08X rgb=%u,%u,%u\\n",
+            "[FieldLaserEmit] src=%08X accepted=%u count=%u pos=%08X,%08X,%08X rgb=%u,%u,%u\n",
             unsigned(source),unsigned(accepted),unsigned(g_fieldLaserLights.count),
             unsigned(x),unsigned(y),unsigned(z),
             unsigned(light.color[2]),unsigned(light.color[1]),unsigned(light.color[0]));
@@ -515,7 +515,7 @@ static void apply_transient_field_laser_lights(SubmissionState& state)
     if (!g_fieldLaserLights.count) return;
     if (state.billboard || !&pCurrentMatrix || !pCurrentMatrix || !g_nativeSceneViewValid) {
         if (rejectedFrames++<12u)
-            lagi::platform::logging::writef("[FieldLaserSkip] billboard=%u matrix=%u viewValid=%u candidates=%u\\n",
+            lagi::platform::logging::writef("[FieldLaserSkip] billboard=%u matrix=%u viewValid=%u candidates=%u\n",
                 unsigned(state.billboard),unsigned(&pCurrentMatrix && pCurrentMatrix),
                 unsigned(g_nativeSceneViewValid),unsigned(g_fieldLaserLights.count));
         return;
@@ -541,7 +541,7 @@ static void apply_transient_field_laser_lights(SubmissionState& state)
         static unsigned evaluations=0;
         if (evaluations++<28u)
             lagi::platform::logging::writef(
-                "[FieldLaserEval] source=%08X,%08X,%08X model=%08X,%08X,%08X distance=%08X outside=%u overflow=%u vector=%d,%d,%d\\n",
+                "[FieldLaserEval] source=%08X,%08X,%08X model=%08X,%08X,%08X distance=%08X outside=%u overflow=%u vector=%d,%d,%d\n",
                 unsigned(params[0]),unsigned(params[1]),unsigned(params[2]),
                 unsigned(nativeMatrix[3]),unsigned(nativeMatrix[7]),unsigned(nativeMatrix[11]),
                 unsigned(result.distance),unsigned(result.outside),unsigned(result.divisionOverflow),
