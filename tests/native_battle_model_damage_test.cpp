@@ -32,7 +32,7 @@ int main(){
  assert(modelLifecycleFixtureMain()==0);
  s_workAreaCopy owner;owner.header.fill(0xa5);
  uint32_t flags=0;
- int16_t health=0,floor=0,pending=0,color=0;int8_t meter=0;
+ int16_t health=0,floor=0,pending=0,color=0;uint8_t meter=0;
  sVec3_FP world{100,200,300},position{};sBattleTargetable target{};
  std::vector<s_hotpointDefinition> definitions(1);definitions[0].m4_count=1;definitions[0].m0.resize(1);
  std::vector<s_3dModel> models(1);
@@ -46,7 +46,7 @@ int main(){
  const int16_t floors[]={-32768,-1,0,1,32767};
  size_t cases=0;
  for(auto hp:edges)for(auto damage:edges)for(auto minimum:floors)for(int kind=-1;kind<5;++kind)for(int q=0;q<4;++q)for(int canShow=0;canShow<2;++canShow){
-  flags=0x44;health=hp;floor=minimum;pending=hp;color=-999;meter=-128;
+  flags=0x44;health=hp;floor=minimum;pending=hp;color=-999;meter=0x80;
   target.m50_flags=0xa0000u|0x101;target.m58=damage;target.m5E_impactForce=int8_t(kind);
   position={};probe={};probe.actor=&actor;probe.quadrant=q;probe.window=canShow;
   const auto postSub=word(int32_t(hp)-damage);

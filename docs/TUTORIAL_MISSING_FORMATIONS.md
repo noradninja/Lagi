@@ -276,6 +276,53 @@ Remaining: actual typed task creation, original formation/group binding and
 ownership, concrete hit-effect/statistic service bindings, formation controller
 and dispatch, then full on-device lesson/title-return/performance acceptance.
 
+## Concrete actor task assembled (not yet dispatched)
+
+`lagi_tutorial_laser_enemy_task.inc` now supplies an actual
+`s_workAreaTemplateWithCopy` work area and task factory. Its typed definition
+matches 060AAD98: no Init callback (explicit native post-allocation setup),
+the recovered Update, shared Draw and no Delete callback. It is compiled
+against the real Vita task classes, not a native-address task blob.
+
+Each actor owns its model vector, target state, position/rotation motion,
+health, life-meter pointer, state/timer and copied authored offset. Explicit
+references retain the formation's position/rotation, dead count and engine
+reward counters. Constructor resources/descriptors/callback EAs are supplied
+from the native formation boundary, not guessed from enemy identity.
+
+The factory copies concrete service bindings and bridges their context
+separately from actor identity. Native sound/RNG/statistic/target callbacks
+reach the supplied service context; drawing-disable always clears that
+actor's real typed Draw method. The caller's generic hideDrawing hook is not
+used by the task wrapper. Two actors can share services and formation state
+without sharing the drawing-disable target, health or model storage.
+
+The actual `sEnemyLifeMeterTask::m31` is **u8**; concrete binding exposed the
+earlier signed-reference mismatch in the damage view. The public view and
+fixtures now use that authoritative unsigned type without a pointer cast.
+Existing byte flags and arithmetic are unchanged.
+
+Incomplete service/resource bindings reject creation before allocating a task.
+Native initialization failure leaves the actual failed task marked finished
+and finishes its newly created life meter. No live placeholder is returned.
+The native Delete callback remains null; normal graph disposal and the
+debris-state ownership still need full formation/hardware lifecycle validation
+before dispatch, not an invented task-specific cleanup sequence.
+
+`tests/tutorial_laser_enemy_task_test.ps1` compiles the production task factory,
+constructor, update, motion, damage and retirement includes together. It creates
+two actors, checks distinct storage/life-meter health pointers, live parent
+motion references, actual Update/Draw callback entry, debris drawing-disable
+isolation, group count/task completion and failed/incomplete setup. Task-kernel,
+animation, presentation and resource services are mocks; this is not a device
+task graph. The factory is forced into the Vita link audit, retaining its
+constructor/update/draw call chain and actual native task templates.
+
+Still required before this lesson can run: original formation initialization
+and update, concrete shared statistic/hit-effect bindings, authored state/death
+ownership, dispatch, title return and hardware performance/visual acceptance.
+The remaining tutorial callbacks are still disabled; Goal 7 remains active.
+
 ## Shared formation spring recovered
 
 `include/lagi/native_formation_motion.h` recovers one axis of native

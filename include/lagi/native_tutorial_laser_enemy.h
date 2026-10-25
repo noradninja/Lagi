@@ -38,3 +38,18 @@ struct LagiTutorialLaserEnemyHooks {
 };
 void lagiUpdateTutorialLaserEnemy(const LagiTutorialLaserEnemyView& actor,
     const LagiTutorialLaserEnemyHooks& hooks);
+struct LagiTutorialLaserEnemySpawn {
+    s_workAreaCopy* parent;
+    npcFileDeleter* resources;
+    const sVec3_FP& formationPosition;
+    const sVec3_FP& formationRotation;
+    std::int8_t& deadCount;
+    std::int32_t& experience;
+    std::int32_t& dyne;
+    const sVec3_FP& authoredOffset;
+    std::int32_t entityIndex;
+    const sSaturnPtr& modelDescriptors;
+    std::array<std::uint32_t,4> callbacks;
+    LagiTutorialLaserEnemyHooks services;
+};
+s_workAreaCopy* lagiCreateTutorialLaserEnemyTask(const LagiTutorialLaserEnemySpawn& spawn);

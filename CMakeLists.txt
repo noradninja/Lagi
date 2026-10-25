@@ -5300,6 +5300,7 @@ endif()
 # alignment can leave too little space before data for some DSP corpus sizes.
 target_link_options(lagi PRIVATE "-Wl,-T,${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
 if(LAGI_BATTLE_LINK_AUDIT)
+ target_link_options(lagi PRIVATE "-Wl,--undefined=_Z32lagiCreateTutorialLaserEnemyTaskRK27LagiTutorialLaserEnemySpawn")
  target_link_options(lagi PRIVATE "-Wl,--undefined=_Z26lagiInitTutorialLaserEnemyRK30LagiTutorialLaserEnemyInitViewiRK8sVec3_FP10sSaturnPtrRKSt5arrayIjLj4EEPFjPvESA_")
  target_link_options(lagi PRIVATE
   "-Wl,--undefined=_Z28lagiUpdateTutorialLaserEnemyRK26LagiTutorialLaserEnemyViewRK27LagiTutorialLaserEnemyHooks"

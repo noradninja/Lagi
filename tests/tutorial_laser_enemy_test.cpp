@@ -5,7 +5,7 @@
 #include "lagi/native_tutorial_laser_enemy.h"
 #include "../src/integration/lagi_battle_model_damage.inc"
 #include "../src/integration/lagi_tutorial_model_motion.inc"
-struct npcFileDeleter {int id=14;};
+struct npcFileDeleter {int id=14;s_fileBundle* m0_fileBundle=nullptr;};
 static unsigned debrisCalls=0;
 static LagiTutorialLaserEnemyView* liveActor=nullptr;
 static void createBoneDebris(s_workAreaCopy* owner,npcFileDeleter* resources,s_3dModel* model,
@@ -29,10 +29,11 @@ static void death(void* context){++static_cast<Probe*>(context)->deaths;}
 static void hide(void* context){++static_cast<Probe*>(context)->hides;}
 static int32_t bits(uint32_t v){return v<=0x7fffffffu?int32_t(v):int32_t(int64_t(v)-0x100000000ll);}
 static int32_t mul(int32_t a,int32_t b){auto product=int64_t(a)*b;auto q=product/65536;if(product<0&&product%65536)--q;return bits(uint32_t(q));}
+#ifndef LAGI_TUTORIAL_ENEMY_FIXTURE_ONLY
 int main(){
  s_workAreaCopy owner;owner.header.fill(0xa5);npcFileDeleter resources;
  sVec3_FP pos{},cur{},target{},vel{},acc{},rot{},rotCur{},rotTarget{},rotVel{},rotAcc{},parent{},parentRot{},authored{100,200,300};
- uint32_t flags=0;int16_t hp=100,floor=0,pending=0,color=0,timer=0;uint8_t state=0;int8_t meter=0,deadCount=0;int32_t xp=0,dyne=0;
+ uint32_t flags=0;int16_t hp=100,floor=0,pending=0,color=0,timer=0;uint8_t state=0,meter=0;int8_t deadCount=0;int32_t xp=0,dyne=0;
  std::vector<s_3dModel> models(1);std::vector<s_hotpointDefinition> definitions(1);definitions[0].m4_count=1;definitions[0].m0.resize(1);
  sBattleTargetable hitTarget{};hitTarget.owner=&owner;sVec3_FP hitPosition{};
  auto& model=models[0];model.m12_numBones=model.m50_targetBoneCount=model.m52_targetableCount=1;model.m40=&definitions;
@@ -103,3 +104,4 @@ int main(){
  for(auto b:owner.header)assert(b==0xa5);
  std::printf("PASS: integrated native tutorial enemy update: live/dead hits, motion/animation ordering, debris, %zu signed timer cases and %zu trajectory axes; service mocks, not hardware\n",timerCases,motionCases);
 }
+#endif

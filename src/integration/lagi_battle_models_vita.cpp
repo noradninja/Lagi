@@ -16,3 +16,4 @@ void clearLightColor();
 #include "lagi_tutorial_model_motion.inc"
 #include "lagi_tutorial_laser_enemy.inc"
 #include "lagi_tutorial_laser_enemy_init.inc"
+#include "lagi_tutorial_laser_enemy_task.inc"

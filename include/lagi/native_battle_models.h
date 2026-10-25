@@ -42,7 +42,7 @@ struct LagiBattleModelDamageView {
     std::int16_t& healthFloor;
     std::int16_t& pendingDamage;
     std::int16_t& lightColor;
-    std::int8_t& lifeMeterFlags;
+    std::uint8_t& lifeMeterFlags; // sEnemyLifeMeterTask::m31 is u8.
     sVec3_FP& worldPosition;
     std::vector<s_3dModel>& models;
     LagiBattleModelTargetState& targets;
