@@ -8,7 +8,13 @@
 struct Task {bool finished=false;void markFinished(){finished=true;}};
 struct s_workAreaCopy {std::array<uint8_t,192> header;Task task;Task* getTask(){return &task;}};
 struct sSaturnPtr {uint32_t ea=0;bool isNull()const{return ea==0;}sSaturnPtr operator+(unsigned n)const{return {ea+n};}};
-struct sVec3_FP {int32_t x=0,y=0,z=0;};
+struct sVec3_FP {
+ int32_t x=0,y=0,z=0;
+ struct Ref {int32_t& m_value;int32_t asS32()const{return m_value;}};
+ struct ConstRef {const int32_t& m_value;int32_t asS32()const{return m_value;}};
+ Ref operator[](unsigned i){assert(i<3);return {i==0?x:i==1?y:z};}
+ ConstRef operator[](unsigned i)const{assert(i<3);return {i==0?x:i==1?y:z};}
+};
 struct sBattleTargetable {s_workAreaCopy* owner; sVec3_FP* position;int32_t radius;uint32_t m50_flags,index,a,b;int16_t m58=0;int8_t m60=0,m5E_impactForce=0;};
 struct s_hotpoinEntry {int32_t m0;sVec3_FP m4;int32_t m10;};
 struct s_hotpointDefinition {std::vector<s_hotpoinEntry> m0;uint32_t m4_count=0;};

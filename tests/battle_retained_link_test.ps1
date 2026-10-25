@@ -13,6 +13,7 @@ if($LASTEXITCODE -ne 0){throw 'Cannot inspect battle ELF'}
 $required=@('overlayStart_BTL_A3','overlayStart_BTL_T0','createBattleEngineTask','battleEngine_CreateHud1',
  'battleEngine_CreateRadar','createBattleCommandMenu','createBattleResultScreen',
  'lagiCreateBattleEnemyModels','lagiInitBattleEnemyModelTargets','lagiRetireBattleEnemyModelTargets','lagiUpdateBattleEnemyModelDamage','lagiDrawBattleEnemyModels',
+ 'lagiUpdateTutorialLaserEnemy','lagiUpdateTutorialModelMotion',
  'displayRaySegment','displayRaySegmentFromWorldSpace','sendRaySegmentToVdp1','lagiDisplayWorldPolygon','beamSpark_spawn','beamSpark_Draw','beamSpark_UpdateAlt','isSoundFileLoaded')
 if($cache -match 'LAGI_BATTLE_EXECUTE_A3:BOOL=ON'){$required+=@('lagiPrepareNativeA3Battle','lagiEnterNativeA3Battle','BTL_GenericData::staticInit')}
 foreach($name in $required) {

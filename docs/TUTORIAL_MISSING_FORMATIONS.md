@@ -174,6 +174,59 @@ animation selection/step, original hit callback bindings and death effect,
 formation lifecycle and dispatch. Shared services existing does not make that
 actor or its lesson playable yet.
 
+## First missing enemy update assembled
+
+`lagi_tutorial_laser_enemy.inc` now translates the complete gameplay update
+06058996..06058C2E. It uses the actual shared damage/target retirement and model
+animation services rather than an isolated alternative damage simulation.
+`lagi_tutorial_model_motion.inc` binds the native fields explicitly:
+
+- position: world +30, velocity +48, acceleration +54, target +60,
+  current +90, interpolation rate +A8;
+- rotation: world +3C, velocity +6C, acceleration +78, target +84,
+  current +9C. Parent position/rotation come from the formation block.
+
+Movement runs before the first model's animation step and damage update.
+Native position interpolation preserves accumulated acceleration. Angular
+movement uses spring FF and damping FFF and clears angular acceleration.
+The actor view is passed by reference without allocating or copying model
+arrays each frame. It is not yet constructed by an enabled native task.
+
+After a live hit, native 0609F568 latches 40000000 (callback zero), sound 66
+plays, and state 1 executes immediately: clear 20000000/40000000, add three
+RNG impulses `(rng & 3FFFFF) - 200000` to **angular acceleration**, then state
+zero. These are not animation indices or angular-velocity writes.
+
+After a lethal hit, retire the actual targets, play sound 65, notify statistic
+selector 8 (0605D6E4 -> 0606B160), and add 16 EXP/10 dyne with 32-bit wrap.
+The native routine does not itself force state 2 here. Keep that separate
+ownership intact; its binding still needs audit when restoring the formation.
+
+State zero sets all three position targets to authored offset plus
+`(rng & FFFF) - 8000` using three original RNG calls. State two calls the
+existing `createBoneDebris` with native owner/resources/model, position,
+rotation, null velocity/acceleration, gravity -44, mask 1FFFFF, zero extra
+parameters, scale 10000 and lifetime zero; then disables drawing and enters
+state three. State three increments its signed word timer and, when the old
+value exceeds 30, zeros it, increments the group's signed byte dead count
+with wrap and marks the actual task finished. No health-driven substitute
+death state or immortal formation was introduced.
+
+`tests/tutorial_laser_enemy_test.ps1` executes the exact production update,
+motion, damage and retirement includes together. It checks previous-target
+movement order, one animation step, live-hit impulses, one-time lethal rewards,
+native debris arguments, all 65536 signed timer values and 1536 wrapped motion
+trajectory axes. Engine presentation, RNG, model animation and debris services
+are mocked; the fixture is not original SH2 execution or a hardware tutorial.
+Existing 8192 lifecycle, 29040 damage and 10752 draw cases still pass.
+The update and motion wrappers are explicit Vita retained-link roots, so their
+actual animation/debris dependencies must resolve in the full VELF/SELF/VPK.
+
+Still outstanding before dispatch: original constructor and initial animation
+setup, concrete RNG/sound/statistic/hit-effect/draw-disable bindings, formation
+ownership/state transitions and lifecycle. The last three lessons remain
+unaccepted and disabled at those missing callbacks; Goal 7 is not complete.
+
 ## Shared formation spring recovered
 
 `include/lagi/native_formation_motion.h` recovers one axis of native

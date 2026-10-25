@@ -62,3 +62,19 @@ bool lagiUpdateBattleEnemyModelDamage(LagiBattleModelDamageView actor,
 void lagiDrawBattleEnemyModels(std::uint32_t& flags, std::int16_t lightColor,
     const sVec3_FP& position, const sVec3_FP& rotation,
     std::vector<s_3dModel>& models);
+struct LagiBattleModelMotionView {
+    sVec3_FP& worldPosition;
+    sVec3_FP& currentPosition;
+    sVec3_FP& targetPosition;
+    sVec3_FP& velocity;
+    sVec3_FP& acceleration;
+    sVec3_FP& worldRotation;
+    sVec3_FP& currentRotation;
+    sVec3_FP& targetRotation;
+    sVec3_FP& angularVelocity;
+    sVec3_FP& angularAcceleration;
+    const sVec3_FP& parentPosition;
+    const sVec3_FP& parentRotation;
+    std::int32_t interpolationRate;
+};
+void lagiUpdateTutorialModelMotion(const LagiBattleModelMotionView& motion);

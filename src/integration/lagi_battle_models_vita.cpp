@@ -1,6 +1,9 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/native_battle_models.h"
+#include "lagi/native_formation_motion.h"
+#include "lagi/native_tutorial_laser_enemy.h"
 #include "battle/battleTargetable.h"
+#include "battle/battleDebris.h"
 #include "kernel/graphicalObject.h"
 #include "kernel/animation.h"
 #include "kernel/fileBundle.h"
@@ -9,3 +12,5 @@
 void setupConditionalLightColor(int);
 void clearLightColor();
 #include "lagi_battle_model_draw.inc"
+#include "lagi_tutorial_model_motion.inc"
+#include "lagi_tutorial_laser_enemy.inc"
