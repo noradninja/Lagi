@@ -427,6 +427,8 @@ static azel::BasicWingDebugMesh g_liveTownCpuMesh{};
 
 struct LivePolygonLightState {
     lagi::AdditionalModelLight additionalLight{};
+    std::array<lagi::AdditionalModelLight, lagi::kMaxTransientLaserLights> transientLaserLights{};
+    std::uint8_t transientLaserLightCount=0;
     std::int32_t vector[3]{};
     std::uint16_t color[3]{};
     std::uint32_t falloff[3]{};
@@ -7510,6 +7512,8 @@ static void appendLiveTownModel(
     appendPhase(g_profileAppendTransformUs);
     LivePolygonLightState polygonLight{};
     polygonLight.additionalLight=state.additionalLight;
+    polygonLight.transientLaserLights=state.transientLaserLights;
+    polygonLight.transientLaserLightCount=state.transientLaserLightCount;
     if (state.hasLight) {
         // Match Azel's renderer: rotate the captured camera/world-space light
         // into model space once per submission. This is algebraically the
@@ -15506,6 +15510,10 @@ static void updateLiveTownAzelLighting()
             if (pointTraceEligible) pointTraceActiveThisFrame = true;
             const int beforePoint[3] = {accum[0], accum[1], accum[2]};
             lagi::accumulate_additional_model_light(light.additionalLight,lighting.normal,accum);
+            // A maximum of four extra native point contributions, per model,
+            // before the already-existing single RGB555 quantization.
+            for(unsigned transient=0;transient<light.transientLaserLightCount;++transient)
+                lagi::accumulate_additional_model_light(light.transientLaserLights[transient],lighting.normal,accum);
             if (pointTraceEligible && corner == 0u &&
                 pointTraceLitFrames < 32u &&
                 (pointTraceLitFrames % 4u) == 0u &&
