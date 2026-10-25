@@ -107,6 +107,7 @@ struct FieldActorBaseLight {
     bool active=false;
 };
 static FieldActorBaseLight g_fieldActorBaseLight{};
+static lagi::TransientLaserLightFrame g_fieldLaserLights{};
 
 // Bounded FLD_A3 diagnostic: compare the static-grid state synthesized by the
 // generated hook with Azel's actual pCurrentMatrix/currentLightVector_M at the
@@ -176,6 +177,7 @@ void begin_frame(bool forceDynamicSubmissions)
 {
     g_fieldEnvironmentPointLight={};
     g_fieldActorBaseLight={};
+    g_fieldLaserLights.clear();
     g_forceDynamicSubmissions = forceDynamicSubmissions;
     g_nativeSceneViewValid = false;
     g_viewRelativeScope = false;
@@ -481,6 +483,65 @@ void capture_field_environment_point_light()
     g_fieldEnvironmentPointLight.active=true;
 }
 
+void record_transient_field_laser_light(std::uint64_t source,
+    std::int32_t x,std::int32_t y,std::int32_t z,std::uint32_t packedColor)
+{
+    lagi::TransientLaserLight light{};
+    light.source=source;
+    light.worldPosition[0]=x;
+    light.worldPosition[1]=y;
+    light.worldPosition[2]=z;
+    // Native setupLight's packed RGB is converted to the reversed color
+    // array consumed by ComputeColorFromNormal (B,G,R).
+    light.color[0]=packedColor&0xFFu;
+    light.color[1]=(packedColor>>8)&0xFFu;
+    light.color[2]=(packedColor>>16)&0xFFu;
+    light.range=0x14000u; // Field special-light parameter from Azel A11D.
+    g_fieldLaserLights.upsert(light);
+}
+
+static void apply_transient_field_laser_lights(SubmissionState& state)
+{
+    if (state.billboard || !&pCurrentMatrix || !pCurrentMatrix ||
+        !g_nativeSceneViewValid || !g_fieldLaserLights.count)
+        return;
+    std::int32_t nativeMatrix[12]{};
+    copyMatrixRaw(*pCurrentMatrix,nativeMatrix);
+    for (std::size_t i=0;i<g_fieldLaserLights.count;++i) {
+        const auto& source=g_fieldLaserLights.lights[i];
+        std::int32_t params[5]{};
+        // Use Azel's current camera view to convert the world-space beam
+        // head to the same view-space basis as the native model matrix.
+        for (unsigned axis=0;axis<3;++axis) {
+            std::int64_t value=std::int64_t(g_nativeSceneViewMatrix[axis*4+3])<<16;
+            for (unsigned column=0;column<3;++column)
+                value+=std::int64_t(g_nativeSceneViewMatrix[axis*4+column])*
+                    source.worldPosition[column];
+            params[axis]=static_cast<std::int32_t>(value>>16);
+        }
+        params[3]=static_cast<std::int32_t>(source.range<<12);
+        const std::int32_t hi=static_cast<std::int16_t>(source.range>>8);
+        params[4]=hi*hi;
+        const auto result=lagi::native_point_light(nativeMatrix,params);
+        if (result.outside || result.divisionOverflow) continue;
+        auto& target=state.transientLaserLights[state.transientLaserLightCount++];
+        std::copy(result.vector.begin(),result.vector.end(),target.vector);
+        std::copy(source.color,source.color+3,target.color);
+        target.active=true;
+        if (state.transientLaserLightCount==lagi::kMaxTransientLaserLights)
+            break;
+    }
+    static unsigned reports=0;
+    if (reports<12 && state.transientLaserLightCount) {
+        lagi::platform::logging::writef(
+            "[FieldLaserLight] selected=%u candidates=%u modelOrigin=%08X,%08X,%08X\n",
+            unsigned(state.transientLaserLightCount),
+            unsigned(g_fieldLaserLights.count),
+            unsigned(nativeMatrix[3]),unsigned(nativeMatrix[7]),unsigned(nativeMatrix[11]));
+        ++reports;
+    }
+}
+
 static void apply_field_environment_point_light(SubmissionState& state)
 {
     if(!state.fieldEnvironment || state.billboard || state.hasNativeModelLight ||
@@ -664,6 +725,7 @@ static void capture_runtime_state(bool billboard)
     }
 
     capture_current_light(g_lastState);
+    apply_transient_field_laser_lights(g_lastState);
 }
 
 const std::vector<lagi::NativeAnimatedPolygonColor>& published_animated_colors()
@@ -798,6 +860,7 @@ static void record_submission(sProcessed3dModel* model, bool billboard,
         // point evaluator needs the live original native matrix at this draw.
         capture_native_point_light(g_lastState);
         apply_field_environment_point_light(g_lastState);
+        apply_transient_field_laser_lights(g_lastState);
     } else {
         capture_runtime_state(billboard);
     }
