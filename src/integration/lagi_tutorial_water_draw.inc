@@ -35,6 +35,9 @@ static void lagiTutorialWaterDraw(sBTL_T0_WaterEffect* self)
         cmd.m14_CMDXC=screen[2][0];cmd.m16_CMDYC=static_cast<s16>(-screen[2][1]);
         cmd.m18_CMDXD=screen[3][0];cmd.m1A_CMDYD=static_cast<s16>(-screen[3][1]);
         const u32 depth=static_cast<u32>(clip.m14_farClipDistance.asS32())-1u;
+        // Same renderer-facing metadata as the shared A3 background helper.
+        // The Saturn packet bucket remains unchanged; it is not GXM Z.
+        createVdp1ExtendedCommand(cmd)->depth=float(depth)/float(clip.m14_farClipDistance.asS32());
         context.m20_pCurrentVdp1Packet->m4_bucketTypes=static_cast<u16>(
             (depth*static_cast<u32>(clip.m38_oneOverFarClip.asS32()))>>16);
         context.m20_pCurrentVdp1Packet->m6_vdp1EA=&cmd;

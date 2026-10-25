@@ -10,6 +10,8 @@ fixedPoint getSin(unsigned a){trigAngle=a;assert(a==0 || a==0x400 || a==0x800 ||
 fixedPoint getCos(unsigned a){assert(a==trigAngle);return a==0?0x10000:a==0x800?-0x10000:0;}
 struct Cmd {u16 m0_CMDCTRL,m4_CMDPMOD,m6_CMDCOLR,m8_CMDSRCA,mA_CMDSIZE;s16 mC_CMDXA,mE_CMDYA,m10_CMDXB,m12_CMDYB,m14_CMDXC,m16_CMDYC,m18_CMDXD,m1A_CMDYD;};
 struct Commands {Cmd commands[16];Cmd* data(){return commands;}Cmd* end(){return commands+16;}Cmd& operator[](unsigned i){return commands[i];}}mainContextVdp1[1];
+struct Extended {float depth=0;}extended[16];
+Extended* createVdp1ExtendedCommand(Cmd& c){return &extended[&c-mainContextVdp1[0].data()];}
 struct Packet {unsigned m4_bucketTypes;Cmd* m6_vdp1EA;};std::array<Packet,16>packets;
 struct Context {Cmd* m0_currentVdp1WriteEA;Packet* m20_pCurrentVdp1Packet;unsigned m1C=0,mC=0;};
 struct Clip {u16 VDP1_X2=352;fixedPoint m14_farClipDistance{0x400000},m38_oneOverFarClip{0x200};};
@@ -36,6 +38,7 @@ int main(){
    for(unsigned v=0;v<4;++v){const int x=input[v][0],y=input[v][1]-4;assert(out[v][0]==x*cosine-y*sine);assert(out[v][1]==-(-x*sine+y*cosine+4));}
    assert(cmd.m0_CMDCTRL==0x1002 && cmd.m4_CMDPMOD==0x4A0 && cmd.m6_CMDCOLR==0x200 && cmd.m8_CMDSRCA==0x1234 && cmd.mA_CMDSIZE==0xA37);
    assert(packets[i].m6_vdp1EA==&mainContextVdp1[0][i]);assert(packets[i].m4_bucketTypes==u16((u32(0x3FFFFF)*u32(0x200))>>16));
+   assert(extended[i].depth>0.999f && extended[i].depth<=1.0f);
   }
  }
  reset();sBTL_T0_WaterEffect self;self.m1C_flag=2;lagiTutorialWaterDraw(&self);assert(!graphicEngineStatus.m14_vdp1Context[0].mC);

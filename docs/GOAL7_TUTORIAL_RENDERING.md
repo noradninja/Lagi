@@ -21,6 +21,15 @@ priority band. Hardware acceptance of the panel/markers remains outstanding.
 
 ## Remaining investigation
 
+The T0 rolled/tiled background emitted a native farClip-1 bucket but omitted
+the normalized extended depth used by the existing A3 background helper.
+It now attaches the same renderer-only metadata, leaving native geometry,
+material and packet keys untouched. This routes the sprite through the
+existing Background pass rather than foreground. The production-include
+fixture checks the far-depth metadata as well as all previous coordinates,
+materials, buckets and guards. Host tests and Vita package build pass;
+device ordering and performance are not yet accepted.
+
 The tutorial RBG cache reports reason 5: OVPNR screen-over pattern mode is not
 yet supported by decoded pages, so it takes the complete raw decoder. Add
 general resource support without dropping screen-over semantics. The current
