@@ -60,9 +60,34 @@ Evidence: original AZEL_1.bin MAIN LBA58, 253952 bytes, base06006000;
 
 ## Outstanding
 
-Trace shared exploration updates (upstream `fieldTerrainCallback`, native
-06012674, is an unimplemented consumer of the same COMMON20A388 hierarchy),
-map pickup state and native gate lifetime;
+## Restored shared exploration producer
+
+MAIN06012674 is the source `fieldTerrainCallback` stub called by
+updateDragonSavedAnglesAndTerrain. The guarded generated replacement uses
+the existing current-field/subfield COMMON20A388 hierarchy, rectangle at
+record+0 and bit base at record+8. X divides by 00200000 and decrements when
+the original X is negative; Y divides wrapped NEG(Z) by the same cell size
+and decrements when original Z is positive. Exact boundaries retain these
+explicit adjustments, rather than substituting floating point floor.
+
+Native helper060125E8 bounds the rectangle and writes only flag IDs in
+[095A,10D8), using the existing setBit566/save-state storage. No new visited
+cache, per-frame allocation, rendering pass or GPU work is introduced.
+The existing caller still owns special-field coordinate transforms.
+
+Production-include tests pass 144 signed coordinate pairs (including exact
+cell boundaries and INT32 extremes), flag-range endpoints, repeated marking
+and malformed/null COMMON pointers. Full battle Vita VPK build passes.
+Actual blue markings and save/reload still require hardware acceptance;
+prior saves cannot retroactively gain cells never recorded by the stub.
+
+The user clarified the invisible page follows **any** subsequent map pickup,
+not a specific second location. Continue auditing shared acquisition/menu
+state and resource lifetimes; do not add a pickup-specific workaround.
+
+## Remaining acceptance and integration
+
+Trace map pickup state, parent/backend coupling and resource lifetimes;
 reproduce the second-map path with fresh diagnostics; implement narrow
 source-faithful corrections and tests; build Vita; obtain pickup/menu/save
 and reload validation on hardware. Host tests alone cannot close this goal.

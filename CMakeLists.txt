@@ -2003,6 +2003,23 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${point_activate_old}" "${point_activate_new}" source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/fieldDragon.cpp")
+  set(map_exploration_old [=[static void fieldTerrainCallback(s32 subFieldIndex, sVec3_FP* pPos, sVec3_FP* pAngle)
+{
+    // Table at 0x0020a388 indexed by current field index
+    // Many entries are null (e.g., field 8, 0xC, 0xD, 0xE)
+    // When null, this is a no-op
+    Unimplemented();
+}]=])
+  string(FIND "${source_text}" "${map_exploration_old}" map_exploration_offset)
+  if(map_exploration_offset LESS 0)
+   message(FATAL_ERROR "Native field map exploration callback boundary changed")
+  endif()
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_field_map_exploration.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_field_map_exploration.inc" map_exploration_native)
+  string(REPLACE "${map_exploration_old}" "${map_exploration_native}" source_text "${source_text}")
+  string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"commonOverlay.h\"" source_text "${source_text}")
   set(actor_base_anchor "            dragonFieldTaskDrawSub1Sub0();")
   string(FIND "${source_text}" "${actor_base_anchor}" actor_base_offset)
   if(actor_base_offset LESS 0)
