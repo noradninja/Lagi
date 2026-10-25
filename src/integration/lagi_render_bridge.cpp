@@ -497,14 +497,29 @@ void record_transient_field_laser_light(std::uint64_t source,
     light.color[1]=(packedColor>>8)&0xFFu;
     light.color[2]=(packedColor>>16)&0xFFu;
     light.range=0x14000u; // Field special-light parameter from Azel A11D.
-    g_fieldLaserLights.upsert(light);
+    const bool accepted=g_fieldLaserLights.upsert(light);
+    static unsigned emitted=0;
+    if (emitted<28u) {
+        lagi::platform::logging::writef(
+            "[FieldLaserEmit] src=%08X accepted=%u count=%u pos=%08X,%08X,%08X rgb=%u,%u,%u\\n",
+            unsigned(source),unsigned(accepted),unsigned(g_fieldLaserLights.count),
+            unsigned(x),unsigned(y),unsigned(z),
+            unsigned(light.color[2]),unsigned(light.color[1]),unsigned(light.color[0]));
+        ++emitted;
+    }
 }
 
 static void apply_transient_field_laser_lights(SubmissionState& state)
 {
-    if (state.billboard || !&pCurrentMatrix || !pCurrentMatrix ||
-        !g_nativeSceneViewValid || !g_fieldLaserLights.count)
+    static unsigned rejectedFrames=0;
+    if (!g_fieldLaserLights.count) return;
+    if (state.billboard || !&pCurrentMatrix || !pCurrentMatrix || !g_nativeSceneViewValid) {
+        if (rejectedFrames++<12u)
+            lagi::platform::logging::writef("[FieldLaserSkip] billboard=%u matrix=%u viewValid=%u candidates=%u\\n",
+                unsigned(state.billboard),unsigned(&pCurrentMatrix && pCurrentMatrix),
+                unsigned(g_nativeSceneViewValid),unsigned(g_fieldLaserLights.count));
         return;
+    }
     std::int32_t nativeMatrix[12]{};
     copyMatrixRaw(*pCurrentMatrix,nativeMatrix);
     for (std::size_t i=0;i<g_fieldLaserLights.count;++i) {
@@ -523,6 +538,14 @@ static void apply_transient_field_laser_lights(SubmissionState& state)
         const std::int32_t hi=static_cast<std::int16_t>(source.range>>8);
         params[4]=hi*hi;
         const auto result=lagi::native_point_light(nativeMatrix,params);
+        static unsigned evaluations=0;
+        if (evaluations++<28u)
+            lagi::platform::logging::writef(
+                "[FieldLaserEval] source=%08X,%08X,%08X model=%08X,%08X,%08X distance=%08X outside=%u overflow=%u vector=%d,%d,%d\\n",
+                unsigned(params[0]),unsigned(params[1]),unsigned(params[2]),
+                unsigned(nativeMatrix[3]),unsigned(nativeMatrix[7]),unsigned(nativeMatrix[11]),
+                unsigned(result.distance),unsigned(result.outside),unsigned(result.divisionOverflow),
+                int(result.vector[0]),int(result.vector[1]),int(result.vector[2]));
         if (result.outside || result.divisionOverflow) continue;
         auto& target=state.transientLaserLights[state.transientLaserLightCount++];
         std::copy(result.vector.begin(),result.vector.end(),target.vector);
