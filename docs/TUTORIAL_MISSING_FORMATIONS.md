@@ -325,6 +325,27 @@ The remaining tutorial callbacks are still disabled; Goal 7 remains active.
 
 ## Shared formation spring recovered
 
+### Typed laser-lesson formation checkpoint
+
+The production formation now recovers 060586E0/0605863C, update 06058740
+and deletion 060587CA. It owns the two authored enemies at 060AACC8,
+slot-14 resource reference, shared formation motion, reward references and
+dead count. Initialization preserves the native 120 timer and formation-name
+call. The all-dead path clears all four attack timer fields on every update
+and finishes after 62 updates from a zero counter (old counter > 60).
+Failed child construction contributes to the dead count without inventing
+an enemy. Deletion releases the original NPC resource reference.
+
+`tests/tutorial_laser_formation_test.ps1` exercises the actual formation,
+typed task, constructor and update code together, including 65536 signed
+completion-counter boundaries, shared ownership and child failure. Kernel,
+engine and rendering services are mocked. The Vita link audit retains the
+formation entry and its call chain; this is not hardware acceptance.
+
+Dispatch remains disabled pending concrete original statistic/hit-effect
+bindings and remaining state/death ownership audit. The last three lessons
+are not claimed playable; Goal 7 remains active.
+
 `include/lagi/native_formation_motion.h` recovers one axis of native
 0609DE44..0609DF72 using named state, without a host/Saturn layout cast.
 The original three axes are independent with the same recurrence:

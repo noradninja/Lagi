@@ -5,6 +5,11 @@
 #include "battle/battleTargetable.h"
 #include "battle/battleDebris.h"
 #include "battle/battleEnemyLifeMeter.h"
+#include "battle/battleManager.h"
+#include "battle/battleOverlay.h"
+#include "battle/battleEngine.h"
+#include "battle/battleEngineSub0.h"
+#include "battle/battleTextDisplay.h"
 #include "kernel/graphicalObject.h"
 #include "kernel/animation.h"
 #include "kernel/fileBundle.h"
@@ -17,3 +22,6 @@ void clearLightColor();
 #include "lagi_tutorial_laser_enemy.inc"
 #include "lagi_tutorial_laser_enemy_init.inc"
 #include "lagi_tutorial_laser_enemy_task.inc"
+void decreaseNPCRefCount(s32);
+void battleEngine_UpdateSub1Sub0(s32);
+#include "lagi_tutorial_laser_formation.inc"

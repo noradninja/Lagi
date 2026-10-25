@@ -7,8 +7,10 @@ template<class T> struct s_workAreaTemplateWithCopy:s_workAreaCopy {
 };
 static std::vector<s_workAreaCopy*> created;
 static s_workAreaCopy* expectedParent=nullptr;
+static bool allowNestedParents=false;
 template<class T>static T* createSubTaskWithCopy(s_workAreaCopy* parent,const typename T::TypedTaskDefinition* def){
- assert(parent==expectedParent&&!def->m_pInit&&!def->m_pDelete&&def->m_pUpdate&&def->m_pDraw);
+ assert(parent&&(allowNestedParents||parent==expectedParent)&&!def->m_pInit&&def->m_pUpdate);
+ if(!allowNestedParents)assert(!def->m_pDelete&&def->m_pDraw);
  auto* t=new T{};t->m0_fileBundle=parent->m0_fileBundle;t->m_UpdateMethod=def->m_pUpdate;t->m_DrawMethod=def->m_pDraw;t->m_DeleteMethod=def->m_pDelete;created.push_back(t);return t;
 }
 struct sEnemyLifeMeterTask:s_workAreaCopy {uint8_t m31=0;sVec3_FP* position=nullptr;int16_t* health=nullptr;};
@@ -24,6 +26,7 @@ static unsigned draws=0;
 static const sVec3_FP* drawnPosition=nullptr;
 void lagiDrawBattleEnemyModels(uint32_t&,int16_t,const sVec3_FP& position,const sVec3_FP&,std::vector<s_3dModel>& models){assert(models.size()==1);++draws;drawnPosition=&position;}
 #include "../src/integration/lagi_tutorial_laser_enemy_task.inc"
+#ifndef LAGI_TUTORIAL_TASK_FIXTURE_ONLY
 int main(){
  s_workAreaCopy parent;expectedParent=&parent;parent.header.fill(0xa5);
  s_fileBundle bundle;sAnimationData animation{8};bundle.animation=&animation;parent.m0_fileBundle=&bundle;
@@ -67,3 +70,4 @@ int main(){
  release();
  std::puts("PASS: actual typed tutorial task factory, independent actors, shared formation references, native callback wiring and failed setup; task/model/presentation services mocked, not hardware");
 }
+#endif

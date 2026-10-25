@@ -36,9 +36,10 @@ static std::array<uint8_t,64> disc{};
 static uint16_t readSaturnU16(sSaturnPtr p){assert(p.ea+1<disc.size());return uint16_t(disc[p.ea])*256+disc[p.ea+1];}
 static sSaturnPtr readSaturnEA(sSaturnPtr p){assert(p.ea+3<disc.size());return {uint32_t(disc[p.ea])*0x1000000u+uint32_t(disc[p.ea+1])*0x10000u+uint32_t(disc[p.ea+2])*256u+disc[p.ea+3]};}
 static int creates=0,steps=0,failModel=-1;
+static bool repeatedModelDescriptor=false;
 static std::vector<uint32_t> hotspotCalls;
 static bool init3DModelRawData(s_workAreaCopy*,s_3dModel* m,int zero,s_fileBundle*,uint16_t model,void* animation,Pose* pose,void* color,sHotpointBundle* hotspots){
- assert(zero==0&&!animation&&pose&&!color);assert(model==0x10+creates);
+ assert(zero==0&&!animation&&pose&&!color);assert(model==0x10+(repeatedModelDescriptor?0:creates));
  hotspotCalls.push_back(hotspots?hotspots->address.ea:0);m->m12_numBones=2;
  return creates++!=failModel;
 }

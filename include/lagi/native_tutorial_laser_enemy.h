@@ -53,3 +53,11 @@ struct LagiTutorialLaserEnemySpawn {
     LagiTutorialLaserEnemyHooks services;
 };
 s_workAreaCopy* lagiCreateTutorialLaserEnemyTask(const LagiTutorialLaserEnemySpawn& spawn);
+struct LagiTutorialLaserFormationSpawn {
+    s_workAreaCopy* parent;
+    const sSaturnPtr& positions;
+    const sSaturnPtr& modelDescriptors;
+    std::array<std::uint32_t,4> callbacks;
+    LagiTutorialLaserEnemyHooks services;
+};
+s_workAreaCopy* lagiCreateTutorialLaserFormation(const LagiTutorialLaserFormationSpawn& spawn);
