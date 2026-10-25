@@ -2220,10 +2220,17 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "${animated_point_anchor}
             // Azel's special-light lifetime is already gated by m_EB.
             // Do not tie its position to the unrelated sparkle-scale value.
-            lightLocation = pTypedWorkArea->mD8_sparklePosition; // LAGI_COLLECTION_ANIMATED_LIGHT
+            // The same world-space position is transformed to view space
+            // by drawProjectedParticleWithGouraud. The native point-light
+            // evaluator expects that view space, not the raw world coordinates.
+            transformAndAddVecByCurrentMatrix(
+                &pTypedWorkArea->mD8_sparklePosition, &lightLocation); // LAGI_COLLECTION_ANIMATED_LIGHT
             static unsigned lagiCollectionLightReports = 0;
             if (lagiCollectionLightReports < 16) {
-                lagi::platform::logging::writef(\"[CollectionLight] position=%08X,%08X,%08X scale=%08X\\n\",
+                lagi::platform::logging::writef(\"[CollectionLight] world=%08X,%08X,%08X view=%08X,%08X,%08X scale=%08X\\n\",
+                    unsigned(pTypedWorkArea->mD8_sparklePosition[0].asS32()),
+                    unsigned(pTypedWorkArea->mD8_sparklePosition[1].asS32()),
+                    unsigned(pTypedWorkArea->mD8_sparklePosition[2].asS32()),
                     unsigned(lightLocation[0].asS32()), unsigned(lightLocation[1].asS32()),
                     unsigned(lightLocation[2].asS32()), unsigned(pTypedWorkArea->mE4_sparkleScale.asS32()));
                 ++lagiCollectionLightReports;
@@ -2282,8 +2289,8 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "static void lagiStartCollectionTrailLight(s32 colorIndex); // LAGI_TRAIL_LIGHT_FORWARD
 ${trail_light_declaration}"
    source_text "${source_text}")
-  # Both the traveling sprite and the native sparkle use camera-space
-  # coordinates. Reuse the already-updated dragon sparkle-position payload.
+  # Trail and sparkle both publish world-space positions. As with native
+  # particle drawing, transform them by the view matrix when setting A11D.
   set(trail_light_init_anchor [=[    pThis->m154++;
     particleInitSub(&pThis->m58, (pThis->m0.m4_characterArea - (0x25C00000)) >> 3, &gFLD_A3->m_0x06095330_animatedQuad);]=])
   string(FIND "${source_text}" "${trail_light_init_anchor}" trail_init_found)
@@ -2313,8 +2320,7 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=])
         if (pThis->m24_receivedItemId >= 0) {
             // Same indexed sprite position as LaserTrailDraw, not a
             // separately integrated or guessed travel path.
-            const s32 index = pThis->m154 < 0x11
-                ? pThis->m154 : ((pThis->m154 - 1) & 0xF);
+            const s32 index = (pThis->m154 - 1) & 0xF;
             auto* dragon = getFieldTaskPtr()->m8_pSubFieldData->m338_pDragonTask;
             dragon->mD8_sparklePosition = pThis->m6C[index & 0xF]; // LAGI_TRAIL_LIGHT_FOLLOW
         }
@@ -2323,6 +2329,26 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=])
 }
 
 static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_text "${source_text}")
+  # The native trail update writes a point and increments m154. Both
+  # the primary projected sprite and its spawned trail particles must use the
+  # last written slot, including during the first 16 ring-buffer updates.
+  set(trail_draw_index_old [=[    s32 trailIndex;
+    if (pThis->m154 < 0x11)
+    {
+        trailIndex = pThis->m154;
+    }
+    else
+    {
+        trailIndex = (pThis->m154 - 1) & 0xF;
+    }]=])
+  string(REGEX MATCHALL "if \\(pThis->m154 < 0x11\\)" invalid_trail_heads "${source_text}")
+  list(LENGTH invalid_trail_heads invalid_trail_count)
+  if(NOT invalid_trail_count EQUAL 2)
+   message(FATAL_ERROR "Expected exactly two native trail particle index consumers")
+  endif()
+  string(REPLACE "${trail_draw_index_old}"
+   "    s32 trailIndex = (pThis->m154 - 1) & 0xF; // LAGI_NATIVE_TRAIL_LAST_WRITTEN"
+   source_text "${source_text}")
   set(trail_light_palette_anchor "void s_LCSLaser_DeleteTrailSub0(s32 r4)")
   string(FIND "${source_text}" "${trail_light_palette_anchor}" trail_palette_found)
   if(trail_palette_found LESS 0)
