@@ -5302,6 +5302,7 @@ target_link_options(lagi PRIVATE "-Wl,-T,${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.
 if(LAGI_BATTLE_LINK_AUDIT)
  target_link_options(lagi PRIVATE "-Wl,--undefined=_Z32lagiCreateTutorialLaserEnemyTaskRK27LagiTutorialLaserEnemySpawn")
  target_link_options(lagi PRIVATE "-Wl,--undefined=_Z32lagiCreateTutorialLaserFormationRK31LagiTutorialLaserFormationSpawn")
+ target_link_options(lagi PRIVATE "-Wl,--undefined=_Z28lagiDispatchTutorialModelHitjR17sBattleTargetable")
  target_link_options(lagi PRIVATE "-Wl,--undefined=_Z26lagiInitTutorialLaserEnemyRK30LagiTutorialLaserEnemyInitViewiRK8sVec3_FP10sSaturnPtrRKSt5arrayIjLj4EEPFjPvESA_")
  target_link_options(lagi PRIVATE
   "-Wl,--undefined=_Z28lagiUpdateTutorialLaserEnemyRK26LagiTutorialLaserEnemyViewRK27LagiTutorialLaserEnemyHooks"

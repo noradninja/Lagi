@@ -61,3 +61,6 @@ struct LagiTutorialLaserFormationSpawn {
     LagiTutorialLaserEnemyHooks services;
 };
 s_workAreaCopy* lagiCreateTutorialLaserFormation(const LagiTutorialLaserFormationSpawn& spawn);
+// Explicit T0 callback identity mapping, never a Saturn-address function cast.
+// Returns false for an unknown callback; known no-op 0609F440 returns true.
+bool lagiDispatchTutorialModelHit(std::uint32_t callbackEA, sBattleTargetable& target);

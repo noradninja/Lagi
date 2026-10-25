@@ -25,3 +25,5 @@ void clearLightColor();
 void decreaseNPCRefCount(s32);
 void battleEngine_UpdateSub1Sub0(s32);
 #include "lagi_tutorial_laser_formation.inc"
+void createExplosionAtPosition(sVec3_FP*,sVec3_FP*,int,u8);
+#include "lagi_tutorial_model_hit.inc"

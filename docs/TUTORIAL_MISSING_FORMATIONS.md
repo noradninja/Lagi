@@ -6,6 +6,28 @@ formation dispatch/implementations and must not be reported playable.
 
 ## Original Disc 1 evidence
 
+### Shared hit-effect binding checkpoint
+
+`lagiDispatchTutorialModelHit` explicitly maps the T0 callback identities:
+0609F440 is a no-op; 0609F444 invokes explosion mode 1; 0609F468 and
+0609F48C invoke mode 0. Each uses target.mC (not the hotpoint at +4),
+engine.m1A0_battleAutoScrollDelta as velocity, and scale 0x20000. Unknown
+addresses return false; no host function pointer is manufactured from an EA.
+
+Native 06074328 matches `createExplosionAtPosition` in gunShotRootTask.cpp:
+the overlay-dependent selection is 3/2, 5/4 or 8/7 for modes 0, 1 or 2.
+Its callee 0607386C is the existing animated-quad `createParticleEffect`,
+not a missing 3D-model factory. Native task size 0x44 and fields (quad +8,
+position +10, velocity +1C, acceleration +28, scale +34, colors +38,
+lifetime +40) match the shared service exactly. No new render pass is added.
+
+`tests/tutorial_model_hit_test.ps1` checks the production dispatch include,
+all 65536 low-word callback identities, live engine switching, the distinct
+impact/current position pointers, scale and mode. Particle submission is
+mocked; Vita build/link checks are not visual acceptance. Formation dispatch
+is still disabled pending remaining bindings/state ownership and hardware
+testing. This checkpoint does not claim the later lessons are playable.
+
 Read BTL_T0.PRG directly from the MODE1/2352 disc: LBA 262947, 392928 bytes,
 base 06054000. Encounter entries start at 060A989C, stride 0x20; the first
 pointer references `{callback, argument, flags}` records, terminated by null.
