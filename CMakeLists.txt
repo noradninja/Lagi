@@ -2186,7 +2186,7 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    source_text "${source_text}")
   string(REPLACE
    "#include \"lagi/lagi_azel_upstream_prelude.h\""
-   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/lagi_render_bridge.h\"\n#include \"lagi/platform.h\""
    source_text "${source_text}")
   # User-requested extension: retain this frame's accepted special point
   # parameters for field environment consumers, without widening the native
@@ -2220,7 +2220,14 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "${animated_point_anchor}
             // Azel's special-light lifetime is already gated by m_EB.
             // Do not tie its position to the unrelated sparkle-scale value.
-            lightLocation = pTypedWorkArea->mD8_sparklePosition; // LAGI_COLLECTION_ANIMATED_LIGHT"
+            lightLocation = pTypedWorkArea->mD8_sparklePosition; // LAGI_COLLECTION_ANIMATED_LIGHT
+            static unsigned lagiCollectionLightReports = 0;
+            if (lagiCollectionLightReports < 16) {
+                lagi::platform::logging::writef(\"[CollectionLight] position=%08X,%08X,%08X scale=%08X\\n\",
+                    unsigned(lightLocation[0].asS32()), unsigned(lightLocation[1].asS32()),
+                    unsigned(lightLocation[2].asS32()), unsigned(pTypedWorkArea->mE4_sparkleScale.asS32()));
+                ++lagiCollectionLightReports;
+            } // LAGI_COLLECTION_LIGHT_TRACE"
    source_text "${source_text}")
   # Original FLD_A3 06074026 loads R7=00014000 before calling
   # point-light setup at 0601E200. The reconstruction omitted R7.
