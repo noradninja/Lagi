@@ -35,6 +35,37 @@ int main(){
    else assert(q[i]==original[i]);
   }
  }
+ // Native near-plane callback interpolates both X and Y, with DIV0U.
+ // Exercise every fixed-quad case with nonuniform depths/neighbor choices.
+ for(unsigned mask=0;mask<16;++mask)for(unsigned variant=0;variant<17;++variant){
+  lagi::NativeRayQuad quad{};
+  for(unsigned i=0;i<4;++i)quad[i]={int(i)*103-207,int(i)*-67+139,
+      (mask&(1u<<i))?int(10+i*3):int(110+i*int(variant))};
+  const auto before=quad;
+  const unsigned result=lagi::nativeClipQuadPlane(quad,2,100,true);
+  const bool reject=mask==5||mask==10||mask==15;
+  assert(result==(reject?2:mask?1:0));
+  if(reject){assert(quad==before);continue;}
+  for(unsigned i=0;i<4;++i){
+   if(!(mask&(1u<<i))){assert(quad[i]==before[i]);continue;}
+   int in=destinations[mask][i];
+   if((mask&(mask-1))==0){
+    constexpr unsigned first[4]={1,0,3,2},second[4]={3,2,1,0};
+    const unsigned a=first[i],b=second[i];
+    in=int(before[a][2]>=before[b][2]?a:b);
+   }
+   const std::int64_t numerator=100-before[i][2],denominator=before[in][2]-before[i][2];
+   const auto fraction=(numerator*256/denominator)*256;
+   for(unsigned axis=0;axis<2;++axis)
+    assert(quad[i][axis]==before[i][axis]+(((std::int64_t(before[in][axis])-before[i][axis])*fraction)>>16));
+   assert(quad[i][2]==100);
+  }
+ }
+ for(unsigned mask=0;mask<16;++mask){
+  lagi::NativeRayQuad quad{};
+  for(unsigned i=0;i<4;++i)quad[i]={0,0,(mask&(1u<<i))?300:100};
+  assert(lagi::nativeClipPolygonDepth(quad,100,300)==(mask==0));
+ }
  lagi::NativeRayQuad q={{{-20,20,0},{20,20,0},{20,-20,0},{-20,-20,0}}};
  assert(lagi::nativeClipRayQuad(q,-10,10,10,-10));
  for(const auto& p:q)assert(p[0]>=-10&&p[0]<=10&&p[1]>=-10&&p[1]<=10);

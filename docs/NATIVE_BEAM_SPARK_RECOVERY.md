@@ -36,3 +36,8 @@ solid line, guessed particle texture, or leave the alternate initializer
 connected to a no-op update to avoid the missing draw work. The remaining
 callback and GXM untextured-world-quad path require tests and hardware visual
 and frame-time acceptance. Other A7 services and spline bounds remain open.
+
+`NATIVE_WORLD_POLYGON_RECOVERY.md` now records the restored shared clipping,
+projection and untextured packet service. Its production-wrapper fixture,
+near-plane quad coverage, existing ray regressions and Vita link/package pass.
+The GXM solid mesh material and actual spark draw callbacks remain open.

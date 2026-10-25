@@ -23,8 +23,9 @@ constexpr std::uint32_t nativeClipFraction(std::uint32_t numerator,std::uint32_t
     }
     return (((n<<1)|unsigned(t))&255u)<<8;
 }
-// MAIN 0602C7E6..0602CA98. Return 0 unchanged, 1 clipped, 2 rejected.
+// MAIN 0602C7E6..0602CAF2. Return 0 unchanged, 1 clipped, 2 rejected.
 // This is the native fixed four-vertex action table, not polygon tessellation.
+// Axes 0/1 are signed screen clipping; axis 2 is unsigned near-depth clipping.
 inline unsigned nativeClipQuadPlane(NativeRayQuad& quad,unsigned axis,
     std::int32_t bound,bool lower,std::array<float,4>* inverseDepth=nullptr)
 {
@@ -36,16 +37,19 @@ inline unsigned nativeClipQuadPlane(NativeRayQuad& quad,unsigned axis,
     const auto sub=[](std::int32_t a,std::int32_t b){return std::uint32_t(a)-std::uint32_t(b);};
     const auto edge=[&](unsigned outside,unsigned inside) {
         const auto fraction=nativeClipFraction(sub(bound,quad[outside][axis]),
-            sub(quad[inside][axis],quad[outside][axis]));
-        const unsigned other=axis^1u;
-        const auto delta=static_cast<std::int32_t>(sub(quad[inside][other],quad[outside][other]));
-        const auto product=std::int64_t(delta)*fraction;
+            sub(quad[inside][axis],quad[outside][axis]),axis!=2);
+        const auto interpolate=[&](unsigned other) {
+            const auto delta=static_cast<std::int32_t>(sub(quad[inside][other],quad[outside][other]));
+            const auto product=std::int64_t(delta)*fraction;
+            quad[outside][other]=static_cast<std::int32_t>(std::uint32_t(quad[outside][other])+
+                std::uint32_t(product>>16));
+        };
         // Renderer-only depth follows the same quantized screen edge. It
         // never participates in native XY decisions or packet sorting.
         if(inverseDepth)(*inverseDepth)[outside]+=((*inverseDepth)[inside]-(*inverseDepth)[outside])*
             (float(fraction)/65536.0f);
-        quad[outside][other]=static_cast<std::int32_t>(std::uint32_t(quad[outside][other])+
-            std::uint32_t(product>>16));
+        if(axis==2){interpolate(0);interpolate(1);}
+        else interpolate(axis^1u);
         quad[outside][axis]=bound;
     };
     const auto single=[&](unsigned out,unsigned a,unsigned b) {
@@ -67,6 +71,13 @@ inline unsigned nativeClipQuadPlane(NativeRayQuad& quad,unsigned axis,
     case 14:edge(1,0);edge(2,0);edge(3,0);break;
     }
     return 1;
+}
+// MAIN 0602C848 and 0602C7C6: near clips the native four-corner shape;
+// far rejects the whole primitive if any resulting vertex reaches the limit.
+inline bool nativeClipPolygonDepth(NativeRayQuad& quad,std::int32_t near,std::int32_t far) {
+    if(nativeClipQuadPlane(quad,2,near,true)==2)return false;
+    for(const auto& p:quad)if(p[2]>=far)return false;
+    return true;
 }
 // MAIN 0602D946: right, left, top, bottom, stopping at rejection.
 inline bool nativeClipRayQuad(NativeRayQuad& quad,std::int16_t left,
