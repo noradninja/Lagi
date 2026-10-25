@@ -2362,7 +2362,7 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_tex
     static unsigned lagiFieldLaserSourceReports = 0;
     if (lagiFieldLaserSourceReports < 28) {
         lagi::platform::logging::writef(
-            "[FieldLaserSource] index=%u head=%08X,%08X,%08X id=%u\\n",
+            "[FieldLaserSource] index=%u head=%08X,%08X,%08X id=%u\n",
             unsigned(pThis->m27),
             unsigned(var4[0].asS32()), unsigned(var4[1].asS32()),
             unsigned(var4[2].asS32()), unsigned(pThis->m154));
