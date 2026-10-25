@@ -70,3 +70,8 @@ and all screen-mask/fraction checks pass. Full Vita package build and ELF
 retention of displayRaySegmentFromWorldSpace pass. No device visual or timing
 acceptance is claimed. A7 remains disabled pending its remaining services and
 the spline endpoint audit.
+
+Follow-up `NATIVE_QUAD_CLIP_BOUNDS.md` restores the separate visible rejection
+and guard intersection bounds passed by original MAIN0602D946. It supersedes
+the initial single-bound screen clipping handoff, not the retained projection,
+near/far, packet or source-zero semantics above.

@@ -35,6 +35,31 @@ int main(){
    else assert(q[i]==original[i]);
   }
  }
+ // Native visible-mask classification and guard intersections are separate.
+ // All 16 mask actions still run when their outside vertices lie inside the
+ // guard band; those vertices/depths are not moved to the visible boundary.
+ for(unsigned axis=0;axis<2;++axis)for(bool lower:{false,true})
+ for(unsigned mask=0;mask<16;++mask)for(int outside:{101,199,200,201,255,400}){
+  const int sign=lower?-1:1;
+  lagi::NativeRayQuad quad{};
+  std::array<float,4> inverse{1.f,2.f,3.f,4.f};
+  for(unsigned i=0;i<4;++i)quad[i][axis]=(mask&(1u<<i))?sign*outside:0;
+  for(unsigned i=0;i<4;++i){quad[i][axis^1]=int(i)*40;quad[i][2]=1234+int(i);}
+  const auto before=quad;const auto beforeDepth=inverse;
+  const unsigned result=lagi::nativeClipQuadPlaneBounds(quad,axis,sign*100,sign*200,lower,&inverse);
+  const bool reject=mask==5||mask==10||mask==15;
+  assert(result==(reject?2:mask?1:0));
+  if(reject){assert(quad==before && inverse==beforeDepth);continue;}
+  for(unsigned i=0;i<4;++i){
+   if(!(mask&(1u<<i)) || outside<=200){assert(quad[i]==before[i] && inverse[i]==beforeDepth[i]);continue;}
+   const unsigned in=unsigned(destinations[mask][i]);
+   const auto fraction=(((std::int64_t(outside-200)*256)-(lower?0:1))/outside)*256;
+   const auto delta=std::int64_t(before[in][axis^1])-before[i][axis^1];
+   assert(quad[i][axis]==sign*200 && quad[i][axis^1]==before[i][axis^1]+((delta*fraction)>>16));
+   assert(quad[i][2]==before[i][2]);
+   assert(inverse[i]==beforeDepth[i]+(beforeDepth[in]-beforeDepth[i])*(float(fraction)/65536.f));
+  }
+ }
  // Native near-plane callback interpolates both X and Y, with DIV0U.
  // Exercise every fixed-quad case with nonuniform depths/neighbor choices.
  for(unsigned mask=0;mask<16;++mask)for(unsigned variant=0;variant<17;++variant){
@@ -84,5 +109,5 @@ int main(){
   assert(lagi::nativeClipRayDepth(line,100,300)==expected);
   if(expected)for(const auto& p:line)assert(p[2]>=100 && p[2]<300);
  }
- puts("PASS native screen-ray clipper: eight-step signed fractions, all 16 masks/both axes/sides, unchanged/rejected ownership and four-plane sequence; renderer integration/device pending");
+ puts("PASS native quad clipping: eight-step fractions, all 16 masks/axes/sides, visible rejection versus guard intersections, near-depth interpolation and four-plane sequence; device pending");
 }

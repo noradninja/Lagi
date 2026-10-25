@@ -26,7 +26,8 @@ void lagiDisplayWorldPolygon(const sVec3_FP* points,std::uint16_t color,std::int
         projected[i][1]=MTH_Mul_5_6(clip.m1C_heightScale,fixedPoint(view[i][1]),reciprocal).asS32();
         inverseDepth[i]=65536.0f/float(view[i][2]);
     }
-    if(!lagi::nativeClipRayQuad(projected,clip.m4,clip.m6,clip.m0,clip.m2,&inverseDepth))return;
+    if(!lagi::nativeClipSceneQuad(projected,{clip.mC,clip.mE,clip.m8,clip.mA},
+        {clip.m4,clip.m6,clip.m0,clip.m2},&inverseDepth))return;
     if(depth<0)depth=view[0][2];
     auto& context=graphicEngineStatus.m14_vdp1Context[0];
     if(context.mC>=1018 || context.m0_currentVdp1WriteEA==mainContextVdp1[0].end() ||

@@ -30,7 +30,8 @@ void displayRaySegmentFromWorldSpace(sVec3_FP* points,s32 width,u16 source,
     for(unsigned i=0;i<4;++i)for(unsigned axis=0;axis<2;++axis)projected[i][axis]=screen[i][axis];
     const float a=float(view[0][2].asS32())/65536.0f,b=float(view[1][2].asS32())/65536.0f;
     std::array<float,4> inverseDepth{1.0f/a,1.0f/b,1.0f/b,1.0f/a};
-    if(!lagi::nativeClipRayQuad(projected,clip.m4,clip.m6,clip.m0,clip.m2,&inverseDepth))return;
+    if(!lagi::nativeClipSceneQuad(projected,{clip.mC,clip.mE,clip.m8,clip.mA},
+        {clip.m4,clip.m6,clip.m0,clip.m2},&inverseDepth))return;
     auto& context=graphicEngineStatus.m14_vdp1Context[0];
     if(context.mC>=1018 || context.m0_currentVdp1WriteEA==mainContextVdp1[0].end() ||
         context.m20_pCurrentVdp1Packet>=context.m24_vdp1Packets+1024)return;

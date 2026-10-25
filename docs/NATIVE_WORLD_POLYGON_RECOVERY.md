@@ -36,4 +36,7 @@ metadata and command/packet capacity guards. Its transform service is mocked;
 this is not a device geometry or performance claim. The full Vita VPK builds
 and the ELF retains the service. `NATIVE_SOLID_MESH_MATERIAL.md` records the
 subsequent shared GXM material correction. Both native spark draw callbacks
-still need completion before device testing.
+are restored in `NATIVE_BEAM_SPARK_RECOVERY.md`; device testing remains pending.
+
+Follow-up `NATIVE_QUAD_CLIP_BOUNDS.md` corrects the visible-mask versus
+guard-intersection boundary distinction in the shared screen clipping path.

@@ -10,7 +10,7 @@ struct sVec3_FP {std::array<fixedPoint,3> v{};fixedPoint& operator[](unsigned i)
 static fixedPoint FP_Div(s32 n,fixedPoint d){assert(d.v);return s32((std::int64_t(n)*65536)/d.v);}
 static fixedPoint mul(fixedPoint a,fixedPoint b){return s32((std::int64_t(a.v)*b.v)>>16);}
 static fixedPoint MTH_Mul_5_6(fixedPoint a,fixedPoint b,fixedPoint c){return mul(a,mul(b,c));}
-struct s_graphicEngineStatus_405C {s16 m0=242,m2=-242,m4=-326,m6=326;
+struct s_graphicEngineStatus_405C {s16 m0=242,m2=-242,m4=-326,m6=326,m8=112,mA=-112,mC=-176,mE=176;
  fixedPoint m10_nearClipDistance{65536},m14_farClipDistance{0x400000},m18_widthScale{100},m1C_heightScale{100},m38_oneOverFarClip{0x200};};
 struct Cmd {u16 m0_CMDCTRL=0,m4_CMDPMOD=0,m6_CMDCOLR=0,m8_CMDSRCA=0,mA_CMDSIZE=0;
  s16 mC_CMDXA=0,mE_CMDYA=0,m10_CMDXB=0,m12_CMDYB=0,m14_CMDXC=0,m16_CMDYC=0,m18_CMDXD=0,m1A_CMDYD=0;u16 m1C_CMDGRA=0;};
@@ -60,6 +60,9 @@ int main(){
  points=reset();for(auto& p:points)p[0]=p[0].v*8;lagiDisplayWorldPolygon(points.data(),1,-1);
  assert(metadata==1 && cmd.mC_CMDXA==-326 && cmd.m14_CMDXC==326);
  points=reset();for(auto& p:points)p[0]=0x100000;lagiDisplayWorldPolygon(points.data(),1,-1);assert(!metadata);
+ points=reset();for(auto& p:points)p[0]=2*65536;lagiDisplayWorldPolygon(points.data(),1,-1);assert(!metadata); // All outside visible, inside guard.
+ points=reset();points[1][0]=2*65536;points[2][0]=2*65536;lagiDisplayWorldPolygon(points.data(),1,-1);
+ assert(metadata==1 && cmd.m10_CMDXB==200 && cmd.m14_CMDXC==200); // Partial shape retains guard-band vertices.
  points=reset();c.mC=1018;lagiDisplayWorldPolygon(points.data(),1,-1);assert(!metadata && c.mC==1018);
  points=reset();c.m0_currentVdp1WriteEA=mainContextVdp1[0].end();lagiDisplayWorldPolygon(points.data(),1,-1);assert(!metadata);
  points=reset();c.m20_pCurrentVdp1Packet=packets.data()+1024;lagiDisplayWorldPolygon(points.data(),1,-1);assert(!metadata);

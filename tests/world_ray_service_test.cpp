@@ -8,7 +8,7 @@ using s32=std::int32_t;using u32=std::uint32_t;using s16=std::int16_t;using u16=
 struct fixedPoint {s32 v;fixedPoint(s32 x=0):v(x){}s32 asS32()const{return v;}};
 using sVec3_FP=std::array<fixedPoint,3>;
 using sScreenQuad3=std::array<std::array<s32,3>,4>;
-struct s_graphicEngineStatus_405C {s16 m0=242,m2=-242,m4=-326,m6=326;fixedPoint m10_nearClipDistance{65536},m14_farClipDistance{0x400000},m38_oneOverFarClip{0x200};};
+struct s_graphicEngineStatus_405C {s16 m0=242,m2=-242,m4=-326,m6=326,m8=112,mA=-112,mC=-176,mE=176;fixedPoint m10_nearClipDistance{65536},m14_farClipDistance{0x400000},m38_oneOverFarClip{0x200};};
 struct Cmd {u16 m0_CMDCTRL=0,m4_CMDPMOD=0,m6_CMDCOLR=0,m8_CMDSRCA=0,mA_CMDSIZE=0;
  s16 mC_CMDXA=0,mE_CMDYA=0,m10_CMDXB=0,m12_CMDYB=0,m14_CMDXC=0,m16_CMDYC=0,m18_CMDXD=0,m1A_CMDYD=0;u16 m1C_CMDGRA=0;};
 static std::vector<Cmd> mainContextVdp1[1];
@@ -56,6 +56,10 @@ int main() {
  assert(capturedDepth[0]>1 && capturedDepth[0]<3 && capturedDepth[1]>1 && capturedDepth[1]<3);
  reset();nextScreen={{{-500,10,0},{-400,10,0},{-400,-10,0},{-500,-10,0}}};
  displayRaySegmentFromWorldSpace(line.data(),42,1,2,3,0);assert(!metadata);
+ reset();nextScreen={{{200,10,0},{250,10,0},{250,-10,0},{200,-10,0}}};
+ displayRaySegmentFromWorldSpace(line.data(),42,1,2,3,0);assert(!metadata);
+ reset();nextScreen={{{-10,10,0},{250,10,0},{250,-10,0},{-10,-10,0}}};
+ displayRaySegmentFromWorldSpace(line.data(),42,1,2,3,0);assert(metadata==1 && mainContextVdp1[0][6].m10_CMDXB==250);
  reset();auto& c=graphicEngineStatus.m14_vdp1Context[0];c.mC=1018;
  displayRaySegmentFromWorldSpace(line.data(),42,1,2,3,0);assert(!metadata && c.mC==1018);
  reset();c.m0_currentVdp1WriteEA=mainContextVdp1[0].end();displayRaySegmentFromWorldSpace(line.data(),42,1,2,3,0);assert(!metadata);
