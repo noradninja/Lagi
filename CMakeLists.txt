@@ -2042,6 +2042,48 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${point_activate_old}" "${point_activate_new}" source_text "${source_text}")
 
  elseif(relative_path STREQUAL "battle/BTL_T0/BTL_T0.cpp")
+  # BTL_T0 06059044: preserve the original phase-1 helper dispatch.
+  # In particular phase 2 must confirm/destroy the input child, not merely
+  # scroll text while leaving mode F and its input lock active.
+  set(tutorial_movement_old [=[    case 1:
+    case 0x13:
+        tutorialController_checkD56cAndSetMode2(pThis);
+        break;
+    case 2:
+    case 0x14:
+        tutorialController_scrollAndAdvance(pThis);]=])
+  set(tutorial_movement_new [=[    case 1:
+    case 4:
+    case 0x13:
+        tutorialController_checkD56cAndSetMode2(pThis);
+        break;
+    case 9:
+    case 0x14:
+        tutorialController_scrollAndAdvance(pThis);]=])
+  set(tutorial_movement_confirm_old [=[    case 4:
+    case 9:
+    case 0xa:
+    case 0x15:
+        tutorialController_timerAndConfirm(pThis);]=])
+  set(tutorial_movement_confirm_new [=[    case 2:
+    case 0xa:
+    case 0x15:
+        tutorialController_timerAndConfirm(pThis);]=])
+  set(tutorial_movement_scroll_old [=[    case 6:
+        tutorialController_checkD56cAndSetMode2(pThis);
+        break;
+    case 7:]=])
+  set(tutorial_movement_scroll_new [=[    case 6:
+        tutorialController_scrollAndAdvance(pThis);
+        break;
+    case 7:]=])
+  foreach(anchor IN ITEMS tutorial_movement tutorial_movement_confirm tutorial_movement_scroll)
+   string(FIND "${source_text}" "${${anchor}_old}" found)
+   if(found LESS 0)
+    message(FATAL_ERROR "Native movement lesson boundary changed: ${anchor}")
+   endif()
+   string(REPLACE "${${anchor}_old}" "${${anchor}_new}" source_text "${source_text}")
+  endforeach()
   set(tutorial_water_old [=[    static void Update(sBTL_T0_WaterEffect* pThis)
     {
         Unimplemented();
