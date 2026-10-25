@@ -2277,7 +2277,7 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
-  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  set(source_text "#include \"lagi/platform.h\"\n#include \"lagi/lagi_render_bridge.h\"\n#include <cstdint>\n${source_text}")
   # Follow the existing Azel trail sprite and final sparkle with the native
   # A11D special light; no new path, light color or attenuation calculation.
   set(trail_light_declaration [=[void s_LCSLaser::InitTrail(s_LCSLaser* pThis, sLaserArgs* arg)]=])
