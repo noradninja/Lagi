@@ -2349,6 +2349,27 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_tex
   string(REPLACE "${trail_draw_index_old}"
    "    s32 trailIndex = (pThis->m154 - 1) & 0xF; // LAGI_NATIVE_TRAIL_LAST_WRITTEN"
    source_text "${source_text}")
+  # Field LCS beam heads reuse the native color-index palette and actual last
+  # written m6C position. Emit once per beam task update; no simulated path.
+  # CMake processes the mounted Azel source, never extern/Azel directly.
+  set(field_laser_update_anchor [=[    pThis->m144 = var4 - r5;
+}]=])
+  string(FIND "${source_text}" "${field_laser_update_anchor}" field_laser_update_found)
+  if(field_laser_update_found LESS 0)
+   message(FATAL_ERROR "Native LCS beam-head light update boundary changed")
+  endif()
+  string(REPLACE "${field_laser_update_anchor}" [=[    pThis->m144 = var4 - r5;
+    if (pThis->m27 < 7) {
+        // Azel owns m6C, m154 and m27; light colors match the item LCS
+        // palette already used by the accepted native collection effect.
+        const auto& beamHead = pThis->m6C[(pThis->m154 - 1) & 0xF];
+        lagi::azel_bridge::record_transient_field_laser_light(
+            static_cast<u64>(reinterpret_cast<uintptr_t>(pThis)),
+            beamHead[0].asS32(), beamHead[1].asS32(),
+            beamHead[2].asS32(),
+            s_LCSLaser_DeleteTrailSub0Data0[pThis->m27].toU32()); // LAGI_FIELD_LASER_LIGHT
+    }
+}]=] source_text "${source_text}")
   set(trail_light_palette_anchor "void s_LCSLaser_DeleteTrailSub0(s32 r4)")
   string(FIND "${source_text}" "${trail_light_palette_anchor}" trail_palette_found)
   if(trail_palette_found LESS 0)
