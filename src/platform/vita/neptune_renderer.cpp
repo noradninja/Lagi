@@ -15416,6 +15416,12 @@ static void updateLiveTownAzelLighting()
     std::int16_t falloffMap[32][3]{};
     bool haveFalloff = false;
     static bool reportedLiveLighting = false;
+    // Bounded diagnostic only; no impact on native lighting arithmetic.
+    // Eight samples over the first 32 point-lit frames, up to three polygons
+    // per sampled frame. This spans the LCS pickup without flooding lagi.log.
+    static unsigned pointTraceLitFrames = 0;
+    unsigned pointTraceSamplesThisFrame = 0;
+    bool pointTraceActiveThisFrame = false;
 
     for (std::size_t p = 0;
          p < g_liveTownCpuMesh.polygonRecords.size(); ++p) {
@@ -15496,7 +15502,40 @@ static void updateLiveTownAzelLighting()
                 accum[2] += light.color[0] * dotHi;
             }
 
+            const bool pointTraceEligible = light.additionalLight.active;
+            if (pointTraceEligible) pointTraceActiveThisFrame = true;
+            const int beforePoint[3] = {accum[0], accum[1], accum[2]};
             lagi::accumulate_additional_model_light(light.additionalLight,lighting.normal,accum);
+            if (pointTraceEligible && corner == 0u &&
+                pointTraceLitFrames < 32u &&
+                (pointTraceLitFrames % 4u) == 0u &&
+                pointTraceSamplesThisFrame < 3u) {
+                // Dot is signed 16.16 with Saturn model-space normals.
+                const std::int64_t pointDot =
+                    std::int64_t(lighting.normal[0]) * light.additionalLight.vector[0] +
+                    std::int64_t(lighting.normal[1]) * light.additionalLight.vector[1] +
+                    std::int64_t(lighting.normal[2]) * light.additionalLight.vector[2];
+                logging::writef(
+                    "[PointGouraudTrace] litFrame=%u polygon=%u mode=%u depthIndex=%d "
+                    "normal=%d,%d,%d baseDot=%d pointDot=%lld "
+                    "base=%d,%d,%d add=%d,%d,%d summed=%d,%d,%d "
+                    "rgb555=%u,%u,%u clipped=%u,%u,%u pointColor=%u,%u,%u\\n",
+                    pointTraceLitFrames, static_cast<unsigned>(p), mode, depthIndex,
+                    int(lighting.normal[0]), int(lighting.normal[1]), int(lighting.normal[2]),
+                    dotProduct, static_cast<long long>(pointDot),
+                    beforePoint[0], beforePoint[1], beforePoint[2],
+                    accum[0]-beforePoint[0], accum[1]-beforePoint[1], accum[2]-beforePoint[2],
+                    accum[0], accum[1], accum[2],
+                    unsigned(std::clamp(accum[0],0,0x1F00)>>8),
+                    unsigned(std::clamp(accum[1],0,0x1F00)>>8),
+                    unsigned(std::clamp(accum[2],0,0x1F00)>>8),
+                    unsigned(accum[0]>0x1F00),unsigned(accum[1]>0x1F00),
+                    unsigned(accum[2]>0x1F00),
+                    unsigned(light.additionalLight.color[2]),
+                    unsigned(light.additionalLight.color[1]),
+                    unsigned(light.additionalLight.color[0]));
+                ++pointTraceSamplesThisFrame;
+            }
 
             for (unsigned channel = 0; channel < 3; ++channel) {
                 const int gouraud5 =
@@ -15506,6 +15545,8 @@ static void updateLiveTownAzelLighting()
             }
         }
     }
+    if (pointTraceActiveThisFrame && pointTraceLitFrames < 32u)
+        ++pointTraceLitFrames;
 }
 
 bool presentation_active()
