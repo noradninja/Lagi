@@ -2748,6 +2748,17 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[1]);" "playSystemSoundEffect(pThis->mCC->m2D_hitSound);" source_text "${source_text}")
   string(REPLACE "pThis->mCC->m28[2] != -1" "pThis->mCC->m2E_deathSound != 0xFF" source_text "${source_text}")
   string(REPLACE "playSystemSoundEffect(pThis->mCC->m28[2]);" "playSystemSoundEffect(pThis->mCC->m2E_deathSound);" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/fieldBeamSpark.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(spark_callback_anchor "pThis->m_UpdateMethod = &beamSpark_UpdateAlt;")
+  string(FIND "${source_text}" "${spark_callback_anchor}" spark_callback_found)
+  if(spark_callback_found LESS 0)
+   message(FATAL_ERROR "Native beam spark callback boundary changed")
+  endif()
+  # Original A7 06069F0C..10 replaces task+0C (draw), not task+08
+  # (update). The alternate name is upstream's historical misidentification.
+  string(REPLACE "${spark_callback_anchor}"
+   "pThis->m_DrawMethod = &beamSpark_UpdateAlt; // Native unrotated DRAW callback; update/lifetime remains active."
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldSpline.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_field_spline_coefficients.inc")
@@ -4815,7 +4826,7 @@ if(LAGI_BATTLE_NATIVE_BUILD)
   RELATIVE "${LAGI_AZEL_SOURCE_ROOT}"
   "${LAGI_AZEL_SOURCE_ROOT}/field/field_a7/*.cpp")
  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES ${LAGI_TUTORIAL_A7_SOURCES})
- list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES field/fieldSpline.cpp)
+ list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES field/fieldSpline.cpp field/fieldBeamSpark.cpp)
  list(REMOVE_DUPLICATES LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES)
 endif()
 
@@ -5073,6 +5084,7 @@ if(LAGI_BATTLE_LINK_AUDIT)
  target_link_options(lagi PRIVATE "-Wl,--undefined=_Z19overlayStart_BTL_A3P10s_workArea")
  target_link_options(lagi PRIVATE "-Wl,--undefined=_Z19overlayStart_BTL_T0P10s_workArea")
  target_link_options(lagi PRIVATE "-Wl,--undefined=_Z31displayRaySegmentFromWorldSpaceP8sVec3_FPitttt")
+ target_link_options(lagi PRIVATE "-Wl,--undefined=_Z15beamSpark_spawnP10s_workAreaP13sBeamSparkArg")
 endif()
 set_property(TARGET lagi APPEND PROPERTY LINK_DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita_sce_gap.ld")
 set_property(SOURCE src/integration/lagi_runtime.cpp src/integration/lagi_input_bridge.cpp APPEND PROPERTY COMPILE_DEFINITIONS

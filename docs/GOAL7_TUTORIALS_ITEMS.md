@@ -45,6 +45,8 @@ the recovered coefficient solver and unresolved evaluator endpoint bounds;
 `NATIVE_WORLD_RAY_RECOVERY.md` records the recovered projected-quad clipper
 and now-integrated unshaded world-ray service, with production-wrapper tests
 and retained Vita linkage. Neither means Tutorial2 is enabled.
+`NATIVE_BEAM_SPARK_RECOVERY.md` records the corrected native draw/update
+callback ownership and tests; its two visual callbacks remain unfinished.
 
 FLD_A7 sources compile in the battle build (722b693), but unused-function
 garbage collection is not a live dependency proof. Temporarily restoring the
