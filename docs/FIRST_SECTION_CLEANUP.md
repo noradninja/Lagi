@@ -28,9 +28,9 @@ Independent corrections remain atomic commits.
    fixed; do not reopen them. Restore the shared pipeline efficiently with GXM.
 5. **Accepted:** Excavation cinematic/town floor corruption: shared source/native black
    behavior, not a scene-specific mask.
-6. Second field-map acquisition/entry failure, visited-area marking, selection,
+6. **Accepted:** Second field-map acquisition/entry failure, visited-area marking, selection,
    exit and save/reload correctness.
-7. Native battle tutorials and first-section item/Berserk coverage, including
+7. **Active, tutorials first:** Native battle tutorials and first-section item/Berserk coverage, including
    Blast Chip and Energy Prism trails, lighting, camera, timing and cleanup.
 
 ## Goal 3 hardware acceptance
