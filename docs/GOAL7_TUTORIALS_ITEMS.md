@@ -38,6 +38,25 @@ dispatch before its required resources/callbacks are serviced.
 
 ## Implementation and acceptance sequence
 
+### Contextual prompt condition restoration
+
+Original T0 0605A214..0605A53A specifies all nine text sets. Sets0..3 retire
+on the matching unsigned quadrant byte and clear both flags10/08. Set4
+retires at mode0/submode>=3; sets5,6,7 at modes3,1,4 respectively with a
+nonnegative signed submode. Set8 accepts any of those four mode/submode
+conditions. Sets4..8 clear08 only, preserving the native menu latch.
+The shared menu preamble clears10 if command menu is absent or its bit8
+is unset, otherwise raises10 and clears the area on the rising edge.
+Unknown text-set values do not invent a completion condition.
+
+`lagi_tutorial_text_condition.inc` replaces the entire stubbed function in
+the generated overlay. Its production-include fixture passes430848 cases
+across text sets0..10, flags0..31, three menu states, modes0..16, six signed
+submode boundaries and all four quadrants, verifying exact clears and flags.
+Vita compiles the actual generated overlay. This restores contextual prompt
+retirement, not full lesson completion; dispatch remains disconnected until
+required remaining effects and entry/return lifecycle are ready.
+
 ### Tutorial source compilation checkpoint
 
 BTL_T0.cpp is now included in the battle Vita source list, using the same

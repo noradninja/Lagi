@@ -2003,6 +2003,19 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${point_activate_old}" "${point_activate_new}" source_text "${source_text}")
 
  elseif(relative_path STREQUAL "battle/BTL_T0/BTL_T0.cpp")
+  set(tutorial_condition_begin "static void tutorialController_checkTextCondition(sTutorialControllerTask* pThis)")
+  set(tutorial_condition_end "// 0605a134")
+  string(FIND "${source_text}" "${tutorial_condition_begin}" tutorial_condition_start)
+  string(FIND "${source_text}" "${tutorial_condition_end}" tutorial_condition_stop)
+  if(tutorial_condition_start LESS 0 OR tutorial_condition_stop LESS tutorial_condition_start)
+   message(FATAL_ERROR "Native tutorial text condition boundary changed")
+  endif()
+  math(EXPR tutorial_condition_length "${tutorial_condition_stop}-${tutorial_condition_start}")
+  string(SUBSTRING "${source_text}" ${tutorial_condition_start} ${tutorial_condition_length} tutorial_condition_old)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_tutorial_text_condition.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_tutorial_text_condition.inc" tutorial_condition_native)
+  string(REPLACE "${tutorial_condition_old}" "${tutorial_condition_native}\n" source_text "${source_text}")
   string(REPLACE "#include \"BTL_T0.h\"" "#include \"battle/BTL_T0/BTL_T0.h\"" source_text "${source_text}")
   set(tutorial_font_old [=[    s32 idx = (param_1 == '\0') ? 0x18 : 0x17;
     setActiveFont((s32)(s8)((u8*)pText)[idx]);]=])
