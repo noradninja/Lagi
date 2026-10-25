@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdio>
 struct {struct {unsigned m0_menuId=1;}m40AC;}graphicEngineStatus;
+unsigned char fieldSubTaskVar0=1;
 struct Game {int scene=0;bool story=false;int readPackedBits(int a,int b){assert(a==0 && b==2);return scene;}bool getBit(int a){assert(a==193);return story;}}mainGameState;
 struct Field {int m2C_currentFieldIndex=2,m2E_currentSubFieldIndex=0;}field;
 Field* currentField=&field;
@@ -41,19 +42,26 @@ int main(){
  std::vector<std::uint8_t> bytes(134788);
  Common common{0x200000,bytes.data(),bytes.size()};gCommonFile=&common;
  auto put=[&](unsigned p,std::uint32_t value){for(unsigned i=0;i<4;++i)bytes[p+i]=value>>(24-i*8);};
- // Null table and zero authored route have identical output for either gate.
+ // Null table and zero authored route disable travel with the live gate on.
  assert(lagiAzelResolveMapParentSource(source) && source.availability.slots[1]==0);
  put(0xA4D4+2*4,0x20A3E4);
  assert(lagiAzelResolveMapParentSource(source) && source.availability.slots[1]==0);
  put(0xA3E4,1);
  const int before=nativeCalls;
- assert(!lagiAzelResolveMapParentSource(source));
+ assert(lagiAzelResolveMapParentSource(source) && source.availability.slots[1]==1 && source.availability.selected==0);
  assert(createMapTask(&parent)==&placeholder && nativeCalls==before);
- put(0xA3E4,0xFFFFFFFF);assert(!lagiAzelResolveMapParentSource(source));
+ put(0xA3E4,0xFFFFFFFF);assert(lagiAzelResolveMapParentSource(source) && source.availability.slots[1]==1);
+ // Any nonzero byte enables native lookup; gate zero short-circuits it.
+ fieldSubTaskVar0=0;
+ assert(lagiAzelResolveMapParentSource(source) && source.availability.slots[1]==0);
+ assert(createMapTask(&parent)==&nativeTask);
+ fieldSubTaskVar0=0x80;
+ assert(lagiAzelResolveMapParentSource(source) && source.availability.slots[1]==1);
+ fieldSubTaskVar0=1;
  put(0xA3E4,0);assert(createMapTask(&parent)==&nativeTask);
  field.m2C_currentFieldIndex=1;
  assert(lagiAzelResolveMapParentSource(source));
- put(0xA3E4,9);assert(!lagiAzelResolveMapParentSource(source));
+ put(0xA3E4,9);assert(lagiAzelResolveMapParentSource(source) && source.availability.slots[1]==1);
  mainGameState.story=false;assert(lagiAzelResolveMapParentSource(source));
  mainGameState.story=true;currentField=nullptr;assert(!lagiAzelResolveMapParentSource(source));
  currentField=&field;common.m_base=0x300000;assert(!lagiAzelResolveMapParentSource(source));
@@ -74,5 +82,5 @@ int main(){
   assert(lagiAzelResolveMapParentSource(source) && source.availability.slots[0]==0 && source.availability.slots[1]==0);
  }
  factoryOk=false;assert(createMapTask(&parent)==&placeholder);
- std::puts("PASS: production Map live source and dispatch, proven gate-independent branches, both field tables, unresolved nonzero route rejection, native context/town/cadence and malformed state; no hardware validation");
+ std::puts("PASS: production Map live source/dispatch, native subfield gate off/on/high-bit, both field tables, enabled route backend guard, context/town/cadence and malformed state; no hardware validation");
 }

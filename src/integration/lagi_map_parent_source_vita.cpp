@@ -3,6 +3,11 @@
 #include "commonOverlay.h"
 #include "field.h"
 
+// MAIN06012434 is setFieldSubTaskVar0: its caller06011BB2 passes1
+// in s_FieldSubTaskWorkArea::Init, immediately after storing field+8 and
+// clearing subfield+370. Read the original live byte, not inventory state.
+extern u8 fieldSubTaskVar0;
+
 bool lagiAzelResolveMapParentSource(LagiAzelMapParentSource& source)
 {
     source={};
@@ -19,18 +24,13 @@ bool lagiAzelResolveMapParentSource(LagiAzelMapParentSource& source)
     input.worldMapStoryBit=mainGameState.getBit(193);
     result.hasContext=lagiAzelResolveCurrentMapContext(result.context);
     input.hasFieldContext=result.hasContext;
-    if(scene==0 && input.worldMapStoryBit) {
+    if(scene==0 && input.worldMapStoryBit && fieldSubTaskVar0!=0) {
         auto* field=getFieldTaskPtr();
         if(!field || !gCommonFile || !gCommonFile->m_data || gCommonFile->m_base!=0x200000)
             return false;
-        std::uint32_t authoredRoute=0;
         if(!lagiAzelReadFieldWorldMapRoute(gCommonFile->m_data,gCommonFile->m_dataSize,
             field->m2C_currentFieldIndex,field->m2E_currentSubFieldIndex,
-            true,input.worldMapStoryBit,authoredRoute)) return false;
-        // If the authored route is zero, both possible values of0024B89C
-        // yield zero. A nonzero route still depends on the unknown live gate:
-        // do not force it on, force it off, or silently remove the world slot.
-        if(authoredRoute!=0) return false;
+            fieldSubTaskVar0!=0,input.worldMapStoryBit,input.fieldRoute)) return false;
     }
     result.availability=lagiAzelMapAvailabilityFromNative(input);
     source=result;

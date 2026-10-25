@@ -14,8 +14,9 @@ cannot be resolved or its enabled world destination has no backend. The
 placeholder displays a selection message but never creates a field viewer.
 This is a candidate for the invisible menu, not a confirmed reproduction.
 
-`lagi_map_parent_source_vita.cpp` explicitly rejects nonzero authored field
-routes while native low-RAM gate 0024B89C is unresolved. The module-manager
+Before this goal's binding correction, `lagi_map_parent_source_vita.cpp`
+rejected nonzero authored field routes while gate 0024B89C was unresolved.
+The module-manager
 generator still leaves entry 5 (CHANGE.PRG) null; entry 6 (WORLD.PRG boundary)
 does not substitute for it. Enabling the world slot without its native owner
 and actual backend would not be a correct field-map fix.
@@ -38,16 +39,30 @@ Read-only Disc 1 MAIN inspection identifies **06012434** as the setter:
   new subfield pointer is stored at field+8 and subfield+370 is cleared.
 
 An aligned MAIN scan found the setter pointer at 06011C30 and no direct BSR
-to the setter. This is not a whole-disc caller proof. The source counterpart
-and other overlay/script writes must be established before binding the live
-flag; it must not be replaced with map ownership or a guessed story bit.
+to the setter. This is not a whole-disc caller proof.
+
+The source counterpart is `s_FieldSubTaskWorkArea::Init` in
+mainMenuDebugTasks.cpp: identical field+8 store, subfield+370 clear,
+`setFieldSubTaskVar0(1)`, field8/12 allocator exception, C210 fade endpoints,
+overlay callback and state4 transition. The setter stores its argument to
+the existing `fieldSubTaskVar0` byte. The source resolver now reads that byte
+and passes the authored route into native availability instead of rejecting
+all nonzero routes. No new flag, inventory dependency or forced value.
+
+Production source/dispatch host tests pass, including gate0/1/80, nonzero and
+FFFFFFFF routes, both field tables and malformed COMMON. Full battle Vita
+VPK build passes. The world backend guard deliberately remains: entry5 is
+still absent, so this correction alone does not claim to repair invisible
+menu entry or enable world travel. Hardware validation is outstanding.
 
 Evidence: original AZEL_1.bin MAIN LBA58, 253952 bytes, base06006000;
 `disc_sh2_inspect` ranges 06011B90..06011C40 and 06012434..06012554.
 
 ## Outstanding
 
-Trace shared exploration updates, map pickup state and native gate lifetime;
+Trace shared exploration updates (upstream `fieldTerrainCallback`, native
+06012674, is an unimplemented consumer of the same COMMON20A388 hierarchy),
+map pickup state and native gate lifetime;
 reproduce the second-map path with fresh diagnostics; implement narrow
 source-faithful corrections and tests; build Vita; obtain pickup/menu/save
 and reload validation on hardware. Host tests alone cannot close this goal.
