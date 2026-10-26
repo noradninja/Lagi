@@ -15539,14 +15539,6 @@ static void updateLiveTownAzelLighting()
             const int preLaserRGB[3]={accum[0],accum[1],accum[2]};
             bool laserFacing=false;
             for(unsigned transient=0;transient<light.transientLaserLightCount;++transient) {
-                if(traceLaserCoverage) {
-                    const auto& source=light.transientLaserLights[transient];
-                    const std::int64_t dot=
-                        std::int64_t(lighting.normal[0])*source.vector[0]+
-                        std::int64_t(lighting.normal[1])*source.vector[1]+
-                        std::int64_t(lighting.normal[2])*source.vector[2];
-                    laserFacing|=(dot>=65536);
-                }
                 // Evaluate source-to-corner displacement, not the native
                 // object's origin. Keep native root/divide/range rules, and
                 // rotate the resulting vector back to the authored normal's
@@ -15598,6 +15590,13 @@ static void updateLiveTownAzelLighting()
                         v+=std::int64_t(light.modelBasis[row*3+axis])*evaluated.vector[row];
                     vertexLight.vector[axis]=static_cast<std::int16_t>(v>>16);
                     vertexLight.color[axis]=source.color[axis];
+                }
+                if(traceLaserCoverage) {
+                    const std::int64_t dot=
+                        std::int64_t(lighting.normal[0])*vertexLight.vector[0]+
+                        std::int64_t(lighting.normal[1])*vertexLight.vector[1]+
+                        std::int64_t(lighting.normal[2])*vertexLight.vector[2];
+                    laserFacing|=(dot>=65536);
                 }
                 lagi::accumulate_additional_model_light(vertexLight,lighting.normal,accum);
             }
