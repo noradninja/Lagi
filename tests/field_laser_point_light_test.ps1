@@ -20,14 +20,16 @@ if (!$bridge.Contains('g_completedFieldLaserLights=g_fieldLaserLights;') -or
     !$bridge.Contains('g_fieldLaserLights.clear();') -or
     !$bridge.Contains('apply_transient_field_laser_lights(g_lastState);') -or
     !$bridge.Contains('native_point_light(nativeMatrix,params)') -or
-    !$bridge.Contains('if (result.outside || result.divisionOverflow) continue;') -or
+    !$bridge.Contains('state.transientLaserSources[slot]=source;') -or
     !$bridge.Contains('state.transientLaserLightCount==lagi::kMaxTransientLaserLights')) {
     throw 'Transient field lights must be frame-owned and native range bounded'
 }
 if (!$header.Contains('std::array<AdditionalModelLight, lagi::kMaxTransientLaserLights>') -or
     !$renderer.Contains('polygonLight.transientLaserLights=state.transientLaserLights;') -or
     !$renderer.Contains('transient<light.transientLaserLightCount') -or
-    !$renderer.Contains('accumulate_additional_model_light(light.transientLaserLights[transient],lighting.normal,accum);')) {
+    !$renderer.Contains('native_point_light(modelAtCorner,params)') -or
+    !$renderer.Contains('g_liveTownCpuMesh.vertices[p*6u+vertexIndex]') -or
+    !$renderer.Contains('accumulate_additional_model_light(vertexLight,lighting.normal,accum);')) {
     throw 'Missing four-light snapshot or additive Gouraud integration'
 }
 if (!$renderer.Contains('[FieldLaserCoverage]') -or
