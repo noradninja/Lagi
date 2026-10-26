@@ -2276,6 +2276,60 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "    copyMatrix(pCurrentMatrix, &pTypedWorkArea->m384_viewMatrix);\n    lagi::azel_bridge::capture_native_scene_view_matrix();"
    source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "battle/homingLaser.cpp")
+  # Battle homing lasers: Azel's interpolated moving laser position and its
+  # own VDP1 trail palette are the authoritative source.
+  set(source_text "#include \"lagi/lagi_render_bridge.h\"\n#include <cstdint>\n${source_text}")
+  set(lagi_battle_laser_anchor [=[void sHomingLaserTask_Draw(sHomingLaserTask* pThis)
+{
+    for (int i = 9; i >= 0; i--)]=])
+  string(FIND "${source_text}" "${lagi_battle_laser_anchor}" lagi_battle_laser_found)
+  if(lagi_battle_laser_found LESS 0)
+   message(FATAL_ERROR "Battle homing laser draw producer changed")
+  endif()
+  string(REPLACE "${lagi_battle_laser_anchor}" [=[void sHomingLaserTask_Draw(sHomingLaserTask* pThis)
+{
+    if (pThis->mF0.m10_laserData &&
+        !pThis->mF0.m10_laserData->m1C_colors.empty()) {
+        const u16 rgb555 = pThis->mF0.m10_laserData->m1C_colors[0][0];
+        const u32 rgb888 =
+            ((u32(rgb555 & 31) << 3) << 16) |
+            ((u32((rgb555 >> 5) & 31) << 3) << 8) |
+            (u32((rgb555 >> 10) & 31) << 3);
+        const auto& position=pThis->m10_laserPosition;
+        lagi::azel_bridge::record_transient_battle_attack_light(
+            static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(pThis)),
+            position[0].asS32(),position[1].asS32(),position[2].asS32(),
+            rgb888); // LAGI_BATTLE_HOMING_POINT
+    }
+    for (int i = 9; i >= 0; i--)]=] source_text "${source_text}")
+
+ elseif(relative_path STREQUAL "battle/gunShotRootTask.cpp")
+  # Gunshot draw tasks provide the moving segment head and weapon-specific
+  # native VDP1 Gouraud table. Avoid weapon-based hardcoded RGB choices.
+  set(source_text "#include \"lagi/lagi_render_bridge.h\"\n#include <cstdint>\n${source_text}")
+  set(lagi_battle_gun_anchor [=[        sGunShotTask_SetupSpriteData(pThis);
+
+        if (!(pThis->m65 & 4))]=])
+  string(FIND "${source_text}" "${lagi_battle_gun_anchor}" lagi_battle_gun_found)
+  if(lagi_battle_gun_found LESS 0)
+   message(FATAL_ERROR "Battle gunshot draw producer changed")
+  endif()
+  string(REPLACE "${lagi_battle_gun_anchor}" [=[        sGunShotTask_SetupSpriteData(pThis);
+        if (pThis->m10_colorSetup && !pThis->m10_colorSetup->empty()) {
+            const u16 rgb555 = (*pThis->m10_colorSetup)[0][0];
+            const u32 rgb888 =
+                ((u32(rgb555 & 31) << 3) << 16) |
+                ((u32((rgb555 >> 5) & 31) << 3) << 8) |
+                (u32((rgb555 >> 10) & 31) << 3);
+            lagi::azel_bridge::record_transient_battle_attack_light(
+                static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(pThis)),
+                pThis->m14[0].asS32(),pThis->m14[1].asS32(),
+                pThis->m14[2].asS32(),rgb888); // LAGI_BATTLE_GUN_POINT
+        }
+
+        if (!(pThis->m65 & 4))]=] source_text "${source_text}")
+
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
   set(source_text "#include \"lagi/platform.h\"\n#include \"lagi/lagi_render_bridge.h\"\n#include <cstdint>\n${source_text}")
   # Follow the existing Azel trail sprite and final sparkle with the native
