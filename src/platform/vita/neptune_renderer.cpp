@@ -15551,7 +15551,39 @@ static void updateLiveTownAzelLighting()
             const bool pointTraceEligible = light.additionalLight.active;
             if (pointTraceEligible) pointTraceActiveThisFrame = true;
             const int beforePoint[3] = {accum[0], accum[1], accum[2]};
-            lagi::accumulate_additional_model_light(light.additionalLight,lighting.normal,accum);
+            if(light.additionalPointPerCorner && light.additionalLight.active) {
+                // Evaluate the accepted native point against this true quad
+                // corner, then rotate its view-space vector to model normals.
+                const unsigned cornerVertex=corner==3u?5u:corner;
+                const auto& vtx=g_liveTownCpuMesh.vertices[p*6u+cornerVertex];
+                const float world[3]={vtx.x,vtx.y,vtx.z};
+                std::int32_t cornerMatrix[12]{0x10000,0,0,0,
+                    0,0x10000,0,0,0,0x10000,0};
+                for(unsigned row=0;row<3;++row) {
+                    double value=double(light.additionalPointView[row*4+3]);
+                    for(unsigned col=0;col<3;++col)
+                        value+=double(light.additionalPointView[row*4+col])*double(world[col]);
+                    cornerMatrix[row*4+3]=static_cast<std::int32_t>(
+                        std::clamp(std::round(value),
+                            double(std::numeric_limits<std::int32_t>::min()),
+                            double(std::numeric_limits<std::int32_t>::max())));
+                }
+                const auto point=lagi::native_point_light(cornerMatrix,light.additionalPointParams);
+                if(!point.outside && !point.divisionOverflow) {
+                    lagi::AdditionalModelLight cornerLight{};
+                    cornerLight.active=true;
+                    for(unsigned axis=0;axis<3;++axis) {
+                        std::int64_t rotated=0;
+                        for(unsigned row=0;row<3;++row)
+                            rotated+=std::int64_t(light.modelBasis[row*3+axis])*point.vector[row];
+                        cornerLight.vector[axis]=static_cast<std::int16_t>(rotated>>16);
+                        cornerLight.color[axis]=light.additionalLight.color[axis];
+                    }
+                    lagi::accumulate_additional_model_light(cornerLight,lighting.normal,accum);
+                }
+            } else {
+                lagi::accumulate_additional_model_light(light.additionalLight,lighting.normal,accum);
+            }
             // A maximum of four extra native point contributions, per model,
             // before the already-existing single RGB555 quantization.
             const bool traceLaserCoverage=light.transientLaserLightCount &&
