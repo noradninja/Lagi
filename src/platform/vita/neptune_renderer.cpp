@@ -7878,6 +7878,17 @@ static void refreshLiveTownStaticLighting()
 
         LivePolygonLightState light{};
         light.additionalLight=submission.state.additionalLight;
+        // Static geometry reuses its polygons across frames. Re-snapshot
+        // transient shot lights here just as appendLiveTownModel() does for
+        // dynamic objects, otherwise the cached environment never receives
+        // the current laser's position, color, or light count.
+        light.transientLaserLights=submission.state.transientLaserLights;
+        light.transientLaserSources=submission.state.transientLaserSources;
+        light.transientLaserLightCount=submission.state.transientLaserLightCount;
+        for(unsigned row=0;row<3;++row)
+            for(unsigned col=0;col<3;++col)
+                light.modelBasis[row*3+col]=
+                    submission.state.modelMatrix[row*4+col];
         if (submission.state.hasLight) {
             // Static geometry keeps model-space normals across cache hits.
             // Refresh the current Azel light in that same model space instead
