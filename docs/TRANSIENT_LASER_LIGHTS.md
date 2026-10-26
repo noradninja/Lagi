@@ -12,14 +12,18 @@
 - Battle homing lasers publish Azel's updated `m10_laserPosition` and native
   VDP1 trail color. Gunshots publish Azel's `m14` segment position and
   weapon-specific VDP1 color table. Both enter the same frame-latched four-slot
-  source pool. Their coordinate spaces, light visibility in battle geometry,
-  and lifecycle have NOT yet been accepted on hardware.
+  source pool. The attached 2026-10-26 log proves four stable task identities
+  update to distinct positions on successive frames. Their added illumination
+  is now 25% of the authored projectile RGB (`F8F880` becomes `3E3E20`) while
+  the projectile sprite remains untouched. Visual acceptance remains pending.
 - The field RBG0 render target is sampled sparsely after `sceGxmFinish`,
   at most once every 120 frames after the initial sample. The upper-band
   mean is a *sky-color proxy*, not a guarantee that every scene's top RBG0
   pixels are purely sky. Sampling is limited to mode-3 field scenes with
-  RBG0 present. Only exactly grayscale native depth-ambient values are
-  hue-tinted (average intensity preserved). Colored ambient is unchanged.
+  RBG0 present. Near-black fade/void samples are rejected, accepted samples
+  are stabilized over time, and one-quarter of the sky chroma is added to both
+  grayscale and colored native depth ambients. The original ambient channel
+  sum is preserved, so the blend changes hue without changing brightness.
   No extra draw pass or GPU readback pass is introduced, but CPU access to
   the finished mapped RBG0 surface must be verified for coherency and correct
   R/B channel ordering on Vita.

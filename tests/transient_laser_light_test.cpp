@@ -3,6 +3,8 @@
 int main() {
     using namespace lagi;
     static_assert(kMaxTransientLaserLights == 4);
+    static_assert(quarter_rgb888(0xF8F880u) == 0x3E3E20u);
+    static_assert(quarter_rgb888(0xFFFFFFu) == 0x3F3F3Fu);
     TransientLaserLightFrame frame;
     for (unsigned i = 1; i <= 4; ++i) {
         TransientLaserLight light{};

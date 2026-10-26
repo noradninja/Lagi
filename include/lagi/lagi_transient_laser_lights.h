@@ -8,6 +8,16 @@ namespace lagi {
 // Hard cap shared by transient field and battle laser lighting. This is a
 // producer-side payload only: consumers may choose fewer, never more.
 inline constexpr std::size_t kMaxTransientLaserLights = 4;
+inline constexpr std::uint32_t kBattleTransientLightDivisor = 4u;
+
+inline constexpr std::uint32_t quarter_rgb888(std::uint32_t packedColor) {
+    const auto quarter = [](std::uint32_t channel) {
+        return channel / kBattleTransientLightDivisor;
+    };
+    return (quarter((packedColor >> 16) & 0xFFu) << 16) |
+        (quarter((packedColor >> 8) & 0xFFu) << 8) |
+        quarter(packedColor & 0xFFu);
+}
 
 struct TransientLaserLight {
     std::uint64_t source = 0;       // Native task identity for same-frame updates

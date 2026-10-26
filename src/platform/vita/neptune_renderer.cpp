@@ -19,6 +19,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/lagi_point_light.h"
 #include "lagi/lagi_corner_point_light.h"
+#include "lagi/lagi_sky_ambient.h"
 #include "lagi/lagi_screen_depth.h"
 #include "lagi/lagi_projection_offset.h"
 #include "lagi/lagi_vdp1_quad_geometry.h"
@@ -1055,6 +1056,7 @@ static void sampleSceneSkyAmbientAfterGpuFinish()
     if(!g_sceneRbg0Enabled || !g_sceneRbg0ColorBuffer ||
        g_sceneGameMode!=3u) {
         g_skyAmbientValid=false;
+        g_skyAmbientFrames=0;
         return;
     }
     if(g_skyAmbientValid && (++g_skyAmbientFrames%120u)!=0u) return;
@@ -1064,17 +1066,28 @@ static void sampleSceneSkyAmbientAfterGpuFinish()
         for(unsigned x=16;x+16<kSceneRbg0Width;x+=16) {
             const std::uint32_t pixel=g_sceneRbg0ColorBuffer[y*kSceneRbg0Pitch+x];
             const unsigned r=pixel&255u,g=(pixel>>8)&255u,b=(pixel>>16)&255u;
-            if(r+g+b<24u) continue;
+            // Ignore near-black fade/void samples. The previous valid field
+            // sky remains authoritative until another real upper-band sample
+            // is available.
+            if(r+g+b<48u) continue;
             channel[0]+=r;channel[1]+=g;channel[2]+=b;
             ++count;
         }
-    if(count<16u) {g_skyAmbientValid=false;return;}
-    for(unsigned i=0;i<3;++i)
-        g_skyAmbientRgb[i]=static_cast<std::uint8_t>(channel[i]/count);
+    if(count<16u) return;
+    std::uint8_t sampled[3]{};
+    for(unsigned i=0;i<3;++i) {
+        sampled[i]=static_cast<std::uint8_t>(channel[i]/count);
+        if(g_skyAmbientValid)
+            g_skyAmbientRgb[i]=static_cast<std::uint8_t>(
+                (3u*unsigned(g_skyAmbientRgb[i])+unsigned(sampled[i])+2u)/4u);
+        else
+            g_skyAmbientRgb[i]=sampled[i];
+    }
     g_skyAmbientValid=true;
     static unsigned reports=0;
     if(reports++<8u)
-        logging::writef("[SkyAmbient] sample=RBG0-top rgb=%u,%u,%u pixels=%u\n",
+        logging::writef("[SkyAmbient] sample=RBG0-top raw=%u,%u,%u stable=%u,%u,%u pixels=%u\n",
+            unsigned(sampled[0]),unsigned(sampled[1]),unsigned(sampled[2]),
             unsigned(g_skyAmbientRgb[0]),unsigned(g_skyAmbientRgb[1]),
             unsigned(g_skyAmbientRgb[2]),count);
 }
@@ -15571,20 +15584,12 @@ static void updateLiveTownAzelLighting()
                 falloffMap[depthIndex][0],
                 falloffMap[depthIndex][1],
                 falloffMap[depthIndex][2]};
-            // Only grayscale native ambient can receive a sky tint. Preserve
-            // average brightness, original depth falloff and colored ambients.
-            if(g_skyAmbientValid && accum[0]==accum[1] &&
-                accum[1]==accum[2]) {
-                const unsigned mean=(unsigned(g_skyAmbientRgb[0])+
-                    unsigned(g_skyAmbientRgb[1])+
-                    unsigned(g_skyAmbientRgb[2]))/3u;
-                if(mean>0u) {
-                    const int gray=accum[0];
-                    for(unsigned c=0;c<3;++c)
-                        accum[c]=std::clamp(int(std::int64_t(gray)*
-                            g_skyAmbientRgb[c]/mean),-32768,32767);
-                }
-            }
+            // Blend a restrained quarter-strength sky chroma into every
+            // outdoor ambient, including authored colored ambients. The
+            // helper preserves the existing channel sum (brightness).
+            if(g_skyAmbientValid)
+                lagi::blend_sky_chroma_preserve_brightness(
+                    accum,g_skyAmbientRgb);
 
             if (mode == 2u && lighting.hasColor) {
                 for (unsigned channel = 0; channel < 3; ++channel)

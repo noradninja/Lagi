@@ -6,6 +6,7 @@ $header=Get-Content -Raw (Join-Path $repo 'include/lagi/lagi_render_bridge.h')
 $renderer=Get-Content -Raw (Join-Path $repo 'src/platform/vita/neptune_renderer.cpp')
 $pool=Get-Content -Raw (Join-Path $repo 'include/lagi/lagi_transient_laser_lights.h')
 $point=Get-Content -Raw (Join-Path $repo 'include/lagi/lagi_corner_point_light.h')
+$sky=Get-Content -Raw (Join-Path $repo 'include/lagi/lagi_sky_ambient.h')
 if (!$pool.Contains('kMaxTransientLaserLights = 4') -or
     !$pool.Contains('if (count == kMaxTransientLaserLights) return false;')) {
     throw 'Native transient pool no longer enforces the hard cap of four'
@@ -65,14 +66,20 @@ if (!$cmake.Contains('LAGI_BATTLE_HOMING_POINT') -or
     !$header.Contains('record_transient_battle_attack_light(')) {
     throw 'Native battle laser and gunshot producer hooks missing'
 }
+if (!$bridge.Contains('quarter_rgb888(packedColor)') -or
+    !$bridge.Contains('nativeRgb=%06X appliedRgb=%06X')) {
+    throw 'Battle projectile light must retain authored color diagnostics and apply quarter intensity'
+}
 if (!$header.Contains('nativePrimaryPointPerCorner') -or
     !$renderer.Contains('!light.nativePrimaryPointPerCorner') -or
     !$bridge.Contains('state.nativePrimaryPointPerCorner=true')) {
     throw 'Native primary point source not redirected into shared evaluator'
 }
 if (!$renderer.Contains('sampleSceneSkyAmbientAfterGpuFinish();') -or
-    !$renderer.Contains('g_skyAmbientValid && accum[0]==accum[1]') -or
-    !$renderer.Contains('g_sceneRbg0ColorBuffer[y*kSceneRbg0Pitch+x]')) {
-    throw 'Grayscale-only ambient sky sampling or gating missing'
+    !$renderer.Contains('blend_sky_chroma_preserve_brightness(') -or
+    !$renderer.Contains('g_sceneRbg0ColorBuffer[y*kSceneRbg0Pitch+x]') -or
+    !$renderer.Contains('r+g+b<48u') -or
+    !$sky.Contains('kSkyAmbientBlendDenominator = 4u')) {
+    throw 'Stabilized all-ambient quarter-strength sky chroma blend missing'
 }
-Write-Output 'PASS: field laser cap, shared native four-corner evaluator, cached static lighting and debug order'
+Write-Output 'PASS: field/battle light producers, quarter battle intensity, stabilized all-ambient sky chroma, shared four-corner evaluator and cached lighting'
