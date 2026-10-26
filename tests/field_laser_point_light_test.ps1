@@ -88,9 +88,21 @@ if (!$renderer.Contains('sampleSceneSkyAmbientAfterGpuFinish();') -or
     !$renderer.Contains('g_skyAmbientNeedsSample = true;') -or
     !$renderer.Contains('[SkyAmbient] sample=carry') -or
     !$renderer.Contains('[BattleSkyAmbient]') -or
-    !$renderer.Contains('(g_sceneRbg0Enabled || g_sceneGameMode==4u)') -or
+    !$renderer.Contains('(g_sceneRbg0Enabled || g_sceneGameMode == 4u)') -or
+    !$renderer.Contains('skyFalloffReady[depthIndex] = true;') -or
+    !$renderer.Contains('skyFalloffMap[depthIndex], g_skyAmbientRgb') -or
     !$sky.Contains('kSkyAmbientBlendNumerator = 7u') -or
     !$sky.Contains('kSkyAmbientBlendDenominator = 16u')) {
     throw 'One-shot all-ambient sky chroma blend missing'
+}
+$lightingStart=$renderer.IndexOf("static void updateLiveTownAzelLighting()`r`n{")
+if ($lightingStart -lt 0) {
+    $lightingStart=$renderer.IndexOf("static void updateLiveTownAzelLighting()`n{")
+}
+$blendAt=$renderer.IndexOf('skyFalloffMap[depthIndex], g_skyAmbientRgb', $lightingStart)
+$cornerLoopAt=$renderer.IndexOf('for (unsigned corner = 0; corner < 4u; ++corner)', $lightingStart)
+if ($lightingStart -lt 0 -or $blendAt -lt 0 -or $cornerLoopAt -lt 0 -or
+    $blendAt -gt $cornerLoopAt) {
+    throw 'Sky chroma must be blended once per used falloff depth before the corner loop'
 }
 Write-Output 'PASS: field/battle light producers, quarter battle intensity, one-shot sky chroma, shared four-corner evaluator and cached lighting'

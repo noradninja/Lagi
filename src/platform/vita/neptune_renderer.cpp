@@ -15537,7 +15537,11 @@ static void updateLiveTownAzelLighting()
 
     std::uint32_t cachedFalloff[3]{0xFFFFFFFFu,0xFFFFFFFFu,0xFFFFFFFFu};
     std::int16_t falloffMap[32][3]{};
+    int skyFalloffMap[32][3]{};
+    bool skyFalloffReady[32]{};
     bool haveFalloff = false;
+    const bool useSkyAmbient = g_skyAmbientValid &&
+        (g_sceneRbg0Enabled || g_sceneGameMode == 4u);
     static bool reportedLiveLighting = false;
     // Hardware shot-light coverage diagnostic: first 24 frames with transient
     // sources; sample only every third frame and avoid per-polygon logs.
@@ -15584,6 +15588,7 @@ static void updateLiveTownAzelLighting()
             generateAzelFalloff(
                 cachedFalloff[0], cachedFalloff[1], cachedFalloff[2],
                 falloffMap);
+            std::fill_n(skyFalloffReady, 32u, false);
             haveFalloff = true;
         }
 
@@ -15605,6 +15610,16 @@ static void updateLiveTownAzelLighting()
         }
 
         const int depthIndex = falloffIndex(p);
+        if (useSkyAmbient && !skyFalloffReady[depthIndex]) {
+            // The same authored ambient/depth value is shared by all corners.
+            // Blend it on first use, not for every corner or unused depth.
+            for (unsigned channel = 0; channel < 3u; ++channel)
+                skyFalloffMap[depthIndex][channel] =
+                    falloffMap[depthIndex][channel];
+            lagi::blend_sky_chroma_preserve_brightness(
+                skyFalloffMap[depthIndex], g_skyAmbientRgb);
+            skyFalloffReady[depthIndex] = true;
+        }
         for (unsigned corner = 0; corner < 4u; ++corner) {
             const unsigned normalIndex = mode == 1u ? 0u : corner;
             if (normalIndex >= record.lightingCount)
@@ -15616,19 +15631,18 @@ static void updateLiveTownAzelLighting()
                 static_cast<int>(lighting.normal[1]) * light.vector[1] +
                 static_cast<int>(lighting.normal[2]) * light.vector[2];
 
+            const int* ambient = useSkyAmbient
+                ? skyFalloffMap[depthIndex] : nullptr;
             int accum[3] = {
-                falloffMap[depthIndex][0],
-                falloffMap[depthIndex][1],
-                falloffMap[depthIndex][2]};
+                ambient ? ambient[0] : falloffMap[depthIndex][0],
+                ambient ? ambient[1] : falloffMap[depthIndex][1],
+                ambient ? ambient[2] : falloffMap[depthIndex][2]};
             // Blend a restrained sky chroma into every
             // outdoor ambient, including authored colored ambients. The
             // helper preserves the existing channel sum (brightness).
             // Direct battle may retain the field sky while RBG0 is disabled;
             // its lit models still use the same authored ambient baseline.
-            if(g_skyAmbientValid &&
-               (g_sceneRbg0Enabled || g_sceneGameMode==4u)) {
-                lagi::blend_sky_chroma_preserve_brightness(
-                    accum,g_skyAmbientRgb);
+            if (useSkyAmbient) {
                 if(p<g_liveTownStaticPolygonCount)
                     ++skyAmbientStaticCorners;
                 else
