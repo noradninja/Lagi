@@ -471,6 +471,18 @@ static void capture_native_point_light(SubmissionState& state)
     } else {
         std::copy(light.vector.begin(), light.vector.end(), state.nativeModelLight);
         state.hasNativeModelLight = true;
+        // This native primary point already occupies the normal light slot.
+        // Transfer it into the shared corner evaluator and suppress the
+        // origin-vector diffuse path to avoid doubling the contribution.
+        if(g_nativeSceneViewValid) {
+            state.nativePrimaryPointPerCorner=true;
+            state.additionalPointPerCorner=true;
+            state.additionalLight.active=true;
+            std::copy(pointLightParams,pointLightParams+5,state.additionalPointParams);
+            std::copy(g_nativeSceneViewMatrix,g_nativeSceneViewMatrix+12,
+                state.additionalPointView);
+            std::copy(pointColor,pointColor+3,state.additionalLight.color);
+        }
     }
     static unsigned reports = 0;
     if (reports < 8) {
