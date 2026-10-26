@@ -108,6 +108,9 @@ struct FieldActorBaseLight {
 };
 static FieldActorBaseLight g_fieldActorBaseLight{};
 static lagi::TransientLaserLightFrame g_fieldLaserLights{};
+// Azel field geometry is submitted before laser task updates. Retain one
+// completed frame so those shot positions can illuminate the next submission.
+static lagi::TransientLaserLightFrame g_completedFieldLaserLights{};
 
 // Bounded FLD_A3 diagnostic: compare the static-grid state synthesized by the
 // generated hook with Azel's actual pCurrentMatrix/currentLightVector_M at the
@@ -177,6 +180,7 @@ void begin_frame(bool forceDynamicSubmissions)
 {
     g_fieldEnvironmentPointLight={};
     g_fieldActorBaseLight={};
+    g_completedFieldLaserLights=g_fieldLaserLights;
     g_fieldLaserLights.clear();
     g_forceDynamicSubmissions = forceDynamicSubmissions;
     g_nativeSceneViewValid = false;
@@ -512,18 +516,18 @@ void record_transient_field_laser_light(std::uint64_t source,
 static void apply_transient_field_laser_lights(SubmissionState& state)
 {
     static unsigned rejectedFrames=0;
-    if (!g_fieldLaserLights.count) return;
+    if (!g_completedFieldLaserLights.count) return;
     if (state.billboard || !&pCurrentMatrix || !pCurrentMatrix || !g_nativeSceneViewValid) {
         if (rejectedFrames++<12u)
             lagi::platform::logging::writef("[FieldLaserSkip] billboard=%u matrix=%u viewValid=%u candidates=%u\n",
                 unsigned(state.billboard),unsigned(&pCurrentMatrix && pCurrentMatrix),
-                unsigned(g_nativeSceneViewValid),unsigned(g_fieldLaserLights.count));
+                unsigned(g_nativeSceneViewValid),unsigned(g_completedFieldLaserLights.count));
         return;
     }
     std::int32_t nativeMatrix[12]{};
     copyMatrixRaw(*pCurrentMatrix,nativeMatrix);
-    for (std::size_t i=0;i<g_fieldLaserLights.count;++i) {
-        const auto& source=g_fieldLaserLights.lights[i];
+    for (std::size_t i=0;i<g_completedFieldLaserLights.count;++i) {
+        const auto& source=g_completedFieldLaserLights.lights[i];
         std::int32_t params[5]{};
         // Use Azel's current camera view to convert the world-space beam
         // head to the same view-space basis as the native model matrix.
@@ -559,7 +563,7 @@ static void apply_transient_field_laser_lights(SubmissionState& state)
         lagi::platform::logging::writef(
             "[FieldLaserLight] selected=%u candidates=%u modelOrigin=%08X,%08X,%08X\n",
             unsigned(state.transientLaserLightCount),
-            unsigned(g_fieldLaserLights.count),
+            unsigned(g_completedFieldLaserLights.count),
             unsigned(nativeMatrix[3]),unsigned(nativeMatrix[7]),unsigned(nativeMatrix[11]));
         ++reports;
     }
