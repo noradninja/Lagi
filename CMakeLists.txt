@@ -2377,8 +2377,11 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_tex
             beamHead[0].asS32(), beamHead[1].asS32(),
             beamHead[2].asS32(),
             [&]() {
-                s_RGB8 nativeColor = s_LCSLaser_DeleteTrailSub0Data0[pThis->m27];
-                return nativeColor.toU32();
+                const s_RGB8& nativeColor = s_LCSLaser_DeleteTrailSub0Data0[pThis->m27];
+                // s_RGB8::toU32 packs BGR. The bridge API explicitly
+                // accepts RGB (0xRRGGBB); keep the native palette order.
+                return (u32(u8(nativeColor.m0)) << 16) |
+                    (u32(u8(nativeColor.m1)) << 8) | u32(u8(nativeColor.m2));
             }()); // LAGI_FIELD_LASER_LIGHT
     }
 }]=] source_text "${source_text}")
