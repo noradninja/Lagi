@@ -14335,7 +14335,8 @@ static void renderBasicWingViewer()
     // detailed heartbeat. Emit only one aggregate line per 120 field frames.
     // This measures renderer work; it is not a display/game frame-time claim.
     struct FlightTimingWindow {
-        unsigned int frames = 0u, over25 = 0u, overDeadline = 0u;
+        unsigned int frames = 0u, over20 = 0u, over25 = 0u;
+        unsigned int over30 = 0u, overDeadline = 0u;
         unsigned int maxRender = 0u, maxBuild = 0u, rebuilds = 0u;
         unsigned int maxFieldLog = 0u;
         std::uint64_t totalRender = 0u;
@@ -14353,16 +14354,20 @@ static void renderBasicWingViewer()
         flightTiming.maxRender = std::max(flightTiming.maxRender, g_profileRenderUs);
         flightTiming.maxBuild = std::max(flightTiming.maxBuild, g_profileBuildUs);
         flightTiming.maxFieldLog = std::max(flightTiming.maxFieldLog, g_profileFieldStreamLogUs);
+        flightTiming.over20 += g_profileRenderUs > 20000u;
         flightTiming.over25 += g_profileRenderUs > 25000u;
+        flightTiming.over30 += g_profileRenderUs > 30000u;
         flightTiming.overDeadline += g_profileRenderUs > 33333u;
         flightTiming.rebuilds += g_liveTownStaticRebuilt;
         if (flightTiming.frames == 120u) {
             logging::writef(
                 "[FlightTimingWindow] mode=%u frames=%u mean=%uus max=%uus "
-                "over25=%u over33333=%u maxBuild=%uus rebuilds=%u maxFieldLog=%uus rendererOnly=1\n",
+                "over20=%u over25=%u over30=%u over33333=%u "
+                "maxBuild=%uus rebuilds=%u maxFieldLog=%uus rendererOnly=1\n",
                 flightTimingMode, flightTiming.frames,
                 static_cast<unsigned int>(flightTiming.totalRender / flightTiming.frames),
-                flightTiming.maxRender, flightTiming.over25, flightTiming.overDeadline,
+                flightTiming.maxRender, flightTiming.over20, flightTiming.over25,
+                flightTiming.over30, flightTiming.overDeadline,
                 flightTiming.maxBuild, flightTiming.rebuilds, flightTiming.maxFieldLog);
             flightTiming = {};
         }

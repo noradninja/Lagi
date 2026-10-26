@@ -66,6 +66,12 @@ foreach ($enabled in @(0, 1)) {
 }
 $completedFrames = Sum-Counter $timing 'frames'
 $completedOver25 = Sum-Counter $timing 'over25'
+$hasNewBudgets = $timing.Count -gt 0 -and
+    @($timing | Where-Object {
+        $_.ContainsKey('over20') -and $_.ContainsKey('over30')
+    }).Count -eq $timing.Count
+$completedOver20 = if ($hasNewBudgets) { Sum-Counter $timing 'over20' } else { $null }
+$completedOver30 = if ($hasNewBudgets) { Sum-Counter $timing 'over30' } else { $null }
 # Strictly fewer than half above the budget guarantees both middle values
 # (for an even count) are within it. Equality does not establish that bound.
 $medianBoundProven = Test-MedianBudgetBound $completedFrames $completedOver25
@@ -89,10 +95,18 @@ $medianBoundProven = Test-MedianBudgetBound $completedFrames $completedOver25
     completeFieldRenderWindows = [ordered]@{
         windows = $timing.Count
         frames = $completedFrames
+        over20ms = $completedOver20
+        medianAtMost20msProven = if ($hasNewBudgets) {
+            Test-MedianBudgetBound $completedFrames $completedOver20
+        } else { $null }
         over25ms = $completedOver25
         medianAtMost25msProven = $medianBoundProven
         medianScope = 'Only completed field windows; not an exact median or whole-capture proof.'
         over33333us = Sum-Counter $timing 'over33333'
+        over30ms = $completedOver30
+        allFramesAtMost30msProven = if ($hasNewBudgets) {
+            $completedOver30 -eq 0
+        } else { $null }
         maxRenderUs = ($timing | ForEach-Object { $_['max'] } | Measure-Object -Maximum).Maximum
     }
     completeFieldPresentationWindows = [ordered]@{

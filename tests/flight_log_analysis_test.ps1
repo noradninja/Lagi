@@ -14,6 +14,10 @@ if ($rbg.render.count -ne 2 -or $rbg.render.medianUs -ne 25000 -or
     throw 'Sample distribution mismatch'
 }
 if ($report.completeFieldRenderWindows.frames -ne 120 -or
+    $report.completeFieldRenderWindows.over20ms -ne 25 -or
+    -not $report.completeFieldRenderWindows.medianAtMost20msProven -or
+    $report.completeFieldRenderWindows.over30ms -ne 3 -or
+    $report.completeFieldRenderWindows.allFramesAtMost30msProven -or
     -not $report.completeFieldRenderWindows.medianAtMost25msProven -or
     $report.completeFieldRenderWindows.over33333us -ne 1 -or
     $report.completeFieldPresentationWindows.overTwoVblanks -ne 0) {
