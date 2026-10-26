@@ -35,6 +35,27 @@ point-light distance evaluator or Gouraud interpolation.
 tracking, color, and 30 FPS. An evaluation can still reject out-of-range
 models. VitaSDK compilation and new device tests have not been performed.
 
+## Per-corner Gouraud trial (not hardware-accepted)
+The field LCS shot-light path now snapshots accepted Azel source positions alongside
+model lighting and evaluates the **original native point-light function at each
+quad corner**. The point's displacement and attenuation are calculated in world
+space from the transformed corner position, then its vector is rotated into
+the model-normal basis. This retains normal-facing diffuse terms, shot colors,
+the four-source cap, and RGB555 quantization. Native collection-item lighting
+is unchanged. Crucially, the model-origin range result is no longer an exclusive
+culling rule for laser sources: a corner near a beam may contribute even if
+its whole mesh's origin is outside range.
+
+The renderer first makes a cheap 64-bit squared-distance check to avoid running
+the native root/divider on remote corners. The existing `[FieldLaserCoverage]`
+diagnostic now uses per-corner light vectors when reporting facing normals.
+
+**Performance risk:** Each in-range source can require one fixed-point evaluator
+per Gouraud corner, up to four sources per polygon. Check battle-independent
+field frame time and 30 FPS on Vita before treating this as final. No VitaSDK
+build or hardware validation has been run for this trial. Restore the model-origin
+path if it causes unacceptable frame-time regression.
+
 ## Current status
 The branch now includes an **experimental field-only end-to-end integration**:
 - The LCS beam update publishes the last-written `m6C` head position and native LCS color index (`m27`) while the beam is active. Source identity is the actual LCS task address; the four-source pool is reset each frame.
