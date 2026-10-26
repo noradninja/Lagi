@@ -72,8 +72,11 @@ if (!$cmake.Contains('LAGI_BATTLE_HOMING_POINT') -or
     throw 'Native battle laser and gunshot producer hooks missing'
 }
 if (!$bridge.Contains('quarter_rgb888(packedColor)') -or
+    !$bridge.Contains('constexpr std::uint32_t kBattleRange=0x5000u;') -or
+    !$bridge.Contains('record_transient_laser_light(source,x,y,z,appliedColor,kBattleRange);') -or
+    !$bridge.Contains('record_transient_laser_light(source,x,y,z,packedColor,0x14000u);') -or
     !$bridge.Contains('nativeRgb=%06X appliedRgb=%06X')) {
-    throw 'Battle projectile light must retain authored color diagnostics and apply quarter intensity'
+    throw 'Battle projectile light must retain quarter intensity and half-radius without changing field lights'
 }
 if (!$header.Contains('nativePrimaryPointPerCorner') -or
     !$renderer.Contains('!light.nativePrimaryPointPerCorner') -or

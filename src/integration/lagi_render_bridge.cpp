@@ -553,7 +553,7 @@ void record_transient_battle_attack_light(std::uint64_t source,
     const std::uint32_t appliedColor=lagi::quarter_rgb888(packedColor);
     // Combat's smaller local pool retains the native point evaluator but
     // narrows the source parameter to avoid lighting distant surfaces.
-    constexpr std::uint32_t kBattleRange=0xA000u;
+    constexpr std::uint32_t kBattleRange=0x5000u;
     record_transient_laser_light(source,x,y,z,appliedColor,kBattleRange);
     static unsigned battleReports=0;
     if(battleReports++<32u)
