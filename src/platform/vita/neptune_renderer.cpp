@@ -1042,6 +1042,7 @@ static constexpr unsigned int kSceneRbg0Width = 352u;
 static constexpr unsigned int kSceneRbg0Height = 224u;
 static constexpr unsigned int kSceneRbg0Pitch = 384u;
 static SceUID g_sceneRbg0ColorUid = -1;
+static unsigned int g_sceneGameMode = 0u;
 static std::uint32_t* g_sceneRbg0ColorBuffer = nullptr;
 static std::uint8_t g_skyAmbientRgb[3]{};
 static bool g_skyAmbientValid=false;
@@ -1072,7 +1073,7 @@ static void sampleSceneSkyAmbientAfterGpuFinish()
     g_skyAmbientValid=true;
     static unsigned reports=0;
     if(reports++<8u)
-        logging::writef("[SkyAmbient] sample=RBG0-top rgb=%u,%u,%u pixels=%u\\n",
+        logging::writef("[SkyAmbient] sample=RBG0-top rgb=%u,%u,%u pixels=%u\n",
             unsigned(g_skyAmbientRgb[0]),unsigned(g_skyAmbientRgb[1]),
             unsigned(g_skyAmbientRgb[2]),count);
 }
@@ -1173,7 +1174,7 @@ static bool g_townPlayerReady = false;
 static bool g_pendingScenePlayerPresent = false;
 static bool g_scenePlayerPresent = false;
 static bool g_townCameraReady = false;
-static unsigned int g_sceneGameMode = 0u;
+
 static float g_townPlayerPosition[3]{};
 static float g_townPlayerYaw = 0.0f;
 static float g_townCameraPosition[3]{};
