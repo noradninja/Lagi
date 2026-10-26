@@ -450,6 +450,12 @@ static void capture_native_point_light(SubmissionState& state)
     }
     const auto* pointColor=&currentLightVector_M ? currentLightVector_M.color : state.lightColor;
     if(g_fieldActorBaseLight.active && !state.fieldEnvironment) {
+        if(g_nativeSceneViewValid) {
+            std::copy(pointLightParams,pointLightParams+5,state.additionalPointParams);
+            std::copy(g_nativeSceneViewMatrix,g_nativeSceneViewMatrix+12,
+                state.additionalPointView);
+            state.additionalPointPerCorner=true;
+        }
         state.additionalLight={};
         if(!light.outside) {
             std::copy(light.vector.begin(),light.vector.end(),state.additionalLight.vector);
@@ -583,6 +589,15 @@ static void apply_field_environment_point_light(SubmissionState& state)
     const auto light=lagi::native_point_light(nativeMatrix,g_fieldEnvironmentPointLight.params);
     // Keep ordinary directional/ambient/material lighting. The additional
     // point contributes only positive diffuse light, before final quantization.
+    // Per-corner shading still uses the same native point parameters. The
+    // model-origin evaluation remains available as a compatibility fallback.
+    if(g_nativeSceneViewValid) {
+        std::copy(g_fieldEnvironmentPointLight.params,
+            g_fieldEnvironmentPointLight.params+5,state.additionalPointParams);
+        std::copy(g_nativeSceneViewMatrix,g_nativeSceneViewMatrix+12,
+            state.additionalPointView);
+        state.additionalPointPerCorner=true;
+    }
     if(!light.outside) {
         std::copy(light.vector.begin(),light.vector.end(),state.additionalLight.vector);
         for(unsigned axis=0;axis<3;++axis) {
