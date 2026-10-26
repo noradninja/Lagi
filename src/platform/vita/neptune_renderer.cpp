@@ -15599,7 +15599,7 @@ static void updateLiveTownAzelLighting()
         if(laserCoverageFrames%3u==0u)
             logging::writef(
                 "[FieldLaserCoverage] frame=%u candidatePolys=%u rejectedPolys=%u "
-                "sampledCorners=%u facingCorners=%u changedRGB555=%u saturatedRGB555=%u peakAccumDelta=%d\\n",
+                "sampledCorners=%u facingCorners=%u changedRGB555=%u saturatedRGB555=%u peakAccumDelta=%d\n",
                 laserCoverageFrames,laserCoverageCandidates,laserCoverageRejected,
                 laserCoverageCorners,laserCoverageFacing,laserCoverageQuantized,
                 laserCoverageSaturated,laserCoveragePeakDelta);
