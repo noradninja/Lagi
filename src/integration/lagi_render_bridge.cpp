@@ -509,8 +509,9 @@ void capture_field_environment_point_light()
     g_fieldEnvironmentPointLight.active=true;
 }
 
-void record_transient_field_laser_light(std::uint64_t source,
-    std::int32_t x,std::int32_t y,std::int32_t z,std::uint32_t packedColor)
+static void record_transient_laser_light(std::uint64_t source,
+    std::int32_t x,std::int32_t y,std::int32_t z,
+    std::uint32_t packedColor,std::uint32_t range)
 {
     lagi::TransientLaserLight light{};
     light.source=source;
@@ -522,7 +523,7 @@ void record_transient_field_laser_light(std::uint64_t source,
     light.color[0]=packedColor&0xFFu;
     light.color[1]=(packedColor>>8)&0xFFu;
     light.color[2]=(packedColor>>16)&0xFFu;
-    light.range=0x14000u; // Field special-light parameter from Azel A11D.
+    light.range=range;
     const bool accepted=g_fieldLaserLights.upsert(light);
     static unsigned emitted=0;
     if (emitted<28u) {
@@ -535,6 +536,13 @@ void record_transient_field_laser_light(std::uint64_t source,
     }
 }
 
+void record_transient_field_laser_light(std::uint64_t source,
+    std::int32_t x,std::int32_t y,std::int32_t z,std::uint32_t packedColor)
+{
+    // Field special-light parameter from Azel A11D.
+    record_transient_laser_light(source,x,y,z,packedColor,0x14000u);
+}
+
 void record_transient_battle_attack_light(std::uint64_t source,
     std::int32_t x,std::int32_t y,std::int32_t z,std::uint32_t packedColor)
 {
@@ -543,13 +551,17 @@ void record_transient_battle_attack_light(std::uint64_t source,
     // Native projectile sprites retain their authored color; only the added
     // illumination is quarter strength to avoid RGB555 saturation.
     const std::uint32_t appliedColor=lagi::quarter_rgb888(packedColor);
-    record_transient_field_laser_light(source,x,y,z,appliedColor);
+    // Combat's smaller local pool retains the native point evaluator but
+    // narrows the source parameter to avoid lighting distant surfaces.
+    constexpr std::uint32_t kBattleRange=0xA000u;
+    record_transient_laser_light(source,x,y,z,appliedColor,kBattleRange);
     static unsigned battleReports=0;
     if(battleReports++<32u)
         lagi::platform::logging::writef(
-            "[BattleLightEmit] task=%08X pos=%08X,%08X,%08X nativeRgb=%06X appliedRgb=%06X pool=%u\n",
+            "[BattleLightEmit] task=%08X pos=%08X,%08X,%08X nativeRgb=%06X appliedRgb=%06X range=%05X pool=%u\n",
             unsigned(source),unsigned(x),unsigned(y),unsigned(z),
             unsigned(packedColor&0xFFFFFFu),unsigned(appliedColor),
+            unsigned(kBattleRange),
             unsigned(g_fieldLaserLights.count));
 }
 

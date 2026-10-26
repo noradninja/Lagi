@@ -65,6 +65,9 @@ void sync_field_presentation_state()
     static const float cameraUp[3] = {0.0f, 1.0f, 0.0f};
 
     lagi::platform::renderer::presentation_set_scene_mode(3u);
+    lagi::platform::renderer::presentation_set_field_scene_key(
+        (unsigned(fieldTaskPtr->m2C_currentFieldIndex) << 16) |
+        unsigned(fieldTaskPtr->m2E_currentSubFieldIndex));
     const float nearPlane =
         static_cast<float>(
             static_cast<s32>(graphicEngineStatus.m405C.m10_nearClipDistance)) /

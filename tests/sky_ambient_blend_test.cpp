@@ -7,7 +7,7 @@ int main() {
     int gray[3]{96,96,96};
     lagi::blend_sky_chroma_preserve_brightness(gray,blueSky);
     assert(gray[0]+gray[1]+gray[2]==288);
-    assert(gray[0]<96 && gray[1]==96 && gray[2]>96);
+    assert(gray[0]==66 && gray[1]==96 && gray[2]==126);
 
     int colored[3]{120,90,60};
     lagi::blend_sky_chroma_preserve_brightness(colored,blueSky);

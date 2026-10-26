@@ -55,7 +55,7 @@ foreach ($field in @('transientLaserLights', 'transientLaserSources',
         throw "Static light refresh fails to propagate $field"
     }
 }
-if (!$renderer.Contains('static constexpr int kSceneModes[5] = {10, 7, 8, 9, 11};') -or
+if (!$renderer.Contains('static constexpr int kSceneModes[6] = {7, 8, 11, 9, 10, 12};') -or
     !$renderer.Contains('static int g_pendingViewMode = 7;')) {
     throw 'Debug cycle must place grayscale immediately before color while preserving default color'
 }
@@ -79,7 +79,8 @@ if (!$renderer.Contains('sampleSceneSkyAmbientAfterGpuFinish();') -or
     !$renderer.Contains('blend_sky_chroma_preserve_brightness(') -or
     !$renderer.Contains('g_sceneRbg0ColorBuffer[y*kSceneRbg0Pitch+x]') -or
     !$renderer.Contains('r+g+b<48u') -or
-    !$sky.Contains('kSkyAmbientBlendDenominator = 4u')) {
-    throw 'Stabilized all-ambient quarter-strength sky chroma blend missing'
+    !$sky.Contains('kSkyAmbientBlendNumerator = 5u') -or
+    !$sky.Contains('kSkyAmbientBlendDenominator = 8u')) {
+    throw 'One-shot all-ambient sky chroma blend missing'
 }
-Write-Output 'PASS: field/battle light producers, quarter battle intensity, stabilized all-ambient sky chroma, shared four-corner evaluator and cached lighting'
+Write-Output 'PASS: field/battle light producers, quarter battle intensity, one-shot sky chroma, shared four-corner evaluator and cached lighting'

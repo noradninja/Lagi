@@ -1048,18 +1048,15 @@ static unsigned int g_sceneGameMode = 0u;
 static std::uint32_t* g_sceneRbg0ColorBuffer = nullptr;
 static std::uint8_t g_skyAmbientRgb[3]{};
 static bool g_skyAmbientValid=false;
-static unsigned g_skyAmbientFrames=0;
+static bool g_skyAmbientEarlyAttempted=false;
+static unsigned g_sceneFieldKey=~0u;
 // Sample only the independently resolved rotation background, never the
 // composited world/UI target. A bounded top band is a sky-color proxy.
 static void sampleSceneSkyAmbientAfterGpuFinish()
 {
-    if(!g_sceneRbg0Enabled || !g_sceneRbg0ColorBuffer ||
-       g_sceneGameMode!=3u) {
-        g_skyAmbientValid=false;
-        g_skyAmbientFrames=0;
-        return;
-    }
-    if(g_skyAmbientValid && (++g_skyAmbientFrames%120u)!=0u) return;
+    if(g_skyAmbientValid || !g_sceneRbg0Enabled ||
+       !g_sceneRbg0ColorBuffer ||
+       !lagi::native_scene_mode(static_cast<int>(g_sceneGameMode))) return;
     std::uint64_t channel[3]{};
     unsigned count=0;
     for(unsigned y=8;y<64;y+=8)
@@ -1069,27 +1066,22 @@ static void sampleSceneSkyAmbientAfterGpuFinish()
             // Ignore near-black fade/void samples. The previous valid field
             // sky remains authoritative until another real upper-band sample
             // is available.
-            if(r+g+b<48u) continue;
+            if(r+g+b<48u || (r>240u && g>240u && b>240u)) continue;
             channel[0]+=r;channel[1]+=g;channel[2]+=b;
             ++count;
         }
-    if(count<16u) return;
+    if(count<48u) return;
     std::uint8_t sampled[3]{};
     for(unsigned i=0;i<3;++i) {
         sampled[i]=static_cast<std::uint8_t>(channel[i]/count);
-        if(g_skyAmbientValid)
-            g_skyAmbientRgb[i]=static_cast<std::uint8_t>(
-                (3u*unsigned(g_skyAmbientRgb[i])+unsigned(sampled[i])+2u)/4u);
-        else
-            g_skyAmbientRgb[i]=sampled[i];
+        g_skyAmbientRgb[i]=sampled[i];
     }
     g_skyAmbientValid=true;
     static unsigned reports=0;
     if(reports++<8u)
-        logging::writef("[SkyAmbient] sample=RBG0-top raw=%u,%u,%u stable=%u,%u,%u pixels=%u\n",
+        logging::writef("[SkyAmbient] sample=RBG0-top latched=%u,%u,%u pixels=%u mode=%u\n",
             unsigned(sampled[0]),unsigned(sampled[1]),unsigned(sampled[2]),
-            unsigned(g_skyAmbientRgb[0]),unsigned(g_skyAmbientRgb[1]),
-            unsigned(g_skyAmbientRgb[2]),count);
+            count,g_sceneGameMode);
 }
 
 static SceGxmColorSurface g_sceneRbg0ColorSurface{};
@@ -1237,6 +1229,7 @@ static unsigned int g_pendingTownEdgePreviousFrame = 0;
 static float g_pendingTownEdgeTransition = 1.0f;
 static bool g_pendingTownPresentationValid = false;
 static unsigned int g_pendingSceneGameMode = 0u;
+static unsigned int g_pendingFieldSceneKey = ~0u;
 static unsigned int g_pendingNativeFrameVblanks = 2u;
 static unsigned int g_nativeFrameVblanks = 2u;
 static int g_pendingViewMode = 7;
@@ -1684,7 +1677,8 @@ static const char* viewerModeLabel(int mode)
     switch (mode) {
     case 7:  return "FULL";
     case 8:  return "TEXTURE";
-    case 10: return "LIGHTING";
+    case 10: return "GREYSCALE LIGHTING";
+    case 12: return "COLOR LIGHTING";
     case 9:  return "QUADS";
     case 11: return "WIRES";
     default: return "";
@@ -11621,7 +11615,7 @@ bool submit_vdp1_model(
         g_texturedGouraudSubdivFragmentProgram;
     const bool subdividedGouraudGray =
         gouraudGray &&
-        g_viewMode == 10 &&
+        (g_viewMode == 10 || g_viewMode == 12) &&
         g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
         g_vdp1SubdivVertices && g_vdp1SubdivIndices &&
         g_vdp1SubdivVertexCapacity >= model.polygonCount * 9u &&
@@ -13936,7 +13930,7 @@ static void renderBasicWingViewer()
         g_viewMode == 9;
     const bool roomAuthenticLightingOnlyMode =
         roomAuthenticCameraMode &&
-        g_viewMode == 10;
+        (g_viewMode == 10 || g_viewMode == 12);
     const bool roomAuthenticWireframeMode =
         roomAuthenticCameraMode &&
         g_viewMode == 11;
@@ -14026,6 +14020,15 @@ static void renderBasicWingViewer()
             sceGxmFinish(g_probeContext);
             gpuPassRbgWaitUs=static_cast<unsigned>(sceKernelGetProcessTimeWide()-start);
         }
+        // During the opening fade, resolve the first usable sky sample before
+        // lighting any world polygon. Subsequent frames use the end-of-frame
+        // finish below until a usable sample appears, with no recurring wait.
+        if(!g_skyAmbientValid &&
+           (!g_skyAmbientEarlyAttempted || g_gpuPassSample)) {
+            if(!g_gpuPassSample) sceGxmFinish(g_probeContext);
+            sampleSceneSkyAmbientAfterGpuFinish();
+            g_skyAmbientEarlyAttempted=true;
+        }
     }
 
     const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
@@ -14089,9 +14092,23 @@ static void renderBasicWingViewer()
 
     if (roomAuthenticCameraMode &&
         (roomAuthenticLitMode || roomAuthenticLightingOnlyMode)) {
+        static std::vector<azel::SaturnGouraud555Quad> grayModeColorBackup;
+        static bool previousGrayMode = false;
+        if (previousGrayMode && !g_liveTownStaticRebuilt &&
+            grayModeColorBackup.size() == g_liveTownCpuMesh.gouraud555.size())
+            g_liveTownCpuMesh.gouraud555 = grayModeColorBackup;
         const std::uint64_t lightingStartUs = sceKernelGetProcessTimeWide();
         traceFieldPolygonStage("before");
         updateLiveTownAzelLighting();
+        previousGrayMode = g_viewMode == 10;
+        if (previousGrayMode) {
+            grayModeColorBackup = g_liveTownCpuMesh.gouraud555;
+            for (auto& quad : g_liveTownCpuMesh.gouraud555)
+                for (auto& corner : quad.corner) {
+                    const float gray = (corner[0] + corner[1] + corner[2]) / 3.0f;
+                    corner[0] = corner[1] = corner[2] = gray;
+                }
+        }
         traceFieldPolygonStage("after");
         if (g_fieldProbeActive) {
             for (const auto& probe : g_fieldPolygonProbes) {
@@ -14650,19 +14667,17 @@ void begin_frame()
     if (!g_debugVisible) {
         // Controller state belongs to the game thread. Only the selected view
         // is copied into the next published render frame.
-        // Grayscale Gouraud illumination immediately precedes the fully
-        // textured/colored lit view in the cyclic debug selector. Color (7)
-        // remains the default when the native scene viewer starts.
-        static constexpr int kSceneModes[5] = {10, 7, 8, 9, 11};
+        // Full remains the default; diagnostic lighting closes the cycle.
+        static constexpr int kSceneModes[6] = {7, 8, 11, 9, 10, 12};
         int sceneModeIndex = 0;
-        for (int i = 0; i < 5; ++i)
+        for (int i = 0; i < 6; ++i)
             if (g_pendingViewMode == kSceneModes[i])
                 sceneModeIndex = i;
 
         if (input::prev_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 4) % 5;
+            sceneModeIndex = (sceneModeIndex + 5) % 6;
         if (input::next_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 1) % 5;
+            sceneModeIndex = (sceneModeIndex + 1) % 6;
         g_pendingViewMode = kSceneModes[sceneModeIndex];
         return;
     }
@@ -15584,10 +15599,10 @@ static void updateLiveTownAzelLighting()
                 falloffMap[depthIndex][0],
                 falloffMap[depthIndex][1],
                 falloffMap[depthIndex][2]};
-            // Blend a restrained quarter-strength sky chroma into every
+            // Blend a restrained sky chroma into every
             // outdoor ambient, including authored colored ambients. The
             // helper preserves the existing channel sum (brightness).
-            if(g_skyAmbientValid)
+            if(g_skyAmbientValid && g_sceneRbg0Enabled)
                 lagi::blend_sky_chroma_preserve_brightness(
                     accum,g_skyAmbientRgb);
 
@@ -15728,7 +15743,7 @@ bool presentation_active()
     const bool sceneMode =
         g_pendingViewMode == 7 || g_pendingViewMode == 8 ||
         g_pendingViewMode == 10 || g_pendingViewMode == 9 ||
-        g_pendingViewMode == 11;
+        g_pendingViewMode == 11 || g_pendingViewMode == 12;
     const bool nativeSceneReady =
         g_sceneGameMode != 0u && (g_nativeSceneViewValid || g_townCameraReady);
     const bool legacyRoomReady =
@@ -15775,6 +15790,23 @@ void presentation_publish_frame()
         // renderer-container cleanup to LagiRender via the existing epoch.
         g_liveTownStaticIdentityResetEpoch.fetch_add(
             1u, std::memory_order_release);
+        // A new native scene gets one independent sky choice. Keep the field
+        // sample across the direct-battle transition so combat starts lit.
+        if (g_pendingSceneGameMode != 4u && g_sceneGameMode != 4u) {
+            g_skyAmbientValid = false;
+            g_skyAmbientEarlyAttempted = false;
+        }
+    }
+    if (g_pendingSceneGameMode == 3u &&
+        g_sceneFieldKey != g_pendingFieldSceneKey) {
+        g_skyAmbientValid = false;
+        g_skyAmbientEarlyAttempted = false;
+        g_sceneFieldKey = g_pendingFieldSceneKey;
+    }
+    if (g_pendingSceneGameMode == 3u &&
+        !g_sceneRbg0Enabled && g_pendingSceneRbg0Enabled) {
+        g_skyAmbientValid = false;
+        g_skyAmbientEarlyAttempted = false;
     }
     g_sceneGameMode = g_pendingSceneGameMode;
     g_nativeFrameVblanks = g_pendingNativeFrameVblanks;
@@ -15921,6 +15953,11 @@ void presentation_set_scene_mode(unsigned int gameMode)
     g_pendingNativeSceneViewValid = false;
     g_pendingScenePlayerPresent = false;
     g_pendingTownPresentationValid = true;
+}
+
+void presentation_set_field_scene_key(unsigned int key)
+{
+    g_pendingFieldSceneKey = key;
 }
 
 void presentation_set_clip_planes(float nearPlane, float farPlane)
