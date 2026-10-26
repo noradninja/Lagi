@@ -551,7 +551,9 @@ static void apply_transient_field_laser_lights(SubmissionState& state)
                 unsigned(result.distance),unsigned(result.outside),unsigned(result.divisionOverflow),
                 int(result.vector[0]),int(result.vector[1]),int(result.vector[2]));
         if (result.outside || result.divisionOverflow) continue;
-        auto& target=state.transientLaserLights[state.transientLaserLightCount++];
+        const unsigned slot=state.transientLaserLightCount++;
+        state.transientLaserSources[slot]=source;
+        auto& target=state.transientLaserLights[slot];
         std::copy(result.vector.begin(),result.vector.end(),target.vector);
         std::copy(source.color,source.color+3,target.color);
         target.active=true;
