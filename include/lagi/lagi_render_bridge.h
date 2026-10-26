@@ -50,6 +50,8 @@ struct SubmissionState {
     AdditionalModelLight additionalLight{};
     std::array<AdditionalModelLight, lagi::kMaxTransientLaserLights> transientLaserLights{};
     std::uint8_t transientLaserLightCount = 0;
+    // Raw Azel world-space shot positions for optional per-corner evaluation.
+    std::array<lagi::TransientLaserLight, lagi::kMaxTransientLaserLights> transientLaserSources{};
     std::uint16_t lightColor[3]{};
     std::uint32_t lightFalloff[3]{};
 
