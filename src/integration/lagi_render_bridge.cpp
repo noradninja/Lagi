@@ -550,7 +550,9 @@ static void apply_transient_field_laser_lights(SubmissionState& state)
                 unsigned(nativeMatrix[3]),unsigned(nativeMatrix[7]),unsigned(nativeMatrix[11]),
                 unsigned(result.distance),unsigned(result.outside),unsigned(result.divisionOverflow),
                 int(result.vector[0]),int(result.vector[1]),int(result.vector[2]));
-        if (result.outside || result.divisionOverflow) continue;
+        // A model origin may be outside the native range while individual
+        // polygon corners remain inside it. Keep the source for per-corner
+        // evaluation; the renderer will reject each actual corner by range.
         const unsigned slot=state.transientLaserLightCount++;
         state.transientLaserSources[slot]=source;
         auto& target=state.transientLaserLights[slot];
