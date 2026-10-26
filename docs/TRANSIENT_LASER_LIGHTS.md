@@ -1,4 +1,4 @@
-## Unified point lighting, battle producers and sky ambient — experimental
+## Unified point lighting and battle producers — experimental
 
 - The native A11D **primary** point-light selector also uses the shared
   four-corner evaluator when its scene view is available. Its original
@@ -16,17 +16,12 @@
   update to distinct positions on successive frames. Their added illumination
   is now 25% of the authored projectile RGB (`F8F880` becomes `3E3E20`) while
   the projectile sprite remains untouched. Visual acceptance remains pending.
-- The field RBG0 render target is sampled sparsely after `sceGxmFinish`,
-  at most once every 120 frames after the initial sample. The upper-band
-  mean is a *sky-color proxy*, not a guarantee that every scene's top RBG0
-  pixels are purely sky. Sampling is limited to mode-3 field scenes with
-  RBG0 present. Near-black fade/void samples are rejected, accepted samples
-  are stabilized over time, and one-quarter of the sky chroma is added to both
-  grayscale and colored native depth ambients. The original ambient channel
-  sum is preserved, so the blend changes hue without changing brightness.
-  No extra draw pass or GPU readback pass is introduced, but CPU access to
-  the finished mapped RBG0 surface must be verified for coherency and correct
-  R/B channel ordering on Vita.
+- Sky-sampled ambient was removed after the 2026-10-26 device review. Native
+  authored depth ambient remains unchanged in field, battle and cutscenes;
+  RBG0 is still rendered as scene background. The early GPU finish formerly
+  used to sample sky color has also been removed. The previously measured
+  frame times do not establish a speedup from this removal; capture the new
+  build on the same routes.
 - All changes are experimental until VitaSDK compilation and side-by-side
   hardware logs/footage verify field pickups, walls, multi-shot battle
   effects and performance. Before shipping, scrutinize 30 FPS frame pacing
@@ -103,8 +98,8 @@ The branch now includes an **experimental field-only end-to-end integration**:
 
 ## Post-validation lighting debug views
 
-After generalized per-corner point lighting, battle projectile lighting, and
-sky-tinted grayscale ambient behavior have passed Vita hardware validation,
+After generalized per-corner point lighting and battle projectile lighting
+have passed Vita hardware validation,
 provide two **display-only** lit diagnostics:
 
 - **Lit Grayscale**: evaluate the *identical* accumulated lighting as normal,
