@@ -15574,8 +15574,13 @@ static void updateLiveTownAzelLighting()
                     cornerLight.active=true;
                     for(unsigned axis=0;axis<3;++axis) {
                         std::int64_t rotated=0;
-                        for(unsigned row=0;row<3;++row)
-                            rotated+=std::int64_t(light.modelBasis[row*3+axis])*point.vector[row];
+                        for(unsigned viewRow=0;viewRow<3;++viewRow) {
+                            std::int64_t combined=0;
+                            for(unsigned worldCol=0;worldCol<3;++worldCol)
+                                combined+=std::int64_t(light.additionalPointView[viewRow*4+worldCol])*
+                                    light.modelBasis[worldCol*3+axis];
+                            rotated+=(combined>>16)*point.vector[viewRow];
+                        }
                         cornerLight.vector[axis]=static_cast<std::int16_t>(rotated>>16);
                         cornerLight.color[axis]=light.additionalLight.color[axis];
                     }
