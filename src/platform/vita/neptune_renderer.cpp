@@ -15570,6 +15570,24 @@ static void updateLiveTownAzelLighting()
                     source.worldPosition[2],
                     static_cast<std::int32_t>(source.range<<12),
                     static_cast<std::int32_t>((source.range>>8)*(source.range>>8))};
+                // Conservative cheap rejection avoids the native restoring
+                // root/divide for remote corners. Work in unwrapped 16.16
+                // distance so far-away positions cannot wrap into range.
+                const std::uint64_t maxSquared=
+                    std::uint64_t(std::uint32_t(params[3]))<<16;
+                std::uint64_t squared=0;
+                bool tooFar=false;
+                for(unsigned axis=0;axis<3;++axis) {
+                    const std::int64_t delta=std::int64_t(params[axis])-
+                        modelAtCorner[axis*4+3];
+                    if (delta < -6000000 || delta > 6000000) {
+                        tooFar=true;
+                        break;
+                    }
+                    squared+=std::uint64_t(delta*delta);
+                    if(squared>maxSquared) { tooFar=true; break; }
+                }
+                if(tooFar) continue;
                 const auto evaluated=lagi::native_point_light(modelAtCorner,params);
                 if(evaluated.outside || evaluated.divisionOverflow) continue;
                 lagi::AdditionalModelLight vertexLight{};
