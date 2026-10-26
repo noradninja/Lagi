@@ -30,4 +30,10 @@ if (!$header.Contains('std::array<AdditionalModelLight, lagi::kMaxTransientLaser
     !$renderer.Contains('accumulate_additional_model_light(light.transientLaserLights[transient],lighting.normal,accum);')) {
     throw 'Missing four-light snapshot or additive Gouraud integration'
 }
+if (!$renderer.Contains('[FieldLaserCoverage]') -or
+    !$renderer.Contains('changedRGB555=%u') -or
+    !$renderer.Contains('rejectedPolys=%u') -or
+    !$renderer.Contains('light.transientLaserLightCount')) {
+    throw 'Missing bounded diagnostic for field laser polygon coverage'
+}
 Write-Output 'PASS: field LCS laser producer, shared four-light cap, frame reset, native falloff and additive Gouraud source assertions'
