@@ -1,3 +1,30 @@
+## Unified point lighting, battle producers and sky ambient — experimental
+
+- `include/lagi/lagi_corner_point_light.h` now owns the common four-corner
+  evaluation. Native collection/environment light and up to four transient
+  shots call it from the *same* Gouraud corner loop, accumulating into one
+  RGB value and quantizing once; no per-light GXM rendering pass.
+- Battle homing lasers publish Azel's updated `m10_laserPosition` and native
+  VDP1 trail color. Gunshots publish Azel's `m14` segment position and
+  weapon-specific VDP1 color table. Both enter the same frame-latched four-slot
+  source pool. Their coordinate spaces, light visibility in battle geometry,
+  and lifecycle have NOT yet been accepted on hardware.
+- The field RBG0 render target is sampled sparsely after `sceGxmFinish`,
+  at most once every 120 frames after the initial sample. The upper-band
+  mean is a *sky-color proxy*, not a guarantee that every scene's top RBG0
+  pixels are purely sky. Sampling is limited to mode-3 field scenes with
+  RBG0 present. Only exactly grayscale native depth-ambient values are
+  hue-tinted (average intensity preserved). Colored ambient is unchanged.
+  No extra draw pass or GPU readback pass is introduced, but CPU access to
+  the finished mapped RBG0 surface must be verified for coherency and correct
+  R/B channel ordering on Vita.
+- All changes are experimental until VitaSDK compilation and side-by-side
+  hardware logs/footage verify field pickups, walls, multi-shot battle
+  effects and performance. Before shipping, scrutinize 30 FPS frame pacing
+  during dense combat and ensure no transient lights persist between modes.
+- Run `tests/field_laser_point_light_test.ps1` for source assertions.
+  The current commit has not been VitaSDK-compiled by this assistant.
+
 # Transient laser point lights — feature branch
 Base: `feature/first-section-cleanup`; branch: `feature/laser-point-lights`.
 
