@@ -5,6 +5,7 @@ $bridge=Get-Content -Raw (Join-Path $repo 'src/integration/lagi_render_bridge.cp
 $header=Get-Content -Raw (Join-Path $repo 'include/lagi/lagi_render_bridge.h')
 $renderer=Get-Content -Raw (Join-Path $repo 'src/platform/vita/neptune_renderer.cpp')
 $pool=Get-Content -Raw (Join-Path $repo 'include/lagi/lagi_transient_laser_lights.h')
+$point=Get-Content -Raw (Join-Path $repo 'include/lagi/lagi_corner_point_light.h')
 if (!$pool.Contains('kMaxTransientLaserLights = 4') -or
     !$pool.Contains('if (count == kMaxTransientLaserLights) return false;')) {
     throw 'Native transient pool no longer enforces the hard cap of four'
@@ -27,8 +28,9 @@ if (!$bridge.Contains('g_completedFieldLaserLights=g_fieldLaserLights;') -or
 if (!$header.Contains('std::array<AdditionalModelLight, lagi::kMaxTransientLaserLights>') -or
     !$renderer.Contains('polygonLight.transientLaserLights=state.transientLaserLights;') -or
     !$renderer.Contains('transient<light.transientLaserLightCount') -or
-    !$renderer.Contains('native_point_light(modelAtCorner,params)') -or
-    !$renderer.Contains('g_liveTownCpuMesh.vertices[p*6u+vertexIndex]') -or
+    !$renderer.Contains('evaluate_point_at_corner(world,params,') -or
+    !$renderer.Contains('evaluate_point_at_corner(world,light.additionalPointParams,') -or
+    !$point.Contains('native_point_light(matrix,params)') -or
     !$renderer.Contains('accumulate_additional_model_light(vertexLight,lighting.normal,accum);')) {
     throw 'Missing four-light snapshot or additive Gouraud integration'
 }
@@ -56,4 +58,4 @@ if (!$renderer.Contains('static constexpr int kSceneModes[5] = {10, 7, 8, 9, 11}
     !$renderer.Contains('static int g_pendingViewMode = 7;')) {
     throw 'Debug cycle must place grayscale immediately before color while preserving default color'
 }
-Write-Output 'PASS: field laser cap, per-corner Gouraud, dynamic and cached static lighting refresh'
+Write-Output 'PASS: field laser cap, shared native four-corner evaluator, cached static lighting and debug order'
