@@ -523,25 +523,40 @@ void record_transient_field_laser_light(std::uint64_t source,
     }
 }
 
+void record_transient_battle_attack_light(std::uint64_t source,
+    std::int32_t x,std::int32_t y,std::int32_t z,std::uint32_t packedColor)
+{
+    // Same four sources and one-frame latch as field effects. The battle
+    // task's own active Draw callback supplies native lifecycle semantics.
+    record_transient_field_laser_light(source,x,y,z,packedColor);
+}
+
 static void apply_transient_field_laser_lights(SubmissionState& state)
 {
     static unsigned rejectedFrames=0;
     if (!g_completedFieldLaserLights.count) return;
-    if (state.billboard || !&pCurrentMatrix || !pCurrentMatrix || !g_nativeSceneViewValid) {
+    if (state.billboard || !state.hasModelMatrix) {
         if (rejectedFrames++<12u)
             lagi::platform::logging::writef("[FieldLaserSkip] billboard=%u matrix=%u viewValid=%u candidates=%u\n",
-                unsigned(state.billboard),unsigned(&pCurrentMatrix && pCurrentMatrix),
+                unsigned(state.billboard),unsigned(state.hasModelMatrix),
                 unsigned(g_nativeSceneViewValid),unsigned(g_completedFieldLaserLights.count));
         return;
     }
     std::int32_t nativeMatrix[12]{};
-    copyMatrixRaw(*pCurrentMatrix,nativeMatrix);
+    if(g_nativeSceneViewValid && &pCurrentMatrix && pCurrentMatrix)
+        copyMatrixRaw(*pCurrentMatrix,nativeMatrix);
+    else
+        std::copy(state.modelMatrix,state.modelMatrix+12,nativeMatrix);
     for (std::size_t i=0;i<g_completedFieldLaserLights.count;++i) {
         const auto& source=g_completedFieldLaserLights.lights[i];
         std::int32_t params[5]{};
         // Use Azel's current camera view to convert the world-space beam
         // head to the same view-space basis as the native model matrix.
         for (unsigned axis=0;axis<3;++axis) {
+            if(!g_nativeSceneViewValid) {
+                params[axis]=source.worldPosition[axis];
+                continue;
+            }
             std::int64_t value=std::int64_t(g_nativeSceneViewMatrix[axis*4+3])<<16;
             for (unsigned column=0;column<3;++column)
                 value+=std::int64_t(g_nativeSceneViewMatrix[axis*4+column])*
