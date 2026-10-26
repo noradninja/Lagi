@@ -2331,7 +2331,7 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
         if (!(pThis->m65 & 4))]=] source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
-  set(source_text "#include \"lagi/platform.h\"\n#include \"lagi/lagi_render_bridge.h\"\n#include <cstdint>\n${source_text}")
+  set(source_text "#include \"lagi/platform.h\"\n#include \"lagi/lagi_render_bridge.h\"\nstruct s_itemBoxType1;\n#include \"field/fieldItemBox_type2.h\"\n#include <cstdint>\n${source_text}")
   # Follow the existing Azel trail sprite and final sparkle with the native
   # A11D special light; no new path, light color or attenuation calculation.
   set(trail_light_declaration [=[void s_LCSLaser::InitTrail(s_LCSLaser* pThis, sLaserArgs* arg)]=])
@@ -2341,6 +2341,10 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   endif()
   string(REPLACE "${trail_light_declaration}"
    "static void lagiStartCollectionTrailLight(s32 colorIndex); // LAGI_TRAIL_LIGHT_FORWARD
+static bool lagiCollectionTrailHasLight(const s_LCSLaser* trail) {
+    return trail->m24_receivedItemId >= 0 ||
+        (trail->m1C && trail->m1C->m4_callback == &LCSItemBox_CallbackSavePoint);
+} // LAGI_SAVE_POINT_TRAIL_LIGHT
 ${trail_light_declaration}"
    source_text "${source_text}")
   # Trail and sparkle both publish world-space positions. As with native
@@ -2353,7 +2357,7 @@ ${trail_light_declaration}"
   endif()
   string(REPLACE "${trail_light_init_anchor}"
    "${trail_light_init_anchor}
-    if (pThis->m24_receivedItemId >= 0) {
+    if (lagiCollectionTrailHasLight(pThis)) {
         auto* dragon = getFieldTaskPtr()->m8_pSubFieldData->m338_pDragonTask;
         dragon->mD8_sparklePosition = pThis->m6C[0];
         dragon->mE4_sparkleScale = 0x10000;
@@ -2371,7 +2375,7 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=])
    message(FATAL_ERROR "Collection trail light update boundary changed")
   endif()
   string(REPLACE "${trail_light_update_anchor}" [=[        pThis->m2C_laserUpdate(pThis);
-        if (pThis->m24_receivedItemId >= 0) {
+        if (lagiCollectionTrailHasLight(pThis)) {
             // Same indexed sprite position as LaserTrailDraw, not a
             // separately integrated or guessed travel path.
             const s32 index = (pThis->m154 - 1) & 0xF;
@@ -2400,6 +2404,25 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_tex
   if(NOT invalid_trail_count EQUAL 2)
    message(FATAL_ERROR "Expected exactly two native trail particle index consumers")
   endif()
+  set(trail_particle_index_old [=[    // Select trail ring buffer index based on build-up state
+    s32 trailIndex;
+    if (pThis->m154 < 0x11)
+    {
+        // During buildup: use sequential index
+        trailIndex = pThis->m154;
+    }
+    else
+    {
+        // After buildup: use wrapped index
+        trailIndex = (pThis->m154 - 1) & 0xF;
+    }]=])
+  string(FIND "${source_text}" "${trail_particle_index_old}" trail_particle_index_found)
+  if(trail_particle_index_found LESS 0)
+   message(FATAL_ERROR "Collection trail particle position anchor changed")
+  endif()
+  string(REPLACE "${trail_particle_index_old}"
+   "    s32 trailIndex = (pThis->m154 - 1) & 0xF; // LAGI_NATIVE_TRAIL_LAST_WRITTEN"
+   source_text "${source_text}")
   string(REPLACE "${trail_draw_index_old}"
    "    s32 trailIndex = (pThis->m154 - 1) & 0xF; // LAGI_NATIVE_TRAIL_LAST_WRITTEN"
    source_text "${source_text}")

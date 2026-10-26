@@ -36,9 +36,11 @@ try {
      !$dragon.Contains('[CollectionLight] world=') -or
      $dragon.Contains('lightLocation = pTypedWorkArea->mD8_sparklePosition;') -or
      $dragon.Contains('mE4_sparkleScale.m_value == 0x10000')) {throw 'Collection light must use native view-space point coordinates without scale gating'}
- foreach($token in @('LAGI_TRAIL_LIGHT_START','LAGI_TRAIL_LIGHT_FOLLOW','lagiStartCollectionTrailLight(s32 colorIndex)',
+ foreach($token in @('LAGI_TRAIL_LIGHT_START','LAGI_TRAIL_LIGHT_FOLLOW','LAGI_SAVE_POINT_TRAIL_LIGHT',
+                    'lagiCollectionTrailHasLight(pThis)','trail->m1C->m4_callback == &LCSItemBox_CallbackSavePoint',
+                    'lagiStartCollectionTrailLight(s32 colorIndex)',
                     's_LCSLaser_DeleteTrailSub0Data0[colorIndex]','LAGI_NATIVE_TRAIL_LAST_WRITTEN',
-                    'pThis->m24_receivedItemId >= 0')) {
+                    'trail->m24_receivedItemId >= 0')) {
   if (!$dispatcher.Contains($token)) {throw "Collection light missing native trail ownership: $token"}
  }
  if ([regex]::Matches($dispatcher, 'LAGI_NATIVE_TRAIL_LAST_WRITTEN').Count -ne 2 -or
