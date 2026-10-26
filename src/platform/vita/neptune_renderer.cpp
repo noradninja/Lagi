@@ -429,6 +429,8 @@ struct LivePolygonLightState {
     lagi::AdditionalModelLight additionalLight{};
     std::array<lagi::AdditionalModelLight, lagi::kMaxTransientLaserLights> transientLaserLights{};
     std::uint8_t transientLaserLightCount=0;
+    std::array<lagi::TransientLaserLight, lagi::kMaxTransientLaserLights> transientLaserSources{};
+    std::int32_t modelBasis[9]{};
     std::int32_t vector[3]{};
     std::uint16_t color[3]{};
     std::uint32_t falloff[3]{};
@@ -7514,6 +7516,10 @@ static void appendLiveTownModel(
     polygonLight.additionalLight=state.additionalLight;
     polygonLight.transientLaserLights=state.transientLaserLights;
     polygonLight.transientLaserLightCount=state.transientLaserLightCount;
+    polygonLight.transientLaserSources=state.transientLaserSources;
+    for(unsigned row=0;row<3;++row)
+        for(unsigned col=0;col<3;++col)
+            polygonLight.modelBasis[row*3+col]=state.modelMatrix[row*4+col];
     if (state.hasLight) {
         // Match Azel's renderer: rotate the captured camera/world-space light
         // into model space once per submission. This is algebraically the
@@ -15539,7 +15545,41 @@ static void updateLiveTownAzelLighting()
                         std::int64_t(lighting.normal[2])*source.vector[2];
                     laserFacing|=(dot>=65536);
                 }
-                lagi::accumulate_additional_model_light(light.transientLaserLights[transient],lighting.normal,accum);
+                // Evaluate source-to-corner displacement, not the native
+                // object's origin. Keep native root/divide/range rules, and
+                // rotate the resulting vector back to the authored normal's
+                // model space. The item pickup light stays unchanged.
+                const auto& source=light.transientLaserSources[transient];
+                if(!source.range) continue;
+                const unsigned vertexIndex=corner==3u?5u:corner;
+                const auto& vertex=g_liveTownCpuMesh.vertices[p*6u+vertexIndex];
+                const auto fixedVertex=[](float v)->std::int32_t {
+                    const double raw=std::round(double(v)*65536.0);
+                    return static_cast<std::int32_t>(std::clamp(raw,
+                        double(std::numeric_limits<std::int32_t>::min()),
+                        double(std::numeric_limits<std::int32_t>::max())));
+                };
+                std::int32_t modelAtCorner[12]{
+                    0x10000,0,0,fixedVertex(vertex.x),
+                    0,0x10000,0,fixedVertex(vertex.y),
+                    0,0,0x10000,fixedVertex(vertex.z)};
+                std::int32_t params[5]{
+                    source.worldPosition[0],source.worldPosition[1],
+                    source.worldPosition[2],
+                    static_cast<std::int32_t>(source.range<<12),
+                    static_cast<std::int32_t>((source.range>>8)*(source.range>>8))};
+                const auto evaluated=lagi::native_point_light(modelAtCorner,params);
+                if(evaluated.outside || evaluated.divisionOverflow) continue;
+                lagi::AdditionalModelLight vertexLight{};
+                vertexLight.active=true;
+                for(unsigned axis=0;axis<3;++axis) {
+                    std::int64_t v=0;
+                    for(unsigned row=0;row<3;++row)
+                        v+=std::int64_t(light.modelBasis[row*3+axis])*evaluated.vector[row];
+                    vertexLight.vector[axis]=static_cast<std::int16_t>(v>>16);
+                    vertexLight.color[axis]=source.color[axis];
+                }
+                lagi::accumulate_additional_model_light(vertexLight,lighting.normal,accum);
             }
             if(traceLaserCoverage) {
                 ++laserCoverageCorners;
