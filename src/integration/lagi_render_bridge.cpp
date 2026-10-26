@@ -541,6 +541,12 @@ void record_transient_battle_attack_light(std::uint64_t source,
     // Same four sources and one-frame latch as field effects. The battle
     // task's own active Draw callback supplies native lifecycle semantics.
     record_transient_field_laser_light(source,x,y,z,packedColor);
+    static unsigned battleReports=0;
+    if(battleReports++<32u)
+        lagi::platform::logging::writef(
+            "[BattleLightEmit] task=%08X pos=%08X,%08X,%08X rgb=%06X pool=%u\n",
+            unsigned(source),unsigned(x),unsigned(y),unsigned(z),
+            unsigned(packedColor&0xFFFFFFu),unsigned(g_fieldLaserLights.count));
 }
 
 static void apply_transient_field_laser_lights(SubmissionState& state)
