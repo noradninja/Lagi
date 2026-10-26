@@ -15,6 +15,26 @@ Base: `feature/first-section-cleanup`; branch: `feature/laser-point-lights`.
 4. **Field hardware gate:** check moving colored light follows LCS shot, source cleanup, view/camera movement, concurrent shots, and 30 FPS.
 5. **Battle follow-up:** connect native `sHomingLaserTask_Draw` node head and `sGunShotTask` trajectory/color; enforce the **same four** source cap for all shots. Profile a many-enemy battle before enabling additional attack types.
 
+## 2026-10-25 hardware diagnostic follow-up
+The new Vita log proves field beam heads and source colors are emitted, but none
+of the bounded native model evaluators run during those shots. Azel updates
+laser tasks after the earlier field model submissions, so the live per-frame
+pool was cleared before any model could consume the previous frame's beams.
+`begin_frame()` now promotes the completed producer pool into an immutable
+one-frame-late model-light input, and clears only the new producer pool.
+This preserves four sources, prevents long-lived stale lights, and keeps the
+accepted collection special light independent.
+
+The original `s_RGB8::toU32()` packs BGR rather than the RGB contract of
+`record_transient_field_laser_light`. The adapter now explicitly packs the
+native m0/m1/m2 channels into 0xRRGGBB. Neither fix changes the native
+point-light distance evaluator or Gouraud interpolation.
+
+**Pending hardware gate:** verify `[FieldLaserEval]` and
+`[FieldLaserLight]` markers appear for consecutive shots; check sprite/light
+tracking, color, and 30 FPS. An evaluation can still reject out-of-range
+models. VitaSDK compilation and new device tests have not been performed.
+
 ## Current status
 The branch now includes an **experimental field-only end-to-end integration**:
 - The LCS beam update publishes the last-written `m6C` head position and native LCS color index (`m27`) while the beam is active. Source identity is the actual LCS task address; the four-source pool is reset each frame.
