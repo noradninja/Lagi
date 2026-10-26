@@ -1,5 +1,10 @@
 ## Unified point lighting, battle producers and sky ambient — experimental
 
+- The native A11D **primary** point-light selector also uses the shared
+  four-corner evaluator when its scene view is available. Its original
+  model-origin directional contribution is suppressed in that case, avoiding
+  double illumination. Scenes without a captured native view retain their
+  original model-origin fallback.
 - `include/lagi/lagi_corner_point_light.h` now owns the common four-corner
   evaluation. Native collection/environment light and up to four transient
   shots call it from the *same* Gouraud corner loop, accumulating into one
