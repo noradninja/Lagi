@@ -64,3 +64,21 @@ The branch now includes an **experimental field-only end-to-end integration**:
 - Run `tests/field_laser_point_light_test.ps1` for source-level checks and `tests/transient_laser_light_test.cpp` as a host-native unit test.
 
 **Not yet validated:** VitaSDK compilation, runtime illumination, correct color interpretation of the native LCS palette, shot/draw ordering, multiple simultaneous beams, and frame-time impact. Battle lasers remain disconnected. This is not yet a hardware-accepted rendering change.
+
+## Post-validation lighting debug views
+
+After generalized per-corner point lighting, battle projectile lighting, and
+sky-tinted grayscale ambient behavior have passed Vita hardware validation,
+provide two **display-only** lit diagnostics:
+
+- **Lit Grayscale**: evaluate the *identical* accumulated lighting as normal,
+  then convert the final lit output to luminance for visual inspection of
+  attenuation, vertex-normal response and Gouraud interpolation.
+- **Lit Color**: retain the existing complete native RGB lighting output.
+
+Do not implement two independent light evaluators or quantize grayscale at an
+earlier stage; otherwise this ceases to be a like-for-like comparison.
+Reuse the existing viewer/debug mode selector and leave Lit Color as the default.
+Do not enable the grayscale view as a shipping visual mode without explicit
+approval.
+
