@@ -15420,6 +15420,14 @@ static void updateLiveTownAzelLighting()
     std::int16_t falloffMap[32][3]{};
     bool haveFalloff = false;
     static bool reportedLiveLighting = false;
+    // Hardware shot-light coverage diagnostic: first 24 frames with transient
+    // sources; sample only every third frame and avoid per-polygon logs.
+    static unsigned laserCoverageFrames=0;
+    bool laserCoveragePresent=false;
+    unsigned laserCoverageCandidates=0,laserCoverageRejected=0;
+    unsigned laserCoverageCorners=0,laserCoverageFacing=0;
+    unsigned laserCoverageQuantized=0,laserCoverageSaturated=0;
+    int laserCoveragePeakDelta=0;
     // Bounded diagnostic only; no impact on native lighting arithmetic.
     // Eight samples over the first 32 point-lit frames, up to three polygons
     // per sampled frame. This spans the LCS pickup without flooding lagi.log.
@@ -15437,6 +15445,12 @@ static void updateLiveTownAzelLighting()
         const unsigned mode = (record.lightingControl >> 8) & 3u;
         auto& out = g_liveTownCpuMesh.gouraud555[p];
         out = {};
+        if (light.transientLaserLightCount) {
+            laserCoveragePresent=true;
+            ++laserCoverageCandidates;
+            if (!light.valid || mode==0u || record.lightingCount==0u)
+                ++laserCoverageRejected;
+        }
         if (!light.valid || mode == 0u || record.lightingCount == 0u)
             continue;
 
@@ -15512,8 +15526,36 @@ static void updateLiveTownAzelLighting()
             lagi::accumulate_additional_model_light(light.additionalLight,lighting.normal,accum);
             // A maximum of four extra native point contributions, per model,
             // before the already-existing single RGB555 quantization.
-            for(unsigned transient=0;transient<light.transientLaserLightCount;++transient)
+            const bool traceLaserCoverage=light.transientLaserLightCount &&
+                laserCoverageFrames<24u && laserCoverageFrames%3u==0u;
+            const int preLaserRGB[3]={accum[0],accum[1],accum[2]};
+            bool laserFacing=false;
+            for(unsigned transient=0;transient<light.transientLaserLightCount;++transient) {
+                if(traceLaserCoverage) {
+                    const auto& source=light.transientLaserLights[transient];
+                    const std::int64_t dot=
+                        std::int64_t(lighting.normal[0])*source.vector[0]+
+                        std::int64_t(lighting.normal[1])*source.vector[1]+
+                        std::int64_t(lighting.normal[2])*source.vector[2];
+                    laserFacing|=(dot>=65536);
+                }
                 lagi::accumulate_additional_model_light(light.transientLaserLights[transient],lighting.normal,accum);
+            }
+            if(traceLaserCoverage) {
+                ++laserCoverageCorners;
+                laserCoverageFacing+=unsigned(laserFacing);
+                bool visibleChange=false,clipped=false;
+                for(unsigned channel=0;channel<3;++channel) {
+                    const int before=std::clamp(preLaserRGB[channel],0,0x1F00)>>8;
+                    const int after=std::clamp(accum[channel],0,0x1F00)>>8;
+                    visibleChange|=after>before;
+                    clipped|=accum[channel]>0x1F00;
+                    laserCoveragePeakDelta=std::max(laserCoveragePeakDelta,
+                        accum[channel]-preLaserRGB[channel]);
+                }
+                laserCoverageQuantized+=unsigned(visibleChange);
+                laserCoverageSaturated+=unsigned(clipped);
+            }
             if (pointTraceEligible && corner == 0u &&
                 pointTraceLitFrames < 32u &&
                 (pointTraceLitFrames % 4u) == 0u &&
@@ -15552,6 +15594,16 @@ static void updateLiveTownAzelLighting()
                     (static_cast<float>(gouraud5) - 16.0f) / 31.0f;
             }
         }
+    }
+    if (laserCoveragePresent && laserCoverageFrames<24u) {
+        if(laserCoverageFrames%3u==0u)
+            logging::writef(
+                "[FieldLaserCoverage] frame=%u candidatePolys=%u rejectedPolys=%u "
+                "sampledCorners=%u facingCorners=%u changedRGB555=%u saturatedRGB555=%u peakAccumDelta=%d\\n",
+                laserCoverageFrames,laserCoverageCandidates,laserCoverageRejected,
+                laserCoverageCorners,laserCoverageFacing,laserCoverageQuantized,
+                laserCoverageSaturated,laserCoveragePeakDelta);
+        ++laserCoverageFrames;
     }
     if (pointTraceActiveThisFrame && pointTraceLitFrames < 32u)
         ++pointTraceLitFrames;
