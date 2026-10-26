@@ -64,6 +64,11 @@ if (!$cmake.Contains('LAGI_BATTLE_HOMING_POINT') -or
     !$header.Contains('record_transient_battle_attack_light(')) {
     throw 'Native battle laser and gunshot producer hooks missing'
 }
+if (!$header.Contains('nativePrimaryPointPerCorner') -or
+    !$renderer.Contains('!light.nativePrimaryPointPerCorner') -or
+    !$bridge.Contains('state.nativePrimaryPointPerCorner=true')) {
+    throw 'Native primary point source not redirected into shared evaluator'
+}
 if (!$renderer.Contains('sampleSceneSkyAmbientAfterGpuFinish();') -or
     !$renderer.Contains('g_skyAmbientValid && accum[0]==accum[1]') -or
     !$renderer.Contains('g_sceneRbg0ColorBuffer[y*kSceneRbg0Pitch+x]')) {
