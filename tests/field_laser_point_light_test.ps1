@@ -58,4 +58,15 @@ if (!$renderer.Contains('static constexpr int kSceneModes[5] = {10, 7, 8, 9, 11}
     !$renderer.Contains('static int g_pendingViewMode = 7;')) {
     throw 'Debug cycle must place grayscale immediately before color while preserving default color'
 }
+if (!$cmake.Contains('LAGI_BATTLE_HOMING_POINT') -or
+    !$cmake.Contains('LAGI_BATTLE_GUN_POINT') -or
+    !$bridge.Contains('record_transient_battle_attack_light(') -or
+    !$header.Contains('record_transient_battle_attack_light(')) {
+    throw 'Native battle laser and gunshot producer hooks missing'
+}
+if (!$renderer.Contains('sampleSceneSkyAmbientAfterGpuFinish();') -or
+    !$renderer.Contains('g_skyAmbientValid && accum[0]==accum[1]') -or
+    !$renderer.Contains('g_sceneRbg0ColorBuffer[y*kSceneRbg0Pitch+x]')) {
+    throw 'Grayscale-only ambient sky sampling or gating missing'
+}
 Write-Output 'PASS: field laser cap, shared native four-corner evaluator, cached static lighting and debug order'
