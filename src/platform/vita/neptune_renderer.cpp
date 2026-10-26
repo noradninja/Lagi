@@ -17,6 +17,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/vdp1_renderer.h"
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_render_bridge.h"
+#include "lagi/lagi_point_light.h"
 #include "lagi/lagi_screen_depth.h"
 #include "lagi/lagi_projection_offset.h"
 #include "lagi/lagi_vdp1_quad_geometry.h"
@@ -39,6 +40,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include <cstring>
 #include <cctype>
 #include <cmath>
+#include <limits>
 #include <unordered_set>
 #include <unordered_map>
 #include <atomic>
