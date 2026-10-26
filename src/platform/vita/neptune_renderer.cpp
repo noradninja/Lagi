@@ -433,6 +433,7 @@ struct LivePolygonLightState {
     std::int32_t additionalPointParams[5]{};
     std::int32_t additionalPointView[12]{};
     bool additionalPointPerCorner=false;
+    bool nativePrimaryPointPerCorner=false;
     std::array<lagi::AdditionalModelLight, lagi::kMaxTransientLaserLights> transientLaserLights{};
     std::uint8_t transientLaserLightCount=0;
     std::array<lagi::TransientLaserLight, lagi::kMaxTransientLaserLights> transientLaserSources{};
@@ -7556,6 +7557,7 @@ static void appendLiveTownModel(
     LivePolygonLightState polygonLight{};
     polygonLight.additionalLight=state.additionalLight;
     polygonLight.additionalPointPerCorner=state.additionalPointPerCorner;
+    polygonLight.nativePrimaryPointPerCorner=state.nativePrimaryPointPerCorner;
     std::copy(std::begin(state.additionalPointParams),std::end(state.additionalPointParams),polygonLight.additionalPointParams);
     std::copy(std::begin(state.additionalPointView),std::end(state.additionalPointView),polygonLight.additionalPointView);
     polygonLight.transientLaserLights=state.transientLaserLights;
@@ -7921,6 +7923,7 @@ static void refreshLiveTownStaticLighting()
         LivePolygonLightState light{};
         light.additionalLight=submission.state.additionalLight;
         light.additionalPointPerCorner=submission.state.additionalPointPerCorner;
+        light.nativePrimaryPointPerCorner=submission.state.nativePrimaryPointPerCorner;
         std::copy(std::begin(submission.state.additionalPointParams),std::end(submission.state.additionalPointParams),light.additionalPointParams);
         std::copy(std::begin(submission.state.additionalPointView),std::end(submission.state.additionalPointView),light.additionalPointView);
         // Static geometry reuses its polygons across frames. Re-snapshot
@@ -15589,7 +15592,7 @@ static void updateLiveTownAzelLighting()
                         lighting.color[channel]);
             }
 
-            if (dotProduct > 0) {
+            if (dotProduct > 0 && !light.nativePrimaryPointPerCorner) {
                 const int dotHi = static_cast<int>(
                     static_cast<std::uint32_t>(dotProduct) >> 16);
 
