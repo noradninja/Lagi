@@ -52,4 +52,8 @@ foreach ($field in @('transientLaserLights', 'transientLaserSources',
         throw "Static light refresh fails to propagate $field"
     }
 }
+if (!$renderer.Contains('static constexpr int kSceneModes[5] = {10, 7, 8, 9, 11};') -or
+    !$renderer.Contains('static int g_pendingViewMode = 7;')) {
+    throw 'Debug cycle must place grayscale immediately before color while preserving default color'
+}
 Write-Output 'PASS: field laser cap, per-corner Gouraud, dynamic and cached static lighting refresh'
