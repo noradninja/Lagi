@@ -48,6 +48,10 @@ struct SubmissionState {
     std::int16_t nativeModelLight[3]{};
     bool hasNativeModelLight = false;
     AdditionalModelLight additionalLight{};
+    // Native point source retained for the optional per-corner evaluator.
+    std::int32_t additionalPointParams[5]{};
+    std::int32_t additionalPointView[12]{};
+    bool additionalPointPerCorner = false;
     std::array<AdditionalModelLight, lagi::kMaxTransientLaserLights> transientLaserLights{};
     std::uint8_t transientLaserLightCount = 0;
     // Raw Azel world-space shot positions for optional per-corner evaluation.
