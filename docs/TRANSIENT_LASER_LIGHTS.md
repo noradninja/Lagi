@@ -78,7 +78,9 @@ provide two **display-only** lit diagnostics:
 
 Do not implement two independent light evaluators or quantize grayscale at an
 earlier stage; otherwise this ceases to be a like-for-like comparison.
-Reuse the existing viewer/debug mode selector and leave Lit Color as the default.
+In the existing viewer/debug cycle, place **Lit Grayscale immediately before Lit Color**
+(the transition is Grayscale → Color). Preserve Lit Color as the default display
+when entering the viewer; cycle order must not silently change the default.
 Do not enable the grayscale view as a shipping visual mode without explicit
 approval.
 
