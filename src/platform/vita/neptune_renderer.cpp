@@ -18,6 +18,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_render_bridge.h"
 #include "lagi/lagi_point_light.h"
+#include "lagi/lagi_corner_point_light.h"
 #include "lagi/lagi_screen_depth.h"
 #include "lagi/lagi_projection_offset.h"
 #include "lagi/lagi_vdp1_quad_geometry.h"
@@ -15555,40 +15556,13 @@ static void updateLiveTownAzelLighting()
             if (pointTraceEligible) pointTraceActiveThisFrame = true;
             const int beforePoint[3] = {accum[0], accum[1], accum[2]};
             if(light.additionalPointPerCorner && light.additionalLight.active) {
-                // Evaluate the accepted native point against this true quad
-                // corner, then rotate its view-space vector to model normals.
-                const unsigned cornerVertex=corner==3u?5u:corner;
-                const auto& vtx=g_liveTownCpuMesh.vertices[p*6u+cornerVertex];
+                const auto& vtx=g_liveTownCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
                 const float world[3]={vtx.x,vtx.y,vtx.z};
-                std::int32_t cornerMatrix[12]{0x10000,0,0,0,
-                    0,0x10000,0,0,0,0x10000,0};
-                for(unsigned row=0;row<3;++row) {
-                    double value=double(light.additionalPointView[row*4+3]);
-                    for(unsigned col=0;col<3;++col)
-                        value+=double(light.additionalPointView[row*4+col])*double(world[col]);
-                    cornerMatrix[row*4+3]=static_cast<std::int32_t>(
-                        std::clamp(std::round(value),
-                            double(std::numeric_limits<std::int32_t>::min()),
-                            double(std::numeric_limits<std::int32_t>::max())));
-                }
-                const auto point=lagi::native_point_light(cornerMatrix,light.additionalPointParams);
-                if(!point.outside && !point.divisionOverflow) {
-                    lagi::AdditionalModelLight cornerLight{};
-                    cornerLight.active=true;
-                    for(unsigned axis=0;axis<3;++axis) {
-                        std::int64_t rotated=0;
-                        for(unsigned viewRow=0;viewRow<3;++viewRow) {
-                            std::int64_t combined=0;
-                            for(unsigned worldCol=0;worldCol<3;++worldCol)
-                                combined+=std::int64_t(light.additionalPointView[viewRow*4+worldCol])*
-                                    light.modelBasis[worldCol*3+axis];
-                            rotated+=(combined>>16)*point.vector[viewRow];
-                        }
-                        cornerLight.vector[axis]=static_cast<std::int16_t>(rotated>>16);
-                        cornerLight.color[axis]=light.additionalLight.color[axis];
-                    }
+                lagi::AdditionalModelLight cornerLight{};
+                if(lagi::evaluate_point_at_corner(world,light.additionalPointParams,
+                    light.additionalLight.color,light.modelBasis,
+                    light.additionalPointView,cornerLight))
                     lagi::accumulate_additional_model_light(cornerLight,lighting.normal,accum);
-                }
             } else {
                 lagi::accumulate_additional_model_light(light.additionalLight,lighting.normal,accum);
             }
@@ -15599,58 +15573,21 @@ static void updateLiveTownAzelLighting()
             const int preLaserRGB[3]={accum[0],accum[1],accum[2]};
             bool laserFacing=false;
             for(unsigned transient=0;transient<light.transientLaserLightCount;++transient) {
-                // Evaluate source-to-corner displacement, not the native
-                // object's origin. Keep native root/divide/range rules, and
-                // rotate the resulting vector back to the authored normal's
-                // model space. The item pickup light stays unchanged.
+                // Same native evaluator and one accumulator as collection lights.
+                // A transient shot supplies world-space point parameters.
                 const auto& source=light.transientLaserSources[transient];
                 if(!source.range) continue;
-                const unsigned vertexIndex=corner==3u?5u:corner;
-                const auto& vertex=g_liveTownCpuMesh.vertices[p*6u+vertexIndex];
-                const auto fixedVertex=[](float v)->std::int32_t {
-                    const double raw=std::round(double(v)*65536.0);
-                    return static_cast<std::int32_t>(std::clamp(raw,
-                        double(std::numeric_limits<std::int32_t>::min()),
-                        double(std::numeric_limits<std::int32_t>::max())));
-                };
-                std::int32_t modelAtCorner[12]{
-                    0x10000,0,0,fixedVertex(vertex.x),
-                    0,0x10000,0,fixedVertex(vertex.y),
-                    0,0,0x10000,fixedVertex(vertex.z)};
-                std::int32_t params[5]{
+                const auto& vertex=g_liveTownCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
+                const float world[3]={vertex.x,vertex.y,vertex.z};
+                const std::int32_t hi=static_cast<std::int16_t>(source.range>>8);
+                const std::int32_t params[5]={
                     source.worldPosition[0],source.worldPosition[1],
                     source.worldPosition[2],
-                    static_cast<std::int32_t>(source.range<<12),
-                    static_cast<std::int32_t>((source.range>>8)*(source.range>>8))};
-                // Conservative cheap rejection avoids the native restoring
-                // root/divide for remote corners. Work in unwrapped 16.16
-                // distance so far-away positions cannot wrap into range.
-                const std::uint64_t maxSquared=
-                    std::uint64_t(std::uint32_t(params[3]))<<16;
-                std::uint64_t squared=0;
-                bool tooFar=false;
-                for(unsigned axis=0;axis<3;++axis) {
-                    const std::int64_t delta=std::int64_t(params[axis])-
-                        modelAtCorner[axis*4+3];
-                    if (delta < -6000000 || delta > 6000000) {
-                        tooFar=true;
-                        break;
-                    }
-                    squared+=std::uint64_t(delta*delta);
-                    if(squared>maxSquared) { tooFar=true; break; }
-                }
-                if(tooFar) continue;
-                const auto evaluated=lagi::native_point_light(modelAtCorner,params);
-                if(evaluated.outside || evaluated.divisionOverflow) continue;
+                    static_cast<std::int32_t>(source.range<<12),hi*hi};
                 lagi::AdditionalModelLight vertexLight{};
-                vertexLight.active=true;
-                for(unsigned axis=0;axis<3;++axis) {
-                    std::int64_t v=0;
-                    for(unsigned row=0;row<3;++row)
-                        v+=std::int64_t(light.modelBasis[row*3+axis])*evaluated.vector[row];
-                    vertexLight.vector[axis]=static_cast<std::int16_t>(v>>16);
-                    vertexLight.color[axis]=source.color[axis];
-                }
+                if(!lagi::evaluate_point_at_corner(world,params,
+                    source.color,light.modelBasis,nullptr,vertexLight))
+                    continue;
                 if(traceLaserCoverage) {
                     const std::int64_t dot=
                         std::int64_t(lighting.normal[0])*vertexLight.vector[0]+
