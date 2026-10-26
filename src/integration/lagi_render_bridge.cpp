@@ -464,6 +464,10 @@ static void capture_native_point_light(SubmissionState& state)
             std::copy(pointColor,pointColor+3,state.additionalLight.color);
             state.additionalLight.active=true;
         }
+        if(state.additionalPointPerCorner) {
+            std::copy(pointColor,pointColor+3,state.additionalLight.color);
+            state.additionalLight.active=true;
+        }
     } else {
         std::copy(light.vector.begin(), light.vector.end(), state.nativeModelLight);
         state.hasNativeModelLight = true;
@@ -603,6 +607,12 @@ static void apply_field_environment_point_light(SubmissionState& state)
         for(unsigned axis=0;axis<3;++axis) {
             state.additionalLight.color[axis]=g_fieldEnvironmentPointLight.color[axis];
         }
+        state.additionalLight.active=true;
+    }
+    // A source outside a model origin can still light its nearest corners.
+    if(state.additionalPointPerCorner) {
+        std::copy(g_fieldEnvironmentPointLight.color,
+            g_fieldEnvironmentPointLight.color+3,state.additionalLight.color);
         state.additionalLight.active=true;
     }
     static unsigned reports=0;
