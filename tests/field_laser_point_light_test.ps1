@@ -10,12 +10,14 @@ if (!$pool.Contains('kMaxTransientLaserLights = 4') -or
     throw 'Native transient pool no longer enforces the hard cap of four'
 }
 if (!$cmake.Contains('LAGI_FIELD_LASER_LIGHT') -or
-    !$cmake.Contains('s_RGB8 nativeColor = s_LCSLaser_DeleteTrailSub0Data0[pThis->m27]') -or
+    !$cmake.Contains('const s_RGB8& nativeColor = s_LCSLaser_DeleteTrailSub0Data0[pThis->m27]') -or
     !$cmake.Contains('pThis->m6C[(pThis->m154 - 1) & 0xF]') -or
     !$cmake.Contains('lagi/lagi_render_bridge.h')) {
     throw 'Native LCS producer no longer uses beam-head position and authored LCS color'
 }
-if (!$bridge.Contains('g_fieldLaserLights.clear();') -or
+if (!$bridge.Contains('g_completedFieldLaserLights=g_fieldLaserLights;') -or
+    !$bridge.Contains('g_completedFieldLaserLights.count') -or
+    !$bridge.Contains('g_fieldLaserLights.clear();') -or
     !$bridge.Contains('apply_transient_field_laser_lights(g_lastState);') -or
     !$bridge.Contains('native_point_light(nativeMatrix,params)') -or
     !$bridge.Contains('if (result.outside || result.divisionOverflow) continue;') -or
