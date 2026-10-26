@@ -1043,6 +1043,40 @@ static constexpr unsigned int kSceneRbg0Height = 224u;
 static constexpr unsigned int kSceneRbg0Pitch = 384u;
 static SceUID g_sceneRbg0ColorUid = -1;
 static std::uint32_t* g_sceneRbg0ColorBuffer = nullptr;
+static std::uint8_t g_skyAmbientRgb[3]{};
+static bool g_skyAmbientValid=false;
+static unsigned g_skyAmbientFrames=0;
+// Sample only the independently resolved rotation background, never the
+// composited world/UI target. A bounded top band is a sky-color proxy.
+static void sampleSceneSkyAmbientAfterGpuFinish()
+{
+    if(!g_sceneRbg0Enabled || !g_sceneRbg0ColorBuffer ||
+       g_sceneGameMode!=3u) {
+        g_skyAmbientValid=false;
+        return;
+    }
+    if(g_skyAmbientValid && (++g_skyAmbientFrames%120u)!=0u) return;
+    std::uint64_t channel[3]{};
+    unsigned count=0;
+    for(unsigned y=8;y<64;y+=8)
+        for(unsigned x=16;x+16<kSceneRbg0Width;x+=16) {
+            const std::uint32_t pixel=g_sceneRbg0ColorBuffer[y*kSceneRbg0Pitch+x];
+            const unsigned r=pixel&255u,g=(pixel>>8)&255u,b=(pixel>>16)&255u;
+            if(r+g+b<24u) continue;
+            channel[0]+=r;channel[1]+=g;channel[2]+=b;
+            ++count;
+        }
+    if(count<16u) {g_skyAmbientValid=false;return;}
+    for(unsigned i=0;i<3;++i)
+        g_skyAmbientRgb[i]=static_cast<std::uint8_t>(channel[i]/count);
+    g_skyAmbientValid=true;
+    static unsigned reports=0;
+    if(reports++<8u)
+        logging::writef("[SkyAmbient] sample=RBG0-top rgb=%u,%u,%u pixels=%u\\n",
+            unsigned(g_skyAmbientRgb[0]),unsigned(g_skyAmbientRgb[1]),
+            unsigned(g_skyAmbientRgb[2]),count);
+}
+
 static SceGxmColorSurface g_sceneRbg0ColorSurface{};
 static SceGxmTexture g_sceneRbg0ResolvedTexture{};
 static std::atomic<unsigned int> g_azelColorOffsetEnable{0};
@@ -14188,6 +14222,7 @@ static void renderBasicWingViewer()
     sceGxmFinish(g_probeContext);
     g_profileGxmFinishUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - finishStartUs);
+    sampleSceneSkyAmbientAfterGpuFinish();
     if(g_gpuPassSample) {
         const unsigned worldWall=g_gpuPassFinalStartUs?static_cast<unsigned>(
             g_gpuPassFinalStartUs-beginSceneStartUs):0;
@@ -15532,6 +15567,20 @@ static void updateLiveTownAzelLighting()
                 falloffMap[depthIndex][0],
                 falloffMap[depthIndex][1],
                 falloffMap[depthIndex][2]};
+            // Only grayscale native ambient can receive a sky tint. Preserve
+            // average brightness, original depth falloff and colored ambients.
+            if(g_skyAmbientValid && accum[0]==accum[1] &&
+                accum[1]==accum[2]) {
+                const unsigned mean=(unsigned(g_skyAmbientRgb[0])+
+                    unsigned(g_skyAmbientRgb[1])+
+                    unsigned(g_skyAmbientRgb[2]))/3u;
+                if(mean>0u) {
+                    const int gray=accum[0];
+                    for(unsigned c=0;c<3;++c)
+                        accum[c]=std::clamp(int(std::int64_t(gray)*
+                            g_skyAmbientRgb[c]/mean),-32768,32767);
+                }
+            }
 
             if (mode == 2u && lighting.hasColor) {
                 for (unsigned channel = 0; channel < 3; ++channel)
