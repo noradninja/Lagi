@@ -38,4 +38,18 @@ if (!$renderer.Contains('[FieldLaserCoverage]') -or
     !$renderer.Contains('light.transientLaserLightCount')) {
     throw 'Missing bounded diagnostic for field laser polygon coverage'
 }
-Write-Output 'PASS: field LCS laser producer, shared four-light cap, frame reset, native falloff and additive Gouraud source assertions'
+# Static field meshes are cached, so the per-frame refresh MUST propagate
+# exactly the same transient fields as the dynamic model append path.
+$staticStart=$renderer.IndexOf('static void refreshLiveTownStaticLighting()')
+$staticEnd=$renderer.IndexOf('// Shared with submission:', $staticStart)
+if ($staticStart -lt 0 -or $staticEnd -le $staticStart) {
+    throw 'Static field light refresh function not found'
+}
+$staticRefresh=$renderer.Substring($staticStart,$staticEnd-$staticStart)
+foreach ($field in @('transientLaserLights', 'transientLaserSources',
+                    'transientLaserLightCount', 'modelBasis')) {
+    if (!$staticRefresh.Contains("light.$field")) {
+        throw "Static light refresh fails to propagate $field"
+    }
+}
+Write-Output 'PASS: field laser cap, per-corner Gouraud, dynamic and cached static lighting refresh'
