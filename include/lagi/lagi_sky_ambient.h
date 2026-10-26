@@ -6,8 +6,8 @@
 
 namespace lagi {
 
-inline constexpr unsigned kSkyAmbientBlendNumerator = 5u;
-inline constexpr unsigned kSkyAmbientBlendDenominator = 8u;
+inline constexpr unsigned kSkyAmbientBlendNumerator = 7u;
+inline constexpr unsigned kSkyAmbientBlendDenominator = 16u;
 
 inline std::int64_t sky_ambient_rounded_divide(
     std::int64_t value, std::int64_t divisor) {

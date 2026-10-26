@@ -1048,13 +1048,17 @@ static unsigned int g_sceneGameMode = 0u;
 static std::uint32_t* g_sceneRbg0ColorBuffer = nullptr;
 static std::uint8_t g_skyAmbientRgb[3]{};
 static bool g_skyAmbientValid=false;
+static bool g_skyAmbientNeedsSample=true;
 static bool g_skyAmbientEarlyAttempted=false;
 static unsigned g_sceneFieldKey=~0u;
+static bool g_cachedFieldSkyValid=false;
+static unsigned g_cachedFieldSkyKey=~0u;
+static std::uint8_t g_cachedFieldSkyRgb[3]{};
 // Sample only the independently resolved rotation background, never the
 // composited world/UI target. A bounded top band is a sky-color proxy.
 static void sampleSceneSkyAmbientAfterGpuFinish()
 {
-    if(g_skyAmbientValid || !g_sceneRbg0Enabled ||
+    if(!g_skyAmbientNeedsSample || !g_sceneRbg0Enabled ||
        !g_sceneRbg0ColorBuffer ||
        !lagi::native_scene_mode(static_cast<int>(g_sceneGameMode))) return;
     std::uint64_t channel[3]{};
@@ -1070,18 +1074,38 @@ static void sampleSceneSkyAmbientAfterGpuFinish()
             channel[0]+=r;channel[1]+=g;channel[2]+=b;
             ++count;
         }
-    if(count<48u) return;
     std::uint8_t sampled[3]{};
-    for(unsigned i=0;i<3;++i) {
-        sampled[i]=static_cast<std::uint8_t>(channel[i]/count);
-        g_skyAmbientRgb[i]=sampled[i];
+    const char* source="RBG0-top";
+    if(count>=48u) {
+        for(unsigned i=0;i<3;++i)
+            sampled[i]=static_cast<std::uint8_t>(channel[i]/count);
+    } else {
+        // Azel publishes an authored VDP2 back-screen color independently of
+        // camera direction. Use it only when the current view has no usable
+        // sky pixels and the color carries meaningful, non-fade chroma.
+        const unsigned back=g_sceneRbg0.backColor;
+        sampled[0]=static_cast<std::uint8_t>((back&31u)*255u/31u);
+        sampled[1]=static_cast<std::uint8_t>(((back>>5)&31u)*255u/31u);
+        sampled[2]=static_cast<std::uint8_t>(((back>>10)&31u)*255u/31u);
+        const unsigned lowest=std::min({sampled[0],sampled[1],sampled[2]});
+        const unsigned highest=std::max({sampled[0],sampled[1],sampled[2]});
+        if (unsigned(sampled[0])+sampled[1]+sampled[2]<48u ||
+            highest-lowest<8u || lowest>240u)
+            return;
+        source="VDP2-back";
     }
+    for(unsigned i=0;i<3;++i)
+        g_skyAmbientRgb[i]=sampled[i];
     g_skyAmbientValid=true;
-    static unsigned reports=0;
-    if(reports++<8u)
-        logging::writef("[SkyAmbient] sample=RBG0-top latched=%u,%u,%u pixels=%u mode=%u\n",
-            unsigned(sampled[0]),unsigned(sampled[1]),unsigned(sampled[2]),
-            count,g_sceneGameMode);
+    g_skyAmbientNeedsSample=false;
+    if(g_sceneGameMode==3u) {
+        g_cachedFieldSkyValid=true;
+        g_cachedFieldSkyKey=g_sceneFieldKey;
+        for(unsigned i=0;i<3;++i) g_cachedFieldSkyRgb[i]=sampled[i];
+    }
+    logging::writef("[SkyAmbient] sample=%s latched=%u,%u,%u pixels=%u mode=%u\n",
+        source,unsigned(sampled[0]),unsigned(sampled[1]),
+        unsigned(sampled[2]),count,g_sceneGameMode);
 }
 
 static SceGxmColorSurface g_sceneRbg0ColorSurface{};
@@ -1676,7 +1700,7 @@ static const char* viewerModeLabel(int mode)
 {
     switch (mode) {
     case 7:  return "FULL";
-    case 8:  return "TEXTURE";
+    case 8:  return "TEXTURES";
     case 10: return "GREYSCALE LIGHTING";
     case 12: return "COLOR LIGHTING";
     case 9:  return "QUADS";
@@ -1690,29 +1714,30 @@ static void drawViewerModeOverlay(
     int pitch,
     int mode)
 {
+    if (mode == 7 || !buffer)
+        return;
     const char* label = viewerModeLabel(mode);
-    const int length =
-        static_cast<int>(std::strlen(label));
-    static constexpr int advance = 6;
+    if (!label[0])
+        return;
     static constexpr int marginX = 8;
     static constexpr int marginY = 8;
-    static constexpr int textHeight = 7;
+    const auto& font = lagi::frontend::font();
+    const int height = font.ready() ? lagi::frontend::LatinFont::height : 7;
+    const int y = viewerRenderHeight() - marginY - height;
 
-    const int x =
-        std::max(
-            0,
-            viewerRenderWidth() - marginX - length * advance);
-    const int y =
-        viewerRenderHeight() - marginY - textHeight;
-
-    // One-pixel black offset gives the text enough contrast over bright
-    // textures without adding a large opaque diagnostic panel.
-    drawTextSmallToBuffer(
-        buffer, pitch, x + 1, y + 1,
-        label, 0xFF000000u);
-    drawTextSmallToBuffer(
-        buffer, pitch, x, y,
-        label, 0xFFFFFFFFu);
+    // The native ASCII.CGZ font is the primary diagnostic label; the small
+    // built-in face remains only a fallback when that resource is unavailable.
+    if (font.ready()) {
+        font.draw(buffer, viewerRenderWidth(), viewerRenderHeight(), pitch,
+            marginX + 1, y + 1, label, 0xFF000000u);
+        font.draw(buffer, viewerRenderWidth(), viewerRenderHeight(), pitch,
+            marginX, y, label, 0xFFFFFFFFu);
+    } else {
+        drawTextSmallToBuffer(buffer, pitch, marginX + 1, y + 1,
+            label, 0xFF000000u);
+        drawTextSmallToBuffer(buffer, pitch, marginX, y,
+            label, 0xFFFFFFFFu);
+    }
 }
 
 // Forward declarations used by the decoded title cache helpers below.
@@ -14023,7 +14048,7 @@ static void renderBasicWingViewer()
         // During the opening fade, resolve the first usable sky sample before
         // lighting any world polygon. Subsequent frames use the end-of-frame
         // finish below until a usable sample appears, with no recurring wait.
-        if(!g_skyAmbientValid &&
+        if(g_skyAmbientNeedsSample && g_sceneRbg0Enabled &&
            (!g_skyAmbientEarlyAttempted || g_gpuPassSample)) {
             if(!g_gpuPassSample) sceGxmFinish(g_probeContext);
             sampleSceneSkyAmbientAfterGpuFinish();
@@ -14419,12 +14444,7 @@ static void renderBasicWingViewer()
             g_profileSprites.paletteRefreshes,g_profileSprites.slotSkips,g_gpuPassSample?1u:0u);
     }
 
-    if (g_showThreadTimingOsd) {
-        drawViewerModeOverlay(
-            colorBuffer,
-            gxmPitch,
-            g_viewMode);
-    }
+    drawViewerModeOverlay(colorBuffer,gxmPitch,g_viewMode);
 
     if (g_showThreadTimingOsd && roomAuthenticCameraMode) {
         char thread0[64], thread1[64], thread2[64], thread3[64];
@@ -15533,6 +15553,7 @@ static void updateLiveTownAzelLighting()
     static unsigned pointTraceLitFrames = 0;
     unsigned pointTraceSamplesThisFrame = 0;
     bool pointTraceActiveThisFrame = false;
+    unsigned skyAmbientStaticCorners=0,skyAmbientDynamicCorners=0;
 
     for (std::size_t p = 0;
          p < g_liveTownCpuMesh.polygonRecords.size(); ++p) {
@@ -15602,9 +15623,17 @@ static void updateLiveTownAzelLighting()
             // Blend a restrained sky chroma into every
             // outdoor ambient, including authored colored ambients. The
             // helper preserves the existing channel sum (brightness).
-            if(g_skyAmbientValid && g_sceneRbg0Enabled)
+            // Direct battle may retain the field sky while RBG0 is disabled;
+            // its lit models still use the same authored ambient baseline.
+            if(g_skyAmbientValid &&
+               (g_sceneRbg0Enabled || g_sceneGameMode==4u)) {
                 lagi::blend_sky_chroma_preserve_brightness(
                     accum,g_skyAmbientRgb);
+                if(p<g_liveTownStaticPolygonCount)
+                    ++skyAmbientStaticCorners;
+                else
+                    ++skyAmbientDynamicCorners;
+            }
 
             if (mode == 2u && lighting.hasColor) {
                 for (unsigned channel = 0; channel < 3; ++channel)
@@ -15736,6 +15765,15 @@ static void updateLiveTownAzelLighting()
     }
     if (pointTraceActiveThisFrame && pointTraceLitFrames < 32u)
         ++pointTraceLitFrames;
+    if(g_sceneGameMode==4u) {
+        static unsigned battleSkyReports=0;
+        if(battleSkyReports++<8u)
+            logging::writef("[BattleSkyAmbient] valid=%u rbg=%u staticCorners=%u dynamicCorners=%u rgb=%u,%u,%u\n",
+                unsigned(g_skyAmbientValid),unsigned(g_sceneRbg0Enabled),
+                skyAmbientStaticCorners,skyAmbientDynamicCorners,
+                unsigned(g_skyAmbientRgb[0]),unsigned(g_skyAmbientRgb[1]),
+                unsigned(g_skyAmbientRgb[2]));
+    }
 }
 
 bool presentation_active()
@@ -15794,19 +15832,40 @@ void presentation_publish_frame()
         // sample across the direct-battle transition so combat starts lit.
         if (g_pendingSceneGameMode != 4u && g_sceneGameMode != 4u) {
             g_skyAmbientValid = false;
+            g_skyAmbientNeedsSample = true;
             g_skyAmbientEarlyAttempted = false;
         }
     }
     if (g_pendingSceneGameMode == 3u &&
         g_sceneFieldKey != g_pendingFieldSceneKey) {
-        g_skyAmbientValid = false;
+        // Keep the previous outdoor tint provisionally until this field can
+        // supply its own sample; a camera aimed at terrain must not cause a
+        // visible ambient gap on tunnel exit.
+        g_skyAmbientNeedsSample = true;
         g_skyAmbientEarlyAttempted = false;
         g_sceneFieldKey = g_pendingFieldSceneKey;
     }
     if (g_pendingSceneGameMode == 3u &&
         !g_sceneRbg0Enabled && g_pendingSceneRbg0Enabled) {
-        g_skyAmbientValid = false;
+        g_skyAmbientNeedsSample = true;
         g_skyAmbientEarlyAttempted = false;
+    }
+    if (g_sceneGameMode == 4u && g_pendingSceneGameMode == 3u &&
+        g_cachedFieldSkyValid) {
+        // Returning from direct battle should carry the field's sky, not a
+        // battle-specific RBG0 sample that may have been latched there.
+        g_skyAmbientValid = false;
+        g_skyAmbientNeedsSample = true;
+        g_skyAmbientEarlyAttempted = false;
+    }
+    if (!g_skyAmbientValid && g_pendingSceneGameMode == 3u &&
+        g_pendingSceneRbg0Enabled && g_cachedFieldSkyValid) {
+        for (unsigned i=0;i<3;++i)
+            g_skyAmbientRgb[i]=g_cachedFieldSkyRgb[i];
+        g_skyAmbientValid = true;
+        logging::writef("[SkyAmbient] sample=carry cachedKey=%06X fieldKey=%06X rgb=%u,%u,%u\n",
+            g_cachedFieldSkyKey,g_pendingFieldSceneKey,unsigned(g_skyAmbientRgb[0]),
+            unsigned(g_skyAmbientRgb[1]),unsigned(g_skyAmbientRgb[2]));
     }
     g_sceneGameMode = g_pendingSceneGameMode;
     g_nativeFrameVblanks = g_pendingNativeFrameVblanks;

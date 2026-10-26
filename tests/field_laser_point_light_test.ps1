@@ -59,6 +59,11 @@ if (!$renderer.Contains('static constexpr int kSceneModes[6] = {7, 8, 11, 9, 10,
     !$renderer.Contains('static int g_pendingViewMode = 7;')) {
     throw 'Debug cycle must place grayscale immediately before color while preserving default color'
 }
+if (!$renderer.Contains('if (mode == 7 || !buffer)') -or
+    !$renderer.Contains('font.draw(buffer, viewerRenderWidth(), viewerRenderHeight(), pitch,') -or
+    !$renderer.Contains('drawViewerModeOverlay(colorBuffer,gxmPitch,g_viewMode);')) {
+    throw 'Diagnostic mode labels must use the native font at lower left, excluding Full'
+}
 if (!$cmake.Contains('LAGI_BATTLE_HOMING_POINT') -or
     !$cmake.Contains('LAGI_BATTLE_GUN_POINT') -or
     !$bridge.Contains('[BattleLightEmit]') -or
@@ -79,8 +84,13 @@ if (!$renderer.Contains('sampleSceneSkyAmbientAfterGpuFinish();') -or
     !$renderer.Contains('blend_sky_chroma_preserve_brightness(') -or
     !$renderer.Contains('g_sceneRbg0ColorBuffer[y*kSceneRbg0Pitch+x]') -or
     !$renderer.Contains('r+g+b<48u') -or
-    !$sky.Contains('kSkyAmbientBlendNumerator = 5u') -or
-    !$sky.Contains('kSkyAmbientBlendDenominator = 8u')) {
+    !$renderer.Contains('g_sceneRbg0.backColor') -or
+    !$renderer.Contains('g_skyAmbientNeedsSample = true;') -or
+    !$renderer.Contains('[SkyAmbient] sample=carry') -or
+    !$renderer.Contains('[BattleSkyAmbient]') -or
+    !$renderer.Contains('(g_sceneRbg0Enabled || g_sceneGameMode==4u)') -or
+    !$sky.Contains('kSkyAmbientBlendNumerator = 7u') -or
+    !$sky.Contains('kSkyAmbientBlendDenominator = 16u')) {
     throw 'One-shot all-ambient sky chroma blend missing'
 }
 Write-Output 'PASS: field/battle light producers, quarter battle intensity, one-shot sky chroma, shared four-corner evaluator and cached lighting'
