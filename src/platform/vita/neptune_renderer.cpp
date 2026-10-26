@@ -429,6 +429,9 @@ static azel::BasicWingDebugMesh g_liveTownCpuMesh{};
 
 struct LivePolygonLightState {
     lagi::AdditionalModelLight additionalLight{};
+    std::int32_t additionalPointParams[5]{};
+    std::int32_t additionalPointView[12]{};
+    bool additionalPointPerCorner=false;
     std::array<lagi::AdditionalModelLight, lagi::kMaxTransientLaserLights> transientLaserLights{};
     std::uint8_t transientLaserLightCount=0;
     std::array<lagi::TransientLaserLight, lagi::kMaxTransientLaserLights> transientLaserSources{};
@@ -7516,6 +7519,9 @@ static void appendLiveTownModel(
     appendPhase(g_profileAppendTransformUs);
     LivePolygonLightState polygonLight{};
     polygonLight.additionalLight=state.additionalLight;
+    polygonLight.additionalPointPerCorner=state.additionalPointPerCorner;
+    std::copy(std::begin(state.additionalPointParams),std::end(state.additionalPointParams),polygonLight.additionalPointParams);
+    std::copy(std::begin(state.additionalPointView),std::end(state.additionalPointView),polygonLight.additionalPointView);
     polygonLight.transientLaserLights=state.transientLaserLights;
     polygonLight.transientLaserLightCount=state.transientLaserLightCount;
     polygonLight.transientLaserSources=state.transientLaserSources;
@@ -7878,6 +7884,9 @@ static void refreshLiveTownStaticLighting()
 
         LivePolygonLightState light{};
         light.additionalLight=submission.state.additionalLight;
+        light.additionalPointPerCorner=submission.state.additionalPointPerCorner;
+        std::copy(std::begin(submission.state.additionalPointParams),std::end(submission.state.additionalPointParams),light.additionalPointParams);
+        std::copy(std::begin(submission.state.additionalPointView),std::end(submission.state.additionalPointView),light.additionalPointView);
         // Static geometry reuses its polygons across frames. Re-snapshot
         // transient shot lights here just as appendLiveTownModel() does for
         // dynamic objects, otherwise the cached environment never receives
