@@ -130,6 +130,10 @@ void capture_field_environment_point_light();
 // The shared transient-light frame is cleared at begin_frame().
 void record_transient_field_laser_light(std::uint64_t source,
     std::int32_t x,std::int32_t y,std::int32_t z,std::uint32_t packedColor);
+// Native battle homing-laser and gunshot source handoff; shares the four-slot
+// pool and a single per-corner accumulator with field shots.
+void record_transient_battle_attack_light(std::uint64_t source,
+    std::int32_t x,std::int32_t y,std::int32_t z,std::uint32_t packedColor);
 // Native setupLight inputs for the ordinary actor directional light. Preserve
 // its direction and packed RGB while the point selector is temporarily active.
 void capture_field_actor_base_light(std::int32_t x,std::int32_t y,
