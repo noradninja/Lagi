@@ -14597,7 +14597,10 @@ void begin_frame()
     if (!g_debugVisible) {
         // Controller state belongs to the game thread. Only the selected view
         // is copied into the next published render frame.
-        static constexpr int kSceneModes[5] = {7, 8, 10, 9, 11};
+        // Grayscale Gouraud illumination immediately precedes the fully
+        // textured/colored lit view in the cyclic debug selector. Color (7)
+        // remains the default when the native scene viewer starts.
+        static constexpr int kSceneModes[5] = {10, 7, 8, 9, 11};
         int sceneModeIndex = 0;
         for (int i = 0; i < 5; ++i)
             if (g_pendingViewMode == kSceneModes[i])
