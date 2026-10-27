@@ -2548,7 +2548,8 @@ bool init()
 {
     logging::writef(
         "[NeptuneBuild] optimized=%u fieldDescriptorIndex=1 sharedRbg0=1 "
-        "rbg0NativeResolve=1 pooledFieldTextures=1 coefficientRows=%u motionTrace=%u\n",
+        "rbg0NativeResolve=1 pooledFieldTextures=1 coefficientRows=%u motionTrace=%u "
+        "lightStateIndex=1 transientCornerPrep=1\n",
         static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED),
         static_cast<unsigned int>(LAGI_RBG_COEFFICIENT_ROWS),
         static_cast<unsigned int>(LAGI_FIELD_MOTION_TRACE));
@@ -15658,21 +15659,25 @@ static void updateLiveTownAzelLighting()
                 laserCoverageFrames<24u && laserCoverageFrames%3u==0u;
             const int preLaserRGB[3]={accum[0],accum[1],accum[2]};
             bool laserFacing=false;
+            std::int32_t transientCornerMatrix[12];
+            if (light.transientLaserLightCount) {
+                const auto& vertex=g_liveTownCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
+                const float world[3]={vertex.x,vertex.y,vertex.z};
+                lagi::prepare_point_corner_matrix(world,nullptr,transientCornerMatrix);
+            }
             for(unsigned transient=0;transient<light.transientLaserLightCount;++transient) {
                 // Same native evaluator and one accumulator as collection lights.
                 // A transient shot supplies world-space point parameters.
                 const auto& source=light.transientLaserSources[transient];
                 if(!source.range) continue;
                 ++g_profileTransientCornerTests;
-                const auto& vertex=g_liveTownCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
-                const float world[3]={vertex.x,vertex.y,vertex.z};
                 const std::int32_t hi=static_cast<std::int16_t>(source.range>>8);
                 const std::int32_t params[5]={
                     source.worldPosition[0],source.worldPosition[1],
                     source.worldPosition[2],
                     static_cast<std::int32_t>(source.range<<12),hi*hi};
                 lagi::AdditionalModelLight vertexLight{};
-                if(!lagi::evaluate_point_at_corner(world,params,
+                if(!lagi::evaluate_point_at_corner_prepared(transientCornerMatrix,params,
                     source.color,light.modelBasis,nullptr,vertexLight))
                     continue;
                 ++g_profileTransientCornerHits;

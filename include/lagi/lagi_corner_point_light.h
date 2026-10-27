@@ -15,12 +15,12 @@ namespace lagi {
 // When view is supplied both the vertex and source are already expected in
 // the same view-space frame as params. A null view means world-space params.
 // basis is the object's world-space 3x3 rotation (16.16), rows first.
-inline bool evaluate_point_at_corner(const float world[3],
-    const std::int32_t params[5], const std::uint16_t color[3],
-    const std::int32_t basis[9], const std::int32_t* view,
-    AdditionalModelLight& out)
+inline void prepare_point_corner_matrix(const float world[3],
+    const std::int32_t* view, std::int32_t matrix[12])
 {
-    std::int32_t matrix[12]{0x10000,0,0,0, 0,0x10000,0,0, 0,0,0x10000,0};
+    const std::int32_t identity[12]{0x10000,0,0,0, 0,0x10000,0,0,
+        0,0,0x10000,0};
+    std::copy(identity, identity+12, matrix);
     for (unsigned row=0;row<3;++row) {
         double v = view ? double(view[row*4+3]) : 0.0;
         for (unsigned col=0;col<3;++col)
@@ -30,6 +30,13 @@ inline bool evaluate_point_at_corner(const float world[3],
             double(std::numeric_limits<std::int32_t>::min()),
             double(std::numeric_limits<std::int32_t>::max())));
     }
+}
+
+inline bool evaluate_point_at_corner_prepared(const std::int32_t matrix[12],
+    const std::int32_t params[5], const std::uint16_t color[3],
+    const std::int32_t basis[9], const std::int32_t* view,
+    AdditionalModelLight& out)
+{
 
     // Broad 64-bit rejection prevents distant corners from entering the
     // native square-root/division loop, and avoids the native 32-bit wrap
@@ -50,17 +57,30 @@ inline bool evaluate_point_at_corner(const float world[3],
     for(unsigned axis=0;axis<3;++axis) {
         std::int64_t rotated=0;
         for(unsigned row=0;row<3;++row) {
-            std::int64_t modelColumn=0;
-            for(unsigned col=0;col<3;++col)
-                modelColumn+=
-                    (view ? std::int64_t(view[row*4+col]) :
-                        (row==col ? 65536LL : 0LL)) *
-                    basis[col*3+axis];
-            rotated+=(modelColumn>>16)*result.vector[row];
+            if (!view) {
+                rotated+=std::int64_t(basis[row*3+axis])*result.vector[row];
+            } else {
+                std::int64_t modelColumn=0;
+                for(unsigned col=0;col<3;++col)
+                    modelColumn+=std::int64_t(view[row*4+col]) *
+                        basis[col*3+axis];
+                rotated+=(modelColumn>>16)*result.vector[row];
+            }
         }
         out.vector[axis]=static_cast<std::int16_t>(rotated>>16);
         out.color[axis]=color[axis];
     }
     return true;
+}
+
+inline bool evaluate_point_at_corner(const float world[3],
+    const std::int32_t params[5], const std::uint16_t color[3],
+    const std::int32_t basis[9], const std::int32_t* view,
+    AdditionalModelLight& out)
+{
+    std::int32_t matrix[12];
+    prepare_point_corner_matrix(world, view, matrix);
+    return evaluate_point_at_corner_prepared(matrix, params, color,
+        basis, view, out);
 }
 }

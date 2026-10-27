@@ -28,7 +28,8 @@ if (!$bridge.Contains('g_completedFieldLaserLights=g_fieldLaserLights;') -or
 if (!$header.Contains('std::array<AdditionalModelLight, lagi::kMaxTransientLaserLights>') -or
     !$renderer.Contains('polygonLight.transientLaserLights=state.transientLaserLights;') -or
     !$renderer.Contains('transient<light.transientLaserLightCount') -or
-    !$renderer.Contains('evaluate_point_at_corner(world,params,') -or
+    !$renderer.Contains('evaluate_point_at_corner_prepared(transientCornerMatrix,params,') -or
+    !$renderer.Contains('prepare_point_corner_matrix(world,nullptr,transientCornerMatrix);') -or
     !$renderer.Contains('evaluate_point_at_corner(world,light.additionalPointParams,') -or
     !$point.Contains('native_point_light(matrix,params)') -or
     !$renderer.Contains('accumulate_additional_model_light(vertexLight,lighting.normal,accum);')) {
