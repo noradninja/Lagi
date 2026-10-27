@@ -13051,10 +13051,29 @@ static bool drawVdp2Rbg0Gpu(
             rbgUniforms,
             g_vdp2Rbg0InfoParam,
             0, 4, rbgInfo);
-        float parameterFormat[4] = {
-            rbg.format[0], rbg.format[1], rbg.format[2],
-            rbg.parameterFormat[coefficientEnableBit == 1u ? 0u : 1u]
+        // The 16x16 8-bit shader does not use CHCTLB's other fields. Decode
+        // the published register bits once per draw, not for every RBG pixel.
+        // The generic program keeps receiving the original register words.
+        const auto makeFormat = [&](float packed, float (&out)[4]) {
+            if (g_rbgTileBound || g_rbgDecodedBound) {
+                const unsigned int pncr = static_cast<unsigned int>(rbg.format[1]);
+                const unsigned int craofb = static_cast<unsigned int>(rbg.format[2]);
+                const unsigned int bits = static_cast<unsigned int>(packed);
+                out[0] = static_cast<float>(pncr & 1023u);
+                out[1] = static_cast<float>(craofb & 7u);
+                out[2] = static_cast<float>(bits & 3u);
+                out[3] = static_cast<float>(((bits >> 2u) & 3u) |
+                    ((bits & 16u) ? 4u : 0u));
+            } else {
+                out[0] = rbg.format[0];
+                out[1] = rbg.format[1];
+                out[2] = rbg.format[2];
+                out[3] = packed;
+            }
         };
+        float parameterFormat[4];
+        makeFormat(rbg.parameterFormat[coefficientEnableBit == 1u ? 0u : 1u],
+            parameterFormat);
         sceGxmSetUniformDataF(
             rbgUniforms,
             g_vdp2Rbg0FormatParam,
@@ -13093,9 +13112,8 @@ static bool drawVdp2Rbg0Gpu(
             static_cast<float>((ktaof >> 8u) & 7u) * bSize * 65536.0f,
             (ktctl & 0x100u) ? 1.0f : 0.0f, bSize, bShared ? 1.0f : 0.0f
         };
-        const float bFormat[4] = {
-            rbg.format[0], rbg.format[1], rbg.format[2], rbg.parameterFormat[1]
-        };
+        float bFormat[4];
+        makeFormat(rbg.parameterFormat[1], bFormat);
         const float* bValues[9] = {
             g_rbgDecodedBound?g_rbgDecodedPlanesB:rbg.planesB,
             g_rbgDecodedBound?g_rbgDecodedPlanesB+4:rbg.planesB+4,
