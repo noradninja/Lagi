@@ -743,6 +743,10 @@ static std::uint64_t g_profileAppendBindingUs = 0;
 static unsigned int g_profileObjectMaterialResolveUs = 0;
 static unsigned int g_profileObjectMaterialCacheMisses = 0;
 static unsigned int g_profileLightingUs = 0;
+static unsigned int g_profileTransientMaxPerPolygon = 0;
+static unsigned int g_profileTransientLitPolygons = 0;
+static unsigned int g_profileTransientCornerTests = 0;
+static unsigned int g_profileTransientCornerHits = 0;
 static unsigned int g_profileSubmitUs = 0;
 static unsigned int g_profileGouraudProjectUs = 0;
 static unsigned int g_profileGouraudPayloadUs = 0;
@@ -14349,7 +14353,7 @@ static void renderBasicWingViewer()
         (((scenePerfHeartbeat++ % 60u) == 0u) || perfMenuChanged || slowMenuSample)) {
         logging::writef(
             "[ScenePerf] build=%uus scan=%u cache=%u obj=%u edge=%u upload=%u "
-            "light=%u gourPrep=%u gourPayload=%u gourBucket=%u "
+            "light=%u transientMax=%u transientPolys=%u transientTests=%u transientHits=%u gourPrep=%u gourPayload=%u gourBucket=%u "
             "gourIndex=%u gourDraw=%u clear=%u begin=%u submit=%u compose=%u "
             "cpuprep=%u gxmwait=%u gxmend=%u gxmfinish=%u "
             "render=%u polys=%u verts=%u "
@@ -14366,6 +14370,10 @@ static void renderBasicWingViewer()
             g_profileBuildEdgeUs,
             g_profileBuildUploadUs,
             g_profileLightingUs,
+            g_profileTransientMaxPerPolygon,
+            g_profileTransientLitPolygons,
+            g_profileTransientCornerTests,
+            g_profileTransientCornerHits,
             g_profileGouraudPrepUs,
             g_profileGouraudPayloadUs,
             g_profileGouraudBucketUs,
@@ -15425,6 +15433,10 @@ void end_frame()
 
 static void updateLiveTownAzelLighting()
 {
+    g_profileTransientMaxPerPolygon = 0u;
+    g_profileTransientLitPolygons = 0u;
+    g_profileTransientCornerTests = 0u;
+    g_profileTransientCornerHits = 0u;
     if (g_liveTownCpuMesh.gouraud555.size() !=
             g_liveTownCpuMesh.polygonRecords.size() ||
         g_liveTownPolygonLights.size() !=
@@ -15536,6 +15548,12 @@ static void updateLiveTownAzelLighting()
         }
         if (!light.valid || mode == 0u || record.lightingCount == 0u)
             continue;
+        if (light.transientLaserLightCount) {
+            ++g_profileTransientLitPolygons;
+            g_profileTransientMaxPerPolygon = std::max<unsigned int>(
+                g_profileTransientMaxPerPolygon,
+                light.transientLaserLightCount);
+        }
 
         if (!haveFalloff ||
             cachedFalloff[0] != light.falloff[0] ||
@@ -15628,6 +15646,7 @@ static void updateLiveTownAzelLighting()
                 // A transient shot supplies world-space point parameters.
                 const auto& source=light.transientLaserSources[transient];
                 if(!source.range) continue;
+                ++g_profileTransientCornerTests;
                 const auto& vertex=g_liveTownCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
                 const float world[3]={vertex.x,vertex.y,vertex.z};
                 const std::int32_t hi=static_cast<std::int16_t>(source.range>>8);
@@ -15639,6 +15658,7 @@ static void updateLiveTownAzelLighting()
                 if(!lagi::evaluate_point_at_corner(world,params,
                     source.color,light.modelBasis,nullptr,vertexLight))
                     continue;
+                ++g_profileTransientCornerHits;
                 if(traceLaserCoverage) {
                     const std::int64_t dot=
                         std::int64_t(lighting.normal[0])*vertexLight.vector[0]+
