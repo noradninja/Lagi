@@ -2291,11 +2291,13 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
 {
     if (pThis->mF0.m10_laserData &&
         !pThis->mF0.m10_laserData->m1C_colors.empty()) {
-        const u16 rgb555 = pThis->mF0.m10_laserData->m1C_colors[0][0];
-        const u32 rgb888 =
-            ((u32(rgb555 & 31) << 3) << 16) |
-            ((u32((rgb555 >> 5) & 31) << 3) << 8) |
-            (u32((rgb555 >> 10) & 31) << 3);
+        // The drawn homing trail uses m18_color when present. Its red-side
+        // vertex is the hue at the moving head; the static first entry is
+        // yellow and is not the colour shown by multi-target lasers.
+        const u16 rgb555 = !pThis->mF0.m18_color.empty()
+            ? pThis->mF0.m18_color[0][2]
+            : pThis->mF0.m10_laserData->m1C_colors[0][2];
+        const u32 rgb888 = lagi::gouraud555_hue_at_peak(rgb555, 248u);
         const auto& position=pThis->m10_laserPosition;
         lagi::azel_bridge::record_transient_battle_attack_light(
             static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(pThis)),
@@ -2446,20 +2448,16 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_tex
         ++lagiFieldLaserSourceReports;
     }
     if (pThis->m27 < 7) {
-        // Azel owns m6C, m154 and m27; light colors match the item LCS
-        // palette already used by the accepted native collection effect.
+        // Azel owns m6C and m154. The beam itself uses the live LCS
+        // Gouraud gradient, not the separate collection-light palette.
         const auto& beamHead = pThis->m6C[(pThis->m154 - 1) & 0xF];
         lagi::azel_bridge::record_transient_field_laser_light(
             static_cast<u64>(reinterpret_cast<uintptr_t>(pThis)),
             beamHead[0].asS32(), beamHead[1].asS32(),
             beamHead[2].asS32(),
-            [&]() {
-                const s_RGB8& nativeColor = s_LCSLaser_DeleteTrailSub0Data0[pThis->m27];
-                // s_RGB8::toU32 packs BGR. The bridge API explicitly
-                // accepts RGB (0xRRGGBB); keep the native palette order.
-                return (u32(u8(nativeColor.m0)) << 16) |
-                    (u32(u8(nativeColor.m1)) << 8) | u32(u8(nativeColor.m2));
-            }()); // LAGI_FIELD_LASER_LIGHT
+            lagi::gouraud555_hue_at_peak(
+                (*getFieldTaskPtr()->m8_pSubFieldData->m340_pLCS->m9C0)[0][0],
+                31u)); // LAGI_FIELD_LASER_LIGHT
     }
 }]=] source_text "${source_text}")
   set(trail_light_palette_anchor "void s_LCSLaser_DeleteTrailSub0(s32 r4)")
@@ -2467,14 +2465,26 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_tex
   if(trail_palette_found LESS 0)
    message(FATAL_ERROR "Collection trail light color palette anchor changed")
   endif()
-  string(REPLACE "${trail_light_palette_anchor}" [=[static void lagiStartCollectionTrailLight(s32 colorIndex)
+  string(REPLACE "${trail_light_palette_anchor}" [=[static s_RGB8 lagiSaturatedCollectionLightColor(s32 colorIndex)
+{
+    const s_RGB8& source = s_LCSLaser_DeleteTrailSub0Data0[colorIndex];
+    const u32 rgb = lagi::saturate_rgb888_peak(
+        (u32(u8(source.m0)) << 16) | (u32(u8(source.m1)) << 8) |
+        u32(u8(source.m2)));
+    return {s8(rgb >> 16), s8(rgb >> 8), s8(rgb)};
+}
+static void lagiStartCollectionTrailLight(s32 colorIndex)
 {
     if (colorIndex < 0 || colorIndex >= 7) return;
     auto* dragon = getFieldTaskPtr()->m8_pSubFieldData->m338_pDragonTask;
-    dragon->m_E8_specialColor = s_LCSLaser_DeleteTrailSub0Data0[colorIndex];
+    dragon->m_E8_specialColor = lagiSaturatedCollectionLightColor(colorIndex);
     dragon->m_EB_useSpecialColor = 1;
 }
 void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
+   source_text "${source_text}")
+  string(REPLACE
+   "pDragonTask->m_E8_specialColor = s_LCSLaser_DeleteTrailSub0Data0[r4];"
+   "pDragonTask->m_E8_specialColor = lagiSaturatedCollectionLightColor(r4); // LAGI_COLLECTION_LIGHT_SATURATION"
    source_text "${source_text}")
   set(script_fade_trace "void scriptFunction_6067E68_fadeOut(s32 arg0)\n{")
   string(FIND "${source_text}" "${script_fade_trace}" script_fade_found)

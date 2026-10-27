@@ -5,6 +5,10 @@ int main() {
     static_assert(kMaxTransientLaserLights == 4);
     static_assert(quarter_rgb888(0xF8F880u) == 0x3E3E20u);
     static_assert(quarter_rgb888(0xFFFFFFu) == 0x3F3F3Fu);
+    static_assert(gouraud555_hue_at_peak(0x801Fu, 248u) == 0xF80000u);
+    static_assert(gouraud555_hue_at_peak(0xE280u, 31u) == 0x00191Fu);
+    static_assert(saturate_rgb888_peak(0x171406u) == 0x171200u);
+    static_assert(saturate_rgb888_peak(0x141414u) == 0x141414u);
     TransientLaserLightFrame frame;
     for (unsigned i = 1; i <= 4; ++i) {
         TransientLaserLight light{};

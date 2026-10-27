@@ -19,6 +19,40 @@ inline constexpr std::uint32_t quarter_rgb888(std::uint32_t packedColor) {
         quarter(packedColor & 0xFFu);
 }
 
+// Keep the brightest native channel unchanged while expanding the hue's
+// chroma. A neutral input remains neutral. Used for effect lights only; the
+// authored sprite/glyph pixels and the point-light falloff are untouched.
+inline constexpr std::uint32_t saturate_rgb888_peak(std::uint32_t color) {
+    const std::uint32_t r = (color >> 16) & 0xFFu;
+    const std::uint32_t g = (color >> 8) & 0xFFu;
+    const std::uint32_t b = color & 0xFFu;
+    const std::uint32_t low = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    const std::uint32_t high = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    if (low == high) return color & 0xFFFFFFu;
+    const auto spread = [=](std::uint32_t channel) {
+        return (channel - low) * high / (high - low);
+    };
+    return (spread(r) << 16) | (spread(g) << 8) | spread(b);
+}
+
+// VDP1 Gouraud entries are offsets, not a finished texture colour. Their
+// channel ordering still identifies the visible beam's chromatic direction.
+// Map that direction to the existing light peak, avoiding a texture-dependent
+// brightness jump while following the active native gradient.
+inline constexpr std::uint32_t gouraud555_hue_at_peak(
+    std::uint16_t gouraud, std::uint32_t peak) {
+    const std::uint32_t r = gouraud & 31u;
+    const std::uint32_t g = (gouraud >> 5) & 31u;
+    const std::uint32_t b = (gouraud >> 10) & 31u;
+    const std::uint32_t low = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    const std::uint32_t high = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    if (low == high) return (peak << 16) | (peak << 8) | peak;
+    const auto channel = [=](std::uint32_t value) {
+        return (value - low) * peak / (high - low);
+    };
+    return (channel(r) << 16) | (channel(g) << 8) | channel(b);
+}
+
 struct TransientLaserLight {
     std::uint64_t source = 0;       // Native task identity for same-frame updates
     std::int32_t worldPosition[3]{}; // Signed 16.16, original Azel world space
