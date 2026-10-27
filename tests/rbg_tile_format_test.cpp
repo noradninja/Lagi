@@ -14,5 +14,16 @@ int main() {
     assert(lagi::rbgTile16EightBit(0x1100,0x8008));
     assert(!lagi::rbgTile16EightBit(0x1300,0x8008));
     assert(!lagi::rbgTile16EightBit(0x0100,0x8008));
+    for (unsigned word=0;word<65536;++word) {
+        const auto decoded=lagi::rbgSpecializedFormat(word,word,0);
+        assert(decoded.scn==word%1024u);
+        assert(decoded.caos==word%8u);
+    }
+    for (unsigned packed=0;packed<32;++packed) {
+        const auto decoded=lagi::rbgSpecializedFormat(0,0,packed);
+        assert(decoded.plsz==packed%4u);
+        assert(decoded.screenOverAndR0tpon%4u==(packed/4u)%4u);
+        assert((decoded.screenOverAndR0tpon<4u)==(packed<16u));
+    }
     puts("PASS exhaustive native RBG format eligibility; shader variant shares generic addressing and coefficients");
 }

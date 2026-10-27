@@ -13059,11 +13059,11 @@ static bool drawVdp2Rbg0Gpu(
                 const unsigned int pncr = static_cast<unsigned int>(rbg.format[1]);
                 const unsigned int craofb = static_cast<unsigned int>(rbg.format[2]);
                 const unsigned int bits = static_cast<unsigned int>(packed);
-                out[0] = static_cast<float>(pncr & 1023u);
-                out[1] = static_cast<float>(craofb & 7u);
-                out[2] = static_cast<float>(bits & 3u);
-                out[3] = static_cast<float>(((bits >> 2u) & 3u) |
-                    ((bits & 16u) ? 4u : 0u));
+                const auto decoded = lagi::rbgSpecializedFormat(pncr, craofb, bits);
+                out[0] = static_cast<float>(decoded.scn);
+                out[1] = static_cast<float>(decoded.caos);
+                out[2] = static_cast<float>(decoded.plsz);
+                out[3] = static_cast<float>(decoded.screenOverAndR0tpon);
             } else {
                 out[0] = rbg.format[0];
                 out[1] = rbg.format[1];
