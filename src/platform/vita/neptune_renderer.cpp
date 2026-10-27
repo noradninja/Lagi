@@ -450,7 +450,12 @@ struct LivePolygonLightState {
 
     bool valid = false;
 };
-static std::vector<LivePolygonLightState> g_liveTownPolygonLights;
+// A submission shares one captured light state across all its polygons.
+// Keep only a compact index per polygon; copying the full transient arrays
+// into every polygon made both dynamic append and static refresh scale with
+// polygon count even though the source state is identical within a model.
+static std::vector<LivePolygonLightState> g_liveTownLightStates;
+static std::vector<std::uint32_t> g_liveTownPolygonLightIndices;
 // A static CPU cache hit does not imply that an offscreen quad has had its
 // current positions written to the reused subdivision GPU buffer.
 static std::vector<std::uint8_t> g_sceneSubdivPositionValid;
@@ -493,8 +498,9 @@ static void traceFieldPolygonStage(const char* stage)
     for (const auto& probe : g_fieldPolygonProbes) {
         const auto p = probe.polygon;
         if (p >= g_liveTownCpuMesh.gouraud555.size() ||
-            p >= g_liveTownPolygonLights.size()) continue;
-        const auto& light = g_liveTownPolygonLights[p];
+            p >= g_liveTownPolygonLightIndices.size() ||
+            g_liveTownPolygonLightIndices[p] >= g_liveTownLightStates.size()) continue;
+        const auto& light = g_liveTownLightStates[g_liveTownPolygonLightIndices[p]];
         const auto& shade = g_liveTownCpuMesh.gouraud555[p];
         logging::writef(
             "[FieldPolygonStage] frame=%u stage=%s cell=%u obj=%08X "
@@ -519,6 +525,7 @@ static std::uint64_t g_liveTownSignature = 0;
 static std::uint64_t g_liveTownStaticSignature = 0;
 static std::size_t g_liveTownStaticVertexCount = 0;
 static std::size_t g_liveTownStaticPolygonCount = 0;
+static std::size_t g_liveTownStaticLightStateCount = 0;
 static bool g_liveTownStaticRebuilt = true;
 
 static std::size_t g_liveTownShadowFirstPolygon = 0;
@@ -7578,9 +7585,12 @@ static void appendLiveTownModel(
     }
 
     // Every polygon in this submission shares the captured model-space light.
-    // Construct the final values once rather than zeroing then assigning.
-    g_liveTownPolygonLights.insert(g_liveTownPolygonLights.end(),
-        model.polygons.size(),polygonLight);
+    if (!model.polygons.empty()) {
+        const auto lightIndex = static_cast<std::uint32_t>(g_liveTownLightStates.size());
+        g_liveTownLightStates.push_back(polygonLight);
+        g_liveTownPolygonLightIndices.insert(g_liveTownPolygonLightIndices.end(),
+            model.polygons.size(),lightIndex);
+    }
     appendPhase(g_profileAppendLightUs);
     std::size_t runStart = 0u;
     std::size_t runCount = 0u;
@@ -7839,7 +7849,7 @@ static void refreshLiveTownStaticLighting()
 
         const std::size_t polygonCount = model->polygons.size();
         if (polygonBase + polygonCount > g_liveTownStaticPolygonCount ||
-            polygonBase + polygonCount > g_liveTownPolygonLights.size())
+            polygonBase + polygonCount > g_liveTownPolygonLightIndices.size())
             break;
 
         if (g_fieldProbeActive && polygonBase + polygonCount <=
@@ -7989,8 +7999,11 @@ static void refreshLiveTownStaticLighting()
             --fieldFalloffCompareBudget;
         }
 
-        for (std::size_t p = 0; p < polygonCount; ++p)
-            g_liveTownPolygonLights[polygonBase + p] = light;
+        if (polygonCount) {
+            const auto lightIndex = g_liveTownPolygonLightIndices[polygonBase];
+            if (lightIndex >= g_liveTownLightStates.size()) return;
+            g_liveTownLightStates[lightIndex] = light;
+        }
 
         polygonBase += polygonCount;
     }
@@ -8201,7 +8214,8 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.polygonRecords.clear();
         g_liveTownCpuMesh.gouraud555.clear();
         g_liveTownCpuMesh.polygonTextureIndices.clear();
-        g_liveTownPolygonLights.clear();
+        g_liveTownLightStates.clear();
+        g_liveTownPolygonLightIndices.clear();
         for (const auto& submission : azel_bridge::published_submissions()) {
             if (submissionIsDynamic(submission) ||
                 submission.adaptedModelIndex < 0)
@@ -8228,6 +8242,7 @@ static bool buildLiveTownFrame()
         g_liveTownStaticSignature = staticSignature;
         g_liveTownStaticVertexCount = g_liveTownCpuMesh.vertices.size();
         g_liveTownStaticPolygonCount = g_liveTownCpuMesh.polygonRecords.size();
+        g_liveTownStaticLightStateCount = g_liveTownLightStates.size();
         g_liveTownStaticMeshRanges = g_liveTownMeshRanges;
     } else {
         g_liveTownCpuMesh.vertices.resize(g_liveTownStaticVertexCount);
@@ -8249,7 +8264,8 @@ static bool buildLiveTownFrame()
 
         g_liveTownCpuMesh.polygonTextureIndices.resize(
             g_liveTownStaticPolygonCount);
-        g_liveTownPolygonLights.resize(g_liveTownStaticPolygonCount);
+        g_liveTownLightStates.resize(g_liveTownStaticLightStateCount);
+        g_liveTownPolygonLightIndices.resize(g_liveTownStaticPolygonCount);
         g_liveTownMeshRanges = g_liveTownStaticMeshRanges;
     }
     g_profileBuildCacheUs = static_cast<unsigned int>(
@@ -8358,7 +8374,7 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.vertices.size() > 65535u ||
         g_liveTownCpuMesh.polygonTextureIndices.size() !=
             g_liveTownCpuMesh.polygonRecords.size() ||
-        g_liveTownPolygonLights.size() !=
+        g_liveTownPolygonLightIndices.size() !=
             g_liveTownCpuMesh.polygonRecords.size()) {
         static bool loggedInvalidGeometry = false;
         if (!loggedInvalidGeometry) {
@@ -8426,7 +8442,7 @@ static bool buildLiveTownFrame()
             g_vdp1TextureIndices && liveTownVdp1Source().texturesValid() &&
             g_texturedGouraudSubdivFragmentProgram &&
             ((g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid) || std::any_of(
-                g_liveTownPolygonLights.begin(),g_liveTownPolygonLights.end(),
+                g_liveTownLightStates.begin(),g_liveTownLightStates.end(),
                 [](const LivePolygonLightState& light){return light.valid;}));
         // LAGI_LIVE_POSITION_SYNC_BEGIN
         const std::size_t firstDynamicVertex = g_liveTownStaticRebuilt
@@ -13910,8 +13926,8 @@ static void renderBasicWingViewer()
     const bool liveSceneLighting =
         nativeSceneMode &&
         std::any_of(
-            g_liveTownPolygonLights.begin(),
-            g_liveTownPolygonLights.end(),
+            g_liveTownLightStates.begin(),
+            g_liveTownLightStates.end(),
             [](const LivePolygonLightState& light) { return light.valid; });
     const bool roomAuthenticLitMode =
         roomAuthenticCameraMode &&
@@ -15439,7 +15455,7 @@ static void updateLiveTownAzelLighting()
     g_profileTransientCornerHits = 0u;
     if (g_liveTownCpuMesh.gouraud555.size() !=
             g_liveTownCpuMesh.polygonRecords.size() ||
-        g_liveTownPolygonLights.size() !=
+        g_liveTownPolygonLightIndices.size() !=
             g_liveTownCpuMesh.polygonRecords.size())
         return;
 
@@ -15536,7 +15552,7 @@ static void updateLiveTownAzelLighting()
             continue;
 
         const auto& record = g_liveTownCpuMesh.polygonRecords[p];
-        const auto& light = g_liveTownPolygonLights[p];
+        const auto& light = g_liveTownLightStates[g_liveTownPolygonLightIndices[p]];
         const unsigned mode = (record.lightingControl >> 8) & 3u;
         auto& out = g_liveTownCpuMesh.gouraud555[p];
         out = {};
