@@ -15618,6 +15618,17 @@ static void updateLiveTownAzelLighting()
             if (normalIndex >= record.lightingCount)
                 continue;
 
+            // Native mode 1 uses the same normal and base colour at every
+            // corner. With no per-corner point source, all four results are
+            // identical, including falloff and RGB555 quantization.
+            if (corner && mode == 1u &&
+                !light.additionalPointPerCorner &&
+                !light.transientLaserLightCount) {
+                for (unsigned channel = 0; channel < 3u; ++channel)
+                    out.corner[corner][channel] = out.corner[0][channel];
+                continue;
+            }
+
             const auto& lighting = record.lighting[normalIndex];
             const int dotProduct =
                 static_cast<int>(lighting.normal[0]) * light.vector[0] +
