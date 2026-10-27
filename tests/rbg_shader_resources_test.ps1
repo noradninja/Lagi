@@ -36,6 +36,10 @@ foreach($variant in @('vdp2_rbg0_f','vdp2_rbg0_tile16_8bit_f','vdp2_rbg0_pages_f
     if($variant -in @('vdp2_rbg0_pages_f','vdp2_rbg0_rows_f')) {
         if($decoded.Count -ne 1 -or $decoded[0].textureUnit -ne '1' -or $lookup.Count -ne 0){throw 'Decoded-page texture slots changed'}
     } elseif($decoded.Count -ne 0 -or $lookup.Count -ne 0){throw 'Non-cache shader requires page resources'}
+    $palette=@($resources.sampler | Where-Object {$_.symbolName -eq 'paletteLut'})
+    if($variant -in @('vdp2_rbg0_pages_f','vdp2_rbg0_rows_f')) {
+        if($palette.Count -ne 1 -or $palette[0].textureUnit -ne '3'){throw 'Live palette LUT must be on texture unit 3'}
+    } elseif($palette.Count -ne 0){throw 'Fallback shader unexpectedly requires palette LUT'}
     $rows=@($resources.sampler | Where-Object {$_.symbolName -eq 'coefficientRows'})
     if($variant -eq 'vdp2_rbg0_rows_f'){
         if($rows.Count -ne 1 -or $rows[0].textureUnit -ne '2'){throw 'Rows sampler slot changed'}

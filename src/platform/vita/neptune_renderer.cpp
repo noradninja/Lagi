@@ -1031,6 +1031,13 @@ static std::uint32_t g_frontendVdp2Generations[kSceneVdp2BlockCount]{};
 static bool g_frontendVdp2RawInitialized=false;
 static SceGxmTexture g_rbgDecodedAtlasTexture{};
 static SceGxmTexture g_rbgCoefficientRowsTexture{};
+static SceGxmTexture g_rbgPaletteLutTexture{};
+static void* g_rbgPaletteLutPixels=nullptr;
+static SceUID g_rbgPaletteLutUid=-1;
+static bool g_rbgPaletteLutInitialized=false;
+static unsigned char g_rbgPaletteLutSource[0x1000]{};
+static void releaseRbgPaletteLut();
+static bool prepareRbgPaletteLut(const void* rawTextureData);
 static bool g_rbgCoefficientRowsReady=false;
 static void releaseRbgCoefficientRows();
 static float g_rbgDecodedPlanesA[16]{},g_rbgDecodedPlanesB[16]{};
@@ -2675,6 +2682,7 @@ void shutdown()
     releaseRbgTileProgram();
     releaseRbgDecodedPages();
     releaseRbgCoefficientRows();
+    releaseRbgPaletteLut();
     freeMovieMappedBlock(g_nbg0RowsUid,g_nbg0RowsPixels);
     freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
     freeSimpleMappedProbe(g_sceneNbg0Uid,g_sceneNbg0Pixels);
@@ -12967,6 +12975,7 @@ static bool renderCinepakResolvePass()
 }
 
 #include "neptune_rbg_tile_program.inc"
+#include "neptune_rbg_palette_lut.inc"
 
 static bool drawVdp2Rbg0Gpu(
     const RbgGpuState& rbg, const void* rawTextureData,
@@ -12974,7 +12983,11 @@ static bool drawVdp2Rbg0Gpu(
     float xExtent, bool frontend)
 {
     bool rbgSubmitted = true;
-    const bool decodedPages=frontend?g_frontendRbgDecodedReady:g_rbgDecodedPagesReady;
+    const bool decodedSource=frontend?g_frontendRbgDecodedReady:g_rbgDecodedPagesReady;
+    // Both the field and front-end use the same live Saturn CRAM snapshot.
+    // If the small lookup texture cannot be prepared, use the existing raw
+    // shader path rather than displaying stale or incorrect palette data.
+    const bool decodedPages=decodedSource && prepareRbgPaletteLut(rawTextureData);
     selectRbgTileProgram(((!frontend && g_sceneVdp2ByteTextureValid) || decodedPages) && lagi::rbgTile16EightBit(
         static_cast<unsigned>(rbg.format[0]),static_cast<unsigned>(rbg.format[1])),
         decodedPages,
@@ -12983,6 +12996,7 @@ static bool drawVdp2Rbg0Gpu(
         sceGxmSetFragmentTexture(g_probeContext,1,&g_sceneVdp2ByteTexture);
     if(g_rbgDecodedBound) {
         sceGxmSetFragmentTexture(g_probeContext,1,&g_rbgDecodedAtlasTexture);
+        sceGxmSetFragmentTexture(g_probeContext,3,&g_rbgPaletteLutTexture);
     }
     if(g_rbgRowsBound)
         sceGxmSetFragmentTexture(g_probeContext,2,&g_rbgCoefficientRowsTexture);
