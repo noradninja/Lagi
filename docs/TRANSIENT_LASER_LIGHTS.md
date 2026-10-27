@@ -115,3 +115,26 @@ when entering the viewer; cycle order must not silently change the default.
 Do not enable the grayscale view as a shipping visual mode without explicit
 approval.
 
+## 2026-10-27 gradient and red collection-class correction
+
+The capture paired with `lagi.log` showed the field shot drawn blue/cyan while
+`[FieldLaserEmit]` reported `rgb=31,3,0`. The producer had sampled only
+`m9C0[0][0]` and interpreted the VDP1 word in the opposite channel direction
+from the rendered effect. The field light now averages all 32 RGB555 vertices
+in the live eight-row LCS gradient, then expands that average to a saturated
+31-channel peak. Position, range, falloff, four-source limit, and the native
+per-corner evaluator are unchanged.
+
+Native collection color class `2` covers the red-class pickups, including
+Blast Chip, Dual Blast Chip, and Tri Blast Chip. That entire class now uses the
+live dragon-stat red endpoint shared with the combat multi-laser. The other six
+collection classes retain the accepted peak-preserving saturation path.
+
+`tests/field_laser_point_light_test.ps1`, the focused Vita C++ syntax check, and
+a clean full-resolution Vita configure/build passed. The build linked
+`lagi.velf`, created `lagi.self`, and packaged `Lagi.vpk`. This is compile and
+package validation only: a new Vita/Vita TV capture must confirm the field
+average follows the visible laser, every red-class pickup is red rather than
+pink, the other collection colors remain accepted, and field/battle frame time
+still meets the existing target.
+

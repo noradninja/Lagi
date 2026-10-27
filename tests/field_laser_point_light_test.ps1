@@ -11,17 +11,19 @@ if (!$pool.Contains('kMaxTransientLaserLights = 4') -or
     throw 'Native transient pool no longer enforces the hard cap of four'
 }
 if (!$cmake.Contains('LAGI_FIELD_LASER_LIGHT') -or
-    !$cmake.Contains('gouraud555_hue_at_peak(') -or
+    !$cmake.Contains('gouraud555_gradient_hue_at_peak(') -or
     !$cmake.Contains('m340_pLCS->m9C0') -or
     !$cmake.Contains('pThis->m6C[(pThis->m154 - 1) & 0xF]') -or
     !$cmake.Contains('lagi/lagi_render_bridge.h')) {
     throw 'Native LCS producer no longer uses beam-head position and drawn gradient hue'
 }
 if (!$cmake.Contains('pThis->mF0.m18_color[0][2]') -or
+    !$cmake.Contains('colorIndex == 2') -or
+    !$cmake.Contains('m9C0)[7][2]') -or
     !$cmake.Contains('lagiSaturatedCollectionLightColor(colorIndex)') -or
     !$cmake.Contains('LAGI_COLLECTION_LIGHT_SATURATION') -or
     !$pool.Contains('saturate_rgb888_peak(')) {
-    throw 'Homing red gradient or peak-preserving collection saturation is missing'
+    throw 'Homing red gradient, red collection class, or retained collection saturation is missing'
 }
 if (!$bridge.Contains('g_completedFieldLaserLights=g_fieldLaserLights;') -or
     !$bridge.Contains('g_completedFieldLaserLights.count') -or

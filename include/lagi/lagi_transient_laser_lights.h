@@ -39,11 +39,9 @@ inline constexpr std::uint32_t saturate_rgb888_peak(std::uint32_t color) {
 // channel ordering still identifies the visible beam's chromatic direction.
 // Map that direction to the existing light peak, avoiding a texture-dependent
 // brightness jump while following the active native gradient.
-inline constexpr std::uint32_t gouraud555_hue_at_peak(
-    std::uint16_t gouraud, std::uint32_t peak) {
-    const std::uint32_t r = gouraud & 31u;
-    const std::uint32_t g = (gouraud >> 5) & 31u;
-    const std::uint32_t b = (gouraud >> 10) & 31u;
+inline constexpr std::uint32_t rgb_hue_at_peak(
+    std::uint32_t r, std::uint32_t g, std::uint32_t b,
+    std::uint32_t peak) {
     const std::uint32_t low = r < g ? (r < b ? r : b) : (g < b ? g : b);
     const std::uint32_t high = r > g ? (r > b ? r : b) : (g > b ? g : b);
     if (low == high) return (peak << 16) | (peak << 8) | peak;
@@ -51,6 +49,34 @@ inline constexpr std::uint32_t gouraud555_hue_at_peak(
         return (value - low) * peak / (high - low);
     };
     return (channel(r) << 16) | (channel(g) << 8) | channel(b);
+}
+
+inline constexpr std::uint32_t gouraud555_hue_at_peak(
+    std::uint16_t gouraud, std::uint32_t peak) {
+    // The VDP1 word is 1BBBBBGGGGGRRRRR, while the rendered effect-light
+    // convention used here is packed 0xRRGGBB. Follow the visible gradient:
+    // its high five bits feed red and its low five bits feed blue.
+    const std::uint32_t r = (gouraud >> 10) & 31u;
+    const std::uint32_t g = (gouraud >> 5) & 31u;
+    const std::uint32_t b = gouraud & 31u;
+    return rgb_hue_at_peak(r, g, b, peak);
+}
+
+template <typename Gradient>
+inline constexpr std::uint32_t gouraud555_gradient_hue_at_peak(
+    const Gradient& gradient, std::uint32_t peak) {
+    std::uint32_t r = 0, g = 0, b = 0;
+    for (const auto& row : gradient) {
+        for (const std::uint16_t gouraud : row) {
+            r += (gouraud >> 10) & 31u;
+            g += (gouraud >> 5) & 31u;
+            b += gouraud & 31u;
+        }
+    }
+    // Scaling every sum by the common vertex count cannot change hue.
+    // Saturating the sums preserves the exact full-gradient average without
+    // an early integer division losing chroma.
+    return rgb_hue_at_peak(r, g, b, peak);
 }
 
 struct TransientLaserLight {

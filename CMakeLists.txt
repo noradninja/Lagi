@@ -2455,8 +2455,8 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_tex
             static_cast<u64>(reinterpret_cast<uintptr_t>(pThis)),
             beamHead[0].asS32(), beamHead[1].asS32(),
             beamHead[2].asS32(),
-            lagi::gouraud555_hue_at_peak(
-                (*getFieldTaskPtr()->m8_pSubFieldData->m340_pLCS->m9C0)[0][0],
+            lagi::gouraud555_gradient_hue_at_peak(
+                *getFieldTaskPtr()->m8_pSubFieldData->m340_pLCS->m9C0,
                 31u)); // LAGI_FIELD_LASER_LIGHT
     }
 }]=] source_text "${source_text}")
@@ -2467,6 +2467,15 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_tex
   endif()
   string(REPLACE "${trail_light_palette_anchor}" [=[static s_RGB8 lagiSaturatedCollectionLightColor(s32 colorIndex)
 {
+    if (colorIndex == 2) {
+        // Every red-class pickup (Blast, Dual Blast, Tri Blast, and any other
+        // item mapped here by Azel) uses the same live dragon-stat red endpoint
+        // as the combat multi-laser instead of the pink collection swatch.
+        const u32 rgb = lagi::gouraud555_hue_at_peak(
+            (*getFieldTaskPtr()->m8_pSubFieldData->m340_pLCS->m9C0)[7][2],
+            31u);
+        return {s8(rgb >> 16), s8(rgb >> 8), s8(rgb)};
+    }
     const s_RGB8& source = s_LCSLaser_DeleteTrailSub0Data0[colorIndex];
     const u32 rgb = lagi::saturate_rgb888_peak(
         (u32(u8(source.m0)) << 16) | (u32(u8(source.m1)) << 8) |
