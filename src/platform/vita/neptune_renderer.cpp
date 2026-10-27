@@ -7801,6 +7801,23 @@ static void appendLiveTownEdge()
         sceKernelGetProcessTimeWide() - tAppend);
 }
 
+static bool liveTownSubmissionIsDynamic(
+    const azel_bridge::RenderSubmission& submission)
+{
+    if (submission.state.dynamic || submission.state.billboard)
+        return true;
+
+    LiveTownInstanceKey key{};
+    key.model = submission.model;
+    key.sceneMode = g_sceneGameMode;
+    key.bundleIndex = submission.bundleIndex;
+    key.cellIndex = submission.cellIndex;
+    key.objectIndex = submission.objectIndex;
+    key.modelTableOffset = submission.modelTableOffset;
+    return g_liveTownAutoDynamicIdentities.find(key) !=
+        g_liveTownAutoDynamicIdentities.end();
+}
+
 static void refreshLiveTownStaticLighting()
 {
     std::size_t polygonBase = 0u;
@@ -7838,7 +7855,7 @@ static void refreshLiveTownStaticLighting()
         };
 
     for (const auto& submission : azel_bridge::published_submissions()) {
-        if (submission.state.dynamic ||
+        if (liveTownSubmissionIsDynamic(submission) ||
             submission.adaptedModelIndex < 0)
             continue;
 
@@ -8114,22 +8131,6 @@ static bool buildLiveTownFrame()
         history.valid = true;
     }
 
-    const auto submissionIsDynamic =
-        [](const azel_bridge::RenderSubmission& submission) {
-            if (submission.state.dynamic || submission.state.billboard)
-                return true;
-
-            LiveTownInstanceKey key{};
-            key.model = submission.model;
-            key.sceneMode = g_sceneGameMode;
-            key.bundleIndex = submission.bundleIndex;
-            key.cellIndex = submission.cellIndex;
-            key.objectIndex = submission.objectIndex;
-            key.modelTableOffset = submission.modelTableOffset;
-            return g_liveTownAutoDynamicIdentities.find(key) !=
-                g_liveTownAutoDynamicIdentities.end();
-        };
-
     for (const auto& submission : azel_bridge::published_submissions()) {
         if (submission.adaptedModelIndex < 0)
             continue;
@@ -8142,13 +8143,13 @@ static bool buildLiveTownFrame()
             ++g_liveTownBillboardSubmissionCount;
             g_liveTownBillboardSubmittedPolygons +=
                 static_cast<unsigned int>(model->polygons.size());
-        } else if (!submissionIsDynamic(submission)) {
+        } else if (!liveTownSubmissionIsDynamic(submission)) {
             ++g_liveTownStaticSubmissionCount;
             g_liveTownStaticSubmittedPolygons +=
                 static_cast<unsigned int>(model->polygons.size());
         }
 
-        if (!submissionIsDynamic(submission)) {
+        if (!liveTownSubmissionIsDynamic(submission)) {
             // Geometry/material identity only. Lighting is renderer state and
             // must not invalidate/rebuild the static world mesh.
             staticSignature ^= static_cast<std::uint64_t>(
@@ -8217,7 +8218,7 @@ static bool buildLiveTownFrame()
         g_liveTownLightStates.clear();
         g_liveTownPolygonLightIndices.clear();
         for (const auto& submission : azel_bridge::published_submissions()) {
-            if (submissionIsDynamic(submission) ||
+            if (liveTownSubmissionIsDynamic(submission) ||
                 submission.adaptedModelIndex < 0)
                 continue;
             const auto* model = azel_bridge::published_adapted_model(
@@ -8285,7 +8286,7 @@ static bool buildLiveTownFrame()
     g_profileAppendSetupUs=g_profileAppendStorageUs=0;
     g_profileAppendTransformUs=g_profileAppendLightUs=g_profileAppendBindingUs=0;
     for (const auto& submission : azel_bridge::published_submissions()) {
-        if (!submissionIsDynamic(submission) ||
+        if (!liveTownSubmissionIsDynamic(submission) ||
             submission.adaptedModelIndex < 0)
             continue;
         const auto* model = azel_bridge::published_adapted_model(
