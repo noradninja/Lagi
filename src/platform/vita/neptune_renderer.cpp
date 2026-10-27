@@ -1409,12 +1409,15 @@ static void recordFlightPresentation(
         ? nowUs - window.lastUs : 0u;
     const unsigned int intervalVblanks = window.lastUs != 0u
         ? g_lastPresentVcount - window.lastVcount : 0u;
-    if (g_profileRenderUs > 33333u || intervalVblanks > 2u) {
+    if (g_profileRenderUs > 30000u || intervalVblanks > 2u) {
         logging::writef(
             "[FlightPresentOutlier] mode=%u baseline=%u render=%uus "
             "build=%uus interval=%lluus vblanks=%u present=%uus "
             "rebuild=%u rbg=%u cpuprep=%u submit=%u compose=%u "
-            "gxmend=%u gxmfinish=%u rbgPrep=%u rbgResolve=%u fadeR=%d fadeG=%d fadeB=%d\n",
+            "gxmend=%u gxmfinish=%u rbgPrep=%u rbgResolve=%u "
+            "light=%u transientMax=%u transientTests=%u transientHits=%u "
+            "gourPrep=%u polys=%u spriteDraws=%u spritePixels=%llu "
+            "fadeR=%d fadeG=%d fadeB=%d\n",
             static_cast<unsigned int>(g_viewMode), window.lastUs != 0u ? 1u : 0u,
             g_profileRenderUs, g_profileBuildUs,
             static_cast<unsigned long long>(intervalUs), intervalVblanks,
@@ -1423,6 +1426,12 @@ static void recordFlightPresentation(
             g_profileRenderCpuPrepUs, g_profileSubmitUs, g_profileComposeUs,
             g_profileGxmEndSceneUs, g_profileGxmFinishUs,
             g_profileRbgPrepareUs, g_profileRbgResolveUs,
+            g_profileLightingUs, g_profileTransientMaxPerPolygon,
+            g_profileTransientCornerTests, g_profileTransientCornerHits,
+            g_profileGouraudPrepUs,
+            static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
+            g_profileSprites.draws,
+            static_cast<unsigned long long>(g_profileSprites.bboxPixels),
             g_sceneColorOffset[0], g_sceneColorOffset[1], g_sceneColorOffset[2]);
     }
     if (window.lastUs != 0u) {
@@ -2549,7 +2558,7 @@ bool init()
     logging::writef(
         "[NeptuneBuild] optimized=%u fieldDescriptorIndex=1 sharedRbg0=1 "
         "rbg0NativeResolve=1 pooledFieldTextures=1 coefficientRows=%u motionTrace=%u "
-        "lightStateIndex=1 transientCornerPrep=1\n",
+        "lightStateIndex=1 transientCornerPrep=1 deadlineOutlier30=1\n",
         static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED),
         static_cast<unsigned int>(LAGI_RBG_COEFFICIENT_ROWS),
         static_cast<unsigned int>(LAGI_FIELD_MOTION_TRACE));
