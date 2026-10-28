@@ -126,16 +126,21 @@ in the live eight-row LCS gradient, then expands that average to a saturated
 per-corner evaluator are unchanged.
 
 Native collection color class `2` covers the red-class pickups, including
-Blast Chip, Dual Blast Chip, and Tri Blast Chip. That entire class now uses the
-live dragon-stat red endpoint from the field LCS table. The other six
-collection classes retain the accepted peak-preserving saturation path.
+Blast Chip, Dual Blast Chip, and Tri Blast Chip. A later device run showed the
+class light nearly white: the sampled live LCS gradient entry is not a
+collection-class color. Class `2` now takes the red channel of its native
+red-dominant collection swatch and emits red-only at the existing 31-channel
+effect-light peak. The other six collection classes retain the accepted
+peak-preserving saturation path. `[CollectionRedLight]` logs the native and
+applied RGB for a bounded number of class-2 activations.
 
 The battle homing-laser trail uses a distinct RGB555 channel contract. The
 field-gradient correction must not reverse its red/blue interpretation:
 `battle_gouraud555_hue_at_peak` preserves the previously accepted combat
 mapping while the field beam continues to use its full-gradient average.
 The combat-enabled Vita build compiles this producer. The next device run
-confirmed the field and combat colors visually.
+confirmed the field beam and combat multi-laser colors visually; it did not
+validate the red collection-class light.
 
 `tests/field_laser_point_light_test.ps1`, the focused Vita C++ syntax check, and
 a clean full-resolution Vita configure/build passed for the color correction.

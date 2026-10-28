@@ -19,7 +19,8 @@ if (!$cmake.Contains('LAGI_FIELD_LASER_LIGHT') -or
 }
 if (!$cmake.Contains('pThis->mF0.m18_color[0][2]') -or
     !$cmake.Contains('colorIndex == 2') -or
-    !$cmake.Contains('m9C0)[7][2]') -or
+    !$cmake.Contains('const s_RGB8 red = {s8(source.m0 ? 31 : 0), 0, 0};') -or
+    !$cmake.Contains('[CollectionRedLight]') -or
     !$cmake.Contains('lagiSaturatedCollectionLightColor(colorIndex)') -or
     !$cmake.Contains('LAGI_COLLECTION_LIGHT_SATURATION') -or
     !$pool.Contains('saturate_rgb888_peak(')) {

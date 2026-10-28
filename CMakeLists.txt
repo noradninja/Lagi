@@ -2467,16 +2467,23 @@ static const std::array<s_RGB8, 7> s_LCSLaser_DeleteTrailSub0Data0]=] source_tex
   endif()
   string(REPLACE "${trail_light_palette_anchor}" [=[static s_RGB8 lagiSaturatedCollectionLightColor(s32 colorIndex)
 {
-    if (colorIndex == 2) {
-        // Every red-class pickup (Blast, Dual Blast, Tri Blast, and any other
-        // item mapped here by Azel) uses the same live dragon-stat red endpoint
-        // as the combat multi-laser instead of the pink collection swatch.
-        const u32 rgb = lagi::gouraud555_hue_at_peak(
-            (*getFieldTaskPtr()->m8_pSubFieldData->m340_pLCS->m9C0)[7][2],
-            31u);
-        return {s8(rgb >> 16), s8(rgb >> 8), s8(rgb)};
-    }
     const s_RGB8& source = s_LCSLaser_DeleteTrailSub0Data0[colorIndex];
+    if (colorIndex == 2) {
+        // Azel's class-2 collection swatch is red-dominant (19,0A,0E).
+        // The live LCS gradient is unrelated to this item's color and can
+        // resolve to neutral white. Keep this class red, including all Blast
+        // Chip variants, at the existing 31-channel effect-light peak.
+        const s_RGB8 red = {s8(source.m0 ? 31 : 0), 0, 0};
+        static unsigned redReports = 0;
+        if (redReports++ < 8)
+            lagi::platform::logging::writef(
+                "[CollectionRedLight] class=%d native=%u,%u,%u applied=%u,%u,%u\n",
+                int(colorIndex), unsigned(u8(source.m0)),
+                unsigned(u8(source.m1)), unsigned(u8(source.m2)),
+                unsigned(u8(red.m0)), unsigned(u8(red.m1)),
+                unsigned(u8(red.m2)));
+        return red;
+    }
     const u32 rgb = lagi::saturate_rgb888_peak(
         (u32(u8(source.m0)) << 16) | (u32(u8(source.m1)) << 8) |
         u32(u8(source.m2)));
