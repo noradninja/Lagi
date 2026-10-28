@@ -37,8 +37,8 @@ if (!$bridge.Contains('g_completedFieldLaserLights=g_fieldLaserLights;') -or
 if (!$header.Contains('std::array<AdditionalModelLight, lagi::kMaxTransientLaserLights>') -or
     !$renderer.Contains('polygonLight.transientLaserLights=state.transientLaserLights;') -or
     !$renderer.Contains('transient<light.transientLaserLightCount') -or
-    !$renderer.Contains('evaluate_point_at_corner_prepared(transientCornerMatrix,params,') -or
-    !$renderer.Contains('prepare_point_corner_matrix(world,nullptr,transientCornerMatrix);') -or
+    !$renderer.Contains('accepted=lagi::evaluate_point_at_corner_prepared(') -or
+    !$renderer.Contains('lagi::prepare_point_corner_matrix(transientWorld,nullptr,') -or
     !$renderer.Contains('evaluate_point_at_corner(world,light.additionalPointParams,') -or
     !$point.Contains('native_point_light(matrix,params)') -or
     !$renderer.Contains('accumulate_additional_model_light(vertexLight,lighting.normal,accum);')) {
@@ -75,6 +75,7 @@ if (!$renderer.Contains('if (mode == 7 || !buffer)') -or
 }
 if (!$cmake.Contains('LAGI_BATTLE_HOMING_POINT') -or
     !$cmake.Contains('LAGI_BATTLE_GUN_POINT') -or
+    !$cmake.Contains('lagi::battle_gouraud555_hue_at_peak(rgb555, 248u)') -or
     !$bridge.Contains('[BattleLightEmit]') -or
     !$bridge.Contains('record_transient_battle_attack_light(') -or
     !$header.Contains('record_transient_battle_attack_light(')) {

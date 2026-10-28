@@ -62,6 +62,15 @@ inline constexpr std::uint32_t gouraud555_hue_at_peak(
     return rgb_hue_at_peak(r, g, b, peak);
 }
 
+inline constexpr std::uint32_t battle_gouraud555_hue_at_peak(
+    std::uint16_t gouraud, std::uint32_t peak) {
+    // Battle's homing trail light historically follows the native VDP1
+    // low-bit red channel. Keep that producer's channel contract separate
+    // from the field beam's visible-gradient interpretation.
+    return rgb_hue_at_peak(gouraud & 31u, (gouraud >> 5) & 31u,
+        (gouraud >> 10) & 31u, peak);
+}
+
 template <typename Gradient>
 inline constexpr std::uint32_t gouraud555_gradient_hue_at_peak(
     const Gradient& gradient, std::uint32_t peak) {

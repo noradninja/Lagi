@@ -2297,7 +2297,7 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
         const u16 rgb555 = !pThis->mF0.m18_color.empty()
             ? pThis->mF0.m18_color[0][2]
             : pThis->mF0.m10_laserData->m1C_colors[0][2];
-        const u32 rgb888 = lagi::gouraud555_hue_at_peak(rgb555, 248u);
+        const u32 rgb888 = lagi::battle_gouraud555_hue_at_peak(rgb555, 248u);
         const auto& position=pThis->m10_laserPosition;
         lagi::azel_bridge::record_transient_battle_attack_light(
             static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(pThis)),
