@@ -21,11 +21,20 @@ inline void prepare_point_corner_matrix(const float world[3],
     const std::int32_t identity[12]{0x10000,0,0,0, 0,0x10000,0,0,
         0,0,0x10000,0};
     std::copy(identity, identity+12, matrix);
+    if (!view) {
+        // Identity view is the common transient-light path. The old loop's
+        // zero terms leave exactly this one product per row.
+        for (unsigned row=0;row<3;++row)
+            matrix[row*4+3]=static_cast<std::int32_t>(std::clamp(
+                std::round(65536.0*double(world[row])),
+                double(std::numeric_limits<std::int32_t>::min()),
+                double(std::numeric_limits<std::int32_t>::max())));
+        return;
+    }
     for (unsigned row=0;row<3;++row) {
-        double v = view ? double(view[row*4+3]) : 0.0;
+        double v = double(view[row*4+3]);
         for (unsigned col=0;col<3;++col)
-            v += (view ? double(view[row*4+col]) : (row==col ? 65536.0:0.0))
-                * double(world[col]);
+            v += double(view[row*4+col])*double(world[col]);
         matrix[row*4+3]=static_cast<std::int32_t>(std::clamp(std::round(v),
             double(std::numeric_limits<std::int32_t>::min()),
             double(std::numeric_limits<std::int32_t>::max())));
