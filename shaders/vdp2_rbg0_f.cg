@@ -167,10 +167,13 @@ float4 sampleRbg0Cell(
         inPlaneX = mapX - planeX * planeWidth;
         inPlaneY = mapY - planeY * planeHeight;
     }
-    const float pageX = floor(inPlaneX / 512.0f);
-    const float pageY = floor(inPlaneY / 512.0f);
-    const float inPageX = inPlaneX - pageX * 512.0f;
-    const float inPageY = inPlaneY - pageY * 512.0f;
+    // PLSZ=0 has one 512x512 page per plane. Keep the multi-page path for
+    // larger native plane sizes, but avoid its divisions on the common field.
+    const bool singlePage = plsz < 0.5f;
+    const float pageX = singlePage ? 0.0f : floor(inPlaneX / 512.0f);
+    const float pageY = singlePage ? 0.0f : floor(inPlaneY / 512.0f);
+    const float inPageX = singlePage ? inPlaneX : inPlaneX - pageX * 512.0f;
+    const float inPageY = singlePage ? inPlaneY : inPlaneY - pageY * 512.0f;
 
     const float patternDim = (chsz >= 0.5f) ? 16.0f : 8.0f;
     const float pageDimension = (chsz >= 0.5f) ? 32.0f : 64.0f;
@@ -188,7 +191,8 @@ float4 sampleRbg0Cell(
         // Cache variant plane uniforms hold four packed two-bit page slots,
         // not physical VRAM addresses. Register-only lookup is done on CPU.
         const float divisor=pageNumber<0.5f?1.0f:pageNumber<1.5f?4.0f:pageNumber<2.5f?16.0f:64.0f;
-        const float slot=fmod(floor(planeBase/divisor),4.0f);
+        const float slot=singlePage?fmod(planeBase,4.0f):
+            fmod(floor(planeBase/divisor),4.0f);
         const float2 origin=float2(fmod(slot,2.0f),floor(slot/2.0f))*512.0f;
         const float4 entry=tex2D(decodedPages,(origin+float2(inPageX,inPageY)+0.5f)/1024.0f);
         if(entry.a<0.5f)return float4(0,0,0,0);
