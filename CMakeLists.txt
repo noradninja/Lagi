@@ -5532,6 +5532,21 @@ foreach(frontend_audio IN ITEMS bgm.mp3 navigate.wav confirm.wav)
  endif()
 endforeach()
 
+set(LAGI_MANUAL_VPK_FILES)
+foreach(manual_page RANGE 1 26)
+ if(manual_page LESS 10)
+  set(manual_name "00${manual_page}")
+ else()
+  set(manual_name "0${manual_page}")
+ endif()
+ set(manual_path "${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/manual/${manual_name}.png")
+ if(NOT EXISTS "${manual_path}")
+  message(FATAL_ERROR "Required native Vita manual page missing: ${manual_path}")
+ endif()
+ list(APPEND LAGI_MANUAL_VPK_FILES
+      "${manual_path}" "sce_sys/manual/${manual_name}.png")
+endforeach()
+
 vita_create_vpk(Lagi.vpk ${VITA_TITLEID} lagi.self
  VERSION ${VITA_VERSION}
  NAME ${VITA_APP_NAME}
@@ -5541,4 +5556,5 @@ vita_create_vpk(Lagi.vpk ${VITA_TITLEID} lagi.self
   "${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/startup.png" sce_sys/livearea/contents/startup.png
   "${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/template.xml" sce_sys/livearea/contents/template.xml
   ${LAGI_FRONTEND_VPK_FILES}
+  ${LAGI_MANUAL_VPK_FILES}
 )
