@@ -754,6 +754,7 @@ static unsigned int g_profileTransientMaxPerPolygon = 0;
 static unsigned int g_profileTransientLitPolygons = 0;
 static unsigned int g_profileTransientCornerTests = 0;
 static unsigned int g_profileTransientCornerHits = 0;
+static unsigned int g_profileTransientCornerReuses = 0;
 static unsigned int g_profileSubmitUs = 0;
 static unsigned int g_profileGouraudProjectUs = 0;
 static unsigned int g_profileGouraudPayloadUs = 0;
@@ -1415,7 +1416,7 @@ static void recordFlightPresentation(
             "build=%uus interval=%lluus vblanks=%u present=%uus "
             "rebuild=%u rbg=%u cpuprep=%u submit=%u compose=%u "
             "gxmend=%u gxmfinish=%u rbgPrep=%u rbgResolve=%u "
-            "light=%u transientMax=%u transientTests=%u transientHits=%u "
+            "light=%u transientMax=%u transientTests=%u transientHits=%u transientReuses=%u "
             "gourPrep=%u polys=%u spriteDraws=%u spritePixels=%llu "
             "fadeR=%d fadeG=%d fadeB=%d\n",
             static_cast<unsigned int>(g_viewMode), window.lastUs != 0u ? 1u : 0u,
@@ -1428,6 +1429,7 @@ static void recordFlightPresentation(
             g_profileRbgPrepareUs, g_profileRbgResolveUs,
             g_profileLightingUs, g_profileTransientMaxPerPolygon,
             g_profileTransientCornerTests, g_profileTransientCornerHits,
+            g_profileTransientCornerReuses,
             g_profileGouraudPrepUs,
             static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
             g_profileSprites.draws,
@@ -14380,7 +14382,7 @@ static void renderBasicWingViewer()
         (((scenePerfHeartbeat++ % 60u) == 0u) || perfMenuChanged || slowMenuSample)) {
         logging::writef(
             "[ScenePerf] build=%uus scan=%u cache=%u obj=%u edge=%u upload=%u "
-            "light=%u transientMax=%u transientPolys=%u transientTests=%u transientHits=%u gourPrep=%u gourPayload=%u gourBucket=%u "
+            "light=%u transientMax=%u transientPolys=%u transientTests=%u transientHits=%u transientReuses=%u gourPrep=%u gourPayload=%u gourBucket=%u "
             "gourIndex=%u gourDraw=%u clear=%u begin=%u submit=%u compose=%u "
             "cpuprep=%u gxmwait=%u gxmend=%u gxmfinish=%u "
             "render=%u polys=%u verts=%u "
@@ -14401,6 +14403,7 @@ static void renderBasicWingViewer()
             g_profileTransientLitPolygons,
             g_profileTransientCornerTests,
             g_profileTransientCornerHits,
+            g_profileTransientCornerReuses,
             g_profileGouraudPrepUs,
             g_profileGouraudPayloadUs,
             g_profileGouraudBucketUs,
@@ -15464,6 +15467,7 @@ static void updateLiveTownAzelLighting()
     g_profileTransientLitPolygons = 0u;
     g_profileTransientCornerTests = 0u;
     g_profileTransientCornerHits = 0u;
+    g_profileTransientCornerReuses = 0u;
     if (g_liveTownCpuMesh.gouraud555.size() !=
             g_liveTownCpuMesh.polygonRecords.size() ||
         g_liveTownPolygonLightIndices.size() !=
@@ -15557,13 +15561,29 @@ static void updateLiveTownAzelLighting()
     unsigned pointTraceSamplesThisFrame = 0;
     bool pointTraceActiveThisFrame = false;
 
+    // Adjacent polygons often submit the same authored vertex more than once.
+    // A direct-mapped, frame-stamped cache reuses the complete native result
+    // only for the identical light state, source slot, and float coordinates.
+    // Collisions merely cause a fresh evaluation; they cannot change color.
+    struct TransientCornerCacheEntry {
+        std::uint64_t frame = 0;
+        std::uint32_t lightIndex = 0, sourceIndex = 0;
+        std::uint32_t positionBits[3]{};
+        lagi::AdditionalModelLight result{};
+        bool accepted = false;
+    };
+    static std::array<TransientCornerCacheEntry, 4096> transientCornerCache{};
+    static std::uint64_t transientCornerCacheFrame = 0;
+    const std::uint64_t cacheFrame = ++transientCornerCacheFrame;
+
     for (std::size_t p = 0;
          p < g_liveTownCpuMesh.polygonRecords.size(); ++p) {
         if (usePreparedVisibility && !g_liveTownGouraudPrep[p].visible)
             continue;
 
         const auto& record = g_liveTownCpuMesh.polygonRecords[p];
-        const auto& light = g_liveTownLightStates[g_liveTownPolygonLightIndices[p]];
+        const std::uint32_t lightIndex = g_liveTownPolygonLightIndices[p];
+        const auto& light = g_liveTownLightStates[lightIndex];
         const unsigned mode = (record.lightingControl >> 8) & 3u;
         auto& out = g_liveTownCpuMesh.gouraud555[p];
         out = {};
@@ -15680,25 +15700,60 @@ static void updateLiveTownAzelLighting()
             const int preLaserRGB[3]={accum[0],accum[1],accum[2]};
             bool laserFacing=false;
             std::int32_t transientCornerMatrix[12];
-            if (light.transientLaserLightCount) {
-                const auto& vertex=g_liveTownCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
-                const float world[3]={vertex.x,vertex.y,vertex.z};
-                lagi::prepare_point_corner_matrix(world,nullptr,transientCornerMatrix);
-            }
+            bool transientCornerMatrixReady=false;
+            const auto& transientVertex=
+                g_liveTownCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
+            const float transientWorld[3]={
+                transientVertex.x,transientVertex.y,transientVertex.z};
+            std::uint32_t transientPositionBits[3]{};
+            if(light.transientLaserLightCount)
+                std::memcpy(transientPositionBits,transientWorld,
+                    sizeof(transientPositionBits));
             for(unsigned transient=0;transient<light.transientLaserLightCount;++transient) {
                 // Same native evaluator and one accumulator as collection lights.
                 // A transient shot supplies world-space point parameters.
                 const auto& source=light.transientLaserSources[transient];
                 if(!source.range) continue;
                 ++g_profileTransientCornerTests;
-                const std::int32_t hi=static_cast<std::int16_t>(source.range>>8);
-                const std::int32_t params[5]={
-                    source.worldPosition[0],source.worldPosition[1],
-                    source.worldPosition[2],
-                    static_cast<std::int32_t>(source.range<<12),hi*hi};
+                std::uint32_t hash=lightIndex*0x9E3779B9u+transient;
+                for(const auto bits:transientPositionBits)
+                    hash=(hash^bits)*0x85EBCA6Bu;
+                auto& cached=transientCornerCache[
+                    hash&(transientCornerCache.size()-1u)];
                 lagi::AdditionalModelLight vertexLight{};
-                if(!lagi::evaluate_point_at_corner_prepared(transientCornerMatrix,params,
-                    source.color,light.modelBasis,nullptr,vertexLight))
+                bool accepted=false;
+                if(cached.frame==cacheFrame &&
+                    cached.lightIndex==lightIndex &&
+                    cached.sourceIndex==transient &&
+                    std::memcmp(cached.positionBits,transientPositionBits,
+                        sizeof(transientPositionBits))==0) {
+                    ++g_profileTransientCornerReuses;
+                    accepted=cached.accepted;
+                    vertexLight=cached.result;
+                } else {
+                    if(!transientCornerMatrixReady) {
+                        lagi::prepare_point_corner_matrix(transientWorld,nullptr,
+                            transientCornerMatrix);
+                        transientCornerMatrixReady=true;
+                    }
+                    const std::int32_t hi=
+                        static_cast<std::int16_t>(source.range>>8);
+                    const std::int32_t params[5]={
+                        source.worldPosition[0],source.worldPosition[1],
+                        source.worldPosition[2],
+                        static_cast<std::int32_t>(source.range<<12),hi*hi};
+                    accepted=lagi::evaluate_point_at_corner_prepared(
+                        transientCornerMatrix,params,source.color,
+                        light.modelBasis,nullptr,vertexLight);
+                    cached.frame=cacheFrame;
+                    cached.lightIndex=lightIndex;
+                    cached.sourceIndex=transient;
+                    std::memcpy(cached.positionBits,transientPositionBits,
+                        sizeof(transientPositionBits));
+                    cached.accepted=accepted;
+                    cached.result=vertexLight;
+                }
+                if(!accepted)
                     continue;
                 ++g_profileTransientCornerHits;
                 if(traceLaserCoverage) {
