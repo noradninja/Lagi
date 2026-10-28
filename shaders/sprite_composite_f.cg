@@ -8,6 +8,9 @@ float4 main(float2 uv:TEXCOORD0,uniform sampler2D layer:TEXUNIT0,
     float backgroundPresent=(geometry.z>=0.5f && dst.a>=0.5f);
     if(backgroundPresent<0.5f)dst=backColor;
     float code=floor(src.a*255.0f+0.5f);
+    // All codes below 128 map to background in spriteCompositeLookup.
+    // Avoid a dependent decision-texture fetch on empty VDP1 pixels.
+    if(code<128.0f)return float4(dst.rgb,1);
     float3 decision=floor(tex2D(decisions,float2((code+0.5f)/256.0f,0.5f)).rgb*255+0.5f);
     float op=backgroundPresent>0.5f?decision.r:decision.g;
     if(op<0.5f)return float4(dst.rgb,1);
