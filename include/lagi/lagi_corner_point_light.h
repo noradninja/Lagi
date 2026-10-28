@@ -43,13 +43,19 @@ inline bool evaluate_point_at_corner_prepared(const std::int32_t matrix[12],
     // classifying an extremely remote point as nearby.
     const std::uint64_t maxSquared=std::uint64_t(std::uint32_t(params[3]))<<16;
     std::uint64_t distanceSquared=0;
+    std::int32_t delta[3]{};
     for(unsigned axis=0;axis<3;++axis) {
-        const std::int64_t delta=std::int64_t(params[axis])-matrix[axis*4+3];
-        if(delta < -6000000 || delta > 6000000) return false;
-        distanceSquared+=std::uint64_t(delta*delta);
+        const std::int64_t difference=
+            std::int64_t(params[axis])-matrix[axis*4+3];
+        if(difference < -6000000 || difference > 6000000) return false;
+        delta[axis]=static_cast<std::int32_t>(difference);
+        distanceSquared+=std::uint64_t(difference*difference);
         if(distanceSquared>maxSquared) return false;
     }
-    const auto result=native_point_light(matrix,params);
+    // The broad-phase differences are now proven representable as signed
+    // 32-bit words, so reuse them in the unchanged SH-2 sqrt/divide path.
+    const auto result=native_point_light_from_delta(
+        matrix,params,delta,distanceSquared);
     if(result.outside || result.divisionOverflow) return false;
 
     out={};

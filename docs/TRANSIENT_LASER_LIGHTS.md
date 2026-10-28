@@ -134,14 +134,21 @@ The battle homing-laser trail uses a distinct RGB555 channel contract. The
 field-gradient correction must not reverse its red/blue interpretation:
 `battle_gouraud555_hue_at_peak` preserves the previously accepted combat
 mapping while the field beam continues to use its full-gradient average.
-The combat-enabled Vita build compiles this producer; visual acceptance still
-requires a fresh multi-laser capture on device.
+The combat-enabled Vita build compiles this producer. The next device run
+confirmed the field and combat colors visually.
 
 `tests/field_laser_point_light_test.ps1`, the focused Vita C++ syntax check, and
-a clean full-resolution Vita configure/build passed. The build linked
-`lagi.velf`, created `lagi.self`, and packaged `Lagi.vpk`. This is compile and
-package validation only: a new Vita/Vita TV capture must confirm the field
-average follows the visible laser, every red-class pickup is red rather than
-pink, the other collection colors remain accepted, and field/battle frame time
-still meets the existing target.
+a clean full-resolution Vita configure/build passed for the color correction.
+The build linked `lagi.velf`, created `lagi.self`, and packaged `Lagi.vpk`.
+
+## 2026-10-28 measured follow-up
+
+The color-correct device log shows a dense field shot at roughly 4,210 corner
+tests, 2,030 exact-result cache reuses, and 9.7–10.1 ms in lighting. Those
+frames still take roughly 32.6–33.1 ms to render, so the 30 ms ceiling is not
+met. The native point evaluator was recomputing the three deltas and squared
+distance after the broad 64-bit range check. The checked deltas and squared
+distance are now passed into the same SH-2 distance/square-root/division path;
+native arithmetic and result construction remain unchanged. This is a source
+optimization only until the user builds and captures the same route again.
 

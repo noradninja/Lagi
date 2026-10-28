@@ -13,17 +13,12 @@ struct NativePointLightResult {
     bool outside = false;
     bool divisionOverflow = false;
 };
-inline NativePointLightResult native_point_light(
-    const std::int32_t matrix[12], const std::int32_t params[5])
+inline NativePointLightResult native_point_light_from_delta(
+    const std::int32_t matrix[12], const std::int32_t params[5],
+    const std::int32_t inputDelta[3], std::uint64_t squared)
 {
     NativePointLightResult result;
-    std::int32_t delta[3];
-    std::uint64_t squared = 0;
-    for (unsigned axis=0; axis<3; ++axis) {
-        delta[axis]=static_cast<std::int32_t>(std::uint32_t(params[axis])-
-            std::uint32_t(matrix[axis*4+3]));
-        squared+=static_cast<std::uint64_t>(std::int64_t(delta[axis])*delta[axis]);
-    }
+    std::int32_t delta[3]{inputDelta[0],inputDelta[1],inputDelta[2]};
     // SH-2 XTRCT retains the middle 32 bits, including wraparound.
     result.distance=static_cast<std::uint32_t>(squared>>16);
     std::uint32_t numerator;
@@ -63,5 +58,18 @@ inline NativePointLightResult native_point_light(
         result.vector[axis]=static_cast<std::int16_t>(mac>>16);
     }
     return result;
+}
+
+inline NativePointLightResult native_point_light(
+    const std::int32_t matrix[12], const std::int32_t params[5])
+{
+    std::int32_t delta[3];
+    std::uint64_t squared = 0;
+    for (unsigned axis=0; axis<3; ++axis) {
+        delta[axis]=static_cast<std::int32_t>(std::uint32_t(params[axis])-
+            std::uint32_t(matrix[axis*4+3]));
+        squared+=static_cast<std::uint64_t>(std::int64_t(delta[axis])*delta[axis]);
+    }
+    return native_point_light_from_delta(matrix,params,delta,squared);
 }
 }
