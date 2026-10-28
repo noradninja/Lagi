@@ -753,6 +753,8 @@ static unsigned int g_profileLightingUs = 0;
 static unsigned int g_profileTransientMaxPerPolygon = 0;
 static unsigned int g_profileTransientLitPolygons = 0;
 static unsigned int g_profileTransientCornerTests = 0;
+static unsigned int g_profilePrimaryCornerTests = 0;
+static unsigned int g_profilePrimaryCornerReuses = 0;
 static unsigned int g_profileTransientCornerHits = 0;
 static unsigned int g_profileTransientCornerReuses = 0;
 static unsigned int g_profileSubmitUs = 0;
@@ -1416,7 +1418,7 @@ static void recordFlightPresentation(
             "build=%uus interval=%lluus vblanks=%u present=%uus "
             "rebuild=%u rbg=%u cpuprep=%u submit=%u compose=%u "
             "gxmend=%u gxmfinish=%u rbgPrep=%u rbgResolve=%u "
-            "light=%u transientMax=%u transientTests=%u transientHits=%u transientReuses=%u "
+            "light=%u primaryTests=%u primaryReuses=%u transientMax=%u transientTests=%u transientHits=%u transientReuses=%u "
             "gourPrep=%u polys=%u spriteDraws=%u spritePixels=%llu "
             "fadeR=%d fadeG=%d fadeB=%d\n",
             static_cast<unsigned int>(g_viewMode), window.lastUs != 0u ? 1u : 0u,
@@ -1427,7 +1429,8 @@ static void recordFlightPresentation(
             g_profileRenderCpuPrepUs, g_profileSubmitUs, g_profileComposeUs,
             g_profileGxmEndSceneUs, g_profileGxmFinishUs,
             g_profileRbgPrepareUs, g_profileRbgResolveUs,
-            g_profileLightingUs, g_profileTransientMaxPerPolygon,
+            g_profileLightingUs, g_profilePrimaryCornerTests,
+            g_profilePrimaryCornerReuses, g_profileTransientMaxPerPolygon,
             g_profileTransientCornerTests, g_profileTransientCornerHits,
             g_profileTransientCornerReuses,
             g_profileGouraudPrepUs,
@@ -14382,7 +14385,7 @@ static void renderBasicWingViewer()
         (((scenePerfHeartbeat++ % 60u) == 0u) || perfMenuChanged || slowMenuSample)) {
         logging::writef(
             "[ScenePerf] build=%uus scan=%u cache=%u obj=%u edge=%u upload=%u "
-            "light=%u transientMax=%u transientPolys=%u transientTests=%u transientHits=%u transientReuses=%u gourPrep=%u gourPayload=%u gourBucket=%u "
+            "light=%u primaryTests=%u primaryReuses=%u transientMax=%u transientPolys=%u transientTests=%u transientHits=%u transientReuses=%u gourPrep=%u gourPayload=%u gourBucket=%u "
             "gourIndex=%u gourDraw=%u clear=%u begin=%u submit=%u compose=%u "
             "cpuprep=%u gxmwait=%u gxmend=%u gxmfinish=%u "
             "render=%u polys=%u verts=%u "
@@ -14399,6 +14402,8 @@ static void renderBasicWingViewer()
             g_profileBuildEdgeUs,
             g_profileBuildUploadUs,
             g_profileLightingUs,
+            g_profilePrimaryCornerTests,
+            g_profilePrimaryCornerReuses,
             g_profileTransientMaxPerPolygon,
             g_profileTransientLitPolygons,
             g_profileTransientCornerTests,
@@ -15463,6 +15468,8 @@ void end_frame()
 
 static void updateLiveTownAzelLighting()
 {
+    g_profilePrimaryCornerTests = 0u;
+    g_profilePrimaryCornerReuses = 0u;
     g_profileTransientMaxPerPolygon = 0u;
     g_profileTransientLitPolygons = 0u;
     g_profileTransientCornerTests = 0u;
@@ -15564,6 +15571,8 @@ static void updateLiveTownAzelLighting()
     // Adjacent polygons often submit the same authored vertex more than once.
     // A direct-mapped, frame-stamped cache reuses the complete native result
     // only for the identical light state, source slot, and float coordinates.
+    // Slot four is reserved for the authored primary point source; transient
+    // sources occupy slots zero through three.
     // Collisions merely cause a fresh evaluation; they cannot change color.
     struct TransientCornerCacheEntry {
         std::uint64_t frame = 0;
@@ -15683,12 +15692,40 @@ static void updateLiveTownAzelLighting()
             if (pointTraceEligible) pointTraceActiveThisFrame = true;
             const int beforePoint[3] = {accum[0], accum[1], accum[2]};
             if(light.additionalPointPerCorner && light.additionalLight.active) {
+                ++g_profilePrimaryCornerTests;
                 const auto& vtx=g_liveTownCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
                 const float world[3]={vtx.x,vtx.y,vtx.z};
+                std::uint32_t positionBits[3];
+                std::memcpy(positionBits,world,sizeof(positionBits));
+                constexpr std::uint32_t primarySlot=lagi::kMaxTransientLaserLights;
+                std::uint32_t hash=lightIndex*0x9E3779B9u+primarySlot;
+                for(const auto bits:positionBits)
+                    hash=(hash^bits)*0x85EBCA6Bu;
+                auto& cached=transientCornerCache[
+                    hash&(transientCornerCache.size()-1u)];
                 lagi::AdditionalModelLight cornerLight{};
-                if(lagi::evaluate_point_at_corner(world,light.additionalPointParams,
-                    light.additionalLight.color,light.modelBasis,
-                    light.additionalPointView,cornerLight))
+                bool accepted=false;
+                if(cached.frame==cacheFrame &&
+                    cached.lightIndex==lightIndex &&
+                    cached.sourceIndex==primarySlot &&
+                    std::memcmp(cached.positionBits,positionBits,
+                        sizeof(positionBits))==0) {
+                    ++g_profilePrimaryCornerReuses;
+                    accepted=cached.accepted;
+                    cornerLight=cached.result;
+                } else {
+                    accepted=lagi::evaluate_point_at_corner(world,light.additionalPointParams,
+                        light.additionalLight.color,
+                        light.modelBasis,light.additionalPointView,cornerLight);
+                    cached.frame=cacheFrame;
+                    cached.lightIndex=lightIndex;
+                    cached.sourceIndex=primarySlot;
+                    std::memcpy(cached.positionBits,positionBits,
+                        sizeof(positionBits));
+                    cached.accepted=accepted;
+                    cached.result=cornerLight;
+                }
+                if(accepted)
                     lagi::accumulate_additional_model_light(cornerLight,lighting.normal,accum);
             } else {
                 lagi::accumulate_additional_model_light(light.additionalLight,lighting.normal,accum);

@@ -41,6 +41,10 @@ if (!$header.Contains('std::array<AdditionalModelLight, lagi::kMaxTransientLaser
     !$renderer.Contains('accepted=lagi::evaluate_point_at_corner_prepared(') -or
     !$renderer.Contains('lagi::prepare_point_corner_matrix(transientWorld,nullptr,') -or
     !$renderer.Contains('evaluate_point_at_corner(world,light.additionalPointParams,') -or
+    !$renderer.Contains('cached.sourceIndex==primarySlot') -or
+    !$renderer.Contains('cached.lightIndex==lightIndex') -or
+    !$renderer.Contains('cached.frame==cacheFrame') -or
+    !$renderer.Contains('g_profilePrimaryCornerReuses') -or
     !$point.Contains('native_point_light_from_delta(') -or
     !$renderer.Contains('accumulate_additional_model_light(vertexLight,lighting.normal,accum);')) {
     throw 'Missing four-light snapshot or additive Gouraud integration'
