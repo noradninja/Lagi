@@ -2,7 +2,12 @@
 // core can end before every memory segment, including the main-thread stack.
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/threadmgr.h>
+#if __has_include(<unwind.h>)
 #include <unwind.h>
+#define LAGI_HAS_UNWIND 1
+#else
+#define LAGI_HAS_UNWIND 0
+#endif
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -13,6 +18,7 @@ extern "C" [[noreturn]] void __wrap_abort();
 namespace {
 std::atomic_flag reporting=ATOMIC_FLAG_INIT;
 std::atomic<const char*> stage{"before E011 startup"};
+#if LAGI_HAS_UNWIND
 struct Trace { std::uintptr_t addresses[32]{}; unsigned count{}; };
 _Unwind_Reason_Code collect(_Unwind_Context* context,void* opaque)
 {
@@ -21,6 +27,7 @@ _Unwind_Reason_Code collect(_Unwind_Context* context,void* opaque)
     trace.addresses[trace.count++]=_Unwind_GetIP(context);
     return _URC_NO_REASON;
 }
+#endif
 void report(const char* reason,const char* detail,void* caller,const char* context=nullptr)
 {
     if(reporting.test_and_set())return;
@@ -40,6 +47,7 @@ void report(const char* reason,const char* detail,void* caller,const char* conte
             if(n>0)sceIoWrite(fd,buffer,n<int(sizeof(buffer))?n:int(sizeof(buffer))-1);
         }
         // Caller is written before unwinding: missing EH tables must not lose it.
+        #if LAGI_HAS_UNWIND
         Trace trace;
         _Unwind_Backtrace(collect,&trace);
         for(unsigned i=0;i<trace.count;++i) {
@@ -47,6 +55,7 @@ void report(const char* reason,const char* detail,void* caller,const char* conte
                 i,static_cast<unsigned>(trace.addresses[i]));
             if(n>0)sceIoWrite(fd,buffer,n);
         }
+        #endif
         sceIoClose(fd);
     }
     reporting.clear();
