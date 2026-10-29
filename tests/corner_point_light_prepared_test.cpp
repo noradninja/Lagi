@@ -55,6 +55,23 @@ static bool previous_evaluate(const float world[3],
 int main()
 {
     std::mt19937 rng(0xA2315u);
+    const double roundingCases[]={
+        -2147483649.0,-2147483648.5,-2147483648.0,
+        -1.5,-0.5,std::nextafter(-0.5,0.0),-0.0,
+        std::nextafter(0.5,0.0),0.5,1.5,
+        2147483646.5,2147483647.0,2147483647.5,
+        std::numeric_limits<double>::infinity(),
+        -std::numeric_limits<double>::infinity()};
+    for (const double value:roundingCases) {
+        const auto expected=static_cast<std::int32_t>(std::clamp(
+            std::round(value),
+            double(std::numeric_limits<std::int32_t>::min()),
+            double(std::numeric_limits<std::int32_t>::max())));
+        if (lagi::round_clamped_point_word(value)!=expected) {
+            std::printf("FAIL: point word rounding %.17g\n",value);
+            return 1;
+        }
+    }
     std::uniform_int_distribution<int> position(-80,80);
     std::uniform_int_distribution<int> basisValue(-65536,65536);
     std::uniform_int_distribution<int> colorValue(0,31);

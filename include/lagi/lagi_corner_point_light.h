@@ -7,6 +7,19 @@
 #include "lagi/lagi_point_light.h"
 
 namespace lagi {
+// std::round() lowers to a library call on Vita. After clipping to the
+// native signed-word range, integer truncation plus an exact fractional
+// comparison has the same halfway-away-from-zero result for finite doubles.
+inline std::int32_t round_clamped_point_word(double value)
+{
+    const double clipped=std::clamp(value,
+        double(std::numeric_limits<std::int32_t>::min()),
+        double(std::numeric_limits<std::int32_t>::max()));
+    const auto whole=static_cast<std::int32_t>(clipped);
+    const double fraction=clipped-double(whole);
+    return whole + (fraction>=0.5) - (fraction<=-0.5);
+}
+
 struct PreparedPointCornerBasis {
     std::int64_t column[3][3]{};
 };
@@ -48,19 +61,15 @@ inline void prepare_point_corner_matrix(const float world[3],
         // Identity view is the common transient-light path. The old loop's
         // zero terms leave exactly this one product per row.
         for (unsigned row=0;row<3;++row)
-            matrix[row*4+3]=static_cast<std::int32_t>(std::clamp(
-                std::round(65536.0*double(world[row])),
-                double(std::numeric_limits<std::int32_t>::min()),
-                double(std::numeric_limits<std::int32_t>::max())));
+            matrix[row*4+3]=round_clamped_point_word(
+                65536.0*double(world[row]));
         return;
     }
     for (unsigned row=0;row<3;++row) {
         double v = double(view[row*4+3]);
         for (unsigned col=0;col<3;++col)
             v += double(view[row*4+col])*double(world[col]);
-        matrix[row*4+3]=static_cast<std::int32_t>(std::clamp(std::round(v),
-            double(std::numeric_limits<std::int32_t>::min()),
-            double(std::numeric_limits<std::int32_t>::max())));
+        matrix[row*4+3]=round_clamped_point_word(v);
     }
 }
 
