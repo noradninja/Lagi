@@ -15584,6 +15584,12 @@ static void updateLiveTownAzelLighting()
     static std::array<TransientCornerCacheEntry, 4096> transientCornerCache{};
     static std::uint64_t transientCornerCacheFrame = 0;
     const std::uint64_t cacheFrame = ++transientCornerCacheFrame;
+    // A light state is shared by its polygons. Its view/model rotation is
+    // frame-invariant even though each corner has a different point delta.
+    static std::vector<lagi::PreparedPointCornerBasis> primaryCornerBasis;
+    static std::vector<std::uint8_t> primaryCornerBasisReady;
+    primaryCornerBasis.resize(g_liveTownLightStates.size());
+    primaryCornerBasisReady.assign(g_liveTownLightStates.size(),0u);
 
     for (std::size_t p = 0;
          p < g_liveTownCpuMesh.polygonRecords.size(); ++p) {
@@ -15714,9 +15720,18 @@ static void updateLiveTownAzelLighting()
                     accepted=cached.accepted;
                     cornerLight=cached.result;
                 } else {
-                    accepted=lagi::evaluate_point_at_corner(world,light.additionalPointParams,
+                    if (!primaryCornerBasisReady[lightIndex]) {
+                        primaryCornerBasis[lightIndex]=lagi::prepare_point_corner_basis(
+                            light.modelBasis,light.additionalPointView);
+                        primaryCornerBasisReady[lightIndex]=1u;
+                    }
+                    std::int32_t primaryCornerMatrix[12];
+                    lagi::prepare_point_corner_matrix(world,light.additionalPointView,
+                        primaryCornerMatrix);
+                    accepted=lagi::evaluate_point_at_corner_prepared_basis(
+                        primaryCornerMatrix,light.additionalPointParams,
                         light.additionalLight.color,
-                        light.modelBasis,light.additionalPointView,cornerLight);
+                        primaryCornerBasis[lightIndex],cornerLight);
                     cached.frame=cacheFrame;
                     cached.lightIndex=lightIndex;
                     cached.sourceIndex=primarySlot;

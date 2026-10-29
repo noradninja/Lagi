@@ -7,6 +7,29 @@
 #include "lagi/lagi_point_light.h"
 
 namespace lagi {
+struct PreparedPointCornerBasis {
+    std::int64_t column[3][3]{};
+};
+
+inline PreparedPointCornerBasis prepare_point_corner_basis(
+    const std::int32_t basis[9], const std::int32_t* view)
+{
+    PreparedPointCornerBasis prepared{};
+    for (unsigned axis=0; axis<3; ++axis)
+        for (unsigned row=0; row<3; ++row) {
+            if (!view) {
+                prepared.column[axis][row]=basis[row*3+axis];
+            } else {
+                std::int64_t modelColumn=0;
+                for (unsigned col=0; col<3; ++col)
+                    modelColumn+=std::int64_t(view[row*4+col]) *
+                        basis[col*3+axis];
+                prepared.column[axis][row]=modelColumn>>16;
+            }
+        }
+    return prepared;
+}
+
 // Shared evaluation of a native Saturn point source against one authored
 // Gouraud corner. All sources contribute to the SAME RGB accumulator and
 // are quantized only once after all lights have been accumulated.
@@ -41,9 +64,10 @@ inline void prepare_point_corner_matrix(const float world[3],
     }
 }
 
-inline bool evaluate_point_at_corner_prepared(const std::int32_t matrix[12],
+inline bool evaluate_point_at_corner_prepared_impl(const std::int32_t matrix[12],
     const std::int32_t params[5], const std::uint16_t color[3],
     const std::int32_t basis[9], const std::int32_t* view,
+    const PreparedPointCornerBasis* preparedBasis,
     AdditionalModelLight& out)
 {
 
@@ -72,7 +96,9 @@ inline bool evaluate_point_at_corner_prepared(const std::int32_t matrix[12],
     for(unsigned axis=0;axis<3;++axis) {
         std::int64_t rotated=0;
         for(unsigned row=0;row<3;++row) {
-            if (!view) {
+            if (preparedBasis) {
+                rotated+=preparedBasis->column[axis][row]*result.vector[row];
+            } else if (!view) {
                 rotated+=std::int64_t(basis[row*3+axis])*result.vector[row];
             } else {
                 std::int64_t modelColumn=0;
@@ -86,6 +112,24 @@ inline bool evaluate_point_at_corner_prepared(const std::int32_t matrix[12],
         out.color[axis]=color[axis];
     }
     return true;
+}
+
+inline bool evaluate_point_at_corner_prepared_basis(const std::int32_t matrix[12],
+    const std::int32_t params[5], const std::uint16_t color[3],
+    const PreparedPointCornerBasis& basis,
+    AdditionalModelLight& out)
+{
+    return evaluate_point_at_corner_prepared_impl(matrix,params,color,
+        nullptr,nullptr,&basis,out);
+}
+
+inline bool evaluate_point_at_corner_prepared(const std::int32_t matrix[12],
+    const std::int32_t params[5], const std::uint16_t color[3],
+    const std::int32_t basis[9], const std::int32_t* view,
+    AdditionalModelLight& out)
+{
+    return evaluate_point_at_corner_prepared_impl(matrix,params,color,
+        basis,view,nullptr,out);
 }
 
 inline bool evaluate_point_at_corner(const float world[3],

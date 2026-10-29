@@ -40,7 +40,8 @@ if (!$header.Contains('std::array<AdditionalModelLight, lagi::kMaxTransientLaser
     !$renderer.Contains('transient<light.transientLaserLightCount') -or
     !$renderer.Contains('accepted=lagi::evaluate_point_at_corner_prepared(') -or
     !$renderer.Contains('lagi::prepare_point_corner_matrix(transientWorld,nullptr,') -or
-    !$renderer.Contains('evaluate_point_at_corner(world,light.additionalPointParams,') -or
+    !$renderer.Contains('evaluate_point_at_corner_prepared_basis(') -or
+    !$renderer.Contains('primaryCornerBasis[lightIndex]') -or
     !$renderer.Contains('cached.sourceIndex==primarySlot') -or
     !$renderer.Contains('cached.lightIndex==lightIndex') -or
     !$renderer.Contains('cached.frame==cacheFrame') -or

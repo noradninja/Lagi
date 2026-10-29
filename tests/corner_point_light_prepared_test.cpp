@@ -87,12 +87,22 @@ int main()
         lagi::prepare_point_corner_matrix(world,selectedView,matrix);
         const bool newHit=lagi::evaluate_point_at_corner_prepared(matrix,params,
             color,basis,selectedView,after);
+        const auto preparedBasis=lagi::prepare_point_corner_basis(basis,selectedView);
+        lagi::AdditionalModelLight reused{};
+        const bool reusedHit=lagi::evaluate_point_at_corner_prepared_basis(
+            matrix,params,color,preparedBasis,reused);
         if (oldHit!=newHit || (oldHit &&
             (before.active!=after.active ||
              !std::equal(std::begin(before.vector),std::end(before.vector),
                  std::begin(after.vector)) ||
              !std::equal(std::begin(before.color),std::end(before.color),
-                 std::begin(after.color))))) {
+                 std::begin(after.color)))) ||
+            newHit!=reusedHit || (newHit &&
+            (after.active!=reused.active ||
+             !std::equal(std::begin(after.vector),std::end(after.vector),
+                 std::begin(reused.vector)) ||
+             !std::equal(std::begin(after.color),std::end(after.color),
+                 std::begin(reused.color))))) {
             std::printf("FAIL: prepared point corner case %u\n",i);
             return 1;
         }
