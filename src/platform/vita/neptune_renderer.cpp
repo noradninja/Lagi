@@ -459,6 +459,11 @@ static std::vector<std::uint32_t> g_liveTownPolygonLightIndices;
 // A static CPU cache hit does not imply that an offscreen quad has had its
 // current positions written to the reused subdivision GPU buffer.
 static std::vector<std::uint8_t> g_sceneSubdivPositionValid;
+struct SubdivShadeState {
+    std::array<std::uint32_t,12> cornerBits{};
+    bool valid = false;
+};
+static std::vector<SubdivShadeState> g_sceneSubdivShadeStates;
 
 // Render-thread-only, bounded field diagnostics. Hash explicit fields, never
 // structure padding. Samples retain exact submission/local/global identity.
@@ -766,6 +771,8 @@ static unsigned int g_profileGouraudDrawUs = 0;
 static unsigned int g_profileGouraudVisibleQuads = 0;
 static unsigned int g_profileGouraudTotalQuads = 0;
 static unsigned int g_profileGouraudPrepUs = 0;
+static unsigned int g_profileSubdivShadeReusedQuads = 0;
+static unsigned int g_profileSubdivShadeWrittenQuads = 0;
 static unsigned int g_profileClearUs = 0;
 static unsigned int g_profileBeginSceneUs = 0;
 static unsigned int g_profileComposeUs = 0;
@@ -2786,6 +2793,7 @@ void shutdown()
     g_vdp1SubdivVertexCapacity = 0u;
     g_vdp1SubdivIndexCapacity = 0u;
     g_vdp1SubdivQuadIndices.clear();
+    g_sceneSubdivShadeStates.clear();
     freeVdp1Textures(true);
     freeMovieResources();
 
@@ -6112,6 +6120,7 @@ static void releaseResidentVdp1Model(bool preserveTextures = false)
     g_vdp1SubdivVertexCapacity = 0u;
     g_vdp1SubdivIndexCapacity = 0u;
     g_vdp1SubdivQuadIndices.clear();
+    g_sceneSubdivShadeStates.clear();
 
     p = g_vdp1SubdivWireVertices;
     freeMapped(g_vdp1SubdivWireVertexUid, p);
@@ -6363,6 +6372,7 @@ bool prepare_vdp1_model(
             // Prepare can reuse storage with a different polygon association.
             // Invalidate independently of the CPU static-prefix rebuild flag.
             g_sceneSubdivPositionValid.clear();
+            g_sceneSubdivShadeStates.clear();
             if (reuseGeometry) {
                 // Positions, UVs, and topology are rewritten below into the
                 // already-mapped capacity. No allocation is required.
@@ -8226,6 +8236,7 @@ static bool buildLiveTownFrame()
         staticSignature != g_liveTownStaticSignature;
     if (g_liveTownStaticRebuilt) {
         g_sceneSubdivPositionValid.clear();
+        g_sceneSubdivShadeStates.clear();
         g_liveTownCpuMesh.vertices.clear();
         g_liveTownCpuMesh.polygonRecords.clear();
         g_liveTownCpuMesh.gouraud555.clear();
@@ -11980,6 +11991,7 @@ bool submit_vdp1_model(
         if (sceneStaticPositions && g_sceneSubdivPositionValid.size() !=
                 g_liveTownStaticPolygonCount)
             g_sceneSubdivPositionValid.assign(g_liveTownStaticPolygonCount, 0u);
+        g_sceneSubdivShadeStates.resize(model.polygonCount);
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             if (!g_liveTownGouraudPrep[p].visible)
@@ -12009,16 +12021,27 @@ bool submit_vdp1_model(
                     g_liveTownStaticPolygonCount) ||
                 (sceneStaticPositions && !g_sceneSubdivPositionValid[p]);
 
+            // Compare authored corner bits in CPU memory. Identical inputs
+            // produce identical midpoint shade payloads; avoid reading the
+            // GPU-mapped stream merely to decide whether to write it again.
+            std::array<std::uint32_t,12> shadeBits{};
+            static_assert(sizeof(shade.corner)==sizeof(shadeBits));
+            std::memcpy(shadeBits.data(),shade.corner,sizeof(shade.corner));
+            auto& shadeState=g_sceneSubdivShadeStates[p];
+            const bool updateShade=!shadeState.valid ||
+                shadeState.cornerBits!=shadeBits;
             float gridR[9], gridG[9], gridB[9];
-            fillMidpointGrid3x3(
-                shade.corner[0][0], shade.corner[1][0],
-                shade.corner[2][0], shade.corner[3][0], gridR);
-            fillMidpointGrid3x3(
-                shade.corner[0][1], shade.corner[1][1],
-                shade.corner[2][1], shade.corner[3][1], gridG);
-            fillMidpointGrid3x3(
-                shade.corner[0][2], shade.corner[1][2],
-                shade.corner[2][2], shade.corner[3][2], gridB);
+            if (updateShade || g_fieldProbeActive) {
+                fillMidpointGrid3x3(
+                    shade.corner[0][0], shade.corner[1][0],
+                    shade.corner[2][0], shade.corner[3][0], gridR);
+                fillMidpointGrid3x3(
+                    shade.corner[0][1], shade.corner[1][1],
+                    shade.corner[2][1], shade.corner[3][1], gridG);
+                fillMidpointGrid3x3(
+                    shade.corner[0][2], shade.corner[1][2],
+                    shade.corner[2][2], shade.corner[3][2], gridB);
+            }
 
             float gridX[9], gridY[9], gridZ[9];
             if (updatePosition) {
@@ -12060,9 +12083,18 @@ bool submit_vdp1_model(
                     dst.y = gridY[i];
                     dst.z = gridZ[i];
                 }
-                dst.shadeR = gridR[i];
-                dst.shadeG = gridG[i];
-                dst.shadeB = gridB[i];
+                if (updateShade) {
+                    dst.shadeR = gridR[i];
+                    dst.shadeG = gridG[i];
+                    dst.shadeB = gridB[i];
+                }
+            }
+            if (updateShade) {
+                shadeState.cornerBits=shadeBits;
+                shadeState.valid=true;
+                ++g_profileSubdivShadeWrittenQuads;
+            } else {
+                ++g_profileSubdivShadeReusedQuads;
             }
             if (sceneStaticPositions && p < g_sceneSubdivPositionValid.size())
                 g_sceneSubdivPositionValid[p] = 1u;
@@ -13903,6 +13935,8 @@ static void renderBasicWingViewer()
     g_profileMenuTransferUs = 0u;
     g_profileBuildUs = 0u;
     g_profileLightingUs = 0u;
+    g_profileSubdivShadeReusedQuads = 0u;
+    g_profileSubdivShadeWrittenQuads = 0u;
     g_profileSubmitUs = 0u;
     g_profileGxmWaitUs = 0u;
     g_profileGxmEndSceneUs = 0u;
@@ -14394,7 +14428,8 @@ static void renderBasicWingViewer()
             "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1 tasks=%u uiOnly=%u slowSample=%u "
             "positionSync=%u positionSyncVerts=%u positionSyncLegacyVerts=%u submissions=%u "
             "spriteDraws=%u spriteWorldTagged=%u spriteShaded=%u spriteBboxPixels=%llu "
-            "spriteCacheHits=%u spriteCacheMisses=%u spritePaletteRefresh=%u spriteSlotSkips=%u gpuSerialized=%u\n",
+            "spriteCacheHits=%u spriteCacheMisses=%u spritePaletteRefresh=%u spriteSlotSkips=%u gpuSerialized=%u "
+            "subdivShadeReused=%u subdivShadeWritten=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -14448,7 +14483,8 @@ static void renderBasicWingViewer()
             g_profileSprites.draws,g_profileSprites.worldTagged,g_profileSprites.shaded,
             static_cast<unsigned long long>(g_profileSprites.bboxPixels),
             g_profileSprites.cacheHits,g_profileSprites.cacheMisses,
-            g_profileSprites.paletteRefreshes,g_profileSprites.slotSkips,g_gpuPassSample?1u:0u);
+            g_profileSprites.paletteRefreshes,g_profileSprites.slotSkips,g_gpuPassSample?1u:0u,
+            g_profileSubdivShadeReusedQuads,g_profileSubdivShadeWrittenQuads);
     }
 
     drawViewerModeOverlay(colorBuffer,gxmPitch,g_viewMode);
