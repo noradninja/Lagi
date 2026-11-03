@@ -14087,7 +14087,7 @@ static void renderBasicWingViewer()
     }
 
     const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
-    const bool spriteComposite=prepareSpriteComposite(nativeSceneMode &&
+    const bool spriteComposite=prepareSpriteComposite(nativeSceneMode && !g_sceneNbg0.behindWorld &&
         (roomAuthenticLitMode || roomAuthenticTexturedMode),nativeMenuFrame);
     // The compositor writes every final-target pixel, including transparent
     // VDP1 holes resolved to RBG0/BACK. Only its input surface needs clearing.
@@ -14116,6 +14116,7 @@ static void renderBasicWingViewer()
 
     unsigned int vdp1UiSpriteSlot = 0u;
     if (nativeSceneMode) {
+        if (g_sceneNbg0.behindWorld) drawSceneNbg0Gpu();
         if (!spriteComposite) drawSceneVdp2Background();
         // Azel's far-plane VDP1 sprites (for example the flight horizon
         // strip) sit above RBG0 but behind world geometry. Foreground VDP1
@@ -14260,7 +14261,7 @@ static void renderBasicWingViewer()
                 return;
             }
             g_spriteUiPriorityActive=priorityUi;
-            drawSceneNbg0Gpu();
+            if (!g_sceneNbg0.behindWorld) drawSceneNbg0Gpu();
             drawAzelVdp2Nbg1Gpu();
             drawAzelVdp2CinematicBarsGpu();
             drawAzelVdp2TextLayerGpu();

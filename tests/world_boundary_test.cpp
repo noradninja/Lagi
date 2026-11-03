@@ -72,7 +72,7 @@ u32 convertColorToU32ForFade(u32 color){return color;}
 int fadeCalls=0,fadeFrames=0;u32 fadeTarget=0;
 void fadePalette(Fade* fade,u32,u32 target,int frames){++fadeCalls;fadeFrames=frames;fadeTarget=target;fade->m20_stopped=0;}
 void setNextGameStatus(int status){assert(!gGameStatus.m8_nextGameStatus);gGameStatus.m8_nextGameStatus=status;}
-struct Vdp2Regs {u32 mE_RAMCTL=0,m10_CYCA0=0,m38_PNCR=0,mBC_RPTAU=0,mBE_RPTAL=0,mC0_WPSX0=0,mC2_WPSY0=0,mC4_WPEX0=0,mC6_WPEY0=0;};
+struct Vdp2Regs {u32 mE_RAMCTL=0,m10_CYCA0=0,m38_PNCR=0,mBC_RPTAU=0,mBE_RPTAL=0,mC0_WPSX0=0,mC2_WPSY0=0,mC4_WPEX0=0,mC6_WPEY0=0,mA8_LCTA=0,mAC_BKTA=0,mF0_PRISA=0,mF2_PRISB=0,mF4_PRISC=0,mF6_PRISD=0,mF8_PRINA=0,mFA_PRINB=0,mFC_PRIR=0;};
 struct {Vdp2Regs* m4_pendingVdp2Regs=nullptr;bool m_isDirty=false;int m0_doubleBufferIndex=0;} vdp2Controls;
 enum LayerCommand {m0_END,m2_CHCN,m5_CHSZ,m6_PNB,m7_CNSM,m11_SCN,m27_RPMD,m31_RxKTE,m34_W0E,m37_W0A,m44_CCEN,m45_COEN};
 struct sLayerConfig {LayerCommand command;u32 value;};

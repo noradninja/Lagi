@@ -4,6 +4,7 @@ namespace lagi {
 struct SceneNbg0State {
     bool enabled=false;
     bool additive=false;
+    bool behindWorld=false;
     // Native normal-background packet; no camera/effect-specific positions.
     float gpu[8][4]{};
 };

@@ -134,6 +134,21 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         // is also available to beginRotationPass.
         setupVdp2Table(6, coefficientA0, coefficientA1, getVdp2Vram(0x20000), 0x80);
         initRotationCoefficientTables(5, getVdp2Vram(0x2A000));
+        // WORLD 06056708..6A supplies black line/back colors and its own
+        // VDP1 and VDP2 priority bands. Do not inherit the outgoing scene.
+        const u16 black = 0;
+        std::memcpy(getVdp2Vram(0x2A400), &black, sizeof(black));
+        std::memcpy(getVdp2Vram(0x2A600), &black, sizeof(black));
+        regs->mA8_LCTA = (regs->mA8_LCTA & 0xFFF80000) | 0x15200;
+        regs->mAC_BKTA = (regs->mAC_BKTA & 0xFFF80000) | 0x15300;
+        regs->mF0_PRISA = 0x0404;
+        regs->mF2_PRISB = 0x0407;
+        regs->mF4_PRISC = 0x0404;
+        regs->mF6_PRISD = 0x0602;
+        regs->mF8_PRINA = 0x0602;
+        regs->mFA_PRINB = 0x0700;
+        regs->mFC_PRIR = 5;
+        vdp2Controls.m_isDirty = true;
         return true;
     }
     const char* DestinationName() const {

@@ -265,7 +265,13 @@ void sync_presentation_state()
             p[7][2]=regs->mF8_PRINA&7;
             // This overlay pass lies above primary world sprites and below
             // NBG1. Other priority bands need their own compositor stage.
-            nbg.enabled=nbg.enabled && lagi::sceneNbg0OverlayBand(regs->m20_BGON,regs->mF8_PRINA,regs->mF0_PRISA);
+            // WORLD's authored NBG0 priority is below both the map
+            // rotation layer and its primary VDP1 geometry.
+            nbg.behindWorld = gGameStatus.m0_gameMode == 6 && !nbg.additive &&
+                p[7][2] < (regs->mF0_PRISA & 7) &&
+                (!(regs->m20_BGON & 0x10) || p[7][2] < (regs->mFC_PRIR & 7));
+            nbg.enabled = nbg.enabled && (nbg.behindWorld ||
+                lagi::sceneNbg0OverlayBand(regs->m20_BGON,regs->mF8_PRINA,regs->mF0_PRISA));
             lagi::platform::renderer::presentation_set_scene_nbg0(nbg);
             static unsigned nbgReports=0;
             static unsigned nbgPrevious=~0u;
