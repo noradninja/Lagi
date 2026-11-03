@@ -75,7 +75,15 @@ to A3, alter story availability, or label an unsupported destination as playable
 
 WORLD record +4 is now named `preloadIndex`: the original camera passes a
 positive signed value to MAIN `06011E0A` for type 0 or `06030100` for types
-1/2/3. Those preparation calls remain under recovery. They must not be replaced
+1/2/3. Original MAIN instructions resolve both file-service calls to
+`060100F2` (not the neighboring `0601016C` wrapper). Field preparation uses
+20-byte records at COMMON `208C58`, optionally preparing the font at +8 with
+destination zero, then the PRG at +4 into Saturn `06054000`, relocation zero.
+Town preparation first reads the signed overlay index from the two-byte pair
+at COMMON `2166E4`, then resolves the PRG from 16-byte records at `2165D8`,
+also targeting `06054000`. The route fixture checks these instructions and
+PC-relative literals. The file-service semantics and safe retained WORLD
+resource lifetime remain under recovery. These preparation calls must not be replaced
 by `loadTownPrg` or forced field/subfield state changes merely because an older
 upstream comment called them overlay loaders.
 

@@ -45,5 +45,33 @@ try {
  $program=Read-CommonString (Read-Native ($field+4) 4 0x200000 182)
  $font=Read-CommonString (Read-Native ($field+8) 4 0x200000 182)
  if($program-ne'FLD_A5.PRG'-or$font-ne'FLD_A5.FNT'){throw 'Garil native field assets differ'}
+ # Resolve original PC-relative loads, rather than assuming the neighboring
+ # synchronous file wrapper is the one used by WORLD preparation.
+ function Assert-MainLiteral([long]$ea,[long]$expected){
+  $op=Read-Native $ea 2 0x06006000 58
+  $literal=(($ea+4)-band -4)+4*($op-band255)
+  if(($op-shr12)-ne0xD-or(Read-Native $literal 4 0x06006000 58)-ne$expected){
+   throw ('WORLD preparation literal differs at {0:X8}'-f$ea)
+  }
+ }
+ Assert-MainLiteral 0x06011E0C 0x208C58
+ Assert-MainLiteral 0x06011E24 0x060100F2
+ Assert-MainLiteral 0x06011E34 0x06054000
+ Assert-MainLiteral 0x06011E3A 0x060100F2
+ Assert-MainLiteral 0x06030100 0x2166E4
+ Assert-MainLiteral 0x06030104 0x06054000
+ Assert-MainLiteral 0x0603010C 0x2165D8
+ Assert-MainLiteral 0x06030114 0x060100F2
+ foreach($pair in @(
+  @(0x06011E14,0x4E08),@(0x06011E16,0x3E3C),@(0x06011E18,0x4E08), # field stride20
+  @(0x06011E1C,0x50E2),@(0x06011E22,0xE600),@(0x06011E26,0x6563),
+  @(0x06011E2A,0x54E2), # font filename +8, destination/relocation0
+  @(0x06011E2C,0x50E1),@(0x06011E32,0xE600),@(0x06011E36,0x54E1), # PRG +4
+  @(0x06030108,0x4400),@(0x0603010A,0x034C), # town-pair stride2, signed index
+  @(0x06030112,0x4408),@(0x06030116,0x4408),@(0x06030118,0x044E), # town stride16
+  @(0x06030102,0xE600),@(0x0603011A,0x432B))) {
+  if((Read-Native $pair[0] 2 0x06006000 58)-ne$pair[1]){throw 'WORLD preparation addressing differs'}
+ }
  Write-Output 'PASS original Garil entry6 gate006C -> status56 -> mode3/field3 -> FLD_A5.PRG/FNT; no story bits changed; not a live travel test'
+ Write-Output 'PASS native field/town preparation tables and MAIN060100F2 call sites; file-service semantics remain under recovery'
 } finally {$disc.Dispose()}
