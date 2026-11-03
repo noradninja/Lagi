@@ -1,4 +1,46 @@
-# Native WORLD handoff boundary (not a playable world map)
+# Native WORLD map bring-up
+
+## Resume here
+
+The experimental WORLD scene is on `feature/light-state-index`. Both the Map
+menu and the post-E014 cutscene request status `0x4F`, which enters mode 6.
+The branch includes the original Disc 1 destination tables and assets,
+marker, trails, camera, input, background passes and travel dispatch. The
+experimental build also links `TWN_CAMP.PRG` for status `0x52`. WORLD now
+initializes its own VDP2 state, clipping window, and projection. Disc 1
+entry code at `06054016..54` sets near and far clip to `0x800` and
+`0x400000` in 16.16 units.
+
+Build in a separate directory with VitaSDK and `psp2cgc` available:
+
+```sh
+git submodule update --init
+cmake -S . -B build-world -G Ninja -DCMAKE_BUILD_TYPE=Release -DLAGI_FULLRES=ON -DLAGI_BATTLE_NATIVE_BUILD=ON -DLAGI_BATTLE_EXECUTE_A3=ON -DLAGI_WORLD_MAP_BRINGUP=ON
+cmake --build build-world --parallel 8
+```
+
+On the work PC the SDK paths are `C:/Dev/VitaSDK` and
+`C:/Dev/sdk/host_tools/bin/psp2cgc.exe`. Set `VITASDK` and `PSP2CGC` for
+the home machine before configuring. The mode 6 option defaults off.
+Use the original Disc 1 CUE/BIN on Vita. The work PC input was
+`Downloads/AZEL_1.cue` and `Downloads/AZEL_1.bin`. No disc data is checked in.
+
+The Vita build compiles and links. Host checks passed for startup ownership,
+display, menu dispatch, tile decoding, and mocked travel handoff. Hardware
+verification remains pending. Test entry from the menu and after E014
+separately. Verify background, marker, directional selection and the destination
+label, then confirm an unlocked destination and verify control in the next
+scene. Save `ux0:data/lagi/lagi.log` after each run. Look for
+`[WorldMapStartup]` with `displaySeeded=1 sceneEnabled=1`, then
+`[WorldMapTravel]` with the selected entry and requested status.
+The locally shared VPK includes a separate water shader precision experiment.
+A fresh branch build uses the branch's shader flags.
+
+The destination label currently uses a fixed text row. The middle arrival
+phase uses an interim approach toward the authored landing point. Verify
+background composition and native arrival timing on Vita before enabling
+WORLD by default. The sections below preserve earlier recovery checkpoints
+and their limitations at the time they were written.
 
 ## 2026-10-20 display-controller checkpoint
 

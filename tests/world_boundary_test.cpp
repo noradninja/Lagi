@@ -64,7 +64,13 @@ bool draw_map_trail(const MapDisplay&,s_workAreaCopy*){return true;}
 namespace lagi { bool worldEnabled=false;bool native_scene_mode(int mode){return mode==6&&worldEnabled;} }
 namespace lagi::azel_bridge { void capture_native_scene_view_matrix(){} void begin_view_relative_submission_scope(){} void end_view_relative_submission_scope(){} }
 struct Pad {unsigned mC_newButtonDown2=0,m8_newButtonDown=0;};
-struct {struct {struct {Pad m0_current;} m0_inputDevices[1];} m4514;} graphicEngineStatus;
+struct Projection {
+ int m10_nearClipDistance=0,m30_oneOverNearClip=0,m14_farClipDistance=0;
+ int m38_oneOverFarClip=0,m34_oneOverFarClip256=0;
+};
+struct {struct {struct {Pad m0_current;} m0_inputDevices[1];} m4514;Projection m405C;} graphicEngineStatus;
+void reset3dEngine(){}
+int FP_Div(int a,int b){return int((std::int64_t(a)*65536)/b);}
 void playSystemSoundEffect(int){}
 struct Fade {u32 m0_color=0;int m20_stopped=0;};
 struct {Fade m0_fade0;int m_48=0;} g_fadeControls;

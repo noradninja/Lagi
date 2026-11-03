@@ -70,6 +70,15 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                 if (task->displayReady && lagi::native_scene_mode(6)) {
                     task->displayReady = LoadEnvironmentGraphics(task->worldFile);
                     if (task->displayReady) {
+                        // WORLD entry 06054016..54 initializes its own
+                        // projection and clipping distances.
+                        reset3dEngine();
+                        auto& projection = graphicEngineStatus.m405C;
+                        projection.m10_nearClipDistance = 0x800;
+                        projection.m30_oneOverNearClip = FP_Div(0x10000, projection.m10_nearClipDistance);
+                        projection.m14_farClipDistance = 0x400000;
+                        projection.m38_oneOverFarClip = FP_Div(0x8000, projection.m14_farClipDistance);
+                        projection.m34_oneOverFarClip256 = projection.m38_oneOverFarClip << 8;
                         task->display.marker.flags |= 0x20;
                         auto& fade = g_fadeControls.m0_fade0;
                         fadePalette(&fade, convertColorToU32ForFade(fade.m0_color),
