@@ -38,7 +38,7 @@ namespace row_shader {
 void word(unsigned a,unsigned v){memory[a]=v>>8;memory[a+1]=v;}
 void longword(unsigned a,unsigned v){word(a,v>>16);word(a+2,v);}
 int main(){
-    for(unsigned i=0;i<memory.size();++i)memory[i]=unsigned char(i*73u+11u);
+    for(unsigned i=0;i<memory.size();++i)memory[i]=static_cast<unsigned char>(i*73u+11u);
     for(unsigned i=0;i<memory.size();++i)
         assert(nbgReadByte(memory.data(),float(i))==float(memory[i]));
     memory.fill(0);
