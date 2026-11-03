@@ -67,7 +67,7 @@ inline MapDestination read_map_destination(sSaturnPtr entry)
 bool initialize_map_arrival(MapDisplayInput&, s32 selected);
 bool retarget_map_arrival(MapDisplayInput&, s32 selected, fixedPoint& yaw,
                           s32& distance, s32& targetHeight);
-void update_map_arrival_launch(MapDisplayInput&, fixedPoint yaw, s32 targetHeight,
+void update_map_arrival_motion(MapDisplayInput&, fixedPoint yaw,s32 distance,s32 targetHeight,
                                s32& forwardStep, s32& verticalStep);
 // Recover native Update without invoking the still-unported WORLD task graph.
 // False leaves state unchanged when a selected native table entry is invalid.

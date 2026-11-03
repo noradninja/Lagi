@@ -46,6 +46,19 @@ try {
    throw 'WORLD camera arrival wait differs'
   }
  }
+ # Arrival uses horizontal distance and target-minus-position heading.
+ # Its rotated displacement is added, and movement still runs after +3D is set.
+ foreach($word in @(
+  @(0x06055464,0x53F1),@(0x06055466,0x1F34),
+  @(0x0605548A,0x53F5),@(0x0605548C,0x55F2),@(0x0605548E,0x3538),
+  @(0x06055490,0x53F3),@(0x06055494,0x64F2),@(0x06055496,0x3438),
+  @(0x060554E6,0x312C),@(0x060554E8,0x2312),
+  @(0x060554F0,0x312C),@(0x060554F2,0x1312),
+  @(0x06055536,0xE001),@(0x0605553E,0x2100),
+  @(0x06055570,0x56EA),@(0x06055574,0x55E9),@(0x06055576,0xBF97)
+ )){
+  if((Read-World $word[0] 2)-ne $word[1]){throw 'WORLD arrival distance/movement instruction differs'}
+ }
  'PASS original WORLD display, arrival and environment callback addresses'
 } finally {$disc.Dispose()}
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-world-display-'+[guid]::NewGuid())

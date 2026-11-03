@@ -52,7 +52,8 @@ inline void map_spring_axis(std::int32_t& position,std::int32_t target,
 
 // WORLD 06055504..5556E, the arrival acceleration step.
 // This advances the child step at +0x28 and sets child flag +0x3D when distance is below 0x6660.
-// The launch branch at distance >= 0xCCC0 has its own position and speed updates.
+// All distance bands then run the same horizontal and vertical movement,
+// including the frame that first sets the completion flag.
 inline void update_map_arrival_step(std::uint32_t target, std::int32_t& step,
                                     bool& arrivalBusy)
 {

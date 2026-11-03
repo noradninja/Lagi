@@ -122,14 +122,18 @@ bool retarget_map_arrival(MapDisplayInput& input, s32 selected, fixedPoint& yaw,
 
     const auto target = readSaturnVec3(input.targetTable + selected * 0x24 + 8);
     const auto& position = input.arrivalPosition;
-    targetHeight = target[1].asS32() + (input.arrivalBusy ? 0 : 0xA000);
-    distance = vecDistance(position, target);
-    const auto dx = u32(position[0].asS32()) - u32(target[0].asS32());
-    const auto dz = u32(position[2].asS32()) - u32(target[2].asS32());
+    targetHeight = s32(u32(target[1].asS32()) + (input.arrivalBusy ? 0u : 0xA000u));
+    // WORLD 06055464..66 overwrites the local source Y with target Y
+    // before vecDistance: the arrival thresholds are horizontal distances.
+    auto horizontalPosition=position;
+    horizontalPosition[1]=target[1];
+    distance = vecDistance(horizontalPosition, target);
+    const auto dx = u32(target[0].asS32()) - u32(position[0].asS32());
+    const auto dz = u32(target[2].asS32()) - u32(position[2].asS32());
     yaw = atan2_FP(s32(dx << 2), s32(dz << 2));
     return true;
 }
-// WORLD 060554A8 rotates (0, 0, step), then subtracts its X and Z.
+// WORLD 060554A8 rotates (0, 0, step), then adds its X and Z.
 static void move_map_arrival_horizontal(sVec3_FP& position, fixedPoint yaw, s32 step)
 {
     sMatrix4x3 matrix;
@@ -140,15 +144,15 @@ static void move_map_arrival_horizontal(sVec3_FP& position, fixedPoint yaw, s32 
     direction[2] = step;
     sVec3_FP displacement;
     transformAndAddVec(direction, displacement, matrix);
-    position[0] -= displacement[0];
-    position[2] -= displacement[2];
+    position[0] = s32(u32(position[0].asS32())+u32(displacement[0].asS32()));
+    position[2] = s32(u32(position[2].asS32())+u32(displacement[2].asS32()));
 }
-void update_map_arrival_launch(MapDisplayInput& input, fixedPoint yaw,
+void update_map_arrival_motion(MapDisplayInput& input, fixedPoint yaw,s32 distance,
                                s32 targetHeight, s32& forwardStep, s32& verticalStep)
 {
     if (!input.arrivalReady)
         return;
-    update_map_arrival_step(0xCCC0, forwardStep, input.arrivalBusy);
+    update_map_arrival_step(u32(distance), forwardStep, input.arrivalBusy);
     move_map_arrival_horizontal(input.arrivalPosition, yaw, forwardStep);
     s32 height = input.arrivalPosition[1].asS32();
     update_map_arrival_height(targetHeight, height, verticalStep);

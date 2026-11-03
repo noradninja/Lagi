@@ -35,6 +35,32 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### 2026-11-03 arrival-motion checkpoint
+
+The interim middle-distance `map_approach_profile` is removed. Original WORLD
+`06055464..66` overwrites the local source Y with target Y before distance
+calculation, so its `CCC0`/`6660` thresholds measure horizontal X/Z distance.
+Heading uses target-minus-position. `060554A8` adds the rotated displacement;
+the old port inverted both heading and integration direction. The recovered
+motion service runs the same horizontal/vertical update in every distance band,
+including the frame that sets child +3D. Once complete, target height changes
+from the authored Y + `A000` to the authored Y, allowing descent during fade.
+
+Boundary Update now evaluates camera/display against the previous child state,
+then advances arrival after display and environment. Completion is consumed by
+the camera/fade path on the following update. Arrival continues during the fade
+until dispatch instead of stopping when its completion flag is consumed.
+
+Original-disc distance/heading/addition instructions are checked alongside the
+existing callback evidence. Production display tests exercise horizontal-only
+distance, heading arguments, middle/near motion and the completion threshold.
+The boundary fixture checks display-before-arrival ordering, next-update fade
+and continued child motion during fade. Native matrix/atan/sine services remain
+mocked in the host fixtures; both actual Vita sources pass syntax checking.
+No package or hardware validation is claimed. Keep fixed-row name placement,
+native child visual/animation behavior, navigation/cancel and destination
+preparation/dispatch under audit before calling WORLD complete.
+
 ### 2026-11-03 live environment checkpoint
 
 The experimental WORLD boundary now owns the native initial environment state:
@@ -64,7 +90,8 @@ writes and camera isolation. Vita source syntax passes. These are not rendered
 pixel or full-package verification. Rebuild the experimental WORLD package before
 hardware testing; no VPK was produced by this checkpoint. Check map entry, moving
 background/marker placement through selection, close-up, and re-entry. Keep the
-matching log. Arrival's interim middle phase and fixed-row name remain open.
+matching log. The later arrival-motion checkpoint above supersedes the interim
+middle phase; fixed-row name placement remains open.
 
 The older helper-only notes below describe earlier checkpoints; their live-hookup
 limitations are superseded only by the environment integration described here.

@@ -44,10 +44,14 @@ struct MapDisplay {struct Marker {unsigned flags=0;} marker;bool seeded=false;in
 bool initialize_map_model(MapDisplay::Marker&,void* owner,u32 light){assert(owner&&light==0x06058774);return true;}
 bool initialize_map_arrival(MapDisplayInput&,int){return true;}
 bool retarget_map_arrival(MapDisplayInput&,int,fixedPoint&,int& distance,int&){distance=0x6000;return true;}
-void update_map_arrival_launch(MapDisplayInput&,fixedPoint,int,int&,int&){}
-void update_map_arrival_step(u32,int&,bool& busy){busy=true;}
+int arrivalMotionCalls=0;
+bool lastDisplayBusy=false;
+void update_map_arrival_motion(MapDisplayInput& input,fixedPoint,int,int,int&,int&){
+ ++arrivalMotionCalls;input.arrivalBusy=true;
+}
 bool update_map_display(MapDisplay& display,const MapDisplayInput& input){
  assert(input.program==0x06054000);
+ lastDisplayBusy=input.arrivalBusy;
  return display.seeded=true;
 }
 bool initialize_map_destinations(MapDisplayInput& input,u32 program,bool fleet,unsigned route){
@@ -184,6 +188,7 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
  }
  auto& pad=graphicEngineStatus.m4514.m0_inputDevices[0].m0_current;
  for (int type : {0,1,2,3}) {
+  fadeCalls=0;lagi::worldmap::arrivalMotionCalls=0;
   LagiWorldBoundary task;
   task.displayReady=true;
   task.display.state=1;
@@ -212,6 +217,11 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   }
   LagiWorldBoundary::Update(&task);
   assert(task.travelStatus==0x52 && task.display.state==(type<2?3:2));
+  assert(!fadeCalls);
+  if(type<2){
+   assert(task.destinations.arrivalBusy && !lagi::worldmap::lastDisplayBusy);
+   assert(lagi::worldmap::arrivalMotionCalls==1);
+  }else assert(!lagi::worldmap::arrivalMotionCalls);
   pad.m8_newButtonDown=0;
   fadeCalls=0;
   const int delay=type<2?1:15;
@@ -219,6 +229,10 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   assert(!fadeCalls);
   LagiWorldBoundary::Update(&task);
   assert(fadeCalls==1 && fadeTarget==0x8000 && fadeFrames==(type<2?60:30));
+  if(type<2){
+   assert(lagi::worldmap::lastDisplayBusy);
+   assert(lagi::worldmap::arrivalMotionCalls==2);
+  }
   LagiWorldBoundary::Update(&task);
   assert(!task.task.finished && !gGameStatus.m8_nextGameStatus);
   g_fadeControls.m0_fade0.m20_stopped=1;

@@ -40,7 +40,8 @@ s32 sqrt_F(s32 v){return s32(std::sqrt(double(std::max(v,0))*65536.));}
 struct {u8 bitField[64]{};} mainGameState;
 constexpr u8 bitMasks[]={128,64,32,16,8,4,2,1};
 s32 FP_Div(s32 n,s32 d){return s32((std::int64_t(n)*65536)/d);}
-s32 atan2_FP(s32,s32){return 0;} // camera-angle arithmetic is a native service
+s32 atanX=0,atanZ=0;
+s32 atan2_FP(s32 x,s32 z){atanX=x;atanZ=z;return 0;} // native service mocked
 s32 vecDistance(const sVec3_FP& a,const sVec3_FP& b){double d=0;for(int i=0;i<3;++i){double n=a[i].v-b[i].v;d+=n*n;}return s32(std::sqrt(d));}
 struct sMatrix4x3 {sVec3_FP translation;};
 void initMatrixToIdentity(sMatrix4x3* m){m->translation.zeroize();}
@@ -75,10 +76,29 @@ int main(){
  assert(in.arrivalPosition[0]==50000&&in.arrivalPosition[1]==20000+0xA000&&in.arrivalPosition[2]==30000);
  assert(!initialize_map_arrival(in,2));
  s32 forwardStep=0,verticalStep=0;
- update_map_arrival_launch(in,0,20000,forwardStep,verticalStep);
+ fixedPoint arrivalYaw;s32 arrivalDistance=0,arrivalHeight=0;
+ assert(retarget_map_arrival(in,1,arrivalYaw,arrivalDistance,arrivalHeight));
+ assert(arrivalDistance==0 && arrivalHeight==20000+0xA000);
+ in.arrivalPosition[0]=51000;in.arrivalPosition[2]=28000;
+ assert(retarget_map_arrival(in,1,arrivalYaw,arrivalDistance,arrivalHeight));
+ assert(atanX==-4000 && atanZ==8000 && arrivalDistance==2236);
+ in.arrivalPosition.v={50000,20000+0xA000,30000};
+ update_map_arrival_motion(in,0,0xCCC0,20000,forwardStep,verticalStep);
  assert(forwardStep==0x28&&verticalStep==-0x3D);
  assert(in.arrivalPosition[0]==50000&&in.arrivalPosition[1]==20000+0xA000-0x3D);
- assert(in.arrivalPosition[2]==30000-0x28);
+ assert(in.arrivalPosition[2]==30000+0x28);
+ in.arrivalPosition.v={0,0,0};in.arrivalBusy=false;
+ forwardStep=0x1000;verticalStep=0;
+ update_map_arrival_motion(in,0,0x8000,16,forwardStep,verticalStep);
+ assert(forwardStep==0x800 && in.arrivalPosition[2]==0x800);
+ assert(in.arrivalPosition[1]==1 && !in.arrivalBusy);
+ forwardStep=0;verticalStep=0;
+ update_map_arrival_motion(in,0,0x665F,17,forwardStep,verticalStep);
+ assert(in.arrivalBusy && forwardStep==0x28 && in.arrivalPosition[2]==0x828);
+ assert(in.arrivalPosition[1]==2);
+ in.arrivalBusy=false;forwardStep=0;
+ update_map_arrival_motion(in,0,0x6660,18,forwardStep,verticalStep);
+ assert(!in.arrivalBusy);
  in.arrivalPosition.v={10000,20000,30000};
  assert(find_map_destination(in,0,2)==1);
  bytes[0x6025]=1;
