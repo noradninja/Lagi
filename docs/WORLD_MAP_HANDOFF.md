@@ -35,8 +35,9 @@ label, then confirm an unlocked destination and verify control in the next
 scene. Save `ux0:data/lagi/lagi.log` after each run. Look for
 `[WorldMapStartup]` with `displaySeeded=1 sceneEnabled=1`, then
 `[WorldMapTravel]` with the selected entry and requested status.
-The locally shared VPK includes a separate water shader precision experiment.
-A fresh branch build uses the branch's shader flags.
+Use `Lagi-WORLD-branch-shaders.vpk` for the WORLD test. It uses the branch
+shader flags and excludes the local water shader precision experiment.
+SHA-256: `E8596B82026486E727EA2ED1F7140F1F099E823E0962E0C1AB7C49DF3682DE2D`. The earlier Camp VPK includes that experiment.
 
 The destination label currently uses a fixed text row. The middle arrival
 phase uses an interim approach toward the authored landing point. Verify
