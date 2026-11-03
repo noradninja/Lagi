@@ -105,3 +105,60 @@ Direct-disc tests verify the mode/entry/filename chain; the production boundary
 fixture checks child ownership, data lifetime, missing-file handling and unchanged
 status. Both Vita configurations compile. Neither check proves on-device map
 rendering or even acceptance of this runtime handoff.
+
+## WORLD-local arrival child verification
+
+Disc 1 WORLD.PRG at LBA 244259 matches the recovered root call and
+display easing table. The child factory at 0605571A passes size 0x40 and
+the callback table at 060587FC to 06009BB6. The table contains Init
+0605532A, Update 0605568C, Draw 060556DA and a null Delete. The Init
+stores 1 at child +3C before returning. This is a separate WORLD task
+with its own callbacks, so the display controller must receive the live
+child state rather than a title save-screen handle or a static map target.
+
+The menu's world confirmation and the post-E014 sequence both request
+status 0x4F. The current menu checks the mode 6 dispatch slot, consistent
+with Disc 1 COMMON.DAT. A non-null slot alone is insufficient to advertise
+a playable map while the mode 6 presentation gate is closed.
+
+WORLD.PRG names its environment resources separately from the model
+bundle: FNS_WLD.SCB/PNB at 06059410/0605941C and FRS_WLD.SCB/PNB at
+06059428/06059434. The camera text path names WORLDMAP.FNT at 06059C04.
+
+The environment setup at 0605668E..AC loads FNS_WLD.SCB at VRAM
+0x10000, FNS_WLD.PNB at 0x1E000, FRS_WLD.SCB at 0x40000, and
+FRS_WLD.PNB at 0x60000. It passes configuration tables 06059390,
+0605933C and 060593C4 to MAIN services 060326DC, 06033C20 and
+0603420C respectively. The plane table at 060593D0 holds sixteen
+absolute VRAM addresses, all in 25E60000..25E63800. The file copies
+alone do not establish the rotation parameters or select the layers.
+
+WORLD Draw 06056DDE copies the display's camera position and rotation
+into its environment work area before querying VDP1 clipping, local
+coordinates and projection at MAIN 06030DD8, 06030DEE and 06030CF6.
+It opens pass A through 06029028, calls WORLD 06056FA8 to build the
+map-specific transform, then calls 0603254A with 6 and 0602905E to
+commit. The following call at 06056E52 enters WORLD 06056D7C. The
+battle rotation implementation shares the begin/commit services, but
+its map transform cannot be substituted for 06056FA8.
+
+Camera state 8 at 0605839A reads root +0x14, then tests the arrival
+child's byte at +0x3D. Zero returns without starting the fade. The
+nonzero path reads the selected destination's signed status at +2.
+The display also consumes +0x3D for marker shrink, so the arrival
+child must produce this flag and its live position together.
+
+## Experimental Vita verification
+
+The local device profile enables LAGI_WORLD_MAP_BRINGUP together with
+LAGI_BATTLE_EXECUTE_A3. Test menu entry and the E014 handoff separately.
+For each, record whether the map background and marker appear, whether
+directional input changes the destination label, and which scene opens
+after confirming an unlocked destination. Preserve ux0:data/lagi/lagi.log
+for each run. WorldMapStartup reports whether resources initialized and
+whether the scene path is enabled. WorldMapTravel records the selected
+entry and status when the request reaches the module manager.
+
+The current label uses a fixed text row. The arrival launch refreshes
+distance after movement as an interim step, and the full native arrival
+phase sequence and background composition still need device verification.

@@ -16,6 +16,7 @@ bool contextAvailable=true,townOk=true;
 int contextCalls=0,townCalls=0;
 bool lagiAzelResolveCurrentMapContext(LagiAzelMapContext& context){++contextCalls;context={};if(contextAvailable){context.field=2;context.descriptor.nativeAddress=0x20E900;}return contextAvailable;}
 bool lagiAzelResolveTownMapAvailability(LagiAzelMapAvailability& a){++townCalls;a={{0,1},1,false};return townOk;}
+namespace lagi { bool worldSceneEnabled=false; bool native_scene_mode(int mode){return mode==6&&worldSceneEnabled;} }
 #include "source.inc"
 s_workArea nativeTask,placeholder;
 struct LagiFieldMapMenuTask{};
@@ -77,6 +78,8 @@ int main(){
  overlayDispatchTable[5]=worldBackend;
  assert(!lagiAzelMapWorldDispatchAvailable() && createMapTask(&parent)==&placeholder);
  overlayDispatchTable[5]=nullptr;overlayDispatchTable[6]=worldBackend;
+ assert(!lagiAzelMapWorldDispatchAvailable() && createMapTask(&parent)==&placeholder);
+ lagi::worldSceneEnabled=true;
  assert(lagiAzelMapWorldDispatchAvailable() && createMapTask(&parent)==&nativeTask && captured.availability.slots[1]==1);
  townOk=false;assert(createMapTask(&parent)==&placeholder);townOk=true;
  for(int scene:{1,3}){

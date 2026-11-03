@@ -49,4 +49,39 @@ inline void map_spring_axis(std::int32_t& position,std::int32_t target,
     position=static_cast<std::int32_t>(static_cast<std::uint32_t>(position)+
                                      static_cast<std::uint32_t>(velocity));
 }
+
+// WORLD 06055504..5556E, the arrival acceleration step.
+// This advances the child step at +0x28 and sets child flag +0x3D for targets other than 0x6660.
+// The 0xCCC0 launch branch has its own position and speed updates.
+inline void update_map_arrival_step(std::uint32_t target, std::int32_t& step,
+                                    bool& arrivalBusy)
+{
+    if (target == 0xCCC0) {
+        step = step >= 0xCCC - 0x28 ? 0xCCC : step + 0x28;
+        return;
+    }
+    const auto limit = static_cast<std::int32_t>(target >> 4);
+    step = step >= limit ? limit : step + 0x28;
+    if (target != 0x6660)
+        arrivalBusy = true;
+}
+
+// WORLD 0605557A..55C8: steer vertical velocity toward the target,
+// then integrate it into the live arrival position at child +0x0C.
+inline void update_map_arrival_height(std::int32_t targetHeight,
+                                      std::int32_t& height,
+                                      std::int32_t& verticalStep)
+{
+    const auto difference = static_cast<std::int32_t>(
+        static_cast<std::uint32_t>(targetHeight) - static_cast<std::uint32_t>(height));
+    if (difference == 0x4CC0 || difference == -0x4CC0)
+        verticalStep = difference / 16;
+    else if (difference >= 0)
+        verticalStep = verticalStep >= 0x4CC - 0x3D ? 0x4CC : verticalStep + 0x3D;
+    else
+        verticalStep = verticalStep <= -0x4CC + 0x3D ? -0x4CC : verticalStep - 0x3D;
+    height = static_cast<std::int32_t>(static_cast<std::uint32_t>(height) +
+                                       static_cast<std::uint32_t>(verticalStep));
+}
+
 }

@@ -13,7 +13,40 @@ try {
  }
  if((Read-World 0x060542AC 4) -ne 0x3E7000){throw 'Native easing maximum differs'}
  if((Read-World 0x06054190 4) -ne 0x0605571A){throw 'Native root child initializer differs'}
- 'PASS original WORLD easing profiles and WORLD-local root +14 initializer'
+ $callbacks=@(0x0605532A,0x0605568C,0x060556DA,0)
+ for($i=0;$i -lt $callbacks.Count;$i++){
+  if((Read-World (0x060587FC+$i*4) 4) -ne $callbacks[$i]){
+   throw 'WORLD-local arrival task callback table differs'
+  }
+ }
+ if((Read-World 0x0605692C 2) -ne 0xBE94 -or
+    (Read-World 0x06056988 4) -ne 0x06056AD4 -or
+    (Read-World 0x0605698C 4) -ne 0x06056DDE){
+  throw 'WORLD environment setup or installed callbacks differ'
+ }
+ $arrivalCalls=@(
+  @(0x06055690,0x060553F8), @(0x060556AA,0x0605532A),
+  @(0x060556BA,0x06055606), @(0x060556BE,0x060555E2),
+  @(0x060556C6,0x06055606), @(0x060556CA,0x060555E2),
+  @(0x060556CE,0x060554FC)
+ )
+ foreach($call in $arrivalCalls){
+  $opcode=Read-World $call[0] 2
+  $displacement=$opcode -band 0xFFF
+  if($displacement -ge 0x800){$displacement-=0x1000}
+  if(($opcode -shr 12) -ne 0xB -or
+     ($call[0]+4+2*$displacement) -ne $call[1]){
+   throw 'WORLD arrival phase call differs'
+  }
+ }
+ # Camera state 8 reads root +0x14, then waits while child +0x3D is zero.
+ $arrivalGate=@(0xE03D,0x52D5,0x002C,0x2008,0x8973)
+ for($i=0;$i -lt $arrivalGate.Count;$i++){
+  if((Read-World (0x0605839A+$i*2) 2) -ne $arrivalGate[$i]){
+   throw 'WORLD camera arrival wait differs'
+  }
+ }
+ 'PASS original WORLD display, arrival and environment callback addresses'
 } finally {$disc.Dispose()}
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-world-display-'+[guid]::NewGuid())
 New-Item -ItemType Directory $scratch | Out-Null

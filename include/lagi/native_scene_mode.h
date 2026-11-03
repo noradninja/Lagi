@@ -5,6 +5,10 @@ namespace lagi {
 // encounters retain mode 3 and publish the battle grid's authored view.
 constexpr bool native_scene_mode(int mode)
 {
+#if defined(LAGI_WORLD_MAP_BRINGUP) && LAGI_WORLD_MAP_BRINGUP
+    if (mode == 6)
+        return true;
+#endif
     return mode>=1 && mode<=4;
 }
 constexpr bool native_scene_depth_mode(int mode)

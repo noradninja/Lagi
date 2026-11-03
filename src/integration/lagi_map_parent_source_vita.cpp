@@ -1,5 +1,6 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/azel_map_menu.h"
+#include "lagi/native_scene_mode.h"
 #include "commonOverlay.h"
 #include "field.h"
 
@@ -43,5 +44,5 @@ bool lagiAzelMapWorldDispatchAvailable()
     // that to mode6 (WORLD.PRG), not mode5 (CHANGE.PRG). This checks dispatch
     // presence only: the existing mode6 boundary is not yet a playable map.
     extern s_workArea*(*overlayDispatchTable[])(s_workArea*,std::int32_t);
-    return overlayDispatchTable[6]!=nullptr;
+    return lagi::native_scene_mode(6) && overlayDispatchTable[6] != nullptr;
 }

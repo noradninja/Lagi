@@ -19,10 +19,11 @@ inline Nbg0ResolveClip sceneNbg0ResolveClip(const SceneNbg0State& s) {
         unsigned(r)|31u,unsigned(b)|31u,false};
 }
 constexpr bool sceneNbg0Supported(unsigned chctla,unsigned pncn,unsigned ccctl,unsigned plsz) {
-    // Tile16, 4bpp, one-word names with native flip bits. Additive and opaque
+    // Tile16, 4bpp or 8bpp, one-word names with native flip bits. Additive and opaque
     // composition use the existing SGX sampling route. Ratio mode is not
     // silently replaced by additive blending.
-    return (chctla&0x7f)==1 && (pncn&0xc000)==0x8000 && (plsz&3)!=2 &&
+    const unsigned format = chctla & 0x7f;
+    return (format == 1 || format == 0x11) && (pncn&0xc000)==0x8000 && (plsz&3)!=2 &&
         (!(ccctl&1) || (ccctl&0x100));
 }
 constexpr unsigned sceneNbg0MapBase(unsigned mpofn,unsigned page,unsigned plsz) {

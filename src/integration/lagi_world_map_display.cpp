@@ -33,7 +33,8 @@ void move_marker(MapDisplay& s,sSaturnPtr entry,bool arrivalBusy)
     }else if(s.marker.flags&1){
         spring_vector(s.marker.position,goal,s.markerVelocity);
         const bool close=vecDistance(s.marker.position,goal)<s.marker.transitionRate;
-        if(close&&(readSaturnS8(entry+5)==0||readSaturnS8(entry+5)==1))
+        const auto destination = read_map_destination(entry);
+        if(close&&(destination.type==0||destination.type==1))
             s.poseCounter=std::min(s.poseCounter+1,12);
         else s.poseCounter=std::max(s.poseCounter-1,0);
         bool arrived=true;
@@ -101,6 +102,58 @@ void update_colors(MapDisplay& s,const MapDisplayInput& in)
 }
 }
 
+bool initialize_map_arrival(MapDisplayInput& input, s32 selected)
+{
+    if (input.targetTable.isNull() || selected < 0 || selected >= input.targetCount)
+        return false;
+    input.arrivalPosition = readSaturnVec3(input.targetTable + selected * 0x24 + 8);
+    input.arrivalPosition[1] += 0xA000;
+    input.arrivalBusy = false;
+    input.arrivalReady = true;
+    return true;
+}
+// WORLD 060553F8 resolves the current selection and updates the arrival heading.
+bool retarget_map_arrival(MapDisplayInput& input, s32 selected, fixedPoint& yaw,
+                          s32& distance, s32& targetHeight)
+{
+    if (!input.arrivalReady || input.targetTable.isNull() ||
+        selected < 0 || selected >= input.targetCount)
+        return false;
+
+    const auto target = readSaturnVec3(input.targetTable + selected * 0x24 + 8);
+    const auto& position = input.arrivalPosition;
+    targetHeight = target[1].asS32() + (input.arrivalBusy ? 0 : 0xA000);
+    distance = vecDistance(position, target);
+    const auto dx = u32(position[0].asS32()) - u32(target[0].asS32());
+    const auto dz = u32(position[2].asS32()) - u32(target[2].asS32());
+    yaw = atan2_FP(s32(dx << 2), s32(dz << 2));
+    return true;
+}
+// WORLD 060554A8 rotates (0, 0, step), then subtracts its X and Z.
+static void move_map_arrival_horizontal(sVec3_FP& position, fixedPoint yaw, s32 step)
+{
+    sMatrix4x3 matrix;
+    initMatrixToIdentity(&matrix);
+    rotateMatrixY(yaw, &matrix);
+    sVec3_FP direction;
+    direction.zeroize();
+    direction[2] = step;
+    sVec3_FP displacement;
+    transformAndAddVec(direction, displacement, matrix);
+    position[0] -= displacement[0];
+    position[2] -= displacement[2];
+}
+void update_map_arrival_launch(MapDisplayInput& input, fixedPoint yaw,
+                               s32 targetHeight, s32& forwardStep, s32& verticalStep)
+{
+    if (!input.arrivalReady)
+        return;
+    update_map_arrival_step(0xCCC0, forwardStep, input.arrivalBusy);
+    move_map_arrival_horizontal(input.arrivalPosition, yaw, forwardStep);
+    s32 height = input.arrivalPosition[1].asS32();
+    update_map_arrival_height(targetHeight, height, verticalStep);
+    input.arrivalPosition[1] = height;
+}
 bool update_map_display(MapDisplay& s,const MapDisplayInput& in)
 {
     if(in.program.isNull()||in.targetTable.isNull()||in.targetCount<=0)return false;
@@ -159,6 +212,42 @@ bool update_map_display(MapDisplay& s,const MapDisplayInput& in)
     return true;
 }
 
+// WORLD 0605799C. Directions are up, left, down, right in native order.
+s32 find_map_destination(const MapDisplayInput& input, s32 current, unsigned direction)
+{
+    if (input.targetTable.isNull() || current < 0 || current >= input.targetCount ||
+        direction >= 4)
+        return current;
+
+    constexpr s32 centers[] = {0x8000000, 0x4000000, 0, 0xC000000};
+    const auto origin = readSaturnVec3(input.targetTable + current * 0x24 + 8);
+    s32 best = current;
+    s32 bestScore = 0x270F000;
+    for (s32 index = 0; index < input.targetCount; ++index) {
+        if (index == current)
+            continue;
+        const auto entry = input.targetTable + index * 0x24;
+        const s16 condition = readSaturnS16(entry);
+        if (condition > 0 &&
+            (unsigned(condition) / 8 >= sizeof(mainGameState.bitField) ||
+             !(mainGameState.bitField[condition / 8] & bitMasks[condition & 7])))
+            continue;
+
+        const auto target = readSaturnVec3(entry + 8);
+        const s32 angle = atan2_FP(target[0] - origin[0], target[2] - origin[2]);
+        const s32 delta = ((angle - centers[direction] + 0x8000000) & 0xFFFFFFF) - 0x8000000;
+        const s32 deviation = delta < 0 ? -delta : delta;
+        if (deviation > 0x3DDDDDD)
+            continue;
+        const s32 penalty = FP_Div(deviation, 0xEEEEEE);
+        const s32 score = MTH_Mul(vecDistance(origin, target), penalty + 0x10000);
+        if (score < 0x113000 && score <= bestScore) {
+            best = index;
+            bestScore = score;
+        }
+    }
+    return best;
+}
 void apply_map_camera_and_light(const MapDisplay& s)
 {
     sVec3_S16 rotation;

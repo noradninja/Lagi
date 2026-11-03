@@ -84,7 +84,7 @@ int main(){
     assert(lagi::sceneNbg0Supported(1,0x8000,0x101,0));
     assert(lagi::sceneNbg0Supported(1,0x8000,0,0));
     assert(!lagi::sceneNbg0Supported(1,0x8000,1,0)); // Not a fake ratio-to-add substitute.
-    assert(!lagi::sceneNbg0Supported(0x11,0x8000,0x101,0));
+    assert(lagi::sceneNbg0Supported(0x11,0x8000,0x101,0));
     assert(!lagi::sceneNbg0Supported(1,0xc000,0x101,0));
     assert(lagi::sceneNbg0MapBase(0,63,3)==0x1e000);
     assert(lagi::sceneNbg0OverlayBand(0x1b,0x605,0x404)); // Native E011 priorities.
@@ -140,5 +140,14 @@ int main(){
             assert(rows[y][0]==x && rows[y][1]==py && rows[256+y][0]==z);
         }
     }
+    memory.fill(0);
+    s[0]={0,1,0,1}; // CRAM offset 1, transparent zero, 8-bit dots.
+    s[3]={0,0,1,0};
+    word(0x1f000,0x2C08); // Palette 2, both flips, character 8.
+    const unsigned characterBase=8*4*32;
+    memory[characterBase+3*64+7*8+7]=0xA5;
+    word(0x80000+(3*256+0xA5)*2,19);
+    assert(sample(0,0).x==19);
+    assert(sample(1,0).w==0);
     puts("PASS production NBG0 shader scalar addressing, flips, signed line scroll, windows and transparent zero; not GPU execution");
 }

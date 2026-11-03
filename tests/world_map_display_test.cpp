@@ -29,6 +29,7 @@ void addObjectToDrawList(sProcessed3dModel* p){assert(p==&trailModel);++trailDra
 struct sSaturnPtr {int offset=0;bool isNull()const{return !offset;}sSaturnPtr operator+(int n)const{return {offset+n};}};
 std::vector<u8> bytes(0x7000);
 u8 readSaturnU8(sSaturnPtr p){return bytes.at(p.offset);}s8 readSaturnS8(sSaturnPtr p){return s8(readSaturnU8(p));}
+s16 readSaturnS16(sSaturnPtr p){return s16((unsigned(readSaturnU8(p))<<8)|readSaturnU8(p+1));}
 sVec3_FP readSaturnVec3(sSaturnPtr p){sVec3_FP v;for(int i=0;i<3;++i){u32 raw=0;for(int b=0;b<4;++b)raw=(raw<<8)|readSaturnU8(p+i*4+b);v[i]=s32(raw);}return v;}
 void put(int ea,s32 value){for(int b=0;b<4;++b)bytes.at(ea+b)=u32(value)>>(24-b*8);}
 void putVec(int ea,s32 x,s32 y,s32 z){put(ea,x);put(ea+4,y);put(ea+8,z);}
@@ -36,6 +37,9 @@ fixedPoint MTH_Mul(s32 a,s32 b){return s32((std::int64_t(a)*b)>>16);}
 fixedPoint MTH_Mul_5_6(s32 a,s32 b,s32 c){return MTH_Mul(MTH_Mul(a,b),c);}
 s32 getSin(int){return 0;}s32 getCos(int){return 65536;}
 s32 sqrt_F(s32 v){return s32(std::sqrt(double(std::max(v,0))*65536.));}
+struct {u8 bitField[64]{};} mainGameState;
+constexpr u8 bitMasks[]={128,64,32,16,8,4,2,1};
+s32 FP_Div(s32 n,s32 d){return s32((std::int64_t(n)*65536)/d);}
 s32 atan2_FP(s32,s32){return 0;} // camera-angle arithmetic is a native service
 s32 vecDistance(const sVec3_FP& a,const sVec3_FP& b){double d=0;for(int i=0;i<3;++i){double n=a[i].v-b[i].v;d+=n*n;}return s32(std::sqrt(d));}
 struct sMatrix4x3 {sVec3_FP translation;};
@@ -53,10 +57,35 @@ void generateLightFalloffMap(u32,u32,u32){++falloffCalls;}
 #include "production.inc"
 int main(){
  using namespace lagi::worldmap;
+ MapDisplayInput destinations;
+ assert(initialize_map_destinations(destinations,{1},false,17));
+ assert(destinations.targetCount==33&&destinations.cameraSelection==17);
+ assert(destinations.targetTable.offset==1+0x5688);
+ assert(!initialize_map_destinations(destinations,{1},false,33));
+ assert(destinations.cameraSelection==17);
+ assert(initialize_map_destinations(destinations,{1},true,0x17));
+ assert(destinations.targetCount==4&&destinations.cameraSelection==2);
+ assert(destinations.targetTable.offset==1+0x5B2C);
  MapDisplay s;MapDisplayInput in;in.program={1};in.targetTable={0x6000};in.targetCount=2;
  in.arrivalReady=true;in.arrivalPosition.v={10000,20000,30000};
  putVec(0x6008,10000,20000,30000);putVec(0x6014,40000,50000,60000);
  putVec(0x602c,50000,20000,30000);putVec(0x6038,80000,50000,60000);
+ assert(initialize_map_arrival(in,1));
+ assert(in.arrivalReady&&!in.arrivalBusy);
+ assert(in.arrivalPosition[0]==50000&&in.arrivalPosition[1]==20000+0xA000&&in.arrivalPosition[2]==30000);
+ assert(!initialize_map_arrival(in,2));
+ s32 forwardStep=0,verticalStep=0;
+ update_map_arrival_launch(in,0,20000,forwardStep,verticalStep);
+ assert(forwardStep==0x28&&verticalStep==-0x3D);
+ assert(in.arrivalPosition[0]==50000&&in.arrivalPosition[1]==20000+0xA000-0x3D);
+ assert(in.arrivalPosition[2]==30000-0x28);
+ in.arrivalPosition.v={10000,20000,30000};
+ assert(find_map_destination(in,0,2)==1);
+ bytes[0x6025]=1;
+ assert(find_map_destination(in,0,2)==0);
+ mainGameState.bitField[0]=bitMasks[1];
+ assert(find_map_destination(in,0,2)==1);
+ bytes[0x6025]=0;
  putVec(1+0x4750,0,100000,200000);putVec(1+0x475c,1,2,3);
  for(int i=0;i<12;++i){bytes[1+0x4774+i]=u8(10+i);bytes[1+0x4780+i]=u8(80+i);}
  assert(update_map_display(s,in));assert(s.state==1&&s.previousState==1&&s.selectedTarget==0);

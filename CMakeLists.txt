@@ -195,6 +195,7 @@ option(LAGI_VDP2_SPRITE_COMPOSITE "Experimental separate native VDP1/VDP2 compos
 option(LAGI_GPU_PASS_TIMING "Sample serialized native GPU pass timing (diagnostic stalls)" OFF)
 option(LAGI_RBG_DECODED_PAGES "Cache native RBG source pages before GPU rotation" OFF)
 option(LAGI_RBG_COEFFICIENT_ROWS "Predecode scanline-constant native RBG coefficients" OFF)
+option(LAGI_WORLD_MAP_BRINGUP "Enable the in-progress native WORLD scene for device testing" OFF)
 option(LAGI_FIELD_MOTION_TRACE "Bounded field motion/snapshot cadence diagnostics" OFF)
 set(LAGI_RBG_ROWS_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f_gxp.o")
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp"
@@ -5429,6 +5430,7 @@ target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDER
 target_compile_definitions(lagi PRIVATE LAGI_VDP2_SPRITE_COMPOSITE=$<BOOL:${LAGI_VDP2_SPRITE_COMPOSITE}>)
 target_compile_definitions(lagi PRIVATE LAGI_GPU_PASS_TIMING=$<BOOL:${LAGI_GPU_PASS_TIMING}>)
 target_compile_definitions(lagi PRIVATE LAGI_RBG_DECODED_PAGES=$<BOOL:${LAGI_RBG_DECODED_PAGES}>)
+target_compile_definitions(lagi PRIVATE LAGI_WORLD_MAP_BRINGUP=$<AND:$<BOOL:${LAGI_WORLD_MAP_BRINGUP}>,$<BOOL:${LAGI_BATTLE_EXECUTE_A3}>>)
 target_compile_definitions(lagi PRIVATE LAGI_RBG_COEFFICIENT_ROWS=$<BOOL:${LAGI_RBG_COEFFICIENT_ROWS}>)
 target_compile_definitions(lagi PRIVATE LAGI_FIELD_MOTION_TRACE=$<BOOL:${LAGI_FIELD_MOTION_TRACE}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel

@@ -86,10 +86,18 @@ float4 sampleSceneNbg0(uniform sampler2D raw,float2 uv,uniform float4 state[8]
     float scn=state[0].x;
     float character=nbgWrap(name,1024.0f)*4.0f+nbgWrap(scn,4.0f)+floor(nbgWrap(scn,32.0f)/4.0f)*4096.0f;
     float cell=floor(within.y/8.0f)*2.0f+floor(within.x/8.0f);
-    float byteAddress=character*32.0f+cell*32.0f+nbgWrap(within.y,8.0f)*4.0f+floor(nbgWrap(within.x,8.0f)/2.0f);
+    bool eightBit=state[0].w>0.5f;
+    float xInCell=nbgWrap(within.x,8.0f);
+    float yInCell=nbgWrap(within.y,8.0f);
+    float byteAddress=character*32.0f;
+    byteAddress+=eightBit?cell*64.0f+yInCell*8.0f+xInCell:
+        cell*32.0f+yInCell*4.0f+floor(xInCell/2.0f);
     float packedByte=nbgReadByte(raw,nbgWrap(byteAddress,524288.0f));
-    float dotIndex=nbgWrap(within.x,2.0f)>0.5f?nbgWrap(packedByte,16.0f):floor(packedByte/16.0f);
+    float dotIndex=eightBit?packedByte:
+        (nbgWrap(xInCell,2.0f)>0.5f?nbgWrap(packedByte,16.0f):floor(packedByte/16.0f));
     if(dotIndex<0.5f && state[0].z<0.5f)return float4(0,0,0,0);
-    float palette=state[0].y*256.0f+floor(name/4096.0f)*16.0f+floor(scn/32.0f)*256.0f+dotIndex;
+    float paletteBase=eightBit?nbgWrap(floor(name/4096.0f),8.0f)*256.0f:
+        floor(name/4096.0f)*16.0f+floor(scn/32.0f)*256.0f;
+    float palette=state[0].y*256.0f+paletteBase+dotIndex;
     return rgb555(nbgAlignedWord(raw,524288.0f+nbgWrap(palette,2048.0f)*2.0f));
 }

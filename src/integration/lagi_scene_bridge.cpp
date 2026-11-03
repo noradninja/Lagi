@@ -29,14 +29,14 @@ namespace {
 lagi::MotionCadence<12,3> g_fieldMotion;
 #endif
 
-void sync_battle_presentation_state()
+void sync_native_camera_presentation_state(unsigned mode)
 {
-    // No field-task/dragon pointer is required for module mode 4. Azel's grid
+    // Battle and WORLD have no field-task/dragon pointer. Their task graph
     // owns the view; the neutral fallback camera supplies no extra transform.
     static const float origin[3]={0.0f,0.0f,0.0f};
     static const float target[3]={0.0f,0.0f,1.0f};
     static const float up[3]={0.0f,1.0f,0.0f};
-    lagi::platform::renderer::presentation_set_scene_mode(4u);
+    lagi::platform::renderer::presentation_set_scene_mode(mode);
     const float nearPlane=static_cast<float>(static_cast<s32>(graphicEngineStatus.m405C.m10_nearClipDistance))/65536.0f;
     const float farPlane=static_cast<float>(static_cast<s32>(graphicEngineStatus.m405C.m14_farClipDistance))/65536.0f;
     lagi::platform::renderer::presentation_set_clip_planes(nearPlane,farPlane);
@@ -242,6 +242,7 @@ void sync_presentation_state()
             auto& p=nbg.gpu;
             p[0][0]=regs->m30_PNCN0&255;p[0][1]=regs->mE4_CRAOFA&7;
             p[0][2]=(regs->m20_BGON>>8)&1;
+            p[0][3]=(regs->m28_CHCTLA>>4)&7;
             const unsigned maps[4]={unsigned(regs->m40_MPABN0)&63u,(unsigned(regs->m40_MPABN0)>>8)&63u,
                 unsigned(regs->m42_MPCDN0)&63u,(unsigned(regs->m42_MPCDN0)>>8)&63u};
             for(unsigned i=0;i<4;++i)p[1][i]=lagi::sceneNbg0MapBase(regs->m3C_MPOFN,maps[i],regs->m3A_PLSZ);
@@ -334,7 +335,11 @@ void sync_presentation_state()
         sync_field_presentation_state();
         break;
     case 4:
-        sync_battle_presentation_state();
+        sync_native_camera_presentation_state(4u);
+        break;
+    case 6:
+        if (lagi::native_scene_mode(6))
+            sync_native_camera_presentation_state(6u);
         break;
     default:
         break;
