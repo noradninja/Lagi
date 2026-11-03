@@ -264,6 +264,14 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         s16 projectionX = 0;
         s16 projectionY = 0;
         getVdp1ClippingCoordinates(clip);
+        // WORLD 06056F06..26 derives window 0 from the live VDP1 clip.
+        // VDP2 stores horizontal coordinates in half-dot units.
+        auto* regs = vdp2Controls.m4_pendingVdp2Regs;
+        regs->mC0_WPSX0 = static_cast<u16>(s32(clip[0]) * 2);
+        regs->mC2_WPSY0 = static_cast<u16>(clip[1]);
+        regs->mC4_WPEX0 = static_cast<u16>(s32(clip[2]) * 2);
+        regs->mC6_WPEY0 = static_cast<u16>(clip[3]);
+        vdp2Controls.m_isDirty = true;
         getVdp1ProjectionParams(&projectionX, &projectionY);
         if (!projectionY)
             return false;
