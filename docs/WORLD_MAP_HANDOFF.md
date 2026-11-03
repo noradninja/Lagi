@@ -26,7 +26,9 @@ Use the original Disc 1 CUE/BIN on Vita. The work PC input was
 `Downloads/AZEL_1.cue` and `Downloads/AZEL_1.bin`. No disc data is checked in.
 
 The Vita build compiles and links. Host checks passed for startup ownership,
-display, menu dispatch, tile decoding, and mocked travel handoff. Hardware
+display, menu dispatch, tile decoding, and mocked travel handoff. The enabled
+startup fixture also verifies priority and clip setup and checks that a missing
+background leaves VDP2 VRAM untouched. Hardware
 verification remains pending. Test entry from the menu and after E014
 separately. Verify background, marker, directional selection and the destination
 label, then confirm an unlocked destination and verify control in the next

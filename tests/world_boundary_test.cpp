@@ -82,7 +82,8 @@ struct Vdp2Regs {u32 mE_RAMCTL=0,m10_CYCA0=0,m38_PNCR=0,mBC_RPTAU=0,mBE_RPTAL=0,
 struct {Vdp2Regs* m4_pendingVdp2Regs=nullptr;bool m_isDirty=false;int m0_doubleBufferIndex=0;} vdp2Controls;
 enum LayerCommand {m0_END,m2_CHCN,m5_CHSZ,m6_PNB,m7_CNSM,m11_SCN,m27_RPMD,m31_RxKTE,m34_W0E,m37_W0A,m44_CCEN,m45_COEN};
 struct sLayerConfig {LayerCommand command;u32 value;};
-void reinitVdp2(){}
+Vdp2Regs worldRegs;int vdp2Resets=0;
+void reinitVdp2(){++vdp2Resets;worldRegs={};vdp2Controls.m4_pendingVdp2Regs=&worldRegs;}
 void setupNBG0(const sLayerConfig*){}
 void setupRGB0(const sLayerConfig*){}
 void setupRotationParams(const sLayerConfig*){}
@@ -101,7 +102,8 @@ void drawCinematicBar(int){}
 void commitRotationPass(){}
 struct RotationEntry {s16 m34,m36,m38,m3C,m3E,m40;};
 RotationEntry gCoefficientTables[2][2]{};
-std::uint8_t* getVdp2Vram(u32){return nullptr;}
+std::array<std::uint8_t,0x80000> vram{};
+std::uint8_t* getVdp2Vram(u32 offset){return vram.data()+offset;}
 std::uint8_t* getVdp2Cram(u32){return nullptr;}
 void asyncDmaCopy(u32,std::uint8_t*,int,int){}
 u32 readSaturnU32(u32){return 0;}
@@ -113,7 +115,19 @@ void setupVDP2StringRendering(int,int,int,int){}
 struct {int m0=0;} vdp2StringContext;
 void drawStringSmallFont(const char*){}
 bool available=true;int reads=0;
-namespace lagi::disc {bool read_file(const char* name,std::vector<std::uint8_t>& out){assert(!std::strcmp(name,"WORLD.PRG"));++reads;if(available)out.assign(0x5ED4,0);return available;}}
+bool backgroundsAvailable=true;
+namespace lagi::disc {
+bool read_file(const char* name,std::vector<std::uint8_t>& out){
+ if(!std::strcmp(name,"WORLD.PRG")){
+  ++reads;
+  if(available)out.assign(0x5ED4,0);
+  return available;
+ }
+ if(!backgroundsAvailable && !std::strcmp(name,"FRS_WLD.PNB"))return false;
+ out.assign(8,0x5A);
+ return true;
+}
+}
 namespace lagi::platform::logging {template<class... T>void writef(const char*,T...) {}}
 #include "production.inc"
 int main(){int parent;mainGameState.bitField[0x1B]=8;
@@ -124,6 +138,25 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   assert(gGameStatus.m4_gameStatus==0x4F&&gGameStatus.m0_gameMode==6);task->getTypedTaskDefinition()->destroy(task);assert(!allocatorDepth&&!vdp1Depth);delete task;}
  assert(reads==2);
  lagi::worldEnabled=true;
+ available=true;
+ for(bool present:{false,true}){
+  backgroundsAvailable=present;
+  vram.fill(0);
+  vdp2Resets=0;
+  auto* task=static_cast<LagiWorldBoundary*>(lagiLoadNativeWorldBoundary(&parent,0));
+  assert(task->displayReady==present && vdp2Resets==int(present));
+  for(u32 offset:{0x10000u,0x1E000u,0x40000u,0x60000u})
+   assert(vram[offset]==(present?0x5A:0));
+  if(present){
+   assert(task->display.marker.flags&0x20);
+   assert(worldRegs.mF8_PRINA==0x0602 && worldRegs.mFC_PRIR==5);
+   assert(graphicEngineStatus.m405C.m10_nearClipDistance==0x800);
+   assert(graphicEngineStatus.m405C.m14_farClipDistance==0x400000);
+  }
+  LagiWorldBoundary::Delete(task);
+  assert(!allocatorDepth&&!vdp1Depth);
+  delete task;
+ }
  auto& pad=graphicEngineStatus.m4514.m0_inputDevices[0].m0_current;
  for (int type : {1,3}) {
   LagiWorldBoundary task;
