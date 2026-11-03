@@ -35,6 +35,31 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native label projection producer — 2026-11-03 (not a live text cutover)
+
+`lagi_world_map_label.cpp` now ports WORLD `060574E4`'s projection through
+the existing native current-matrix transform, fixed divider and three-factor
+multiply services. The bounds helper subtracts the signed string half-width
+and Y offset 3 with low-word wrapping, rejects coordinates outside +/-512
+to native offscreen position `(0,-256)`, clamps X sequentially to -160 and
+`160 - 2*halfWidth`, and clamps Y to -88..104. Original `MOV #A8` is signed
+**-88**, not positive 168. The third task coordinate remains native `0333`;
+do not reinterpret it as font scale without tracing its consumer.
+
+Disc 1 instructions, projection-service literals and the label-task creation
+literals are pinned in `world_map_label_test.ps1`. The production producer
+passes native-service binding checks and 660 independent bounds comparisons;
+Vita compile/link passes. This helper is deliberately **not live** yet.
+WORLD's current fixed VDP2 row remains until the real consumer is ready.
+The authored label creation calls MAIN `060263D4` with VDP1 character memory
+`25C7B600`, not `createDisplayFormationNameText`'s VDP2 blue-box task. Port
+that sprite-text task and its glyph/resource lifetime before cutting over;
+do not substitute a moving VDP2 row or a generic UI font.
+
+No new hardware test is needed for this producer-only checkpoint; the prior
+arrival/transition hardware checkpoint is still outstanding. No performance
+claim is made without a fresh device log.
+
 ### Native arrival dragon animation/draw — 2026-11-03
 
 The WORLD-local arrival child now uses the resident native dragon, loading it
