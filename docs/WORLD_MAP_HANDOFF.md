@@ -11,8 +11,9 @@ status/COMMON/overlay chain before declaring the Garil route connected.
 
 Implementation and acceptance gates:
 
-1. Recover WORLD's missing normal-background scroll producer and its live native
-   state. Replace the documented interim arrival phase and fixed-row name behavior
+1. Recover WORLD's missing environment motion and its live native state, keeping
+   normal-background origins separate from rotation-coefficient wave modulation.
+   Replace the documented interim arrival phase and fixed-row name behavior
    with their original producers rather than treating the experimental path as final.
 2. Check entry from both Map and E014, selection/locked destinations, confirmation,
    native arrival/fades, cancellation where authored, teardown and re-entry. Ask for
@@ -247,12 +248,32 @@ build. Statuses 51/52 route to alternate town indices 15/7. Record the
 actual selected status during testing so a failed destination overlay
 can be investigated separately from the map's navigation and fade.
 
-## Remaining normal-background motion
+## Remaining environment motion — corrected native trace, 2026-11-03
 
 Disc 1 WORLD Draw at `06056E54..88` stores the result of `06056D7C`
 in environment +0x38. It derives the horizontal origin as
 `-(yaw >> 12) * 0x400` and the vertical origin as
 `(0x100 - scrollOffset) * 0x10000`, then calls `060565C0`.
-That helper fills a 0x1A8-entry table using the live phase and amplitude.
-The current Vita map initializes and composites NBG0, but this native
-per-frame scroll table producer still needs to be ported and checked.
+The earlier description of `060565C0` as an NBG0 scroll-table generator was
+incorrect. Its selected-table load and multiply loop read existing rotation
+coefficients, then overwrite each with the fixed-point product of that value
+and `0x10000 + MTH_Mul(amplitude, sine)`. It processes `0x1A8` entries. Sine
+index is `(phase >> 16) & 0xFFF`; environment +0x50 supplies amplitude, +0x4C
+the per-entry phase step, +0x48 the per-frame phase step, and +0x54 the phase.
+The table is selected using the current rotation pass and VDP2 buffer index.
+The literal at `06056650` is native fixed-point multiply `06035644`, and
+`06056654` points to the native sine table `20216E80`.
+
+Normal-background X/Y origins are separate environment fields +4/+8, derived
+by the caller before wave modulation. Their consumer and the environment's
+live phase/amplitude initialization/update must be recovered before hookup;
+do not invent a per-line NBG0 scroll buffer from the `0x1A8` loop count.
+The same wave arithmetic is recognizable in upstream
+`shared/vdp2PlaneTask.cpp::vdp2ApplyWaveDistortion`, but its work-area offsets
+are different and cannot be aliased to the WORLD environment.
+
+`tests/world_map_environment_evidence_test.ps1 -DiscImage <Disc1.bin>` checks
+the original instruction anchors, fixed-point/sine literals and call target
+using read-only sector access. It passes on the current US Disc 1 image.
+This is evidence preservation, not execution of the routine or rendered
+environment acceptance. No runtime change is included in this checkpoint.
