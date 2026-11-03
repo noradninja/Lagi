@@ -68,6 +68,21 @@ try {
                    @(0x06056EC0,0x0605254C),@(0x06056EC8,0x06035664))) {
   if((Read-World $pair[0] 4) -ne $pair[1]){throw 'WORLD wave literal differs'}
  }
+ # Resolve the SH-2 PC-relative load itself. Nearby literals are not enough:
+ # both camera-origin multiplications load 32.0, not the nearby -90deg angle.
+ foreach($pair in @(@(0x06057028,0x10000),@(0x0605703E,0x200000),@(0x06057044,0x200000))) {
+  $opcode=Read-World $pair[0] 2
+  $literal=(($pair[0]+4)-band -4)+4*($opcode-band 255)
+  if(($opcode-shr 12)-ne 0xD -or (Read-World $literal 4)-ne $pair[1]) {
+   throw 'WORLD camera-origin PC-relative load differs'
+  }
+ }
+ if((Read-World 0x06056810 4)-ne 0x5B333 -or
+    (Read-World 0x06056814 4)-ne 0x1FB33 -or
+    (Read-World 0x0605695A 2)-ne 0xFE67 -or
+    (Read-World 0x060568D6 2)-ne 0xE2AF) {
+  throw 'WORLD environment scale, height or drift initializer differs'
+ }
  $op=Read-World 0x06056E86 2
  $disp=$op-band 0xFFF
  if($disp-ge 0x800){$disp-=0x1000}

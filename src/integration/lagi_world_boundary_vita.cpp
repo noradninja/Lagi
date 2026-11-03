@@ -6,12 +6,14 @@
 #include "audio/systemSounds.h"
 #include "lagi/world_map_display.h"
 #include "lagi/world_map_motion.h"
+#include "lagi/world_map_environment.h"
 #include "kernel/moduleManager.h"
 #include "kernel/fade.h"
 #include "kernel/cinematicBarsTask.h"
 #include "battle/BTL_A3/BTL_A3_map6.h"
 #include "kernel/graphicalObject.h"
 #include "kernel/vdp1Allocator.h"
+#include "trigo.h"
 #include "mainMenuDebugTasks.h"
 
 void unloadFnt();
@@ -26,6 +28,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
     sSaturnMemoryFile worldFile;
     lagi::worldmap::MapDisplayInput destinations;
     lagi::worldmap::MapDisplay display;
+    lagi::worldmap::MapEnvironment environment;
     bool displayReady = false;
     bool fontReady = false;
     s32 nameShown = -1;
@@ -282,6 +285,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             lagi::worldmap::apply_map_camera_and_light(display);
             lagi::azel_bridge::capture_native_scene_view_matrix();
         }
+        lagi::worldmap::advance_map_environment(task->environment);
     }
 
     static bool BeginEnvironmentRotation() {
@@ -338,16 +342,27 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         }
     }
     static bool DrawEnvironmentPassA(const lagi::worldmap::MapDisplay& display,
-                                     fixedPoint scale, fixedPoint planeHeight) {
+                                     const lagi::worldmap::MapEnvironment& environment) {
         if (!BeginEnvironmentRotation())
             return false;
 
+        const auto camera=lagi::worldmap::map_environment_camera(
+            {display.camera[0].asS32(),display.camera[1].asS32(),display.camera[2].asS32()},
+            environment,[](s32 numerator,s32 denominator){
+                return FP_Div(numerator,fixedPoint(denominator)).asS32();
+            });
+        const sVec3_FP environmentCamera={camera[0],camera[1],camera[2]};
+        // WORLD 06056FD0..06057024 supplies -0xB60B6 for an exactly
+        // zero pitch before building its environment-only rotation matrix.
+        const s32 pitch=display.rotation[0].asS32()!=0
+            ? display.rotation[0].asS32() : -0xB60B6;
         // WORLD 060570B4..DA applies pitch/yaw, scale, and then roll.
-        buildRotationMatrixPitchYaw(-0x4000000 - display.rotation[0].asS32(),
+        buildRotationMatrixPitchYaw(-0x4000000 - pitch,
                                     -display.rotation[1].asS32());
-        scaleRotationMatrix(scale);
+        scaleRotationMatrix(fixedPoint(environment.scale));
         writeRotationParams(-display.rotation[2].asS32());
-        TranslateEnvironmentRotation(display.camera, scale, planeHeight);
+        TranslateEnvironmentRotation(environmentCamera,fixedPoint(environment.scale),
+                                     fixedPoint(environment.planeHeight));
         drawCinematicBar(6);
         commitRotationPass();
         return true;
@@ -356,8 +371,31 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         if (!task->displayReady || !lagi::native_scene_mode(6))
             return;
 
-        // Retail WORLD environment defaults at 0605676E and 060568DA.
-        DrawEnvironmentPassA(task->display, fixedPoint(0x5B333), fixedPoint(-81));
+        if (!DrawEnvironmentPassA(task->display,task->environment))
+            return;
+        const auto& table=gCoefficientTables[0][vdp2Controls.m0_doubleBufferIndex];
+        const auto& row=gVdp2RotationMatrix.m[2];
+        const auto ground=lagi::worldmap::map_projected_ground(
+            {row[0].asS32(),row[1].asS32(),row[2].asS32()},
+            {table.m34,table.m36,table.m38},table.m8_Zst,
+            [](s32 numerator,s32 denominator){
+                return FP_Div(numerator,fixedPoint(denominator)).asS32();
+            });
+        auto* coefficients=gVdp2CoefficientTables[0][vdp2Controls.m0_doubleBufferIndex];
+        if (!coefficients || !lagi::worldmap::apply_map_coefficient_wave(
+                std::span(*coefficients),task->environment.wave,
+                [](unsigned index){return getSin(index).asS32();}))
+            return;
+        const auto origin=lagi::worldmap::map_normal_background_origin(
+            task->display.rotation[1].asS32(),ground,task->environment.verticalOffset);
+        auto* regs=vdp2Controls.m4_pendingVdp2Regs;
+        regs->m70_SCXN0=origin.horizontal;
+        regs->m74_SCYN0=origin.scrollY;
+        // WORLD 06056F28..7C, with native environment +69 initially zero.
+        regs->mF8_PRINA=0x0602;
+        regs->mFA_PRINB=0x0700;
+        regs->mFC_PRIR=task->display.camera[1].asS32()>task->environment.planeHeight?5:3;
+        vdp2Controls.m_isDirty=true;
         lagi::azel_bridge::begin_view_relative_submission_scope();
         lagi::worldmap::draw_map_trail(task->display, task->modelOwner);
         lagi::worldmap::draw_map_model(task->display.marker);

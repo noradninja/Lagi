@@ -20,7 +20,7 @@ New-Item -ItemType Directory $scratch | Out-Null
 $source=Get-Content -Raw "$repo/src/integration/lagi_world_boundary_vita.cpp"
 $source=[regex]::Replace($source,'(?m)^#include[^\r\n]*','')
 [IO.File]::WriteAllText("$scratch/production.inc",$source)
-& cl /nologo /std:c++20 /EHsc "/I$scratch" "$PSScriptRoot/world_boundary_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
+& cl /nologo /std:c++20 /EHsc "/I$scratch" "/I$repo/include" /FIlagi/world_map_environment.h "$PSScriptRoot/world_boundary_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
 if($LASTEXITCODE -ne 0){throw 'World boundary fixture compile failed'}
 & "$scratch/test.exe"
 if($LASTEXITCODE -ne 0){throw 'World boundary fixture failed'}

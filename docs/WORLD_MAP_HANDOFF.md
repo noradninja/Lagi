@@ -35,6 +35,40 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### 2026-11-03 live environment checkpoint
+
+The experimental WORLD boundary now owns the native initial environment state:
+plane height `1FB33`, scale `5B333`, vertical offset `013B`, drift speeds -409/-81
+and the recovered coefficient-wave parameters. Update advances the two native
+drift accumulators. Draw uses an environment-only camera copy, applying the
+original `32 / scale` offsets to X and Z and subtracting their drift. The two
+PC-relative loads both resolve to WORLD `060571C0`; the nearby -90-degree
+literal belongs to rotation setup, not Z translation. An exactly zero pitch
+uses the original environment fallback `-B60B6`.
+
+After the rotation pass, Draw computes projected ground from the live matrix
+and pivot through the native divider, applies the 424-entry wave to the selected
+coefficient buffer, and writes native NBG0 origins and priority bands. The normal
+environment control byte at +69 starts zero; WORLD's camera-height comparison
+therefore chooses RBG priority 3 or 5. Desktop debug-keyboard mutations are not
+introduced as Vita controls. No presentation/view mode was added.
+
+This replaces the former constant `-81` plane-height argument, which was actually
+the environment's Z drift speed, not its authored plane height. The display/game
+camera is never modified by these texture-origin calculations.
+
+Disc instruction/literal checks, 5,832 arithmetic comparisons, wave checks and
+production-boundary tests pass. The latter executes actual Draw with mocked
+matrix/sine/native services, checks both coefficient buffers, scroll/priority
+writes and camera isolation. Vita source syntax passes. These are not rendered
+pixel or full-package verification. Rebuild the experimental WORLD package before
+hardware testing; no VPK was produced by this checkpoint. Check map entry, moving
+background/marker placement through selection, close-up, and re-entry. Keep the
+matching log. Arrival's interim middle phase and fixed-row name remain open.
+
+The older helper-only notes below describe earlier checkpoints; their live-hookup
+limitations are superseded only by the environment integration described here.
+
 The experimental WORLD scene is on `feature/light-state-index`. Both the Map
 menu and the post-E014 cutscene request status `0x4F`, which enters mode 6.
 The branch includes the original Disc 1 destination tables and assets,

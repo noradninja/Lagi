@@ -49,6 +49,15 @@ int main()
     assert(map_normal_background_origin(0,195,0).scrollY==0xFF140000u);
     assert(map_normal_background_origin(0,196,0).scrollY==0xFF3C0000u);
     assert(map_normal_background_origin(0,236,0).scrollY==0xFF140000u);
+    lagi::worldmap::MapEnvironment environment;
+    environment.driftX=0x100u;environment.driftZ=0xFFFFFFFFu;
+    lagi::worldmap::advance_map_environment(environment);
+    assert(environment.driftX==0xFFFFFF67u && environment.driftZ==0xFFFFFFAEu);
+    const auto adjusted=lagi::worldmap::map_environment_camera({100,200,300},environment,
+        [](std::int32_t numerator,std::int32_t denominator){
+            assert(numerator==0x10000 && denominator==0x5B333);return 0x10000;
+        });
+    assert(adjusted[0]==100+153+0x200000 && adjusted[1]==200 && adjusted[2]==300+82+0x200000);
     const auto sine=[](unsigned index){return std::int32_t(index*31u)-65536;};
     for(const auto phase : {0u,0xFFFFFFFFu,0x80008000u})
         for(const auto amplitude : {-65536,0,691,INT32_MAX}) {
@@ -85,6 +94,6 @@ int main()
             });
         assert(called && ground==static_cast<std::int16_t>(quotient>>16));
     }
-    std::printf("PASS %u WORLD background-origin cases, signed threshold and wrap; live hookup pending\n",cases);
+    std::printf("PASS %u WORLD background-origin cases, signed threshold and wrap; hardware output unverified\n",cases);
     std::puts("PASS WORLD 424-entry coefficient wave, phase/suffix/bounds guards and native divider binding; sine/divider services mocked");
 }

@@ -71,7 +71,9 @@ struct Projection {
 };
 struct {struct {struct {Pad m0_current;} m0_inputDevices[1];} m4514;Projection m405C;} graphicEngineStatus;
 void reset3dEngine(){}
-int FP_Div(int a,int b){return int((std::int64_t(a)*65536)/b);}
+int FP_Div(int a,int b){return b?int((std::int64_t(a)*65536)/b):(a>=0?INT32_MAX:INT32_MIN);}
+fixedPoint FP_Div(int a,fixedPoint b){return FP_Div(a,b.asS32());}
+fixedPoint getSin(unsigned){return 0;}
 void playSystemSoundEffect(int){}
 struct Fade {u32 m0_color=0;int m20_stopped=0;};
 struct {Fade m0_fade0;int m_48=0;} g_fadeControls;
@@ -79,7 +81,7 @@ u32 convertColorToU32ForFade(u32 color){return color;}
 int fadeCalls=0,fadeFrames=0;u32 fadeTarget=0;
 void fadePalette(Fade* fade,u32,u32 target,int frames){++fadeCalls;fadeFrames=frames;fadeTarget=target;fade->m20_stopped=0;}
 void setNextGameStatus(int status){assert(!gGameStatus.m8_nextGameStatus);gGameStatus.m8_nextGameStatus=status;}
-struct Vdp2Regs {u32 mE_RAMCTL=0,m10_CYCA0=0,m38_PNCR=0,mBC_RPTAU=0,mBE_RPTAL=0,mC0_WPSX0=0,mC2_WPSY0=0,mC4_WPEX0=0,mC6_WPEY0=0,mA8_LCTA=0,mAC_BKTA=0,mF0_PRISA=0,mF2_PRISB=0,mF4_PRISC=0,mF6_PRISD=0,mF8_PRINA=0,mFA_PRINB=0,mFC_PRIR=0;};
+struct Vdp2Regs {u32 m70_SCXN0=0,m74_SCYN0=0,mE_RAMCTL=0,m10_CYCA0=0,m38_PNCR=0,mBC_RPTAU=0,mBE_RPTAL=0,mC0_WPSX0=0,mC2_WPSY0=0,mC4_WPEX0=0,mC6_WPEY0=0,mA8_LCTA=0,mAC_BKTA=0,mF0_PRISA=0,mF2_PRISB=0,mF4_PRISC=0,mF6_PRISD=0,mF8_PRINA=0,mFA_PRINB=0,mFC_PRIR=0;};
 struct {Vdp2Regs* m4_pendingVdp2Regs=nullptr;bool m_isDirty=false;int m0_doubleBufferIndex=0;} vdp2Controls;
 enum LayerCommand {m0_END,m2_CHCN,m5_CHSZ,m6_PNB,m7_CNSM,m11_SCN,m27_RPMD,m31_RxKTE,m34_W0E,m37_W0A,m44_CCEN,m45_COEN};
 struct sLayerConfig {LayerCommand command;u32 value;};
@@ -89,19 +91,24 @@ void setupNBG0(const sLayerConfig*){}
 void setupRGB0(const sLayerConfig*){}
 void setupRotationParams(const sLayerConfig*){}
 void setupRotationMapPlanes(int,u32){}
-int coefficientA0=0,coefficientA1=0;
-void setupVdp2Table(int,int&,int&,std::uint8_t*,int){}
+std::vector<fixedPoint> coefficientA0(512),coefficientA1(512);
+std::vector<fixedPoint>* gVdp2CoefficientTables[2][2]{};
+void setupVdp2Table(int,std::vector<fixedPoint>& a,std::vector<fixedPoint>& b,std::uint8_t*,int){
+ gVdp2CoefficientTables[0][0]=&a;gVdp2CoefficientTables[0][1]=&b;
+ for(auto& value:a)value=0x10000;
+ for(auto& value:b)value=0x10000;
+}
 void initRotationCoefficientTables(int,std::uint8_t*){}
 void initLayerMap(u32,u32,u32,u32,u32){}
-void getVdp1ClippingCoordinates(std::array<s16,4>&){}
-void getVdp1ProjectionParams(s16*,s16*){}
+void getVdp1ClippingCoordinates(std::array<s16,4>& out){out={0,0,351,223};}
+void getVdp1ProjectionParams(s16* x,s16* y){*x=176;*y=112;}
 void beginRotationPass(int,int){}
-void buildRotationMatrixPitchYaw(fixedPoint,fixedPoint){}
+void buildRotationMatrixPitchYaw(fixedPoint,fixedPoint){gVdp2RotationMatrix.m[2][1]=0x10000;}
 void scaleRotationMatrix(fixedPoint){}
 void writeRotationParams(fixedPoint){}
 void drawCinematicBar(int){}
 void commitRotationPass(){}
-struct RotationEntry {s16 m34,m36,m38,m3C,m3E,m40;};
+struct RotationEntry {int m8_Zst=0;s16 m34,m36,m38,m3C,m3E,m40;};
 RotationEntry gCoefficientTables[2][2]{};
 std::array<std::uint8_t,0x80000> vram{};
 std::uint8_t* getVdp2Vram(u32 offset){return vram.data()+offset;}
@@ -153,6 +160,23 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
    assert(worldRegs.mF8_PRINA==0x0602 && worldRegs.mFC_PRIR==5);
    assert(graphicEngineStatus.m405C.m10_nearClipDistance==0x800);
    assert(graphicEngineStatus.m405C.m14_farClipDistance==0x400000);
+   task->display.rotation[1]=0x1000000;
+   const auto originalCamera=task->display.camera;
+   for(int buffer:{0,1}){
+    vdp2Controls.m0_doubleBufferIndex=buffer;
+    const auto phase=task->environment.wave.phase;
+    LagiWorldBoundary::Draw(task);
+    assert(task->environment.wave.phase==phase+0x11102Au);
+    assert(worldRegs.m70_SCXN0==0xFFC00000u);
+    assert(worldRegs.m74_SCYN0==0xFE560000u);
+    assert(worldRegs.mFC_PRIR==3);
+    for(unsigned axis=0;axis<3;++axis)
+     assert(task->display.camera[axis].asS32()==originalCamera[axis].asS32());
+   }
+   task->display.camera[1]=task->environment.planeHeight+1;
+   LagiWorldBoundary::Draw(task);
+   assert(worldRegs.mFC_PRIR==5);
+   vdp2Controls.m0_doubleBufferIndex=0;
   }
   LagiWorldBoundary::Delete(task);
   assert(!allocatorDepth&&!vdp1Depth);
@@ -206,5 +230,5 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   assert(task.task.finished && gGameStatus.m8_nextGameStatus==0x52);
   gGameStatus.m8_nextGameStatus=0;
  }
- puts("PASS WORLD startup ownership, four destination types, story/readiness guards, entry delay, arrival and close-up fades, and module handoff");
+ puts("PASS WORLD startup ownership, both environment buffers, scroll/priority writes, camera isolation, four destination types, story/readiness guards, entry delay, fades, and module handoff");
 }
