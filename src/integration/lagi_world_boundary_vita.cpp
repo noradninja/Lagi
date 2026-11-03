@@ -323,8 +323,10 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
     static void Delete(LagiWorldBoundary* task) {
         if (task->fontReady)
             unloadFnt();
-        if (task->ownsMapAllocator)
+        if (task->ownsMapAllocator) {
             freeRamResources(task);
+            vdp1FreeLastAllocation(task);
+        }
     }
     static const TypedTaskDefinition* getTypedTaskDefinition() {
         static const TypedTaskDefinition definition={Init,Update,Draw,Delete};

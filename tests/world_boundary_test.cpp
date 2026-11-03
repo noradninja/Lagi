@@ -20,11 +20,12 @@ struct {
  bool getBit(int){return true;}
 } mainGameState;
 std::uint8_t townBuffer[0xB0000];
-int allocatorDepth=0;
+int allocatorDepth=0,vdp1Depth=0;
 bool findFileOnDisc(const char*){return true;}
 void resetTempAllocators(){}
 void initDramAllocator(void*,std::uint8_t*,u32,const char**){++allocatorDepth;}
-void initVdp1Ram(void*,u32,u32){}
+void initVdp1Ram(void*,u32,u32){++vdp1Depth;}
+void vdp1FreeLastAllocation(void*){assert(vdp1Depth==1);--vdp1Depth;}
 void* allocateNPC(void* task,int){return task;}
 void freeRamResources(void*){assert(allocatorDepth==1);--allocatorDepth;}
 using s16=std::int16_t;
@@ -111,7 +112,7 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   assert(task&&static_cast<void*>(task)!=&parent);assert(task->program.size()==(present?0x5ED4:0));
   assert(task->displayReady==present&&task->display.seeded==present);
   if(present)assert(task->worldFile.m_data==task->program.data()&&task->destinations.program==0x06054000);
-  assert(gGameStatus.m4_gameStatus==0x4F&&gGameStatus.m0_gameMode==6);task->getTypedTaskDefinition()->destroy(task);assert(!allocatorDepth);delete task;}
+  assert(gGameStatus.m4_gameStatus==0x4F&&gGameStatus.m0_gameMode==6);task->getTypedTaskDefinition()->destroy(task);assert(!allocatorDepth&&!vdp1Depth);delete task;}
  assert(reads==2);
  lagi::worldEnabled=true;
  auto& pad=graphicEngineStatus.m4514.m0_inputDevices[0].m0_current;
