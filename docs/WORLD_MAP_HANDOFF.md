@@ -35,6 +35,36 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native sprite-text consumer — 2026-11-03 (controller cutover still pending)
+
+`lagi_world_map_sprite_text.cpp` ports MAIN `060263D4` creation and `06026316`
+Draw as a parent-owned typed task. It uses the existing native text parser and
+active font in offscreen row 32, reads cells at VDP2 `7000`/`7080`, strips the
+original 12-bit character index, and copies each nonempty glyph's two 32-byte
+tiles into WORLD's reserved VDP1 range `7B600..7BFFF`. Blank cells keep their
+8-pixel advance without consuming character memory. It clears the scratch
+row and restores the same six cursor/window fields saved by the original.
+Vita texture invalidation occurs once for the written range, not each frame.
+
+Draw follows the live parent-owned placement and writes original normal-sprite
+attributes: CTRL `1000`, PMOD `0080`, COLR `27C0`, SIZE `0110` (8x16).
+X adds the glyph advance; Y negates placement plus glyph Y. MAIN `06026382`
+multiplies placement's third component by the native one-over-far-clip input
+for the packet depth key: that component is **not font scale**. Both context
+command and packet cursors/counters advance through the normal native path.
+
+`world_map_sprite_text_test.ps1 -DiscImage <Disc1.bin>` checks original task
+and draw/glyph instruction anchors, then the production task with mocked
+native services: glyph order, blanks, bitmap bytes, cursor restoration,
+palette/size, live placement/depth, full 40-cell range bounds and task release.
+Tests pass, and the actual Vita executable compiles/links. Font decoding and
+GPU appearance are not proven by those mocks.
+
+This consumer is not live yet: the native WORLD message/confirmation controller
+must create/delete these children, update their placement, and perform the
+authored center interpolation before the fixed-row implementation is retired.
+No new hardware run is needed solely for this inactive consumer checkpoint.
+
 ### Native label projection producer — 2026-11-03 (not a live text cutover)
 
 `lagi_world_map_label.cpp` now ports WORLD `060574E4`'s projection through
