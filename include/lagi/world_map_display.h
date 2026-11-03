@@ -52,7 +52,7 @@ inline bool initialize_map_destinations(MapDisplayInput& input, sSaturnPtr progr
 struct MapDestination {
     s16 storyBit;
     s16 gameStatus;
-    s8 overlayIndex;
+    s8 preloadIndex; // WORLD camera passes +4 to native field/town preload helpers
     s8 type;
 
     bool canTravel() const { return gameStatus >= 0 && type >= 0 && type <= 3; }

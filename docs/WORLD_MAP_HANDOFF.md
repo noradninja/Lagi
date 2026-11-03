@@ -35,6 +35,31 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Garil route / downstream backend audit — 2026-11-03
+
+Original Disc 1 WORLD ordinary entry 6 is **Garil Desert**: story gate `006C`,
+status `0056`, preload selector 3, type 0. COMMON `212EAC + 56*2` gives mode 3 /
+field 3; native field definition `208C58 + 3*20` names `FLD_A5.PRG` and
+`FLD_A5.FNT`. Do not confuse the WORLD 0x24-byte record with the 20-byte field
+definition or select another desert overlay by filename resemblance.
+
+`tests/world_map_garil_route_test.ps1 -DiscImage <Disc1.bin>` verifies this
+complete read-only data chain, including the label, original gate and both asset
+names. It passes. It does not change flags, assert that the destination is unlocked,
+or prove live travel/player control.
+
+The current Vita source selection removes `overlayStart_FLD_A5` from the field
+dispatcher and does not compile `field/field_a5` modules. Thus WORLD dispatch
+alone cannot finish this goal. Restore the native A5 backend and its shared
+dependencies behind the experimental build boundary; do not reroute status 56
+to A3, alter story availability, or label an unsupported destination as playable.
+
+WORLD record +4 is now named `preloadIndex`: the original camera passes a
+positive signed value to MAIN `06011E0A` for type 0 or `06030100` for types
+1/2/3. Those preparation calls remain under recovery. They must not be replaced
+by `loadTownPrg` or forced field/subfield state changes merely because an older
+upstream comment called them overlay loaders.
+
 ### 2026-11-03 arrival-motion checkpoint
 
 The interim middle-distance `map_approach_profile` is removed. Original WORLD
