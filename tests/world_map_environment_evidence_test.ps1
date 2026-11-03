@@ -40,14 +40,24 @@ try {
   @(0x06056E7A,0x52EE), @(0x06056E7C,0x9318),
   @(0x06056E7E,0x622B), @(0x06056E80,0x323C),
   @(0x06056E82,0x4228), @(0x06056E84,0x1E22), # (256-offset)<<16 -> +8
-  @(0x06056EB0,0x0100)
+  @(0x06056EB0,0x0100),
+  @(0x06056E94,0x03EE), @(0x06056E98,0x323C), # add environment +40
+  @(0x06056E9C,0x1D21), @(0x06056E9E,0x9208),
+  @(0x06056EA0,0x3423), @(0x06056EA2,0x8B21), # signed horizon >=196
+  @(0x06056EA4,0x6143), @(0x06056EA6,0x4128),
+  @(0x06056EAA,0x631B), # negative horizon <<16
+  @(0x06056EAE,0x00C4), # signed comparison threshold 196
+  @(0x06056EE8,0xD343), @(0x06056EEE,0x1D31),
+  @(0x06056EF0,0x2210), # select normal-background layer 0
+  @(0x06056EF2,0x55D1), @(0x06056EF6,0x430B), @(0x06056EF8,0x64D2)
  )
  foreach($pair in $words) {
   if((Read-World $pair[0] 2) -ne $pair[1]) {
    throw ('WORLD environment instruction differs at {0:X8}' -f $pair[0])
   }
  }
- foreach($pair in @(@(0x0605664C,0x10000),@(0x06056650,0x06035644),@(0x06056654,0x20216E80))) {
+ foreach($pair in @(@(0x0605664C,0x10000),@(0x06056650,0x06035644),@(0x06056654,0x20216E80),
+                   @(0x06056FF8,4279500800L),@(0x06057000,0x06028986))) {
   if((Read-World $pair[0] 4) -ne $pair[1]){throw 'WORLD wave literal differs'}
  }
  $op=Read-World 0x06056E86 2
@@ -56,3 +66,10 @@ try {
  if(($op-shr 12)-ne 0xB -or (0x06056E86+4+2*$disp)-ne 0x060565C0){throw 'WORLD wave call differs'}
  Write-Output 'PASS original WORLD coefficient-wave instructions and separate normal-background origins; not a runtime/render test'
 } finally {$disc.Dispose()}
+$repo=Split-Path $PSScriptRoot -Parent
+$scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-world-environment-'+[guid]::NewGuid())
+New-Item -ItemType Directory $scratch | Out-Null
+& cl /nologo /std:c++20 /EHsc "/I$repo/include" "$PSScriptRoot/world_map_environment_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
+if($LASTEXITCODE -ne 0){throw 'WORLD environment fixture compile failed'}
+& "$scratch/test.exe"
+if($LASTEXITCODE -ne 0){throw 'WORLD environment fixture failed'}

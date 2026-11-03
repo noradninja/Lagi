@@ -250,6 +250,24 @@ can be investigated separately from the map's navigation and fade.
 
 ## Remaining environment motion — corrected native trace, 2026-11-03
 
+The normal-background origin arithmetic is now ported to
+`include/lagi/world_map_environment.h`. Original `06056E94..06056EF8`
+adds environment +0x40 to the signed projected-ground value with native wrap.
+For a sum at least 196, the consumer uses its negated 16.16 value; otherwise
+it uses literal `FF140000` (-236 in 16.16). This is a signed threshold branch,
+not a clamp to 236. The consumer selects NBG0 and calls MAIN `06028986`.
+The stored environment +8 value remains `(256-ground)<<16`, distinct from
+that final consumed Y. Horizontal origin preserves twelve arithmetic shifts,
+then left shift ten and negation, including low-32-bit wrap.
+
+The production header passes 5,832 host comparisons against a separate
+64-bit arithmetic oracle, including threshold discontinuity, negative yaw and
+signed overflow boundaries. Disc anchors for the consumer branch/call and
+literals pass; the header/test also passes Vita syntax checking. It is not
+wired into Draw yet: the projected-ground producer, live environment +0x40,
+zoom/window consumers and coefficient-wave lifecycle must be connected together.
+No visible behavior or hardware acceptance is claimed by this checkpoint.
+
 Disc 1 WORLD Draw at `06056E54..88` stores the result of `06056D7C`
 in environment +0x38. It derives the horizontal origin as
 `-(yaw >> 12) * 0x400` and the vertical origin as
