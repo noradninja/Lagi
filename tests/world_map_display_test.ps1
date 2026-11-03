@@ -59,7 +59,19 @@ try {
  )){
   if((Read-World $word[0] 2)-ne $word[1]){throw 'WORLD arrival distance/movement instruction differs'}
  }
- 'PASS original WORLD display, arrival and environment callback addresses'
+ # Native map-table switch: original story gate, selection slots and targets.
+ foreach($word in @(
+  @(0x06057CE2,0xE01A),@(0x06057CEE,0x8456),@(0x06057CF0,0x2308),
+  @(0x06057CF8,0x741B),@(0x06057CFE,0x7604),@(0x06057D02,0x2328),
+  @(0x06057D16,0xE1BF),@(0x06057D22,0xE221),
+  @(0x06057D4C,0x00DE),@(0x06057D4E,0x0087),
+  @(0x06057D7E,0xE240),@(0x06057D8A,0xE104),@(0x06057D9C,0xE200))) {
+  if((Read-World $word[0] 2)-ne$word[1]){throw 'WORLD map-table switch instruction differs'}
+ }
+ if((Read-World 0x06057D64 4)-ne0x06059688-or(Read-World 0x06057DB0 4)-ne0x06059B2C){
+  throw 'WORLD ordinary/fleet table literals differ'
+ }
+ 'PASS original WORLD display, arrival, table-switch and environment evidence'
 } finally {$disc.Dispose()}
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-world-display-'+[guid]::NewGuid())
 New-Item -ItemType Directory $scratch | Out-Null

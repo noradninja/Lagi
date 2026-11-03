@@ -37,7 +37,11 @@ fixedPoint MTH_Mul(s32 a,s32 b){return s32((std::int64_t(a)*b)>>16);}
 fixedPoint MTH_Mul_5_6(s32 a,s32 b,s32 c){return MTH_Mul(MTH_Mul(a,b),c);}
 s32 getSin(int){return 0;}s32 getCos(int){return 65536;}
 s32 sqrt_F(s32 v){return s32(std::sqrt(double(std::max(v,0))*65536.));}
-struct {u8 bitField[64]{};} mainGameState;
+struct {
+ u8 bitField[64]{};unsigned packed[256]{};
+ unsigned readPackedBits(unsigned index,unsigned count){assert(count==6);return packed[index];}
+ void setPackedBits(unsigned index,unsigned count,unsigned value){assert(count==6);packed[index]=value;}
+} mainGameState;
 constexpr u8 bitMasks[]={128,64,32,16,8,4,2,1};
 s32 FP_Div(s32 n,s32 d){return s32((std::int64_t(n)*65536)/d);}
 s32 atanX=0,atanZ=0;
@@ -139,5 +143,22 @@ int main(){
  assert(draw_map_trail(s,&owner));
  assert(pushes==3&&pops==3&&trailDraws==3&&trailPositions==std::vector<int>({101,100,115}));
  s.trailCount=16;assert(!draw_map_trail(s,&owner));s.trailCount=1;assert(!draw_map_trail(s,nullptr));
+ // Native 06057CE0 table switch is independent of field travel and preserves
+ // the ordinary selection in packed DE until the fleet table is left.
+ MapDisplay toggle;MapDisplayInput tables;tables.program={1};
+ tables.targetTable={1+0x5688};tables.targetCount=33;toggle.selectedTarget=32;
+ assert(!toggle_map_destinations(tables,toggle));
+ assert(toggle.selectedTarget==32&&tables.targetCount==33&&!mainGameState.bitField[0x1B]);
+ mainGameState.bitField[0x1A]=2;
+ mainGameState.packed[0x87]=6;
+ assert(toggle_map_destinations(tables,toggle));
+ assert((mainGameState.bitField[0x1B]&8)&&tables.targetCount==4&&tables.targetTable.offset==1+0x5B2C);
+ assert(toggle.selectedTarget==0&&(toggle.marker.flags&0x40));
+ assert(mainGameState.packed[0xDE]==32&&mainGameState.packed[0x87]==6);
+ toggle.selectedTarget=3;
+ assert(toggle_map_destinations(tables,toggle));
+ assert(!(mainGameState.bitField[0x1B]&8)&&tables.targetCount==33&&tables.targetTable.offset==1+0x5688);
+ assert(toggle.selectedTarget==32&&!(toggle.marker.flags&0x40)&&mainGameState.packed[0x87]==32);
+ tables.program={0};assert(!toggle_map_destinations(tables,toggle));
  puts("PASS production WORLD display states, target motion, camera transitions, bounded trails, native RGB blend, arrival shrink and camera/light service calls; not a playable-map test");
 }

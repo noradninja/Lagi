@@ -40,6 +40,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
     int selectionDelay = 15;
     bool waitingForArrival = false;
     bool preparedFilesHandedOff = false;
+    bool waitingForMapToggle = false;
     fixedPoint arrivalYaw = 0;
     s32 arrivalDistance = 0;
     s32 arrivalHeight = 0;
@@ -69,6 +70,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                 task->modelOwner = allocateNPC(task, 0);
                 const bool modelReady = lagi::worldmap::initialize_map_model(
                     task->display.marker, task->modelOwner, task->worldFile.getSaturnPtr(0x06058774));
+                if (fleet) task->display.marker.flags |= 0x40;
                 task->displayReady = modelReady && lagi::worldmap::initialize_map_arrival(
                     task->destinations, task->destinations.cameraSelection) &&
                     lagi::worldmap::update_map_display(
@@ -201,7 +203,22 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             task->fontReady = true;
         }
         auto& display = task->display;
-        if (task->waitingForArrival && task->destinations.arrivalBusy) {
+        bool returnedToSelection = false;
+        if (task->waitingForMapToggle && g_fadeControls.m0_fade0.m20_stopped) {
+            // Native camera state FF waits for fade completion before changing
+            // the table, then uses return-to-selection (display state 4).
+            lagi::worldmap::toggle_map_destinations(task->destinations, display);
+            task->waitingForMapToggle = false;
+            display.marker.flags |= 0x20;
+            display.state = 4;
+            task->nameShown = -1;
+            task->selectionDelay = 15;
+            lagi::disc::clear_prepared_native_files();
+            auto& fade = g_fadeControls.m0_fade0;
+            fadePalette(&fade, convertColorToU32ForFade(fade.m0_color),
+                        static_cast<s16>(g_fadeControls.m_48), 0x1e);
+            returnedToSelection = true;
+        } else if (task->waitingForArrival && task->destinations.arrivalBusy) {
             task->waitingForArrival = false;
             auto& fade = g_fadeControls.m0_fade0;
             fadePalette(&fade, convertColorToU32ForFade(fade.m0_color),
@@ -222,7 +239,9 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             }
         }
         // WORLD camera state 2 waits 15 updates before accepting input.
-        if (task->selectionDelay > 0)
+        if (task->waitingForMapToggle || returnedToSelection) {
+            // No confirmation or navigation during the native table-switch fade.
+        } else if (task->selectionDelay > 0)
             --task->selectionDelay;
         else if (display.state == 1) {
             const auto& pad = graphicEngineStatus.m4514.m0_inputDevices[0].m0_current;
@@ -230,30 +249,40 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             const auto destination = lagi::worldmap::read_map_destination(entry);
             // WORLD camera states 7 and 9 use the close-up path for types 2/3.
             // Types 0/1 use the arrival camera and the child completion flag.
-            if ((pad.m8_newButtonDown & 6) && destination.canTravel() &&
-                (destination.type >= 2 || task->destinations.arrivalReady) &&
+            if ((pad.m8_newButtonDown & 6) &&
                 (destination.storyBit <= 0 ||
                  (unsigned(destination.storyBit) / 8 < sizeof(mainGameState.bitField) &&
-                  mainGameState.getBit(destination.storyBit))) &&
-                lagi::worldmap::prepare_map_travel(destination)) {
-                if (destination.type >= 2) {
-                    task->travelStatus = destination.gameStatus;
-                    task->travelDelay = 15;
-                    display.state = 2;
-                } else if (lagi::worldmap::retarget_map_arrival(task->destinations,
-                               display.selectedTarget, task->arrivalYaw,
-                               task->arrivalDistance, task->arrivalHeight)) {
-                    task->travelStatus = destination.gameStatus;
-                    task->waitingForArrival = true;
-                    task->arrivalForwardStep = 0;
-                    task->arrivalVerticalStep = 0;
-                    display.state = 3;
+                  mainGameState.getBit(destination.storyBit)))) {
+                if (destination.gameStatus < 0) {
+                    clearVdp2TextArea();
+                    playSystemSoundEffect(0);
+                    auto& fade = g_fadeControls.m0_fade0;
+                    fadePalette(&fade, convertColorToU32ForFade(fade.m0_color), 0, 0x1e);
+                    task->waitingForMapToggle = true;
+                } else if (destination.canTravel() &&
+                           (destination.type >= 2 || task->destinations.arrivalReady) &&
+                           lagi::worldmap::prepare_map_travel(destination)) {
+                    clearVdp2TextArea();
+                    playSystemSoundEffect(0);
+                    if (destination.type >= 2) {
+                        task->travelStatus = destination.gameStatus;
+                        task->travelDelay = 15;
+                        display.state = 2;
+                    } else if (lagi::worldmap::retarget_map_arrival(task->destinations,
+                                   display.selectedTarget, task->arrivalYaw,
+                                   task->arrivalDistance, task->arrivalHeight)) {
+                        task->travelStatus = destination.gameStatus;
+                        task->waitingForArrival = true;
+                        task->arrivalForwardStep = 0;
+                        task->arrivalVerticalStep = 0;
+                        display.state = 3;
+                    }
                 }
             }
             constexpr unsigned masks[] = {0x10, 0x80, 0x20, 0x40};
             s32 selected = display.selectedTarget;
             for (unsigned direction = 0; direction < 4; ++direction) {
-                if (task->travelStatus < 0 && (pad.mC_newButtonDown2 & masks[direction]))
+                if (!task->waitingForMapToggle && task->travelStatus < 0 && (pad.mC_newButtonDown2 & masks[direction]))
                     selected = lagi::worldmap::find_map_destination(
                         task->destinations, display.selectedTarget, direction);
             }

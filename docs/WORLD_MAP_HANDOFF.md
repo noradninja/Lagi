@@ -35,6 +35,29 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Ordinary/fleet map switching — 2026-11-03
+
+The negative-status authored destination now follows native camera state FF:
+clear selection text, confirmation sound, 30-update fade to zero, wait for the
+fade to stop, then invoke WORLD `06057CE0` and return through display state 4.
+It never prepares files or dispatches a negative game status. Confirmation and
+navigation are suppressed while that fade is pending, and return restores the
+normal fade/15-update input delay.
+
+The original story gate is byte `1A` mask `02`. The switch toggles only the
+authored ordinary/fleet mode bit (`1B:08`), switches the original destination
+table/count, and preserves ordinary selection in packed `DE`. Leaving the
+fleet table restores that selection and packed route `87`. Native marker
+color flag `40` now also follows fleet mode on initial WORLD entry. No story
+unlock is fabricated. The display fixture checks the real service in both
+directions and the no-gate case; original Disc 1 instructions/table literals
+are pinned alongside it. The boundary fixture covers the negative-status
+fade wait, input suppression, re-entry delay, and absence of module dispatch.
+
+Host fixtures pass. Hardware visual/behavioral acceptance remains pending;
+fleet advance preview/dragon tasks, native labels, and the complete Garil
+entry/return route are not claimed complete by this checkpoint.
+
 ### Native destination file preparation — 2026-11-03
 
 WORLD confirmation now calls the recovered field/town preparation boundary

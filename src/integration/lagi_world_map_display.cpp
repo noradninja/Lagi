@@ -112,6 +112,33 @@ bool initialize_map_arrival(MapDisplayInput& input, s32 selected)
     input.arrivalReady = true;
     return true;
 }
+bool toggle_map_destinations(MapDisplayInput& input, MapDisplay& display)
+{
+    // WORLD 06057CE0: bit 1A:02 enables the ordinary/fleet table switch.
+    // Packed DE retains the ordinary selection, independently of route 87.
+    if (input.program.isNull() || !(mainGameState.bitField[0x1A] & 2))
+        return false;
+    if (mainGameState.bitField[0x1B] & 8) {
+        const auto selected = mainGameState.readPackedBits(0xDE, 6);
+        if (selected >= 33) return false;
+        mainGameState.bitField[0x1B] &= ~8;
+        display.marker.flags &= ~0x40;
+        input.targetTable = input.program + 0x5688;
+        input.targetCount = 33;
+        display.selectedTarget = selected;
+        mainGameState.setPackedBits(0x87, 6, selected);
+    } else {
+        if (display.selectedTarget < 0 || display.selectedTarget >= 33)
+            return false;
+        mainGameState.bitField[0x1B] |= 8;
+        display.marker.flags |= 0x40;
+        input.targetTable = input.program + 0x5B2C;
+        input.targetCount = 4;
+        mainGameState.setPackedBits(0xDE, 6, display.selectedTarget);
+        display.selectedTarget = 0;
+    }
+    return true;
+}
 // WORLD 060553F8 resolves the current selection and updates the arrival heading.
 bool retarget_map_arrival(MapDisplayInput& input, s32 selected, fixedPoint& yaw,
                           s32& distance, s32& targetHeight)

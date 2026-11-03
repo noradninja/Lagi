@@ -43,6 +43,10 @@ MapDestination read_map_destination(u32){return selectedDestination;}
 bool preparationSucceeds=true;int preparationCalls=0;
 bool prepare_map_travel(const MapDestination&){++preparationCalls;return preparationSucceeds;}
 struct MapDisplay {struct Marker {unsigned flags=0;} marker;bool seeded=false;int state=0,selectedTarget=0;sVec3_FP camera{},rotation{};};
+int tableToggles=0;
+bool toggle_map_destinations(MapDisplayInput& in,MapDisplay& display){
+ ++tableToggles;in.targetTable=0x06059688;in.targetCount=33;display.selectedTarget=32;return true;
+}
 bool initialize_map_model(MapDisplay::Marker&,void* owner,u32 light){assert(owner&&light==0x06058774);return true;}
 bool initialize_map_arrival(MapDisplayInput&,int){return true;}
 bool retarget_map_arrival(MapDisplayInput&,int,fixedPoint&,int& distance,int&){distance=0x6000;return true;}
@@ -54,6 +58,7 @@ void update_map_arrival_motion(MapDisplayInput& input,fixedPoint,int,int,int&,in
 bool update_map_display(MapDisplay& display,const MapDisplayInput& input){
  assert(input.program==0x06054000);
  lastDisplayBusy=input.arrivalBusy;
+ if(display.state==4)display.state=1;
  return display.seeded=true;
 }
 bool initialize_map_destinations(MapDisplayInput& input,u32 program,bool fleet,unsigned route){
@@ -128,6 +133,7 @@ void unloadFnt(){}
 void setupVDP2StringRendering(int,int,int,int){}
 struct {int m0=0;} vdp2StringContext;
 void drawStringSmallFont(const char*){}
+void clearVdp2TextArea(){}
 bool available=true;int reads=0;
 bool backgroundsAvailable=true;
 namespace lagi::disc {
@@ -165,6 +171,7 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
    assert(vram[offset]==(present?0x5A:0));
   if(present){
    assert(task->display.marker.flags&0x20);
+   assert(task->display.marker.flags&0x40);
    assert(worldRegs.mF8_PRINA==0x0602 && worldRegs.mFC_PRIR==5);
    assert(graphicEngineStatus.m405C.m10_nearClipDistance==0x800);
    assert(graphicEngineStatus.m405C.m14_farClipDistance==0x400000);
@@ -259,6 +266,30 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   LagiWorldBoundary::Delete(&task);
   assert(lagi::disc::preparationClears==clears);
   gGameStatus.m8_nextGameStatus=0;
+ }
+ // Authored negative status fades and returns within WORLD. It must never
+ // prepare a destination or dispatch a negative game status as a module.
+ {
+  LagiWorldBoundary task;task.displayReady=true;task.selectionDelay=0;
+  task.display.state=1;task.destinations.program=0x06054000;
+  lagi::worldmap::selectedDestination={-1,0,193};
+  lagi::worldmap::preparationCalls=0;fadeCalls=0;
+  mainGameState.storyAllowed=false;pad.m8_newButtonDown=2;
+  LagiWorldBoundary::Update(&task);
+  assert(!task.waitingForMapToggle&&!fadeCalls);
+  mainGameState.storyAllowed=true;
+  LagiWorldBoundary::Update(&task);
+  assert(task.waitingForMapToggle&&fadeCalls==1&&fadeFrames==30&&fadeTarget==0);
+  assert(!lagi::worldmap::preparationCalls&&!lagi::worldmap::tableToggles);
+  for(int i=0;i<5;++i)LagiWorldBoundary::Update(&task);
+  assert(fadeCalls==1&&task.waitingForMapToggle&&!lagi::worldmap::tableToggles);
+  g_fadeControls.m0_fade0.m20_stopped=1;
+  LagiWorldBoundary::Update(&task);
+  assert(!task.waitingForMapToggle&&lagi::worldmap::tableToggles==1);
+  assert(task.display.selectedTarget==32&&task.destinations.targetCount==33&&task.display.state==1);
+  assert(fadeCalls==2&&fadeFrames==30&&fadeTarget==u32(g_fadeControls.m_48));
+  assert(task.selectionDelay==15&&!task.task.finished&&!gGameStatus.m8_nextGameStatus);
+  assert(!lagi::worldmap::preparationCalls&&!task.preparedFilesHandedOff);
  }
  puts("PASS WORLD startup ownership, both environment buffers, scroll/priority writes, camera isolation, four destination types, story/readiness guards, entry delay, fades, and module handoff");
 }
