@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
-using p_workArea=void*;using s32=int;
+using p_workArea=void*;using s_workAreaCopy=void;using s32=int;
 template<class T> struct s_workAreaTemplate {struct Task {bool finished=false;void markFinished(){finished=true;}} task;Task* getTask(){return &task;}struct TypedTaskDefinition {void(*init)(T*);void(*update)(T*);void(*draw)(T*);void(*destroy)(T*);};};
 template<class T> void* createSubTask(void*){auto* task=new T;T::getTypedTaskDefinition()->init(task);return task;}
 struct {int m4_gameStatus=0x4F,m0_gameMode=6,m8_nextGameStatus=0;} gGameStatus;
@@ -59,9 +59,10 @@ namespace lagi::worldmap {
 int find_map_destination(const MapDisplayInput&,int selected,unsigned){return selected;}
 void apply_map_camera_and_light(const MapDisplay&){}
 void draw_map_model(MapDisplay::Marker&){}
+bool draw_map_trail(const MapDisplay&,s_workAreaCopy*){return true;}
 }
 namespace lagi { bool worldEnabled=false;bool native_scene_mode(int mode){return mode==6&&worldEnabled;} }
-namespace lagi::azel_bridge { void capture_native_scene_view_matrix(){} }
+namespace lagi::azel_bridge { void capture_native_scene_view_matrix(){} void begin_view_relative_submission_scope(){} void end_view_relative_submission_scope(){} }
 struct Pad {unsigned mC_newButtonDown2=0,m8_newButtonDown=0;};
 struct {struct {struct {Pad m0_current;} m0_inputDevices[1];} m4514;} graphicEngineStatus;
 void playSystemSoundEffect(int){}

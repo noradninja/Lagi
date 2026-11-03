@@ -30,6 +30,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
     bool fontReady = false;
     s32 nameShown = -1;
     bool ownsMapAllocator = false;
+    s_workAreaCopy* modelOwner = nullptr;
     s32 travelStatus = -1;
     int travelDelay = 0;
     int selectionDelay = 15;
@@ -59,9 +60,9 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                 initDramAllocator(task, townBuffer, sizeof(townBuffer), worldAssets);
                 task->ownsMapAllocator = true;
                 initVdp1Ram(task, 0x25C18800, 0x62E00);
-                auto* owner = allocateNPC(task, 0);
+                task->modelOwner = allocateNPC(task, 0);
                 const bool modelReady = lagi::worldmap::initialize_map_model(
-                    task->display.marker, owner, task->worldFile.getSaturnPtr(0x06058774));
+                    task->display.marker, task->modelOwner, task->worldFile.getSaturnPtr(0x06058774));
                 task->displayReady = modelReady && lagi::worldmap::initialize_map_arrival(
                     task->destinations, task->destinations.cameraSelection) &&
                     lagi::worldmap::update_map_display(
@@ -323,7 +324,10 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
 
         // Retail WORLD environment defaults at 0605676E and 060568DA.
         DrawEnvironmentPassA(task->display, fixedPoint(0x5B333), fixedPoint(-81));
+        lagi::azel_bridge::begin_view_relative_submission_scope();
+        lagi::worldmap::draw_map_trail(task->display, task->modelOwner);
         lagi::worldmap::draw_map_model(task->display.marker);
+        lagi::azel_bridge::end_view_relative_submission_scope();
     }
     static void Delete(LagiWorldBoundary* task) {
         if (task->fontReady)
