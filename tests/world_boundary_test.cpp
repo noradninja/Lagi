@@ -43,6 +43,12 @@ MapDestination read_map_destination(u32){return selectedDestination;}
 bool preparationSucceeds=true;int preparationCalls=0;
 bool prepare_map_travel(const MapDestination&){++preparationCalls;return preparationSucceeds;}
 struct MapDisplay {struct Marker {unsigned flags=0;} marker;bool seeded=false;int state=0,selectedTarget=0;sVec3_FP camera{},rotation{};};
+struct MapArrivalAnimation {bool ready=false;};
+bool initialize_map_arrival_animation(MapArrivalAnimation& state,void*){state.ready=true;return true;}
+int animationUpdates=0;
+std::vector<int> childUpdateOrder;
+void update_map_arrival_animation(MapArrivalAnimation&){++animationUpdates;childUpdateOrder.push_back(1);}
+void draw_map_arrival(const MapArrivalAnimation&,MapDisplayInput&,int){}
 int tableToggles=0;
 bool toggle_map_destinations(MapDisplayInput& in,MapDisplay& display){
  ++tableToggles;in.targetTable=0x06059688;in.targetCount=33;display.selectedTarget=32;return true;
@@ -51,10 +57,11 @@ bool initialize_map_model(MapDisplay::Marker&,void* owner,u32 light){assert(owne
 bool initialize_map_arrival(MapDisplayInput&,int){return true;}
 bool retarget_map_arrival(MapDisplayInput&,int,fixedPoint&,int& distance,int&){distance=0x6000;return true;}
 int arrivalMotionCalls=0;
-void update_map_arrival_heading(MapDisplayInput& input,fixedPoint,int){input.arrivalRotation[1]=123;}
+void update_map_arrival_heading(MapDisplayInput& input,fixedPoint,int){childUpdateOrder.push_back(2);input.arrivalRotation[1]=123;}
 bool lastDisplayBusy=false;
 void update_map_arrival_motion(MapDisplayInput& input,fixedPoint yaw,int,int,int&,int&){
  assert(yaw.asS32()==123); // movement receives live eased yaw, not the desired heading
+ childUpdateOrder.push_back(3);
  ++arrivalMotionCalls;input.arrivalBusy=true;
 }
 bool update_map_display(MapDisplay& display,const MapDisplayInput& input){
@@ -235,6 +242,7 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   assert(task.travelStatus<0 && task.display.state==1 && !fadeCalls);
   assert(lagi::worldmap::preparationCalls==1);
   lagi::worldmap::preparationSucceeds=true;
+  lagi::worldmap::childUpdateOrder.clear();
   LagiWorldBoundary::Update(&task);
   assert(task.travelStatus==0x52 && task.display.state==(type<2?3:2));
   assert(lagi::worldmap::preparationCalls==2);
@@ -242,6 +250,7 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   if(type<2){
    assert(task.destinations.arrivalBusy && !lagi::worldmap::lastDisplayBusy);
    assert(lagi::worldmap::arrivalMotionCalls==1);
+   assert((lagi::worldmap::childUpdateOrder==std::vector<int>{1,2,3}));
   }else assert(!lagi::worldmap::arrivalMotionCalls);
   pad.m8_newButtonDown=0;
   fadeCalls=0;

@@ -8,6 +8,7 @@
 #include "lagi/world_map_display.h"
 #include "lagi/world_map_motion.h"
 #include "lagi/world_map_environment.h"
+#include "lagi/world_map_arrival.h"
 #include "kernel/moduleManager.h"
 #include "kernel/fade.h"
 #include "kernel/cinematicBarsTask.h"
@@ -30,6 +31,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
     lagi::worldmap::MapDisplayInput destinations;
     lagi::worldmap::MapDisplay display;
     lagi::worldmap::MapEnvironment environment;
+    lagi::worldmap::MapArrivalAnimation arrivalAnimation;
     bool displayReady = false;
     bool fontReady = false;
     s32 nameShown = -1;
@@ -73,6 +75,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                 if (fleet) task->display.marker.flags |= 0x40;
                 task->displayReady = modelReady && lagi::worldmap::initialize_map_arrival(
                     task->destinations, task->destinations.cameraSelection) &&
+                    lagi::worldmap::initialize_map_arrival_animation(task->arrivalAnimation, task) &&
                     lagi::worldmap::update_map_display(
                     task->display, task->destinations);
                 if (task->displayReady && lagi::native_scene_mode(6)) {
@@ -307,6 +310,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         if (task->destinations.arrivalReady &&
             lagi::worldmap::retarget_map_arrival(task->destinations,display.selectedTarget,
                 task->arrivalYaw,task->arrivalDistance,task->arrivalHeight)) {
+            lagi::worldmap::update_map_arrival_animation(task->arrivalAnimation);
             lagi::worldmap::update_map_arrival_heading(task->destinations,
                 task->arrivalYaw,task->arrivalDistance);
             if (task->travelStatus >= 0 && display.state == 3)
@@ -427,6 +431,8 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         lagi::azel_bridge::begin_view_relative_submission_scope();
         lagi::worldmap::draw_map_trail(task->display, task->modelOwner);
         lagi::worldmap::draw_map_model(task->display.marker);
+        lagi::worldmap::draw_map_arrival(task->arrivalAnimation,task->destinations,
+                                       task->display.camera[1].asS32());
         lagi::azel_bridge::end_view_relative_submission_scope();
     }
     static void Delete(LagiWorldBoundary* task) {

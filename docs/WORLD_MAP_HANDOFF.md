@@ -35,6 +35,38 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native arrival dragon animation/draw — 2026-11-03
+
+The WORLD-local arrival child now uses the resident native dragon, loading it
+only if absent as the original root does. Init invokes the existing
+`setupDragonForTown`, animation zero from that dragon's own offset table/bundle,
+`setupModelAnimation`, and the native runtime-delta reset. Update preserves
+the separate child curve-frame counter (COMMON `206AC4`, 20-byte dragon rows),
+then calls `stepAnimation` and `updateAnimationMatrices` before yaw and motion.
+The normal retail curve selector remains zero; no debug curve editor was added.
+
+Draw uses `submitModelAndShadowModelToRendering` with the native main/shadow
+indices, the live child position/rotation and shadow height zero. Original
+WORLD `060556DA` suppresses it when the display camera Y is greater than
+`64000`; the adapter retains that gate, including equality. It does not hide
+the dragon simply because movement has not yet begun. No rider or replacement
+static model is appended to the map mesh.
+
+`world_map_arrival_test.ps1 -DiscImage <Disc1.bin>` pins original instructions
+and service literals, then compiles the production adapter with mocked native
+services to check selection, call order, curve cycling and drawing parameters.
+The boundary test checks animation-before-heading-before-movement. Both pass;
+the actual Vita `build/world-garil` executable target compiles and links.
+These are not device animation/texture/performance acceptance.
+
+This is a meaningful hardware checkpoint: build the configured experimental
+WORLD profile, enter through Map (and E014 if available), inspect the moving
+dragon/shadow, select an ordinarily unlocked destination and return to WORLD.
+Try Garil only when the real story gate exposes it; do not edit unlock bits.
+Capture the current build identity and `lagi.log`, including selected/status
+dispatch and frame timing. Native label placement, fleet-preview control and
+the complete Garil field route still remain open. The goal stays active.
+
 ### Arrival live-yaw correction — 2026-11-03
 
 Arrival now owns its original rotation vector, initialized with yaw `238E38E`.
