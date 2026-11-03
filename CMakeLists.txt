@@ -4210,6 +4210,10 @@ void pauseCutscene]=]
    message(FATAL_ERROR
     "Native town cutscene bridge did not apply completely; upstream Azel changed")
   endif()
+ elseif(relative_path STREQUAL "town/camp/campVdp2Plane.cpp")
+  # Camp's projection service writes two signed words.
+  string(REPLACE "s16 m30_vdp1ProjectionParam[1];"
+   "s16 m30_vdp1ProjectionParam[2];" source_text "${source_text}")
  elseif(relative_path STREQUAL "town/exca/twn_exca.cpp")
   # VDP2 pattern names are Saturn big-endian bytes, unlike host-generated
   # rotation/coefficient work areas. Preserve the authored 0x5000 entries
