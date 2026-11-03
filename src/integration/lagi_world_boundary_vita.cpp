@@ -170,13 +170,18 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         auto& display = task->display;
         if (task->waitingForArrival) {
             auto& arrival = task->destinations;
-            if (task->arrivalDistance == 0xCCC0) {
+            lagi::worldmap::retarget_map_arrival(arrival, display.selectedTarget,
+                task->arrivalYaw, task->arrivalDistance, task->arrivalHeight);
+            if (task->arrivalDistance >= 0xCCC0) {
                 lagi::worldmap::update_map_arrival_launch(arrival, task->arrivalYaw,
                     task->arrivalHeight, task->arrivalForwardStep, task->arrivalVerticalStep);
-                // Refresh the measured distance after moving. Holding the
-                // initial launch distance forever would pin this phase.
-                lagi::worldmap::retarget_map_arrival(arrival, display.selectedTarget,
-                    task->arrivalYaw, task->arrivalDistance, task->arrivalHeight);
+            } else if (task->arrivalDistance >= 0x6660) {
+                // Interim approach for the unported middle arrival phase.
+                const auto target = readSaturnVec3(arrival.targetTable +
+                    display.selectedTarget * 0x24 + 8);
+                for (unsigned axis = 0; axis < 3; ++axis)
+                    arrival.arrivalPosition[axis] = lagi::worldmap::map_approach_profile(
+                        arrival.arrivalPosition[axis].asS32(), target[axis].asS32(), 1);
             } else {
                 lagi::worldmap::update_map_arrival_step(task->arrivalDistance,
                     task->arrivalForwardStep, arrival.arrivalBusy);

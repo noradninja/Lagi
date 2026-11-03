@@ -35,14 +35,14 @@ int MTH_Mul(fixedPoint a,int b){return int((std::int64_t(a.value)*b)>>16);}
 struct {fixedPoint m[3][3],Mx,My,Mz;} gVdp2RotationMatrix;
 int intDivide(int a,int b){return a/b;}
 namespace lagi::worldmap {
-struct MapDisplayInput {u32 program=0,targetTable=0;int targetCount=0,cameraSelection=0;bool arrivalReady=false,arrivalBusy=false;};
+struct MapDisplayInput {u32 program=0,targetTable=0;int targetCount=0,cameraSelection=0;bool arrivalReady=false,arrivalBusy=false;sVec3_FP arrivalPosition{};};
 struct MapDestination {int gameStatus=0,type=0,storyBit=0;bool canTravel()const{return gameStatus>0;}};
 MapDestination selectedDestination;
 MapDestination read_map_destination(u32){return selectedDestination;}
 struct MapDisplay {struct Marker {unsigned flags=0;} marker;bool seeded=false;int state=0,selectedTarget=0;sVec3_FP camera{},rotation{};};
 bool initialize_map_model(MapDisplay::Marker&,void* owner,u32 light){assert(owner&&light==0x06058774);return true;}
 bool initialize_map_arrival(MapDisplayInput&,int){return true;}
-bool retarget_map_arrival(MapDisplayInput&,int,fixedPoint&,int& distance,int&){distance=0xA000;return true;}
+bool retarget_map_arrival(MapDisplayInput&,int,fixedPoint&,int& distance,int&){distance=0x6000;return true;}
 void update_map_arrival_launch(MapDisplayInput&,fixedPoint,int,int&,int&){}
 void update_map_arrival_step(u32,int&,bool& busy){busy=true;}
 bool update_map_display(MapDisplay& display,const MapDisplayInput& input){
@@ -98,6 +98,8 @@ std::uint8_t* getVdp2Vram(u32){return nullptr;}
 std::uint8_t* getVdp2Cram(u32){return nullptr;}
 void asyncDmaCopy(u32,std::uint8_t*,int,int){}
 u32 readSaturnU32(u32){return 0;}
+sVec3_FP readSaturnVec3(u32){return {};}
+namespace lagi::worldmap {int map_approach_profile(int,int target,int){return target;}}
 void loadFnt(const char*){}
 void unloadFnt(){}
 void setupVDP2StringRendering(int,int,int,int){}
