@@ -179,6 +179,8 @@ add_custom_command(OUTPUT "${LAGI_VDP2_UI_PRIORITY_OBJ}"
  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_ui_priority_f.gxp" VERBATIM)
 set(LAGI_RBG_TILE_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f_gxp.o")
+# Every RBG variant shares exact float VRAM addressing and coefficient math
+# with the generic shader. Reduced precision can corrupt addresses/selection.
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f.gxp"
  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_rbg0_tile16_8bit_f.cg" -Wperf -fastprecision -O3
@@ -4299,6 +4301,12 @@ void townCamera_update(sCameraTask* pThis)]=] source_text "${source_text}")
     source_text "${source_text}")
   endif()
 
+  if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
+   string(REPLACE
+    "    else if (overlayFileName == \"TWN_E006.PRG\")"
+    "    else if (overlayFileName == \"TWN_CAMP.PRG\")\n    {\n        gFieldOverlayFunction = overlayStart_TWN_CAMP;\n    }\n    else if (overlayFileName == \"TWN_E006.PRG\")"
+    source_text "${source_text}")
+  endif()
   # Vita bridge for the authentic upstream static world-grid submission path.
   # This modifies only the generated build copy, never extern/Azel.
   string(REPLACE
@@ -5119,6 +5127,13 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  town/ruin/twn_ruin_lock.cpp
 )
 
+if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
+ list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
+  town/camp/twn_camp.cpp
+  town/camp/campVdp2Plane.cpp
+  town/camp/campDragon.cpp
+  town/camp/campDragonNameEntry.cpp)
+endif()
 if(LAGI_BATTLE_NATIVE_BUILD)
  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES town/e011/twn_e011.cpp town/e014/twn_e014.cpp)
  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
@@ -5430,6 +5445,14 @@ target_compile_definitions(lagi PRIVATE LAGI_PLATFORM_VITA=1 LAGI_NEPTUNE_RENDER
 target_compile_definitions(lagi PRIVATE LAGI_VDP2_SPRITE_COMPOSITE=$<BOOL:${LAGI_VDP2_SPRITE_COMPOSITE}>)
 target_compile_definitions(lagi PRIVATE LAGI_GPU_PASS_TIMING=$<BOOL:${LAGI_GPU_PASS_TIMING}>)
 target_compile_definitions(lagi PRIVATE LAGI_RBG_DECODED_PAGES=$<BOOL:${LAGI_RBG_DECODED_PAGES}>)
+if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
+ set_source_files_properties(
+  "${LAGI_AZEL_GENERATED_ROOT}/town_camp_twn_camp.cpp"
+  "${LAGI_AZEL_GENERATED_ROOT}/town_camp_campVdp2Plane.cpp"
+  "${LAGI_AZEL_GENERATED_ROOT}/town_camp_campDragon.cpp"
+  "${LAGI_AZEL_GENERATED_ROOT}/town_camp_campDragonNameEntry.cpp"
+  PROPERTIES INCLUDE_DIRECTORIES "${LAGI_AZEL_SOURCE_ROOT}/town/camp")
+endif()
 target_compile_definitions(lagi PRIVATE LAGI_WORLD_MAP_BRINGUP=$<AND:$<BOOL:${LAGI_WORLD_MAP_BRINGUP}>,$<BOOL:${LAGI_BATTLE_EXECUTE_A3}>>)
 target_compile_definitions(lagi PRIVATE LAGI_RBG_COEFFICIENT_ROWS=$<BOOL:${LAGI_RBG_COEFFICIENT_ROWS}>)
 target_compile_definitions(lagi PRIVATE LAGI_FIELD_MOTION_TRACE=$<BOOL:${LAGI_FIELD_MOTION_TRACE}>)
