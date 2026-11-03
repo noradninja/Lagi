@@ -63,6 +63,9 @@ inline MapDestination read_map_destination(sSaturnPtr entry)
     return {readSaturnS16(entry), readSaturnS16(entry + 2),
             readSaturnS8(entry + 4), readSaturnS8(entry + 5)};
 }
+// Camera state 7: MAIN 06011E0A (field) / 06030100 (town).
+// Preparation does not activate an overlay or change field/story state.
+bool prepare_map_travel(const MapDestination&);
 // WORLD arrival Init 0605532A positions the child above its authored entry.
 bool initialize_map_arrival(MapDisplayInput&, s32 selected);
 bool retarget_map_arrival(MapDisplayInput&, s32 selected, fixedPoint& yaw,

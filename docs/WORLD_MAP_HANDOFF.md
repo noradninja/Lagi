@@ -35,6 +35,33 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native destination file preparation — 2026-11-03
+
+WORLD confirmation now calls the recovered field/town preparation boundary
+before starting arrival or its close-up delay. Native signed preload selectors,
+COMMON field definitions (font then PRG), and town-pair/overlay records select
+the filenames. Preparation changes no story flags, current field, subfield,
+or overlay dispatch pointer. A failed preparation leaves selection active.
+
+`lagi_world_map_travel.cpp` delegates those requests to the Vita file service.
+Since the service is synchronous and programs have independent host ownership,
+it retains the exact prepared bytes instead of overwriting the live WORLD
+program at Saturn `06054000`. Normal `loadFile`/`sSaturnMemoryFile` consumers
+take a matching disc/name entry once; preparation alone does not report a
+completed destination copy. Failed transactions retain no partial files.
+WORLD clears preparation on entry and cancellation/teardown, but transfers
+ownership after issuing its native next-status request. A disc change
+invalidates retained bytes. There is no per-frame read or background worker.
+
+`world_map_travel_test.ps1` checks native filename selection/order and cache
+ownership. `disc_file_preparation_test.ps1` compiles the actual file adapter
+and checks font/program consumption, failure, release and completion semantics.
+The boundary fixture covers preparation failure and handoff teardown for all
+four destination types. These pass, and `build/world-garil` target `lagi`
+compiles/links. No SELF/VPK or hardware acceptance is claimed. Native child
+visual/animation, name placement, navigation/cancel variants and live Garil
+entry/control/return remain open; the goal is not complete.
+
 ### Native Garil backend build checkpoint — 2026-11-03
 
 The experimental WORLD/A3-execution configuration now restores the original
@@ -82,8 +109,9 @@ destination zero, then the PRG at +4 into Saturn `06054000`, relocation zero.
 Town preparation first reads the signed overlay index from the two-byte pair
 at COMMON `2166E4`, then resolves the PRG from 16-byte records at `2165D8`,
 also targeting `06054000`. The route fixture checks these instructions and
-PC-relative literals. The file-service semantics and safe retained WORLD
-resource lifetime remain under recovery. These preparation calls must not be replaced
+PC-relative literals. The retained-byte Vita preparation service above now
+handles the host resource lifetime; native asynchronous GFS scheduling is not
+claimed. These preparation calls must not be replaced
 by `loadTownPrg` or forced field/subfield state changes merely because an older
 upstream comment called them overlay loaders.
 

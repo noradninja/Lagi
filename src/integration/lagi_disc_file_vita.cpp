@@ -1,6 +1,7 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 
 #include "lagi/disc_image.h"
+#include "lagi/prepared_disc_files.h"
 #include "lagi/platform.h"
 #include "kernel/fileBundle.h"
 
@@ -12,6 +13,8 @@
 #endif
 
 namespace {
+
+lagi::disc::PreparedFiles preparedFiles;
 
 // Engine-thread file service: completion means the synchronous destination
 // copy finished, not merely that a filename exists on disc.
@@ -28,6 +31,8 @@ std::string completionKey(const char* name)
 
 bool readDiscFile(const char* fileName, std::vector<u8>& data)
 {
+    if (preparedFiles.take(lagi::disc::selected_disc(), fileName, data))
+        return true;
     if (fileName && lagi::disc::read_file(fileName, data))
         return true;
 
@@ -38,6 +43,19 @@ bool readDiscFile(const char* fileName, std::vector<u8>& data)
 }
 
 } // namespace
+
+namespace lagi::disc {
+bool prepare_native_files(const std::vector<std::string>& names)
+{
+    return preparedFiles.prepare(selected_disc(), names,
+        [](const char* name, std::vector<std::uint8_t>& bytes) {
+            if (read_file(name, bytes)) return true;
+            lagi::platform::logging::writef("[WorldMapPrepare] failed disc file: %s\n", name);
+            return false;
+        });
+}
+void clear_prepared_native_files() { preparedFiles.clear(); }
+}
 
 // Vita platform adapter for the upstream Azel file API. Azel continues to own
 // all runtime and file-format behavior; only byte access is redirected from

@@ -40,6 +40,8 @@ struct MapDisplayInput {u32 program=0,targetTable=0;int targetCount=0,cameraSele
 struct MapDestination {int gameStatus=0,type=0,storyBit=0;bool canTravel()const{return gameStatus>0;}};
 MapDestination selectedDestination;
 MapDestination read_map_destination(u32){return selectedDestination;}
+bool preparationSucceeds=true;int preparationCalls=0;
+bool prepare_map_travel(const MapDestination&){++preparationCalls;return preparationSucceeds;}
 struct MapDisplay {struct Marker {unsigned flags=0;} marker;bool seeded=false;int state=0,selectedTarget=0;sVec3_FP camera{},rotation{};};
 bool initialize_map_model(MapDisplay::Marker&,void* owner,u32 light){assert(owner&&light==0x06058774);return true;}
 bool initialize_map_arrival(MapDisplayInput&,int){return true;}
@@ -129,6 +131,8 @@ void drawStringSmallFont(const char*){}
 bool available=true;int reads=0;
 bool backgroundsAvailable=true;
 namespace lagi::disc {
+int preparationClears=0;
+void clear_prepared_native_files(){++preparationClears;}
 bool read_file(const char* name,std::vector<std::uint8_t>& out){
  if(!std::strcmp(name,"WORLD.PRG")){
   ++reads;
@@ -189,6 +193,7 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
  auto& pad=graphicEngineStatus.m4514.m0_inputDevices[0].m0_current;
  for (int type : {0,1,2,3}) {
   fadeCalls=0;lagi::worldmap::arrivalMotionCalls=0;
+  lagi::worldmap::preparationCalls=0;
   LagiWorldBoundary task;
   task.displayReady=true;
   task.display.state=1;
@@ -215,8 +220,15 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
    assert(task.travelStatus<0 && task.display.state==1);
    task.destinations.arrivalReady=true;
   }
+  // Failed preparation cannot initiate movement, fades or module dispatch.
+  lagi::worldmap::preparationSucceeds=false;
+  LagiWorldBoundary::Update(&task);
+  assert(task.travelStatus<0 && task.display.state==1 && !fadeCalls);
+  assert(lagi::worldmap::preparationCalls==1);
+  lagi::worldmap::preparationSucceeds=true;
   LagiWorldBoundary::Update(&task);
   assert(task.travelStatus==0x52 && task.display.state==(type<2?3:2));
+  assert(lagi::worldmap::preparationCalls==2);
   assert(!fadeCalls);
   if(type<2){
    assert(task.destinations.arrivalBusy && !lagi::worldmap::lastDisplayBusy);
@@ -242,6 +254,10 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   gGameStatus.m8_nextGameStatus=0;
   LagiWorldBoundary::Update(&task);
   assert(task.task.finished && gGameStatus.m8_nextGameStatus==0x52);
+  assert(task.preparedFilesHandedOff);
+  const auto clears=lagi::disc::preparationClears;
+  LagiWorldBoundary::Delete(&task);
+  assert(lagi::disc::preparationClears==clears);
   gGameStatus.m8_nextGameStatus=0;
  }
  puts("PASS WORLD startup ownership, both environment buffers, scroll/priority writes, camera isolation, four destination types, story/readiness guards, entry delay, fades, and module handoff");

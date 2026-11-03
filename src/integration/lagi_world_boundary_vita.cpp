@@ -1,5 +1,6 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/disc_image.h"
+#include "lagi/prepared_disc_files.h"
 #include "lagi/platform.h"
 #include "lagi/native_scene_mode.h"
 #include "lagi/lagi_render_bridge.h"
@@ -38,12 +39,14 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
     int travelDelay = 0;
     int selectionDelay = 15;
     bool waitingForArrival = false;
+    bool preparedFilesHandedOff = false;
     fixedPoint arrivalYaw = 0;
     s32 arrivalDistance = 0;
     s32 arrivalHeight = 0;
     s32 arrivalForwardStep = 0;
     s32 arrivalVerticalStep = 0;
     static void Init(LagiWorldBoundary* task) {
+        lagi::disc::clear_prepared_native_files();
         const bool loaded=lagi::disc::read_file("WORLD.PRG",task->program);
         // Validate the complete authored table range before exposing pointers
         // into the task-owned program to future WORLD children.
@@ -213,6 +216,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                     "[WorldMapTravel] dispatch selected=%d status=%02X\n",
                     int(display.selectedTarget), unsigned(task->travelStatus));
                 setNextGameStatus(task->travelStatus);
+                task->preparedFilesHandedOff = true;
                 task->getTask()->markFinished();
                 return;
             }
@@ -230,7 +234,8 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                 (destination.type >= 2 || task->destinations.arrivalReady) &&
                 (destination.storyBit <= 0 ||
                  (unsigned(destination.storyBit) / 8 < sizeof(mainGameState.bitField) &&
-                  mainGameState.getBit(destination.storyBit)))) {
+                  mainGameState.getBit(destination.storyBit))) &&
+                lagi::worldmap::prepare_map_travel(destination)) {
                 if (destination.type >= 2) {
                     task->travelStatus = destination.gameStatus;
                     task->travelDelay = 15;
@@ -393,6 +398,8 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         lagi::azel_bridge::end_view_relative_submission_scope();
     }
     static void Delete(LagiWorldBoundary* task) {
+        if (!task->preparedFilesHandedOff)
+            lagi::disc::clear_prepared_native_files();
         if (task->fontReady)
             unloadFnt();
         if (task->ownsMapAllocator) {
