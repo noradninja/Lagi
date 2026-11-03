@@ -162,3 +162,10 @@ entry and status when the request reaches the module manager.
 The current label uses a fixed text row. The arrival launch refreshes
 distance after movement as an interim step, and the full native arrival
 phase sequence and background composition still need device verification.
+
+Disc 1 destination records 0..3 carry statuses 50 (Above Excavation
+Site), 51 (Excavation Site), 52 (Camp), and 53 (Valley). COMMON routes
+50/53 to field indices 1/2, which both use FLD_A3.PRG in the generated
+build. Statuses 51/52 route to alternate town indices 15/7. Record the
+actual selected status during testing so a failed destination overlay
+can be investigated separately from the map's navigation and fade.
