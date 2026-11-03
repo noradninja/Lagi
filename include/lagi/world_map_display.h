@@ -22,6 +22,7 @@ struct MapDisplayInput {
     sSaturnPtr program; // WORLD at native base 06054000
     sSaturnPtr targetTable;
     sVec3_FP arrivalPosition; // native root +14 child's live +8/+C/+10 position
+    sVec3_FP arrivalRotation; // child +14/+18/+1C; yaw is eased before movement
     bool arrivalReady=false;
     s32 targetCount=0;
     s32 cameraSelection=0;
@@ -72,6 +73,7 @@ bool toggle_map_destinations(MapDisplayInput&, MapDisplay&);
 bool initialize_map_arrival(MapDisplayInput&, s32 selected);
 bool retarget_map_arrival(MapDisplayInput&, s32 selected, fixedPoint& yaw,
                           s32& distance, s32& targetHeight);
+void update_map_arrival_heading(MapDisplayInput&, fixedPoint desiredYaw, s32 distance);
 void update_map_arrival_motion(MapDisplayInput&, fixedPoint yaw,s32 distance,s32 targetHeight,
                                s32& forwardStep, s32& verticalStep);
 // Recover native Update without invoking the still-unported WORLD task graph.

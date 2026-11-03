@@ -108,6 +108,8 @@ bool initialize_map_arrival(MapDisplayInput& input, s32 selected)
         return false;
     input.arrivalPosition = readSaturnVec3(input.targetTable + selected * 0x24 + 8);
     input.arrivalPosition[1] += 0xA000;
+    input.arrivalRotation.zeroize();
+    input.arrivalRotation[1] = 0x238E38E;
     input.arrivalBusy = false;
     input.arrivalReady = true;
     return true;
@@ -160,7 +162,16 @@ bool retarget_map_arrival(MapDisplayInput& input, s32 selected, fixedPoint& yaw,
     yaw = atan2_FP(s32(dx << 2), s32(dz << 2));
     return true;
 }
-// WORLD 060554A8 rotates (0, 0, step), then adds its X and Z.
+void update_map_arrival_heading(MapDisplayInput& input, fixedPoint desiredYaw, s32 distance)
+{
+    if (!input.arrivalReady) return;
+    // WORLD 060555D0 holds the current heading inside child +34 (1000).
+    // 060555E2 then invokes the native 28-bit angular interpolation service.
+    const auto current = input.arrivalRotation[1];
+    input.arrivalRotation[1] = interpolateRotation(current,
+        distance >= 0x1000 ? desiredYaw : current, 0x1999, 0x38E38E, 0x12345);
+}
+// WORLD 060554A8 rotates (0, 0, step) by the child's live yaw, then adds X/Z.
 static void move_map_arrival_horizontal(sVec3_FP& position, fixedPoint yaw, s32 step)
 {
     sMatrix4x3 matrix;

@@ -55,9 +55,19 @@ try {
   @(0x060554E6,0x312C),@(0x060554E8,0x2312),
   @(0x060554F0,0x312C),@(0x060554F2,0x1312),
   @(0x06055536,0xE001),@(0x0605553E,0x2100),
-  @(0x06055570,0x56EA),@(0x06055574,0x55E9),@(0x06055576,0xBF97)
+  @(0x06055570,0x56EA),@(0x06055574,0x55E9),@(0x06055576,0xBF97),
+  @(0x060555D0,0x514D),@(0x060555D2,0x5048),@(0x060555D4,0x3013),
+  @(0x060555DA,0x5046),@(0x060555DC,0x5049),
+  @(0x060555EA,0x2F36),@(0x060555EC,0xBFF0),@(0x060555FA,0x54E6),@(0x060555FC,0x1E06)
  )){
   if((Read-World $word[0] 2)-ne $word[1]){throw 'WORLD arrival distance/movement instruction differs'}
+ }
+ foreach($literal in @(@(0x060553E4,0x238E38E),@(0x06055670,0x12345),
+                        @(0x06055674,0x38E38E),@(0x06055678,0x06055B42))) {
+  if((Read-World $literal[0] 4)-ne$literal[1]){throw 'WORLD arrival heading literal differs'}
+ }
+ if((Read-World 0x060553B0 2)-ne0x1000-or(Read-World 0x0605566E 2)-ne0x1999){
+  throw 'WORLD arrival heading threshold/gain differs'
  }
  # Native map-table switch: original story gate, selection slots and targets.
  foreach($word in @(

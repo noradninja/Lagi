@@ -46,6 +46,10 @@ constexpr u8 bitMasks[]={128,64,32,16,8,4,2,1};
 s32 FP_Div(s32 n,s32 d){return s32((std::int64_t(n)*65536)/d);}
 s32 atanX=0,atanZ=0;
 s32 atan2_FP(s32 x,s32 z){atanX=x;atanZ=z;return 0;} // native service mocked
+int headingCalls=0;
+fixedPoint interpolateRotation(fixedPoint,fixedPoint target,fixedPoint gain,fixedPoint maximum,s32 minimum){
+ assert(gain==0x1999&&maximum==0x38E38E&&minimum==0x12345);++headingCalls;return target;
+}
 s32 vecDistance(const sVec3_FP& a,const sVec3_FP& b){double d=0;for(int i=0;i<3;++i){double n=a[i].v-b[i].v;d+=n*n;}return s32(std::sqrt(d));}
 struct sMatrix4x3 {sVec3_FP translation;};
 void initMatrixToIdentity(sMatrix4x3* m){m->translation.zeroize();}
@@ -160,5 +164,14 @@ int main(){
  assert(!(mainGameState.bitField[0x1B]&8)&&tables.targetCount==33&&tables.targetTable.offset==1+0x5688);
  assert(toggle.selectedTarget==32&&!(toggle.marker.flags&0x40)&&mainGameState.packed[0x87]==32);
  tables.program={0};assert(!toggle_map_destinations(tables,toggle));
+ MapDisplayInput arrival;arrival.targetTable={0x6000};arrival.targetCount=1;
+ assert(initialize_map_arrival(arrival,0));
+ assert(arrival.arrivalRotation[0]==0&&arrival.arrivalRotation[1]==0x238E38E&&arrival.arrivalRotation[2]==0);
+ update_map_arrival_heading(arrival,0x1234567,0x1000);
+ assert(headingCalls==1&&arrival.arrivalRotation[1]==0x1234567);
+ update_map_arrival_heading(arrival,0x7654321,0xFFF);
+ assert(headingCalls==2&&arrival.arrivalRotation[1]==0x1234567);
+ arrival.arrivalReady=false;update_map_arrival_heading(arrival,1,0x2000);
+ assert(headingCalls==2);
  puts("PASS production WORLD display states, target motion, camera transitions, bounded trails, native RGB blend, arrival shrink and camera/light service calls; not a playable-map test");
 }

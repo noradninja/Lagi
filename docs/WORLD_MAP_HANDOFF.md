@@ -35,6 +35,23 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Arrival live-yaw correction — 2026-11-03
+
+Arrival now owns its original rotation vector, initialized with yaw `238E38E`.
+WORLD `060555D0` holds that heading inside distance `1000`; `060555E2` eases
+it toward the desired yaw through Azel's existing `interpolateRotation`, using
+gain `1999`, maximum `38E38E`, and minimum `12345`. This runs in the idle
+arrival phase too. Active movement now rotates by the child's **live eased
+yaw**, not the desired destination angle. This supersedes the direct-heading
+integration in the earlier arrival checkpoint.
+
+Original instructions/literals are pinned in the display evidence fixture.
+Host checks verify initialization, hold threshold, exact native service inputs,
+readiness gating and live-yaw movement wiring. The actual rotation service is
+mocked in those host fixtures; Vita compile/link and hardware behavior are
+separate checks. Native arrival animation and its model/shadow draw remain
+under recovery, not replaced by a static display model.
+
 ### Ordinary/fleet map switching — 2026-11-03
 
 The negative-status authored destination now follows native camera state FF:

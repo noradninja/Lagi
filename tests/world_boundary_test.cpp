@@ -36,7 +36,7 @@ int MTH_Mul(fixedPoint a,int b){return int((std::int64_t(a.value)*b)>>16);}
 struct {fixedPoint m[3][3],Mx,My,Mz;} gVdp2RotationMatrix;
 int intDivide(int a,int b){return a/b;}
 namespace lagi::worldmap {
-struct MapDisplayInput {u32 program=0,targetTable=0;int targetCount=0,cameraSelection=0;bool arrivalReady=false,arrivalBusy=false;sVec3_FP arrivalPosition{};};
+struct MapDisplayInput {u32 program=0,targetTable=0;int targetCount=0,cameraSelection=0;bool arrivalReady=false,arrivalBusy=false;sVec3_FP arrivalPosition{},arrivalRotation{};};
 struct MapDestination {int gameStatus=0,type=0,storyBit=0;bool canTravel()const{return gameStatus>0;}};
 MapDestination selectedDestination;
 MapDestination read_map_destination(u32){return selectedDestination;}
@@ -51,8 +51,10 @@ bool initialize_map_model(MapDisplay::Marker&,void* owner,u32 light){assert(owne
 bool initialize_map_arrival(MapDisplayInput&,int){return true;}
 bool retarget_map_arrival(MapDisplayInput&,int,fixedPoint&,int& distance,int&){distance=0x6000;return true;}
 int arrivalMotionCalls=0;
+void update_map_arrival_heading(MapDisplayInput& input,fixedPoint,int){input.arrivalRotation[1]=123;}
 bool lastDisplayBusy=false;
-void update_map_arrival_motion(MapDisplayInput& input,fixedPoint,int,int,int&,int&){
+void update_map_arrival_motion(MapDisplayInput& input,fixedPoint yaw,int,int,int&,int&){
+ assert(yaw.asS32()==123); // movement receives live eased yaw, not the desired heading
  ++arrivalMotionCalls;input.arrivalBusy=true;
 }
 bool update_map_display(MapDisplay& display,const MapDisplayInput& input){

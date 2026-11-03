@@ -304,12 +304,15 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         // Native child order is camera, display, environment, then arrival.
         // Consume the old child's position/flag above and advance it only
         // afterward. Phase 2 keeps moving during the travel fade as well.
-        if (task->travelStatus >= 0 && display.state == 3 &&
+        if (task->destinations.arrivalReady &&
             lagi::worldmap::retarget_map_arrival(task->destinations,display.selectedTarget,
                 task->arrivalYaw,task->arrivalDistance,task->arrivalHeight)) {
-            lagi::worldmap::update_map_arrival_motion(task->destinations,task->arrivalYaw,
-                task->arrivalDistance,task->arrivalHeight,task->arrivalForwardStep,
-                task->arrivalVerticalStep);
+            lagi::worldmap::update_map_arrival_heading(task->destinations,
+                task->arrivalYaw,task->arrivalDistance);
+            if (task->travelStatus >= 0 && display.state == 3)
+                lagi::worldmap::update_map_arrival_motion(task->destinations,
+                    task->destinations.arrivalRotation[1],task->arrivalDistance,
+                    task->arrivalHeight,task->arrivalForwardStep,task->arrivalVerticalStep);
         }
     }
 
