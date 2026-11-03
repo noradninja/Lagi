@@ -250,6 +250,23 @@ can be investigated separately from the map's navigation and fade.
 
 ## Remaining environment motion — corrected native trace, 2026-11-03
 
+`world_map_environment.h` also ports the projected-ground producer and the
+424-entry coefficient-wave update. Ground uses the live rotation matrix's
+third row, signed coefficient pivot and Zst, retains low-32-bit products/sums,
+and delegates division to the supplied native divider before SHLR16/EXTS.W.
+The wave helper takes the current coefficient table and native sine service;
+it advances local phase per entry but stored phase by only the frame speed.
+An undersized table is rejected before mutation rather than silently shortened.
+The original initializer literals are speed `0011102A`, frequency `0005B059`,
+amplitude `02B3`, and normal-background vertical offset `013B`.
+
+Production-helper host checks cover wave coefficient products, phase wrap,
+424 writes, untouched suffix, rejection without mutation and divider argument/
+result binding; sine and divide services are mocked. Original-disc initializer,
+rotation-matrix and divider anchors pass, as does Vita syntax checking.
+These helpers are not yet attached to the live environment: native state
+updates and window/zoom handling remain required before an atomic draw cutover.
+
 The normal-background origin arithmetic is now ported to
 `include/lagi/world_map_environment.h`. Original `06056E94..06056EF8`
 adds environment +0x40 to the signed projected-ground value with native wrap.

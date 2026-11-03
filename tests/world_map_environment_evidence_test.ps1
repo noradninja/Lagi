@@ -49,7 +49,13 @@ try {
   @(0x06056EAE,0x00C4), # signed comparison threshold 196
   @(0x06056EE8,0xD343), @(0x06056EEE,0x1D31),
   @(0x06056EF0,0x2210), # select normal-background layer 0
-  @(0x06056EF2,0x55D1), @(0x06056EF6,0x430B), @(0x06056EF8,0x64D2)
+  @(0x06056EF2,0x55D1), @(0x06056EF6,0x430B), @(0x06056EF8,0x64D2),
+  @(0x06056D94,0xDE4A), # use live rotation matrix, not environment camera XYZ
+  @(0x06056DAA,0x01DD), @(0x06056DB2,0x05DD),
+  @(0x06056DBA,0x4528), @(0x06056DBC,0x53D2), @(0x06056DBE,0x3538),
+  @(0x06056DC4,0x54E8), @(0x06056DCE,0x55E7), # matrix row2 Z and Y
+  @(0x06056DD2,0x4029), @(0x06056DD6,0x600F), # SHLR16 / EXTS.W
+  @(0x06056958,0x02B3), @(0x0605695C,0x013B) # initial amplitude / vertical offset
  )
  foreach($pair in $words) {
   if((Read-World $pair[0] 2) -ne $pair[1]) {
@@ -57,7 +63,9 @@ try {
   }
  }
  foreach($pair in @(@(0x0605664C,0x10000),@(0x06056650,0x06035644),@(0x06056654,0x20216E80),
-                   @(0x06056FF8,4279500800L),@(0x06057000,0x06028986))) {
+                   @(0x06056FF8,4279500800L),@(0x06057000,0x06028986),
+                   @(0x06056978,0x11102A),@(0x0605697C,0x5B059),
+                   @(0x06056EC0,0x0605254C),@(0x06056EC8,0x06035664))) {
   if((Read-World $pair[0] 4) -ne $pair[1]){throw 'WORLD wave literal differs'}
  }
  $op=Read-World 0x06056E86 2
