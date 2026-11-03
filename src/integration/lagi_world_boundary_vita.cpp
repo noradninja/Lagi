@@ -96,6 +96,8 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                 bytes[i].size() > loads[i].capacity)
                 return false;
         }
+        // Reset the old scene tables and establish the VDP2 text layer.
+        reinitVdp2();
         for (unsigned i = 0; i < std::size(loads); ++i)
             std::memcpy(getVdp2Vram(loads[i].offset), bytes[i].data(), bytes[i].size());
         // WORLD 06059390/0605933C: native NBG0 and RBG0 format descriptors.
