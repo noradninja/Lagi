@@ -1,5 +1,37 @@
 # Native WORLD map bring-up
 
+## Active completion goal — 2026-11-03
+
+Finish native WORLD entry, navigation, confirmation, travel and exit/re-entry so
+normal progression can reach Garil Desert. Work stays on
+`feature/light-state-index` in small atomic commits. Preserve native story gates,
+destination records, task/resource ownership and GXM presentation; do not force
+an unlocked destination or substitute a field viewer. Trace the actual destination
+status/COMMON/overlay chain before declaring the Garil route connected.
+
+Implementation and acceptance gates:
+
+1. Recover WORLD's missing normal-background scroll producer and its live native
+   state. Replace the documented interim arrival phase and fixed-row name behavior
+   with their original producers rather than treating the experimental path as final.
+2. Check entry from both Map and E014, selection/locked destinations, confirmation,
+   native arrival/fades, cancellation where authored, teardown and re-entry. Ask for
+   hardware testing when this forms a coherent visual/behavioral milestone.
+3. Follow the original unlocked progression into the next fields toward Garil:
+   verify destination dispatch, required overlay services/assets, player control,
+   and the return route to WORLD. Keep unsupported downstream services explicit.
+4. Validate the complete route on Vita, including repeated WORLD visits, resources,
+   save/load as applicable, and render timing. Target 22 ms with a 33 ms deadline;
+   host fixtures/builds alone cannot close this acceptance gate.
+
+Baseline audit: the existing production display/motion and model fixtures pass
+against the original Disc 1 image. The boundary fixture now covers all four
+destination types, disabled status, story rejection, arrival readiness, fade wait,
+existing pending-status protection and startup/resource cleanup. Native camera,
+arrival and rendering services remain mocked there: this is regression coverage,
+not proof of complete arrival semantics or rendered output. No new hardware
+test or VPK is claimed by this test-only checkpoint.
+
 ## Resume here
 
 The experimental WORLD scene is on `feature/light-state-index`. Both the Map

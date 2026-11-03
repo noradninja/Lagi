@@ -16,8 +16,9 @@ struct sSaturnMemoryFile {
 };
 struct {
  std::uint8_t bitField[32]{};
+ bool storyAllowed=true;
  unsigned readPackedBits(int,int){return 6;}
- bool getBit(int){return true;}
+ bool getBit(int){return storyAllowed;}
 } mainGameState;
 std::uint8_t townBuffer[0xB0000];
 int allocatorDepth=0,vdp1Depth=0;
@@ -158,7 +159,7 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   delete task;
  }
  auto& pad=graphicEngineStatus.m4514.m0_inputDevices[0].m0_current;
- for (int type : {1,3}) {
+ for (int type : {0,1,2,3}) {
   LagiWorldBoundary task;
   task.displayReady=true;
   task.display.state=1;
@@ -168,15 +169,32 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   pad.m8_newButtonDown=2;
   for(int n=0;n<15;++n)LagiWorldBoundary::Update(&task);
   assert(task.travelStatus<0);
+  // An authored disabled destination cannot enter either travel path.
+  lagi::worldmap::selectedDestination.gameStatus=0;
   LagiWorldBoundary::Update(&task);
-  assert(task.travelStatus==0x52 && task.display.state==(type==1?3:2));
+  assert(task.travelStatus<0 && task.display.state==1);
+  lagi::worldmap::selectedDestination.gameStatus=0x52;
+  // Keep original story availability authoritative, independently of type.
+  lagi::worldmap::selectedDestination.storyBit=193;
+  mainGameState.storyAllowed=false;
+  LagiWorldBoundary::Update(&task);
+  assert(task.travelStatus<0 && task.display.state==1);
+  mainGameState.storyAllowed=true;
+  if(type<2){
+   task.destinations.arrivalReady=false;
+   LagiWorldBoundary::Update(&task);
+   assert(task.travelStatus<0 && task.display.state==1);
+   task.destinations.arrivalReady=true;
+  }
+  LagiWorldBoundary::Update(&task);
+  assert(task.travelStatus==0x52 && task.display.state==(type<2?3:2));
   pad.m8_newButtonDown=0;
   fadeCalls=0;
-  const int delay=type==1?1:15;
+  const int delay=type<2?1:15;
   for(int n=1;n<delay;++n)LagiWorldBoundary::Update(&task);
   assert(!fadeCalls);
   LagiWorldBoundary::Update(&task);
-  assert(fadeCalls==1 && fadeTarget==0x8000 && fadeFrames==(type==1?60:30));
+  assert(fadeCalls==1 && fadeTarget==0x8000 && fadeFrames==(type<2?60:30));
   LagiWorldBoundary::Update(&task);
   assert(!task.task.finished && !gGameStatus.m8_nextGameStatus);
   g_fadeControls.m0_fade0.m20_stopped=1;
@@ -188,5 +206,5 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   assert(task.task.finished && gGameStatus.m8_nextGameStatus==0x52);
   gGameStatus.m8_nextGameStatus=0;
  }
- puts("PASS WORLD startup ownership, entry delay, arrival and close-up fades, and module handoff");
+ puts("PASS WORLD startup ownership, four destination types, story/readiness guards, entry delay, arrival and close-up fades, and module handoff");
 }
