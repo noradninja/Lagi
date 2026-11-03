@@ -86,3 +86,24 @@ Neptune composes 3D geometry, depth-aware VDP1 world effects, VDP2 background la
 Azel remains the source of VDP commands, scene and task state, lighting selectors and ordering. Lagi captures transforms, colors and palette metadata at the native submission boundary rather than reconstructing them from scene names or texture identifiers. Neptune uses SGX for rasterization, sampling and composition, with native integer math retained where Saturn behavior depends on it.
 
 The same rendering infrastructure serves fields, towns, menus and cinematics. Sampling exceptions, including point-filtered radar elements, follow the requirements of the original presentation. Frame ownership and resource lifetime are managed across the producer/consumer boundary. Feature descriptions distinguish source-level implementation, host-side verification and visual confirmation on Vita hardware.
+
+## Future Saturn-style model rasterization experiment
+
+Benchmark projecting model vertices with Azel's native fixed-point transform,
+clip and projection routines, including conversion to integer Saturn screen
+coordinates. Reuse projected shared vertices where the model instance and
+projection state match. Preserve the local origin and scale the projected
+coordinates to the Vita viewport only after Saturn pixel quantization.
+
+For textured quads, evaluate a batched GXM strip path. Step along opposite
+edges in VDP1 texture-row order and emit screen-space triangles with matching
+UVs. Use constant clip-space W and point sampling for screen-linear UV
+interpolation. Carry depth independently for Neptune's existing depth tests.
+Start with the existing subdivision budget and compare adaptive row splits
+against a one-strip-per-source-row reference.
+
+This approximates the VDP1 mapping shape. GXM still uses triangle coverage,
+so edge pixels, degenerate quads and repeated writes can differ from VDP1.
+Compare against Saturn captures of a steeply angled face and a slow camera
+pan. Measure CPU projection and batch preparation separately from GPU time
+on a busy Deep Valley Gulch frame against the 33 ms frame budget.
