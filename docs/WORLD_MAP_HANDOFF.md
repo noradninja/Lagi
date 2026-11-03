@@ -214,3 +214,13 @@ Site), 51 (Excavation Site), 52 (Camp), and 53 (Valley). COMMON routes
 build. Statuses 51/52 route to alternate town indices 15/7. Record the
 actual selected status during testing so a failed destination overlay
 can be investigated separately from the map's navigation and fade.
+
+## Remaining normal-background motion
+
+Disc 1 WORLD Draw at `06056E54..88` stores the result of `06056D7C`
+in environment +0x38. It derives the horizontal origin as
+`-(yaw >> 12) * 0x400` and the vertical origin as
+`(0x100 - scrollOffset) * 0x10000`, then calls `060565C0`.
+That helper fills a 0x1A8-entry table using the live phase and amplitude.
+The current Vita map initializes and composites NBG0, but this native
+per-frame scroll table producer still needs to be ported and checked.
