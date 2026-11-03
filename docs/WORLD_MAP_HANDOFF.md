@@ -35,6 +35,25 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native Garil backend build checkpoint — 2026-11-03
+
+The experimental WORLD/A3-execution configuration now restores the original
+`overlayStart_FLD_A5` dispatcher and all 28 native A5 translation units. The
+native shared `fieldModelRender.cpp` model/LCS context and
+`fieldAnimRingSubTask.cpp` exit animation service are included as dependencies;
+no replacement stubs or upstream edits were introduced.
+
+The isolated `build/world-garil` Release executable target `lagi` compiled and
+linked successfully. Its ELF contains the A5 entry point and both shared native
+services. `tests/world_a5_build_contract_test.ps1` passes for WORLD enabled and
+for each disabled WORLD/execution gate; disabled configurations select no A5
+modules or dispatcher. The original-disc Garil route fixture also passes.
+
+This supersedes the source-exclusion finding below, not the remaining travel
+work. No SELF/VPK, deployment, or hardware acceptance is claimed. Native WORLD
+destination preparation, label/child presentation, navigation/cancellation,
+field entry/control and return/re-entry still require completion or validation.
+
 ### Garil route / downstream backend audit — 2026-11-03
 
 Original Disc 1 WORLD ordinary entry 6 is **Garil Desert**: story gate `006C`,
@@ -48,7 +67,7 @@ complete read-only data chain, including the label, original gate and both asset
 names. It passes. It does not change flags, assert that the destination is unlocked,
 or prove live travel/player control.
 
-The current Vita source selection removes `overlayStart_FLD_A5` from the field
+At this audit checkpoint the Vita source selection removed `overlayStart_FLD_A5` from the field
 dispatcher and does not compile `field/field_a5` modules. Thus WORLD dispatch
 alone cannot finish this goal. Restore the native A5 backend and its shared
 dependencies behind the experimental build boundary; do not reroute status 56

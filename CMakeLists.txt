@@ -1896,6 +1896,18 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    ""
    source_text "${source_text}")
 
+  if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
+   # WORLD entry 6 / status 56 reaches native field 3 (Garil). Restore
+   # the original A5 branch after the unrelated later overlays are trimmed.
+   string(REPLACE
+    "        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D5.PRG\"))"
+    "        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_A5.PRG\"))\n        {\n            gFieldOverlayFunction = overlayStart_FLD_A5;\n        }\n        else if (!strcmp(pFieldDefinition->m_prg, \"FLD_D5.PRG\"))"
+    source_text "${source_text}")
+   if(NOT source_text MATCHES "gFieldOverlayFunction = overlayStart_FLD_A5;")
+    message(FATAL_ERROR "Native Garil field dispatch anchor changed")
+   endif()
+  endif()
+
   # Do not expose the removed temporary System menu as native functionality.
   string(REPLACE
    "    pWorkArea->m3_menuButtonStates[4] = 1; // setup"
@@ -5211,6 +5223,16 @@ if(LAGI_BATTLE_NATIVE_BUILD)
   RELATIVE "${LAGI_AZEL_SOURCE_ROOT}"
   "${LAGI_AZEL_SOURCE_ROOT}/field/field_a7/*.cpp")
  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES ${LAGI_TUTORIAL_A7_SOURCES})
+ if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
+  # Keep all native A5 subfields and their shared object/environment services.
+  # Do not replace unlinked factories with stubs or redirect Garil to A3.
+  file(GLOB LAGI_WORLD_A5_SOURCES CONFIGURE_DEPENDS
+   RELATIVE "${LAGI_AZEL_SOURCE_ROOT}"
+   "${LAGI_AZEL_SOURCE_ROOT}/field/field_a5/*.cpp")
+  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES ${LAGI_WORLD_A5_SOURCES})
+  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
+   field/fieldModelRender.cpp field/fieldAnimRingSubTask.cpp)
+ endif()
  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES field/fieldSpline.cpp field/fieldBeamSpark.cpp)
  list(REMOVE_DUPLICATES LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES)
 endif()
@@ -5437,6 +5459,7 @@ target_include_directories(lagi PRIVATE include
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/shared"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_a3"
+ "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_a5"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_a7"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/field/field_d5"
  "${CMAKE_CURRENT_SOURCE_DIR}/extern/Azel/AzelLib/battle"
