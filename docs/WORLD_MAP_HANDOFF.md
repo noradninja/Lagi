@@ -52,8 +52,12 @@ A distinct unported UI producer exists at WORLD 0605738C..060574E2.
 It draws two animated normal sprites (CTRL=1000, PMOD=00A0), with color banks
 2200 + panel*100, source-offset arrays at 06059BE8, sizes at 06059BF0 and
 placement records at 06059BF4. Its animation/visibility decision calls
-06055772, which reads original button state/configuration data, so these
-are input-responsive panels, not proof of a destination-name background.
+06055772. Follow-up resolved 0604A3F8 as mainGameState.bitField and
+06042F14 as bitMasks (80,40,20,10,08,04,02,01), not input/configuration.
+These are story-dependent panels, not proof of a destination-name background.
+The exact priority selector is staged in world_map_panels.h, with all 1024
+relevant story-bit combinations tested for both panels. It is not live yet;
+resource ownership, animation control writes and draw scheduling remain open.
 Native placement slides by two pixels, bounded 0..96; selected animation
 increments by its signed direction and uses frames 1..10. Packet depth uses
 0199 times oneOverFarClip. Recover the native owning task's initializer,
