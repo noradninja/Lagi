@@ -35,6 +35,31 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Camera / missing UI source audit — 2026-11-04
+
+Do not compensate the apparent shadow-focused view by aiming selection camera
+state 1 at arrivalPosition: the native display producer targets the destination
+marker, while arrival Init places the dragon A000 above that destination.
+WORLD 060556DA checks camera Y at display+B0 against 64000, then passes the
+arrival child's +8 position, +14 rotation, resident dragon model/shadow indices
+and zero shadow height to MAIN 06009BB6. The current arrival adapter uses that
+same contract. The shared native service draws both flattened shadow and body;
+no evidence found here supports suppressing the shadow or offsetting the camera.
+Remaining camera acceptance must compare the restored terrain and native
+camera/view bridge, not assume the target should be the airborne dragon.
+
+A distinct unported UI producer exists at WORLD 0605738C..060574E2.
+It draws two animated normal sprites (CTRL=1000, PMOD=00A0), with color banks
+2200 + panel*100, source-offset arrays at 06059BE8, sizes at 06059BF0 and
+placement records at 06059BF4. Its animation/visibility decision calls
+06055772, which reads original button state/configuration data, so these
+are input-responsive panels, not proof of a destination-name background.
+Native placement slides by two pixels, bounded 0..96; selected animation
+increments by its signed direction and uses frames 1..10. Packet depth uses
+0199 times oneOverFarClip. Recover the native owning task's initializer,
+resource base, control fields and scheduling before enabling this routine;
+do not synthesize a generic plaque behind the already-ported glyph task.
+
 ### WORLD rotation VRAM bank roles — 2026-11-04
 
 Original WORLD 060566B8 loads the word at 0605677A (00B4), masks the
