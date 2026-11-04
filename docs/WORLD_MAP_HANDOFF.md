@@ -35,6 +35,20 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native ground-task back screen — 2026-11-04
+
+Recovered the remaining initialization side effect at 06055740..55770:
+write color B1F3 to VDP2 VRAM 7FFFE, then preserve BKTA upper bits and set
+its low address field to 3FFFF. The boundary now runs this initializer after
+environment graphics setup, matching native environment/ground task order.
+MapGround selection/frame reset to -1/0. This replaces the earlier adapter's
+retained black back-screen word; it is not another terrain visibility override.
+
+Original store/mask/literal evidence and host tests pin the VRAM word, exact
+BKTA address, preserved upper mode bits and state reset. Boundary fixtures
+still pass. It does not connect shortcut controls or establish hardware mesh
+visibility; the base-mesh device checkpoint remains outstanding.
+
 ### Native optional map pose sequence consumer — 2026-11-04
 
 The remaining 06055972..C0 consumer is connected behind MapGround's native

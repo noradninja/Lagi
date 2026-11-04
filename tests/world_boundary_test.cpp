@@ -87,6 +87,7 @@ void apply_map_camera_and_light(const MapDisplay&){messageCameraReady=true;}
 void draw_map_model(MapDisplay::Marker&){}
  bool draw_map_trail(const MapDisplay&,s_workAreaCopy*){return true;}
  struct MapGround {};
+ void initialize_map_ground(MapGround&){}
  bool draw_map_ground(MapGround&,u32,s_workAreaCopy*){return true;}
 }
 namespace lagi { bool worldEnabled=false;bool native_scene_mode(int mode){return mode==6&&worldEnabled;} }

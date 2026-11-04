@@ -27,6 +27,10 @@ void pushCurrentMatrix(){++pushes;}void popMatrix(){++pops;}
 using sVec3_FP=std::array<int,3>;
 void translateCurrentMatrix(sVec3_FP p){assert((p==sVec3_FP{0,0x5000,0}));}
 struct {std::array<std::uint8_t,32> bitField{};} mainGameState;
+struct {std::uint32_t mAC_BKTA=0xA5F15300;} regs;
+struct {decltype(regs)* m4_pendingVdp2Regs=&regs;bool m_isDirty=false;} vdp2Controls;
+unsigned backWord=0;
+void setVdp2VramU16(unsigned address,unsigned word){assert(address==0x7fffe);backWord=word;}
 #include "lagi/world_map_ground.h"
 #include "lagi/world_map_panels.h"
 std::vector<std::pair<s16,s16>> draws;
@@ -43,6 +47,10 @@ int main(){
  assert(pushes==1&&pops==1&&draws.size()==3);
  for(int i=0;i<3;++i)assert((draws[i]==std::pair<s16,s16>{s16(0x20+i*16),s16(0x28+i*16)}));
  lagi::worldmap::MapGround state;
+ state.selected=1;state.frame=100;
+ lagi::worldmap::initialize_map_ground(state);
+ assert(state.selected==-1&&state.frame==0&&backWord==0xb1f3);
+ assert(regs.mAC_BKTA==((0xA5F15300u&0xFFF80000u)|0x3FFFFu)&&vdp2Controls.m_isDirty);
  draws.clear();assert(lagi::worldmap::draw_map_ground(state,{1},&owner)&&draws.size()==3);
  state.selected=0;mainGameState.bitField[5]=1;
  for(unsigned sequenceIndex:{2u,0u,1u,1u}) {

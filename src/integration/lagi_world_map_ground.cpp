@@ -5,6 +5,17 @@
 #include "kernel/fileBundle.h"
 
 namespace lagi::worldmap {
+void initialize_map_ground(MapGround& state)
+{
+    // WORLD 06055740..06055770: the ground task owns this back-screen
+    // word/address. Keep upper BKTA mode bits, just as the native AND/OR.
+    state={};
+    setVdp2VramU16(0x7FFFE,0xB1F3);
+    auto* regs=vdp2Controls.m4_pendingVdp2Regs;
+    regs->mAC_BKTA=(regs->mAC_BKTA&0xFFF80000u)|0x3FFFFu;
+    vdp2Controls.m_isDirty=true;
+}
+
 bool draw_map_ground_base(sSaturnPtr program,s_workAreaCopy* owner)
 {
     if(program.isNull() || !owner || !owner->m0_fileBundle) return false;

@@ -84,6 +84,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                 if (task->displayReady && lagi::native_scene_mode(6)) {
                     task->displayReady = LoadEnvironmentGraphics(task->worldFile);
                     if (task->displayReady) {
+                        lagi::worldmap::initialize_map_ground(task->ground);
                         // WORLD entry 06054016..54 initializes its own
                         // projection and clipping distances.
                         reset3dEngine();
