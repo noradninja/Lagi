@@ -16332,10 +16332,11 @@ void presentation_set_sprite_color_state(const lagi::Vdp2SpriteColorState& state
     static unsigned budget=32;
     static lagi::Vdp2SpriteColorState previous{};
     if (budget && (state.ccctl!=previous.ccctl || state.spctl!=previous.spctl ||
-        state.ratio[0]!=previous.ratio[0] || state.priority[0]!=previous.priority[0])) {
+        state.ratio[0]!=previous.ratio[0] || state.priority[0]!=previous.priority[0] ||
+        state.rbgRatio!=previous.rbgRatio || state.prir!=previous.prir)) {
         --budget;
-        logging::writef("[VDP2SpriteColor] CCCTL=%04X SPCTL=%04X PRISA=%04X CCRSA=%04X CCRSB=%04X window=%02X selectors=captured\n",
-            state.ccctl,state.spctl,state.priority[0],state.ratio[0],state.ratio[1],state.colorWindow);
+        logging::writef("[VDP2SpriteColor] CCCTL=%04X SPCTL=%04X PRISA=%04X CCRSA=%04X CCRSB=%04X window=%02X CCRR=%04X PRIR=%04X selectors=captured\n",
+            state.ccctl,state.spctl,state.priority[0],state.ratio[0],state.ratio[1],state.colorWindow,state.rbgRatio,state.prir);
         previous=state;
     }
 }

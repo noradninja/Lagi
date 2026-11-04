@@ -35,6 +35,24 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### WORLD cloud composition state gap — 2026-11-04
+
+WORLD uses sprite type 0, CCCTL0010 (RBG0 calculation, not sprite calculation),
+NBG0 underneath, and RBG0 priority3/5 relative to VDP1 priority4. The current
+type-3 compositor's support predicate rejects this state; its alternative
+background-before-world route cannot implement the priority5 cloud foreground.
+Enabling type3 blindly or merely moving clouds last would be incorrect: native
+RBG0 calculation also needs the next eligible source and its CCRR ratio.
+
+CCRR was entirely absent from Lagi's published composition state. It is now
+captured as rbgRatio from the same live register snapshot as CCCTL/PRIR/CCRS,
+copied through the existing frame publication, and included in the bounded
+transition log. Tests cover all 65536 register words / low-five-bit ratios and
+the production capture/publication wiring. This is prerequisite data capture,
+NOT an enabled new compositor or a cloud-ordering fix. Type0 selector metadata,
+NBG0/RBG0/VDP1 top/second-source resolution and RGB555 blend parity remain open.
+Keep this work separate from the accepted flight/water type3 compositor.
+
 ### Native WORLD camera pitch arithmetic corrected — 2026-11-04
 
 The 16-03-03 capture confirms visible ground but excessive camera steepness,

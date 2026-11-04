@@ -4,6 +4,11 @@
 #include <initializer_list>
 int main() {
     lagi::Vdp2SpriteColorState s;
+    for(unsigned word=0;word<65536;++word) {
+        s.rbgRatio=std::uint16_t(word);
+        const auto snapshot=s;
+        assert(snapshot.rbgRatio==word&&lagi::rbgColorRatio(snapshot)==word%32);
+    }
     s.ccctl=0x40;s.spctl=0x1403;s.priority[0]=0x404;s.ratio[0]=0x1210;s.ratio[1]=0x14;
     assert(lagi::spritePriority(s,0)==4&&lagi::spriteColorRatio(s,0)==16);
     assert(lagi::spriteColorRatio(s,1)==18&&lagi::spriteColorRatio(s,2)==20);
