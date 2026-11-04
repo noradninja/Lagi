@@ -91,9 +91,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                         projection.m38_oneOverFarClip = FP_Div(0x8000, projection.m14_farClipDistance);
                         projection.m34_oneOverFarClip256 = projection.m38_oneOverFarClip << 8;
                         task->display.marker.flags |= 0x20;
-                        auto& fade = g_fadeControls.m0_fade0;
-                        fadePalette(&fade, convertColorToU32ForFade(fade.m0_color),
-                                    static_cast<s16>(g_fadeControls.m_48), 0x1e);
+                        BeginSelectionFadeIn();
                     }
                 }
             }
@@ -103,6 +101,20 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             "sceneEnabled=%u\n",
             unsigned(gGameStatus.m4_gameStatus),int(gGameStatus.m0_gameMode),
             loaded?1u:0u,unsigned(task->program.size()),task->displayReady?1u:0u,lagi::native_scene_mode(6)?1u:0u);
+    }
+    static void BeginSelectionFadeIn() {
+        // WORLD camera state 1 (06057ED0) and state FF clear both CLOFSL
+        // buffers before fading A back in. Inherited B can remain black
+        // after field exit, hiding an otherwise submitted RBG0 terrain.
+        if (static_cast<std::int8_t>(g_fadeControls.m_4C) <=
+            static_cast<std::int8_t>(g_fadeControls.m_4D)) {
+            vdp2Controls.m20_registers[0].m112_CLOFSL = 0;
+            vdp2Controls.m20_registers[1].m112_CLOFSL = 0;
+            vdp2Controls.m_isDirty = true;
+        }
+        auto& fade = g_fadeControls.m0_fade0;
+        fadePalette(&fade, convertColorToU32ForFade(fade.m0_color),
+                    static_cast<s16>(g_fadeControls.m_48), 0x1e);
     }
     static bool LoadEnvironmentGraphics(sSaturnMemoryFile& worldFile) {
         // WORLD 0605668E..AC loads these four files into VDP2 VRAM.
@@ -217,9 +229,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             task->nameShown = -1;
             task->selectionDelay = 15;
             lagi::disc::clear_prepared_native_files();
-            auto& fade = g_fadeControls.m0_fade0;
-            fadePalette(&fade, convertColorToU32ForFade(fade.m0_color),
-                        static_cast<s16>(g_fadeControls.m_48), 0x1e);
+            BeginSelectionFadeIn();
             returnedToSelection = true;
         } else if (task->waitingForArrival && task->destinations.arrivalBusy) {
             task->waitingForArrival = false;

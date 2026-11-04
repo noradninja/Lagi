@@ -35,6 +35,39 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Hardware regression report / fade-group correction — 2026-11-04
+
+Hardware acceptance **failed**: user reports missing canyon water, cinematic
+cloud slowdown, black WORLD environment, wrong camera/indicator behavior,
+missing WORLD clouds and no destination transition. Do not treat the earlier
+host fixtures/link results as acceptance of any of these behaviors. Label
+controller work is deferred while these failures are investigated.
+
+The available `lagi_InGame.log` proves WORLD reaches mode 6, submits 63 native
+models / 263 polygons, and enables RBG0/NBG0. It also records `CLOFSL=0010`
+while A fades to `(0,0,0)` and B remains `(-256,-256,-256)`. Thus the RBG0
+terrain retains fully black offset B despite native submissions. The adapter
+omitted WORLD camera state 1's original signed `4C <= 4D` test and clearing of
+**both** CLOFSL buffers. The same operation belongs to negative-target return.
+`BeginSelectionFadeIn` now restores that native operation at both entry sites;
+it does not fabricate geometry, adjust the camera, or disable fade processing.
+
+Original Disc 1 `06057ED0..EE4` anchors and host checks for both buffers and
+signed-byte boundary cases pass; Vita executable compile/link passes. Visibility
+is not yet hardware-verified, and this does not claim to fix the other failures.
+WORLD samples in the available log take about 33–34 ms, with roughly 26–28 ms
+in GXM wait and about 6 ms CPU preparation (`gpuSerialized=0`). This is not
+evidence that clouds alone cause the cost.
+
+Capture availability at inspection: the requested first Downloads `lagi.log`
+is absent. The supplied `Lagi - Lagi.mp4` is 50.048 seconds and starts directly
+in WORLD; its opening nine sampled seconds also remain in WORLD, not the
+described canyon/cinematic/boss route. `Lagi - InGame.mp4` is 55.573 seconds,
+showing flight/menu/WORLD. The 12.367-second Saturn reference shows terrain,
+clouds, normal selection and travel. Obtain the intended first log/video before
+claiming a canyon-water or boss-cinematic timing diagnosis. Do not repeatedly
+request hardware runs for each narrow source correction.
+
 ### Native sprite-text consumer — 2026-11-03 (controller cutover still pending)
 
 `lagi_world_map_sprite_text.cpp` ports MAIN `060263D4` creation and `06026316`

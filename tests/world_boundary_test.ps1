@@ -13,6 +13,13 @@ try {
  $entry=Read-Native 182 0x200000 (0x212FC4+6*4) 4
  $name=([Text.Encoding]::ASCII.GetString((Read-Native 58 0x6006000 0x604382C 10))).Split([char]0)[0]
  if($mode[0] -ne 6 -or $mode[1] -ne 0 -or [BitConverter]::ToString($entry) -ne '06-02-78-78' -or $name -ne 'WORLD.PRG'){throw 'Native WORLD dispatch contract differs'}
+ foreach($word in @(@(0x06057ED0,'E0-4D'),@(0x06057ED2,'01-CC'),
+  @(0x06057ED4,'E0-4C'),@(0x06057ED6,'03-CC'),@(0x06057ED8,'31-33'),
+  @(0x06057EDA,'8B-04'),@(0x06057EE0,'04-B5'),@(0x06057EE4,'04-B5'))) {
+  if([BitConverter]::ToString((Read-Native 244259 0x06054000 $word[0] 2))-ne$word[1]){
+   throw 'Native WORLD signed fade-group reset differs'
+  }
+ }
  'PASS original status 4F -> mode 6 -> 06027878 -> WORLD.PRG; no story-status substitution'
 } finally {$disc.Dispose()}
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-world-boundary-'+[guid]::NewGuid())

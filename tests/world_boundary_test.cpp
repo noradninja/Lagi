@@ -96,13 +96,13 @@ fixedPoint FP_Div(int a,fixedPoint b){return FP_Div(a,b.asS32());}
 fixedPoint getSin(unsigned){return 0;}
 void playSystemSoundEffect(int){}
 struct Fade {u32 m0_color=0;int m20_stopped=0;};
-struct {Fade m0_fade0;int m_48=0;} g_fadeControls;
+struct {Fade m0_fade0;int m_48=0;std::uint8_t m_4C=0,m_4D=0;} g_fadeControls;
 u32 convertColorToU32ForFade(u32 color){return color;}
 int fadeCalls=0,fadeFrames=0;u32 fadeTarget=0;
 void fadePalette(Fade* fade,u32,u32 target,int frames){++fadeCalls;fadeFrames=frames;fadeTarget=target;fade->m20_stopped=0;}
 void setNextGameStatus(int status){assert(!gGameStatus.m8_nextGameStatus);gGameStatus.m8_nextGameStatus=status;}
 struct Vdp2Regs {u32 m70_SCXN0=0,m74_SCYN0=0,mE_RAMCTL=0,m10_CYCA0=0,m38_PNCR=0,mBC_RPTAU=0,mBE_RPTAL=0,mC0_WPSX0=0,mC2_WPSY0=0,mC4_WPEX0=0,mC6_WPEY0=0,mA8_LCTA=0,mAC_BKTA=0,mF0_PRISA=0,mF2_PRISB=0,mF4_PRISC=0,mF6_PRISD=0,mF8_PRINA=0,mFA_PRINB=0,mFC_PRIR=0;};
-struct {Vdp2Regs* m4_pendingVdp2Regs=nullptr;bool m_isDirty=false;int m0_doubleBufferIndex=0;} vdp2Controls;
+struct {Vdp2Regs* m4_pendingVdp2Regs=nullptr;struct {u32 m112_CLOFSL=0;}m20_registers[2];bool m_isDirty=false;int m0_doubleBufferIndex=0;} vdp2Controls;
 enum LayerCommand {m0_END,m2_CHCN,m5_CHSZ,m6_PNB,m7_CNSM,m11_SCN,m27_RPMD,m31_RxKTE,m34_W0E,m37_W0A,m44_CCEN,m45_COEN};
 struct sLayerConfig {LayerCommand command;u32 value;};
 Vdp2Regs worldRegs;int vdp2Resets=0;
@@ -162,6 +162,15 @@ bool read_file(const char* name,std::vector<std::uint8_t>& out){
 namespace lagi::platform::logging {template<class... T>void writef(const char*,T...) {}}
 #include "production.inc"
 int main(){int parent;mainGameState.bitField[0x1B]=8;
+ for(const auto pair : {std::array<int,2>{0,0},{128,127},{127,128}}){
+  g_fadeControls.m_4C=std::uint8_t(pair[0]);g_fadeControls.m_4D=std::uint8_t(pair[1]);
+  for(auto& registers:vdp2Controls.m20_registers)registers.m112_CLOFSL=0x10;
+  LagiWorldBoundary::BeginSelectionFadeIn();
+  const bool cleared=std::int8_t(pair[0])<=std::int8_t(pair[1]);
+  for(const auto& registers:vdp2Controls.m20_registers)assert(registers.m112_CLOFSL==(cleared?0u:0x10u));
+  assert(fadeFrames==30&&fadeTarget==u32(g_fadeControls.m_48));
+ }
+ g_fadeControls.m_4C=g_fadeControls.m_4D=0;
  for(bool present:{true,false}){available=present;auto* task=static_cast<LagiWorldBoundary*>(lagiLoadNativeWorldBoundary(&parent,0));
   assert(task&&static_cast<void*>(task)!=&parent);assert(task->program.size()==(present?0x5ED4:0));
   assert(task->displayReady==present&&task->display.seeded==present);
