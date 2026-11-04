@@ -5,9 +5,11 @@
 #include "field/fieldCutsceneTask2.h"
 #include "field/fieldCutsceneTask3.h"
 #include "field/fieldCutsceneTask.h"
+#include "lagi/garil_placement.h"
 
 bool lagiAzelTryGarilScriptAction(sSaturnPtr target, s32& result)
 {
+    if (lagiAzelTryGarilPlacement(target)) {result=0;return true;}
     if (!gFLD_A5 || target.m_file != gFLD_A5 ||
         (target.m_offset != 0x060728A4 && target.m_offset != 0x060728E0 &&
          target.m_offset != 0x060728F8)) return false;

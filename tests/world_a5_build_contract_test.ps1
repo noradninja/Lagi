@@ -19,6 +19,11 @@ if($Enabled){
     !$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_script_native.cpp.obj:')){
   throw 'Owned Garil native-action binding missing'
  }
+ $camera=Get-Content -Raw (Join-Path $directory 'azel_upstream/field_fieldCamera.cpp')
+ if(!$camera.Contains('void lagiAzelPrepareGarilCamera(sFieldCameraStatus* camera, s_dragonTaskWorkArea* dragon) { cameraFollowMode_posFromDragon(camera, dragon); }')-or
+    !$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_placement.cpp.obj:')){
+  throw 'Native Garil placement/camera producer missing'
+ }
  if(!$ninja.Contains('build CMakeFiles/lagi.dir/azel_upstream/field_fieldModelRender.cpp.obj:')){
   throw 'Native A5 model/LCS context dependency missing'
  }
@@ -30,5 +35,5 @@ if($Enabled){
   $target='build CMakeFiles/lagi.dir/azel_upstream/field_field_a5_'+$source.Name+'.obj:'
   if(!$ninja.Contains($target)){throw "Missing A5 target: $($source.Name)"}
  }
-}elseif($objects.Count-or$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_script_native.cpp.obj:')){throw 'A5 modules leaked into the disabled WORLD configuration'}
+}elseif($objects.Count-or$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_script_native.cpp.obj:')-or$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_placement.cpp.obj:')){throw 'A5 modules leaked into the disabled WORLD configuration'}
 Write-Output "PASS WORLD/A5 build gate: enabled=$([bool]$Enabled) nativeModules=$($objects.Count); not a link or hardware test"

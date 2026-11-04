@@ -6,6 +6,8 @@ $fades=@($audit.Calls | Where-Object NativeEA -in 0x0606FA5C,0x0606FAB4)
 if($fades.Count-ne6-or@($fades|Where-Object {$_.Opcode-ne14-or$_.Arguments-ne1}).Count){throw 'Garil ordinary fade-action call sites differ'}
 $stateActions=@($audit.Calls | Where-Object NativeEA -in 0x060728A4,0x060728E0,0x060728F8)
 if($stateActions.Count-ne11-or@($stateActions|Where-Object {$_.Opcode-ne14-or$_.Arguments-ne0}).Count){throw 'Garil ordinary cutscene-state action sites differ'}
+$placements=@($audit.Calls | Where-Object NativeEA -in 0x0605C020,0x0605C054)
+if($placements.Count-ne2-or@($placements|Where-Object {$_.Opcode-ne14-or$_.Arguments-ne0}).Count){throw 'Garil placement action sites differ'}
 $disc=[IO.File]::OpenRead((Resolve-Path -LiteralPath $DiscImage).Path)
 try {
  function Read-A5Word([long]$ea){
@@ -29,8 +31,18 @@ try {
   @(0x06071A7E,0x8B0E),@(0x06071A82,0xC802),@(0x06071A84,0x8905))) {
   if((Read-A5Word $word[0])-ne$word[1]){throw 'Original A5 cutscene-state instruction differs'}
  }
+ foreach($word in @(@(0x0607FB12,0x1426),@(0x0607FB16,0x1437),@(0x0607FB1A,0x1428),
+  @(0x0607C5A8,0x1E32),@(0x0607C5AC,0x1E23),@(0x0607C5B0,0x1E34),
+  @(0x0607C5BC,0x1E28),@(0x0607C5C0,0x1E39),@(0x0607C5C6,0x1E2A),
+  @(0x0607C5DE,0x1324),@(0x06069B00,0x9377),@(0x06069BF2,0x03E4),
+  @(0x06069B1C,0x1E29),@(0x06069BCE,0x2E22),@(0x06069BD6,0x1E11),@(0x06069BDE,0x1E22),
+  @(0x0605C088,0x005B),@(0x0605C08A,0x5000),@(0x0605C08C,0x0001),@(0x0605C08E,0x4000),
+  @(0x0605C090,0xFFDD),@(0x0605C092,0xA000),@(0x0605C094,0x0800),
+  @(0x0605C0A0,0x0048),@(0x0605C0A2,0),@(0x0605C0A4,0xFF54),@(0x0605C0A6,0))) {
+  if((Read-A5Word $word[0])-ne$word[1]){throw 'Original A5 placement/camera instruction differs'}
+ }
 } finally {$disc.Dispose()}
-'PASS original A5 fade/cutscene instructions and 17 ordinary-action sites; structural audit is incomplete at four unsupported entrypoints'
+'PASS original A5 fade/cutscene/placement instructions and 19 ordinary-action sites; structural audit is incomplete at four unsupported entrypoints'
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-garil-native-'+[guid]::NewGuid())
 New-Item -ItemType Directory $scratch | Out-Null
 $source=Get-Content -Raw "$repo/src/integration/lagi_garil_script_native.cpp"
@@ -40,3 +52,10 @@ $source=[regex]::Replace($source,'(?m)^#include[^\r\n]*','')
 if($LASTEXITCODE){throw 'Garil native fixture compile failed'}
 & "$scratch/test.exe"
 if($LASTEXITCODE){throw 'Garil native fixture failed'}
+$placement=Get-Content -Raw "$repo/src/integration/lagi_garil_placement.cpp"
+$placement=[regex]::Replace($placement,'(?m)^#include[^\r\n]*','')
+[IO.File]::WriteAllText("$scratch/placement.inc",$placement)
+& cl /nologo /std:c++20 /EHsc "/I$scratch" "$PSScriptRoot/garil_placement_test.cpp" "/Fe:$scratch/placement.exe" "/Fo:$scratch/placement.obj"
+if($LASTEXITCODE){throw 'Garil placement fixture compile failed'}
+& "$scratch/placement.exe"
+if($LASTEXITCODE){throw 'Garil placement fixture failed'}

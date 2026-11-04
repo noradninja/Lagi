@@ -25,9 +25,14 @@ Field* getFieldTaskPtr(){return &field;}
 int restores=0,cuts=0;
 void endCutsceneCameraWithRestore(){++restores;}
 void endCutsceneCameraNoRestore(){++cuts;}
+bool placementReady=false;
+bool lagiAzelTryGarilPlacement(sSaturnPtr target){return placementReady&&target.m_file==gFLD_A5&&target.m_offset==0x0605C020;} // separately tested producer
 #include "production.inc"
 int main(){
  s32 result=99;
+ placementReady=true;
+ assert(lagiAzelTryGarilScriptAction({0x0605C020,&a5},result)&&result==0);
+ placementReady=false;result=99;
  for(auto target:{sSaturnPtr{0x060728E0,&a3},sSaturnPtr{0x060728A4,nullptr},sSaturnPtr{0x0606FA5C,&a5}})
   assert(!lagiAzelTryGarilScriptAction(target,result)&&result==99);
  gFLD_A5=nullptr;assert(!lagiAzelTryGarilScriptAction({0x060728E0,&a5},result));gFLD_A5=&a5;

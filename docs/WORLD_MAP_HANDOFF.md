@@ -35,6 +35,37 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Garil authored placement / direct camera reset — 2026-11-04
+
+A5-owned `0605C020/54` actions now read their original position/rotation
+literals from FLD_A5.PRG and port `0607C584`'s state changes: dragon position
+and angles, rider rotation vector at +18 when present, native rotation-matrix
+producer and the active camera's yaw. Then `06069AE8` resets follow-camera
+slot zero, which is not necessarily the active slot. The existing native
+altitude/config producer is exposed through a guarded generated-source wrapper;
+the reset copies its distance, normalizes and bounds pitch, and computes the
+fixed-point camera offset/position. It does not run the ordinary spring update,
+clear impulses, blend a camera or substitute a guessed view.
+
+MAIN `0600AE68` also invalidates a live light-wing task during placement.
+That factory is still unported. A non-null light-wing task therefore declines
+the binding **before any state mutation**, rather than silently skipping its
+required effect; this path is not claimed supported. The normal early-game
+null-light-wing path is implemented. No animation-table rebinding or upstream
+edits are made.
+
+Original instruction/literal checks and production fixtures cover both authored
+locations, null/foreign owner guards, unsupported-effect isolation, rider vector
+bounds, matrix/camera order, distinct active/slot-zero cameras, pitch clamps,
+distance and preservation of nonzero springs/impulses. Native altitude/trig
+services are mocked. Vita compile/link and SELF/VPK packaging pass. This is not
+on-device camera or Garil entry acceptance.
+
+This supersedes the placement-pending note below for the early-game path.
+Seven native addresses / 19 sites in the partial structural audit now have
+owned bindings. Scheduling, hide/light-wing support, undecoded script paths,
+WORLD hardware acceptance, and actual Garil entry/control/return remain open.
+
 ### Garil native cutscene-state actions — 2026-11-04
 
 The zero-argument shared VM boundary now resolves three additional actions

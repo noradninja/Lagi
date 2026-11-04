@@ -2279,6 +2279,13 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${point_restore_old}" "${point_restore_new}" source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/fieldCamera.cpp")
+  if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
+   string(FIND "${source_text}" "static void cameraFollowMode_posFromDragon(sFieldCameraStatus* r11, s_dragonTaskWorkArea* stack_4)" garil_camera_found)
+   if(garil_camera_found LESS 0)
+    message(FATAL_ERROR "Native camera altitude producer boundary changed")
+   endif()
+   string(APPEND source_text "\nvoid lagiAzelPrepareGarilCamera(sFieldCameraStatus* camera, s_dragonTaskWorkArea* dragon) { cameraFollowMode_posFromDragon(camera, dragon); }\n")
+  endif()
   # Field Phase 4: capture Azel's exact active view matrix after it has been
   # applied to pCurrentMatrix. The bridge removes it from field submissions
   # and Neptune reapplies it once at presentation.
@@ -5554,7 +5561,7 @@ endif()
 if(LAGI_BATTLE_EXECUTE_A3)
  target_sources(lagi PRIVATE src/integration/lagi_battle_startup_vita.cpp src/integration/lagi_world_boundary_vita.cpp src/integration/lagi_world_map_model.cpp src/integration/lagi_world_map_display.cpp src/integration/lagi_world_map_travel.cpp src/integration/lagi_world_map_arrival.cpp src/integration/lagi_world_map_label.cpp src/integration/lagi_world_map_sprite_text.cpp src/integration/lagi_world_map_message.cpp)
  if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
-  target_sources(lagi PRIVATE src/integration/lagi_garil_script_native.cpp)
+  target_sources(lagi PRIVATE src/integration/lagi_garil_script_native.cpp src/integration/lagi_garil_placement.cpp)
  endif()
  set_property(SOURCE src/integration/lagi_audio_vita.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_BATTLE_AUDIO_STACK=1)
 endif()
