@@ -9,6 +9,13 @@ try {
   $out=New-Object byte[] $count
   for($i=0;$i -lt $count;$i++){$offset=$ea+$i-$base;$disc.Position=($lba+[long][Math]::Floor($offset/2048))*2352+16+($offset%2048);$b=$disc.ReadByte();if($b -lt 0){throw 'Short disc read'};$out[$i]=$b};return ,$out
  }
+ # Locked selection plays the original error sound instead of silently doing nothing.
+ foreach($word in @(@(0x06058036,'89-05'),@(0x06058044,'D3-21'),
+                    @(0x06058046,'43-0B'),@(0x06058048,'E4-05'))) {
+  if([BitConverter]::ToString((Read-Native 244259 0x06054000 $word[0] 2))-ne$word[1]){
+   throw 'Native WORLD locked-destination feedback differs'
+  }
+ }
  $mode=Read-Native 182 0x200000 (0x212EAC+0x4F*2) 2
  $entry=Read-Native 182 0x200000 (0x212FC4+6*4) 4
  $name=([Text.Encoding]::ASCII.GetString((Read-Native 58 0x6006000 0x604382C 10))).Split([char]0)[0]

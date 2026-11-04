@@ -35,6 +35,34 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### WORLD confirmation evidence / Garil entry audit — 2026-11-04
+
+Locked WORLD confirmation now plays native sound 5 (`06058044..48`) instead
+of silently ignoring the press. The same original availability guard remains
+authoritative. Event-only `[WorldMapTravel]` lines record the pressed selection,
+status/type/story gate, unlocked/readiness result, preparation completion and
+arrival start before the existing final dispatch event. They do not traverse
+additional geometry, run per frame, alter story state or add controls. This
+allows one next capture to distinguish rejection, failed preparation, arrival
+and final module handoff rather than assuming every stationary selection is
+a renderer problem.
+
+Garil data audit also confirms original Disc 1 FLD_A5.PRG at LBA244678,
+316576 bytes. Entry `060540AC` supplies its own script table `0609D4A8`;
+subfield-0 script 19hex points to `06061955`, a duration-60 location-name
+display (opcode 27, string `060655C9`) followed by END. The route fixture now
+checks that evidence in addition to WORLD/COMMON routing. It does not execute
+A5 or establish playable entry. The compiled A5 backend still has unimplemented
+services, and its `gCurrentFieldOverlay = gFLD_A3` / shared animation-table
+bindings require recovery rather than a speculative pointer swap. Do not
+report the linked backend as complete Garil gameplay.
+
+Boundary tests cover locked sound and unchanged preparation/fade guards;
+native instruction and Garil-entry data checks pass. Device acceptance remains
+outstanding for the complete accumulated WORLD checkpoint.
+Vita executable compile/link and SELF/VPK packaging pass; the travel events
+are intended for that next device capture, not claimed device evidence.
+
 ### Native WORLD shoulder-button orbit — 2026-11-04
 
 Camera Update `06057DFA..06057E1A` reads the new-button word before camera

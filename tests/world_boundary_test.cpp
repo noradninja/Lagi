@@ -99,7 +99,8 @@ void reset3dEngine(){}
 int FP_Div(int a,int b){return b?int((std::int64_t(a)*65536)/b):(a>=0?INT32_MAX:INT32_MIN);}
 fixedPoint FP_Div(int a,fixedPoint b){return FP_Div(a,b.asS32());}
 fixedPoint getSin(unsigned){return 0;}
-void playSystemSoundEffect(int){}
+std::vector<int> sounds;
+void playSystemSoundEffect(int sound){sounds.push_back(sound);}
 struct Fade {u32 m0_color=0;int m20_stopped=0;};
 struct {Fade m0_fade0;int m_48=0;std::uint8_t m_4C=0,m_4D=0;} g_fadeControls;
 u32 convertColorToU32ForFade(u32 color){return color;}
@@ -241,8 +242,11 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   // Keep original story availability authoritative, independently of type.
   lagi::worldmap::selectedDestination.storyBit=193;
   mainGameState.storyAllowed=false;
+  sounds.clear();
   LagiWorldBoundary::Update(&task);
   assert(task.travelStatus<0 && task.display.state==1);
+  assert(sounds==std::vector<int>{5});
+  assert(lagi::worldmap::preparationCalls==0);
   mainGameState.storyAllowed=true;
   if(type<2){
    task.destinations.arrivalReady=false;
@@ -252,14 +256,17 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   }
   // Failed preparation cannot initiate movement, fades or module dispatch.
   lagi::worldmap::preparationSucceeds=false;
+  sounds.clear();
   LagiWorldBoundary::Update(&task);
   assert(task.travelStatus<0 && task.display.state==1 && !fadeCalls);
   assert(lagi::worldmap::preparationCalls==1);
+  assert(sounds.empty());
   lagi::worldmap::preparationSucceeds=true;
   lagi::worldmap::childUpdateOrder.clear();
   LagiWorldBoundary::Update(&task);
   assert(task.travelStatus==0x52 && task.display.state==(type<2?3:2));
   assert(lagi::worldmap::preparationCalls==2);
+  assert(sounds==std::vector<int>{0});
   assert(!fadeCalls);
   if(type<2){
    assert(task.destinations.arrivalBusy && !lagi::worldmap::lastDisplayBusy);

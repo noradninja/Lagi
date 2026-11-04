@@ -45,6 +45,16 @@ try {
  $program=Read-CommonString (Read-Native ($field+4) 4 0x200000 182)
  $font=Read-CommonString (Read-Native ($field+8) 4 0x200000 182)
  if($program-ne'FLD_A5.PRG'-or$font-ne'FLD_A5.FNT'){throw 'Garil native field assets differ'}
+ # Disc 1 FLD_A5.PRG is LBA244678, 316576 bytes. Its entry owns a
+ # separate script table; do not mistake a linked A3 shared service for A5 data.
+ foreach($literal in @(@(0x06054170,0x0609D4A8),@(0x06054174,0x06089A38),
+                       @(0x06054184,0x06071708),@(0x0609D50C,0x06061955))) {
+  if((Read-Native $literal[0] 4 0x06054000 244678)-ne$literal[1]){throw 'Garil native startup ownership differs'}
+ }
+ if((Read-Native 0x06061955 1 0x06054000 244678)-ne27-or
+    (Read-Native 0x06061956 2 0x06054000 244678)-ne60-or
+    (Read-Native 0x06061958 4 0x06054000 244678)-ne0x060655C9-or
+    (Read-Native 0x0606195C 1 0x06054000 244678)-ne1){throw 'Garil open-field entry label script differs'}
  # Resolve original PC-relative loads, rather than assuming the neighboring
  # synchronous file wrapper is the one used by WORLD preparation.
  function Assert-MainLiteral([long]$ea,[long]$expected){
@@ -74,4 +84,5 @@ try {
  }
  Write-Output 'PASS original Garil entry6 gate006C -> status56 -> mode3/field3 -> FLD_A5.PRG/FNT; no story bits changed; not a live travel test'
  Write-Output 'PASS native field/town preparation tables and MAIN060100F2 call sites; file-service semantics remain under recovery'
+ Write-Output 'PASS original A5 entry script table and subfield0 location-label script; not an A5 execution or gameplay test'
 } finally {$disc.Dispose()}

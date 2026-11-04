@@ -215,6 +215,9 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             returnedToSelection = true;
         } else if (task->waitingForArrival && task->destinations.arrivalBusy) {
             task->waitingForArrival = false;
+            lagi::platform::logging::writef(
+                "[WorldMapTravel] arrivalComplete selected=%d status=%02X\n",
+                int(display.selectedTarget),unsigned(task->travelStatus));
             auto& fade = g_fadeControls.m0_fade0;
             fadePalette(&fade, convertColorToU32ForFade(fade.m0_color),
                         task->travelStatus == 0x66 ? 0xFFFF : 0x8000, 0x3c);
@@ -243,10 +246,21 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             const auto destination = lagi::worldmap::read_map_destination(entry);
             // WORLD camera states 7 and 9 use the close-up path for types 2/3.
             // Types 0/1 use the arrival camera and the child completion flag.
-            if ((pad.m8_newButtonDown & 6) &&
-                (destination.storyBit <= 0 ||
-                 (unsigned(destination.storyBit) / 8 < sizeof(mainGameState.bitField) &&
-                  mainGameState.getBit(destination.storyBit)))) {
+            const bool unlocked = destination.storyBit <= 0 ||
+                (unsigned(destination.storyBit) / 8 < sizeof(mainGameState.bitField) &&
+                 mainGameState.getBit(destination.storyBit));
+            if (pad.m8_newButtonDown & 6) {
+                // Native 06058044 rejects a locked destination with sound 5.
+                // Event-only evidence: no per-frame logging or new controls.
+                lagi::platform::logging::writef(
+                    "[WorldMapTravel] confirm selected=%d status=%d type=%d story=%04X "
+                    "unlocked=%u arrivalReady=%u\n",
+                    int(display.selectedTarget),int(destination.gameStatus),int(destination.type),
+                    unsigned(u16(destination.storyBit)),unlocked?1u:0u,
+                    task->destinations.arrivalReady?1u:0u);
+                if (!unlocked) playSystemSoundEffect(5);
+            }
+            if ((pad.m8_newButtonDown & 6) && unlocked) {
                 if (destination.gameStatus < 0) {
                     clearVdp2TextArea();
                     playSystemSoundEffect(0);
@@ -254,22 +268,30 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                     fadePalette(&fade, convertColorToU32ForFade(fade.m0_color), 0, 0x1e);
                     task->waitingForMapToggle = true;
                 } else if (destination.canTravel() &&
-                           (destination.type >= 2 || task->destinations.arrivalReady) &&
-                           lagi::worldmap::prepare_map_travel(destination)) {
-                    clearVdp2TextArea();
-                    playSystemSoundEffect(0);
-                    if (destination.type >= 2) {
-                        task->travelStatus = destination.gameStatus;
-                        task->travelDelay = 15;
-                        display.state = 2;
-                    } else if (lagi::worldmap::retarget_map_arrival(task->destinations,
-                                   display.selectedTarget, task->arrivalYaw,
-                                   task->arrivalDistance, task->arrivalHeight)) {
-                        task->travelStatus = destination.gameStatus;
-                        task->waitingForArrival = true;
-                        task->arrivalForwardStep = 0;
-                        task->arrivalVerticalStep = 0;
-                        display.state = 3;
+                           (destination.type >= 2 || task->destinations.arrivalReady)) {
+                    const bool prepared=lagi::worldmap::prepare_map_travel(destination);
+                    lagi::platform::logging::writef(
+                        "[WorldMapTravel] preparation selected=%d status=%02X ready=%u\n",
+                        int(display.selectedTarget),unsigned(destination.gameStatus),prepared?1u:0u);
+                    if (prepared) {
+                        clearVdp2TextArea();
+                        playSystemSoundEffect(0);
+                        if (destination.type >= 2) {
+                            task->travelStatus = destination.gameStatus;
+                            task->travelDelay = 15;
+                            display.state = 2;
+                        } else if (lagi::worldmap::retarget_map_arrival(task->destinations,
+                                       display.selectedTarget, task->arrivalYaw,
+                                       task->arrivalDistance, task->arrivalHeight)) {
+                            task->travelStatus = destination.gameStatus;
+                            task->waitingForArrival = true;
+                            task->arrivalForwardStep = 0;
+                            task->arrivalVerticalStep = 0;
+                            display.state = 3;
+                            lagi::platform::logging::writef(
+                                "[WorldMapTravel] arrival selected=%d distance=%d targetHeight=%d\n",
+                                int(display.selectedTarget),int(task->arrivalDistance),int(task->arrivalHeight));
+                        }
                     }
                 }
             }
