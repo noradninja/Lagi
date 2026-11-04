@@ -86,7 +86,8 @@ int find_map_destination(const MapDisplayInput&,int selected,unsigned){return se
 void apply_map_camera_and_light(const MapDisplay&){messageCameraReady=true;}
 void draw_map_model(MapDisplay::Marker&){}
  bool draw_map_trail(const MapDisplay&,s_workAreaCopy*){return true;}
- bool draw_map_ground_base(u32,s_workAreaCopy*){return true;}
+ struct MapGround {};
+ bool draw_map_ground(MapGround&,u32,s_workAreaCopy*){return true;}
 }
 namespace lagi { bool worldEnabled=false;bool native_scene_mode(int mode){return mode==6&&worldEnabled;} }
 namespace lagi::azel_bridge { void capture_native_scene_view_matrix(){} void begin_view_relative_submission_scope(){} void end_view_relative_submission_scope(){} }

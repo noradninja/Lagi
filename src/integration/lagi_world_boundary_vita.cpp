@@ -37,6 +37,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
     bool displayReady = false;
     bool fontReady = false;
     lagi::worldmap::MapMessage message;
+    lagi::worldmap::MapGround ground;
     bool ownsMapAllocator = false;
     s_workAreaCopy* modelOwner = nullptr;
     s32 travelStatus = -1;
@@ -450,7 +451,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         lagi::azel_bridge::begin_view_relative_submission_scope();
         lagi::worldmap::draw_map_trail(task->display, task->modelOwner);
         lagi::worldmap::draw_map_model(task->display.marker);
-        lagi::worldmap::draw_map_ground_base(
+        lagi::worldmap::draw_map_ground(task->ground,
             task->worldFile.getSaturnPtr(0x06054000),task->modelOwner);
         lagi::worldmap::draw_map_arrival(task->arrivalAnimation,task->destinations,
                                        task->display.camera[1].asS32());

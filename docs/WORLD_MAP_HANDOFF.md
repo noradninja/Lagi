@@ -35,6 +35,23 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native optional map pose sequence consumer — 2026-11-04
+
+The remaining 06055972..C0 consumer is connected behind MapGround's native
+selected=-1/frame=0 initial state. For an active selection, the retail
+060558F6 selector uses the recovered 06055772 story priority, reads the
+descriptor/pose tables from 06058B24, selects the sequence byte, and submits
+the corresponding signed hierarchy/pose pair after native +5000 Y translation.
+One sequence entry advances per Draw; its last frame holds, not loops.
+The debug-only pad-mode-7 keyboard preview in 06055834 is not introduced.
+
+The WORLD camera action producer has not yet been connected to selected;
+ordinary startup therefore remains the base-list-only checkpoint. Do not
+claim optional animations or shortcut travel are live from this consumer.
+Tests cover base+optional source order, nonmonotonic pose sequence, final hold,
+default inactivity, matrix balance and original consumer instructions. Native
+hierarchy renderer is mocked in the host fixture; hardware remains necessary.
+
 ### Missing WORLD base meshes connected — 2026-11-04
 
 The 15-48-46 hardware result confirms correct destination glyphs and visible
