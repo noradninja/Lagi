@@ -6,15 +6,23 @@
 #include "field/fieldCutsceneTask3.h"
 #include "field/fieldCutsceneTask.h"
 #include "lagi/garil_placement.h"
+#include "field/fieldDragon.h"
 
 bool lagiAzelTryGarilScriptAction(sSaturnPtr target, s32& result)
 {
     if (lagiAzelTryGarilPlacement(target)) {result=0;return true;}
     if (!gFLD_A5 || target.m_file != gFLD_A5 ||
         (target.m_offset != 0x060728A4 && target.m_offset != 0x060728E0 &&
-         target.m_offset != 0x060728F8)) return false;
+         target.m_offset != 0x060728F8 && target.m_offset != 0x0607C82A &&
+         target.m_offset != 0x0607C86C)) return false;
     auto* field=getFieldTaskPtr()->m8_pSubFieldData;
-    if (target.m_offset == 0x060728A4) {
+    if (target.m_offset == 0x0607C82A || target.m_offset == 0x0607C86C) {
+        auto* dragon=field->m338_pDragonTask;
+        // Native callbacks 0600AE5A/0600AE4C disable/restore a light-wing
+        // child's Draw method. Its factory is unported: do not fake that case.
+        if (dragon->mB8_lightWingEffect) return false;
+        dragon->m249_noCollisionAndHideDragon=target.m_offset == 0x0607C82A ? 1 : 0;
+    } else if (target.m_offset == 0x060728A4) {
         // Original 060728A4 guards field, child and script +5C, then calls
         // 06071A36: the common retirement and camera-restore sequence below.
         if (field) {

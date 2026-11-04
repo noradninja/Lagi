@@ -35,6 +35,33 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Garil dragon hide/show actions — 2026-11-04
+
+A5-owned `0607C82A` and `0607C86C` now set/clear the native combined
+`m249_noCollisionAndHideDragon` byte for the normal null-light-wing path.
+Original instructions then call MAIN `0600AE5A/0600AE4C` to disable/restore
+the light-wing child's Draw callback; those services are no-ops for null.
+Because that effect's factory is still unported, a non-null child declines the
+binding before the flag changes. No light-wing update is silently skipped,
+and no renderer-owned visibility override is introduced.
+
+Eight authored opcode-14 sites are checked against the original instructions
+and callback literals. Production fixtures verify exact byte values, foreign
+owner isolation, unchanged unrelated state and no partial mutation for a live
+unsupported effect. Vita compile/link and SELF/VPK packaging pass. Device
+visibility, collision and Garil progression remain unverified.
+
+Nine native addresses / 27 sites in the structural inventory now have owned
+bindings for the supported early-game configuration. Further inspection also
+corrects the remaining callee's description: `06054DCC` tail-calls `060703E4`
+with arguments (10hex,90hex), which schedules **battle loading**, not an
+ordinary field script. Its task table at `0609F308` contains native battle
+loading Init/Draw/Delete callbacks; its delayed task waits for field status
+bits to clear. Do not bind it to `startFieldScript` or assume the tutorial
+battle shortcut has identical ownership/asset semantics. That battle path,
+live light-wing effects, hardware WORLD travel/performance and Garil
+entry/control/return remain open.
+
 ### Garil choice opcode / radar-data classification — 2026-11-04
 
 Corrected the earlier structural-audit diagnosis: table entries 16/17/18hex

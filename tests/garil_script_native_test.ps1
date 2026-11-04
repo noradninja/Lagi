@@ -8,6 +8,8 @@ $stateActions=@($audit.Calls | Where-Object NativeEA -in 0x060728A4,0x060728E0,0
 if($stateActions.Count-ne11-or@($stateActions|Where-Object {$_.Opcode-ne14-or$_.Arguments-ne0}).Count){throw 'Garil ordinary cutscene-state action sites differ'}
 $placements=@($audit.Calls | Where-Object NativeEA -in 0x0605C020,0x0605C054)
 if($placements.Count-ne2-or@($placements|Where-Object {$_.Opcode-ne14-or$_.Arguments-ne0}).Count){throw 'Garil placement action sites differ'}
+$visibility=@($audit.Calls | Where-Object NativeEA -in 0x0607C82A,0x0607C86C)
+if($visibility.Count-ne8-or@($visibility|Where-Object {$_.Opcode-ne14-or$_.Arguments-ne0}).Count){throw 'Garil visibility action sites differ'}
 $disc=[IO.File]::OpenRead((Resolve-Path -LiteralPath $DiscImage).Path)
 try {
  function Read-A5Word([long]$ea){
@@ -41,8 +43,14 @@ try {
   @(0x0605C0A0,0x0048),@(0x0605C0A2,0),@(0x0605C0A4,0xFF54),@(0x0605C0A6,0))) {
   if((Read-A5Word $word[0])-ne$word[1]){throw 'Original A5 placement/camera instruction differs'}
  }
+ foreach($word in @(@(0x0607C836,0xE301),@(0x0607C83E,0x0E34),
+  @(0x0607C860,0x0249),@(0x0607C862,0x00B8),@(0x0607C868,0x0600),@(0x0607C86A,0xAE5A),
+  @(0x0607C876,0xE300),@(0x0607C880,0x0E34),@(0x0607C95E,0x0249),@(0x0607C960,0x00B8),
+  @(0x0607C974,0x0600),@(0x0607C976,0xAE4C))) {
+  if((Read-A5Word $word[0])-ne$word[1]){throw 'Original A5 visibility/collision instruction differs'}
+ }
 } finally {$disc.Dispose()}
-'PASS original A5 fade/cutscene/placement instructions and 19 ordinary-action sites; structural coverage is not native-call implementation coverage'
+'PASS original A5 fade/cutscene/placement/visibility instructions and 27 ordinary-action sites; live light-wing side effects remain unsupported'
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-garil-native-'+[guid]::NewGuid())
 New-Item -ItemType Directory $scratch | Out-Null
 $source=Get-Content -Raw "$repo/src/integration/lagi_garil_script_native.cpp"

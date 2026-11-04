@@ -19,7 +19,8 @@ struct s_cutsceneTask2 : s_workArea {u32 m0=0;} cutscene;
 struct s_cutsceneTask3 : s_workArea {s32 m0=0;} cutscene3;
 struct s_cutsceneTask : s_workArea {u32 m0=0;} cutscene1;
 struct Script {s_workArea* m48_cutsceneTask=nullptr;s32 m5C=0;void* m78=nullptr;} script;
-struct SubField {Script* m34C_ptrToE=&script;} subfield;
+struct Dragon {unsigned char m249_noCollisionAndHideDragon=0;void* mB8_lightWingEffect=nullptr;int unrelated=123;} dragon;
+struct SubField {Script* m34C_ptrToE=&script;Dragon* m338_pDragonTask=&dragon;} subfield;
 struct Field {SubField* m8_pSubFieldData=&subfield;} field;
 Field* getFieldTaskPtr(){return &field;}
 int restores=0,cuts=0;
@@ -33,6 +34,16 @@ int main(){
  placementReady=true;
  assert(lagiAzelTryGarilScriptAction({0x0605C020,&a5},result)&&result==0);
  placementReady=false;result=99;
+ for(u32 address:{0x0607C82Au,0x0607C86Cu}){
+  dragon.m249_noCollisionAndHideDragon=17;
+  assert(!lagiAzelTryGarilScriptAction({address,&a3},result)&&result==99&&dragon.m249_noCollisionAndHideDragon==17);
+  dragon.mB8_lightWingEffect=&dragon;
+  assert(!lagiAzelTryGarilScriptAction({address,&a5},result)&&result==99&&dragon.m249_noCollisionAndHideDragon==17);
+  dragon.mB8_lightWingEffect=nullptr;
+  assert(lagiAzelTryGarilScriptAction({address,&a5},result)&&result==0);
+  assert(dragon.m249_noCollisionAndHideDragon==(address==0x0607C82A?1:0)&&dragon.unrelated==123);
+  result=99;
+ }
  for(auto target:{sSaturnPtr{0x060728E0,&a3},sSaturnPtr{0x060728A4,nullptr},sSaturnPtr{0x0606FA5C,&a5}})
   assert(!lagiAzelTryGarilScriptAction(target,result)&&result==99);
  gFLD_A5=nullptr;assert(!lagiAzelTryGarilScriptAction({0x060728E0,&a5},result));gFLD_A5=&a5;
