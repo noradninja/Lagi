@@ -2570,10 +2570,13 @@ bool init()
     logging::writef(
         "[NeptuneBuild] optimized=%u fieldDescriptorIndex=1 sharedRbg0=1 "
         "rbg0NativeResolve=1 pooledFieldTextures=1 coefficientRows=%u motionTrace=%u "
-        "lightStateIndex=1 transientCornerPrep=1 deadlineOutlier30=1\n",
+        "lightStateIndex=1 transientCornerPrep=1 deadlineOutlier30=1 "
+        "spriteComposite=%u decodedPages=%u\n",
         static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED),
         static_cast<unsigned int>(LAGI_RBG_COEFFICIENT_ROWS),
-        static_cast<unsigned int>(LAGI_FIELD_MOTION_TRACE));
+        static_cast<unsigned int>(LAGI_FIELD_MOTION_TRACE),
+        static_cast<unsigned int>(LAGI_VDP2_SPRITE_COMPOSITE),
+        static_cast<unsigned int>(LAGI_RBG_DECODED_PAGES));
     logging::writef(
         "[DitherFilter] enabled=%u pattern=screen-2x2 sampling=%s\n",
         static_cast<unsigned int>(kStochastic),

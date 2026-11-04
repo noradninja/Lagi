@@ -35,6 +35,36 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Water-only capture / build profile correction — 2026-11-04
+
+The replacement 30.297-second capture is water-only, not a boss/WORLD test.
+Its sampled FPS remains 30. Deep Gulch records `CCCTL=0043 SPCTL=1323
+BGON=001A`, matching the accepted water composition state. However, the new
+`build/world-garil` cache had `LAGI_VDP2_SPRITE_COMPOSITE=OFF`, whereas the
+accepted water log records `[VDP2SpriteComposite] active=1`. The earlier WORLD
+build instructions omitted this option. This is a concrete configuration
+regression, not evidence requiring new water geometry or guessed blending.
+
+Apply the explicit profile when configuring this device-test build:
+
+```powershell
+$env:VITASDK='E:\dev\VitaSDK'
+$env:PSP2CGC='E:\PSVITA\sdk\host_tools\bin\psp2cgc.exe'
+cmake -S . -B build/world-garil -G Ninja -C cmake/world_garil_profile.cmake
+cmake --build build/world-garil --parallel 8
+```
+
+The profile repairs the compositor setting even in an existing cache, enables
+the native WORLD/battle route, and disables serialized GPU timing/motion tracing.
+It deliberately does not change the experimental bridge/page/coefficient options.
+Startup now reports `spriteComposite` and `decodedPages` alongside the existing
+build settings. Water restoration still requires hardware confirmation; this
+capture does not answer the boss-cloud or WORLD failures below.
+
+Validation: configuration and generated compiler definitions both select
+`LAGI_VDP2_SPRITE_COMPOSITE=1`; the Vita executable links and SELF/VPK packaging
+passes. No post-correction hardware result is claimed.
+
 ### Hardware regression report / fade-group correction — 2026-11-04
 
 Hardware acceptance **failed**: user reports missing canyon water, cinematic
