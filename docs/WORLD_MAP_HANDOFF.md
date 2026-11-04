@@ -35,6 +35,29 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Restore background optimization profile — 2026-11-04
+
+The 13-57-01 hardware capture confirms restored water but sustained deadline
+misses: 2918/4800 completed renderer-window frames exceed 30 ms and 1780/4800
+presentation intervals exceed two vblanks. RBG-enabled ScenePerf samples have
+median render 30619.5 us, CPU preparation 7708 us and final graphics completion
+wait 20966.5 us. These are sampled overlapping stages, not isolated GPU passes.
+WORLD also slows with sprite composition inactive; do not blame water alone.
+
+The explicit world_garil profile now enables LAGI_RBG_DECODED_PAGES and
+LAGI_RBG_COEFFICIENT_ROWS, matching the previously exercised background paths.
+Water composition remains ON, serialized GPU timing and motion tracing OFF.
+Unsupported layouts and precision-ambiguous coefficient tables retain their
+existing raw native decoding path. No shader, visibility, native ownership,
+camera, label or story-state changes are part of this checkpoint.
+
+Production page-service and exhaustive/native-oracle coefficient-row fixtures
+pass. Hardware performance and pixels require a fresh capture of this profile;
+look for decodedPages=1, coefficientRows=1 and the coefficient activation/fallback
+marker. Keep cold page fills separate from warm throughput. WORLD's black
+environment, apparent shadow-focused camera, overlapping name glyphs and absent
+plaques remain open; previous-area dispatches 0 and 3 were observed, not Garil.
+
 ### Garil dragon hide/show actions — 2026-11-04
 
 A5-owned `0607C82A` and `0607C86C` now set/clear the native combined
