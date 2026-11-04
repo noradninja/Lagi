@@ -44,6 +44,10 @@ bool preparationSucceeds=true;int preparationCalls=0;
 bool prepare_map_travel(const MapDestination&){++preparationCalls;return preparationSucceeds;}
 struct MapDisplay {struct Marker {unsigned flags=0;} marker;bool seeded=false;int state=0,selectedTarget=0;sVec3_FP camera{},rotation{};};
 struct MapArrivalAnimation {bool ready=false;};
+struct MapMessage {int mode=3,queuedMode=-1;};
+void request_map_message(MapMessage&,int){}
+bool messageCameraReady=false;int messageUpdates=0;
+bool update_map_message(MapMessage&,void*,u32,u32,int,int,bool){assert(messageCameraReady);messageCameraReady=false;++messageUpdates;return true;}
 bool initialize_map_arrival_animation(MapArrivalAnimation& state,void*){state.ready=true;return true;}
 int animationUpdates=0;
 std::vector<int> childUpdateOrder;
@@ -78,7 +82,7 @@ bool initialize_map_destinations(MapDisplayInput& input,u32 program,bool fleet,u
 }
 namespace lagi::worldmap {
 int find_map_destination(const MapDisplayInput&,int selected,unsigned){return selected;}
-void apply_map_camera_and_light(const MapDisplay&){}
+void apply_map_camera_and_light(const MapDisplay&){messageCameraReady=true;}
 void draw_map_model(MapDisplay::Marker&){}
 bool draw_map_trail(const MapDisplay&,s_workAreaCopy*){return true;}
 }

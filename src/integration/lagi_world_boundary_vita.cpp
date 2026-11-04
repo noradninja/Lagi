@@ -9,6 +9,7 @@
 #include "lagi/world_map_motion.h"
 #include "lagi/world_map_environment.h"
 #include "lagi/world_map_arrival.h"
+#include "lagi/world_map_message.h"
 #include "kernel/moduleManager.h"
 #include "kernel/fade.h"
 #include "kernel/cinematicBarsTask.h"
@@ -34,7 +35,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
     lagi::worldmap::MapArrivalAnimation arrivalAnimation;
     bool displayReady = false;
     bool fontReady = false;
-    s32 nameShown = -1;
+    lagi::worldmap::MapMessage message;
     bool ownsMapAllocator = false;
     s_workAreaCopy* modelOwner = nullptr;
     s32 travelStatus = -1;
@@ -185,36 +186,14 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         vdp2Controls.m_isDirty = true;
         return true;
     }
-    const char* DestinationName() const {
-        const s32 selected = display.selectedTarget;
-        if (selected < 0 || selected >= destinations.targetCount)
-            return nullptr;
-        const u32 address = readSaturnU32(destinations.targetTable + selected * 0x24 + 0x20);
-        if (address < worldFile.m_base || address - worldFile.m_base >= program.size())
-            return nullptr;
-        const auto offset = address - worldFile.m_base;
-        const char* name = reinterpret_cast<const char*>(program.data() + offset);
-        return std::memchr(name, 0, program.size() - offset) ? name : nullptr;
-    }
-
-    void UpdateDestinationName() {
-        if (!fontReady || nameShown == display.selectedTarget)
-            return;
-        nameShown = display.selectedTarget;
-        setupVDP2StringRendering(2, 0x16, 0x28, 4);
-        vdp2StringContext.m0 = 0;
-        // Clear the previous label's fixed-width row before replacing it.
-        drawStringSmallFont("                                        ");
-        setupVDP2StringRendering(2, 0x16, 0x28, 4);
-        if (const char* name = DestinationName())
-            drawStringSmallFont(name);
-    }
     static void Update(LagiWorldBoundary* task) {
         if (!task->displayReady || !lagi::native_scene_mode(6))
             return;
 
         if (!task->fontReady && findFileOnDisc("WORLDMAP.FNT")) {
             loadFnt("WORLDMAP.FNT");
+            setupVDP2StringRendering(2, 0x16, 0x28, 4);
+            vdp2StringContext.m0 = 0;
             task->fontReady = true;
         }
         auto& display = task->display;
@@ -226,7 +205,8 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             task->waitingForMapToggle = false;
             display.marker.flags |= 0x20;
             display.state = 4;
-            task->nameShown = -1;
+            // Native camera re-entry initializes message mode directly.
+            task->message.mode=3;task->message.queuedMode=-1;
             task->selectionDelay = 15;
             lagi::disc::clear_prepared_native_files();
             BeginSelectionFadeIn();
@@ -301,6 +281,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             }
             if (selected != display.selectedTarget) {
                 display.selectedTarget = selected;
+                lagi::worldmap::request_map_message(task->message,3);
                 if (pad.m8_newButtonDown & 0xF0)
                     display.marker.flags |= 1;
                 else
@@ -309,9 +290,13 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             }
         }
         if (lagi::worldmap::update_map_display(display, task->destinations)) {
-            task->UpdateDestinationName();
             lagi::worldmap::apply_map_camera_and_light(display);
             lagi::azel_bridge::capture_native_scene_view_matrix();
+            if (task->fontReady)
+                lagi::worldmap::update_map_message(task->message,task,
+                    task->worldFile.getSaturnPtr(0x06054000),
+                    task->destinations.targetTable,task->destinations.targetCount,
+                    display.selectedTarget,task->travelStatus>=0 || task->waitingForMapToggle);
         }
         lagi::worldmap::advance_map_environment(task->environment);
         // Native child order is camera, display, environment, then arrival.
@@ -446,6 +431,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         lagi::azel_bridge::end_view_relative_submission_scope();
     }
     static void Delete(LagiWorldBoundary* task) {
+        // The native task walker tears down owned children before this callback.
         if (!task->preparedFilesHandedOff)
             lagi::disc::clear_prepared_native_files();
         if (task->fontReady)

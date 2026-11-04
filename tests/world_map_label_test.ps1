@@ -30,6 +30,14 @@ try {
                        @(0x06057704,0x060263D4))) {
   if((Read-World $literal[0] 4)-ne$literal[1]){throw 'WORLD label projection service differs'}
  }
+ foreach($word in @(@(0x060575D4,0x937F),@(0x060576D6,0x028F),
+  @(0x060576D8,0x0F5C),@(0x060576DA,0x1999),@(0x060576DC,0x0085),
+  @(0x060576DE,0x03E7),@(0x0605760A,0x3528),@(0x06057618,0x1E01),
+  @(0x06057628,0x1E02),@(0x06057778,0x1EB7),@(0x0605777A,0x0E24),
+  @(0x06057820,0x0E24),@(0x06057860,0x0EB4))) {
+  if((Read-World $word[0] 2)-ne$word[1]){throw 'WORLD message controller instruction differs'}
+ }
+ if((Read-World 0x06059C14 4)-ne0-or(Read-World 0x06059C18 4)-ne80){throw 'WORLD confirmation label target differs'}
  'PASS original WORLD label transform/projection and signed bounds evidence'
 } finally {$disc.Dispose()}
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-world-label-'+[guid]::NewGuid())
@@ -41,3 +49,10 @@ $source=[regex]::Replace($source,'(?m)^#include[^\r\n]*','')
 if($LASTEXITCODE){throw 'WORLD label fixture compile failed'}
 & "$scratch/test.exe"
 if($LASTEXITCODE){throw 'WORLD label fixture failed'}
+$message=Get-Content -Raw "$repo/src/integration/lagi_world_map_message.cpp"
+$message=[regex]::Replace($message,'(?m)^#include[^\r\n]*','')
+[IO.File]::WriteAllText("$scratch/message.inc",$message)
+& cl /nologo /std:c++20 /EHsc "/I$scratch" "/I$repo/include" "$PSScriptRoot/world_map_message_test.cpp" "/Fe:$scratch/message.exe" "/Fo:$scratch/message.obj"
+if($LASTEXITCODE){throw 'WORLD message fixture compile failed'}
+& "$scratch/message.exe"
+if($LASTEXITCODE){throw 'WORLD message fixture failed'}

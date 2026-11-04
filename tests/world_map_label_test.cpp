@@ -45,5 +45,5 @@ int main(){
     // Outlier rejection observes SH-2 low-word wrapping before comparisons.
     auto wrapped=bound_map_label(INT32_MIN,INT32_MAX,1);
     assert(wrapped.x==0&&wrapped.y==-256);
-    std::printf("PASS native label service bindings and %u independent bounds comparisons; sprite-text cutover is not yet active\n",comparisons);
+    std::printf("PASS native label service bindings and %u independent bounds comparisons; no hardware pixel acceptance\n",comparisons);
 }

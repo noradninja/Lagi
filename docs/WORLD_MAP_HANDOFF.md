@@ -35,6 +35,33 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native WORLD destination-message cutover — 2026-11-04
+
+The live boundary now uses the previously recovered projection and VDP1
+sprite-text services through WORLD's seven-state message controller
+(`06057708`), replacing `DestinationName` / `UpdateDestinationName` and the
+fixed-row destination fallback completely. The native text window is set once
+after loading WORLDMAP.FNT. Location changes retire the old child, clear the
+ordinary notice area, retain the selected record's anchor and create its text
+child. The original 0085 story condition selects the Stronghold/Camp name;
+locked destinations retain the native notice text. No story gate is changed.
+
+The live camera is applied before projecting the anchor. Confirmation captures
+that placement and runs `060575D0`'s fixed-point factor/centering calculation
+against the original WORLD vector `06059C14` (0,80), preserving raw depth 0333.
+Message requests use the original active/queued-mode rule. Map-table re-entry
+resets mode 3 directly like the native camera initialization. Owned children are
+retired on label replacement; normal parent teardown uses the native task
+walker's recursive child deletion rather than dereferencing a retired child.
+
+Original-disc instruction/target checks, 660 label bounds cases, production
+message-state fixtures and the boundary camera-before-message binding pass.
+Vita compile/link and SELF/VPK packaging pass. Native services remain mocked in
+host fixtures: live text pixels, placement, confirmation and repeated re-entry
+still need hardware acceptance. This supersedes earlier notes saying the
+sprite-text and projection services are not connected; WORLD completion and
+Garil progression are still unproven.
+
 ### WORLD matrix angle-unit correction — 2026-11-04
 
 Original MAIN `06035E68` begins `SHLR16 R4`, then masks the 12-bit trigonometric
