@@ -43,6 +43,7 @@ MapDestination read_map_destination(u32){return selectedDestination;}
 bool preparationSucceeds=true;int preparationCalls=0;
 bool prepare_map_travel(const MapDestination&){++preparationCalls;return preparationSucceeds;}
 struct MapDisplay {struct Marker {unsigned flags=0;} marker;bool seeded=false;int state=0,selectedTarget=0;sVec3_FP camera{},rotation{};};
+void apply_map_orbit_buttons(MapDisplay&,u16){}
 struct MapArrivalAnimation {bool ready=false;};
 struct MapMessage {int mode=3,queuedMode=-1;};
 void request_map_message(MapMessage&,int){}

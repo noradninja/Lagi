@@ -35,6 +35,25 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native WORLD shoulder-button orbit — 2026-11-04
+
+Camera Update `06057DFA..06057E1A` reads the new-button word before camera
+state dispatch. Mask 8000 increments display +20C; mask 0800 decrements it.
+These are separate signed-byte stores, not held-button motion or a reset on
+release. The boundary omitted both operations, leaving the orbit controller
+permanently at zero. It now forwards the native button word every update.
+The existing display states retain their original -3..3 clamp, 3A41 velocity
+acceleration, and 369D0 control gain; entry/return states still reset orbit.
+No new mapping, camera formula, or debug control is introduced.
+
+Original-disc checks cover both masks, byte stores and increment/decrement
+instructions. Production fixtures cover release, both presses, unrelated
+buttons, signed-byte wrapping, and positive/negative clamp/acceleration.
+Host checks do not prove native camera feel on hardware.
+Display/motion and boundary fixtures pass; Vita executable compile/link and
+SELF/VPK packaging pass. This build includes the preceding water-composition,
+angle-unit and message-controller corrections, all awaiting device acceptance.
+
 ### Native WORLD destination-message cutover — 2026-11-04
 
 The live boundary now uses the previously recovered projection and VDP1

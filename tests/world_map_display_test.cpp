@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <vector>
 using u8=std::uint8_t;using s8=std::int8_t;using u32=std::uint32_t;using s32=std::int32_t;using s16=std::int16_t;
+using u16=std::uint16_t;
 struct fixedPoint {
  s32 v=0;fixedPoint(s32 n=0):v(n){}s32 asS32()const{return v;}operator s32()const{return v;}
  fixedPoint& operator+=(s32 n){v+=n;return *this;}fixedPoint& operator-=(s32 n){v-=n;return *this;}
@@ -84,9 +85,30 @@ int main(){
  assert(destinations.targetCount==4&&destinations.cameraSelection==2);
  assert(destinations.targetTable.offset==1+0x5B2C);
  MapDisplay s;MapDisplayInput in;in.program={1};in.targetTable={0x6000};in.targetCount=2;
+ {
+  MapDisplay orbit;
+  apply_map_orbit_buttons(orbit,0x8000);assert(orbit.orbitControl==1);
+  apply_map_orbit_buttons(orbit,0);assert(orbit.orbitControl==1); // release holds
+  apply_map_orbit_buttons(orbit,0x8000);assert(orbit.orbitControl==2);
+  apply_map_orbit_buttons(orbit,0x0800);assert(orbit.orbitControl==1);
+  apply_map_orbit_buttons(orbit,0x8800);assert(orbit.orbitControl==1);
+  apply_map_orbit_buttons(orbit,0x00F6);assert(orbit.orbitControl==1);
+  orbit.orbitControl=127;apply_map_orbit_buttons(orbit,0x8000);assert(orbit.orbitControl==-128);
+  apply_map_orbit_buttons(orbit,0x0800);assert(orbit.orbitControl==127);
+ }
  in.arrivalReady=true;in.arrivalPosition.v={10000,20000,30000};
  putVec(0x6008,10000,20000,30000);putVec(0x6014,40000,50000,60000);
  putVec(0x602c,50000,20000,30000);putVec(0x6038,80000,50000,60000);
+ {
+  MapDisplay orbit;orbit.state=1;orbit.orbitControl=3;
+  apply_map_orbit_buttons(orbit,0x8000);assert(orbit.orbitControl==4);
+  orbit_camera(orbit,in,in.targetTable);
+  assert(orbit.orbitControl==3&&orbit.orbitVelocity==0x3A41&&orbit.orbitAngle==0x3A41);
+  orbit.orbitControl=-3;orbit.orbitVelocity=0;orbit.orbitAngle=0;
+  apply_map_orbit_buttons(orbit,0x0800);assert(orbit.orbitControl==-4);
+  orbit_camera(orbit,in,in.targetTable);
+  assert(orbit.orbitControl==-3&&orbit.orbitVelocity==-0x3A41&&orbit.orbitAngle==-0x3A41);
+ }
  {
   MapDisplay orbit;orbit.state=1;orbit.orbitAngle=0x4000000;
   orbit.desiredCamera.v={10000,20000,30000};

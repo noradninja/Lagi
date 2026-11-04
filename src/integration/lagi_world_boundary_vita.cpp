@@ -197,6 +197,8 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             task->fontReady = true;
         }
         auto& display = task->display;
+        const auto& pad = graphicEngineStatus.m4514.m0_inputDevices[0].m0_current;
+        lagi::worldmap::apply_map_orbit_buttons(display,pad.m8_newButtonDown);
         bool returnedToSelection = false;
         if (task->waitingForMapToggle && g_fadeControls.m0_fade0.m20_stopped) {
             // Native camera state FF waits for fade completion before changing
@@ -237,7 +239,6 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         } else if (task->selectionDelay > 0)
             --task->selectionDelay;
         else if (display.state == 1) {
-            const auto& pad = graphicEngineStatus.m4514.m0_inputDevices[0].m0_current;
             const auto entry = task->destinations.targetTable + display.selectedTarget * 0x24;
             const auto destination = lagi::worldmap::read_map_destination(entry);
             // WORLD camera states 7 and 9 use the close-up path for types 2/3.

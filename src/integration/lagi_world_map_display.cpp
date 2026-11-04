@@ -197,6 +197,13 @@ void update_map_arrival_motion(MapDisplayInput& input, fixedPoint yaw,s32 distan
     update_map_arrival_height(targetHeight, height, verticalStep);
     input.arrivalPosition[1] = height;
 }
+void apply_map_orbit_buttons(MapDisplay& s, u16 newButtons)
+{
+    // Native MOV.B stores wrap to a signed byte. orbit_camera subsequently
+    // clamps the control to -3..3 in the states that use it; release holds it.
+    if(newButtons&0x8000) s.orbitControl=s8(u8(s.orbitControl)+1u);
+    if(newButtons&0x0800) s.orbitControl=s8(u8(s.orbitControl)-1u);
+}
 bool update_map_display(MapDisplay& s,const MapDisplayInput& in)
 {
     if(in.program.isNull()||in.targetTable.isNull()||in.targetCount<=0)return false;

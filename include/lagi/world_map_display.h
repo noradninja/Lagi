@@ -79,6 +79,8 @@ void update_map_arrival_motion(MapDisplayInput&, fixedPoint yaw,s32 distance,s32
 // Recover native Update without invoking the still-unported WORLD task graph.
 // False leaves state unchanged when a selected native table entry is invalid.
 bool update_map_display(MapDisplay&,const MapDisplayInput&);
+// Camera Update 06057DFA..1A, before its state dispatch. New presses, not held.
+void apply_map_orbit_buttons(MapDisplay&, u16 newButtons);
 s32 find_map_destination(const MapDisplayInput&, s32 current, unsigned direction);
 void apply_map_camera_and_light(const MapDisplay&);
 bool draw_map_trail(const MapDisplay&,s_workAreaCopy*);

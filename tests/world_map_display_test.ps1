@@ -21,6 +21,15 @@ try {
                        @(0x06055238,0x06035E64))){
   if((Read-World $literal[0] 4)-ne$literal[1]){throw 'WORLD shifted Y rotation target differs'}
  }
+ # Camera Update adjusts the signed control byte before entering any state.
+ foreach($word in @(@(0x06057DFA,0x8594),@(0x06057DFC,0x2038),
+  @(0x06057E04,0x012C),@(0x06057E06,0x7101),@(0x06057E08,0x0214),
+  @(0x06057E0A,0x8594),@(0x06057E0E,0x2038),
+  @(0x06057E16,0x012C),@(0x06057E18,0x71FF),@(0x06057E1A,0x0214),
+  @(0x06057E40,0x020C),@(0x06057E42,0x0800))) {
+  if((Read-World $word[0] 2)-ne$word[1]){throw 'WORLD orbit button instruction differs'}
+ }
+ if((Read-World 0x06057E54 4)-ne0x8000){throw 'WORLD positive orbit button mask differs'}
  $values=@(0xA3,0x2000,0xA3D,0xF5,0x4000,0x1999,0x199,0x6000,0x3333,0x333,0x1000,0x51E)
  for($i=0;$i -lt $values.Count;$i++){
   if((Read-World (0x0605428E+$i*2) 2) -ne $values[$i]){throw 'Native easing profile table differs'}
