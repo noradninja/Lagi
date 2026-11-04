@@ -35,6 +35,30 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native WORLD camera pitch arithmetic corrected — 2026-11-04
+
+The 16-03-03 capture confirms visible ground but excessive camera steepness,
+clouds composed behind the world, absent location structures and WORLD render
+samples around 38..39 ms. The four base-list entries resolve to four models /
+514 quads in the original bundle; the device's total rises from 263 to 777,
+confirming this producer is live. Original-asset hierarchy/pose/vertex/quad
+validation is now covered, separately from VDP2 background-cell tests.
+
+Original camera 06054AE0/EC loads MAIN 0603564E, NOT ordinary multiply
+06035644. 3564E produces low32((signed64(a)*b)>>12), using MACH<<20 OR
+MACL>>12. The adapter mistakenly used MTH_Mul's >>16 before native SHLL4,
+sqrt_F and SHAR4. For in-range vectors this shrinks horizontal length by four
+and gives an excessively steep pitch. Restored the native >>12 squares,
+wrapping 32-bit addition/shift and existing square-root/angle services.
+
+Fixtures now check the original callee/shift instructions and actual atan2
+arguments for axis-aligned and signed 3/4/5 horizontal triangles. The previous
+fixture mocked atan2 and did not assert its pitch arguments, so it missed this.
+Do not claim earlier broad camera parity tests proved the pitch correct.
+This changes no authored camera target/offset, FOV, mesh, cloud ordering or
+location visibility gate. Camera pixels and performance require hardware;
+cloud composition and missing location producers remain separate work.
+
 ### Native story-panel sprite producer connected — 2026-11-04
 
 WORLD 0605738C..574E2 now emits its two normal-sprite panels through native

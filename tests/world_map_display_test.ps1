@@ -22,6 +22,12 @@ try {
   if((Read-World $literal[0] 4)-ne$literal[1]){throw 'WORLD shifted Y rotation target differs'}
  }
  # Camera Update adjusts the signed control byte before entering any state.
+ if((Read-World 0x06054BA4 4)-ne0x0603564E){throw 'WORLD camera square service differs'}
+ foreach($word in @(@(0x06035654,0x4428),@(0x06035656,0x4408),
+  @(0x06035658,0x4408),@(0x0603565A,0x4019),@(0x0603565C,0x4009),
+  @(0x0603565E,0x4009),@(0x06035662,0x204B))) {
+  if((Read-Main $word[0] 2)-ne$word[1]){throw 'Native camera multiply must shift by 12, not 16'}
+ }
  foreach($word in @(@(0x06057DFA,0x8594),@(0x06057DFC,0x2038),
   @(0x06057E04,0x012C),@(0x06057E06,0x7101),@(0x06057E08,0x0214),
   @(0x06057E0A,0x8594),@(0x06057E0E,0x2038),

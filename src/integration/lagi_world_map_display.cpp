@@ -81,8 +81,11 @@ void update_camera_rotation(MapDisplay& s)
 {
     // 06054AAA: preserve native fixed-point horizontal length and angle order.
     const auto d=s.target-s.camera;
-    const fixedPoint length=MTH_Mul(d[0],d[0])+MTH_Mul(d[2],d[2]);
-    const s32 horizontal=sqrt_F(static_cast<s32>(static_cast<u32>(length.asS32())<<4))>>4;
+    // MAIN 0603564E combines MACH<<20 with MACL>>12, not the ordinary
+    // 06035644 >>16 multiply. Preserve low-word wrapping before SHLL4.
+    const u32 xSquared=u32((std::int64_t(d[0].asS32())*d[0].asS32())>>12);
+    const u32 zSquared=u32((std::int64_t(d[2].asS32())*d[2].asS32())>>12);
+    const s32 horizontal=sqrt_F(static_cast<s32>((xSquared+zSquared)<<4))>>4;
     s.rotation[0]=0x4000000-atan2_FP(horizontal,d[1]);
     s.rotation[1]=static_cast<s32>(0xFC000000u)-atan2_FP(d[2],d[0]);
     s.rotation[2]=0;

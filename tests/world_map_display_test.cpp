@@ -47,7 +47,8 @@ struct {
 constexpr u8 bitMasks[]={128,64,32,16,8,4,2,1};
 s32 FP_Div(s32 n,s32 d){return s32((std::int64_t(n)*65536)/d);}
 s32 atanX=0,atanZ=0;
-s32 atan2_FP(s32 x,s32 z){atanX=x;atanZ=z;return 0;} // native service mocked
+std::vector<std::array<s32,2>> atanArguments;
+s32 atan2_FP(s32 x,s32 z){atanX=x;atanZ=z;atanArguments.push_back({x,z});return 0;} // native service mocked
 int headingCalls=0;
 fixedPoint interpolateRotation(fixedPoint,fixedPoint target,fixedPoint gain,fixedPoint maximum,s32 minimum){
  assert(gain==0x1999&&maximum==0x38E38E&&minimum==0x12345);++headingCalls;return target;
@@ -75,6 +76,19 @@ void generateLightFalloffMap(u32,u32,u32){++falloffCalls;}
 #include "production.inc"
 int main(){
  using namespace lagi::worldmap;
+ {
+  MapDisplay camera;
+  camera.camera.zeroize();camera.target.v={3*65536,4*65536,0};
+  atanArguments.clear();update_camera_rotation(camera);
+  assert(atanArguments.size()==2);
+  assert((atanArguments[0]==std::array<s32,2>{3*65536,4*65536}));
+  assert((atanArguments[1]==std::array<s32,2>{0,3*65536}));
+  // Non-axis-aligned 3/4/5 horizontal triangle, signs preserved for yaw.
+  camera.target.v={-3*65536,2*65536,4*65536};
+  atanArguments.clear();update_camera_rotation(camera);
+  assert((atanArguments[0]==std::array<s32,2>{5*65536,2*65536}));
+  assert((atanArguments[1]==std::array<s32,2>{4*65536,-3*65536}));
+ }
  MapDisplayInput destinations;
  assert(initialize_map_destinations(destinations,{1},false,17));
  assert(destinations.targetCount==33&&destinations.cameraSelection==17);
