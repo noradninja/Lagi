@@ -23,6 +23,13 @@ int main(){
  assert(!lagi::rbgBankReadable(0x13b4,0,2));
  assert(lagi::rbgBankReadable(0x13b4,0x60000,2));
  assert(lagi::rbgBankReadable(0x13b4,0x40000,3));
+ // WORLD's old adapter value still permits its name plane but denies both
+ // authored character data and the coefficient table. BGON alone is not
+ // evidence that any terrain pixel can survive native bank-role checks.
+ assert(lagi::rbgBankReadable(0x1380,0x60000,2));
+ assert(!lagi::rbgBankReadable(0x1380,0x40000,3));
+ assert(!lagi::rbgBankReadable(0x1380,0x20000,1));
+ assert(lagi::rbgBankReadable(0x13b4,0x20000,1));
  std::vector<std::uint8_t> raw(0x81000,0xff);
  std::vector<std::uint32_t> pixels(lagi::RbgDecodedPage::Pixels,1);
  lagi::RbgDecodedPage cache;lagi::RbgDecodedPage::Generations gen{};
@@ -37,7 +44,7 @@ int main(){
  assert(pixels[0]==(0xff000000u|0x5ff)); // legal names and character banks.
  assert(cache.dependsOn(0x60000/4096) && cache.dependsOn(0x40000/4096));
  // Register-only role change must invalidate despite unchanged VRAM epochs.
- key.ramctl=0x1384;assert(update()==lagi::RbgPageResult::Rebuilt);
+ key.ramctl=0x1380;assert(update()==lagi::RbgPageResult::Rebuilt);
  assert(std::all_of(pixels.begin(),pixels.end(),[](auto p){return p==0;}));
  assert(!cache.dependsOn(0x40000/4096));
  key.ramctl=0x13b4;assert(update()==lagi::RbgPageResult::Rebuilt);assert(pixels[0]);

@@ -35,6 +35,21 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Missing terrain priority / bank denial regression — 2026-11-04
+
+Missing WORLD terrain remains the primary visual blocker; do not divert the
+next live change into panels. The unfinished panel integration was removed,
+leaving only the previously committed selector helper. No user files removed.
+
+The captured 1380 setting permits the WORLD name plane at 60000 (role 2)
+but denies character data at 40000 (role 3) AND coefficients at 20000 (role 1).
+Authored 13B4 permits all three. rbg_bank_access_test now explicitly pins this
+WORLD distinction, including an unchanged-VRAM register-only transition to
+1380 producing an empty decoded page and restoration to 13B4 rebuilding pixels.
+This is direct evidence for a terrain-data rejection mechanism, not a complete
+hardware fix claim. Neptune's bank checks must remain intact; do not force
+bank access or add replacement terrain geometry to hide bad native setup.
+
 ### Hardware checkpoint 15-30-57 — 2026-11-04
 
 Capture/log at Videos/Lagi/2026-11-04 15-30-57 - Lagi - Lagi confirms
