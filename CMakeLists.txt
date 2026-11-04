@@ -2348,6 +2348,17 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
         if (!(pThis->m65 & 4))]=] source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
+   set(source_text "#include \"lagi/garil_script_native.h\"\n${source_text}")
+   set(garil_action_anchor "        m54_currentResult = gCurrentFieldOverlay->executeNative(readSaturnEA(r14), readSaturnS32(r14 + 4));")
+   string(FIND "${source_text}" "${garil_action_anchor}" garil_action_found)
+   if(garil_action_found LESS 0)
+    message(FATAL_ERROR "Shared field native-action dispatch boundary changed")
+   endif()
+   string(REPLACE "${garil_action_anchor}"
+    "        if (lagiAzelTryGarilScriptAction(readSaturnEA(r14), readSaturnS32(r14 + 4), m54_currentResult)) break;\n${garil_action_anchor}"
+    source_text "${source_text}")
+  endif()
   set(source_text "#include \"lagi/platform.h\"\n#include \"lagi/lagi_render_bridge.h\"\nstruct s_itemBoxType1;\n#include \"field/fieldItemBox_type2.h\"\n#include <cstdint>\n${source_text}")
   # Follow the existing Azel trail sprite and final sparkle with the native
   # A11D special light; no new path, light color or attenuation calculation.
@@ -5534,6 +5545,9 @@ if(LAGI_BATTLE_NATIVE_BUILD)
 endif()
 if(LAGI_BATTLE_EXECUTE_A3)
  target_sources(lagi PRIVATE src/integration/lagi_battle_startup_vita.cpp src/integration/lagi_world_boundary_vita.cpp src/integration/lagi_world_map_model.cpp src/integration/lagi_world_map_display.cpp src/integration/lagi_world_map_travel.cpp src/integration/lagi_world_map_arrival.cpp src/integration/lagi_world_map_label.cpp src/integration/lagi_world_map_sprite_text.cpp src/integration/lagi_world_map_message.cpp)
+ if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
+  target_sources(lagi PRIVATE src/integration/lagi_garil_script_native.cpp)
+ endif()
  set_property(SOURCE src/integration/lagi_audio_vita.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_BATTLE_AUDIO_STACK=1)
 endif()
 

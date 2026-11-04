@@ -35,6 +35,42 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Owned Garil script fade actions — 2026-11-04
+
+The shared field VM previously dispatched all A5 native calls through the
+inherited A3 owner. The generated one-argument boundary now first resolves the
+two recovered A5 fade actions only when the target's actual file owner is
+`gFLD_A5`: out `0606FA5C`, in `0606FAB4`. Foreign files, unrelated addresses
+and the zero-argument dispatcher are unchanged. No speculative global overlay
+or dragon-animation table rebinding is performed, and `extern/Azel` is intact.
+
+Both native functions compare sign-extended fade bytes, set both CLOFSL buffers
+to 0010 when that guard passes, and operate on both fade channels with the
+low-32-bit doubled authored duration. Fade out starts at each channel's own
+current converted color; fade in starts black and targets signed native +48.
+The six recovered call sites are ordinary opcode-14 actions, not polling calls.
+Production fixtures cover ownership isolation, both channels/order/colors,
+signed-byte boundary cases and duration wrapping. Original A5 instructions and
+all six sites are checked read-only. Vita compile/link and SELF/VPK pass.
+
+`tools/audit_garil_scripts.ps1 -DiscImage <Disc1.bin>` structurally traverses
+the original 39-entry A5 table with explicit operands, branches, call
+continuations and bounds. It is an audit tool, not a scanner in the runtime or
+a replacement interpreter. The current traversal visits 1457 instructions,
+finds 28 native-call sites at ten addresses, and stops four paths it cannot
+decode: entries `06061897`, `060618C5`, `0606190D` begin with 7F; `060619CC`
+uses opcode 30. Therefore this is an incomplete inventory, not a claim that
+these are every possible A5 native call or that those entrypoints can safely
+be skipped.
+
+Other recovered callees still requiring bindings/recovery are `06054DCC`
+(native scheduling through `060703E4`), `0605C020/54` (authored dragon position
+and camera reset), `060728A4` (guarded cutscene completion), `060728E0/F8`
+(script +5C state), and `0607C82A/86C` (dragon hide/collision plus light-wing
+Draw callback control). Do not redirect them to Canyon addresses by numerical
+similarity or treat unimplemented native services as successful. Garil control,
+return/re-entry and all on-device WORLD acceptance remain outstanding.
+
 ### WORLD confirmation evidence / Garil entry audit — 2026-11-04
 
 Locked WORLD confirmation now plays native sound 5 (`06058044..48`) instead
