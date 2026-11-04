@@ -3,6 +3,11 @@
 #include <span>
 
 namespace lagi::worldmap {
+struct MapPanels {
+    std::int32_t slide=96;
+    std::int16_t selected=-1,frame=0;
+    std::int8_t direction=0;
+};
 // WORLD 06055772..06055812. Native mainGameState.bitField bytes, not input.
 inline int map_panel_variant(std::span<const std::uint8_t> story, unsigned panel)
 {

@@ -87,6 +87,8 @@ void apply_map_camera_and_light(const MapDisplay&){messageCameraReady=true;}
 void draw_map_model(MapDisplay::Marker&){}
  bool draw_map_trail(const MapDisplay&,s_workAreaCopy*){return true;}
  struct MapGround {};
+ struct MapPanels {};
+ void draw_map_panels(MapPanels&,u32,s_workAreaCopy*,bool){}
  void initialize_map_ground(MapGround&){}
  bool draw_map_ground(MapGround&,u32,s_workAreaCopy*){return true;}
 }

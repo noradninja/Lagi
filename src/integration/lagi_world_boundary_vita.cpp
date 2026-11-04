@@ -11,6 +11,7 @@
 #include "lagi/world_map_arrival.h"
 #include "lagi/world_map_message.h"
 #include "lagi/world_map_ground.h"
+#include "lagi/world_map_panels_draw.h"
 #include "kernel/moduleManager.h"
 #include "kernel/fade.h"
 #include "kernel/cinematicBarsTask.h"
@@ -38,6 +39,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
     bool fontReady = false;
     lagi::worldmap::MapMessage message;
     lagi::worldmap::MapGround ground;
+    lagi::worldmap::MapPanels panels;
     bool ownsMapAllocator = false;
     s_workAreaCopy* modelOwner = nullptr;
     s32 travelStatus = -1;
@@ -212,6 +214,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
             display.state = 4;
             // Native camera re-entry initializes message mode directly.
             task->message.mode=3;task->message.queuedMode=-1;
+            task->panels={};
             task->selectionDelay = 15;
             lagi::disc::clear_prepared_native_files();
             BeginSelectionFadeIn();
@@ -325,6 +328,9 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                     display.selectedTarget,task->travelStatus>=0 || task->waitingForMapToggle);
         }
         lagi::worldmap::advance_map_environment(task->environment);
+        lagi::worldmap::draw_map_panels(task->panels,
+            task->worldFile.getSaturnPtr(0x06054000),task->modelOwner,
+            !(mainGameState.bitField[0x1B]&8));
         // Native child order is camera, display, environment, then arrival.
         // Consume the old child's position/flag above and advance it only
         // afterward. Phase 2 keeps moving during the travel fade as well.

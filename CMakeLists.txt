@@ -5422,6 +5422,10 @@ add_executable(lagi
  ${LAGI_AZEL_UPSTREAM_SOURCES}
 )
 
+if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
+ target_sources(lagi PRIVATE src/integration/lagi_world_map_panels.cpp)
+endif()
+
 # Neptune performs the measured field transforms, lighting, material decoding
 # and submission preparation. Bring-up configurations often have no build type,
 # so make its optimization explicit rather than depending on Release flags.

@@ -35,6 +35,24 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native story-panel sprite producer connected — 2026-11-04
+
+WORLD 0605738C..574E2 now emits its two normal-sprite panels through native
+VDP1 commands using the copied WORLDMAP allocation's texture base, authored
+source-offset/size/placement tables at 06059BE8/F0/F4, color banks 2200/2300,
+CTRL1000, PMOD00A0 and native depth0199. Story-dependent eligibility remains
+the recovered 06055772 selector. Ordinary/fleet state drives the original
+0..96 two-pixel slide; selected frame state follows native 1..10 wrap behavior.
+Map-table re-entry resets the panel state alongside destination-message state.
+
+Production host tests cover both descriptors, actual packet counters/depth,
+bundle-relative sources, both slide axes, selected-frame wrap and story hiding.
+Boundary fixtures pass. No new render modes, generated artwork, generic plaque
+or replacement font was introduced. Camera action-selection triggers remain
+unconnected, so panels are submitted in their ordinary unselected state until
+that producer is ported. This is separate from ground mesh acceptance and does
+not prove these are the particular missing name plaques in the Saturn capture.
+
 ### Native ground-task back screen — 2026-11-04
 
 Recovered the remaining initialization side effect at 06055740..55770:
