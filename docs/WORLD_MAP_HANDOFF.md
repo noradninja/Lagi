@@ -35,6 +35,31 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Hardware checkpoint 15-30-57 — 2026-11-04
+
+Capture/log at Videos/Lagi/2026-11-04 15-30-57 - Lagi - Lagi confirms
+the performance restoration: decodedPages=1, coefficientRows=1, compositor=1,
+RBG0PageCache active=1 and RBG0CoefficientRows active=1 reason=0. Serialized
+GPU timing remains off. Across 61 completed windows / 7320 frames, 419 exceed
+30 ms and 51 exceed 33333 us; 306 presentation intervals exceed two vblanks.
+RBG-enabled sampled median render is 26121.5 us, final completion wait
+14361 us. Prior capture sampled median was 30619.5 / 20966.5 us respectively;
+different routes/workloads preclude controlled per-pass attribution. This is
+substantial recovery, not proof of an all-frame 33 ms ceiling. Cold page fills,
+scene transitions and menus must remain separated from steady rendering.
+
+Event logs complete confirmation/preparation/arrival/dispatch for selection 3
+(status53) and selection 1 (status51). Video shows return to the canyon field
+and entry into the excavation town. Neither proves the Garil route.
+
+Crucially WORLD still logs RAMCTL=1380 in this capture. Therefore it does not
+exercise the 9471ebf B4 bank-role correction. The mixed-name visual symptom
+also remains, but do not attribute it to a failed e50cb44 fix without matching
+the installed package identity. Newer visual corrections remain unaccepted.
+Do not introduce another camera/background workaround from this older visual
+baseline. The current packaged runtime includes the separate UI-write and
+bank-role corrections; the latest source-only panel selector changes no pixels.
+
 ### Camera / missing UI source audit — 2026-11-04
 
 Do not compensate the apparent shadow-focused view by aiming selection camera
