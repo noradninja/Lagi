@@ -159,7 +159,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         // 060566B6..D6 configures the VRAM bank cycle before loading the
         // native parameter-A plane addresses.
         auto* regs = vdp2Controls.m4_pendingVdp2Regs;
-        regs->mE_RAMCTL = (regs->mE_RAMCTL & 0xFF00) | 0x80;
+        regs->mE_RAMCTL = (regs->mE_RAMCTL & 0xFF00) | 0xB4;
         regs->m10_CYCA0 = 0x310F7544;
         setupRotationMapPlanes(0, worldFile.getSaturnPtr(0x060593D0));
         // 060566D8..E6 maps the same FNS pattern plane to all four slots.

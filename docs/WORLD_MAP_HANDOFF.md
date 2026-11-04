@@ -35,6 +35,18 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### WORLD rotation VRAM bank roles — 2026-11-04
+
+Original WORLD 060566B8 loads the word at 0605677A (00B4), masks the
+pending RAMCTL with FF00 and ORs B4 before storing it at 060566C4.
+The adapter incorrectly used 80, conflating this bank-role write with the
+separate 0080 argument to setupVdp2Table at 060566E8. Restored B4 while
+preserving RAMCTL's high byte. This is an authored setup correction, not a
+renderer bypass or a forced visible background. The evidence fixture now
+checks the instruction, literal, store and production assignment together.
+The separate coefficient-table argument remains 80. Black-map resolution,
+clouds, camera targeting and final pixels still require hardware validation.
+
 ### Live UI texture writes — 2026-11-04
 
 Tracing overlapping WORLD names found a shared renderer cache defect: native

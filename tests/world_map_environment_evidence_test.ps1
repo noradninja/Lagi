@@ -17,6 +17,10 @@ try {
  # not a newly generated NBG0 line-scroll table. Check native instructions,
  # not just the routine address or a translated helper's name.
  $words=@(
+  @(0x060566B8,0x945F), # RAMCTL low-byte PC-relative literal load
+  @(0x0605677A,0x00B4), # authored rotation VRAM bank roles (not 0080)
+  @(0x060566BE,0x2039), @(0x060566C0,0x240B), # preserve high byte, OR literal
+  @(0x060566C4,0x2241), # write pending RAMCTL
   @(0x060565D4,0x9831), # mov.w count literal -> r8
   @(0x060565EA,0x0DDE), # load selected table pointer
   @(0x060565EC,0xE054), # phase at environment +54
@@ -90,6 +94,10 @@ try {
  Write-Output 'PASS original WORLD coefficient-wave instructions and separate normal-background origins; not a runtime/render test'
 } finally {$disc.Dispose()}
 $repo=Split-Path $PSScriptRoot -Parent
+$boundary=Get-Content -Raw "$repo/src/integration/lagi_world_boundary_vita.cpp"
+if($boundary -notmatch 'regs->mE_RAMCTL\s*=\s*\(regs->mE_RAMCTL\s*&\s*0xFF00\)\s*\|\s*0xB4;') {
+ throw 'WORLD adapter does not preserve the authored RAMCTL bank roles'
+}
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-world-environment-'+[guid]::NewGuid())
 New-Item -ItemType Directory $scratch | Out-Null
 & cl /nologo /std:c++20 /EHsc "/I$repo/include" "$PSScriptRoot/world_map_environment_test.cpp" "/Fe:$scratch/test.exe" "/Fo:$scratch/test.obj"
