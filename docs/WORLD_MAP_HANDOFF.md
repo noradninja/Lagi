@@ -35,6 +35,22 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Generic 4bpp shader cell parity — 2026-11-04
+
+The terrain asset fixture now extracts and host-compiles the production
+selectRbg0Plane, rbgBankReadable and generic sampleRbg0Cell functions from
+vdp2_rbg0_f.cg. Against original WORLD plane/name/character/palette data,
+260864 texels (every texel of all 1019 distinct patterns) match independent
+integer 4bpp cell addressing, X/Y flips, transparent zero and palette words.
+No production shader change is justified by this comparison.
+
+Scope: host adapters supply raw byte/BE16 reads and compare color words before
+RGB channel conversion. This does not execute SGX normalized texture reads,
+rotation/coefficient projection, windows, blending or framebuffer composition.
+The earlier general statement that 4bpp parity was entirely untested is thus
+superseded only for the cell-addressing/selection portion. Missing live terrain
+remains unaccepted pending the corrected bank setup's device result.
+
 ### Original-disc terrain asset validation — 2026-11-04
 
 world_map_terrain_assets_test reads WORLD.PRG, FRS_WLD.SCB and FRS_WLD.PNB

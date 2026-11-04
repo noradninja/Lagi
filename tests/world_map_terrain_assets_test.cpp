@@ -9,6 +9,16 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <cmath>
+using std::floor;using std::fmod;
+struct float4 {float x,y,z,w;float4(float a=0,float b=0,float c=0,float d=0):x(a),y(b),z(c),w(d){}};
+using sampler2D=const std::uint8_t*;
+static float frac(float a) {return a-std::floor(a);}
+static float readByte(sampler2D raw,float a) {return raw[unsigned(a)];}
+static float readRbgAlignedBE16(sampler2D raw,float a) {const auto* p=raw+unsigned(a);return unsigned(p[0])*256u+p[1];}
+// Compare native color words, not host approximations of GPU RGB channels.
+static float4 rgb555(float word) {return {word,0,0,1};}
+#include "world_terrain_shader.inc"
 using Bytes=std::vector<std::uint8_t>;
 static unsigned le32(const std::uint8_t* p) {return p[0]|unsigned(p[1])<<8|unsigned(p[2])<<16|unsigned(p[3])<<24;}
 static unsigned be16(const std::uint8_t* p) {return unsigned(p[0])<<8|p[1];}
@@ -62,6 +72,21 @@ int main(int argc,char** argv) {
         std::copy_n(world.data()+src,count,cram.data()+dst);
     // WORLD: CHCN=0, CHSZ=1, PNB=1, CNSM=0, SCN=8. Count authored
     // texels, not projected raster output. Rotation/windows remain untested.
+    Bytes raw=vram;raw.insert(raw.end(),cram.begin(),cram.end());
+    std::array<float4,4> planes;
+    for(unsigned group=0;group<4;++group) {
+        float values[4];
+        for(unsigned lane=0;lane<4;++lane) {
+            const unsigned ea=be32(world.data()+0x53d0+(group*4+lane)*4);
+            values[lane]=float(ea>=0x25e00000?ea-0x25e00000:ea);
+        }
+        planes[group]={values[0],values[1],values[2],values[3]};
+    }
+    float nameBanks[4],characterBanks[4];
+    lagi::rbgBankPermissions(0x13b4,2,nameBanks);lagi::rbgBankPermissions(0x13b4,3,characterBanks);
+    const float4 nb{nameBanks[0],nameBanks[1],nameBanks[2],nameBanks[3]};
+    const float4 cb{characterBanks[0],characterBanks[1],characterBanks[2],characterBanks[3]};
+    unsigned shaderChecks=0;
     unsigned oldAllowed=0,newAllowed=0,visible=0;std::set<unsigned> patterns;
     for(unsigned plane=0;plane<16;++plane) {
         const unsigned ea=be32(world.data()+0x53d0+plane*4);
@@ -74,6 +99,17 @@ int main(int argc,char** argv) {
             assert(address>=0x40000 && address+128<=0x40000+characters.size());
             oldAllowed+=lagi::rbgBankReadable(0x1380,address,3);
             newAllowed+=lagi::rbgBankReadable(0x13b4,address,3);
+            for(unsigned y=0;y<16;++y) for(unsigned x=0;x<16;++x) {
+                const unsigned sx=(name&0x400)?15-x:x,sy=(name&0x800)?15-y:y;
+                const unsigned offset=((sy/8)*2+sx/8)*32+((sy%8)*8+sx%8)/2;
+                const unsigned dot=(vram[address+offset]>>((sx&1)?0:4))&15;
+                const unsigned index=((name&0xf000)>>8)|dot;
+                const unsigned word=dot?be16(cram.data()+index*2):0;
+                const auto actual=sampleRbg0Cell(raw.data(),float((plane%4)*512+(tile%32)*16+x),
+                    float((plane/4)*512+(tile/32)*16+y),{0x100,0x8008,0,0},0,0,nb,cb,
+                    planes[0],planes[1],planes[2],planes[3]);
+                assert(actual.x==word && actual.w==(dot?1.f:0.f));++shaderChecks;
+            }
             for(unsigned byte=0;byte<128;++byte) for(unsigned shift:{0u,4u}) {
                 const unsigned dot=(vram[address+byte]>>shift)&15;
                 const unsigned index=((name&0xf000)>>8)|dot;
@@ -82,5 +118,5 @@ int main(int argc,char** argv) {
         }
     }
     assert(!oldAllowed && newAllowed==patterns.size() && visible);
-    std::printf("PASS original WORLD 4bpp terrain assets: patterns=%zu coloredTexels=%u oldBankReadable=%u authoredBankReadable=%u; not camera/GPU validation\n",patterns.size(),visible,oldAllowed,newAllowed);
+    std::printf("PASS original WORLD 4bpp terrain: patterns=%zu coloredTexels=%u oldBankReadable=%u authoredBankReadable=%u shaderCellChecks=%u; not camera/GPU validation\n",patterns.size(),visible,oldAllowed,newAllowed,shaderChecks);
 }
