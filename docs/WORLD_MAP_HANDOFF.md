@@ -35,6 +35,25 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Original-disc terrain asset validation — 2026-11-04
+
+world_map_terrain_assets_test reads WORLD.PRG, FRS_WLD.SCB and FRS_WLD.PNB
+directly through the MODE1/2352 ISO directory. It stages the same character,
+pattern-name and four palette ranges as the adapter, then follows all sixteen
+authored plane addresses with WORLD's 16x16, 4bpp, one-word/CNSM0/SCN8 format.
+The supplied Disc 1 contains 1019 distinct patterns and 177735 nonzero texels
+whose authored palette colors are nonblack. Production bank permissions reject
+all 1019 character patterns under 1380 and permit all under 13B4. All referenced
+name/character spans are within the loaded assets. No game bytes are retained
+as test artifacts, modified, generated or committed.
+
+This establishes populated, in-range map assets and the captured bank-denial
+mechanism. It does NOT validate live palette DMA completion, coefficient
+projection, windows, camera, 4bpp fragment-shader parity or final GPU pixels.
+Decoded-page acceleration is 8bpp-specific; WORLD's 4bpp terrain must continue
+through the generic native-format shader rather than being forced into that
+cache. Device validation of the corrected bank setup remains necessary.
+
 ### Missing terrain priority / bank denial regression — 2026-11-04
 
 Missing WORLD terrain remains the primary visual blocker; do not divert the
