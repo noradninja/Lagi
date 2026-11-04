@@ -42,7 +42,7 @@ try {
   if((Read-A5Word $word[0])-ne$word[1]){throw 'Original A5 placement/camera instruction differs'}
  }
 } finally {$disc.Dispose()}
-'PASS original A5 fade/cutscene/placement instructions and 19 ordinary-action sites; structural audit is incomplete at four unsupported entrypoints'
+'PASS original A5 fade/cutscene/placement instructions and 19 ordinary-action sites; structural coverage is not native-call implementation coverage'
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-garil-native-'+[guid]::NewGuid())
 New-Item -ItemType Directory $scratch | Out-Null
 $source=Get-Content -Raw "$repo/src/integration/lagi_garil_script_native.cpp"

@@ -14,6 +14,10 @@ if($dispatch-ne[bool]$Enabled){throw 'Generated A5 field dispatch does not match
 $sources=@(Get-ChildItem -LiteralPath "$repo/extern/Azel/AzelLib/field/field_a5" -Filter '*.cpp')
 if($Enabled){
  $shared=Get-Content -Raw (Join-Path $directory 'azel_upstream/field_field_a3_o_fld_a3.cpp')
+ if(!$shared.Contains('const auto step=lagiAzelRunGarilChoice30(this,pScript);')-or
+    !$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_script_choice.cpp.obj:')){
+  throw 'Owned Garil choice30 binding missing'
+ }
  if(!$shared.Contains('if (lagiAzelTryGarilScriptAction(readSaturnEA(r14), readSaturnS32(r14 + 4), m54_currentResult)) break;')-or
     !$shared.Contains('if (lagiAzelTryGarilScriptAction(readSaturnEA(r14), m54_currentResult)) break;')-or
     !$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_script_native.cpp.obj:')){
@@ -35,5 +39,5 @@ if($Enabled){
   $target='build CMakeFiles/lagi.dir/azel_upstream/field_field_a5_'+$source.Name+'.obj:'
   if(!$ninja.Contains($target)){throw "Missing A5 target: $($source.Name)"}
  }
-}elseif($objects.Count-or$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_script_native.cpp.obj:')-or$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_placement.cpp.obj:')){throw 'A5 modules leaked into the disabled WORLD configuration'}
+}elseif($objects.Count-or$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_script_native.cpp.obj:')-or$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_placement.cpp.obj:')-or$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_script_choice.cpp.obj:')){throw 'A5 modules leaked into the disabled WORLD configuration'}
 Write-Output "PASS WORLD/A5 build gate: enabled=$([bool]$Enabled) nativeModules=$($objects.Count); not a link or hardware test"

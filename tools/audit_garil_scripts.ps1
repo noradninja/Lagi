@@ -17,9 +17,22 @@ try {
  if((Read-A5 0x06054170 4)-ne0x0609D4A8){throw 'Original A5 script table differs'}
  $pending=[Collections.Generic.Queue[long]]::new()
  $roots=[Collections.Generic.List[long]]::new()
+ $metadata=[Collections.Generic.List[object]]::new()
  for($entry=0x0609D4A8L;;$entry+=4){
   $target=Read-A5 $entry 4;if(!$target){break}
-  $roots.Add($target);$pending.Enqueue($target)
+  $index=$roots.Count
+  $roots.Add($target)
+  if($index-in0x16,0x17,0x18){
+   # Native subfields pass these entries to 0607A9A0 -> 06070D94,
+   # the encounter-list consumer, not the script interpreter.
+   $record=$target;$records=0
+   while((Read-A5 $record 1)-ne1){
+    if((Read-A5 $record 1)-eq0x7F){
+     $record=(($record+4)-band-4)+0x14;$records++
+    }else{$record++}
+   }
+   $metadata.Add([pscustomobject]@{Index=$index;EA=$target;Records=$records})
+  }else{$pending.Enqueue($target)}
   if($roots.Count-gt256){throw 'Unterminated A5 script table'}
  }
  $visited=[Collections.Generic.HashSet[long]]::new()
@@ -47,7 +60,7 @@ try {
    }
    {$_-in21,34} {$next=(($next+3)-band-4)+4}
    27 {$next=((($next+1)-band-2)+5)-band-4;$next+=4}
-   {$_-in31,33} {
+   {$_-in30,31,33} {
     $choices=Read-A5 $next 1;if($choices-ge128){$choices-=256}
     $next++
     if($choices-gt0){$next=(($next+3)-band-4)+4*$choices}
@@ -56,9 +69,9 @@ try {
   }
   $pending.Enqueue($next)
  }
- $result=[pscustomobject]@{Roots=$roots.ToArray();Visited=$visited.Count;Calls=$calls.ToArray();Unknown=$unknown.ToArray()}
+ $result=[pscustomobject]@{Roots=$roots.ToArray();Metadata=$metadata.ToArray();Visited=$visited.Count;Calls=$calls.ToArray();Unknown=$unknown.ToArray()}
  if($AsObject){return $result}
- "A5 structural audit: roots=$($roots.Count) instructions=$($visited.Count) nativeCalls=$($calls.Count) unsupported=$($unknown.Count); not execution evidence"
+ "A5 structural audit: tableEntries=$($roots.Count) metadata=$($metadata.Count) instructions=$($visited.Count) nativeCalls=$($calls.Count) unsupported=$($unknown.Count); not execution evidence"
  $calls | Group-Object NativeEA,Arguments | ForEach-Object {
   $first=$_.Group[0];'{0:X8} args={1} sites={2}'-f$first.NativeEA,$first.Arguments,$_.Count
  }

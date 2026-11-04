@@ -35,6 +35,40 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Garil choice opcode / radar-data classification — 2026-11-04
+
+Corrected the earlier structural-audit diagnosis: table entries 16/17/18hex
+(`06061897`, `060618C5`, `0606190D`) are radar encounter lists, not executable
+script roots. Original subfields pass those selectors to `0607A9A0`, which
+calls `06070D94` to consume marker 7F and aligned 20-byte records until END.
+The audit now traverses those three roots as metadata (2/3/3 records), never
+as VM instructions. No runtime skip-7F workaround was added.
+
+The fourth path genuinely uses missing VM opcode 30 at `060619CC`.
+Original dispatch table entry `06070652` targets `06070B4C`: it creates the
+existing MAIN `0601CB4E` dialog with the signed count unchanged (opcode 31
+negates it). A zero count continues immediately; a live dialog yields at the
+opcode until status 4; completion advances past the count and, only for a
+positive count, the aligned choice-pointer array. The output result is kept.
+This action is now connected at the shared VM boundary for the A5 owner only,
+using the native dialog task, not a replacement prompt or new menu mode.
+Foreign-overlay opcode 30 remains explicitly unsupported.
+
+Original opcode/metadata instructions and production fixtures cover sign,
+all operand alignments, zero/positive/negative counts, native factory binding,
+busy/completed phases, failed creation retry and owner isolation. Native dialog
+input/drawing is mocked there. Vita compile/link and SELF/VPK packaging pass.
+The corrected structural inventory has 39 table entries (36 executable roots,
+three metadata roots), 1457 visited VM positions, 28 native-call sites at ten
+addresses, and zero undecoded structural paths. This supersedes earlier notes
+claiming four unsupported opcode paths; it is not VM execution, a proof that
+all callees work, or hardware acceptance.
+
+Seven known native addresses / 19 sites have owned bindings for the early-game
+configuration. Scheduling `06054DCC` and hide/light-wing `0607C82A/86C` still
+need recovery. Non-null light-wing placement remains unsupported. Actual WORLD
+travel, Garil entry/control/return and frame-time acceptance remain open.
+
 ### Garil authored placement / direct camera reset — 2026-11-04
 
 A5-owned `0605C020/54` actions now read their original position/rotation
