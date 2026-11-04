@@ -10,6 +10,7 @@
 #include "lagi/world_map_environment.h"
 #include "lagi/world_map_arrival.h"
 #include "lagi/world_map_message.h"
+#include "lagi/world_map_ground.h"
 #include "kernel/moduleManager.h"
 #include "kernel/fade.h"
 #include "kernel/cinematicBarsTask.h"
@@ -449,6 +450,8 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         lagi::azel_bridge::begin_view_relative_submission_scope();
         lagi::worldmap::draw_map_trail(task->display, task->modelOwner);
         lagi::worldmap::draw_map_model(task->display.marker);
+        lagi::worldmap::draw_map_ground_base(
+            task->worldFile.getSaturnPtr(0x06054000),task->modelOwner);
         lagi::worldmap::draw_map_arrival(task->arrivalAnimation,task->destinations,
                                        task->display.camera[1].asS32());
         lagi::azel_bridge::end_view_relative_submission_scope();

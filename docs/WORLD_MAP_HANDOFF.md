@@ -35,6 +35,33 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Missing WORLD base meshes connected — 2026-11-04
+
+The 15-48-46 hardware result confirms correct destination glyphs and visible
+VDP2 clouds with RAMCTL=13B4, but only dragon/shadow/indicator wires. Native
+root 060540BE..C8 also creates a copied-bundle task via 060559D0, Draw
+06055924. That mesh producer was absent from Lagi's live boundary.
+
+The base part now traverses WORLD 0605881C's pointer/count record in source
+order, reads signed hierarchy/pose slot pairs, and invokes the existing native
+LCSItemBox_DrawType0Sub0 hierarchy service (MAIN 060211D2). This service's name
+does not make it item-specific: it resolves the original bundle hierarchy and
+static bone pose, recursively transforms nodes and calls addObjectToDrawList.
+Submissions run in the existing live view-relative scope between the indicator
+and arrival dragon. The task's authored initial translation and rotations are
+zero; the base path inherits the camera and preserves the matrix stack.
+
+This is the actual static-list producer, not a reconstructed map mesh or a
+VDP2 replacement. The optional animated hierarchy branch 06055972..C0 and its
+selection/control producer remain open; do not claim the whole task complete.
+Original instruction/literal tests, production list-order/ownership fixture
+and WORLD boundary fixture pass. Hardware visibility/performance remain pending.
+
+Correction to earlier terrain terminology: the bank and generic-cell fixtures
+validate VDP2 background resources (now visibly clouds), NOT the missing
+hierarchical ground meshes. Their passing results never proved mesh presence.
+Keep that distinction when interpreting earlier diagnostic entries below.
+
 ### Generic 4bpp shader cell parity — 2026-11-04
 
 The terrain asset fixture now extracts and host-compiles the production
