@@ -9,6 +9,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <functional>
 #include <cmath>
 using std::floor;using std::fmod;
 struct float4 {float x,y,z,w;float4(float a=0,float b=0,float c=0,float d=0):x(a),y(b),z(c),w(d){}};
@@ -63,6 +64,41 @@ int main(int argc,char** argv) {
     }
     auto file=[&](const char* name) {assert(files.contains(name));const auto [lba,size]=files.at(name);return read(disc,lba,size);};
     const auto world=file("WORLD.PRG"),characters=file("FRS_WLD.SCB"),names=file("FRS_WLD.PNB");
+    const auto models=file("WORLDMAP.MCB");
+    const unsigned groundList=be32(world.data()+0x481c)-0x06054000;
+    const unsigned groundCount=be32(world.data()+0x4820);
+    assert(groundCount && groundCount<world.size()/4 && groundList+groundCount*4<=world.size());
+    unsigned meshNodes=0,meshModels=0,meshQuads=0;
+    for(unsigned entry=0;entry<groundCount;++entry) {
+        const auto* pair=world.data()+groundList+entry*4;
+        const int hierarchySlot=std::int16_t(be16(pair)),poseSlot=std::int16_t(be16(pair+2));
+        assert(hierarchySlot>=0&&poseSlot>=0&&unsigned(hierarchySlot)+4<=models.size()&&unsigned(poseSlot)+4<=models.size());
+        const unsigned root=be32(models.data()+hierarchySlot),pose=be32(models.data()+poseSlot);
+        assert(root&&pose);std::set<unsigned> nodes;
+        std::function<void(unsigned)> walk=[&](unsigned node) {
+            assert(node+12<=models.size()&&nodes.insert(node).second);
+            ++meshNodes;
+            const unsigned model=be32(models.data()+node);
+            if(model) {
+                assert(model+12<=models.size());++meshModels;
+                const unsigned vertices=be32(models.data()+model+4),vertexData=be32(models.data()+model+8);
+                assert(vertices && vertexData+vertices*6<=models.size());
+                unsigned quad=model+12;
+                while(true) {
+                    assert(quad+8<=models.size());
+                    if(!be32(models.data()+quad)&&!be32(models.data()+quad+4))break;
+                    assert(quad+20<=models.size());
+                    for(unsigned corner=0;corner<4;++corner)assert(be16(models.data()+quad+corner*2)<vertices);
+                    const unsigned mode=(be16(models.data()+quad+8)>>8)&3;
+                    quad+=20+std::array<unsigned,4>{0,8,48,24}[mode];++meshQuads;
+                }
+            }
+            for(unsigned link:{4u,8u}) {const unsigned next=be32(models.data()+node+link);if(next)walk(next);}
+        };
+        walk(root);assert(pose+nodes.size()*36<=models.size());
+    }
+    assert(meshModels&&meshQuads);
+    std::printf("PASS original WORLD base mesh references: entries=%u bones=%u modelSubmissions=%u quads=%u; not live frustum visibility\n",groundCount,meshNodes,meshModels,meshQuads);
     assert(world.size()>0x5c00 && characters.size()<=0x20000 && names.size()<=0x4000);
     Bytes vram(0x80000),cram(0x1000);
     std::copy(characters.begin(),characters.end(),vram.begin()+0x40000);
