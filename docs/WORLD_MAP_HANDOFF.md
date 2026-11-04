@@ -35,6 +35,27 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### WORLD matrix angle-unit correction — 2026-11-04
+
+Original MAIN `06035E68` begins `SHLR16 R4`, then masks the 12-bit trigonometric
+index. Its current-matrix wrapper `06035E64` falls through to that instruction.
+WORLD orbit (`060549F0`), arrival displacement (`06055554`), and marker/trail
+draw (`06055238`) reference these shifted-angle services. The adapter instead
+called integer-angle `rotateMatrixY` / `rotateCurrentMatrixY` with the full
+16.16 value. That discarded the meaningful heading bits and used fractional
+bits as an angle, affecting orbit, travel displacement, and marker/trail spin.
+
+All four sites now call Azel's existing shifted-angle wrappers. No camera
+formula, winding, renderer, destination gate, or speed has been changed.
+The production fixtures previously ignored matrix rotation; they now exercise
+nonzero quarter-turn orbit and positive/negative arrival displacement, and
+check marker/trail shifted-service binding. Original-disc assertions verify
+the service instructions and WORLD call-table literals. Those fixtures pass;
+hardware camera/animation/travel acceptance is still outstanding.
+Vita compile/link and SELF/VPK packaging also pass with the corrected water
+composition profile. This is a coherent hardware checkpoint, not proof that
+WORLD navigation or the Garil transition is complete.
+
 ### Water-only capture / build profile correction — 2026-11-04
 
 The replacement 30.297-second capture is water-only, not a boss/WORLD test.

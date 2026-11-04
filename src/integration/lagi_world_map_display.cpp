@@ -72,7 +72,8 @@ void orbit_camera(MapDisplay& s,const MapDisplayInput& in,sSaturnPtr entry)
         offset=readSaturnVec3(entry+0x14)-readSaturnVec3(entry+8);
         translateMatrix(readSaturnVec3(entry+8),&matrix);
     }
-    rotateMatrixY(s.orbitAngle,&matrix);
+    // Native 06035E68 consumes a 16.16 angle (SHLR16 before table lookup).
+    rotateMatrixShiftedY(s.orbitAngle,&matrix);
     sVec3_FP cameraGoal;transformAndAddVec(offset,cameraGoal,matrix);
     spring_vector(s.desiredCamera,cameraGoal,s.cameraVelocity);
 }
@@ -176,7 +177,7 @@ static void move_map_arrival_horizontal(sVec3_FP& position, fixedPoint yaw, s32 
 {
     sMatrix4x3 matrix;
     initMatrixToIdentity(&matrix);
-    rotateMatrixY(yaw, &matrix);
+    rotateMatrixShiftedY(yaw, &matrix);
     sVec3_FP direction;
     direction.zeroize();
     direction[2] = step;
@@ -318,7 +319,7 @@ bool draw_map_trail(const MapDisplay& s,s_workAreaCopy* owner)
     for(int count=0;count<s.trailCount;++count){
         pushCurrentMatrix();
         translateCurrentMatrix(s.trail[index].position);
-        rotateCurrentMatrixY(s.trail[index].yaw);
+        rotateCurrentMatrixShiftedY(s.trail[index].yaw);
         addObjectToDrawList(model);
         popMatrix();
         index=(index+15)&15;

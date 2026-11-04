@@ -7,6 +7,20 @@ try {
   $value=0L
   for($i=0;$i -lt $count;$i++){$offset=$ea+$i-0x06054000;$disc.Position=(244259+[long][Math]::Floor($offset/2048))*2352+16+($offset%2048);$b=$disc.ReadByte();if($b -lt 0){throw 'Short disc read'};$value=($value-shl 8)-bor $b};return $value
  }
+ function Read-Main([long]$ea,[int]$count){
+  $value=0L
+  for($i=0;$i -lt $count;$i++){$offset=$ea+$i-0x06006000;$disc.Position=(58+[long][Math]::Floor($offset/2048))*2352+16+($offset%2048);$b=$disc.ReadByte();if($b -lt 0){throw 'Short MAIN disc read'};$value=($value-shl 8)-bor $b};return $value
+ }
+ # Both arbitrary-matrix Y rotation and the current-matrix wrapper consume
+ # 16.16 angles. The latter falls through to the same SHLR16 instruction.
+ if((Read-Main 0x06035E68 2)-ne0x4429-or
+    (Read-Main 0x06035E64 2)-ne0xD525-or
+    (Read-Main 0x06035E66 2)-ne0x6552){throw 'Native shifted Y rotation service differs'}
+ foreach($literal in @(@(0x060549F0,0x06035E68),
+                       @(0x06055554,0x06035E68),
+                       @(0x06055238,0x06035E64))){
+  if((Read-World $literal[0] 4)-ne$literal[1]){throw 'WORLD shifted Y rotation target differs'}
+ }
  $values=@(0xA3,0x2000,0xA3D,0xF5,0x4000,0x1999,0x199,0x6000,0x3333,0x333,0x1000,0x51E)
  for($i=0;$i -lt $values.Count;$i++){
   if((Read-World (0x0605428E+$i*2) 2) -ne $values[$i]){throw 'Native easing profile table differs'}

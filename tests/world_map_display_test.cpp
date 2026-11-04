@@ -24,7 +24,8 @@ struct s_workAreaCopy {s_fileBundle* m0_fileBundle=&bundle;};
 std::vector<int> trailPositions;int pushes=0,pops=0,trailDraws=0;
 void pushCurrentMatrix(){++pushes;}void popMatrix(){++pops;}
 void translateCurrentMatrix(sVec3_FP p){trailPositions.push_back(p[0]);}
-void rotateCurrentMatrixY(fixedPoint){}
+std::vector<s32> trailYaws;
+void rotateCurrentMatrixShiftedY(fixedPoint yaw){trailYaws.push_back(yaw);}
 void addObjectToDrawList(sProcessed3dModel* p){assert(p==&trailModel);++trailDraws;}
 struct sSaturnPtr {int offset=0;bool isNull()const{return !offset;}sSaturnPtr operator+(int n)const{return {offset+n};}};
 std::vector<u8> bytes(0x7000);
@@ -51,11 +52,18 @@ fixedPoint interpolateRotation(fixedPoint,fixedPoint target,fixedPoint gain,fixe
  assert(gain==0x1999&&maximum==0x38E38E&&minimum==0x12345);++headingCalls;return target;
 }
 s32 vecDistance(const sVec3_FP& a,const sVec3_FP& b){double d=0;for(int i=0;i<3;++i){double n=a[i].v-b[i].v;d+=n*n;}return s32(std::sqrt(d));}
-struct sMatrix4x3 {sVec3_FP translation;};
-void initMatrixToIdentity(sMatrix4x3* m){m->translation.zeroize();}
+struct sMatrix4x3 {sVec3_FP translation;s32 yaw=0;};
+void initMatrixToIdentity(sMatrix4x3* m){m->translation.zeroize();m->yaw=0;}
 void translateMatrix(sVec3_FP p,sMatrix4x3* m){m->translation=p;}
-void rotateMatrixY(s32,sMatrix4x3*){}
-void transformAndAddVec(sVec3_FP p,sVec3_FP& out,const sMatrix4x3& m){out=p;for(int i=0;i<3;++i)out[i]+=m.translation[i];}
+void rotateMatrixShiftedY(fixedPoint yaw,sMatrix4x3* m){m->yaw=yaw.asS32()>>16;}
+void transformAndAddVec(sVec3_FP p,sVec3_FP& out,const sMatrix4x3& m){
+ const double angle=(m.yaw&4095)*6.283185307179586/4096;
+ const s32 sine=s32(std::llround(std::sin(angle)*65536));
+ const s32 cosine=s32(std::llround(std::cos(angle)*65536));
+ out=p;out[0]=s32((std::int64_t(cosine)*p[0].asS32()+std::int64_t(sine)*p[2].asS32())>>16);
+ out[2]=s32((-std::int64_t(sine)*p[0].asS32()+std::int64_t(cosine)*p[2].asS32())>>16);
+ for(int i=0;i<3;++i)out[i]+=m.translation[i];
+}
 void transformVecByCurrentMatrix(sVec3_FP p,sVec3_FP& out){out=p;}
 struct Camera {} cameraProperties2;int cameraCalls=0,lightCalls=0,falloffCalls=0;
 void updateEngineCamera(Camera*,sVec3_FP,sVec3_S16){++cameraCalls;}
@@ -79,6 +87,14 @@ int main(){
  in.arrivalReady=true;in.arrivalPosition.v={10000,20000,30000};
  putVec(0x6008,10000,20000,30000);putVec(0x6014,40000,50000,60000);
  putVec(0x602c,50000,20000,30000);putVec(0x6038,80000,50000,60000);
+ {
+  MapDisplay orbit;orbit.state=1;orbit.orbitAngle=0x4000000;
+  orbit.desiredCamera.v={10000,20000,30000};
+  putVec(0x6014,10000,20000,30000+0x10000);
+  orbit_camera(orbit,in,in.targetTable);
+  assert(orbit.desiredCamera[0]>10000&&orbit.desiredCamera[2]==30000);
+  putVec(0x6014,40000,50000,60000);
+ }
  assert(initialize_map_arrival(in,1));
  assert(in.arrivalReady&&!in.arrivalBusy);
  assert(in.arrivalPosition[0]==50000&&in.arrivalPosition[1]==20000+0xA000&&in.arrivalPosition[2]==30000);
@@ -104,6 +120,14 @@ int main(){
  update_map_arrival_motion(in,0,0x665F,17,forwardStep,verticalStep);
  assert(in.arrivalBusy && forwardStep==0x28 && in.arrivalPosition[2]==0x828);
  assert(in.arrivalPosition[1]==2);
+ // Nonzero native 16.16 headings must not be interpreted as integer angles.
+ // Quarter-turn forward displacement is +X, not +Z (the former adapter bug).
+ in.arrivalPosition.zeroize();in.arrivalBusy=false;forwardStep=0;verticalStep=0;
+ update_map_arrival_motion(in,0x4000000,0xCCC0,0,forwardStep,verticalStep);
+ assert(in.arrivalPosition[0]==0x28&&in.arrivalPosition[2]==0);
+ in.arrivalPosition.zeroize();forwardStep=0;
+ update_map_arrival_motion(in,-0x4000000,0xCCC0,0,forwardStep,verticalStep);
+ assert(in.arrivalPosition[0]==-0x28&&in.arrivalPosition[2]==0);
  in.arrivalBusy=false;forwardStep=0;
  update_map_arrival_motion(in,0,0x6660,18,forwardStep,verticalStep);
  assert(!in.arrivalBusy);
@@ -144,8 +168,10 @@ int main(){
  in.targetCount=1;s.selectedTarget=1;assert(!update_map_display(s,in));
  s_workAreaCopy owner;s.trailHead=1;s.trailCount=3;
  s.trail[1].position[0]=101;s.trail[0].position[0]=100;s.trail[15].position[0]=115;
+ s.trail[1].yaw=0x4000000;s.trail[0].yaw=-0x4000000;s.trail[15].yaw=0x1234567;
  assert(draw_map_trail(s,&owner));
  assert(pushes==3&&pops==3&&trailDraws==3&&trailPositions==std::vector<int>({101,100,115}));
+ assert(trailYaws==std::vector<s32>({0x4000000,-0x4000000,0x1234567}));
  s.trailCount=16;assert(!draw_map_trail(s,&owner));s.trailCount=1;assert(!draw_map_trail(s,nullptr));
  // Native 06057CE0 table switch is independent of field travel and preserves
  // the ordinary selection in packed DE until the fleet table is left.
