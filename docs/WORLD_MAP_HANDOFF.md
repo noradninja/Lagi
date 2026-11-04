@@ -35,6 +35,23 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Type-0 selector contract covered — 2026-11-04
+
+Added a separate type-0 indexed-pixel metadata encoder (priority bits14..15,
+ratio bits11..13), and taught the register lookup to retain all eight CCRS
+selectors for type0. Exhaustive word coverage checks selector round-trips and
+lookup results; existing type3 lookup parity remains unchanged. The type3
+fixture now explicitly sets SPCTL's type bits instead of accidentally using0.
+The local Yabause Vdp1GetSpritePixelInfo definition corroborates this layout;
+Azel renderer.cpp's simplified priority helper does not implement it correctly.
+
+This is NOT wired to texture production yet: changing cached metadata without
+a matching WORLD compositor/cache-format boundary would regress rendering.
+No new hardware acceptance or cloud-ordering fix is claimed. Next: resolve
+NBG0/RBG0/completed VDP1 top and second sources using native priorities/CCRR,
+then switch type0 production with texture-cache invalidation. Missing location
+model producers and the measured WORLD graphics cost remain open.
+
 ### WORLD cloud composition state gap — 2026-11-04
 
 WORLD uses sprite type 0, CCCTL0010 (RBG0 calculation, not sprite calculation),

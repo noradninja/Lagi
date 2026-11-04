@@ -33,6 +33,21 @@ int main() {
         assert((encoded>>24)>=129&&(encoded>>24)<=156);
     }
     assert(lagi::spriteType3Metadata(0,0x6801)==0);
+    // Exhaust all indexed type-0 words, including every CCRS register.
+    s.spctl=0x20;s.ccctl=0;s.prir=0;
+    s.priority[0]=0x0201;s.priority[1]=0x0403;
+    for(unsigned i=0;i<4;++i)s.ratio[i]=(2*i)|((2*i+1)<<8);
+    for(unsigned code=0;code<65536;++code) {
+        const auto encoded=lagi::spriteType0Metadata(0xFF123456,code);
+        const unsigned alpha=encoded>>24;
+        assert((encoded&0xFFFFFF)==0x123456);
+        assert((alpha-129)/8==((code>>14)&3));
+        assert((alpha-129)%8==((code>>11)&7));
+        const auto decision=lagi::spriteCompositeLookup(s,alpha);
+        assert((decision>>24)==1+((code>>14)&3));
+        assert(((decision>>16)&31)==((code>>11)&7));
+    }
+    assert(lagi::spriteType0Metadata(0,0x6801)==0);
     // Once-per-completed-VDP1 composition is observably different from
     // applying a second-stage ratio after each overlapping primitive.
     const auto once=lagi::spriteRatioRgb555(31,31<<10,16);

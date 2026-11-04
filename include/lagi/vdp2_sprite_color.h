@@ -17,6 +17,12 @@ constexpr std::uint32_t spriteType3Metadata(std::uint32_t rgba,unsigned code) {
     return (rgba&0xFF000000u) ? (rgba&0xFFFFFFu) |
         ((129u+(((code>>13)&3u)*8u)+((code>>11)&3u))<<24) : 0u;
 }
+// Type 0 has two priority bits and THREE ratio bits. Keep the same byte
+// namespace as type 3; the frame's SPCTL disambiguates the ratio range.
+constexpr std::uint32_t spriteType0Metadata(std::uint32_t rgba,unsigned code) {
+    return (rgba&0xFF000000u) ? (rgba&0xFFFFFFu) |
+        ((129u+(((code>>14)&3u)*8u)+((code>>11)&7u))<<24) : 0u;
+}
 constexpr unsigned spritePriority(const Vdp2SpriteColorState& s,unsigned bank) {
     return (s.priority[(bank&7)/2]>>((bank&1)*8))&7;
 }
@@ -79,7 +85,7 @@ constexpr std::uint32_t spriteCompositeLookup(const Vdp2SpriteColorState& s,unsi
         const unsigned selectors=code-129;
         const unsigned pi=selectors/8,ri=selectors%8;
         p=spritePriority(s,pi<3?pi:3);
-        r=spriteColorRatio(s,ri<3?ri:3);
+        r=spriteColorRatio(s,(s.spctl&15)==0?ri:(ri<3?ri:3));
         msb=false;
     }
     if(!p)return 0;
