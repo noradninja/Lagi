@@ -2,6 +2,45 @@
 #include "lagi/garil_script_native.h"
 #include "field/field_a5/o_fld_a5.h"
 #include "kernel/fade.h"
+#include "field/fieldCutsceneTask2.h"
+#include "field/fieldCutsceneTask3.h"
+#include "field/fieldCutsceneTask.h"
+
+bool lagiAzelTryGarilScriptAction(sSaturnPtr target, s32& result)
+{
+    if (!gFLD_A5 || target.m_file != gFLD_A5 ||
+        (target.m_offset != 0x060728A4 && target.m_offset != 0x060728E0 &&
+         target.m_offset != 0x060728F8)) return false;
+    auto* field=getFieldTaskPtr()->m8_pSubFieldData;
+    if (target.m_offset == 0x060728A4) {
+        // Original 060728A4 guards field, child and script +5C, then calls
+        // 06071A36: the common retirement and camera-restore sequence below.
+        if (field) {
+            auto* script=field->m34C_ptrToE;
+            if (auto* child=script->m48_cutsceneTask; child && script->m5C == 0) {
+                // The Saturn service reads the common first flags word. The
+                // translated children have distinct C++ types: never reuse the
+                // upstream unconditional cast from task 3 to task 2.
+                u32 flags;
+                if (auto* task=dynamic_cast<s_cutsceneTask2*>(child)) flags=task->m0;
+                else if (auto* task=dynamic_cast<s_cutsceneTask3*>(child)) flags=task->m0;
+                else if (auto* task=dynamic_cast<s_cutsceneTask*>(child)) flags=task->m0;
+                else return false; // unrecovered owner, not successful completion
+                child->getTask()->markFinished();
+                script->m48_cutsceneTask=nullptr;
+                script->m5C=0;
+                if (!script->m78) {
+                    if(flags&2) endCutsceneCameraWithRestore();
+                    else endCutsceneCameraNoRestore();
+                }
+            }
+        }
+    } else {
+        field->m34C_ptrToE->m5C=target.m_offset == 0x060728F8 ? 1 : 0;
+    }
+    result=0; // recovered opcode-14 actions; no result-polling sites
+    return true;
+}
 
 bool lagiAzelTryGarilScriptAction(sSaturnPtr target, s32 argument, s32& result)
 {

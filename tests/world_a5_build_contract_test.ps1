@@ -15,6 +15,7 @@ $sources=@(Get-ChildItem -LiteralPath "$repo/extern/Azel/AzelLib/field/field_a5"
 if($Enabled){
  $shared=Get-Content -Raw (Join-Path $directory 'azel_upstream/field_field_a3_o_fld_a3.cpp')
  if(!$shared.Contains('if (lagiAzelTryGarilScriptAction(readSaturnEA(r14), readSaturnS32(r14 + 4), m54_currentResult)) break;')-or
+    !$shared.Contains('if (lagiAzelTryGarilScriptAction(readSaturnEA(r14), m54_currentResult)) break;')-or
     !$ninja.Contains('build CMakeFiles/lagi.dir/src/integration/lagi_garil_script_native.cpp.obj:')){
   throw 'Owned Garil native-action binding missing'
  }

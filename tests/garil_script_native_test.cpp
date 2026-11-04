@@ -14,9 +14,43 @@ struct Call {Fade* fade;u32 from;s32 to,duration;};
 std::vector<Call> calls;
 u32 convertColorToU32ForFade(u32 color){return color^0x1357;}
 void fadePalette(Fade* fade,u32 from,s32 to,s32 duration){calls.push_back({fade,from,to,duration});}
+struct s_workArea {virtual ~s_workArea()=default;struct Task {bool finished=false;void markFinished(){finished=true;}} task;Task* getTask(){return &task;}};
+struct s_cutsceneTask2 : s_workArea {u32 m0=0;} cutscene;
+struct s_cutsceneTask3 : s_workArea {s32 m0=0;} cutscene3;
+struct s_cutsceneTask : s_workArea {u32 m0=0;} cutscene1;
+struct Script {s_workArea* m48_cutsceneTask=nullptr;s32 m5C=0;void* m78=nullptr;} script;
+struct SubField {Script* m34C_ptrToE=&script;} subfield;
+struct Field {SubField* m8_pSubFieldData=&subfield;} field;
+Field* getFieldTaskPtr(){return &field;}
+int restores=0,cuts=0;
+void endCutsceneCameraWithRestore(){++restores;}
+void endCutsceneCameraNoRestore(){++cuts;}
 #include "production.inc"
 int main(){
  s32 result=99;
+ for(auto target:{sSaturnPtr{0x060728E0,&a3},sSaturnPtr{0x060728A4,nullptr},sSaturnPtr{0x0606FA5C,&a5}})
+  assert(!lagiAzelTryGarilScriptAction(target,result)&&result==99);
+ gFLD_A5=nullptr;assert(!lagiAzelTryGarilScriptAction({0x060728E0,&a5},result));gFLD_A5=&a5;
+ assert(lagiAzelTryGarilScriptAction({0x060728F8,&a5},result)&&result==0&&script.m5C==1);
+ script.m48_cutsceneTask=&cutscene;
+ assert(lagiAzelTryGarilScriptAction({0x060728A4,&a5},result)&&!cutscene.task.finished);
+ assert(lagiAzelTryGarilScriptAction({0x060728E0,&a5},result)&&script.m5C==0);
+ assert(lagiAzelTryGarilScriptAction({0x060728A4,&a5},result)&&cutscene.task.finished&&cuts==1&&!restores);
+ assert(!script.m48_cutsceneTask&&script.m5C==0);
+ script.m48_cutsceneTask=&cutscene3;script.m5C=-1;
+ lagiAzelTryGarilScriptAction({0x060728A4,&a5},result);assert(!cutscene3.task.finished);
+ script.m5C=0;script.m48_cutsceneTask=nullptr;
+ lagiAzelTryGarilScriptAction({0x060728A4,&a5},result);assert(cuts==1&&!restores);
+ field.m8_pSubFieldData=nullptr;
+ lagiAzelTryGarilScriptAction({0x060728A4,&a5},result);assert(cuts==1&&!restores);
+ field.m8_pSubFieldData=&subfield;result=99;
+ script.m48_cutsceneTask=&cutscene3;cutscene3.m0=2;
+ assert(lagiAzelTryGarilScriptAction({0x060728A4,&a5},result)&&cutscene3.task.finished&&restores==1);
+ script.m48_cutsceneTask=&cutscene1;script.m78=&script;cutscene1.m0=2;
+ assert(lagiAzelTryGarilScriptAction({0x060728A4,&a5},result)&&cutscene1.task.finished&&restores==1&&cuts==1);
+ s_workArea foreign;script.m48_cutsceneTask=&foreign;result=99;
+ assert(!lagiAzelTryGarilScriptAction({0x060728A4,&a5},result)&&result==99&&!foreign.task.finished);
+ assert(script.m48_cutsceneTask==&foreign);script.m48_cutsceneTask=nullptr;result=99;
  for(auto target:{sSaturnPtr{0x0606FA5C,&a3},sSaturnPtr{0x0606FAB4,nullptr},sSaturnPtr{0x060728E0,&a5}}){
   assert(!lagiAzelTryGarilScriptAction(target,15,result)&&result==99&&calls.empty());
  }
@@ -38,5 +72,5 @@ int main(){
    assert(call.to==(address==0x0606FA5C?0x8000:-1));
   }
  }
- puts("PASS A5 fade-action ownership, foreign dispatch isolation, signed group selection, two-channel order, colors and low-word duration; native fade service mocked");
+ puts("PASS A5 owned actions, typed cutscene retirement/restore guards, script state, fade groups/colors/duration; native camera/fade services mocked");
 }

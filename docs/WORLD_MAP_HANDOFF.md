@@ -35,6 +35,40 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Garil native cutscene-state actions — 2026-11-04
+
+The zero-argument shared VM boundary now resolves three additional actions
+only for the actual A5 file owner: `060728E0` clears script +5C, `060728F8`
+sets it to 1, and `060728A4` completes the active cutscene only when the field
+and child exist and +5C is zero. All eleven recovered sites use ordinary
+opcode 14. Foreign files, unsupported addresses and the shared animation-data
+binding are unchanged.
+
+Completion follows original `06071A36`: mark the child finished, clear the
+script child and +5C, then preserve camera tracking when +78 is nonzero;
+otherwise choose the native restore/no-restore camera service from child flag
+2. The native first flags word belongs to distinct translated C++ task types.
+The adapter uses the actual `s_cutsceneTask`, `s_cutsceneTask2` or
+`s_cutsceneTask3` type, not the upstream unconditional task-2 cast. An unknown
+child type leaves state untouched and declines the binding rather than
+reporting successful completion.
+
+Original instruction checks and production fixtures cover both state writes,
+guarded completion, typed retirement, tracking preservation, both restore
+branches, foreign dispatch and unknown-child isolation. Native camera/fade
+services are mocked in these fixtures. Vita compile/link and SELF/VPK pass;
+live A5 cutscene behavior is not hardware-accepted.
+
+This supersedes the pending list below for these three addresses. Five of the
+ten addresses in the partial structural inventory now have A5-owned bindings
+(17 of 28 sites); four undecoded paths still make that inventory incomplete.
+Placement actions `0605C020/54` were inspected but deliberately not bound:
+their native placement/rotation helper also updates rider state, the light-wing
+task and the direct camera reset. Existing translated helper stubs are not
+proof of those semantics. Scheduling, hide/light-wing, placement/camera and
+undecoded script paths still require recovery, followed by actual Garil
+entry/control/return testing.
+
 ### Owned Garil script fade actions — 2026-11-04
 
 The shared field VM previously dispatched all A5 native calls through the

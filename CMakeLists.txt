@@ -2358,6 +2358,14 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    string(REPLACE "${garil_action_anchor}"
     "        if (lagiAzelTryGarilScriptAction(readSaturnEA(r14), readSaturnS32(r14 + 4), m54_currentResult)) break;\n${garil_action_anchor}"
     source_text "${source_text}")
+   set(garil_action0_anchor "        m54_currentResult = gCurrentFieldOverlay->executeNative(readSaturnEA(r14));")
+   string(FIND "${source_text}" "${garil_action0_anchor}" garil_action0_found)
+   if(garil_action0_found LESS 0)
+    message(FATAL_ERROR "Shared field zero-argument native-action dispatch boundary changed")
+   endif()
+   string(REPLACE "${garil_action0_anchor}"
+    "        if (lagiAzelTryGarilScriptAction(readSaturnEA(r14), m54_currentResult)) break;\n${garil_action0_anchor}"
+    source_text "${source_text}")
   endif()
   set(source_text "#include \"lagi/platform.h\"\n#include \"lagi/lagi_render_bridge.h\"\nstruct s_itemBoxType1;\n#include \"field/fieldItemBox_type2.h\"\n#include <cstdint>\n${source_text}")
   # Follow the existing Azel trail sprite and final sparkle with the native
