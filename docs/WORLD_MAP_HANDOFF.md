@@ -35,6 +35,27 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Live UI texture writes — 2026-11-04
+
+Tracing overlapping WORLD names found a shared renderer cache defect: native
+sprite text correctly reuses VDP1 glyph storage at 7B600, but UI descriptor-cache
+hits ignored published pixel writes. Only the 3D texture cache consumed those
+dependency notifications. Consequently a new destination could show letters
+decoded for a previous name despite correct native string/child selection.
+
+UI entries now retain a dirty flag for overlapping image/LUT writes or dependent
+CRAM writes. The next draw decodes current bytes into the existing GPU storage;
+only successful refresh clears the flag. Unaffected descriptors remain cached.
+Invalidation stays on the render thread and uses existing bounded write-block
+snapshots; no per-frame glyph hashing, new allocations per rewrite, string
+replacement or WORLD-specific renderer exception is introduced. The existing
+palette-refresh profiling count includes these content refreshes as well.
+
+Dependency fixtures cover WORLD's reused glyph range, unaffected addresses,
+native color-bank masking, unrelated palette writes and missing-range fallback.
+This does not resolve absent plaques, black WORLD environment or camera targeting;
+their causes remain separate. Device pixels remain an acceptance gate.
+
 ### Restore background optimization profile — 2026-11-04
 
 The 13-57-01 hardware capture confirms restored water but sustained deadline

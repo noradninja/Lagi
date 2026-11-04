@@ -68,5 +68,16 @@ int main() {
     assert(!textureDependsOnWrites(texture,{},{},true,true)); // native flat color
     texture.nativeDependenciesKnown=false;
     assert(textureDependsOnWrites(texture,{},{},true,true)); // unknown producer
-    std::puts("PASS: normalized/wrapped ranges, concurrent producers, image/LUT/palette dependencies and conservative fallbacks");
+    // WORLD reuses the same 8x16 glyph descriptors with new pixels.
+    pixels.publish(0x7b600,64);
+    auto glyphWrites=pixels.consume();
+    assert(uiTextureDependsOnWrites(0x80,0x27c0,0x7b600>>3,0x110,glyphWrites,{},true,false));
+    assert(!uiTextureDependsOnWrites(0x80,0x27c0,0x10000>>3,0x110,glyphWrites,{},true,false));
+    palettes.publish(0xf80,32); // WORLD bank 0x7c0, not the descriptor's upper flags.
+    assert(uiTextureDependsOnWrites(0x80,0x27c0,0,0x110,{},palettes.consume(),false,true));
+    palettes.publish(0x100,32);
+    assert(!uiTextureDependsOnWrites(0x80,0x27c0,0,0x110,{},palettes.consume(),false,true));
+    assert(uiTextureDependsOnWrites(0x80,0x27c0,0,0x110,{},{},true,false));
+    assert(!uiTextureDependsOnWrites(5<<3,0,0,0x110,{},{},false,true));
+    std::puts("PASS: normalized/wrapped ranges, concurrent producers, image/LUT/palette dependencies, WORLD UI glyph rewrites and conservative fallbacks");
 }

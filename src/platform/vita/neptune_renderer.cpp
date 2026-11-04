@@ -895,6 +895,7 @@ static bool g_vdp1BaseTexturedPayloadValid = false;
 // Lightweight VDP1 2D/UI translator. These resources are separate from the
 // resident 3D town mesh so UI commands never invalidate or rebuild it.
 struct Vdp1UiTextureCacheEntry {
+    bool contentsDirty = false;
     std::uint16_t cmdPmod = 0;
     std::uint16_t cmdColr = 0;
     std::uint16_t cmdSrca = 0;
@@ -2547,6 +2548,11 @@ static void applyPendingRendererInvalidation()
     g_vdp1TextureDataDirty = true;
     const auto pixelWrites = g_pendingVdp1Writes.consume();
     const auto paletteWrites = g_pendingCramWrites.consume();
+    for (auto& entry : g_vdp1UiTextureCache)
+        entry.contentsDirty |= uiTextureDependsOnWrites(entry.cmdPmod,entry.cmdColr,
+            entry.cmdSrca,entry.cmdSize,pixelWrites,paletteWrites,
+            (flags & kRendererInvalidateVdp1Textures)!=0u,
+            (flags & kRendererInvalidateCram)!=0u);
     const auto previousGeneration = g_nativeTextureGeneration++;
     // Only advance entries already valid at the previous epoch. Older stale
     // entries must remain stale until first use decodes them. GPU generations
@@ -4773,7 +4779,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
     std::size_t cacheIndex=0;
     if (g_vdp1UiTextureIndex.find(cacheKey,cacheIndex)) {
         auto& entry=g_vdp1UiTextureCache[cacheIndex];
-        if (!hasPalette || (entry.hasPalette && entry.palette==palette)) {
+        if (!entry.contentsDirty && (!hasPalette || (entry.hasPalette && entry.palette==palette))) {
             ++g_profileSprites.cacheHits;
             return &entry.gpu;
         }
@@ -4919,6 +4925,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                 decoded.rgba.data(),decoded.width,decoded.height);
             refreshEntry->palette=palette;
             refreshEntry->hasPalette=hasPalette;
+            refreshEntry->contentsDirty=false;
             ++g_profileSprites.paletteRefreshes;
             return &refreshEntry->gpu;
         }

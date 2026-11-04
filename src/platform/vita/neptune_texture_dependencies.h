@@ -56,6 +56,26 @@ private:
 using Vdp1WriteBlocks = TextureWriteBlocks<0x80000u, 512u, 0x25C00000u>;
 using CramWriteBlocks = TextureWriteBlocks<0x1000u, 32u, 0x25F00000u>;
 
+inline bool uiTextureDependsOnWrites(unsigned pmod, unsigned colr, unsigned srca,
+    unsigned size, const Vdp1WriteBlocks::Snapshot& pixels,
+    const CramWriteBlocks::Snapshot& palettes, bool pixelNotification,
+    bool paletteNotification)
+{
+    const unsigned mode=(pmod>>3)&7u;
+    if (mode>5u) return pixelNotification || paletteNotification;
+    const unsigned count=((size>>8)&63u)*8u*(size&255u);
+    if (pixelNotification && (Vdp1WriteBlocks::empty(pixels) ||
+        Vdp1WriteBlocks::overlaps(pixels,srca<<3,
+            mode<=1u?count/2u:count*(mode==5u?2u:1u)) ||
+        (mode==1u && Vdp1WriteBlocks::overlaps(pixels,colr<<3,32u)))) return true;
+    if (!paletteNotification || mode==5u) return false;
+    // LUT entries can reference any CRAM bank. Bank modes use contiguous
+    // 16/64/128/256-color ranges; block rounding only over-invalidates.
+    if (mode==1u || CramWriteBlocks::empty(palettes)) return true;
+    const unsigned colors=mode==0u?16u:mode==2u?64u:mode==3u?128u:256u;
+    return CramWriteBlocks::overlaps(palettes,(colr&0x7ffu&~(colors-1u))*2u,colors*2u);
+}
+
 template<class Texture>
 bool textureDependsOnWrites(const Texture& texture,
     const Vdp1WriteBlocks::Snapshot& pixels,
