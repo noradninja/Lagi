@@ -6,8 +6,8 @@ fixes are checkpoints within this audit.
 Sixteen additional script callbacks are restored in this checkpoint, covering
 dragon feeding/rewards, player animation banks, NPC turning/animation/flags,
 random choice and the direct camera restore entry. Their source-level binding
-checks and production fixtures pass. Two script targets and both NPC task
-definitions below remain pending. NPC receivers must be implemented before the
+checks and production fixtures pass. All 55 inventoried script targets now have bindings. One NPC task
+definition below remains pending. NPC receivers must be implemented before the
 connected script services can establish a playable scene.
 
 ## Native script inventory
@@ -48,8 +48,8 @@ independent native instruction validation before this becomes a completion gate.
 | 06056588 | 2 | Bound | 4 | 06060B2C |
 | 0605664A | 1 | Bound | 2 | 06060A18 |
 | 06056662 | 1 | Bound | 2 | 06060A28 |
-| 06057B62 | 1 | Pending | 1 | 060604F0 |
-| 06057B76 | 1 | Pending | 1 | 06060514 |
+| 06057B62 | 1 | Bound | 1 | 060604F0 |
+| 06057B76 | 1 | Bound | 1 | 06060514 |
 | 06057F46 | 0 | Bound | 1 | 06060AD8 |
 | 0606AECC | 0 | Bound | 1 | 060580DA |
 | 0606C70C | 1 | Bound | 9 | 06065BC8 |
@@ -83,13 +83,19 @@ independent native instruction validation before this becomes a completion gate.
 
 ## Missing task dispatch
 
-Four original object definitions have factories in Camp. Two additional
-definitions reached through object registration remain absent.
+Five original object definitions now have factories in Camp. The interactive
+actor definition0607B5BC is restored with Init06057714, resource wait06057A68,
+Update06057818, Draw0605799E and Delete060579F0. Its two collision scripts,
+seven model variants, PCM lifecycle and relative palette-sequence loops are
+connected.06057B62 queries state3;06057B76 switches to state4 or1 and returns
+the previous state. Production lifecycle and native-anchor checks pass, as
+does Vita compile/link/SELF/VPK. Rendering and gameplay still need device checks.
+
+One definition reached through object registration remains absent.
 
 | Definition | Init | Update | Draw | Delete | Native size |
 |---|---|---|---|---|---|
 | 06080148 | 0606F3F0 | 0606F530 | 0 | 0606FF04 | 17C |
-| 0607B5BC | 06057714 | 06057A68 | 0 | 060579F0 | 1B4 |
 
 These require recovery or verified reuse of matching task implementations.
 Common NPC movement/animation callbacks must be checked against their concrete
@@ -97,8 +103,12 @@ receiver types and registration lifecycle, including Edge and the Camp dragon.
 
 ## Remaining acceptance
 
-- Resolve every pending native call with correct argument interpretation.
-- Recover both missing NPC task paths, including their child callbacks.
+- Validate native-call semantics together with concrete actor lifecycles.
+- Recover remaining06080148 NPC task and its child callbacks. Native factory
+  0606ABE8 creates a34-byte segmented-body task from0607EB94. Its init/update/draw
+  entries are0606AA04/0606AB88/0606ABD2; parent bit40 requires this path.
+  Existing shared NPC translation leaves it unimplemented, so binding the class
+  alone would not complete the callback chain.
 - Validate remaining static coverage against native dispatch. Runtime opcode38 is restored and covered by its production fixture.
 - Exercise startup, dragon recovery/interactions, other characters, save station,
   save/load return state, normal exits and repeated Camp entry.

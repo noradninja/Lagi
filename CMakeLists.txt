@@ -4536,6 +4536,19 @@ static s32 lagiCampRandomChoice(s32 limit)
         overlayScriptFunctions.m_threeArg[0x06070664] = {&lagiCampScheduleNpcAnimation, "Camp queued NPC animation"};
         overlayScriptFunctions.m_zeroArg[0x0606cb54]]=]
    source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_camp_interactive_actor.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_camp_interactive_actor.inc" camp_interactive_actor)
+  string(REPLACE "struct TWN_CAMP_data : public sTownOverlay" "${camp_interactive_actor}\nstruct TWN_CAMP_data : public sTownOverlay" source_text "${source_text}")
+  string(REPLACE "        case 0x60800E8:"
+   "        case 0x0607B5BC:\n            assert(size == 0x1B4);\n            return lagiCreateCampInteractiveActor(parent, arg);\n        case 0x60800E8:" source_text "${source_text}")
+  string(REPLACE "        for (int i = 0; i < 9; i++) {"
+   "        overlayScriptFunctions.m_oneArg[0x06057B62] = {&lagiCampInteractiveActorReady, \"Camp interactive actor ready\"};\n        overlayScriptFunctions.m_oneArg[0x06057B76] = {&lagiCampToggleInteractiveActor, \"Camp toggle interactive actor\"};\n        for (int i = 0; i < 9; i++) {" source_text "${source_text}")
+  if(NOT source_text MATCHES "return lagiCreateCampInteractiveActor" OR
+     NOT source_text MATCHES "m_oneArg\\[0x06057B62\\]" OR
+     NOT source_text MATCHES "m_oneArg\\[0x06057B76\\]")
+   message(FATAL_ERROR "Camp interactive actor task/script binding did not apply")
+  endif()
  elseif(relative_path STREQUAL "town/camp/campVdp2Plane.cpp")
   # Camp's projection service writes two signed words.
   string(REPLACE "s16 m30_vdp1ProjectionParam[1];"

@@ -35,6 +35,29 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Camp interactive actor and remaining callback gap � 2026-11-05
+
+Recovered definition0607B5BC in `lagi_camp_interactive_actor.inc`, including
+its deferred resource initialization, two models/collision scripts, seven model
+variants, PCM start/stop lifecycle, palette sequences and draw/update/delete.
+Native06057766 submits32 palette bytes to CRAM240, rotates the secondary model
+by-5B05B and registers its collision body while the sequence remains active.
+Zero/relative-loop/terminator records retain native pointer stepping.
+
+The final two script targets06057B62/06057B76 now use this concrete task.
+All55 inventoried native script targets have bindings. This does NOT finish
+Camp: definition06080148 and its bit40 segmented-body child task are still
+missing. Child factory0606ABE8 uses definition0607EB94, size34, with
+init0606AA04/update0606AB88/draw0606ABD2. Shared NPC code has an unimplemented
+branch there; recover it before calling the callback chain complete.
+
+`tests/camp_interactive_actor_test.ps1 -Build <build> -DiscImage <Disc1.bin>`
+checks original task/palette/state anchors, generated dispatch and the owned
+production actor through resource waits, eight open/close cycles, variant wrap,
+palette loops/termination, collision ownership, sound cleanup and teardown.
+The fixture and Vita compile/link/SELF/VPK pass. Device Camp/save acceptance
+is still open. Preserve original WORLD profile and matched package/symbols.
+
 ### Camp native Yes/No dialog � 2026-11-05
 
 Restored town script opcode38 and its MAIN0601C6CA dialog task. This is the

@@ -80,7 +80,8 @@ foreach($binding in @(
 if(!$script.Contains('{0x06026DA4, {&lagiTownOpenSaveMenu, "town save menu"}},')) {
     throw 'Authored town save station callback is unbound'
 }
-if(([regex]::Matches($camp,'getNpcDataByIndexAsTask\(')).Count -ne 13) {
+$campWithoutInteractive=[regex]::Replace($camp,'(?s)struct sLagiCampInteractiveActor :.*?(?=struct TWN_CAMP_data :)','')
+if(([regex]::Matches($campWithoutInteractive,'getNpcDataByIndexAsTask\(')).Count -ne 13) {
     throw 'Camp dragon script and recovery-wait lookups must use their registered task'
 }
 if(!$camp.Contains('overlayScriptFunctions.m_oneArg[0x060564B4] = {&lagiCampRecoveryFinished, "Camp recovery finished"};')) {
