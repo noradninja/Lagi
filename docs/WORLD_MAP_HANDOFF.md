@@ -35,6 +35,34 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### 21-00 hardware: clouds accepted; camp startup crash — 2026-11-04
+
+User confirms cloud blending fixed. New capture/log:
+D:/Users/Noradninja/Videos/Lagi/2026-11-04 21-00-06 - Lagi - Lagi/.
+The Cainus route now dispatches54, plays EVT016_1.CPK, exits54, loads
+TWN_CAMP.PRG, starts music64/CAMPBGM and reaches status55/mode2. Native actor
+draws/submissions and model texture uploads occur before the log stops. This
+proves the movie-to-camp handoff is connected, NOT that camp is playable.
+The log alone cannot identify the faulting instruction or distinguish a
+renderer/CPU/resource failure at that point. Do not patch a guessed cause.
+
+Video error screen says Saved Core File Succeeded, naming
+ux0:data/psp2core-1793844053-0x0019d82f9b-eboot.bin.psp2dmp. It was not in the
+capture directory or Downloads when checked. Asked for that file, if present,
+and the matching unstripped lagi.velf. Do not substitute a later ELF for the
+tested binary. There is no verified complete dump/symbolized fault yet.
+
+This log still reports specialized8bit16 and reason1 format rejection on
+WORLD's four-bit RBG path. It does not establish a hardware result for the
+new098e06d four-bit/eight-page optimization. Performance remains open.
+
+Additional report: on returning to the first flight area, the bird cannot be
+highlighted for Conana's Nest/D Unit01. Upstream o_fld_a3_1.cpp creates the
+bird LCS target and disables it when getBit(0xA*8+1), index0x51/byte0A mask40,
+is unset. The separate nest-exit target checks0x91*8+4 plus its position zone.
+The correct story-flag producer and runtime LCS state are not yet verified;
+do not force either flag or conflate the exit-zone gate with bird targeting.
+
 ### Exact 4-bit RBG decoded-page performance path — 2026-11-04
 
 Continue from hardware checkpointeeccc31 without folding new timing claims
