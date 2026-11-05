@@ -1,5 +1,39 @@
 # Camp callback audit — 2026-11-05
 
+## C2 segmented-child service checkpoint - 2026-11-05
+
+`src/integration/lagi_camp_npc_body.inc` recovers the complete native child
+factory0606ABE8/definition0607EB94, Init0606AA04, Update0606AB88, Draw0606ABD2,
+attachment0606A888 and movement impulse0606AAB8. It uses the existing native
+segmented-body services, seven linked parts, model8/pose70 seed translations,
+the original0607EAFC templates, normal/interpolated parent bone poses and
+attachment vector0607EB88. The original separate Z/X/Y inverse rotation and
+wrapping SHLL14 impulses are preserved. Each update writes body rotation target
++18; it does NOT overwrite base rotation+0C, which retains its initial pose.
+The host-owned body/vector has an explicit task Delete callback.
+
+The adapter is compiled into generated Camp but is not yet invoked. Definition
+06080148 remains unbound until its full control pipeline is recovered. Do not
+substitute the existing Zoah class without checking its initialization/control
+callbacks, original idle table and child factory. No new hardware run is needed
+for this unused prerequisite; keep the ec3199a recovery/feeding package for tests.
+
+Original-disc instruction/resource anchors and the production child fixture pass
+for initialization service calls, seed translations, both pose banks, attachment
+service order, motion impulses, base/target separation, drawing scope and cleanup.
+The fixture substitutes matrix/physics services, so it does NOT prove their math
+or rendered parity. Full Vita compile/link/SELF/VPK packaging passes; the child
+still requires integrated actor and hardware validation.
+
+Original Camp control map0606FF30: mode0=0606F8BA look-angle decay;
+mode1=0606F974 pose-record playback; mode2=06070ABC bounded wandering/patrol;
+mode3 uses the entity's callback pointer; mode4=0606F8D8 weighted animation
+schedule. Authored06080148 records include mode2 (for example0607BAE0 and
+0607C9C4), plus bit40 segmented-child variants0607B8AC/0607B900/0607B954.
+Shared initEdgeNPC still leaves mode2 Unimplemented. Camp's walking/idle selector
+060718BE/060717A0 uses original table06080180, not the Ruins table or an invented
+idle distribution. Recover those native services before enabling this class.
+
 ## C2 feeding and interaction-state correction - 2026-11-05
 
 Native feeding continuation060559A4 now runs through the existing Camp mode

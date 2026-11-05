@@ -4591,6 +4591,9 @@ static s32 lagiCampRandomChoice(s32 limit)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_camp_interactive_actor.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_camp_interactive_actor.inc" camp_interactive_actor)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_camp_npc_body.inc")
+  string(APPEND camp_interactive_actor "\n#include \"lagi_camp_npc_body.inc\"\n")
   string(REPLACE "struct TWN_CAMP_data : public sTownOverlay" "${camp_interactive_actor}\nstruct TWN_CAMP_data : public sTownOverlay" source_text "${source_text}")
   string(REPLACE "        case 0x60800E8:"
    "        case 0x0607B5BC:\n            assert(size == 0x1B4);\n            return lagiCreateCampInteractiveActor(parent, arg);\n        case 0x60800E8:" source_text "${source_text}")
