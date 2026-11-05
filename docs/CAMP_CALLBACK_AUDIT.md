@@ -1,5 +1,53 @@
 # Camp callback audit — 2026-11-05
 
+## Current priority: native dragon recovery and control release
+
+User confirms WORLD transition and Camp loading now work at the newest branch
+checkpoint52f9ebf. Camp functionality is the priority; do not continue treating
+the old camp startup crash or WORLD transition as the active blocker.
+
+Saturn reference:20261105-2059-34.1759502.mp4,18.17seconds. The sequence shows
+the recovering text, dragon rising/animation, white lighting with blue particles,
+settling/restored color, camera return and eventual Edge control. It is a
+reference capture, not evidence that the current Vita implementation passes.
+
+Concrete source gap:06056484 recovers HP/BP and starts dragon substate10 when
+needed. The native mode dispatch enters06055734, advancing to11, then
+060557BC. That continuation remains Unimplemented in campDragon.cpp under the
+misleading translated name sCampDragon_handlePetting. Thus bound script calls
+cannot finish recovery:060564B4 waits for substate<10. Do not bypass this wait,
+force substate0, replace it with a timer, or substitute the battle heal effect.
+
+First coherent implementation milestone must recover the whole chain:
+
+-06055734/060557BC: authored camera interpolation, animation-state10 wait,
+  sound6F, command sequence0607AF5E, effect parameters/table0607B052 and native
+  return to substate0 with the original Draw callback restored.
+-060555E2/06055634: native lighting-transition setup, delay/counts, signed-byte
+  color interpolation and normal dragon draw. The current tail fields are
+  misleadingly named; adapt their typed semantics rather than raw task offsets.
+-0605669C and its child effect lifecycle: original particles/resources,
+  transforms, timing, release and rendering boundaries.
+-Let the original script poll, camera restoration and player-control services
+  finish naturally. Verify both damaged HP/BP and already-full entry paths.
+
+After recovery, finish the remaining Camp actor/segmented-child callback gap
+below and audit petting/feeding continuations (060559A4 is also a stub), saving,
+normal exits and re-entry. Visual correctness and performance remain acceptance
+requirements; preserve the existing WORLD comparison build profile.
+
+Two separate user reports remain tracked, without forced fixes:
+
+-Rider gun missing in flight AND combat. Native fieldDragon.cpp and
+  battleDragon.cpp already call addObjectToDrawList for the rider bundle's
+  weapon slot. Trace loadRider weapon index, hand hotpoint data, captured model
+  transform/material and actual submission; do not append a guessed gun mesh.
+-First-area bird not targetable on return. Both generated A3 bird guards still
+  use the original byte0A mask02/bit6 correction, not upstream's incorrect bit1.
+  Trace the live captain/progression flag and target disable/registration state.
+  A source guard being corrected does not establish that the user can target
+  the bird. Do not force the story bit or conflate the nest exit-zone gate.
+
 Camp callback coverage remains incomplete. The current registration and save
 fixes are checkpoints within this audit.
 

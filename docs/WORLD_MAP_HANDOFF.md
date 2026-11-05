@@ -35,6 +35,17 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### User acceptance and Camp-first priority - 2026-11-05
+
+User confirms WORLD transition is finished and Camp now loads correctly after
+the latest52f9ebf branch checkpoint. Prioritize Camp functionality, starting with
+the dragon's native recovery animation/effect and the script-controlled release
+of Edge. See CAMP_CALLBACK_AUDIT.md's new current-priority section for the
+Saturn reference and concrete unimplemented060557BC/lighting/effect chain.
+Do not keep requesting the obsolete startup-crash reproduction as a gate to
+this work. Missing rider gun (flight/combat) and unselectable return-area bird
+are separately tracked; neither has a verified new fix at this checkpoint.
+
 ### Camp interactive actor and remaining callback gap - 2026-11-05
 
 Recovered definition0607B5BC in `lagi_camp_interactive_actor.inc`, including
