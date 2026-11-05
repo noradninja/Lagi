@@ -35,6 +35,26 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Garil exit-trigger typed child writes — 2026-11-04
+
+Independent downstream audit found a definite host-layout bug in native A5
+exit-trigger mode1. Upstream writes *(s32*)((u8*)child+0x10); a C++ task has
+base/vtable/callback storage and is not a packed Saturn work area. Original
+FLD_A5 instructions06056714/0605672E write child+10, while060561B6 reads
+current intensity at+C and06056202..04 latches stored+10 into current+C only
+at the four-phase wrap. The translated member for native+10 is named
+m14_storedIntensity (its name is misleading), NOT m10_intensity.
+
+The generated-source adapter replaces exactly both parent writes with typed
+m14_storedIntensity assignments; no extern/Azel edit, vibration shortcut,
+immediate latch, field routing, flag, shader or rendering change. The existing
+native child supplies positive/negative/half-positive/half-negative impulses.
+Original-disc instruction/literal checks plus the generated parent assignments
+and actual child Update body pass a host fixture checking delayed start/stop
+and unchanged host task metadata. This removes a concrete corruption hazard
+on Garil's authored exit sequence; it is NOT evidence for the separate camp
+startup crash or proof that field exit/WORLD re-entry works on Vita.
+
 ### WORLD concrete work-area disposal — 2026-11-04
 
 Lifecycle audit found src/integration/lagi_task_vita.cpp only deleted the

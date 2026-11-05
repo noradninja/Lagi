@@ -2762,6 +2762,18 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   endif()
   string(REPLACE "getBit(0xA * 8 + 1)" "getBit(0xA * 8 + 6)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/a5_exitTriggerEntity.cpp")
+  # A5 06056714/0605672E write child+10 (stored intensity), NOT current
+  # intensity at native+C. Saturn offsets cannot index a C++ work area.
+  set(garil_vibration_old "*(s32*)((u8*)pThis->m2C_childTask + 0x10)")
+  string(REGEX MATCHALL "\\*\\(s32\\*\\)\\(\\(u8\\*\\)pThis->m2C_childTask \\+ 0x10\\)" garil_vibration_matches "${source_text}")
+  list(LENGTH garil_vibration_matches garil_vibration_count)
+  if(NOT garil_vibration_count EQUAL 2)
+   message(FATAL_ERROR "Expected both native Garil vibration writes")
+  endif()
+  string(REPLACE "${garil_vibration_old}"
+   "static_cast<sA5ExitTriggerVibrationTask*>(pThis->m2C_childTask)->m14_storedIntensity"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3_2.cpp")
   set(fish_motion_old [=[            // Compute values using sin/cos tables (results not stored to struct in mode 0,
             // only used for return value which the task scheduler ignores)
