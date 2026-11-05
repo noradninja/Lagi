@@ -35,6 +35,43 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Camp interaction and shared NPC callbacks — 2026-11-05
+
+Restored five audited native calls.06056408 starts feeding at substate12 and
+returns the original register value11.0605641C waits for signed substate<12.
+060564D6 and060564FE apply resource-B rewards2/1 once per native flags263:80
+and262:01, preserving signed return values and all unrelated bits.06056526
+sets substate7 only below9, then tail-calls the petting reward. These use the
+registered concrete dragon task and the existing resource producer.
+
+Original-disc instruction/literal/mask checks, generated binding checks,
+production host fixtures across all signed substates and256 flag bytes,
+repeat-call reward suppression, and Vita compile/link/SELF/VPK packaging pass.
+Additional restored services cover Edge's two authored animation banks, NPC
+look-at flags and completion tests, native random choice, and the direct camera
+restore entry.606C95C is a JMP through literal606C9B4 to606AECC, so both addresses
+now resolve to the existing camera-state producer.
+
+NPC turning, saved-angle restoration, animation selection and scheduling reuse
+the existing shared sNPC services from the pinned Azel source. Generated adapters
+preserve Camp's signed byte animation/control arguments and native return
+registers, including return2 for animation0 and159 for queued animation0.
+Production fixtures exercise both animation sources, queue reset, mode0/1
+turning, byte conversion, all256 flag bytes, signed return values and repeated
+reward suppression. The build passes Vita compile/link/SELF/VPK packaging.
+
+No new hardware acceptance is claimed.53 of55 audited native calls have dispatch
+entries. The two remaining calls6057B62/6057B76 inspect/toggle the state of the
+missing1B4 actor. Both missing NPC task implementations remain required, including
+the17C common actor and its nested optional callbacks. Bound script services do
+not create those receiver tasks. Complete these before the next Camp checkpoint.
+
+Native VM opcode38 has now been identified as the Yes/No dialog, without script
+operands. MAIN switch table600D054 maps it to600D660, which calls601C6CA using
+COMMON task definition21006C (Update601C4F0, Draw601C5D8, Delete601C6B0).
+The following08/0001 bytes are a separate equality test, not operands of38.
+Its runtime port remains pending; the provisional audit decoder is corrected.
+
 ### Sky accepted, Camp registration and callback audit — 2026-11-05
 
 User confirms WORLD sky mapping fixed on c19bf15. Camp still crashes before

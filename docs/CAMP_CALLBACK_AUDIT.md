@@ -3,6 +3,13 @@
 Camp callback coverage remains incomplete. The current registration and save
 fixes are checkpoints within this audit.
 
+Sixteen additional script callbacks are restored in this checkpoint, covering
+dragon feeding/rewards, player animation banks, NPC turning/animation/flags,
+random choice and the direct camera restore entry. Their source-level binding
+checks and production fixtures pass. Two script targets and both NPC task
+definitions below remain pending. NPC receivers must be implemented before the
+connected script services can establish a playable scene.
+
 ## Native script inventory
 
 Read-only inspection uses US Disc 1 TWN_CAMP.PRG at LBA239428, base06054000.
@@ -12,8 +19,8 @@ object registration. It follows conditional branches, script calls, switch
 entries and native-call operands across story alternatives. Current inventory
 is55 distinct native function/arity pairs. Bound means a generated dispatch
 entry exists. Semantic parity and hardware acceptance remain separate gates.
-The decoder follows opcode38 operands for this audit, while its runtime handler
-is absent. Table-default handling and all later-game paths still need
+Opcode38 is a no-operand Yes/No dialog, recovered from MAIN600D660 and task
+factory601C6CA. Its runtime handler is absent. Table-default handling and all later-game paths still need
 independent native instruction validation before this becomes a completion gate.
 
 | Native function | Arguments | Dispatch | Call sites | First call site |
@@ -28,13 +35,13 @@ independent native instruction validation before this becomes a completion gate.
 | 0602C32A | 1 | Bound | 8 | 06065C24 |
 | 0603011E | 0 | Bound | 1 | 06060361 |
 | 060541C4 | 1 | Bound | 9 | 06065B8C |
-| 06056408 | 1 | Pending | 1 | 06060A3C |
-| 0605641C | 1 | Pending | 1 | 06060A4C |
+| 06056408 | 1 | Bound | 1 | 06060A3C |
+| 0605641C | 1 | Bound | 1 | 06060A4C |
 | 06056484 | 1 | Bound | 1 | 060580A4 |
 | 060564B4 | 1 | Bound | 1 | 060580C4 |
-| 060564D6 | 0 | Pending | 1 | 06060998 |
-| 060564FE | 0 | Pending | 1 | 06060980 |
-| 06056526 | 1 | Pending | 5 | 06060BE4 |
+| 060564D6 | 0 | Bound | 1 | 06060998 |
+| 060564FE | 0 | Bound | 1 | 06060980 |
+| 06056526 | 1 | Bound | 5 | 06060BE4 |
 | 06056544 | 1 | Bound | 5 | 06060B70 |
 | 06056562 | 1 | Bound | 1 | 06060A93 |
 | 06056574 | 1 | Bound | 5 | 06060BA8 |
@@ -44,7 +51,7 @@ independent native instruction validation before this becomes a completion gate.
 | 06057B62 | 1 | Pending | 1 | 060604F0 |
 | 06057B76 | 1 | Pending | 1 | 06060514 |
 | 06057F46 | 0 | Bound | 1 | 06060AD8 |
-| 0606AECC | 0 | Pending | 1 | 060580DA |
+| 0606AECC | 0 | Bound | 1 | 060580DA |
 | 0606C70C | 1 | Bound | 9 | 06065BC8 |
 | 0606C952 | 0 | Bound | 10 | 06058608 |
 | 0606C95C | 0 | Bound | 10 | 0605861C |
@@ -56,18 +63,18 @@ independent native instruction validation before this becomes a completion gate.
 | 0606D5BC | 0 | Bound | 3 | 060603B1 |
 | 0606D5F2 | 0 | Bound | 13 | 06060431 |
 | 0606D608 | 1 | Bound | 5 | 060609E0 |
-| 0606D790 | 1 | Pending | 2 | 06065CEC |
-| 06070198 | 3 | Pending | 13 | 06058498 |
-| 06070268 | 2 | Pending | 5 | 060586F1 |
+| 0606D790 | 1 | Bound | 2 | 06065CEC |
+| 06070198 | 3 | Bound | 13 | 06058498 |
+| 06070268 | 2 | Bound | 5 | 060586F1 |
 | 060704C4 | 4 | Bound | 9 | 06065B98 |
 | 060704F2 | 4 | Bound | 9 | 06065BB0 |
-| 06070560 | 3 | Pending | 80 | 060584C4 |
-| 06070664 | 3 | Pending | 48 | 060584F8 |
-| 0607091E | 1 | Pending | 1 | 0605C8EB |
-| 06070932 | 1 | Pending | 1 | 0605CCC0 |
-| 06070946 | 1 | Pending | 22 | 060584AC |
-| 06071A78 | 0 | Pending | 4 | 06058FBD |
-| 06071A90 | 0 | Pending | 5 | 06059320 |
+| 06070560 | 3 | Bound | 80 | 060584C4 |
+| 06070664 | 3 | Bound | 48 | 060584F8 |
+| 0607091E | 1 | Bound | 1 | 0605C8EB |
+| 06070932 | 1 | Bound | 1 | 0605CCC0 |
+| 06070946 | 1 | Bound | 22 | 060584AC |
+| 06071A78 | 0 | Bound | 4 | 06058FBD |
+| 06071A90 | 0 | Bound | 5 | 06059320 |
 | 06071ADE | 0 | Bound | 1 | 0606038C |
 | 06071B40 | 2 | Bound | 9 | 06065C30 |
 | 06071CA4 | 1 | Bound | 9 | 06065C10 |

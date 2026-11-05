@@ -4343,12 +4343,13 @@ void pauseCutscene]=]
    message(FATAL_ERROR "Camp native ninth setup was not retained")
   endif()
   string(REPLACE "#include \"town/town.h\""
-   "#include \"town/town.h\"\n#include \"town/townCutscene.h\""
+   "#include \"town/town.h\"\n#include \"town/townCutscene.h\"\n#include \"mainMenuDebugTasks.h\""
    source_text "${source_text}")
   string(REPLACE "        overlayScriptFunctions.m_zeroArg[0x0606cb54]"
    [=[        overlayScriptFunctions.m_zeroArg[0x0606CC0E] = {&setupAutoWalk, "Camp automatic walk"};
         overlayScriptFunctions.m_zeroArg[0x0606D416] = {&townIsCutsceneDone, "Camp cutscene complete"};
         overlayScriptFunctions.m_zeroArg[0x0606D580] = {&townDeleteCutscene, "Camp close cutscene"};
+        overlayScriptFunctions.m_zeroArg[0x0606AECC] = {&setupCameraUpdateForCurrentMode, "Camp restore camera update"};
         overlayScriptFunctions.m_oneArg[0x0606D542] = {&townCreateCutscene, "Camp create cutscene"};
         overlayScriptFunctions.m_zeroArg[0x0606cb54]]=]
    source_text "${source_text}")
@@ -4375,14 +4376,166 @@ void pauseCutscene]=]
     return dragon->m11_subState < 10;
 }
 
+static s32 lagiCampStartFeeding(s32 npcIndex)
+{
+    auto* dragon = static_cast<sTownDragon*>(getNpcDataByIndexAsTask(npcIndex));
+    dragon->m11_subState = 12;
+    return 0x11;
+}
+
+static s32 lagiCampFeedingFinished(s32 npcIndex)
+{
+    auto* dragon = static_cast<sTownDragon*>(getNpcDataByIndexAsTask(npcIndex));
+    return dragon->m11_subState < 12;
+}
+
+static s32 lagiCampRewardPetting()
+{
+    auto& flags = mainGameState.bitField[0x263];
+    if (flags & 0x80) return -128;
+    increaseGameResource(0xB, 2);
+    flags |= 0x80;
+    return static_cast<s8>(flags);
+}
+
+static s32 lagiCampRewardInteraction()
+{
+    auto& flags = mainGameState.bitField[0x262];
+    if (flags & 1) return 1;
+    increaseGameResource(0xB, 1);
+    flags |= 1;
+    return static_cast<s8>(flags);
+}
+
+static s32 lagiCampFinishInteraction(s32 npcIndex)
+{
+    auto* dragon = static_cast<sTownDragon*>(getNpcDataByIndexAsTask(npcIndex));
+    if (dragon->m11_subState < 9) dragon->m11_subState = 7;
+    return lagiCampRewardPetting();
+}
+
+static s32 lagiCampUseScriptedPlayerAnimations()
+{
+    auto* edge = static_cast<sEdgeTask*>(getNpcDataByIndexAsTask(0));
+    edge->m30_animationTable = gCurrentTownOverlay->getSaturnPtr(0x0607FA84);
+    const s32 flags = edge->mC | 1;
+    edge->mC = static_cast<s8>(flags);
+    return flags;
+}
+
+static s32 lagiCampUseNormalPlayerAnimations()
+{
+    auto* edge = static_cast<sEdgeTask*>(getNpcDataByIndexAsTask(0));
+    edge->m30_animationTable = gCurrentTownOverlay->getSaturnPtr(0x0608015C);
+    const s32 flags = edge->mC & 0xFE;
+    edge->mC = static_cast<s8>(flags);
+    return flags;
+}
+
+static s32 lagiCampDisableLookAtDecay(s32 npcIndex)
+{
+    auto* npc = getNpcDataByIndex(npcIndex);
+    const s32 flags = npc->mC | 8;
+    npc->mC = static_cast<s8>(flags);
+    return flags;
+}
+
+static s32 lagiCampEnableLookAtDecay(s32 npcIndex)
+{
+    auto* npc = getNpcDataByIndex(npcIndex);
+    const s32 flags = npc->mC & 0xF7;
+    npc->mC = static_cast<s8>(flags);
+    return flags;
+}
+
+static s32 lagiCampNpcMotionFinished(s32 npcIndex)
+{
+    return (getNpcDataByIndex(npcIndex)->mC & 6) == 0;
+}
+
+static s32 lagiCampRandomChoice(s32 limit)
+{
+    return static_cast<s32>(performModulo2(static_cast<u32>(limit), randomNumber()));
+}
+
 // Setup camera fixed for camp]=]
    source_text "${source_text}")
   string(REPLACE "        overlayScriptFunctions.m_oneArg[0x6056484] = {&scriptFunction_6056484, \"scriptFunction_6056484\"};"
-   "        overlayScriptFunctions.m_oneArg[0x6056484] = {&scriptFunction_6056484, \"scriptFunction_6056484\"};\n        overlayScriptFunctions.m_oneArg[0x060564B4] = {&lagiCampRecoveryFinished, \"Camp recovery finished\"};"
+   [=[        overlayScriptFunctions.m_oneArg[0x6056484] = {&scriptFunction_6056484, "scriptFunction_6056484"};
+        overlayScriptFunctions.m_oneArg[0x060564B4] = {&lagiCampRecoveryFinished, "Camp recovery finished"};
+        overlayScriptFunctions.m_oneArg[0x06056408] = {&lagiCampStartFeeding, "Camp start feeding"};
+        overlayScriptFunctions.m_oneArg[0x0605641C] = {&lagiCampFeedingFinished, "Camp feeding finished"};
+        overlayScriptFunctions.m_zeroArg[0x060564D6] = {&lagiCampRewardPetting, "Camp petting reward"};
+        overlayScriptFunctions.m_zeroArg[0x060564FE] = {&lagiCampRewardInteraction, "Camp interaction reward"};
+        overlayScriptFunctions.m_oneArg[0x06056526] = {&lagiCampFinishInteraction, "Camp finish interaction"};
+        overlayScriptFunctions.m_zeroArg[0x06071A78] = {&lagiCampUseScriptedPlayerAnimations, "Camp scripted player animations"};
+        overlayScriptFunctions.m_zeroArg[0x06071A90] = {&lagiCampUseNormalPlayerAnimations, "Camp normal player animations"};
+        overlayScriptFunctions.m_oneArg[0x0607091E] = {&lagiCampDisableLookAtDecay, "Camp disable look-at decay"};
+        overlayScriptFunctions.m_oneArg[0x06070932] = {&lagiCampEnableLookAtDecay, "Camp enable look-at decay"};
+        overlayScriptFunctions.m_oneArg[0x06070946] = {&lagiCampNpcMotionFinished, "Camp NPC motion finished"};
+        overlayScriptFunctions.m_oneArg[0x0606D790] = {&lagiCampRandomChoice, "Camp random choice"};]=]
    source_text "${source_text}")
   if(NOT source_text MATCHES "0x060564B4\\] = \\{&lagiCampRecoveryFinished")
    message(FATAL_ERROR "Native Camp recovery wait binding did not apply")
   endif()
+  # These four services use the shared 17C NPC representation. Reuse the
+  # translated bodies instead of maintaining another movement/animation copy.
+  set(camp_shared_npc_source "${LAGI_AZEL_SOURCE_ROOT}/town/zoah/twn_zoah.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${camp_shared_npc_source}")
+  file(READ "${camp_shared_npc_source}" camp_shared_npc_text)
+  string(FIND "${camp_shared_npc_text}" "// Set NPC animation and control state" camp_shared_npc_start)
+  if(camp_shared_npc_start LESS 0)
+   message(FATAL_ERROR "Shared NPC script service definitions changed")
+  endif()
+  string(SUBSTRING "${camp_shared_npc_text}" ${camp_shared_npc_start} -1 camp_shared_npc_text)
+  set(camp_shared_npc_bodies "")
+  foreach(camp_npc_function IN ITEMS setupZoahNPCAnimation turnNpcTowardsNpc turnNpcBackToSavedAngle scheduleNpcAnimation)
+   string(FIND "${camp_shared_npc_text}" "static s32 ${camp_npc_function}(" camp_npc_function_start)
+   if(camp_npc_function_start LESS 0)
+    message(FATAL_ERROR "Shared NPC function missing: ${camp_npc_function}")
+   endif()
+   string(SUBSTRING "${camp_shared_npc_text}" ${camp_npc_function_start} -1 camp_npc_function_tail)
+   string(FIND "${camp_npc_function_tail}" "\n// " camp_npc_function_end)
+   if(camp_npc_function_end LESS 0)
+    message(FATAL_ERROR "Shared NPC function boundary changed: ${camp_npc_function}")
+   endif()
+   string(SUBSTRING "${camp_npc_function_tail}" 0 ${camp_npc_function_end} camp_npc_function_body)
+   string(REPLACE "\r\n" "\n" camp_npc_function_body "${camp_npc_function_body}")
+   if(camp_npc_function STREQUAL "setupZoahNPCAnimation" OR camp_npc_function STREQUAL "scheduleNpcAnimation")
+    string(REPLACE "{\n    sNPC* pNPC ="
+     "{\n    animIndex = static_cast<s8>(animIndex);\n    controlState = static_cast<s8>(controlState);\n    sNPC* pNPC ="
+     camp_npc_function_body "${camp_npc_function_body}")
+   endif()
+   # Retain the return registers from Camp's concrete entry points as well.
+   if(camp_npc_function STREQUAL "setupZoahNPCAnimation")
+    set(camp_npc_return "return pNPC->mE_controlState;")
+   elseif(camp_npc_function STREQUAL "scheduleNpcAnimation")
+    set(camp_npc_return "return animIndex == 0 ? 0x159 : controlState;")
+   elseif(camp_npc_function STREQUAL "turnNpcTowardsNpc")
+    set(camp_npc_return "return pNPC1->mC;")
+   else()
+    set(camp_npc_return "return pNPC->mC;")
+   endif()
+   string(REPLACE "return 0;" "${camp_npc_return}" camp_npc_function_body "${camp_npc_function_body}")
+   string(APPEND camp_shared_npc_bodies "${camp_npc_function_body}\n\n")
+  endforeach()
+  # The queue/saved-angle fields already live in the shared sNPC base.
+  string(REPLACE "sZoahNPC" "sNPC" camp_shared_npc_bodies "${camp_shared_npc_bodies}")
+  string(REGEX REPLACE "static_cast<sNPC\\*>\\((pNPC[12]?)\\)" "\\1"
+   camp_shared_npc_bodies "${camp_shared_npc_bodies}")
+  string(REPLACE "setupZoahNPCAnimation" "lagiCampSetNpcAnimation" camp_shared_npc_bodies "${camp_shared_npc_bodies}")
+  string(REPLACE "turnNpcTowardsNpc" "lagiCampTurnNpcTowardsNpc" camp_shared_npc_bodies "${camp_shared_npc_bodies}")
+  string(REPLACE "turnNpcBackToSavedAngle" "lagiCampTurnNpcBack" camp_shared_npc_bodies "${camp_shared_npc_bodies}")
+  string(REPLACE "scheduleNpcAnimation" "lagiCampScheduleNpcAnimation" camp_shared_npc_bodies "${camp_shared_npc_bodies}")
+  string(REPLACE "// Setup camera fixed for camp" "${camp_shared_npc_bodies}\n// Setup camera fixed for camp"
+   source_text "${source_text}")
+  string(REPLACE "        overlayScriptFunctions.m_zeroArg[0x0606cb54]"
+   [=[        overlayScriptFunctions.m_threeArg[0x06070198] = {&lagiCampTurnNpcTowardsNpc, "Camp turn NPC toward NPC"};
+        overlayScriptFunctions.m_twoArg[0x06070268] = {&lagiCampTurnNpcBack, "Camp restore NPC angle"};
+        overlayScriptFunctions.m_threeArg[0x06070560] = {&lagiCampSetNpcAnimation, "Camp NPC animation"};
+        overlayScriptFunctions.m_threeArg[0x06070664] = {&lagiCampScheduleNpcAnimation, "Camp queued NPC animation"};
+        overlayScriptFunctions.m_zeroArg[0x0606cb54]]=]
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "town/camp/campVdp2Plane.cpp")
   # Camp's projection service writes two signed words.
   string(REPLACE "s16 m30_vdp1ProjectionParam[1];"

@@ -23,6 +23,19 @@ try {
        (Read-Native 239428 0x06054000 0x0607BAC8 4) -ne '00-00-00-09' -or
        (Read-Native 239428 0x06054000 0x060580AC 4) -ne '00-00-00-09' -or
        (Read-Native 239428 0x06054000 0x060564BE 24) -ne 'E0-11-02-4C-E3-0A-32-33-89-02-4F-26-00-0B-E0-01-E0-00-4F-26-00-0B-00-09' -or
+       (Read-Native 239428 0x06054000 0x06056414 8) -ne 'E2-0C-E0-11-00-0B-04-24' -or
+       (Read-Native 239428 0x06054000 0x06056426 24) -ne 'E0-11-02-4C-E3-0C-32-33-89-02-4F-26-00-0B-E0-01-E0-00-4F-26-00-0B-00-09' -or
+       (Read-Native 239428 0x06054000 0x060565CC 20) -ne '06-04-A6-5B-06-04-2F-14-06-06-D7-02-06-04-A6-5A-06-04-2F-1B' -or
+       (Read-Native 58 0x06006000 0x06042F14 1) -ne '80' -or
+       (Read-Native 58 0x06006000 0x06042F1B 1) -ne '01' -or
+       (Read-Native 239428 0x06054000 0x06056530 20) -ne 'E0-11-E3-09-02-4C-32-33-89-02-E1-07-E0-11-04-14-AF-C9-4F-26' -or
+       (Read-Native 239428 0x06054000 0x06071AA8 12) -ne '06-00-CE-0A-06-07-FA-84-06-08-01-5C' -or
+       (Read-Native 239428 0x06054000 0x0607092A 8) -ne '84-4C-CB-08-00-0B-80-4C' -or
+       (Read-Native 239428 0x06054000 0x0607093E 8) -ne '84-4C-C9-F7-00-0B-80-4C' -or
+       (Read-Native 239428 0x06054000 0x06070950 4) -ne '84-4C-C8-06' -or
+       (Read-Native 239428 0x06054000 0x0606D7E8 8) -ne '06-03-61-F4-06-03-55-50' -or
+       (Read-Native 239428 0x06054000 0x0606C9B4 4) -ne '06-06-AE-CC' -or
+       (Read-Native 239428 0x06054000 0x06070578 18) -ne '90-35-61-CE-0E-D4-21-18-70-FF-0E-D4-70-02-8D-1E-0E-D4' -or
        (Read-Native 239428 0x06054000 0x06074000 4) -ne '06-06-04-23' -or
        (Read-Native 239428 0x06054000 0x0606048C 4) -ne '06-02-6D-A4' -or
        (Read-Native 239428 0x06054000 0x0606D416 8) -ne '4F-22-D4-29-7F-FC-D2-2C' -or
@@ -41,6 +54,22 @@ if(!$camp.Contains('for (int i = 0; i < 9; i++)')) {
     throw 'Camp scripts can select nine authored setups'
 }
 foreach($binding in @(
+    'm_oneArg[0x06056408] = {&lagiCampStartFeeding,',
+    'm_oneArg[0x0605641C] = {&lagiCampFeedingFinished,',
+    'm_zeroArg[0x060564D6] = {&lagiCampRewardPetting,',
+    'm_zeroArg[0x060564FE] = {&lagiCampRewardInteraction,',
+    'm_oneArg[0x06056526] = {&lagiCampFinishInteraction,',
+    'm_zeroArg[0x06071A78] = {&lagiCampUseScriptedPlayerAnimations,',
+    'm_zeroArg[0x06071A90] = {&lagiCampUseNormalPlayerAnimations,',
+    'm_oneArg[0x0607091E] = {&lagiCampDisableLookAtDecay,',
+    'm_oneArg[0x06070932] = {&lagiCampEnableLookAtDecay,',
+    'm_oneArg[0x06070946] = {&lagiCampNpcMotionFinished,',
+    'm_threeArg[0x06070198] = {&lagiCampTurnNpcTowardsNpc,',
+    'm_twoArg[0x06070268] = {&lagiCampTurnNpcBack,',
+    'm_threeArg[0x06070560] = {&lagiCampSetNpcAnimation,',
+    'm_threeArg[0x06070664] = {&lagiCampScheduleNpcAnimation,',
+    'm_oneArg[0x0606D790] = {&lagiCampRandomChoice,',
+    'm_zeroArg[0x0606AECC] = {&setupCameraUpdateForCurrentMode,',
     'm_zeroArg[0x0606CC0E] = {&setupAutoWalk,',
     'm_zeroArg[0x0606D416] = {&townIsCutsceneDone,',
     'm_zeroArg[0x0606D580] = {&townDeleteCutscene,',
@@ -51,7 +80,7 @@ foreach($binding in @(
 if(!$script.Contains('{0x06026DA4, {&lagiTownOpenSaveMenu, "town save menu"}},')) {
     throw 'Authored town save station callback is unbound'
 }
-if(([regex]::Matches($camp,'getNpcDataByIndexAsTask\(')).Count -ne 8) {
+if(([regex]::Matches($camp,'getNpcDataByIndexAsTask\(')).Count -ne 13) {
     throw 'Camp dragon script and recovery-wait lookups must use their registered task'
 }
 if(!$camp.Contains('overlayScriptFunctions.m_oneArg[0x060564B4] = {&lagiCampRecoveryFinished, "Camp recovery finished"};')) {
@@ -60,10 +89,26 @@ if(!$camp.Contains('overlayScriptFunctions.m_oneArg[0x060564B4] = {&lagiCampReco
 $production=''
 foreach($item in @(
     @($script,'p_workArea getNpcDataByIndexAsTask'),
+    @($script,'sNPC* getNpcDataByIndex'),
     @($script,'static s32 lagiTownOpenSaveMenu'),
     @($camp,'int recoverAllHP_BP'),
     @($camp,'int scriptFunction_6056484'),
     @($camp,'static s32 lagiCampRecoveryFinished'),
+    @($camp,'static s32 lagiCampStartFeeding'),
+    @($camp,'static s32 lagiCampFeedingFinished'),
+    @($camp,'static s32 lagiCampRewardPetting'),
+    @($camp,'static s32 lagiCampRewardInteraction'),
+    @($camp,'static s32 lagiCampFinishInteraction'),
+    @($camp,'static s32 lagiCampUseScriptedPlayerAnimations'),
+    @($camp,'static s32 lagiCampUseNormalPlayerAnimations'),
+    @($camp,'static s32 lagiCampDisableLookAtDecay'),
+    @($camp,'static s32 lagiCampEnableLookAtDecay'),
+    @($camp,'static s32 lagiCampNpcMotionFinished'),
+    @($camp,'static s32 lagiCampRandomChoice'),
+    @($camp,'static s32 lagiCampSetNpcAnimation'),
+    @($camp,'static s32 lagiCampTurnNpcTowardsNpc'),
+    @($camp,'static s32 lagiCampTurnNpcBack'),
+    @($camp,'static s32 lagiCampScheduleNpcAnimation'),
     @($dragon,'s32 sCampDragon_InitSub1')
 )) {
     $body=[regex]::Match($item[0],'(?ms)^'+[regex]::Escape($item[1])+'\([^\n]*?\).*?^}')
