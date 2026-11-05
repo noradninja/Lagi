@@ -1,5 +1,28 @@
 # Camp callback audit — 2026-11-05
 
+## C1 recovery arithmetic checkpoint - 2026-11-05
+
+Added `include/lagi/camp_recovery.h` with exact logical host state for native
+060555E2/06055634 color transitions and060557E8/06055906 camera-target
+interpolation. Native setup stores packed RGB as signed channel bytes; it is
+not RGB555. Highlight begins after30 draw calls and restoration after120,
+with30-step transitions. Delay processing precedes interpolation and restores
+last if both expire together. A zero-duration equal-color transition retains
+the native divider call; never perform C++ integer division by zero instead.
+Native0601DFC8 is setupLightColor, not setupLight;0601DF8A restores the falloff
+colors after normal dragon drawing. These identities are pinned in the fixture.
+
+Original CAMP instruction/literal checks and2031616 signed source/target/tick
+cases pass, plus delayed highlight/restoration, equal-delay ordering, native
+zero-duration divider binding and wrapping camera endpoints. These helpers are
+NOT yet wired into the live dragon: the particle factory0605669C and its
+Update060569EC/Draw060570F0 (definition0607B270) still require complete recovery
+before an atomic runtime cutover. They must not be replaced with the superficially
+similar battle heal task without instruction-level semantic comparison.
+No new VPK/hardware run is requested for this unused-helper checkpoint; C1
+remains open. The next implementation step is the original particle lifecycle,
+then typed callback integration and the full recovery-to-control regression.
+
 ## Next goal markers - 2026-11-05
 
 All markers are open. Implement in this priority order, preserving accepted
