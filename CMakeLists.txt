@@ -1145,6 +1145,18 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_module_exit_fade.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_module_exit_fade.inc" module_exit_fade_service)
+  if(LAGI_WORLD_MAP_BRINGUP)
+   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_world_movie_exit.inc")
+   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_world_movie_exit.inc" world_movie_exit_service)
+   set(world_movie_exit_anchor "    case 0x4A: // load savegame?")
+   string(FIND "${source_text}" "${world_movie_exit_anchor}" world_movie_exit_found)
+   if(world_movie_exit_found LESS 0)
+    message(FATAL_ERROR "Native module-manager WORLD movie exit boundary changed")
+   endif()
+   string(REPLACE "${world_movie_exit_anchor}"
+    "${world_movie_exit_service}\n${world_movie_exit_anchor}" source_text "${source_text}")
+  endif()
   set(module_exit_fade_anchor "void moduleManager_Draw(s_moduleManager* pWorkArea)\n{")
   string(FIND "${source_text}" "${module_exit_fade_anchor}" module_exit_fade_found)
   if(module_exit_fade_found LESS 0)

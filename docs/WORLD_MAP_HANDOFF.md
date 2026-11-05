@@ -35,6 +35,25 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native Cainus movie-to-camp exit connected — 2026-11-04
+
+The ordinary WORLD record4 requests status54; COMMON maps it to movie entry4.
+Original MAIN switch slot54 (27AAC+(54-1)*2) resolves to27C7A: story byte4 OR1,
+byte13 ANDDF then OR08 and OR10, then setNextGameStatus55. COMMON55 maps to
+mode2/town pair1, whose overlay name resolves toTWN_CAMP.PRG (entry1).
+The generated module-manager switch lacked54 and fell through its incomplete
+default; no pending status then selects status0/movie0. This explains the
+reported movie replay/skip loop, rather than a WORLD destination-name error.
+
+Added only the recovered54 handler, preserving MSB-first native story-bit
+services and pending-status protection. It is materialized into the generated
+Vita copy; extern/Azel stays unchanged. Fixture checks the original jump slot,
+instruction stores/branches, actual bit-mask bytes, COMMON status/pair/name,
+and production adapter mutations over256 initial values plus pending-request
+and unrelated-state guards. Runtime movie completion and skipping share this
+exit path. Camp loading/playability and subsequent WORLD/Garil progression
+still need device validation; this does not claim the whole route is complete.
+
 ### User acceptance and left-edge WORLD control — 2026-11-04
 
 17-48 user confirms camera, names, terrain and selector meshes. Keep these
