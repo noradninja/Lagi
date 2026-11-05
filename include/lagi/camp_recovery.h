@@ -4,6 +4,35 @@
 #include <cstdint>
 
 namespace lagi::camp::recovery {
+// Native+2C/+30 are independent of +28 animation sound count and +3C
+// head pitch. The translated sTownDragon omits these two interaction fields.
+struct Sequence { std::int32_t timer=40,phase=0; };
+// CAMP060557BC. Called only by the native mode dispatch (mE==0); the
+// animation command stream owns the intervening updates, never this timer.
+template<class Divide,class Target,class RequestReady,class Ready,
+    class BeginLight,class StartEffectAndAnimation,class Finish>
+void step_sequence(Sequence& state,Divide divide,Target target,
+    RequestReady requestReady,Ready ready,BeginLight beginLight,
+    StartEffectAndAnimation startEffectAndAnimation,Finish finish)
+{
+    switch(state.phase) {
+    case 0:
+        target(divide(state.timer,40));
+        if(state.timer--==0)state.phase=1;
+        break;
+    case 1:
+        requestReady();
+        if(ready()) {beginLight();state.phase=2;}
+        break;
+    case 2:
+        startEffectAndAnimation();state.timer=40;state.phase=3;
+        break;
+    case 3:
+        if(--state.timer==0)finish();
+        else target(divide(40-state.timer,40));
+        break;
+    }
+}
 // Logical host state for CAMP+614..620. Never overlay native task offsets
 // onto the polymorphic C++ work area. Both color arrays use signed MOV.B.
 struct ColorTransition {

@@ -54,5 +54,26 @@ int main()
     const std::array<std::int32_t,3> target={INT32_MAX,-40,INT32_MIN};
     assert(interpolate_target(dragon,target,0,multiply)==dragon);
     assert(interpolate_target(dragon,target,65536,multiply)==target);
-    puts("PASS Camp native signed color arithmetic:2031616 cases, delay/ramp/restore ordering, zero-duration divider service and wrapping camera endpoints; not wired or hardware acceptance");
+    Sequence sequence;
+    int requested=0,lightBegins=0,effects=0,finished=0,targets=0;
+    bool ready=false;
+    auto step=[&](){step_sequence(sequence,divide,[&](int factor){
+        const int expected=sequence.phase==0?sequence.timer:40-sequence.timer;
+        assert(factor==divide(expected,40));++targets;
+    },[&](){++requested;},[&](){return ready;},[&](){++lightBegins;},
+        [&](){++effects;},[&](){++finished;});};
+    for(int i=0;i<41;++i)step();
+    assert(sequence.phase==1&&sequence.timer==-1&&targets==41);
+    for(int i=0;i<80;++i)step();
+    assert(requested==80&&!lightBegins&&!effects&&!finished);
+    ready=true;step();
+    assert(sequence.phase==2&&requested==81&&lightBegins==1&&!effects);
+    step();assert(sequence.phase==3&&sequence.timer==40&&effects==1);
+    // Animation owns subsequent calls. No independent elapsed-time tick may
+    // consume the recovery timer while mE dispatches its command stream.
+    for(int i=0;i<300;++i)assert(sequence.timer==40&&!finished);
+    for(int i=0;i<39;++i)step();
+    assert(sequence.timer==1&&!finished&&targets==80);
+    step();assert(!sequence.timer&&finished==1&&targets==80);
+    puts("PASS Camp recovery:2031616 signed color cases, highlight/restore, wrapping target,41-call approach, animation readiness wait and40-call return; hardware acceptance pending");
 }

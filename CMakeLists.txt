@@ -4314,6 +4314,30 @@ void pauseCutscene]=]
     "Native town cutscene bridge did not apply completely; upstream Azel changed")
   endif()
  elseif(relative_path STREQUAL "town/camp/campDragon.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_camp_recovery.inc"
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_camp_recovery_effect.inc")
+  string(REPLACE "#include \"lightSetup.h\""
+   "#include \"lightSetup.h\"\n#include \"lagi/camp_recovery.h\"" source_text "${source_text}")
+  string(REPLACE "    //size: 0x624"
+   "    lagi::camp::recovery::Sequence lagiRecoverySequence;\n    lagi::camp::recovery::RecoveryLight lagiRecoveryLight;\n    //size: 0x624" source_text "${source_text}")
+  set(camp_recovery_start_old "    pThis->m28 = 0x28;\n    pThis->m3C = 0;")
+  string(FIND "${source_text}" "${camp_recovery_start_old}" camp_recovery_start_found)
+  if(camp_recovery_start_found LESS 0)
+   message(FATAL_ERROR "Camp recovery setup anchor changed")
+  endif()
+  string(REPLACE "${camp_recovery_start_old}"
+   "    pThis->lagiRecoverySequence = {}; // Native+2C/+30, not sound count/head pitch"
+   source_text "${source_text}")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_camp_recovery.inc" camp_recovery_adapter)
+  set(camp_recovery_stub "static s32 sCampDragon_handlePetting(sCampDragon* pThis) {\n    Unimplemented(); // petting interaction continue\n    return 0;\n}")
+  string(FIND "${source_text}" "${camp_recovery_stub}" camp_recovery_stub_found)
+  if(camp_recovery_stub_found LESS 0)
+   message(FATAL_ERROR "Camp recovery continuation anchor changed")
+  endif()
+  string(REPLACE "${camp_recovery_stub}"
+   "${camp_recovery_adapter}\nstatic s32 sCampDragon_handlePetting(sCampDragon* pThis) { return lagiCampRecoveryUpdate(pThis); }"
+   source_text "${source_text}")
   # Native Init06055492 loads a LONG index at entity+20. Reading its high
   # halfword registers the dragon in Edge's slot0 instead of authored slot9.
   set(camp_dragon_slot_old "npcData0.m70_npcPointerArray[readSaturnU16(arg + 0x20)].workArea = pThis;")

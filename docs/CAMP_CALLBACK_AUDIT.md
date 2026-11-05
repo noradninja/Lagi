@@ -1,5 +1,49 @@
 # Camp callback audit — 2026-11-05
 
+## C1 recovery runtime cutover - 2026-11-05
+
+The complete060557BC recovery continuation now replaces the translated stub
+through `src/integration/lagi_camp_recovery.inc`. The native mode dispatcher
+still gates recovery on mE==0; animation commands own their intervening frames.
+Camera approach uses41 updates (40/40 through0/40); readiness10 precedes the
+lighting callback, sound6F, native35-particle factory and animation0607AF5E.
+The return uses40 mode updates and restores the original dragon Draw callback.
+The unchanged script poll releases control; no timer bypass or forced flag.
+
+Important translation correction: original timer+2C and phase+30 were omitted
+from the host sTownDragon. The translated setup incorrectly reused+28 sound
+count and+3C head pitch. Recovery now has separate typed state, preserving
+animation sound tables and head motion. Native instruction anchors pin all four.
+
+`lagi_camp_recovery_effect.inc` ports factory0605669C, Update060569EC,
+Draw060570F0 and particle step06057226. It shares the verified fixed-point motion
+arithmetic with the battle effect, but NOT that effect's resources or lifecycle:
+Camp uses descriptor06073CA8, colors0607B052, target0607B264, native file entry2,
+and skips expired particles except the final one on the terminating draw.
+The original repeated motion-ring initialization/RNG progression, frame70 state
+change, source order, transforms and scaled color-table emission are retained.
+Task heap arrays and the parsed quad vector are released on expiry/parent teardown.
+The native+34 factory argument remains stored but unused by Update/Draw.
+
+The special dragon Draw applies the signed packed-color transitions through
+setupLightColor, submits the normal animated dragon, then restores all three
+saved light gradients. Camera-target writes use the native no-op-update service.
+No renderer, WORLD transition, shader, input or comparison-profile changes.
+
+Validation: native CAMP instruction/resource anchors,2031616 signed color
+cases, camera approach/readiness/return tests, shared effect-motion tests and
+original BTL_A3 anchors pass. Full Release compile/link/SELF/VPK packaging passes
+with `cmake/world_garil_profile.cmake`; FULLRES remainsON and GPU_PASS_TIMINGOFF.
+This supersedes the unused-helper status of the arithmetic checkpoint below.
+
+C1 remains OPEN pending hardware: one capture should enter Camp after damage,
+show recovery text, dragon animation, white light/blue particles, restored
+lighting/camera and working Edge movement; then re-enter with full HP/BP and
+confirm the authored no-recovery path. Include the matching log. Preserve the
+exact package/unstripped executable/velf together as described in
+`WORLD_MAP_WORK_BUILD.md`. This fixture does not prove Saturn visual parity or
+the33ms hardware frame deadline. C2/R1/B1 remain open.
+
 ## C1 recovery arithmetic checkpoint - 2026-11-05
 
 Added `include/lagi/camp_recovery.h` with exact logical host state for native
