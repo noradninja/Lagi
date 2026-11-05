@@ -1,5 +1,22 @@
 # Camp callback audit — 2026-11-05
 
+## Next goal markers - 2026-11-05
+
+All markers are open. Implement in this priority order, preserving accepted
+WORLD transitions, the comparison build profile and the33ms frame deadline.
+Each subsystem uses original native producers/services, lands in atomic,
+buildable commits, and needs hardware acceptance at a coherent checkpoint.
+
+| Marker | Outcome | Completion evidence |
+|---|---|---|
+| C1 - Camp recovery | Complete dragon healing animation, original lighting/particles, camera return and script-driven Edge control | Damaged HP/BP and already-full entry behave correctly against Saturn; no forced wait bypass |
+| C2 - Camp functionality | Remaining actor/segmented-child chain, petting/feeding, save interaction, exits and repeated entry | Native lifecycle/service tests plus playable interactions, save/load and re-entry on hardware |
+| R1 - Rider gun | Edge holds the correct weapon in flight and combat through native resource/hotpoint/model submission | Correct animated hand attachment, texture and visibility in both modes on hardware |
+| B1 - Bird/nest progression | Returning to the first area enables the authored bird target and route to D Unit01 | Real story state and target lifecycle permit selection/nest travel and item acquisition; no forced flag |
+
+Host fixtures and packaging are prerequisite checks, not substitutes for these
+visual/behavioral gates. Keep unrelated runtime work out of each atomic fix.
+
 ## Current priority: native dragon recovery and control release
 
 User confirms WORLD transition and Camp loading now work at the newest branch
