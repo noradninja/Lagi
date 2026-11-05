@@ -4338,6 +4338,34 @@ void pauseCutscene]=]
   string(REPLACE "${camp_recovery_stub}"
    "${camp_recovery_adapter}\nstatic s32 sCampDragon_handlePetting(sCampDragon* pThis) { return lagiCampRecoveryUpdate(pThis); }"
    source_text "${source_text}")
+  set(camp_feeding_stub "static s32 sCampDragon_handleFeeding(sCampDragon* pThis) {\n    Unimplemented(); // feeding interaction continue\n    return 0;\n}")
+  string(FIND "${source_text}" "${camp_feeding_stub}" camp_feeding_stub_found)
+  if(camp_feeding_stub_found LESS 0)
+   message(FATAL_ERROR "Camp feeding continuation anchor changed")
+  endif()
+  string(REPLACE "${camp_feeding_stub}"
+   "static s32 sCampDragon_handleFeeding(sCampDragon* pThis) { return lagiCampFeedingUpdate(pThis); }"
+   source_text "${source_text}")
+  set(camp_feeding_start_old "static s32 sCampDragon_handleFeedingStart(sCampDragon* pThis) {\n    pThis->m12_eventFlag = 0;\n    pThis->m3C = 0;")
+  string(FIND "${source_text}" "${camp_feeding_start_old}" camp_feeding_start_found)
+  if(camp_feeding_start_found LESS 0)
+   message(FATAL_ERROR "Camp feeding setup anchor changed")
+  endif()
+  string(REPLACE "${camp_feeding_start_old}"
+   "static s32 sCampDragon_handleFeedingStart(sCampDragon* pThis) {\n    pThis->m12_eventFlag = 0;\n    pThis->lagiRecoverySequence.phase = 0;"
+   source_text "${source_text}")
+  # Native mode1..6 use +2C/+30 for interaction timing/phases. Keep +28
+  # animation sound count and +3C head pitch intact outside this exact block.
+  string(FIND "${source_text}" "void sCampDragon_UpdateMode1(sCampDragon* pThis)" camp_modes_start)
+  string(FIND "${source_text}" "static s32 signExtend28(s32 value)" camp_modes_end)
+  if(camp_modes_start LESS 0 OR camp_modes_end LESS camp_modes_start)
+   message(FATAL_ERROR "Camp interaction mode boundaries changed")
+  endif()
+  math(EXPR camp_modes_length "${camp_modes_end}-${camp_modes_start}")
+  string(SUBSTRING "${source_text}" ${camp_modes_start} ${camp_modes_length} camp_modes_old)
+  string(REPLACE "pThis->m28" "pThis->lagiRecoverySequence.timer" camp_modes_new "${camp_modes_old}")
+  string(REPLACE "pThis->m3C" "pThis->lagiRecoverySequence.phase" camp_modes_new "${camp_modes_new}")
+  string(REPLACE "${camp_modes_old}" "${camp_modes_new}" source_text "${source_text}")
   # Native Init06055492 loads a LONG index at entity+20. Reading its high
   # halfword registers the dragon in Edge's slot0 instead of authored slot9.
   set(camp_dragon_slot_old "npcData0.m70_npcPointerArray[readSaturnU16(arg + 0x20)].workArea = pThis;")

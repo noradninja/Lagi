@@ -75,5 +75,19 @@ int main()
     for(int i=0;i<39;++i)step();
     assert(sequence.timer==1&&!finished&&targets==80);
     step();assert(!sequence.timer&&finished==1&&targets==80);
-    puts("PASS Camp recovery:2031616 signed color cases, highlight/restore, wrapping target,41-call approach, animation readiness wait and40-call return; hardware acceptance pending");
+    Sequence feeding;feeding.phase=0;
+    requested=lightBegins=effects=finished=0;ready=false;
+    auto feed=[&](){step_feeding(feeding,[&](){++requested;},[&](){return ready;},
+        [&](){++lightBegins;},[&](){++effects;},[&](){++finished;});};
+    for(int i=0;i<100;++i)feed();
+    assert(feeding.phase==0&&requested==100&&!lightBegins&&!effects&&!finished);
+    ready=true;feed();
+    assert(feeding.phase==1&&lightBegins==1&&!effects&&!finished);
+    feed();assert(feeding.phase==2&&effects==1&&!finished);
+    // The native command-stream dispatch owns the gap before the next feed.
+    feed();assert(finished==1);
+    begin_recovery_light(light,original);light.highlight=0x1F00;
+    for(int i=0;i<59;++i)step_recovery_light(light,original,divide,multiply);
+    assert(step_recovery_light(light,original,divide,multiply)==0x1F00);
+    puts("PASS Camp interactions:2031616 signed color cases, recovery approach/readiness/return, feeding readiness/animation phases and green ramp; hardware acceptance pending");
 }

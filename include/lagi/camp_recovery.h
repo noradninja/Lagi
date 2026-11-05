@@ -7,6 +7,22 @@ namespace lagi::camp::recovery {
 // Native+2C/+30 are independent of +28 animation sound count and +3C
 // head pitch. The translated sTownDragon omits these two interaction fields.
 struct Sequence { std::int32_t timer=40,phase=0; };
+// CAMP060559A4. Shares native+30 and the special Draw callback with recovery;
+// feeding has no camera interpolation or particle-factory call.
+template<class RequestReady,class Ready,class BeginLightAndSound,
+    class StartAnimation,class Finish>
+void step_feeding(Sequence& state,RequestReady requestReady,Ready ready,
+    BeginLightAndSound beginLightAndSound,StartAnimation startAnimation,Finish finish)
+{
+    switch(state.phase) {
+    case 0:
+        requestReady();
+        if(ready()) {beginLightAndSound();++state.phase;}
+        break;
+    case 1:startAnimation();++state.phase;break;
+    case 2:finish();break;
+    }
+}
 // CAMP060557BC. Called only by the native mode dispatch (mE==0); the
 // animation command stream owns the intervening updates, never this timer.
 template<class Divide,class Target,class RequestReady,class Ready,

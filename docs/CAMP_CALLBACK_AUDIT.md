@@ -1,5 +1,28 @@
 # Camp callback audit — 2026-11-05
 
+## C2 feeding and interaction-state correction - 2026-11-05
+
+Native feeding continuation060559A4 now runs through the existing Camp mode
+dispatch. It waits for ready-state10, installs the shared special dragon Draw
+with highlight00001F00, plays sound6F, starts command sequence0607AF5E on the
+next mode update, and restores normal Draw/substate0 only after the native mE
+animation dispatch returns. Unlike recovery it has no particle factory or camera
+interpolation. Feeding setup resets native phase+30 without overwriting head pitch.
+
+The native+2C timer/+30 phase correction also covers the exact mode1..6 source
+block. Those translated petting/ambient branches previously reused animation
+sound count+28 and head pitch+3C. The bounded generated-source adaptation leaves
+sound-table lookup/initialization and head tracking outside that block intact.
+This fixes state ownership without changing the authored mode choices or delays.
+
+Native feeding instructions, green highlight, callback/command targets and
+interaction timer/phase stores are pinned in the recovery fixture. Production
+phase tests cover readiness blocking, distinct sound/animation calls and final
+callback restoration; signed color/recovery regressions still pass. Vita full
+compile/link/SELF/VPK packaging passes with the retained comparison profile.
+Hardware feeding/petting and the33ms deadline remain unverified. C2 still needs
+the06080148 actor and segmented child pipeline, plus save/exits/re-entry checks.
+
 ## C1 recovery runtime cutover - 2026-11-05
 
 The complete060557BC recovery continuation now replaces the translated stub

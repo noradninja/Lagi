@@ -50,3 +50,22 @@ static s32 lagiCampRecoveryUpdate(sCampDragon* dragon)
         [&](){dragon->m_DrawMethod=&sCampDragon_Draw;dragon->m11_subState=0;});
     return 0;
 }
+
+// CAMP060559A4. Native mE dispatch prevents phase2 until the animation command
+// stream has completed; do not replace that wait with an independent timer.
+static s32 lagiCampFeedingUpdate(sCampDragon* dragon)
+{
+    lagi::camp::recovery::step_feeding(dragon->lagiRecoverySequence,
+        [&](){sCampDragon_UpdateMode4Mode9(dragon,10);},
+        [&](){return dragon->m14_readyState==10;},
+        [&](){
+            lagi::camp::recovery::begin_recovery_light(dragon->lagiRecoveryLight,
+                dragon->m608_savedLightColor[0].asS32());
+            dragon->lagiRecoveryLight.highlight=0x00001F00;
+            dragon->m_DrawMethod=&lagiCampRecoveryDraw;
+            playSystemSoundEffect(0x6F);
+        },
+        [&](){sCampDragon_startAnimSequence(dragon,gCurrentTownOverlay->getSaturnPtr(0x0607AF5E));},
+        [&](){dragon->m_DrawMethod=&sCampDragon_Draw;dragon->m11_subState=0;});
+    return 0;
+}
