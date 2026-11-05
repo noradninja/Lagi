@@ -35,6 +35,39 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Combined regression / stable hardware checkpoint — 2026-11-04
+
+Runtime checkpoint093f25771ea68e45f4a045802258a7dbeaf4d477 is packaged as
+build/world-garil/Lagi-world-093f257.vpk with matching
+lagi-world-093f257.velf. VPK SHA256:
+D68C9C3F06A64F5CC3D9EFE212759EB31ECD32BD28786D0DB66CC6A17980475C.
+Do not overwrite that ELF/package while requesting a capture of it.
+
+Combined current-tree regression run passed19 script entrypoints: WORLD
+display, arrival, environment, destination drawing, Garil route, ground, label,
+model, sprite text, terrain assets, Garil choices/native actions, field route,
+Garil vibration, bird gates, movie/module exits, WORLD boundary, A5 build
+contract and task heap/disposal. These include production-body fixtures and
+original-disc bindings but mock many native services; they are not hardware
+acceptance, a CPU/GPU budget result or an entire game progression test.
+
+| Goal requirement | Current evidence | Acceptance still required |
+|---|---|---|
+| WORLD entry/navigation | Original tables, production states and prior camera/name/terrain acceptance | Current build after restored destination child |
+| Confirmation/travel | Four type paths, story/preparation/fade guards and native dispatch fixtures | Normal unlocked selection into Garil with control |
+| Return/re-entry | Native55/56->4F cases, packed-route conversion and typed disposal tests | Exit and revisit WORLD on device |
+| Destination appearance | Original resource slots, source-order/type/progress fixtures | Silhouettes, placement and sprite/UI layering |
+| Accuracy/performance | Cloud blend previously accepted; exact indexed cache candidate built | Current same-route capture, <=33ms deadline; no serialized GPU timing claim |
+| Camp/progression |54->55 startup reaches native actor submissions | Crash dump with matching tested ELF, then playable camp/progression |
+
+Specific crash dump1793844053 was still absent from Downloads at this audit.
+Downloads/lagi.log had timestamp2026-11-04 15:20, not new evidence for this
+checkpoint; it was not reanalyzed as a fresh run. The pending request remains
+one coherent gameplay capture/log, including WORLD destination selection and
+a return visit where possible, plus the matching camp crash dump/ELF. Rendering
+and performance changes are frozen while this checkpoint is being tested.
+The goal is NOT achieved; do not turn host passes into live-route acceptance.
+
 ### Native camp/Garil module exit to WORLD — 2026-11-04
 
 Completed the module-manager half of the return audit. Original MAIN switch
