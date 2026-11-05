@@ -16,6 +16,13 @@ Validation: generated battle source inspected for both slot selections; accepted
 world_garil profile configured; Vita compile/link/SELF/VPK passed. Hardware
 weapon visibility and attachment are UNTESTED. This does not complete R1.
 
+`tests/rider_weapon_attachment_test.py` passes against the original Disc 1
+battle and flight opcode sequences, COMMON Edge hotpoint counts and generated
+battle helper. It pins the pointer-array layout independently of the adapter.
+Flight0607449E reads slot5 already; EDGE.MCB table24 resolves a nonempty
+four-quad weapon model. Flight runtime pose/transform/submission still needs
+evidence; these checks do not prove visibility.
+
 ## Hardware acceptance and remaining visuals - 17:45 capture
 
 User confirms Camp transitions, dragon healing/animation, saving, waiting until
