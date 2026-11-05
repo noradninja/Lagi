@@ -35,6 +35,39 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Sky accepted, Camp registration and callback audit — 2026-11-05
+
+User confirms WORLD sky mapping fixed on c19bf15. Camp still crashes before
+visible fade-in. New dump1793896687 and its log match the archived c19bf15
+executables exactly. Main PC8113933E, RX base81059000, resolves to
+ELF810E033E, scriptFunction_6056484+36. The corrected task lookup still returns
+null. This supersedes an assumption that the earlier pointer-slot correction
+alone would make the dragon available.
+
+Original Camp Init06055492 is MOV.L @(20,R13),R1, then SHLL2 and indexed task
+store. All authored dragon records use long index9 at+20; recovery script
+060580AC requests9. Upstream Init read only U16 at+20, yielding0 and overwriting
+Edge's task slot. Generated Camp Init now reads S32. Its heading helper now uses
+the typed Edge position instead of raw Saturn offsetE8 into the host object.
+The production fixture registers each nonzero slot, preserves Edge, and then
+executes actual recovery and heading consumers.
+
+Connected native recovery completion060564B4 with its signed substate<10
+predicate. Connected the authored save-station script06060423's MAIN06026DA4
+call to the existing save menu with the current town status and zero return
+indices. Connected shared automatic walking and cutscene create/complete/delete
+callbacks through existing services. The ninth authored setup is now parsed,
+matching script calls to initNPC(8). Tests pin original instructions, record
+width/index, save callsite and generated bindings. Host fixtures and Vita
+compile/link/SELF/VPK packaging pass for these changes.
+
+The user explicitly requests ALL required Camp callbacks. The broader audit is
+still in progress. See CAMP_CALLBACK_AUDIT.md for the native call inventory and
+remaining NPC task dispatch gaps. Do not claim Camp is ready based on the
+registry fix or save-menu binding. Complete that audit before requesting the
+next device checkpoint. Camp display, controls, save write/load, exit and
+re-entry still require device acceptance.
+
 ### Work-machine sky stretch and matching Camp crash — 2026-11-05
 
 User tested source8632722 with the documented full-resolution profile. WORLD's

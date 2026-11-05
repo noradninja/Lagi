@@ -18,7 +18,17 @@ try {
     # writes its +11 substate. MAIN indexes the single native +70 task array.
     if((Read-Native 239428 0x06054000 0x060565C4 4) -ne '06-00-CE-0A' -or
        (Read-Native 239428 0x06054000 0x0605649A 10) -ne 'E2-0A-63-F2-E0-11-03-24-7F-04' -or
-       (Read-Native 58 0x06006000 0x0600CE1C 14) -ne '60-43-40-08-63-53-73-70-00-3E-00-0B-00-09') {
+       (Read-Native 58 0x06006000 0x0600CE1C 14) -ne '60-43-40-08-63-53-73-70-00-3E-00-0B-00-09' -or
+       (Read-Native 239428 0x06054000 0x06055492 8) -ne '51-D8-D3-14-41-08-01-E6' -or
+       (Read-Native 239428 0x06054000 0x0607BAC8 4) -ne '00-00-00-09' -or
+       (Read-Native 239428 0x06054000 0x060580AC 4) -ne '00-00-00-09' -or
+       (Read-Native 239428 0x06054000 0x060564BE 24) -ne 'E0-11-02-4C-E3-0A-32-33-89-02-4F-26-00-0B-E0-01-E0-00-4F-26-00-0B-00-09' -or
+       (Read-Native 239428 0x06054000 0x06074000 4) -ne '06-06-04-23' -or
+       (Read-Native 239428 0x06054000 0x0606048C 4) -ne '06-02-6D-A4' -or
+       (Read-Native 239428 0x06054000 0x0606D416 8) -ne '4F-22-D4-29-7F-FC-D2-2C' -or
+       (Read-Native 239428 0x06054000 0x0606D542 8) -ne '2F-E6-4F-22-D5-18-DE-0F' -or
+       (Read-Native 239428 0x06054000 0x0606D580 4) -ne 'AF-84-00-09' -or
+       (Read-Native 58 0x06006000 0x06026DA4 24) -ne 'D4-3C-E2-08-D1-3A-D3-3C-60-30-80-48-E0-00-80-49-80-4A-80-4B-00-0B-21-20') {
         throw 'Original Camp recovery/task lookup binding differs'
     }
 } finally { $disc.Dispose() }
@@ -26,19 +36,43 @@ $repo=Split-Path $PSScriptRoot -Parent
 $generated=Join-Path $repo "$Build/azel_upstream"
 $script=Get-Content -Raw "$generated/town_townScript.cpp"
 $camp=Get-Content -Raw "$generated/town_camp_twn_camp.cpp"
-if(([regex]::Matches($camp,'getNpcDataByIndexAsTask\(')).Count -ne 7) {
-    throw 'All seven Camp dragon script lookups must use their registered task'
+$dragon=Get-Content -Raw "$generated/town_camp_campDragon.cpp"
+if(!$camp.Contains('for (int i = 0; i < 9; i++)')) {
+    throw 'Camp scripts can select nine authored setups'
+}
+foreach($binding in @(
+    'm_zeroArg[0x0606CC0E] = {&setupAutoWalk,',
+    'm_zeroArg[0x0606D416] = {&townIsCutsceneDone,',
+    'm_zeroArg[0x0606D580] = {&townDeleteCutscene,',
+    'm_oneArg[0x0606D542] = {&townCreateCutscene,'
+)) {
+    if(!$camp.Contains($binding)) { throw "Camp shared service missing: $binding" }
+}
+if(!$script.Contains('{0x06026DA4, {&lagiTownOpenSaveMenu, "town save menu"}},')) {
+    throw 'Authored town save station callback is unbound'
+}
+if(([regex]::Matches($camp,'getNpcDataByIndexAsTask\(')).Count -ne 8) {
+    throw 'Camp dragon script and recovery-wait lookups must use their registered task'
+}
+if(!$camp.Contains('overlayScriptFunctions.m_oneArg[0x060564B4] = {&lagiCampRecoveryFinished, "Camp recovery finished"};')) {
+    throw 'Native Camp recovery wait is unbound'
 }
 $production=''
 foreach($item in @(
     @($script,'p_workArea getNpcDataByIndexAsTask'),
+    @($script,'static s32 lagiTownOpenSaveMenu'),
     @($camp,'int recoverAllHP_BP'),
-    @($camp,'int scriptFunction_6056484')
+    @($camp,'int scriptFunction_6056484'),
+    @($camp,'static s32 lagiCampRecoveryFinished'),
+    @($dragon,'s32 sCampDragon_InitSub1')
 )) {
     $body=[regex]::Match($item[0],'(?ms)^'+[regex]::Escape($item[1])+'\([^\n]*?\).*?^}')
     if(!$body.Success) { throw "Production function missing: $($item[1])" }
     $production+=$body.Value+"`n"
 }
+$registration=[regex]::Match($dragon,'(?m)^\s*npcData0\.m70_npcPointerArray\[readSaturnS32\(arg \+ 0x20\)\]\.workArea = pThis;')
+if(!$registration.Success) { throw 'Camp dragon must register the native long index' }
+$production+='void registerProductionDragon(sTownDragon* pThis, sSaturnPtr arg) {'+"`n"+$registration.Value+"`n}"+"`n"
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-camp-task-'+[guid]::NewGuid())
 New-Item -ItemType Directory $scratch | Out-Null
 [IO.File]::WriteAllText("$scratch/production.inc",$production)

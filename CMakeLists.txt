@@ -4313,7 +4313,45 @@ void pauseCutscene]=]
    message(FATAL_ERROR
     "Native town cutscene bridge did not apply completely; upstream Azel changed")
   endif()
+ elseif(relative_path STREQUAL "town/camp/campDragon.cpp")
+  # Native Init06055492 loads a LONG index at entity+20. Reading its high
+  # halfword registers the dragon in Edge's slot0 instead of authored slot9.
+  set(camp_dragon_slot_old "npcData0.m70_npcPointerArray[readSaturnU16(arg + 0x20)].workArea = pThis;")
+  string(FIND "${source_text}" "${camp_dragon_slot_old}" camp_dragon_slot_found)
+  if(camp_dragon_slot_found LESS 0)
+   message(FATAL_ERROR "Camp dragon registry initializer changed")
+  endif()
+  string(REPLACE "${camp_dragon_slot_old}"
+   "npcData0.m70_npcPointerArray[readSaturnS32(arg + 0x20)].workArea = pThis;"
+   source_text "${source_text}")
+  # The native +E8 Edge position is a typed member after host base metadata.
+  string(REPLACE "#include \"town/town.h\""
+   "#include \"town/town.h\"\n#include \"town/townEdge.h\""
+   source_text "${source_text}")
+  set(camp_edge_position_old "sVec3_FP& edgePos = *(sVec3_FP*)((u8*)npcData0.m70_npcPointerArray[0].workArea + 0xE8);")
+  string(FIND "${source_text}" "${camp_edge_position_old}" camp_edge_position_found)
+  if(camp_edge_position_found LESS 0)
+   message(FATAL_ERROR "Camp dragon Edge heading producer changed")
+  endif()
+  string(REPLACE "${camp_edge_position_old}"
+   "const sVec3_FP& edgePos = static_cast<sEdgeTask*>(npcData0.m70_npcPointerArray[0].workArea)->mE8.m0_position;"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "town/camp/twn_camp.cpp")
+  string(REPLACE "for (int i = 0; i < 8; i++)"
+   "for (int i = 0; i < 9; i++)" source_text "${source_text}")
+  if(NOT source_text MATCHES "for \\(int i = 0; i < 9; i\\+\\+\\)")
+   message(FATAL_ERROR "Camp native ninth setup was not retained")
+  endif()
+  string(REPLACE "#include \"town/town.h\""
+   "#include \"town/town.h\"\n#include \"town/townCutscene.h\""
+   source_text "${source_text}")
+  string(REPLACE "        overlayScriptFunctions.m_zeroArg[0x0606cb54]"
+   [=[        overlayScriptFunctions.m_zeroArg[0x0606CC0E] = {&setupAutoWalk, "Camp automatic walk"};
+        overlayScriptFunctions.m_zeroArg[0x0606D416] = {&townIsCutsceneDone, "Camp cutscene complete"};
+        overlayScriptFunctions.m_zeroArg[0x0606D580] = {&townDeleteCutscene, "Camp close cutscene"};
+        overlayScriptFunctions.m_oneArg[0x0606D542] = {&townCreateCutscene, "Camp create cutscene"};
+        overlayScriptFunctions.m_zeroArg[0x0606cb54]]=]
+   source_text "${source_text}")
   # Camp dragons register a task, not an sNPC. The host proxy stores these
   # pointers separately, so the sNPC accessor returns null for the dragon.
   string(REPLACE "(sTownDragon*)getNpcDataByIndex(npcIndex)"
@@ -4329,6 +4367,21 @@ void pauseCutscene]=]
   list(LENGTH camp_task_lookups camp_task_lookup_count)
   if(NOT camp_task_lookup_count EQUAL 7)
    message(FATAL_ERROR "Camp dragon task lookup adapter did not apply completely")
+  endif()
+  string(REPLACE "// Setup camera fixed for camp"
+   [=[static s32 lagiCampRecoveryFinished(s32 npcIndex)
+{
+    auto* dragon = static_cast<sTownDragon*>(getNpcDataByIndexAsTask(npcIndex));
+    return dragon->m11_subState < 10;
+}
+
+// Setup camera fixed for camp]=]
+   source_text "${source_text}")
+  string(REPLACE "        overlayScriptFunctions.m_oneArg[0x6056484] = {&scriptFunction_6056484, \"scriptFunction_6056484\"};"
+   "        overlayScriptFunctions.m_oneArg[0x6056484] = {&scriptFunction_6056484, \"scriptFunction_6056484\"};\n        overlayScriptFunctions.m_oneArg[0x060564B4] = {&lagiCampRecoveryFinished, \"Camp recovery finished\"};"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "0x060564B4\\] = \\{&lagiCampRecoveryFinished")
+   message(FATAL_ERROR "Native Camp recovery wait binding did not apply")
   endif()
  elseif(relative_path STREQUAL "town/camp/campVdp2Plane.cpp")
   # Camp's projection service writes two signed words.
@@ -4376,6 +4429,27 @@ void pauseCutscene]=]
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 2)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townScript.cpp")
+  string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"kernel/moduleManager.h\""
+   source_text "${source_text}")
+  # MAIN06026DA4, called by Camp's authored save-station script, opens the
+  # existing save menu and records the current town status with zero indices.
+  string(REPLACE "sKernelScriptFunctions gKernelScriptFunctions ="
+   [=[static s32 lagiTownOpenSaveMenu()
+{
+    setupSaveParams(0, 0, 0);
+    gSaveGameStatus.m8_gameMode = gGameStatus.m4_gameStatus;
+    return 0;
+}
+
+sKernelScriptFunctions gKernelScriptFunctions =]=]
+   source_text "${source_text}")
+  string(REPLACE "        {0x600CDD4, {&getNpcData0_5d, \"getNpcData0_5d\"}},"
+   "        {0x600CDD4, {&getNpcData0_5d, \"getNpcData0_5d\"}},\n        {0x06026DA4, {&lagiTownOpenSaveMenu, \"town save menu\"}},"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "0x06026DA4, \\{&lagiTownOpenSaveMenu")
+   message(FATAL_ERROR "Native town save-menu script binding did not apply")
+  endif()
   string(REPLACE
    "    assert(0);\n    return NULL;\n    //return npcData0.m70_npcPointerArray[r4].pNPC;"
    "    return npcData0.m70_npcPointerArray[r4].workArea;"
