@@ -10,7 +10,7 @@ Run in PowerShell. If the tracked-edit guard stops, preserve/reconcile those
 edits first; do not reset or clean the checkout. Untracked assets are left alone.
 
 ```powershell
-Set-Location E:\dev\Lagi
+Set-Location C:\Dev\Lagi
 git status --short
 if (git status --porcelain --untracked-files=no) {
     throw 'Local tracked edits exist; preserve/reconcile them before pulling.'
@@ -21,7 +21,7 @@ git switch feature/light-state-index
 if ($LASTEXITCODE) { throw 'Branch switch failed' }
 git pull --ff-only origin feature/light-state-index
 if ($LASTEXITCODE) { throw 'Pull failed; do not force/reset' }
-git submodule update --init --recursive
+git -c core.longpaths=true submodule update --init --recursive
 if ($LASTEXITCODE) { throw 'Submodule update failed' }
 git rev-parse HEAD
 ```
@@ -31,12 +31,15 @@ git rev-parse HEAD
 Use a NEW dedicated build directory, not the older `build` cache. The profile
 forces the important WORLD/native-composition/cache switches even when reused;
 the extra arguments below also pin the other settings from the tested cache.
-SDK paths may be adjusted to the work machine's installations only.
+These paths match this work machine's installed SDK and shader compiler.
+Use build/world-visual-20261105 as a fresh directory for this checkpoint.
+If it already contains an older configuration, choose a new directory name.
 
 ```powershell
-$env:VITASDK = 'E:\dev\VitaSDK'
-$env:PSP2CGC = 'E:\PSVITA\sdk\host_tools\bin\psp2cgc.exe'
-$worldBuild = 'build/world-garil-work'
+$env:VITASDK = 'C:\Dev\VitaSDK'
+$env:PSP2CGC = 'C:\Dev\sdk\host_tools\bin\psp2cgc.exe'
+$env:PATH = "$env:VITASDK\bin;$env:PATH"
+$worldBuild = 'build/world-visual-20261105'
 $worldConfigure = @(
     '-S', '.', '-B', $worldBuild, '-G', 'Ninja',
     '-C', 'cmake/world_garil_profile.cmake',
@@ -54,7 +57,7 @@ cmake --build $worldBuild --parallel 8
 if ($LASTEXITCODE) { throw 'Build/package failed' }
 ```
 
-Required cache values (check `build/world-garil-work/CMakeCache.txt`):
+Required cache values (check `build/world-visual-20261105/CMakeCache.txt`):
 
 | Setting | Value |
 |---|---|
