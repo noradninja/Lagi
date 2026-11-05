@@ -3,6 +3,7 @@
 #include "lagi/prepared_disc_files.h"
 #include "lagi/platform.h"
 #include "lagi/native_scene_mode.h"
+#include "lagi/native_task_disposal.h"
 #include "lagi/lagi_render_bridge.h"
 #include "audio/systemSounds.h"
 #include "lagi/world_map_display.h"
@@ -500,5 +501,9 @@ p_workArea lagiLoadNativeWorldBoundary(p_workArea parent,s32)
 {
     // Return a real child, never the manager itself as upstream's unfinished
     // loadWorldOverlay currently does. No setNextGameStatus/fallback is issued.
-    return createSubTask<LagiWorldBoundary>(parent);
+    auto* task=createSubTask<LagiWorldBoundary>(parent);
+    lagi::tasks::register_work_area_disposer(task,[](void* area) {
+        delete static_cast<LagiWorldBoundary*>(area);
+    });
+    return task;
 }

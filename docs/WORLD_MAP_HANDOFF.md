@@ -35,6 +35,31 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### WORLD concrete work-area disposal — 2026-11-04
+
+Lifecycle audit found src/integration/lagi_task_vita.cpp only deleted the
+s_task record after Delete callbacks and native heap cleanup. Azel s_workArea
+has no virtual destructor, so deleting its base is not a safe fix; WORLD's
+program vector, marker model vectors and embedded C++ state otherwise survive
+every visit. Added an opt-in typed host disposer registry to the existing
+retirement point. Only lagiLoadNativeWorldBoundary registers its concrete
+LagiWorldBoundary deletion. No other task type is newly destroyed.
+
+Native order remains child callbacks, parent callback, next retirement pass,
+child heap drain/disposal, parent heap drain/disposal, task-record deletion.
+The registry entry is erased before invoking the concrete disposer. WORLD's
+explicit destination-model/bundle/VDP1 cleanup is unchanged; its remaining
+embedded vectors/string are now destroyed after their child users retire.
+This is host allocation ownership, not a replacement native task scheduler.
+
+Production scheduler/heap fixture passes256 registered parent/child lifecycles
+with child-first, exactly-once concrete destruction and no retained entries,
+plus256 unchanged legacy encounter lifecycles. WORLD boundary fixtures exercise
+actual registered typed deletion for loaded/missing assets. Host checks do not
+prove Vita re-entry or explain the separate unresolved camp crash. No rendering
+or performance logic is changed; next hardware route should include a return
+to WORLD rather than requesting an additional standalone capture.
+
 ### Native destination-model child restored — 2026-11-04
 
 Recovered WORLD root060540CC -> child factory0605637C, definition06058CCC,

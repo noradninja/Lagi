@@ -4,6 +4,17 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include "lagi/native_task_disposal.h"
+namespace lagi::tasks {
+void* registeredArea=nullptr;WorkAreaDisposer registeredDisposer=nullptr;
+void register_work_area_disposer(void* area,WorkAreaDisposer disposer){
+ assert(area&&disposer&&!registeredArea);registeredArea=area;registeredDisposer=disposer;
+}
+void disposeRegistered(void* area){
+ assert(area==registeredArea);auto disposer=registeredDisposer;
+ registeredArea=nullptr;registeredDisposer=nullptr;disposer(area);
+}
+}
 using p_workArea=void*;using s_workAreaCopy=void;using s32=int;
 template<class T> struct s_workAreaTemplate {struct Task {bool finished=false;void markFinished(){finished=true;}} task;Task* getTask(){return &task;}struct TypedTaskDefinition {void(*init)(T*);void(*update)(T*);void(*draw)(T*);void(*destroy)(T*);};};
 template<class T> void* createSubTask(void*){auto* task=new T;T::getTypedTaskDefinition()->init(task);return task;}
@@ -198,7 +209,7 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   assert(task&&static_cast<void*>(task)!=&parent);assert(task->program.size()==(present?0x5ED4:0));
   assert(task->displayReady==present&&task->display.seeded==present);
   if(present)assert(task->worldFile.m_data==task->program.data()&&task->destinations.program==0x06054000);
-  assert(gGameStatus.m4_gameStatus==0x4F&&gGameStatus.m0_gameMode==6);task->getTypedTaskDefinition()->destroy(task);assert(!allocatorDepth&&!vdp1Depth);delete task;}
+  assert(gGameStatus.m4_gameStatus==0x4F&&gGameStatus.m0_gameMode==6);task->getTypedTaskDefinition()->destroy(task);assert(!allocatorDepth&&!vdp1Depth);lagi::tasks::disposeRegistered(task);}
  assert(reads==2);
  lagi::worldEnabled=true;
  available=true;
@@ -236,7 +247,7 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
   }
   LagiWorldBoundary::Delete(task);
   assert(!allocatorDepth&&!vdp1Depth&&!lagi::worldmap::destinationOwners);
-  delete task;
+  lagi::tasks::disposeRegistered(task);
  }
  auto& pad=graphicEngineStatus.m4514.m0_inputDevices[0].m0_current;
  for (int type : {0,1,2,3}) {
