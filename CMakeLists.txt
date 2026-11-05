@@ -3586,6 +3586,20 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    "    lagiCreateStatusSparkles(pEngine, &gBattleManager->m10_battleOverlay->m18_dragon->m8_position, readSaturnEA(g_BTL_GenericData->getSaturnPtr(0x060ABEF4 + effectId * 4)), 2);\n${sparkle_anchor}"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleDragon.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # BTL_A3 0609FE2E..0609FE54 indexes an array of 32-bit pointers:
+  # offsets 0x24 and 0x14 are slots 9 and 5, not vector-sized slots 3/1.
+  foreach(weapon_slot_pair "3;9" "1;5")
+   list(GET weapon_slot_pair 0 old_slot)
+   list(GET weapon_slot_pair 1 native_slot)
+   set(weapon_slot_old "pRider1State->m18_3dModel.m44_hotpointData[${old_slot}]")
+   string(FIND "${source_text}" "${weapon_slot_old}" weapon_slot_found)
+   if(weapon_slot_found LESS 0)
+    message(FATAL_ERROR "Native rider weapon attachment boundary changed")
+   endif()
+   string(REPLACE "${weapon_slot_old}"
+    "pRider1State->m18_3dModel.m44_hotpointData[${native_slot}]"
+    source_text "${source_text}")
+  endforeach()
   set(status_light_old [=[    if (local_24)
     {
         Unimplemented();

@@ -1,5 +1,21 @@
 # Camp callback audit — 2026-11-05
 
+## R1 battle weapon attachment correction - 2026-11-05
+
+Original Disc 1 BTL_A3 0609FE12 is the weapon draw helper called at
+0609FB26. Instructions 0609FE2E..0609FE32 load the rider model's +44
+hotpoint pointer array (rider +5C), then pointer offset24 for dragon level8.
+0609FE4C..0609FE50 use pointer offset14 for other levels. These are slots9
+and5 in a four-byte pointer array. The upstream C++ translation mistakenly
+uses slots3 and1. The owned battle source adapter now selects slots9/5,
+retaining the original empty-slot fallback, inverse-view conversion, quadrant
+rotation and model-table submission. Flight already selects slot5 and is not
+changed; its missing gun remains under investigation. No extern/Azel edits.
+
+Validation: generated battle source inspected for both slot selections; accepted
+world_garil profile configured; Vita compile/link/SELF/VPK passed. Hardware
+weapon visibility and attachment are UNTESTED. This does not complete R1.
+
 ## Hardware acceptance and remaining visuals - 17:45 capture
 
 User confirms Camp transitions, dragon healing/animation, saving, waiting until
