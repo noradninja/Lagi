@@ -35,6 +35,17 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Cainus arrival-to-Garil unlock audit — 2026-11-04
+
+The original WORLD entry6 gate006C is precisely bit13*8+4, already set by
+the restored status54 handler (MAIN06027C92..06027C9A, mask08). Therefore
+normal Cainus arrival opens Garil before camp gameplay; do not invent a camp
+completion unlock or force availability. The movie-exit fixture now pins the
+WORLD gate against this mutation and executes the production handler with the
+gate initially clear for256 surrounding byte patterns, checking all unrelated
+bytes. This proves the adapter's unlock connection, not successful camp startup
+or live Garil travel. Both still require device evidence.
+
 ### Original bird gate correction — 2026-11-04
 
 The suspected missing unlock is a translated gate error, not evidence that

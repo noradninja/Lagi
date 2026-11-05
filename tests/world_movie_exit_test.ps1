@@ -15,6 +15,11 @@ try{
   if((Read-Native 58 0x6006000 $pair[0] 1)-ne$pair[1]){throw 'Native story mask differs'}
  }
  if((Read-Native 182 0x200000 (0x212EAC+0x55*2) 2)-ne0x0201){throw 'Status55 no longer resolves town pair1'}
+ # Tie the production movie-exit mutation to WORLD's actual Garil gate,
+ # rather than assuming camp completion or another unlock is required.
+ if((Read-Native 244259 0x6054000 (0x6059688+6*0x24) 2)-ne(13*8+4)){
+  throw 'Garil gate no longer matches the native Cainus arrival mutation'
+ }
  $overlay=Read-Native 182 0x200000 0x2166E6 1
  $name=Read-Native 182 0x200000 (0x2165D8+$overlay*16) 4
  $expected='TWN_CAMP.PRG'

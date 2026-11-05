@@ -16,9 +16,14 @@ default:break;
 int main(){
     for(unsigned value=0;value<256;++value){
         for(unsigned i=0;i<32;++i)mainGameState.bitField[i]=std::uint8_t(value+i*7);
+        // Start with Garil locked, regardless of the surrounding byte pattern.
+        // WORLD entry6's native gate006C is byte13, MSB-first mask08.
+        mainGameState.clearBit(0x6C);
         const auto before=mainGameState.bitField;
         pending=calls=0;exitStatus(0x54);
         assert(pending==0x55 && calls==1);
+        assert((before[0x6C/8] & (0x80>>(0x6C%8)))==0);
+        assert((mainGameState.bitField[0x6C/8] & (0x80>>(0x6C%8)))!=0);
         for(unsigned i=0;i<32;++i){
             unsigned expected=before[i];
             if(i==4)expected|=1;
