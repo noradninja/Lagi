@@ -35,7 +35,7 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
-### Camp interactive actor and remaining callback gap � 2026-11-05
+### Camp interactive actor and remaining callback gap - 2026-11-05
 
 Recovered definition0607B5BC in `lagi_camp_interactive_actor.inc`, including
 its deferred resource initialization, two models/collision scripts, seven model
@@ -58,7 +58,7 @@ palette loops/termination, collision ownership, sound cleanup and teardown.
 The fixture and Vita compile/link/SELF/VPK pass. Device Camp/save acceptance
 is still open. Preserve original WORLD profile and matched package/symbols.
 
-### Camp native Yes/No dialog � 2026-11-05
+### Camp native Yes/No dialog - 2026-11-05
 
 Restored town script opcode38 and its MAIN0601C6CA dialog task. This is the
 original horizontal Yes/No prompt using COMMON00210048, with native button
