@@ -1,5 +1,58 @@
 # Camp callback audit — 2026-11-05
 
+## Hardware acceptance and remaining visuals - 17:45 capture
+
+User confirms Camp transitions, dragon healing/animation, saving, waiting until
+night/day, Garil loading, returning to previous areas through WORLD, entering
+WORLD from gameplay and travelling back to Camp. Capture/log:
+`2026-11-05 17-45-27 - Lagi - Lagi`. These are hardware functional passes for
+the tested route, not proof of every story branch or the33ms worst-case budget.
+Dragon feeding/petting remains explicitly UNTESTED. Gash remains inactive in
+this capture, which predates the actor cutover below.
+
+Two visual issues remain: every VDP2 ground plane drifts with the camera
+(especially obvious in the desert, described as a screen-projected texture),
+and the Camp campfire-floor sprite has an incorrect hard/blended edge. The
+capture overview confirms the latter. Investigate shared RBG world-to-plane
+coordinates/presentation and native sprite color-calculation state separately;
+do not add compensating scroll offsets or guessed alpha. Preserve point sampling
+and SGX projection/cache performance. These issues are not fixed by the NPC commit.
+
+## C2 native Camp NPC cutover - 2026-11-05
+
+Definition06080148 now creates a concrete native17C NPC. Resource wait0606F530
+loads the original hierarchy/pose before installing active update/draw callbacks,
+and bit40 creates the recovered segmented child. Initialization registers both
+typed task/NPC receivers, sets collision links and uses Camp's original control
+map. Mode0 decays look-at, mode1 plays authored pose records, mode2 runs the
+original bounded patrol, mode3 uses the known authored06070EB8 movement callback,
+and mode4 schedules weighted animations. No shared Unimplemented mode2 remains.
+
+`camp_npc_patrol.h` ports060709E8/06070ABC, retaining collision application,
+native boundary comparisons, random-word reuse, integer turn duration versus
+FP_Div walking duration, signed -113 speed, turn/look rates, early returns and
+animation selections. Native+14C/+14D bytes are explicitly packed logically,
+independent of host endianness. The initial MOV.B1 at+14E retains the native
+big-endian word0100 rather than assuming it writes a host short1.
+
+Verified shared NPC active animation, scripted turning and drawing bodies are
+adapted from the pinned source. Camp's idle selector uses original06080180 and
+post-decrement timing, not another town's hard-coded distribution. Drawing uses
+the live view-relative bridge scope, including normal/interpolated pose paths,
+shadow flags and the child. Delete protects replacement registry owners. The
+task disposer releases C++ model vectors after native child/Delete/heap cleanup.
+No renderer, camera or RBG implementation changes are included.
+
+Native instruction/resource anchors, all patrol choices, boundary timing/equality,
+normal/interpolated child attachment service contracts, and actual generated NPC
+Init/resource-wait/Draw/Delete methods pass host fixtures. The latter covers all
+five control modes and shadow/child flag combinations. Existing Camp script and
+actor fixtures pass; full Vita compile/link/SELF/VPK packaging passes. Matrix
+service mocks and source checks do not establish rendered parity or performance.
+Hardware must confirm Gash visibility/activity, approach/interaction/dialogue,
+scripted turn/animation, Camp exit/re-entry and pending dragon interactions.
+C2, R1 and B1 remain open. This supersedes the unbound-actor status below.
+
 ## C2 segmented-child service checkpoint - 2026-11-05
 
 `src/integration/lagi_camp_npc_body.inc` recovers the complete native child

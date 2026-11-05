@@ -4594,9 +4594,61 @@ static s32 lagiCampRandomChoice(s32 limit)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_camp_npc_body.inc")
   string(APPEND camp_interactive_actor "\n#include \"lagi_camp_npc_body.inc\"\n")
+  # CAMP0606F3F0/0606F530/0606F59A/0606FD50/0606FF04 share the NPC
+  # representation and active task bodies. Supply Camp's original control map,
+  # patrol, idle table and segmented child instead of the translated stubs.
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_camp_npc_controls.inc"
+   "${LAGI_AZEL_SOURCE_ROOT}/town/townEdge.cpp")
+  file(READ "${camp_shared_npc_source}" camp_actor_source)
+  string(FIND "${camp_actor_source}" "static void updateZoahNPCSub1(sNPC* pThis)" camp_actor_start)
+  string(FIND "${camp_actor_source}" "// Set NPC animation and control state" camp_actor_end)
+  if(camp_actor_start LESS 0 OR camp_actor_end LESS camp_actor_start)
+   message(FATAL_ERROR "Shared Camp actor body boundaries changed")
+  endif()
+  math(EXPR camp_actor_length "${camp_actor_end}-${camp_actor_start}")
+  string(SUBSTRING "${camp_actor_source}" ${camp_actor_start} ${camp_actor_length} camp_actor_source)
+  file(READ "${LAGI_AZEL_SOURCE_ROOT}/town/townEdge.cpp" camp_edge_source)
+  string(FIND "${camp_edge_source}" "void updateEdgeSub3Sub0(sEdgeTask* pThis)" camp_idle_start)
+  string(FIND "${camp_edge_source}" "void updateEdgeSub3(sEdgeTask* pThis)\n{" camp_idle_end)
+  if(camp_idle_start LESS 0 OR camp_idle_end LESS camp_idle_start)
+   message(FATAL_ERROR "Native NPC idle selector boundaries changed")
+  endif()
+  math(EXPR camp_idle_length "${camp_idle_end}-${camp_idle_start}")
+  string(SUBSTRING "${camp_edge_source}" ${camp_idle_start} ${camp_idle_length} camp_idle_body)
+  string(REPLACE "void updateEdgeSub3Sub0(sEdgeTask* pThis)"
+   "static void lagiCampNpcIdle(sNPC* pThis, s16&)" camp_idle_body "${camp_idle_body}")
+  string(REPLACE "gTWN_RUIN->getSaturnPtr(0x60604B0)"
+   "gCurrentTownOverlay->getSaturnPtr(0x06080180)" camp_idle_body "${camp_idle_body}")
+  string(FIND "${camp_actor_source}" "static void updateZoahNPCIdle(" camp_actor_idle_start)
+  string(FIND "${camp_actor_source}" "// Walk/run control state" camp_actor_idle_end)
+  if(camp_actor_idle_start LESS 0 OR camp_actor_idle_end LESS camp_actor_idle_start)
+   message(FATAL_ERROR "Shared NPC idle body boundaries changed")
+  endif()
+  math(EXPR camp_actor_idle_length "${camp_actor_idle_end}-${camp_actor_idle_start}")
+  string(SUBSTRING "${camp_actor_source}" ${camp_actor_idle_start} ${camp_actor_idle_length} camp_actor_idle_old)
+  string(REPLACE "${camp_actor_idle_old}" "${camp_idle_body}" camp_actor_source "${camp_actor_source}")
+  string(REPLACE "updateZoahNPCIdle" "lagiCampNpcIdle" camp_actor_source "${camp_actor_source}")
+  string(REPLACE "updateZoahNPC" "lagiCampNpc" camp_actor_source "${camp_actor_source}")
+  string(REPLACE "sZoahNPC" "sLagiCampNPC" camp_actor_source "${camp_actor_source}")
+  string(REPLACE "createZoahNPC" "lagiCreateCampNPC" camp_actor_source "${camp_actor_source}")
+  string(REPLACE "initEdgeNPC(pThis, arg);" "lagiCampNpcInit(pThis, arg);" camp_actor_source "${camp_actor_source}")
+  string(REPLACE "Unimplemented(); // FUN_06096fc4" "lagiCreateCampNpcBody(pThis);" camp_actor_source "${camp_actor_source}")
+  string(REPLACE "static void Draw2(sLagiCampNPC* pThis)\n    {\n        pushCurrentMatrix();"
+   "static void Draw2(sLagiCampNPC* pThis)\n    {\n        lagi::azel_bridge::begin_view_relative_submission_scope();\n        pushCurrentMatrix();" camp_actor_source "${camp_actor_source}")
+  string(REPLACE "        popMatrix();\n    }\n\n    static void Delete"
+   "        popMatrix();\n        lagi::azel_bridge::end_view_relative_submission_scope();\n    }\n\n    static void Delete" camp_actor_source "${camp_actor_source}")
+  string(REPLACE "return createSubTaskWithArgWithCopy<sLagiCampNPC, sSaturnPtr>(parent, arg);"
+   "auto* task = createSubTaskWithArgWithCopy<sLagiCampNPC, sSaturnPtr>(parent, arg);\n    lagi::tasks::register_work_area_disposer(task, [](void* area) { delete static_cast<sLagiCampNPC*>(area); });\n    return task;" camp_actor_source "${camp_actor_source}")
+  if(camp_actor_source MATCHES "Unimplemented|gTWN_RUIN|initEdgeNPC\\(" OR
+     NOT camp_actor_source MATCHES "lagiCreateCampNpcBody\\(pThis\\)" OR
+     NOT camp_actor_source MATCHES "register_work_area_disposer")
+   message(FATAL_ERROR "Native Camp actor cutover did not apply completely")
+  endif()
+  string(APPEND camp_interactive_actor "\n#include \"lagi_camp_npc_controls.inc\"\n#include \"lagi/native_task_disposal.h\"\n${camp_actor_source}\n")
   string(REPLACE "struct TWN_CAMP_data : public sTownOverlay" "${camp_interactive_actor}\nstruct TWN_CAMP_data : public sTownOverlay" source_text "${source_text}")
   string(REPLACE "        case 0x60800E8:"
-   "        case 0x0607B5BC:\n            assert(size == 0x1B4);\n            return lagiCreateCampInteractiveActor(parent, arg);\n        case 0x60800E8:" source_text "${source_text}")
+   "        case 0x06080148:\n            assert(size == 0x17C);\n            return lagiCreateCampNPC(parent, arg);\n        case 0x0607B5BC:\n            assert(size == 0x1B4);\n            return lagiCreateCampInteractiveActor(parent, arg);\n        case 0x60800E8:" source_text "${source_text}")
   string(REPLACE "        for (int i = 0; i < 9; i++) {"
    "        overlayScriptFunctions.m_oneArg[0x06057B62] = {&lagiCampInteractiveActorReady, \"Camp interactive actor ready\"};\n        overlayScriptFunctions.m_oneArg[0x06057B76] = {&lagiCampToggleInteractiveActor, \"Camp toggle interactive actor\"};\n        for (int i = 0; i < 9; i++) {" source_text "${source_text}")
   if(NOT source_text MATCHES "return lagiCreateCampInteractiveActor" OR
