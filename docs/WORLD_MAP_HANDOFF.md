@@ -35,6 +35,38 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Clean work-machine visual test package — 2026-11-05
+
+Built source1544a059cc600ce579c22cd1e50b10fa04eaddca in a fresh isolated
+checkout with pinned Azel c52329fb257561abff05531a8335e34137d67098 and the exact
+WORLD_MAP_WORK_BUILD.md profile. The work-machine SDK paths are C:/Dev/VitaSDK
+and C:/Dev/sdk/host_tools/bin/psp2cgc.exe. Recursive dependencies initialized;
+Windows required repository-local core.longpaths=true for the Azel checkout.
+The previous local shader experiment was excluded by using this clean checkout.
+
+Delivered in the work chat's outputs directory:
+
+- Lagi-WORLD-1544a05.vpk, 28812853 bytes, SHA256
+  064E3DD62EC2454A1AE023F4BEA16778B6C7B92E86418DE8FFC7A39BD9CC031D.
+- Lagi-WORLD-1544a05-symbols.zip contains the matching unstripped lagi,
+  lagi.velf, build-manifest.json with binary hashes, CMakeCache.txt and build log.
+  Keep this archive with the deployed VPK. Binary packages are not in Git.
+
+All documented cache values were checked. Clean Vita compilation, linking,
+Sony ELF/SELF conversion and VPK packaging passed. Package eboot.bin matches
+the built SELF by SHA256; the retained lagi has its symbol/string tables.
+The enabled A5 build contract includes28 modules. Original-disc WORLD environment
+and Garil route evidence checks pass. These are build/source checks; WORLD
+visual acceptance is pending.
+
+Next test is WORLD visuals first. Enter from Map, move selection through the
+available destinations, and record destination models/silhouettes/placement,
+terrain and camera alignment, labels/panel edges, marker/trails and cloud/UI
+composition. Include a selection close-up where reachable. Check post-E014 entry
+in the same package when available. Save the video and ux0:data/lagi/lagi.log,
+with the tested package hash. Report remaining visible defects before further
+camp/Garil progression changes. A crash requires its dump and this archive.
+
 ### Visual acceptance first — 2026-11-05
 
 The user explicitly prioritizes correcting WORLD's visual issues before further
