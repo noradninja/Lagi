@@ -35,6 +35,36 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native destination-model child restored — 2026-11-04
+
+Recovered WORLD root060540CC -> child factory0605637C, definition06058CCC,
+Init06055E08 and Draw06056288. This is a separate child from terrain06055924
+and panel sprites0605738C. Its final dispatch06055F90 walks the CURRENT ordinary
+or fleet destination table in source order and checks each signed story gate.
+
+The WORLD owner now owns its typed destination state, parsed sprite frames and
+model vectors; it releases these before native bundle/VDP1 teardown. The draw
+pass is after ground and before arrival, through native addObjectToDrawList,
+hierarchy/pose drawing and the existing MAIN0602E5CC sprite bridge. All four
+types are restored:0/1 use hierarchy01E8, pose05C4, color animation05CC and
+per-record selection progress clamped0..12;2 uses model slot03CC;3 uses native
+offset06058CAC, sprite scale00020000, sorting-only biasFFFFD000, and hierarchy
+01E4/pose05C0. Sprite animation advances once per pass, not per destination.
+Locked records neither draw nor advance progress. The original auxiliary
+hierarchy passes and their startup story predicates are retained. The retail
+camera enables pass10; debug keyboard preview controls are not Vita inputs.
+No replacement geometry, forced gates, renderer material guesses or fallback
+path was added. Other original flag40 refresh producers remain to be traced;
+this change does not claim every later-game event producer is connected.
+
+Original-disc task/service/instruction/MCB-slot evidence and production-source
+host fixtures pass. Fixtures cover resources, all four draw paths, order,
+selected/locked progress, sprite offset/scale/sort bias, auxiliary story flags,
+invalid count and owner teardown. WORLD boundary startup/travel/fade tests pass,
+and Vita compile/link/SELF/VPK packaging passed. These tests mock native draw
+services: actual destination silhouettes, placement, sprite layers and cost
+still need hardware acceptance. Camp crash and Garil live travel remain open.
+
 ### Native WORLD cloud palette update — 2026-11-04
 
 Restored WORLD060569E2..06056A98 in the environment owner. Native signed

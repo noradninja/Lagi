@@ -11,6 +11,7 @@
 #include "lagi/world_map_arrival.h"
 #include "lagi/world_map_message.h"
 #include "lagi/world_map_ground.h"
+#include "lagi/world_map_destinations_draw.h"
 #include "lagi/world_map_panels_draw.h"
 #include "kernel/moduleManager.h"
 #include "kernel/fade.h"
@@ -39,6 +40,7 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
     bool fontReady = false;
     lagi::worldmap::MapMessage message;
     lagi::worldmap::MapGround ground;
+    lagi::worldmap::MapDestinationModels* destinationModels=nullptr;
     lagi::worldmap::MapPanels panels;
     bool ownsMapAllocator = false;
     s_workAreaCopy* modelOwner = nullptr;
@@ -78,7 +80,9 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                 const bool modelReady = lagi::worldmap::initialize_map_model(
                     task->display.marker, task->modelOwner, task->worldFile.getSaturnPtr(0x06058774));
                 if (fleet) task->display.marker.flags |= 0x40;
-                task->displayReady = modelReady && lagi::worldmap::initialize_map_arrival(
+                task->destinationModels=lagi::worldmap::initialize_map_destination_models(
+                    task->worldFile.getSaturnPtr(base),task->modelOwner);
+                task->displayReady = modelReady && task->destinationModels && lagi::worldmap::initialize_map_arrival(
                     task->destinations, task->destinations.cameraSelection) &&
                     lagi::worldmap::initialize_map_arrival_animation(task->arrivalAnimation, task) &&
                     lagi::worldmap::update_map_display(
@@ -466,11 +470,16 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         lagi::worldmap::draw_map_model(task->display.marker);
         lagi::worldmap::draw_map_ground(task->ground,
             task->worldFile.getSaturnPtr(0x06054000),task->modelOwner);
+        lagi::worldmap::draw_map_destination_models(task->destinationModels,
+            task->worldFile.getSaturnPtr(0x06054000),task->destinations.targetTable,
+            task->destinations.targetCount,task->destinations.cameraSelection,task->modelOwner);
         lagi::worldmap::draw_map_arrival(task->arrivalAnimation,task->destinations,
                                        task->display.camera[1].asS32());
         lagi::azel_bridge::end_view_relative_submission_scope();
     }
     static void Delete(LagiWorldBoundary* task) {
+        lagi::worldmap::delete_map_destination_models(task->destinationModels);
+        task->destinationModels=nullptr;
         // The native task walker tears down owned children before this callback.
         if (!task->preparedFilesHandedOff)
             lagi::disc::clear_prepared_native_files();

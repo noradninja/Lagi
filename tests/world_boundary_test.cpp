@@ -91,6 +91,15 @@ void draw_map_model(MapDisplay::Marker&){}
  void draw_map_panels(MapPanels&,u32,s_workAreaCopy*,bool){}
  void initialize_map_ground(MapGround&){}
  bool draw_map_ground(MapGround&,u32,s_workAreaCopy*){return true;}
+ struct MapDestinationModels {};
+ int destinationOwners=0,destinationDraws=0;
+ MapDestinationModels* initialize_map_destination_models(u32 program,void* owner){
+  assert(program==0x06054000&&owner);++destinationOwners;return new MapDestinationModels;
+ }
+ bool draw_map_destination_models(MapDestinationModels* state,u32,u32,int,int,void*){
+  assert(state);++destinationDraws;return true;
+ }
+ void delete_map_destination_models(MapDestinationModels* state){if(state){--destinationOwners;delete state;}}
 }
 namespace lagi { bool worldEnabled=false;bool native_scene_mode(int mode){return mode==6&&worldEnabled;} }
 namespace lagi::azel_bridge { void capture_native_scene_view_matrix(){} void begin_view_relative_submission_scope(){} void end_view_relative_submission_scope(){} }
@@ -146,6 +155,8 @@ std::array<std::uint8_t,0x80000> vram{};
 std::uint8_t* getVdp2Vram(u32 offset){return vram.data()+offset;}
 std::uint8_t* getVdp2Cram(u32){return nullptr;}
 void asyncDmaCopy(u32,std::uint8_t*,int,int){}
+void asyncDmaCopy(void*,std::uint8_t*,int,int){}
+u16 readSaturnU16(u32){return 0x7FFF;}
 u32 readSaturnU32(u32){return 0;}
 sVec3_FP readSaturnVec3(u32){return {};}
 namespace lagi::worldmap {int map_approach_profile(int,int target,int){return target;}}
@@ -224,7 +235,7 @@ int main(){int parent;mainGameState.bitField[0x1B]=8;
    vdp2Controls.m0_doubleBufferIndex=0;
   }
   LagiWorldBoundary::Delete(task);
-  assert(!allocatorDepth&&!vdp1Depth);
+  assert(!allocatorDepth&&!vdp1Depth&&!lagi::worldmap::destinationOwners);
   delete task;
  }
  auto& pad=graphicEngineStatus.m4514.m0_inputDevices[0].m0_current;
