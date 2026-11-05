@@ -35,6 +35,22 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Work-machine sync / crash evidence update — 2026-11-05
+
+Use [WORLD_MAP_WORK_BUILD.md](WORLD_MAP_WORK_BUILD.md) for exact safe pull,
+fresh-directory configure/build arguments, the complete comparison cache values,
+and per-revision package/ELF/unstripped-executable preservation. Do not build an
+older default cache or disable native sprite composition/RBG fast paths. Normal
+captures keep serialized GPU timing OFF. Current comparison profile is FULLRES
+ON; historical low-resolution town instructions are not this build baseline.
+
+Camp dump1793844053 has now been received and parsed. The supplied velf path
+was overwritten by later builds (now093f257); its executable segment size differs
+from the dump's module. The user has no saved earlier ELF. Do not trust symbol
+or unwind attribution made with that mismatched file; camp root cause remains
+unproven. Preserve both lagi and lagi.velf with the next deployed package.
+This supersedes older notes saying the dump has not arrived.
+
 ### Combined regression / stable hardware checkpoint — 2026-11-04
 
 Runtime checkpoint093f25771ea68e45f4a045802258a7dbeaf4d477 is packaged as
