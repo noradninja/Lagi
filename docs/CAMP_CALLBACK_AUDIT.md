@@ -20,7 +20,7 @@ entries and native-call operands across story alternatives. Current inventory
 is55 distinct native function/arity pairs. Bound means a generated dispatch
 entry exists. Semantic parity and hardware acceptance remain separate gates.
 Opcode38 is a no-operand Yes/No dialog, recovered from MAIN600D660 and task
-factory601C6CA. Its runtime handler is absent. Table-default handling and all later-game paths still need
+factory601C6CA. Its runtime handler and original dialog task are now restored. The production fixture checks all 512 choice/input combinations, original COMMON text, cursor animation, result inversion, display-task handoff and owner cleanup. Vita compile/link/SELF/VPK passes; hardware acceptance remains open. Table-default handling and all later-game paths still need
 independent native instruction validation before this becomes a completion gate.
 
 | Native function | Arguments | Dispatch | Call sites | First call site |
@@ -99,7 +99,7 @@ receiver types and registration lifecycle, including Edge and the Camp dragon.
 
 - Resolve every pending native call with correct argument interpretation.
 - Recover both missing NPC task paths, including their child callbacks.
-- Recover runtime opcode38 and validate static coverage against native dispatch.
+- Validate remaining static coverage against native dispatch. Runtime opcode38 is restored and covered by its production fixture.
 - Exercise startup, dragon recovery/interactions, other characters, save station,
   save/load return state, normal exits and repeated Camp entry.
 - Preserve the tested VPK, unstripped lagi and lagi.velf together.

@@ -35,6 +35,22 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Camp native Yes/No dialog � 2026-11-05
+
+Restored town script opcode38 and its MAIN0601C6CA dialog task. This is the
+original horizontal Yes/No prompt using COMMON00210048, with native button
+priority, Yes=1/No=0 results, animated cursor, existing box cleanup and owner
+pointer lifecycle. The opcode waits for existing text to close and waits for
+dialog state4 before continuing, without consuming a following script operand.
+This connects the prompt needed by Camp interactions and the save route.
+
+`tests/town_yes_no_test.ps1 -Build <build> -DiscImage <Disc1.bin>` validates
+original instruction/task anchors and executes the generated opcode plus owned
+production dialog. All 512 choice/input combinations, cursor timing, wait states
+and cleanup pass. The full Vita compile/link/SELF/VPK passes with the preserved
+WORLD profile. Camp device acceptance remains open. Two actor task definitions
+and two native script targets remain pending in `CAMP_CALLBACK_AUDIT.md`.
+
 ### Camp interaction and shared NPC callbacks — 2026-11-05
 
 Restored five audited native calls.06056408 starts feeding at substate12 and

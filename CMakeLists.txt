@@ -4583,7 +4583,7 @@ static s32 lagiCampRandomChoice(s32 limit)
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townScript.cpp")
   string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
-   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"kernel/moduleManager.h\""
+   "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"kernel/moduleManager.h\"\n#include \"lagi/town_yes_no.h\""
    source_text "${source_text}")
   # MAIN06026DA4, called by Camp's authored save-station script, opens the
   # existing save menu and records the current town status with zero indices.
@@ -4602,6 +4602,28 @@ sKernelScriptFunctions gKernelScriptFunctions =]=]
    source_text "${source_text}")
   if(NOT source_text MATCHES "0x06026DA4, \\{&lagiTownOpenSaveMenu")
    message(FATAL_ERROR "Native town save-menu script binding did not apply")
+  endif()
+  string(REPLACE "        case 39: // multi-choice"
+   [=[        case 38: // native MAIN0600D660 Yes/No prompt, no operands
+        {
+            if (r13_pThis->m170_multiChoiceTask) {
+                if (r13_pThis->m170_multiChoiceTask->m0_Status != 4)
+                    return r14 - 1;
+                r13_pThis->mF0 = 0;
+                return r14;
+            }
+            if (r13_pThis->m16C_displayStringTask) {
+                r13_pThis->m16C_displayStringTask->getTask()->markFinished();
+                return r14 - 1;
+            }
+            lagiStartTownYesNoDialog(currentResTask, &r13_pThis->m170_multiChoiceTask,
+                                    &r13_pThis->m118_currentResult);
+            return r14 - 1;
+        }
+        case 39: // multi-choice]=]
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "case 38: // native MAIN0600D660")
+   message(FATAL_ERROR "Native town Yes/No opcode adapter did not apply")
   endif()
   string(REPLACE
    "    assert(0);\n    return NULL;\n    //return npcData0.m70_npcPointerArray[r4].pNPC;"
@@ -5696,6 +5718,7 @@ add_executable(lagi
  src/integration/lagi_town_runtime.cpp
  src/integration/lagi_town_collision.cpp
  src/integration/lagi_town_tasks.cpp
+ src/integration/lagi_town_yes_no_vita.cpp
  src/integration/lagi_ruin_room_debug.cpp
  src/integration/lagi_edge_debug.cpp
  src/integration/lagi_fixedpoint_vita.cpp
