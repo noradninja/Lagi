@@ -2752,6 +2752,16 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
    "u32 getFileSizeFromFileId(const char* fileName)"
    "__attribute__((weak)) u32 getFileSizeFromFileId(const char* fileName)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a3/o_fld_a3_1.cpp")
+  # Original FLD_A3 0605B242/0605B58A loads byte0A and mask06042F1A=02.
+  # The upstream translation checks bit1 (40); native code checks bit6 (02).
+  string(REGEX MATCHALL "getBit\\(0xA \\* 8 \\+ 1\\)" bird_gate_matches "${source_text}")
+  list(LENGTH bird_gate_matches bird_gate_count)
+  if(NOT bird_gate_count EQUAL 2)
+   message(FATAL_ERROR "Expected both original A3 bird gate adapters")
+  endif()
+  string(REPLACE "getBit(0xA * 8 + 1)" "getBit(0xA * 8 + 6)"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3_2.cpp")
   set(fish_motion_old [=[            // Compute values using sin/cos tables (results not stored to struct in mode 0,
             // only used for return value which the task scheduler ignores)

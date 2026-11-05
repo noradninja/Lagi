@@ -35,6 +35,23 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Original bird gate correction — 2026-11-04
+
+The suspected missing unlock is a translated gate error, not evidence that
+WORLD should force a new flag. Original FLD_A3 initializers0605B1B4 and0605B504
+load byte0604A402 through literals0605B32C/0605B680 and mask06042F1A through
+0605B330/0605B684. MAIN's mask byte is02, i.e. MSB-first bit0A*8+6, NOT the
+upstream C++ bit0A*8+1/mask40. Both TST/BFS sequences disable the target only
+when02 is absent. Captain progression already sets bit0A*8+6.
+
+The generated-source adapter corrects exactly these two checks, preserving
+extern/Azel, callback/state behavior, and all story bytes. No unlock is forced.
+tests/a3_bird_gate_test.ps1 pins both original literal/instruction sequences,
+the mask byte, both generated guards and all256 input-byte states. Host evidence
+passes; native bird highlighting/nest travel and D Unit01 still require hardware.
+The separate nest-exit gate is unchanged. Camp crash still needs its matching
+dump and unstripped ELF; this correction does not claim to fix that crash.
+
 ### 21-00 hardware: clouds accepted; camp startup crash — 2026-11-04
 
 User confirms cloud blending fixed. New capture/log:
