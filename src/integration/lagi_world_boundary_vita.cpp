@@ -181,13 +181,14 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         std::memcpy(getVdp2Vram(0x2A600), &black, sizeof(black));
         regs->mA8_LCTA = (regs->mA8_LCTA & 0xFFF80000) | 0x15200;
         regs->mAC_BKTA = (regs->mAC_BKTA & 0xFFF80000) | 0x15300;
-        regs->mF0_PRISA = 0x0404;
+        regs->mF0_PRISA = 0x0604;
         regs->mF2_PRISB = 0x0407;
         regs->mF4_PRISC = 0x0404;
         regs->mF6_PRISD = 0x0602;
         regs->mF8_PRINA = 0x0602;
         regs->mFA_PRINB = 0x0700;
         regs->mFC_PRIR = 5;
+        lagi::worldmap::initialize_map_environment_color(*regs);
         vdp2Controls.m_isDirty = true;
         return true;
     }

@@ -35,6 +35,76 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### 17-48 hardware result and missing native color initializer — 2026-11-04
+
+User accepts camera, names, terrain and player-selector meshes. Do not retune
+those. Clouds blend incorrectly, sky mapping/UI layering need correction,
+and destination meshes remain missing. Log has active type0 RBG resolve,
+CCCTL0010/SPCTL0020/CCRR0000, 777 polygons; 12 WORLD samples give upper-middle
+render45817us, CPU9491us, finish34396us. These are ordinary non-serialized
+samples, not isolated GPU pass timings. No performance acceptance.
+
+Tracing the original initializer beyond the previously ported end discovers
+the missing 0605681C..568BC block. Descriptor59440 is sprite CCEN=1 (MAIN
+344C0 -> 3461E sets CCCTL40), then WORLD selects additive CCCTL100, sprite
+type3/priority-equals3, CCRSA180D, CCRSB/C/D0, CCRR16. Thus the expected final
+state is CCCTL0150/SPCTL1323 after reinit, not the incomplete type0 state seen
+on hardware. PRISA is also corrected from0404 to native0604. This supersedes
+earlier descriptions treating observed type0/ratio state as native intent.
+
+The three-source shader now supports native additive AND ratio calculation
+for the winning RBG0 or eligible VDP1 source, always against the next raw
+source, with native equal-priority ties and completed-image UI masking.
+Existing flight shader remains separate. Production Cg host coverage expands
+to524288 cases; native register writes and actual source literals are pinned.
+
+Sky threshold is236 at06056EB2, not196. The previous evidence fixture checked
+C4 at06056EAE, a camera-field offset, rather than resolving the load at56E9E.
+That fixture could pass while proving the wrong literal. Fixed the producer,
+oracle and PC-relative load binding. This is a specific NBG0 horizon correction,
+not a claim that all sky mapping is accepted. Palette-motion recovery and
+missing destination-model producers remain open. Hardware for the final
+corrected tree is still required;17-48 cannot validate these later changes.
+
+### WORLD native-priority cloud resolve connected — 2026-11-04
+
+The completed-VDP1 compositor now also accepts the register-defined type0
+state with RBG0 ratio calculation (CCCTL0010), opaque NBG0, and optional
+NBG3 strictly above both backgrounds. It compares VDP1/RBG0/NBG0 per pixel,
+uses the next RAW visible source under RBG0, applies native CCRR with RGB555
+integer weighting/quantization, and falls through holes to native BACK.
+Equal priorities follow VDP1 > RBG0 > NBG0, corroborated by the local Yabause
+Titan priority sorter. RBG0 priority3/5 comes from live PRIR, not a WORLD rule.
+No authored placement, cloud suppression, geometry or camera hack is added.
+
+The existing resolved NBG0 texture supplies the third sampler source; no new
+surface or raw-VRAM pixel loop is added. Both backgrounds are omitted from
+the VDP1 target and composed once. Foreground VDP1 commands join the completed
+image before resolve; NBG3 follows with the existing completed-image priority
+mask (native bank2 priority7 wins its tie against NBG3 priority7). WORLD uses a separate
+fragment program so the accepted type3 flight shader gains no branches or
+samplers. Special-function NBG0/RBG0 priority/color modes, other layer sets,
+sprite windows, extended/destination-alpha calculation and non-top NBG3 are
+rejected rather than silently approximated. SFPRMD/SFCCMD are frame captured
+for that support predicate, with bounded activation logging.
+
+Type0 metadata is now used by native indexed-texture decoding. A change
+between type0 and the existing type3 encoding invalidates model and UI cached
+payloads on the render thread, even without a VRAM/CRAM write. Register-only
+priority/ratio changes do not force texture decoding. In-game resolved NBG0
+sampling is point-filtered, matching the existing RBG0 background policy.
+
+The host fixture includes the production Cg shader with only semantic labels
+removed, checks 131072 priority/presence/ratio cases against an independent
+top/second-source sort and RGB555 oracle, checks rejection states, compiles
+with psp2cgc and verifies all sampler/uniform bindings. Existing type3 lookup,
+sprite selection and UI priority tests pass. Vita compile/link/SELF/VPK passed;
+device cloud pixels/order, corrected camera and WORLD performance are NOT yet
+accepted. One combined hardware checkpoint should cover WORLD entry/rotation,
+clouds both in front/behind the terrain, flight water/cinematic regression,
+selection/return, and the ordinary non-serialized timing log. Missing location
+model producers and WORLD graphics cost remain separate open items.
+
 ### Type-0 selector contract covered — 2026-11-04
 
 Added a separate type-0 indexed-pixel metadata encoder (priority bits14..15,

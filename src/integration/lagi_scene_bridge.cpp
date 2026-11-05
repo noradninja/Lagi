@@ -285,6 +285,8 @@ void sync_presentation_state()
             lagi::Vdp2SpriteColorState sprite;
             sprite.ccctl=regs->mEC_CCCTL;
             sprite.rbgRatio=regs->m10C_CCRR;
+            sprite.specialPriority=regs->mEA_SFPRMD;
+            sprite.specialColor=regs->mEE_SFCCMD;
             sprite.bgon=regs->m20_BGON; sprite.prir=regs->mFC_PRIR;
             sprite.prina=regs->mF8_PRINA; sprite.prinb=regs->mFA_PRINB;
             sprite.spctl=regs->mE0_SPCTL;

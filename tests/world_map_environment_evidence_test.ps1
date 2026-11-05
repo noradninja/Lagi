@@ -17,6 +17,18 @@ try {
  # not a newly generated NBG0 line-scroll table. Check native instructions,
  # not just the routine address or a translated helper's name.
  $words=@(
+  @(0x06056782,0x0604), # native PRISA (bank1 is priority6, not4)
+  @(0x06056826,0x354C), @(0x06056828,0xD34F),
+  @(0x0605682E,0x2539), @(0x06056830,0x51E1),
+  @(0x06056832,0x252B), @(0x06056838,0x2451), # CCCTL additive-bit write
+  @(0x0605694C,0x00EC), @(0x0605694E,0x0100),
+  @(0x06056850,0x1EC5), @(0x06056852,0xE503), # sprite type3
+  @(0x0605687C,0x2451), # SPCTL condition write
+  @(0x06056886,0xE218), @(0x0605687E,0xE310), # CCRSA high24 / CCRR16
+  @(0x0605689E,0x232B), @(0x060568A0,0x0535),
+  @(0x060568BC,0x2211), # authored CCRR store
+  @(0x06059440,0x0000), @(0x06059442,0x002C),
+  @(0x06059444,0x0000), @(0x06059446,0x0001), # sprite CCEN descriptor
   @(0x060566B8,0x945F), # RAMCTL low-byte PC-relative literal load
   @(0x0605677A,0x00B4), # authored rotation VRAM bank roles (not 0080)
   @(0x060566BE,0x2039), @(0x060566C0,0x240B), # preserve high byte, OR literal
@@ -47,10 +59,10 @@ try {
   @(0x06056EB0,0x0100),
   @(0x06056E94,0x03EE), @(0x06056E98,0x323C), # add environment +40
   @(0x06056E9C,0x1D21), @(0x06056E9E,0x9208),
-  @(0x06056EA0,0x3423), @(0x06056EA2,0x8B21), # signed horizon >=196
+  @(0x06056EA0,0x3423), @(0x06056EA2,0x8B21), # signed horizon >=236
   @(0x06056EA4,0x6143), @(0x06056EA6,0x4128),
   @(0x06056EAA,0x631B), # negative horizon <<16
-  @(0x06056EAE,0x00C4), # signed comparison threshold 196
+  @(0x06056EB2,0x00EC), # actual threshold literal; EAE is camera field offset, NOT threshold
   @(0x06056EE8,0xD343), @(0x06056EEE,0x1D31),
   @(0x06056EF0,0x2210), # select normal-background layer 0
   @(0x06056EF2,0x55D1), @(0x06056EF6,0x430B), @(0x06056EF8,0x64D2),
@@ -66,6 +78,11 @@ try {
    throw ('WORLD environment instruction differs at {0:X8}' -f $pair[0])
   }
  }
+ # Pin the actual load-to-literal relationship. The former test checked C4
+ # at EAE (a camera field offset) instead of resolving this load to EB2/EC.
+ $load=Read-World 0x06056E9E 2
+ $literal=0x06056E9E+4+(($load-band 255)*2)
+ if($literal-ne 0x06056EB2 -or (Read-World $literal 2)-ne 236){throw 'Native sky-scroll threshold literal binding differs'}
  foreach($pair in @(@(0x0605664C,0x10000),@(0x06056650,0x06035644),@(0x06056654,0x20216E80),
                    @(0x06056FF8,4279500800L),@(0x06057000,0x06028986),
                    @(0x06056978,0x11102A),@(0x0605697C,0x5B059),

@@ -150,6 +150,7 @@ add_custom_command(OUTPUT "${LAGI_RGBA_PRESENT_OBJ}"
  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_rgba_present_f.gxp" VERBATIM)
 set(LAGI_SPRITE_COMPOSITE_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_sprite_composite_f_gxp.o")
+set(LAGI_RBG_RATIO_COMPOSITE_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_rbg_ratio_composite_f_gxp.o")
 set(LAGI_COLOR_MESH_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_color_mesh_f_gxp.o")
 set_source_files_properties("${LAGI_COLOR_MESH_OBJ}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_color_mesh_f.gxp"
@@ -237,6 +238,16 @@ add_custom_command(OUTPUT "${LAGI_SPRITE_COMPOSITE_OBJ}"
  lagi_sprite_composite_f.gxp "${LAGI_SPRITE_COMPOSITE_OBJ}"
  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_sprite_composite_f.gxp" VERBATIM)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_rbg_ratio_composite_f.gxp"
+ COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rbg_ratio_composite_f.cg" -Wperf -fastprecision -O3
+ -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_rbg_ratio_composite_f.gxp"
+ DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rbg_ratio_composite_f.cg" VERBATIM)
+add_custom_command(OUTPUT "${LAGI_RBG_RATIO_COMPOSITE_OBJ}"
+ COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
+ lagi_rbg_ratio_composite_f.gxp "${LAGI_RBG_RATIO_COMPOSITE_OBJ}"
+ WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+ DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_rbg_ratio_composite_f.gxp" VERBATIM)
 set(LAGI_VDP2_RBG0_F_GXP "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_f.gxp")
 set(LAGI_VDP2_RBG0_F_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_f_gxp.o")
 
@@ -5350,6 +5361,7 @@ add_executable(lagi
  ${LAGI_RGBA_PRESENT_OBJ}
  ${LAGI_SCENE_NBG0_OBJ}
  ${LAGI_SPRITE_COMPOSITE_OBJ}
+ ${LAGI_RBG_RATIO_COMPOSITE_OBJ}
  ${LAGI_VDP2_UI_PRIORITY_OBJ}
  ${LAGI_COLOR_MESH_OBJ}
  ${LAGI_RBG_TILE_OBJ}

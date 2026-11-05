@@ -30,8 +30,8 @@ static bool renderSceneNbg0Gpu()
             SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,kSceneRbg0Width,kSceneRbg0Height,kSceneRbg0Pitch*4)<0) {
             freeMovieMappedBlock(g_sceneNbg0Uid,g_sceneNbg0Pixels);return false;
         }
-        sceGxmTextureSetMinFilter(&g_sceneNbg0Texture,SCE_GXM_TEXTURE_FILTER_LINEAR);
-        sceGxmTextureSetMagFilter(&g_sceneNbg0Texture,SCE_GXM_TEXTURE_FILTER_LINEAR);
+        sceGxmTextureSetMinFilter(&g_sceneNbg0Texture,SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(&g_sceneNbg0Texture,SCE_GXM_TEXTURE_FILTER_POINT);
     }
     std::memset(g_sceneNbg0Pixels,0,kSceneRbg0Pitch*kSceneRbg0Height*4);
     const auto clip=lagi::sceneNbg0ResolveClip(g_sceneNbg0);

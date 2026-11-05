@@ -4,6 +4,21 @@
 #include <span>
 
 namespace lagi::worldmap {
+// WORLD 0605681C..060568BC. MAIN 060344C0 consumes descriptor 06059440
+// (sprite CCEN=1); the following instructions select additive calculation,
+// type3/priority-equals3 sprite selection, CCRSA=180D and CCRR=16.
+template<class Registers>
+inline void initialize_map_environment_color(Registers& regs)
+{
+    regs.mEC_CCCTL=(regs.mEC_CCCTL&0xFFBF)|0x40;
+    regs.mEC_CCCTL=(regs.mEC_CCCTL&0xFEFF)|0x100;
+    regs.mE0_SPCTL=(regs.mE0_SPCTL&0xF8FF)|0x300;
+    regs.mE0_SPCTL=(regs.mE0_SPCTL&0xFFF0)|3;
+    regs.mE0_SPCTL=(regs.mE0_SPCTL&0xCFFF)|0x1000;
+    regs.m100_CCRSA=0x180D;
+    regs.m102_CCRSB=regs.m104_CCRSC=regs.m106_CCRSD=0;
+    regs.m10C_CCRR=16;
+}
 inline std::int32_t map_environment_multiply(std::int32_t a,std::int32_t b)
 {
     return static_cast<std::int32_t>((std::int64_t(a)*b)>>16);
@@ -95,7 +110,7 @@ struct MapNormalBackgroundOrigin {
 };
 
 // WORLD 06056E58..84 and 06056E94..06056EF8. The consumer compares the
-// signed, wrapping sum against 196; it is not a conventional clamp to 236.
+// signed, wrapping sum against 236 (PC-relative literal at 06056EB2).
 // Inputs remain native 16.16 yaw, signed projected ground, and environment +40.
 inline MapNormalBackgroundOrigin map_normal_background_origin(
     std::int32_t yaw, std::int32_t ground, std::int32_t verticalOffset)
@@ -110,7 +125,7 @@ inline MapNormalBackgroundOrigin map_normal_background_origin(
     return {
         0u - (shiftedYaw << 10),
         (256u - static_cast<std::uint32_t>(ground)) << 16,
-        horizon >= 196
+        horizon >= 236
             ? 0u - (static_cast<std::uint32_t>(horizon) << 16)
             : 0xFF140000u,
     };

@@ -90,6 +90,7 @@ extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
 extern const unsigned char _binary_lagi_rgba_present_f_gxp_start[];
 extern const unsigned char _binary_lagi_scene_nbg0_f_gxp_start[];
 extern const unsigned char _binary_lagi_sprite_composite_f_gxp_start[];
+extern const unsigned char _binary_lagi_rbg_ratio_composite_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_ui_priority_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_tile16_8bit_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_pages_f_gxp_start[];
@@ -1236,7 +1237,9 @@ static bool g_pendingVdp2TextValid = false;
 static lagi::MenuNbg2State g_pendingMenuNbg2{},g_menuNbg2{};
 static lagi::Vdp2SpriteColorState g_pendingSpriteColor{},g_spriteColor{};
 static std::uint32_t nativeSpriteMetadata(std::uint32_t rgba,unsigned code) {
-    return LAGI_VDP2_SPRITE_COMPOSITE ? lagi::spriteType3Metadata(rgba,code) : rgba;
+    if(!LAGI_VDP2_SPRITE_COMPOSITE)return rgba;
+    return (g_spriteColor.spctl&15)==0 ? lagi::spriteType0Metadata(rgba,code)
+        : lagi::spriteType3Metadata(rgba,code);
 }
 static void releaseSpriteComposite();
 static bool g_vdp2TextValid = false;
@@ -2517,6 +2520,18 @@ void invalidate_vdp1_texture_range(unsigned int start, unsigned int size)
 
 static void applyPendingRendererInvalidation()
 {
+    // Metadata is decoded into cached texture alpha. Crossing SPCTL formats
+    // invalidates model and UI payloads on their owning render thread, even
+    // if neither VRAM nor CRAM changed. Register-only changes need no decode.
+    static bool decodedType0=true;
+    const bool type0=(g_spriteColor.spctl&15)==0;
+    if(LAGI_VDP2_SPRITE_COMPOSITE && decodedType0!=type0) {
+        decodedType0=type0;
+        ++g_nativeTextureGeneration;
+        g_liveTownSignature=0;g_liveTownPrepared=false;
+        g_vdp1TextureDataDirty=true;
+        for(auto& entry:g_vdp1UiTextureCache)entry.contentsDirty=true;
+    }
     const std::uint32_t flags = g_rendererInvalidationFlags.exchange(
         0u, std::memory_order_acquire);
     if (flags == 0u)
@@ -14097,7 +14112,7 @@ static void renderBasicWingViewer()
     }
 
     const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
-    const bool spriteComposite=prepareSpriteComposite(nativeSceneMode && !g_sceneNbg0.behindWorld &&
+    const bool spriteComposite=prepareSpriteComposite(nativeSceneMode &&
         (roomAuthenticLitMode || roomAuthenticTexturedMode),nativeMenuFrame);
     // The compositor writes every final-target pixel, including transparent
     // VDP1 holes resolved to RBG0/BACK. Only its input surface needs clearing.
@@ -14126,7 +14141,7 @@ static void renderBasicWingViewer()
 
     unsigned int vdp1UiSpriteSlot = 0u;
     if (nativeSceneMode) {
-        if (g_sceneNbg0.behindWorld) drawSceneNbg0Gpu();
+        if (!spriteComposite && g_sceneNbg0.behindWorld) drawSceneNbg0Gpu();
         if (!spriteComposite) drawSceneVdp2Background();
         // Azel's far-plane VDP1 sprites (for example the flight horizon
         // strip) sit above RBG0 but behind world geometry. Foreground VDP1
@@ -14262,7 +14277,8 @@ static void renderBasicWingViewer()
             // to individual commands. Finish foreground emission before the
             // one existing resolve, then let NBG1/3 compare against that image.
             const bool priorityUi=spriteComposite && g_spriteUiPriorityFrame;
-            if(priorityUi)drawPublishedVdp1Ui(
+            const bool completedForeground=priorityUi || (spriteComposite && g_rbgRatioCompositeFrame);
+            if(completedForeground)drawPublishedVdp1Ui(
                 Vdp1UiPass::Foreground, &vdp1UiSpriteSlot);
             if (spriteComposite && !finishSpriteComposite(renderTarget,colorSurface,syncObject)) {
                 logging::writef("[VDP2SpriteComposite] FAIL finishing world layer\n");
@@ -14271,11 +14287,11 @@ static void renderBasicWingViewer()
                 return;
             }
             g_spriteUiPriorityActive=priorityUi;
-            if (!g_sceneNbg0.behindWorld) drawSceneNbg0Gpu();
+            if (!spriteComposite && !g_sceneNbg0.behindWorld) drawSceneNbg0Gpu();
             drawAzelVdp2Nbg1Gpu();
             drawAzelVdp2CinematicBarsGpu();
             drawAzelVdp2TextLayerGpu();
-            if(!priorityUi)drawPublishedVdp1Ui(
+            if(!completedForeground)drawPublishedVdp1Ui(
                 Vdp1UiPass::Foreground, &vdp1UiSpriteSlot);
             g_spriteUiPriorityActive=false;
         }

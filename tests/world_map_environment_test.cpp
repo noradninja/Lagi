@@ -21,6 +21,14 @@ static std::int32_t multiply_oracle(std::int32_t a,std::int32_t b)
 
 int main()
 {
+    struct Registers {
+        unsigned mEC_CCCTL=0x10,mE0_SPCTL=0x20,m100_CCRSA=0,m102_CCRSB=3,
+            m104_CCRSC=4,m106_CCRSD=5,m10C_CCRR=0;
+    } registers;
+    lagi::worldmap::initialize_map_environment_color(registers);
+    assert(registers.mEC_CCCTL==0x150 && registers.mE0_SPCTL==0x1323);
+    assert(registers.m100_CCRSA==0x180D && registers.m102_CCRSB==0 &&
+        registers.m104_CCRSC==0 && registers.m106_CCRSD==0 && registers.m10C_CCRR==16);
     using lagi::worldmap::map_normal_background_origin;
     // Separate mathematical oracle for the arithmetic shift and native
     // truncation. Do not use the implementation's shift/mask expression.
@@ -41,13 +49,13 @@ int main()
                 const auto sum=std::uint32_t(std::int64_t(ground)+offset);
                 const auto signedSum=sum<=INT32_MAX ? std::int64_t(sum)
                                                    : std::int64_t(sum)-0x100000000LL;
-                const auto y=signedSum>=196 ? std::uint32_t(-signedSum*65536)
+                const auto y=signedSum>=236 ? std::uint32_t(-signedSum*65536)
                                            : 0xFF140000u;
                 assert(actual.horizontal==x && actual.vertical==vertical && actual.scrollY==y);
                 ++cases;
             }
     assert(map_normal_background_origin(0,195,0).scrollY==0xFF140000u);
-    assert(map_normal_background_origin(0,196,0).scrollY==0xFF3C0000u);
+    assert(map_normal_background_origin(0,196,0).scrollY==0xFF140000u);
     assert(map_normal_background_origin(0,236,0).scrollY==0xFF140000u);
     lagi::worldmap::MapEnvironment environment;
     environment.driftX=0x100u;environment.driftZ=0xFFFFFFFFu;

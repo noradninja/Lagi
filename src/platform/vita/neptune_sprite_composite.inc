@@ -1,6 +1,5 @@
-// Type-3 sprite selection over RBG0/BACK, with NBG1/3 UI priority masking for
-// register states proved by spriteUiPrioritySupported. Other second-source
-// combinations/windows retain the established route.
+// Completed-VDP1 composition: accepted type3 RBG0/BACK route, or the
+// register-gated type0 RBG0-ratio/NBG0/BACK route. Never per primitive.
 static void* g_spriteLayerPixels=nullptr;
 static SceUID g_spriteLayerUid=-1;
 static SceGxmColorSurface g_spriteLayerSurface{};
@@ -12,6 +11,10 @@ static void* g_spriteLookupPixels=nullptr;
 static SceUID g_spriteLookupUid=-1;
 static SceGxmTexture g_spriteLookupTexture{};
 static const SceGxmProgramParameter *g_spriteGeometry=nullptr,*g_spriteBackColor=nullptr;
+static SceGxmFragmentProgram* g_rbgRatioCompositeProgram=nullptr;
+static SceGxmShaderPatcherId g_rbgRatioCompositeId{};
+static bool g_rbgRatioCompositeRegistered=false,g_rbgRatioCompositeFrame=false;
+static const SceGxmProgramParameter *g_rbgRatioGeometry=nullptr,*g_rbgRatioBack=nullptr,*g_rbgRatioState=nullptr;
 static SceGxmFragmentProgram* g_spriteUiPriorityProgram=nullptr;
 static SceGxmShaderPatcherId g_spriteUiPriorityId{};
 static bool g_spriteUiPriorityRegistered=false,g_spriteUiPriorityFrame=false;
@@ -56,6 +59,13 @@ static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority) {
 }
 static void releaseSpriteComposite() {
     g_spriteUiPriorityActive=g_spriteUiPriorityFrame=false;
+    g_rbgRatioCompositeFrame=false;
+    if(g_probeShaderPatcher && g_rbgRatioCompositeProgram)
+        sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_rbgRatioCompositeProgram);
+    g_rbgRatioCompositeProgram=nullptr;
+    if(g_probeShaderPatcher && g_rbgRatioCompositeRegistered)
+        sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_rbgRatioCompositeId);
+    g_rbgRatioCompositeRegistered=false;
     if(g_probeShaderPatcher && g_spriteUiPriorityProgram)
         sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_spriteUiPriorityProgram);
     g_spriteUiPriorityProgram=nullptr;
@@ -73,10 +83,15 @@ static void releaseSpriteComposite() {
 }
 static bool prepareSpriteComposite(bool native,bool menu) {
     g_spriteUiPriorityActive=g_spriteUiPriorityFrame=false;
-    const bool supported=LAGI_VDP2_SPRITE_COMPOSITE && native && !menu && !g_halfResolution &&
+    g_rbgRatioCompositeFrame=false;
+    const bool rbgRatio=lagi::rbgLayerCompositeSupported(g_spriteColor) &&
+        (!(g_spriteColor.bgon&1) || (g_sceneNbg0.enabled && g_sceneNbg0Pixels));
+    const bool type3=
         (g_spriteColor.ccctl&0x40) && (g_spriteColor.spctl&15)==3 &&
         !g_spriteColor.colorWindow && !(g_spriteColor.ccctl&0x610) &&
-        !(g_spriteColor.bgon&0x5) && (g_spriteColor.spctl&0x20) &&
+        !(g_spriteColor.bgon&0x5) && (g_spriteColor.spctl&0x20);
+    const bool supported=LAGI_VDP2_SPRITE_COMPOSITE && native && !menu && !g_halfResolution &&
+        (type3 || rbgRatio) &&
         g_sceneVdp2Vertices && g_sceneVdp2Indices;
     static std::uint64_t last=~std::uint64_t(0);
     static unsigned budget=32;
@@ -85,13 +100,30 @@ static bool prepareSpriteComposite(bool native,bool menu) {
         (std::uint64_t(g_spriteColor.bgon)<<32) | (std::uint64_t(supported)<<63);
     if(LAGI_VDP2_SPRITE_COMPOSITE && budget && key!=last) {
         --budget;last=key;
-        logging::writef("[VDP2SpriteComposite] active=%u CCCTL=%04X SPCTL=%04X BGON=%04X colorWindow=%02X menu=%u nativeFull=%u\n",
+        logging::writef("[VDP2SpriteComposite] active=%u CCCTL=%04X SPCTL=%04X BGON=%04X colorWindow=%02X menu=%u nativeFull=%u rbgRatio=%u SFPRMD=%04X SFCCMD=%04X CCRR=%04X\n",
             supported?1u:0u,g_spriteColor.ccctl,g_spriteColor.spctl,g_spriteColor.bgon,
-            g_spriteColor.colorWindow,menu?1u:0u,native?1u:0u);
+            g_spriteColor.colorWindow,menu?1u:0u,native?1u:0u,unsigned(rbgRatio),
+            g_spriteColor.specialPriority,g_spriteColor.specialColor,g_spriteColor.rbgRatio);
     }
     if(!supported)return false;
-    // Destination-alpha mode and extra world layers need a multi-layer
-    // top/second-source resolver; they must not silently use this route.
+    if(rbgRatio && !g_rbgRatioCompositeProgram) {
+        const auto* fp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_rbg_ratio_composite_f_gxp_start);
+        const auto* vp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_texture_v_gxp_start);
+        if(sceGxmProgramCheck(fp)<0)return false;
+        if(!g_rbgRatioCompositeRegistered) {
+            if(sceGxmShaderPatcherRegisterProgram(g_probeShaderPatcher,fp,&g_rbgRatioCompositeId)<0)return false;
+            g_rbgRatioCompositeRegistered=true;
+        }
+        g_rbgRatioGeometry=sceGxmProgramFindParameterByName(fp,"geometry");
+        g_rbgRatioBack=sceGxmProgramFindParameterByName(fp,"backColor");
+        g_rbgRatioState=sceGxmProgramFindParameterByName(fp,"rbgState");
+        if(!g_rbgRatioGeometry || !g_rbgRatioBack || !g_rbgRatioState)return false;
+        if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_rbgRatioCompositeId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,nullptr,vp,
+            &g_rbgRatioCompositeProgram)<0)return false;
+    }
+    // Keep the flight shader separate: no extra WORLD branches/samplers in
+    // the accepted type3 fragment path.
     if(!g_spriteCompositeProgram) {
         const auto* fp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_sprite_composite_f_gxp_start);
         const auto* vp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_texture_v_gxp_start);
@@ -152,6 +184,13 @@ static bool prepareSpriteComposite(bool native,bool menu) {
     auto* lookup=static_cast<std::uint32_t*>(g_spriteLookupPixels);
     for(unsigned i=0;i<256;++i)lookup[i]=lagi::spriteCompositeLookup(g_spriteColor,i);
     g_spriteUiPriorityFrame=prepareSpriteUiPriority();
+    if(rbgRatio && (g_spriteColor.bgon&8) && g_vdp2TextValid && !g_spriteUiPriorityFrame) {
+        // WORLD's bank2 priority7 wins ties against NBG3 priority7. Without
+        // the completed-image mask the glyph draw would reverse that result.
+        static unsigned uiFailures=0;
+        if(uiFailures++<4)logging::writef("[VDP2SpriteComposite] RBG ratio resolve unavailable: native NBG3 priority mask not ready\n");
+        return false;
+    }
     static int previousPriorityUi=-1;
     if(previousPriorityUi!=int(g_spriteUiPriorityFrame)) {
         previousPriorityUi=int(g_spriteUiPriorityFrame);
@@ -159,7 +198,9 @@ static bool prepareSpriteComposite(bool native,bool menu) {
             unsigned(g_spriteUiPriorityFrame),g_spriteColor.prina,g_spriteColor.prinb,
             g_spriteColor.priority[0],g_spriteColor.priority[1]);
     }
-    return clearNativeSceneColorBuffer(static_cast<std::uint32_t*>(g_spriteLayerPixels),kWidth,kHeight,kGxmPitch);
+    if(!clearNativeSceneColorBuffer(static_cast<std::uint32_t*>(g_spriteLayerPixels),kWidth,kHeight,kGxmPitch))return false;
+    g_rbgRatioCompositeFrame=rbgRatio;
+    return true;
 }
 static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface* destination,
     SceGxmSyncObject* sync) {
@@ -172,7 +213,7 @@ static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface*
     }
     if(sceGxmBeginScene(g_probeContext,0,target,nullptr,nullptr,sync,destination,nullptr)<0)return false;
     sceGxmSetVertexProgram(g_probeContext,g_textureVertexProgram);
-    sceGxmSetFragmentProgram(g_probeContext,g_spriteCompositeProgram);
+    sceGxmSetFragmentProgram(g_probeContext,g_rbgRatioCompositeFrame?g_rbgRatioCompositeProgram:g_spriteCompositeProgram);
     sceGxmSetCullMode(g_probeContext,SCE_GXM_CULL_NONE);
     sceGxmSetFrontDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetBackDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
@@ -187,9 +228,18 @@ static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface*
     const auto identity=viewerIdentity();
     sceGxmSetUniformDataF(v,g_textureWvpParam,0,16,identity.m);
     const float geometry[4]={float(kWidth)/kGxmPitch,1,g_sceneRbg0Enabled?1.f:0.f,float(g_spriteColor.prir&7)};
-    const float back[4]={0,0,0,1}; // Matches clearNativeSceneColorBuffer.
-    sceGxmSetUniformDataF(f,g_spriteGeometry,0,4,geometry);
-    sceGxmSetUniformDataF(f,g_spriteBackColor,0,4,back);
+    const unsigned nativeBack=g_sceneRbg0.backColor;
+    const float back[4]={float(nativeBack&31)/31,float((nativeBack>>5)&31)/31,float((nativeBack>>10)&31)/31,1};
+    const float black[4]={0,0,0,1}; // Preserve accepted type3 back-screen behavior.
+    sceGxmSetUniformDataF(f,g_rbgRatioCompositeFrame?g_rbgRatioGeometry:g_spriteGeometry,0,4,geometry);
+    sceGxmSetUniformDataF(f,g_rbgRatioCompositeFrame?g_rbgRatioBack:g_spriteBackColor,0,4,
+        g_rbgRatioCompositeFrame?back:black);
+    if(g_rbgRatioCompositeFrame) {
+        const float state[4]={float((g_spriteColor.bgon&1)?g_spriteColor.prina&7:0),
+            float(lagi::rbgColorRatio(g_spriteColor)),(g_spriteColor.ccctl&0x100)?1.f:0.f,0};
+        sceGxmSetUniformDataF(f,g_rbgRatioState,0,4,state);
+        sceGxmSetFragmentTexture(g_probeContext,3,(g_spriteColor.bgon&1)?&g_sceneNbg0Texture:&g_spriteLayerTexture);
+    }
     sceGxmSetFragmentTexture(g_probeContext,0,&g_spriteLayerTexture);
     sceGxmSetFragmentTexture(g_probeContext,1,g_sceneRbg0Enabled?&g_sceneRbg0ResolvedTexture:&g_spriteLayerTexture);
     sceGxmSetFragmentTexture(g_probeContext,2,&g_spriteLookupTexture);

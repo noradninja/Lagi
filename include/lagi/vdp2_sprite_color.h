@@ -9,6 +9,7 @@ struct Vdp2SpriteColorState {
     std::uint16_t colorWindow=0,window[8]{};
     std::uint16_t bgon=0,prir=0,prina=0,prinb=0;
     std::uint16_t rbgRatio=0; // Native CCRR; sprite CCRS is a different selector.
+    std::uint16_t specialPriority=0,specialColor=0;
 };
 constexpr unsigned rbgColorRatio(const Vdp2SpriteColorState& s) {return s.rbgRatio&31u;}
 // Type-3 indexed VDP1 pixels: retain PRIS/CCRS selectors after CRAM lookup.
@@ -47,11 +48,33 @@ constexpr unsigned spritePixelPriority(const Vdp2SpriteColorState& s,unsigned co
     const unsigned bank=(code>128 && code<255)?(code-129)/8:0;
     return spritePriority(s,bank<3?bank:3);
 }
+// Register-defined three-source route: opaque NBG0, VDP1, RBG0 color
+// calculation, optional NBG3 above both background layers. VDP1/UI ties are
+// handled by the existing completed-image UI mask. No
+// special-function, destination-alpha, extended calculation or color window.
+// This deliberately describes a supported state, not a game-mode exception.
+constexpr bool rbgLayerCompositeSupported(const Vdp2SpriteColorState& s) {
+    if(((s.spctl&15)!=0 && (s.spctl&15)!=3) || !(s.spctl&0x20) || (s.spctl&0x10) ||
+        !(s.ccctl&0x10) || (s.ccctl&~0x150u) ||
+        s.colorWindow || (s.bgon&0x26) || (s.specialPriority&0x303) ||
+        (s.specialColor&0x303))return false;
+    if(s.bgon&8) {
+        const unsigned ui=(s.prinb>>8)&7;
+        if((s.specialPriority&0xc0) || !ui || ui<=(s.prir&7) ||
+            ((s.bgon&1) && ui<=(s.prina&7)))return false;
+        for(unsigned code=128;code<256;++code) {
+            const unsigned p=spritePixelPriority(s,code);
+            if(p>=ui && spriteColorCalculationSelected(s,p,code==128 || code==255))return false;
+        }
+    }
+    return true;
+}
 // Existing NBG1 backing/NBG3 glyph draws can be masked against the completed
 // VDP1 image without another surface. This is exact when both UI layers are
 // above RBG0 and any sprite that beats them is opaque at the VDP2 stage.
 // Other states require a top/second-source resolver, not this fast path.
 constexpr bool spriteUiPrioritySupported(const Vdp2SpriteColorState& s) {
+    if(rbgLayerCompositeSupported(s))return (s.bgon&8)!=0;
     if((s.spctl&15)!=3 || !(s.spctl&0x20) || (s.bgon&5) ||
         s.colorWindow || (s.ccctl&0x610))return false;
     unsigned first=8,last=0;
