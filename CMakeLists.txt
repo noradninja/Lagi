@@ -4313,6 +4313,23 @@ void pauseCutscene]=]
    message(FATAL_ERROR
     "Native town cutscene bridge did not apply completely; upstream Azel changed")
   endif()
+ elseif(relative_path STREQUAL "town/camp/twn_camp.cpp")
+  # Camp dragons register a task, not an sNPC. The host proxy stores these
+  # pointers separately, so the sNPC accessor returns null for the dragon.
+  string(REPLACE "(sTownDragon*)getNpcDataByIndex(npcIndex)"
+   "static_cast<sTownDragon*>(getNpcDataByIndexAsTask(npcIndex))"
+   source_text "${source_text}")
+  string(REPLACE "auto data = getNpcDataByIndex(arg);"
+   "auto data = getNpcDataByIndexAsTask(arg);"
+   source_text "${source_text}")
+  string(REPLACE "sTownDragon* pDragon = (sTownDragon*)data;"
+   "sTownDragon* pDragon = static_cast<sTownDragon*>(data);"
+   source_text "${source_text}")
+  string(REGEX MATCHALL "getNpcDataByIndexAsTask\\(" camp_task_lookups "${source_text}")
+  list(LENGTH camp_task_lookups camp_task_lookup_count)
+  if(NOT camp_task_lookup_count EQUAL 7)
+   message(FATAL_ERROR "Camp dragon task lookup adapter did not apply completely")
+  endif()
  elseif(relative_path STREQUAL "town/camp/campVdp2Plane.cpp")
   # Camp's projection service writes two signed words.
   string(REPLACE "s16 m30_vdp1ProjectionParam[1];"
@@ -4359,6 +4376,13 @@ void pauseCutscene]=]
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 2)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townScript.cpp")
+  string(REPLACE
+   "    assert(0);\n    return NULL;\n    //return npcData0.m70_npcPointerArray[r4].pNPC;"
+   "    return npcData0.m70_npcPointerArray[r4].workArea;"
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "return npcData0.m70_npcPointerArray\\[r4\\].workArea;")
+   message(FATAL_ERROR "Native town task lookup adapter did not apply")
+  endif()
   string(REPLACE
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 6)"
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"

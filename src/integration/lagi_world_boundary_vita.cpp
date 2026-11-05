@@ -171,6 +171,10 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         auto* regs = vdp2Controls.m4_pendingVdp2Regs;
         regs->mE_RAMCTL = (regs->mE_RAMCTL & 0xFF00) | 0xB4;
         regs->m10_CYCA0 = 0x310F7544;
+        // The translated reset initializes X only. Both normal-background
+        // coordinate increments must be unity before WORLD starts scrolling.
+        regs->m78_ZMXN0 = 0x10000;
+        regs->m7C_ZMYN0 = 0x10000;
         setupRotationMapPlanes(0, worldFile.getSaturnPtr(0x060593D0));
         // 060566D8..E6 maps the same FNS pattern plane to all four slots.
         initLayerMap(0, 0x1E000, 0x1E000, 0x1E000, 0x1E000);

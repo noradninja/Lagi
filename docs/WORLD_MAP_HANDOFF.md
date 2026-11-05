@@ -35,6 +35,50 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Work-machine sky stretch and matching Camp crash — 2026-11-05
+
+User tested source8632722 with the documented full-resolution profile. WORLD's
+VDP2 sky is vertically stretched/mapped incorrectly. Cainus selection and skipped
+cinematics reach Camp status55, play CAMPBGM and crash before visible fade-in.
+New evidence is D:/data/lagi/lagi.log and
+psp2core-1793895292-0x0005e53643-eboot.bin.psp2dmp, with preserved copies of
+the tested lagi.velf AND unstripped lagi. The tested executable SHA256 is
+BFCC17D56E2D067D3946FAC6AB41613D2068E911A3D59C35788FDE1A33F71A77.
+
+This dump's lagi RX segment starts8105C000 and has size190500, matching the
+supplied VELF. Main thread PC8113C336 resolves to ELF810E0336,
+scriptFunction_6056484+36. STRB.W IP,[LR,#25] writes10 through LR=0 to
+fault address25. The stack return resolves to callNativeWithArguments.
+The logged fade has begun internally, but is still nearly black at the crash.
+
+Camp's dragon Init registers the real sTownDragon in NPCProxy.workArea.
+NPCProxy.pNPC is a separate host pointer for sNPC objects. All seven Camp dragon
+script functions incorrectly used getNpcDataByIndex, which reads pNPC. Generated
+adapters now use the typed task lookup and cast to sTownDragon. The existing
+getNpcDataByIndexAsTask service now returns the registered workArea for numbered
+slots, retaining the current script owner for index-1. HP/BP recovery and native
+substate10 remain intact. This corrects the null receiver demonstrated by the
+dump; later Camp execution still requires device testing.
+
+WORLD's shared translated VDP2 reset initializes X coordinate increment to10000
+but leaves Y zero. The NBG0 shader/row preparation consumes Y as a multiplier,
+so every scanline samples the same source row. WORLD now explicitly initializes
+both NBG0 increments to10000 before drawing. This targets the demonstrated
+mapping defect; remaining rotation-background mapping needs visual acceptance.
+Renderer profile, sprite composition and RBG fast paths stay enabled.
+
+Validation passed Vita compile/link/SELF/VPK packaging, the production WORLD
+boundary fixture including nonzero X/Y zoom, and the new Camp production-body
+fixture over all16 slots, null/distinct sNPC pointers, all HP/BP recovery cases
+and script owner-1. Original-disc checks pin Camp's native recovery task lookup
+and substate store. Run tests/camp_task_lookup_test.ps1 with -Build and -DiscImage.
+
+The current log confirms eight active cached RBG pages and no serialized GPU
+timing. WORLD render samples are still approximately36–38ms, above the33ms
+deadline. Neither visual acceptance nor playable Camp is claimed. Next capture
+should check WORLD sky/selection first, then the same skipped-Cainus Camp route,
+with the new package and matching symbols preserved before deployment.
+
 ### Clean work-machine visual test package — 2026-11-05
 
 Built source1544a059cc600ce579c22cd1e50b10fa04eaddca in a fresh isolated
