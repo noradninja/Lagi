@@ -12,6 +12,7 @@
 
 unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/debug_mesh.h"
+#include "lagi/ui_edge_anchor.h"
 #include "lagi/shared_color_offset.h"
 #include "lagi/nbg0_line_rows.h"
 #include "lagi/vdp1_renderer.h"
@@ -5579,6 +5580,10 @@ static void drawPublishedVdp1Ui(
             pos[1][0] = pos[2][0] = radarX(command.xa + width);
             pos[0][1] = pos[1][1] = radarY(command.ya);
             pos[2][1] = pos[3][1] = radarY(command.ya + height);
+        }
+        if(command.leftEdgeAnchored && !nativeCanvas && commandType==0u) {
+            const float shift=lagi::uiLeftEdgeShift(command.leftEdgeOrigin,saturnAspectCorrection);
+            for(auto& point:pos)point[0]+=shift;
         }
         if (commandType == 0x0002u) {
             // Distorted sprite: Azel supplies all four projected corners.

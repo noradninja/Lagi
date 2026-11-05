@@ -28,6 +28,7 @@ void draw_map_panels(MapPanels& s,sSaturnPtr program,s_workAreaCopy* owner,bool 
         cmd.mA_CMDSIZE=readSaturnU16(program+0x5BF0+panel*2);
         cmd.mC_CMDXA=s16(u32(s32(readSaturnS16(placement+2)))-(panel?u32(s.slide):0u));
         cmd.mE_CMDYA=s16(0u-u32(s32(readSaturnS16(placement+6)))-(panel?0u:u32(s.slide)));
+        if(panel==0)lagiAnchorVdp1CommandLeft(&cmd,readSaturnS16(placement+2));
         context.m20_pCurrentVdp1Packet->m4_bucketTypes=u16(MTH_Mul(
             0x199,graphicEngineStatus.m405C.m38_oneOverFarClip).asS32());
         context.m20_pCurrentVdp1Packet->m6_vdp1EA=&cmd;

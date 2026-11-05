@@ -28,6 +28,8 @@
 #include "VDP1.h"
 // Presentation ownership only; the native radar still emits its own commands.
 void lagiMarkFieldRadarCommands(const void* begin, const void* end);
+// Explicit producer-owned presentation anchor, not a texture-ID heuristic.
+void lagiAnchorVdp1CommandLeft(const void* command, s16 nativeLeft);
 // Exact view-space endpoint depth for projected native scene commands.
 void lagiRecordVdp1WorldDepth(const void* command, const float viewZ[4]);
 // Read the existing native text-substitution table; ownership stays in VDP2.

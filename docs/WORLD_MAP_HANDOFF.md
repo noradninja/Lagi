@@ -35,6 +35,24 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### User acceptance and left-edge WORLD control — 2026-11-04
+
+17-48 user confirms camera, names, terrain and selector meshes. Keep these
+accepted producers intact. FPS remains part of the active objective (not
+deferred cleanup), along with cloud/sky/UI correction and destination meshes.
+Village of Canus selection reaches the expected cinematics, but completion
+OR skipping loops to the intro instead of camp. Trace the cinematic's native
+exit/status and camp dispatch; do not substitute a forced destination.
+
+User additionally requests the upper-left WORLD control aligned to screen
+left like the radar. Native panel0 explicitly tags its emitted command and
+authored left origin. Per-frame capture preserves/clears this ownership and
+Neptune translates that rectangle to NDC left=-1. Size, aspect, Y, native
+animation, story gates, texels and the other panel/radar are unchanged; this
+is a requested presentation adjustment, not a source gameplay change.
+Host panel tests check producer tagging plus edge/width invariants. Device
+edge placement awaits the next combined hardware capture.
+
 ### 17-48 hardware result and missing native color initializer — 2026-11-04
 
 User accepts camera, names, terrain and player-selector meshes. Do not retune

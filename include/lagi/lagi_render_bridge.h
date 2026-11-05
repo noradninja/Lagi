@@ -99,6 +99,8 @@ struct Vdp1UiCommand {
     std::uint16_t nativeSortKey = 0;
     bool hasNativeSortKey = false;
     bool fieldRadar = false;
+    bool leftEdgeAnchored = false;
+    std::int16_t leftEdgeOrigin = 0;
     std::int16_t xa = 0, ya = 0;
     std::int16_t xb = 0, yb = 0;
     std::int16_t xc = 0, yc = 0;

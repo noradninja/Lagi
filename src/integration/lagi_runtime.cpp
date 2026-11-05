@@ -36,6 +36,8 @@ namespace lagi::azel {
 static lagi::PlayTimeClock playTimeClock;
 
 static std::array<bool, 1024> radarCommandOwned{};
+static std::array<bool, 1024> leftEdgeCommandOwned{};
+static std::array<s16, 1024> leftEdgeCommandOrigin{};
 static std::array<std::array<float, 4>, 1024> worldCommandViewZ{};
 static std::array<bool, 1024> worldCommandDepthValid{};
 
@@ -54,6 +56,7 @@ static void begin_azel_vdp1_frame()
     // commands must not inherit a previous background sprite's far depth.
     ++frameIndex;
     radarCommandOwned.fill(false);
+    leftEdgeCommandOwned.fill(false);
     worldCommandDepthValid.fill(false);
     ctx.m0_currentVdp1WriteEA = mainContextVdp1[0].begin() + 6;
     ctx.m20_pCurrentVdp1Packet = ctx.m24_vdp1Packets;
@@ -102,6 +105,8 @@ static void capture_azel_vdp1_frontend_commands()
         ui.cmdSize = cmd->mA_CMDSIZE;
         const auto nativeIndex = static_cast<std::size_t>(cmd - mainContextVdp1[0].begin());
         ui.fieldRadar = nativeIndex < radarCommandOwned.size() && radarCommandOwned[nativeIndex];
+        ui.leftEdgeAnchored = nativeIndex < leftEdgeCommandOwned.size() && leftEdgeCommandOwned[nativeIndex];
+        if(ui.leftEdgeAnchored)ui.leftEdgeOrigin=leftEdgeCommandOrigin[nativeIndex];
         if (nativeIndex < worldCommandDepthValid.size() && worldCommandDepthValid[nativeIndex]) {
             ui.hasWorldDepth = true;
             std::copy(worldCommandViewZ[nativeIndex].begin(), worldCommandViewZ[nativeIndex].end(), ui.viewZ);
@@ -1297,6 +1302,18 @@ void lagiMarkFieldRadarCommands(const void* begin, const void* end)
     for (auto i = (first - base) / sizeof(s_vdp1Command);
          i < (last - base) / sizeof(s_vdp1Command) && i < lagi::azel::radarCommandOwned.size(); ++i)
         lagi::azel::radarCommandOwned[i] = true;
+}
+
+void lagiAnchorVdp1CommandLeft(const void* command, s16 nativeLeft)
+{
+    const auto base=reinterpret_cast<std::uintptr_t>(mainContextVdp1[0].data());
+    const auto address=reinterpret_cast<std::uintptr_t>(command);
+    const auto limit=base+mainContextVdp1[0].size()*sizeof(s_vdp1Command);
+    if(address<base || address>=limit || (address-base)%sizeof(s_vdp1Command))return;
+    const auto index=(address-base)/sizeof(s_vdp1Command);
+    if(index>=lagi::azel::leftEdgeCommandOwned.size())return;
+    lagi::azel::leftEdgeCommandOwned[index]=true;
+    lagi::azel::leftEdgeCommandOrigin[index]=nativeLeft;
 }
 
 void lagiRecordVdp1WorldDepth(const void* command, const float viewZ[4])
