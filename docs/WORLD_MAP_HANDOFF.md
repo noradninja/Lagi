@@ -35,6 +35,22 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Visual acceptance first — 2026-11-05
+
+The user explicitly prioritizes correcting WORLD's visual issues before further
+camp/Garil progression work. The next hardware checkpoint should focus on WORLD
+entry and navigation, destination silhouettes and placement, terrain/camera
+alignment, destination labels and panel edges, marker/trails, cloud palette and
+sprite/background/UI composition. Check selection and close-up transitions for
+visual regressions. Preserve the current full-resolution renderer profile and
+matching package/symbol archive from WORLD_MAP_WORK_BUILD.md.
+
+The restored destination child and latest indexed background cache still need
+visual acceptance on Vita. Existing host fixtures and successful packaging do
+not establish corrected rendered output. Use a capture and matching log from
+the current revision to identify remaining defects before changing rendering.
+Camp crash diagnosis and Garil control/return acceptance follow this visual gate.
+
 ### Work-machine sync / crash evidence update — 2026-11-05
 
 Use [WORLD_MAP_WORK_BUILD.md](WORLD_MAP_WORK_BUILD.md) for exact safe pull,
