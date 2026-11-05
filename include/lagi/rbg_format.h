@@ -4,6 +4,10 @@ namespace lagi {
 constexpr bool rbgTile16EightBit(unsigned chctlb,unsigned pncr) {
     return (chctlb&0x7300u)==0x1100u && (pncr&0xC000u)==0x8000u;
 }
+constexpr bool rbgTile16Indexed(unsigned chctlb,unsigned pncr) {
+    const auto format=chctlb&0x7300u;
+    return (format==0x0100u || format==0x1100u) && (pncr&0xC000u)==0x8000u;
+}
 // Uniform fields consumed by the specialized RBG0 shader. Keep this native
 // register decode shared with the host fixture rather than duplicating it.
 struct RbgSpecializedFormat {

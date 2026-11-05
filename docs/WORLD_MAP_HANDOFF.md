@@ -35,6 +35,38 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Exact 4-bit RBG decoded-page performance path — 2026-11-04
+
+Continue from hardware checkpointeeccc31 without folding new timing claims
+into that package. WORLD's CHSZ16/CHCN0 format previously rejected the decoded
+page cache and ran the raw per-fragment name/character/palette decoder. Its
+authored plane list593D0 also contains EIGHT distinct pages, exceeding the old
+four-page capacity even after adding4-bit format eligibility.
+
+The shared resource decoder now handles4-bit and8-bit one-word flip-enabled
+pages, including exact nibble selection, supplementary palette bits, transparent
+dot0/TPON, RAMCTL access, dependency tracking and format-only invalidation.
+The bounded atlas becomes1024x2048/eight slots (8MiB instead of4MiB); per-plane
+slot packing uses three bits. Larger layouts or allocation failure retain the
+complete raw route, never discard pages. WORLD's real eight-page list is pinned
+in the disc evidence test and exercised by the production cache-service fixture.
+
+Normal cached GPU sampling retains live coefficients, transform, windows,
+priorities, and CRAM/CAOS. Decoded pages store palette indices, so cloud palette
+animation does not rebuild/upload megabytes. OVPNR remains a live raw character
+sample with the same exact4-/8-bit format rules. No scene-specific placement,
+cloud approximation, extra native background layer or debug mode is introduced.
+
+Host native-oracle tests cover33554432 four-bit page samples (all flip/palette
+combinations across selectedSCN/CAOS states), every four-bit OVPNR word, existing
+8-bit parity, all4096 packed page-slot values and transparency/invalidation.
+Compiler reflection, renderer-source binding, page-service capacity/allocation
+fallback, frontend and generic/byte/page/row switching fixtures pass. Vita
+compile/link and SELF/VPK packaging pass. Hardware
+output and speedup remain unproven until a capture of this final tree; do not
+claim that this alone meets33ms. Missing destination meshes, native palette
+motion and remaining WORLD/Garil lifecycle work remain active.
+
 ### Native Cainus movie-to-camp exit connected — 2026-11-04
 
 The ordinary WORLD record4 requests status54; COMMON maps it to movie entry4.

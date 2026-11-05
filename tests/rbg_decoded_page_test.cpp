@@ -24,6 +24,8 @@ static unsigned quantize(unsigned byte){return (byte*31+127)/255;}
 static u32 native555(u32 c){return ((c>>19)&31)|(((c>>11)&31)<<5)|(((c>>3)&31)<<10);}
 static u32 cached555(u32 c){return quantize(c&255)|(quantize((c>>8)&255)<<5)|(quantize((c>>16)&255)<<10);}
 int main() {
+    for(unsigned code=0;code<4096;++code)for(unsigned page=0;page<4;++page)
+        assert(unsigned(rbgDecodedPageSlot(float(code),float(page)))==((code>>(page*3))&7));
     for(unsigned i=0;i<image.size();++i)image[i]=u8((i*37)^(i>>5));
     constexpr unsigned base=0x70000;
     for(unsigned i=0;i<1024;++i) {
@@ -114,5 +116,47 @@ int main() {
             }
         }
     }
-    std::puts("PASS native decoded page oracle and production OVPNR addresses: all pattern words, flips, palette wrap, signed repeat, invalidation and fallback");
+    // WORLD's four-bit pages: supplementary palette bits, both nibbles,
+    // every flip, palette wrap and the same native four-cell addressing.
+    layer.CHCN=0;dimensions.cellSizeInByte=32;
+    for(unsigned tile=0;tile<1024;++tile){
+        const unsigned name=(tile%511)|(((tile/7)&3)<<10)|(((tile/11)&15)<<12);
+        image[base+tile*2]=u8(name>>8);image[base+tile*2+1]=u8(name);
+    }
+    ++generations[base/4096];
+    unsigned fourBitSamples=0;
+    for(unsigned scn:{0u,1u,4u,8u,0x20u,0x47u,0xA8u,0xE0u})for(unsigned caos=0;caos<8;++caos)
+    for(bool indexed:{false,true}){
+        key={base,u16(0x8000|scn),u16(caos),false,indexed,0,false,true};
+        layer.SCN=scn;layer.CAOS=caos;
+        assert(cache.update(image.data(),generations,key,pixels.data(),pixels.size())==lagi::RbgPageResult::Rebuilt);
+        for(unsigned y=0;y<512;++y)for(unsigned x=0;x<512;++x){
+            const auto native=sampleTileAtCoordinate(x,y,layer,dimensions),entry=pixels[y*512+x];
+            assert(bool(native>>24)==bool(entry>>24));
+            if(native)assert(native555(native)==(indexed?
+                (getVdp2CramU16(((entry&2047)+caos*256)*2)&0x7fff):cached555(entry)));
+            ++fourBitSamples;
+        }
+        assert(cache.update(image.data(),generations,key,pixels.data(),pixels.size())==lagi::RbgPageResult::Hit);
+    }
+    assert(!pixels[0]); // dot0 is transparent even with a nonzero supplementary palette.
+    key.opaqueZero=true;
+    assert(cache.update(image.data(),generations,key,pixels.data(),pixels.size())==lagi::RbgPageResult::Rebuilt);
+    assert((pixels[0]>>24) && (pixels[0]&2047)==0x700);
+    // Four-bit OVPNR uses the same production pixel-offset routine, but
+    // halves the byte offset and selects the high/low nibble after flipping.
+    layer.SCN=0xE8;layer.CAOS=7;
+    for(unsigned name=0;name<65536;++name){
+        image[base]=u8(name>>8);image[base+1]=u8(name);
+        for(unsigned y=0;y<16;++y)for(unsigned x=0;x<16;++x){
+            const unsigned offset=unsigned(rbgOverPatternPixelOffset(float(name),float(x),float(y)));
+            const unsigned address=unsigned(rbgOverPatternCharacterBase(float(name),float(layer.SCN)))+offset/2;
+            const unsigned dot=(image[address]>>((offset&1)?0:4))&15;
+            const auto native=sampleTileAtCoordinate(x,y,layer,dimensions);
+            assert(bool(native>>24)==bool(dot));
+            if(dot)assert(native555(native)==(getVdp2CramU16(
+                (layer.CAOS*256+((name>>12)*16)+((layer.SCN>>5)*256)+dot)*2)&0x7fff));
+        }
+    }
+    std::printf("PASS native 8-bit page/OVPNR parity plus %u four-bit page samples, all four-bit OVPNR names, flips and supplementary palettes; GPU pending\n",fourBitSamples);
 }

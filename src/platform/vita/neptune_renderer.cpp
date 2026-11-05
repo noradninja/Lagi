@@ -13086,8 +13086,8 @@ static bool drawVdp2Rbg0Gpu(
     // If the small lookup texture cannot be prepared, use the existing raw
     // shader path rather than displaying stale or incorrect palette data.
     const bool decodedPages=decodedSource && prepareRbgPaletteLut(rawTextureData);
-    selectRbgTileProgram(((!frontend && g_sceneVdp2ByteTextureValid) || decodedPages) && lagi::rbgTile16EightBit(
-        static_cast<unsigned>(rbg.format[0]),static_cast<unsigned>(rbg.format[1])),
+    selectRbgTileProgram(decodedPages || ((!frontend && g_sceneVdp2ByteTextureValid) && lagi::rbgTile16EightBit(
+        static_cast<unsigned>(rbg.format[0]),static_cast<unsigned>(rbg.format[1]))),
         decodedPages,
         !frontend && g_rbgCoefficientRowsReady);
     if(g_rbgTileBound)
@@ -13176,6 +13176,8 @@ static bool drawVdp2Rbg0Gpu(
                 out[1] = static_cast<float>(decoded.caos);
                 out[2] = static_cast<float>(decoded.plsz);
                 out[3] = static_cast<float>(decoded.screenOverAndR0tpon);
+                if(g_rbgDecodedBound && (static_cast<unsigned>(rbg.format[0])&0x7000u)==0)
+                    out[3]+=8.f; // Decoded-page OVPNR uses native 4-bit dots.
             } else {
                 out[0] = rbg.format[0];
                 out[1] = rbg.format[1];

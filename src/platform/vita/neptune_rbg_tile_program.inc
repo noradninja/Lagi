@@ -57,7 +57,7 @@ static void selectRbgTileProgram(bool eligible,bool decoded=false,bool rows=fals
                 SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,&blend,vp,&g_rbgPrograms[v])<0)
                 g_rbgPrograms[v]=nullptr;
         }
-        logging::writef("[RBG0TileFormat] specialized8bit16=%u decodedPages=%u genericFallback=%u\n",g_rbgPrograms[v]?1u:0u,decoded?1u:0u,g_rbgPrograms[v]?0u:1u);
+        logging::writef("[RBG0TileFormat] specializedIndexed16=%u decodedPages=%u genericFallback=%u\n",g_rbgPrograms[v]?1u:0u,decoded?1u:0u,g_rbgPrograms[v]?0u:1u);
     }
     if(eligible && v==2 && !g_rbgPrograms[v]) {
         selectRbgTileProgram(eligible,true,false);

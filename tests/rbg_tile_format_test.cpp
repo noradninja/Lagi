@@ -8,6 +8,9 @@ int main() {
         const bool generic=((ch>>8)&1)==1 && ((ch>>12)&7)==1 &&
             !(ch&0x200) && ((pn>>15)&1)==1 && ((pn>>14)&1)==0;
         assert(lagi::rbgTile16EightBit(ch,pn)==generic);
+        const bool indexed=((ch>>8)&1)==1 && ((ch>>12)&7)<=1 &&
+            !(ch&0x200) && ((pn>>15)&1)==1 && ((pn>>14)&1)==0;
+        assert(lagi::rbgTile16Indexed(ch,pn)==indexed);
         matches+=generic;
     }
     assert(matches>0);

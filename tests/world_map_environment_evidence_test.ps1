@@ -83,6 +83,12 @@ try {
  $load=Read-World 0x06056E9E 2
  $literal=0x06056E9E+4+(($load-band 255)*2)
  if($literal-ne 0x06056EB2 -or (Read-World $literal 2)-ne 236){throw 'Native sky-scroll threshold literal binding differs'}
+ # Native WORLD requires eight distinct pattern pages, not four. This is
+ # test evidence only; production cache collection reads the live plane list.
+ $pageIds=@(0,1,4,5,2,3,6,7,4,5,0,1,6,7,2,3)
+ for($i=0;$i-lt16;$i++){
+  if((Read-World (0x060593D0+$i*4) 4)-ne(0x25E60000+$pageIds[$i]*2048)){throw 'Native WORLD eight-page plane list differs'}
+ }
  foreach($pair in @(@(0x0605664C,0x10000),@(0x06056650,0x06035644),@(0x06056654,0x20216E80),
                    @(0x06056FF8,4279500800L),@(0x06057000,0x06028986),
                    @(0x06056978,0x11102A),@(0x0605697C,0x5B059),

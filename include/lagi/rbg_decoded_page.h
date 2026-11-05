@@ -7,7 +7,7 @@
 
 namespace lagi {
 // Resource decoding only. Rotation, windows, priorities and composition do
-// not belong to this cache. One native 16x16/8-bit/one-word page is 512x512.
+// not belong to this cache. One native 16x16/4- or 8-bit/one-word page is 512x512.
 struct RbgPageKey {
     std::uint32_t base=0;
     std::uint16_t pncr=0,craofb=0;
@@ -15,6 +15,7 @@ struct RbgPageKey {
     bool indexed=false; // Retain palette index; animated CRAM stays live on GPU.
     std::uint16_t ramctl=0;
     bool bankAccess=false; // Standalone format-oracle callers may omit hardware access.
+    bool fourBit=false;
     bool operator==(const RbgPageKey&) const = default;
 };
 enum class RbgPageResult { Hit, Rebuilt, Unsupported };
@@ -51,7 +52,7 @@ public:
         // palette entry, not once per output pixel. Indexed pages still keep
         // CAOS/CRAM live on the GPU and do not depend on CPU palette data.
         for(unsigned i=0;i<colors.size();++i)
-            colors[i]=(!(i&255) && !key.opaqueZero)?0:
+            colors[i]=(!(i&(key.fourBit?15u:255u)) && !key.opaqueZero)?0:
                 (key.indexed?(0xff000000u|i):rgba(word(raw+0x80000+((i+caos)&2047)*2)));
         // Memoize exact pattern names within this rebuild. The destination
         // page itself owns the decoded tiles: no persistent pixel cache or
@@ -59,20 +60,23 @@ public:
         std::array<unsigned,256> decodedTiles{};
         for(unsigned tile=0;tile<1024;++tile) {
             const unsigned name=word(raw+key.base+tile*2);
-            // renderer_vdp2.cpp::sampleTileAtCoordinate: CHSZ=1, CHCN=1,
+            // renderer_vdp2.cpp::sampleTileAtCoordinate: CHSZ=1, CHCN=0/1,
             // PNB=1, CNSM=0. Character addresses are in 32-byte units.
             const unsigned character=((name&0x3ff)<<2)|(scn&3)|((scn&0x1c)<<10);
             const unsigned characterBase=character*32;
-            if(characterBase>0x80000u-256u)return RbgPageResult::Unsupported;
-            const bool characterCrossesBank=(characterBase>>17)!=((characterBase+255)>>17);
+            const unsigned characterBytes=key.fourBit?128u:256u;
+            if(characterBase>0x80000u-characterBytes)return RbgPageResult::Unsupported;
+            const bool characterCrossesBank=(characterBase>>17)!=((characterBase+characterBytes-1)>>17);
             if(key.bankAccess && !characterCrossesBank && !rbgBankReadable(key.ramctl,characterBase,3)) {
                 const unsigned tileX=(tile%32)*16,tileY=(tile/32)*16;
                 for(unsigned y=0;y<16;++y)
                     std::memset(pixels+(tileY+y)*Width+tileX,0,16*sizeof(*pixels));
                 continue;
             }
-            depend(characterBase,256);
-            const unsigned palette=(name&0x7000)>>4,flip=(name>>10)&3;
+            depend(characterBase,characterBytes);
+            const unsigned palette=key.fourBit?((name&0xF000)>>8)|((scn&0xE0)<<3):
+                (name&0x7000)>>4;
+            const unsigned flip=(name>>10)&3;
             const unsigned tileX=(tile%32)*16,tileY=(tile/32)*16;
             const unsigned bucket=((name*2654435761u)>>24);
             const unsigned prior=decodedTiles[bucket];
@@ -86,10 +90,12 @@ public:
             decodedTiles[bucket]=tile+1;
             const auto* offsets=characterOffsets[flip].data();
             for(unsigned y=0;y<16;++y)for(unsigned x=0;x<16;++x) {
-                const unsigned address=characterBase+offsets[y*16+x];
+                const unsigned dotOffset=offsets[y*16+x];
+                const unsigned address=characterBase+(key.fourBit?dotOffset/2:dotOffset);
                 const bool readable=!key.bankAccess || !characterCrossesBank ||
                     rbgBankReadable(key.ramctl,address,3);
-                pixels[(tileY+y)*Width+tileX+x]=readable?colors[palette|raw[address]]:0;
+                const unsigned dot=key.fourBit?(raw[address]>>((dotOffset&1)?0:4))&15:raw[address];
+                pixels[(tileY+y)*Width+tileX+x]=readable?colors[palette|dot]:0;
             }
         }
         ready_=true;

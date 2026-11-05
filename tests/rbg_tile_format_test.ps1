@@ -11,7 +11,7 @@ if(!$wrapper.Contains('#define LAGI_RBG_TILE16_8BIT 1') -or !$wrapper.Contains('
 $renderer=Get-Content -Raw "$repo/src/platform/vita/neptune_renderer.cpp"
 if(!$renderer.Contains('const bool decodedSource=frontend?g_frontendRbgDecodedReady:g_rbgDecodedPagesReady;') -or
    !$renderer.Contains('const bool decodedPages=decodedSource && prepareRbgPaletteLut(rawTextureData);') -or
-   !$renderer.Contains('selectRbgTileProgram(((!frontend && g_sceneVdp2ByteTextureValid) || decodedPages) && lagi::rbgTile16EightBit(')){throw 'Format/source eligibility lost'}
+   !$renderer.Contains('selectRbgTileProgram(decodedPages || ((!frontend && g_sceneVdp2ByteTextureValid) && lagi::rbgTile16EightBit(')){throw 'Format/source eligibility lost'}
 foreach($variant in @('vdp2_rbg0_pages_f.cg','vdp2_rbg0_rows_f.cg')) {
     if(!(Get-Content -Raw "$repo/shaders/$variant").Contains('#define LAGI_RBG_PALETTE_LUT 1')) {
         throw "Decoded RBG variant lacks live palette LUT: $variant"
