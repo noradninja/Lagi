@@ -58,6 +58,43 @@ int main()
     assert(map_normal_background_origin(0,196,0).scrollY==0xFF140000u);
     assert(map_normal_background_origin(0,236,0).scrollY==0xFF140000u);
     lagi::worldmap::MapEnvironment environment;
+    // Original palette entry starts at signed -1, increments to32, then
+    // performs no further color reads/uploads until the direction changes.
+    assert(environment.paletteLevel==-1 && environment.flags==0);
+    unsigned paletteReads=0;
+    auto readWhite=[&](unsigned i){assert(i<16);++paletteReads;return 0x7FFF;};
+    for(int frame=0;frame<=32;++frame) {
+        assert(lagi::worldmap::advance_map_environment_palette(environment,readWhite));
+        assert(environment.paletteLevel==frame);
+        const unsigned channel=31u*unsigned(16+frame/2)/32u;
+        const unsigned expected=0x8000u|channel*1057u;
+        for(unsigned i=0;i<16;++i)
+            assert((unsigned(environment.palette[i*2])*256+environment.palette[i*2+1])==expected);
+    }
+    assert(paletteReads==33*16);
+    assert(!lagi::worldmap::advance_map_environment_palette(environment,readWhite));
+    assert(paletteReads==33*16);
+    environment.flags=1;
+    for(int frame=31;frame>=0;--frame) {
+        assert(lagi::worldmap::advance_map_environment_palette(environment,readWhite));
+        assert(environment.paletteLevel==frame);
+    }
+    assert(!lagi::worldmap::advance_map_environment_palette(environment,readWhite));
+    // Exhaust every RGB555 source (including both bit15 values) and all
+    // native level factors. Each channel uses integer truncation, not rounding.
+    for(unsigned color=0;color<65536;++color)
+        for(int level=0;level<=32;++level) {
+            environment.paletteLevel=std::int8_t(level-1);environment.flags=0;
+            assert(lagi::worldmap::advance_map_environment_palette(environment,
+                [&](unsigned){return color;}));
+            unsigned expected=0x8000;
+            for(unsigned shift : {0u,5u,10u}) {
+                const unsigned component=(color>>shift)%32;
+                expected|=(component*unsigned(16+level/2)/32)<<shift;
+            }
+            assert(unsigned(environment.palette[0])*256+environment.palette[1]==expected);
+        }
+    puts("PASS WORLD palette ramp/reverse/endpoints, big-endian output and 2162688 RGB555/level cases; hardware output unverified");
     environment.driftX=0x100u;environment.driftZ=0xFFFFFFFFu;
     lagi::worldmap::advance_map_environment(environment);
     assert(environment.driftX==0xFFFFFF67u && environment.driftZ==0xFFFFFFAEu);

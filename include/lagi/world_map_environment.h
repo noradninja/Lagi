@@ -57,7 +57,34 @@ struct MapEnvironment {
     MapCoefficientWave wave{0x11102A,0x5B059,0x2B3,0};
     std::uint32_t driftX=0;           // +5C; +58 speed = -409
     std::uint32_t driftZ=0;           // +64; +60 speed = -81
+    std::int8_t paletteLevel=-1;      // +68, initialized by 060568F2..F4
+    std::uint8_t flags=0;             // +6D, bit0 selects palette fade-out
+    std::array<std::uint8_t,32> palette{}; // native scratch0605944C, big-endian
 };
+
+// WORLD 060569E2..06056A98. Update only when the signed level changes;
+// the native divider060265FA truncates positive channel products by32.
+// Keep CRAM upload in the native service caller, not the renderer.
+template<class ReadColor>
+inline bool advance_map_environment_palette(MapEnvironment& environment,ReadColor readColor)
+{
+    int level=environment.paletteLevel;
+    if(environment.flags&1) { if(--level<0) level=0; }
+    else { if(++level>32) level=32; }
+    if(level==environment.paletteLevel) return false;
+    environment.paletteLevel=static_cast<std::int8_t>(level);
+    const unsigned factor=unsigned(level/2+16);
+    for(unsigned i=0;i<16;++i) {
+        const auto color=std::uint16_t(readColor(i));
+        const auto red=((color&31u)*factor)/32u;
+        const auto green=(((color>>5)&31u)*factor)/32u;
+        const auto blue=(((color>>10)&31u)*factor)/32u;
+        const auto result=std::uint16_t(0x8000u|red|(green<<5)|(blue<<10));
+        environment.palette[i*2]=std::uint8_t(result>>8);
+        environment.palette[i*2+1]=std::uint8_t(result);
+    }
+    return true;
+}
 
 // WORLD 06056AD4..06056B00, before palette/debug keyboard services.
 inline void advance_map_environment(MapEnvironment& environment)

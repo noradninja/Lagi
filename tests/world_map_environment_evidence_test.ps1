@@ -17,6 +17,16 @@ try {
  # not a newly generated NBG0 line-scroll table. Check native instructions,
  # not just the routine address or a translated helper's name.
  $words=@(
+  @(0x060568F2,0xE068), @(0x060568F4,0x0D24), # initial signed palette level -1
+  @(0x060568E6,0xE2FF),
+  @(0x060569F2,0x064C), @(0x060569F8,0xC801), # +68 level, +6D direction bit0
+  @(0x060569FE,0x76FF), @(0x06056A06,0xE600),
+  @(0x06056A08,0x7601), @(0x06056A0E,0x6653), # clamp0..32
+  @(0x06056A16,0x8940), # unchanged endpoint skips color work/upload
+  @(0x06056A24,0x4621), @(0x06056A26,0x7610), # factor(level>>1)+16
+  @(0x06056A34,0x06D7), @(0x06056A4C,0x0627), @(0x06056A58,0x0677),
+  @(0x06056A74,0x27CB), @(0x06056A78,0x2971), # force bit15; native word output
+  @(0x06056A86,0xE620), # exactly32 palette bytes
   @(0x06056782,0x0604), # native PRISA (bank1 is priority6, not4)
   @(0x06056826,0x354C), @(0x06056828,0xD34F),
   @(0x0605682E,0x2539), @(0x06056830,0x51E1),
@@ -114,6 +124,11 @@ try {
  $disp=$op-band 0xFFF
  if($disp-ge 0x800){$disp-=0x1000}
  if(($op-shr 12)-ne 0xB -or (0x06056E86+4+2*$disp)-ne 0x060565C0){throw 'WORLD wave call differs'}
+ foreach($literal in @(@(0x06056ABC,0x0605944C),@(0x06056AC0,0x0605911C),
+                       @(0x06056AC4,0x8000),@(0x06056AC8,0x060265FA),
+                       @(0x06056ACC,0x25F00000),@(0x06056AD0,0x0602FD7A))) {
+  if((Read-World $literal[0] 4)-ne$literal[1]){throw 'Native WORLD palette data/division/upload binding differs'}
+ }
  Write-Output 'PASS original WORLD coefficient-wave instructions and separate normal-background origins; not a runtime/render test'
 } finally {$disc.Dispose()}
 $repo=Split-Path $PSScriptRoot -Parent

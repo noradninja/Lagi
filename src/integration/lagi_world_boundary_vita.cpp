@@ -329,6 +329,11 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
                     display.selectedTarget,task->travelStatus>=0 || task->waitingForMapToggle);
         }
         lagi::worldmap::advance_map_environment(task->environment);
+        if(lagi::worldmap::advance_map_environment_palette(task->environment,
+            [&](unsigned i) { return readSaturnU16(
+                task->worldFile.getSaturnPtr(0x0605911C+i*2)); })) {
+            asyncDmaCopy(task->environment.palette.data(),getVdp2Cram(0),0x20,0);
+        }
         lagi::worldmap::draw_map_panels(task->panels,
             task->worldFile.getSaturnPtr(0x06054000),task->modelOwner,
             !(mainGameState.bitField[0x1B]&8));

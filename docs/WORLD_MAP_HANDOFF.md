@@ -35,6 +35,24 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native WORLD cloud palette update — 2026-11-04
+
+Restored WORLD060569E2..06056A98 in the environment owner. Native signed
+level+68 initializes to-1, rises to32, and applies factor(level>>1)+16 to
+16 RGB555 colors from0605911C. Channels divide by32 with truncation, bit15
+is set, and32 big-endian bytes upload through asyncDmaCopy to CRAM0. Unchanged
+endpoints do no color reads or upload. Native flag+6D bit0 reverses the ramp;
+the helper preserves that contract, but does not invent a camera/action flag
+producer. Current ordinary environment starts with flags0 as before. Other
+environment flag producers, destination tasks and live route acceptance remain
+open. This is not a change to the accepted cloud blending/compositor.
+
+Original-disc instruction/literal evidence and production host arithmetic pass,
+including both ramp directions/endpoints and all65536 source words at33 levels
+(2162688 combinations). Vita compile/link/SELF/VPK packaging passed;
+visual entry-ramp acceptance remains hardware-only. Normal steady-state palette
+is unchanged from the authored source after level32. No speedup claim is made.
+
 ### Cainus arrival-to-Garil unlock audit — 2026-11-04
 
 The original WORLD entry6 gate006C is precisely bit13*8+4, already set by
