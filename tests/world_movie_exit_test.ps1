@@ -8,6 +8,14 @@ try{
  }
  $slot=Read-Native 58 0x6006000 (0x6027AAC+(0x54-1)*2) 2
  if(0x6027AA8+$slot-ne0x6027C7A){throw 'Native status54 switch target differs'}
+ foreach($status in @(0x55,0x56)) {
+  $target=0x6027AA8+(Read-Native 58 0x6006000 (0x6027AAC+($status-1)*2) 2)
+  if($target-ne0x60283F0){throw 'Native camp/Garil return target differs'}
+ }
+ foreach($pair in @(@(0x60283F0,0xE44F),@(0x60283F2,0xD345),@(0x60283F4,0x430B),@(0x60283F6,0x0009))) {
+  if((Read-Native 58 0x6006000 $pair[0] 2)-ne$pair[1]){throw 'Native WORLD return instructions differ'}
+ }
+ if((Read-Native 58 0x6006000 0x6028508 4)-ne0x6027110){throw 'Native return status service differs'}
  foreach($word in @(@(0x6027C84,0x2300),@(0x6027C90,0x2100),@(0x6027C9A,0x2100),@(0x6027CA4,0x2100),@(0x6027CA6,0xA2FC),@(0x6027CA8,0xE455),@(0x60282A2,0xD242),@(0x60282A4,0x420B))){
   if((Read-Native 58 0x6006000 $word[0] 2)-ne$word[1]){throw 'Native status54 mutation/next-status instructions differ'}
  }

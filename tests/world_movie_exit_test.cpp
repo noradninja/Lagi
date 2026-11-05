@@ -32,8 +32,17 @@ int main(){
         }
     }
     pending=0x4F;calls=0;exitStatus(0x54);assert(pending==0x4F && calls==1);
+    for(int status : {0x55,0x56})
+        for(unsigned value=0;value<256;++value){
+            for(unsigned i=0;i<32;++i)mainGameState.bitField[i]=std::uint8_t(value+i*7);
+            const auto before=mainGameState.bitField;
+            pending=calls=0;exitStatus(status);
+            assert(pending==0x4F&&calls==1&&mainGameState.bitField==before);
+            pending=0x58;calls=0;exitStatus(status);
+            assert(pending==0x58&&calls==1&&mainGameState.bitField==before);
+        }
     const auto before=mainGameState.bitField;
     pending=calls=0;exitStatus(0x53);
     assert(mainGameState.bitField==before && !pending && !calls);
-    puts("PASS production status54 story mutations and native status55 request; unrelated states/pending request preserved; device camp acceptance pending");
+    puts("PASS production status54 story mutations/status55 request, camp55/Garil56 exits to WORLD4F, pending destinations and unrelated bits preserved; device route acceptance pending");
 }

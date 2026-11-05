@@ -35,6 +35,23 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native camp/Garil module exit to WORLD — 2026-11-04
+
+Completed the module-manager half of the return audit. Original MAIN switch
+slots55 and56 BOTH resolve to060283F0, MOV#4F,R4 followed by native
+setNextGameStatus06027110. The upstream translated switch lacks these cases
+and would reach its default assertion when either module finishes. Added
+both cases to the existing generated exit adapter. No story bits change;
+an already pending authored destination remains protected by setNextGameStatus.
+
+Original-disc switch-target/instruction/service checks and production exit
+fixture cover512 camp/Garil state patterns, empty/pending destination cases,
+unchanged story bytes, and the earlier Cainus movie/actual Garil-unlock path.
+This closes a specific missing normal module-exit case, not the entire route.
+Live field shutdown, camp startup crash, Garil gameplay and repeated WORLD
+re-entry still require hardware evidence. Do not identify the camp startup
+crash as this assertion without the matching dump/instruction evidence.
+
 ### Native shared field-to-WORLD index conversion — 2026-11-04
 
 Original MAIN06011EEC..06011F26 first guards same-field transitions, selects
