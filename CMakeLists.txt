@@ -2729,6 +2729,18 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   # Native ray calls terminate in Lagi's shared VDP1 effect service.
 
  elseif(relative_path STREQUAL "field.cpp")
+  # MAIN06011EEC..06011F26 converts native statuses56/63/6D to WORLD
+  # indices by ADD #-50 before the six-bit write. Upstream omitted this.
+  foreach(field_route_status 86 99 109)
+   set(field_route_old "mainGameState.setPackedBits(135, 6, ${field_route_status});")
+   string(FIND "${source_text}" "${field_route_old}" field_route_found)
+   if(field_route_found LESS 0)
+    message(FATAL_ERROR "Native field WORLD-route conversion anchor changed")
+   endif()
+   string(REPLACE "${field_route_old}"
+    "mainGameState.setPackedBits(135, 6, ${field_route_status} - 0x50);"
+    source_text "${source_text}")
+  endforeach()
   string(REPLACE
    "        pNewTask->m10 = 20;"
    "        pNewTask->m10 = 20;\n        pNewTask->m14_status = 0; // LAGI_FIELD_EXIT_ZERO_STATE: original cleared task contract"

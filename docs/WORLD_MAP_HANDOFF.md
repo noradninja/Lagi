@@ -35,6 +35,27 @@ test or VPK is claimed by this test-only checkpoint.
 
 ## Resume here
 
+### Native shared field-to-WORLD index conversion — 2026-11-04
+
+Original MAIN06011EEC..06011F26 first guards same-field transitions, selects
+statuses56/63/6D for fields3/6/17, then ADD#B0 (-50 hexadecimal) before writing
+six bits at87 through060132C8. Upstream field.cpp omitted that subtraction
+and wrote decimal86/99/109 directly; the packed writer masks them to6bits,
+producing22/35/45 instead of the native WORLD indices6/19/29.
+
+Generated-source adaptation restores the missing subtraction in exactly those
+three native cases. Same-field/other-field cases still do not mutate the saved
+route. This is not a forced unlock, map selection override or field dispatch
+replacement. The ordinary field loader already stores status-50 separately;
+this correction covers the shared cross-field transition helper too.
+
+Original MAIN branch/immediate/writer bindings and generated production helper
+pass6144 combinations of current/target/pattern, including unrelated packed
+bit preservation. Existing shared exit-fade/teardown fixture passes. This proves
+the route arithmetic, not live Garil exit or WORLD re-entry. The return callback
+dispatchTutorialMultiChoiceSub2 reaches native field shutdown state7; downstream
+device acceptance remains open. No visual/performance change is intended.
+
 ### Garil exit-trigger typed child writes — 2026-11-04
 
 Independent downstream audit found a definite host-layout bug in native A5
