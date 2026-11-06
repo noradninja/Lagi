@@ -372,6 +372,14 @@ float readRbgCoefficient(
     return value / 65536.0f;
 }
 
+// Inverse of the 3D presentation X scale, about Azel's native raster center.
+// Keep rotation/coefficient evaluation in native pixel coordinates. Screen
+// windows still address the display raster, independently of camera rays.
+float rbgProjectionX(float screenX, float inverseXScale)
+{
+    return floor(176.0f + (screenX - 176.0f) * inverseXScale);
+}
+
 float4 main(
     float2 vTexcoord : TEXCOORD0,
     uniform sampler2D raw:TEXUNIT0,
@@ -420,7 +428,8 @@ float4 main(
     uniform float4 rbg0LayerWindow,
     uniform float4 rbg0LayerWindowInfo)
 {
-    const float x = min(351.0f, floor(vTexcoord.x * 352.0f));
+    const float screenX = min(351.0f, floor(vTexcoord.x * 352.0f));
+    const float x = rbgProjectionX(vTexcoord.x * 352.0f, rbg0LayerWindowInfo.w);
     const float y = min(223.0f, floor(vTexcoord.y * 224.0f));
 
     // Layer visibility (WCTLC) is independent of parameter selection (WCTLD).
@@ -432,7 +441,7 @@ float4 main(
             xs = floor(readLE16(raw, address) / 2.0f);
             xe = floor(readLE16(raw, address + 2.0f) / 2.0f);
         }
-        const bool inside = x >= xs && x <= xe &&
+        const bool inside = screenX >= xs && screenX <= xe &&
             y >= rbg0LayerWindow.y && y <= rbg0LayerWindow.w;
         const bool drawInside = fmod(rbg0LayerWindowInfo.x, 2.0f) >= 1.0f;
         if (inside != drawInside) discard;

@@ -1,5 +1,34 @@
 # Camp callback audit — 2026-11-05
 
+## VDP2 wide-view projection alignment - 2026-11-06
+
+User chose to preserve the current wide camera view. The 3D path already
+multiplies X by (4/3)/(framebuffer width/height), but RBG rotation previously
+sampled the entire native352 raster stretched across the wider screen. This
+makes a ground landmark move at a different horizontal rate from the same
+landmark's 3D projection. The live RBG shader now applies the inverse scale
+about nativeX176 before the original rotation and coefficient equations.
+The widened sides evaluate additional native camera rays; they are not clamped
+to the old352 edge. Point sampling and the native plane/table data remain.
+
+The existing layer-window-info uniform's unused W carries the inverse scale.
+All raw/tile/decoded-page/coefficient-row variants share the same shader helper.
+Native screen windows and RPMD3 span selection retain display-raster coordinates;
+frontend/title/name-entry use scale1. No camera framing, 3D matrix, UI, task,
+scene ownership, texture filter, additional buffer or CPU pixel traversal changes.
+
+`tests/rbg_presentation_test.ps1` compiles the actual shader coordinate helper
+into a host fixture:270 zero-pitch/yaw translated-camera ground alignments,
+frontend identity,4:3 identity, and unclamped wide side rays pass. The analytic
+fixture exposes the previous horizontal mismatch; it does not validate all
+native matrix modes or prove every reported drift axis fixed. Hardware must
+check Camp/Garil lateral/forward movement and yaw, WORLD/cloud projection,
+Ruins, screen-window edges, name entry, and ordinary frame time below33ms.
+This is a projection correction checkpoint, not hardware visual acceptance.
+Validation: presentation fixture and2944 window states (232128512 pixel
+decisions) pass. All four RBG shader variants, Vita compile/link, SELF and VPK
+packaging pass with the world_garil profile; GPU_PASS_TIMING remains OFF.
+
 ## R1 battle weapon attachment correction - 2026-11-05
 
 Original Disc 1 BTL_A3 0609FE12 is the weapon draw helper called at

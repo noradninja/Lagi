@@ -3,6 +3,7 @@
 #include "lagi/ui_texture_cache_index.h"
 #include "lagi/vdp1_color_calculation.h"
 #include "lagi/rbg_format.h"
+#include "lagi/saturn_presentation.h"
 #include "lagi/rbg_decoded_page.h"
 #include "lagi/native_scene_mode.h"
 #if LAGI_FIELD_MOTION_TRACE
@@ -6758,14 +6759,10 @@ static void azelProjectionScales(
         (176.0f / 112.0f) *
         heightFactor;
 
-    // The Saturn 352x224 image is authored for a 4:3 display. The Vita
-    // framebuffer is 16:9, so compress X into the centered 4:3 presentation
-    // area while preserving Azel's original projection math.
-    const float intendedAspect = 4.0f / 3.0f;
-    const float vitaAspect =
-        static_cast<float>(kWidth) /
-        static_cast<float>(kHeight);
-    outXScale *= intendedAspect / vitaAspect;
+    // Preserve the accepted wide camera: native projected points use the
+    // Saturn 4:3 horizontal scale on Vita, exposing additional world rays at
+    // the sides. Live RBG sampling applies its inverse about native X=176.
+    outXScale *= lagi::saturnDisplayXScale(kWidth, kHeight);
 }
 
 static ViewerMat4 buildAzelProjection(
@@ -13193,7 +13190,8 @@ static bool drawVdp2Rbg0Gpu(
             g_vdp2Rbg0FormatParam,
             0, 4, parameterFormat);
         const float layerWindowInfo[4] = {
-            rbg.ctrl[3], rbg.ctrl[7], rbg.ctrl[5], 0.0f
+            rbg.ctrl[3], rbg.ctrl[7], rbg.ctrl[5],
+            lagi::rbgProjectionInverseXScale(frontend, kWidth, kHeight)
         };
         sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0LayerWindowParam,
             0, 4, &rbg.ctrl[8]);

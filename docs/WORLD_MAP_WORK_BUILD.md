@@ -4,6 +4,23 @@ Branch: `feature/light-state-index`. Read `WORLD_MAP_HANDOFF.md` for native
 pipeline changes and acceptance limits. This is still bring-up, not a claim
 that camp/Garil progression or the 33 ms deadline passes on hardware.
 
+## Morning resume checkpoint - 2026-11-06
+
+Latest projection checkpoint preserves the existing wide camera presentation.
+Read `CAMP_CALLBACK_AUDIT.md` for the precise changes and hardware gates.
+Recent independent commits:87840c4 native Camp NPC/segmented actor;
+0c9df32 native battle gun attachment slots;1411da6 original-disc parity test.
+The VDP2 projection change follows as its own atomic commit. Camp actor,
+battle gun, ground stability and frame time need hardware validation; flight
+gun visibility and campfire blending remain open. Do not treat source tests
+or package success as those passes.
+
+Use the profile and arguments below unchanged. For this morning choose a new
+`build/world-camp-20261106` directory in place of `build/world-visual-20261105`
+everywhere below. Keep the full-resolution ON setting and GPU pass timing OFF.
+Use one capture through Camp interaction, Garil ground movement and return-area
+bird targeting, with the matching log and retained unstripped symbols.
+
 ## Pull without losing local work
 
 Run in PowerShell. If the tracked-edit guard stops, preserve/reconcile those
