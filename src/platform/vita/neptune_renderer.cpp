@@ -14126,6 +14126,77 @@ static void renderBasicWingViewer()
     if (roomAuthenticCameraMode)
         prepareLiveTownGouraudVisibility(wvp);
 
+    // One-shot, scene-agnostic attribution of the largest visible native
+    // VDP1 mesh quads. Source CMD fields and projected footprint identify
+    // actual ground effects without guessing an object or texture name.
+    // This runs only upon entering the RAW/SPLIT diagnostic views.
+    if (nativeSceneMode && (g_viewMode == 13 || g_viewMode == 14) &&
+        g_liveTownGouraudPrepValid &&
+        g_liveTownCpuMesh.vertices.size() ==
+            g_liveTownCpuMesh.polygonRecords.size() * 6u) {
+        static bool attributed = false;
+        if (!attributed) {
+            attributed = true;
+            struct Candidate {std::size_t p; float area, cx, cy, depth;};
+            std::vector<Candidate> candidates;
+            const auto& mesh=g_liveTownCpuMesh;
+            const unsigned corners[4]={0u,1u,2u,5u};
+            for (std::size_t p=0; p<mesh.polygonRecords.size(); ++p) {
+                const auto& record=mesh.polygonRecords[p];
+                if (!(record.cmdPmod & 0x0100u) ||
+                    !g_liveTownGouraudPrep[p].visible)continue;
+                float minX=1e9f,maxX=-1e9f,minY=1e9f,maxY=-1e9f,depth=0.f;
+                bool valid=true;
+                for (unsigned corner : corners) {
+                    const auto& v=mesh.vertices[p*6u+corner];
+                    const float x=v.x*wvp.m[0]+v.y*wvp.m[4]+v.z*wvp.m[8]+wvp.m[12];
+                    const float y=v.x*wvp.m[1]+v.y*wvp.m[5]+v.z*wvp.m[9]+wvp.m[13];
+                    const float z=v.x*wvp.m[2]+v.y*wvp.m[6]+v.z*wvp.m[10]+wvp.m[14];
+                    const float w=v.x*wvp.m[3]+v.y*wvp.m[7]+v.z*wvp.m[11]+wvp.m[15];
+                    if(w<=0.00001f){valid=false;break;}
+                    const float px=(x/w*0.5f+0.5f)*viewerRenderWidth();
+                    const float py=(0.5f-y/w*0.5f)*viewerRenderHeight();
+                    minX=std::min(minX,px);maxX=std::max(maxX,px);
+                    minY=std::min(minY,py);maxY=std::max(maxY,py);
+                    depth+=z/w;
+                }
+                if(!valid)continue;
+                // Clip bounding bounds to display; far-offscreen oversized
+                // quads should not dominate the attribution ranking.
+                const float x0=std::max(0.f,minX),x1=std::min(float(viewerRenderWidth()),maxX);
+                const float y0=std::max(0.f,minY),y1=std::min(float(viewerRenderHeight()),maxY);
+                const float area=std::max(0.f,x1-x0)*std::max(0.f,y1-y0);
+                if(area>12.f)candidates.push_back({p,area,(minX+maxX)*0.5f,(minY+maxY)*0.5f,depth*0.25f});
+            }
+            std::sort(candidates.begin(),candidates.end(),[](const Candidate&a,const Candidate&b){
+                return a.area>b.area;
+            });
+            logging::writef("[NativeMeshAttribution] visible=%u candidates=%u EdgeFirst=%u EdgeCount=%u meshRanges=%u mode=%u\n",
+                unsigned(g_liveTownCpuMesh.polygonRecords.size()),
+                unsigned(candidates.size()),unsigned(g_liveTownEdgeFirstPolygon),
+                unsigned(g_liveTownEdgePolygonCount),unsigned(g_liveTownMeshRanges.size()),
+                unsigned(g_viewMode));
+            const std::size_t count=std::min(std::size_t(24),candidates.size());
+            for(std::size_t n=0;n<count;++n){
+                const auto& c=candidates[n];
+                const auto& record=mesh.polygonRecords[c.p];
+                const unsigned texture=c.p<mesh.polygonTextureIndices.size()
+                    ? mesh.polygonTextureIndices[c.p]:0xffffu;
+                const auto& v=mesh.vertices[c.p*6u];
+                const bool edge=g_liveTownEdgePolygonCount &&
+                    c.p>=g_liveTownEdgeFirstPolygon &&
+                    c.p<g_liveTownEdgeFirstPolygon+g_liveTownEdgePolygonCount;
+                const bool shadow=g_liveTownShadowPolygonCount &&
+                    c.p>=g_liveTownShadowFirstPolygon &&
+                    c.p<g_liveTownShadowFirstPolygon+g_liveTownShadowPolygonCount;
+                logging::writef("[NativeMeshCandidate] rank=%u polygon=%u group=%u texture=%u PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X CTRL=%04X area=%.0f center=(%.1f,%.1f) depth=%.4f vertex0=(%.3f,%.3f,%.3f)\n",
+                    unsigned(n),unsigned(c.p),edge?2u:(shadow?1u:0u),texture,
+                    record.cmdPmod,record.cmdColr,record.cmdSrca,record.cmdSize,record.cmdCtrl,
+                    c.area,c.cx,c.cy,c.depth,v.x,v.y,v.z);
+            }
+        }
+    }
+
     const int gxmPitch = viewerRenderPitch();
 
     std::uint32_t* const colorBuffer =
