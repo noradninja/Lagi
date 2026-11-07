@@ -8392,6 +8392,35 @@ static bool buildLiveTownFrame()
         [](const LiveTownSubmissionRange&a,const LiveTownSubmissionRange&b){
             return a.azelOrder<b.azelOrder;
         });
+    if(g_profileAppendSample && !g_liveTownSubmissionRanges.empty()) {
+        unsigned materialRuns=0, orderedRuns=0, discontinuities=0;
+        std::size_t previousEnd=0;
+        bool firstRange=true;
+        for(const auto& range:g_liveTownSubmissionRanges) {
+            if(!firstRange && range.first!=previousEnd)++discontinuities;
+            firstRange=false;
+            previousEnd=range.first+range.count;
+            const auto end=std::min(previousEnd,g_liveTownCpuMesh.polygonRecords.size());
+            for(std::size_t p=range.first;p<end;) {
+                const auto& record=g_liveTownCpuMesh.polygonRecords[p];
+                const unsigned texture=g_liveTownCpuMesh.polygonTextureIndices[p];
+                const bool ordered=(record.cmdPmod&0x0100u) ||
+                    lagi::vdp1_half_transparent(record.cmdPmod);
+                ++materialRuns;
+                if(ordered)++orderedRuns;
+                std::size_t next=p+1;
+                while(next<end &&
+                    g_liveTownCpuMesh.polygonTextureIndices[next]==texture &&
+                    bool((g_liveTownCpuMesh.polygonRecords[next].cmdPmod&0x0100u) ||
+                        lagi::vdp1_half_transparent(g_liveTownCpuMesh.polygonRecords[next].cmdPmod))==ordered)
+                    ++next;
+                p=next;
+            }
+        }
+        logging::writef("[NativeOrderReplay] submissions=%u runs=%u orderedRuns=%u storageDiscontinuities=%u polygons=%u originalOrder=1 depthOpaque=LEQUAL depthOrdered=native\n",
+            unsigned(g_liveTownSubmissionRanges.size()),materialRuns,orderedRuns,
+            discontinuities,unsigned(g_liveTownCpuMesh.polygonRecords.size()));
+    }
     g_profileObjectAppendUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tObjects);
     if(g_profileAppendSample) {
