@@ -7,7 +7,7 @@ if($LASTEXITCODE){throw 'Priority coverage host compilation failed'}
 & "$scratch/test.exe"
 if($LASTEXITCODE){throw 'Priority coverage host test failed'}
 $renderer=Get-Content -Raw "$repo/src/platform/vita/neptune_renderer.cpp"
-if(!$renderer.Contains('g_rbgRatioCompositeFrame &&') -or
+if(!$renderer.Contains('lagi::rbgLayerCompositeSupported(g_spriteColor) &&') -or
    !$renderer.Contains('[NativePriorityCoverage]') -or
    !$renderer.Contains('gpu.nativeSelectorMask = lagi::vdp1PrioritySelectorCoverage(')){
     throw 'Native renderer priority coverage path is missing'
