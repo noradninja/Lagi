@@ -875,6 +875,9 @@ struct GpuMode1Texture {
     unsigned int height = 0;
     bool opaque = false;
     bool mesh = false;
+    // Native palette/RGB selector coverage, computed at decode/upload time.
+    // Used to audit composed-image priority without inspecting GPU memory.
+    std::uint8_t nativeSelectorMask = 0;
     std::uint16_t cmdPmod = 0, cmdColr = 0, cmdSrca = 0, cmdSize = 0;
 };
 
@@ -5863,6 +5866,8 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
         const auto opacityStartUs = sceKernelGetProcessTimeWide();
         gpu.opaque = source.opacityKnown ? source.opaque
             : texturePixelsOpaque(source.rgba.data(), source.rgba.size());
+        gpu.nativeSelectorMask = lagi::vdp1PrioritySelectorCoverage(
+            source.rgba.data(),source.rgba.size());
         opacityUs += sceKernelGetProcessTimeWide() - opacityStartUs;
         gpu.mesh = (source.cmdPmod & 0x0100u) != 0u;
         gpu.cmdPmod = source.cmdPmod;
@@ -11639,6 +11644,54 @@ bool submit_vdp1_model(
         !g_vdp1Indices)
         return false;
 
+    // Auditing the _visible materials_ is necessary before splitting VDP1
+    // layers. The final combined VDP1 framebuffer cannot recover a higher-
+    // priority pixel that an overlapping lower-priority draw replaced.
+    // Only report when a native compositor is active; no per-frame texel walk.
+    if (g_rbgRatioCompositeFrame &&
+        g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+        model.polygonTextureIndices.size() == model.polygonCount) {
+        static unsigned traceBudget=3;
+        static std::uint64_t lastKey=~std::uint64_t(0);
+        const std::uint64_t key=(std::uint64_t(g_spriteColor.ccctl)<<48) |
+            (std::uint64_t(g_spriteColor.spctl)<<32) |
+            (std::uint64_t(g_spriteColor.priority[0])<<16) |
+            std::uint64_t(g_nativeTextureGeneration&0xffffu);
+        if(traceBudget && key!=lastKey) {
+            lastKey=key;--traceBudget;
+            unsigned counts[3][3]{};
+            unsigned reported=0;
+            std::vector<std::uint8_t> visited(g_vdp1GpuTextures.size()*3u,0u);
+            for(std::size_t polygon=0;polygon<model.polygonCount;++polygon) {
+                const unsigned textureIndex=model.polygonTextureIndices[polygon];
+                if(textureIndex>=g_vdp1GpuTextures.size())continue;
+                const unsigned phase=polygon<g_liveTownShadowFirstPolygon ? 0u :
+                    (polygon<g_liveTownEdgeFirstPolygon ? 1u : 2u);
+                if(visited[phase*g_vdp1GpuTextures.size()+textureIndex])continue;
+                visited[phase*g_vdp1GpuTextures.size()+textureIndex]=1u;
+                const auto& t=g_vdp1GpuTextures[textureIndex];
+                const auto coverage=lagi::vdp1PriorityCoverage(
+                    t.nativeSelectorMask,g_spriteColor,g_spriteColor.prir&7);
+                if(coverage.below)++counts[phase][0];
+                if(coverage.above)++counts[phase][1];
+                if(coverage.below && coverage.above)++counts[phase][2];
+                if(coverage.below && reported<24u) {
+                    ++reported;
+                    logging::writef("[NativePriorityMaterial] phase=%u texture=%u selectorMask=%02X below=%u above=%u PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
+                        phase,textureIndex,unsigned(t.nativeSelectorMask),
+                        unsigned(coverage.below),unsigned(coverage.above),
+                        t.cmdPmod,t.cmdColr,t.cmdSrca,t.cmdSize);
+                }
+            }
+            logging::writef("[NativePriorityCoverage] CCCTL=%04X SPCTL=%04X PRISA=%04X PRISB=%04X PRIR=%04X world=%u/%u/%u shadow=%u/%u/%u edge=%u/%u/%u (below/above/mixed RBG)\n",
+                g_spriteColor.ccctl,g_spriteColor.spctl,
+                g_spriteColor.priority[0],g_spriteColor.priority[1],g_spriteColor.prir,
+                counts[0][0],counts[0][1],counts[0][2],
+                counts[1][0],counts[1][1],counts[1][2],
+                counts[2][0],counts[2][1],counts[2][2]);
+        }
+    }
+
     const bool textured =
         drawState.mode == Vdp1RenderMode::Textured &&
         g_vdp1TexturedReady && model.texturesValid() &&
@@ -13564,6 +13617,7 @@ static void drawSceneVdp2Background()
     }
 }
 
+#include "lagi/vdp1_priority_coverage.h"
 #include "neptune_sprite_composite.inc"
 #include "neptune_scene_nbg0.inc"
 
