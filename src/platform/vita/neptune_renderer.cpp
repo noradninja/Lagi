@@ -298,7 +298,7 @@ static void setStochastic(unsigned w, unsigned h, bool blended=false)
             ub, g_stochasticTextureSizeParam, 0, 4, size);
     }
 }
-static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority);
+static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority,bool nbg1=false);
 static bool g_spriteUiPriorityActive=false;
 
 static void setStochasticGouraud(unsigned w, unsigned h, bool blended=false, bool mesh=false)

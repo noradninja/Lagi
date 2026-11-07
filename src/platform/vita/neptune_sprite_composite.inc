@@ -55,7 +55,7 @@ static bool prepareSpriteUiPriority() {
     }
     return true;
 }
-static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority,bool nbg1=false) {
+static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority,bool nbg1) {
     if(!g_spriteUiPriorityActive)return true;
     // Priority zero disables the native VDP2 layer.
     if(!priority || !g_spriteUiPriorityProgram)return false;
