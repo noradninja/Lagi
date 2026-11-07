@@ -12000,69 +12000,28 @@ bool submit_vdp1_model(
         };
 
         if (g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-            g_liveTownEdgePolygonCount != 0u) {
-            const std::size_t worldEnd =
-                g_liveTownShadowPolygonCount != 0u
-                    ? g_liveTownShadowFirstPolygon
-                    : g_liveTownEdgeFirstPolygon;
-
-            // 1. Town/world and task-owned objects.
-            if (!submitRange(0u, worldEnd, false))
-                return false;
-
-            // 2. Edge's ordered VDP1 mesh shadow.
-            if (g_liveTownShadowPolygonCount != 0u &&
-                !submitRange(
-                    g_liveTownShadowFirstPolygon,
-                    g_liveTownShadowPolygonCount,
-                    true))
-                return false;
-
-            // 3. Edge actor. Normal depth testing now places Edge over its
-            // shadow while the already-rendered town remains underneath.
-            if (!submitRange(
-                    g_liveTownEdgeFirstPolygon,
-                    g_liveTownEdgePolygonCount,
-                    false))
-                return false;
-
-            const std::size_t tailFirst =
-                g_liveTownEdgeFirstPolygon +
-                g_liveTownEdgePolygonCount;
-            if (tailFirst < model.polygonCount &&
-                !submitRange(
-                    tailFirst,
-                    model.polygonCount - tailFirst,
-                    false))
-                return false;
-            return true;
-        }
-
-        if (g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-            !g_liveTownMeshRanges.empty()) {
-            std::size_t cursor = 0u;
-            for (const auto& meshRange : g_liveTownMeshRanges) {
-                if (meshRange.first > cursor &&
-                    !submitRange(
-                        cursor,
-                        meshRange.first - cursor,
-                        false))
-                    return false;
-
-                if (!submitRange(
-                        meshRange.first,
-                        meshRange.count,
-                        true))
-                    return false;
-
-                cursor = meshRange.first + meshRange.count;
+            !g_liveTownSubmissionRanges.empty()) {
+            for(const auto& range:g_liveTownSubmissionRanges) {
+                const std::size_t end=std::min(range.first+range.count,model.polygonCount);
+                for(std::size_t p=range.first;p<end;) {
+                    const unsigned texture=model.polygonTextureIndices[p];
+                    const bool ordered=(model.polygons[p].cmdPmod&0x0100u) ||
+                        lagi::vdp1_half_transparent(model.polygons[p].cmdPmod);
+                    std::size_t next=p+1;
+                    while(next<end && model.polygonTextureIndices[next]==texture &&
+                        bool((model.polygons[next].cmdPmod&0x0100u) ||
+                            lagi::vdp1_half_transparent(model.polygons[next].cmdPmod))==ordered)++next;
+                    if(!submitRange(p,next-p,ordered))return false;
+                    p=next;
+                }
             }
-            if (cursor < model.polygonCount &&
-                !submitRange(
-                    cursor,
-                    model.polygonCount - cursor,
-                    false))
-                return false;
+            if(g_liveTownShadowPolygonCount &&
+                !submitRange(g_liveTownShadowFirstPolygon,g_liveTownShadowPolygonCount,true))return false;
+            if(g_liveTownEdgePolygonCount &&
+                !submitRange(g_liveTownEdgeFirstPolygon,g_liveTownEdgePolygonCount,false))return false;
+            const std::size_t tail=g_liveTownEdgeFirstPolygon+g_liveTownEdgePolygonCount;
+            if(g_liveTownEdgePolygonCount && tail<model.polygonCount &&
+                !submitRange(tail,model.polygonCount-tail,false))return false;
             return true;
         }
 
@@ -12517,62 +12476,31 @@ bool submit_vdp1_model(
         bool phaseResult = true;
         if (subdividedTexturedLit &&
             g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-            g_liveTownEdgePolygonCount != 0u) {
-            const std::size_t worldEnd =
-                g_liveTownShadowPolygonCount != 0u
-                    ? g_liveTownShadowFirstPolygon
-                    : g_liveTownEdgeFirstPolygon;
-
-            phaseResult =
-                submitSubdivRange(0u, worldEnd, false) &&
-                (g_liveTownShadowPolygonCount == 0u ||
-                 submitSubdivRange(
-                    g_liveTownShadowFirstPolygon,
-                    g_liveTownShadowPolygonCount,
-                    true)) &&
-                submitSubdivRange(
-                    g_liveTownEdgeFirstPolygon,
-                    g_liveTownEdgePolygonCount,
-                    false);
-
-            const std::size_t tailFirst =
-                g_liveTownEdgeFirstPolygon +
-                g_liveTownEdgePolygonCount;
-            if (phaseResult && tailFirst < model.polygonCount)
-                phaseResult = submitSubdivRange(
-                    tailFirst,
-                    model.polygonCount - tailFirst,
-                    false);
-        } else if (
-            subdividedTexturedLit &&
-            g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-            !g_liveTownMeshRanges.empty()) {
-            std::size_t cursor = 0u;
-            for (const auto& meshRange : g_liveTownMeshRanges) {
-                if (phaseResult &&
-                    meshRange.first > cursor) {
-                    phaseResult = submitSubdivRange(
-                        cursor,
-                        meshRange.first - cursor,
-                        false);
+            !g_liveTownSubmissionRanges.empty()) {
+            for(const auto& range:g_liveTownSubmissionRanges) {
+                const std::size_t end=std::min(range.first+range.count,model.polygonCount);
+                for(std::size_t p=range.first;p<end && phaseResult;) {
+                    const unsigned texture=model.polygonTextureIndices[p];
+                    const bool ordered=(model.polygons[p].cmdPmod&0x0100u) ||
+                        lagi::vdp1_half_transparent(model.polygons[p].cmdPmod);
+                    std::size_t next=p+1;
+                    while(next<end && model.polygonTextureIndices[next]==texture &&
+                        bool((model.polygons[next].cmdPmod&0x0100u) ||
+                            lagi::vdp1_half_transparent(model.polygons[next].cmdPmod))==ordered)++next;
+                    phaseResult=submitSubdivRange(p,next-p,ordered);
+                    p=next;
                 }
-                if (phaseResult) {
-                    phaseResult = submitSubdivRange(
-                        meshRange.first,
-                        meshRange.count,
-                        true);
-                }
-                cursor = meshRange.first + meshRange.count;
+                if(!phaseResult)break;
             }
-            if (phaseResult && cursor < model.polygonCount) {
-                phaseResult = submitSubdivRange(
-                    cursor,
-                    model.polygonCount - cursor,
-                    false);
-            }
+            if(phaseResult && g_liveTownShadowPolygonCount)
+                phaseResult=submitSubdivRange(g_liveTownShadowFirstPolygon,g_liveTownShadowPolygonCount,true);
+            if(phaseResult && g_liveTownEdgePolygonCount)
+                phaseResult=submitSubdivRange(g_liveTownEdgeFirstPolygon,g_liveTownEdgePolygonCount,false);
+            const std::size_t tail=g_liveTownEdgeFirstPolygon+g_liveTownEdgePolygonCount;
+            if(phaseResult && g_liveTownEdgePolygonCount && tail<model.polygonCount)
+                phaseResult=submitSubdivRange(tail,model.polygonCount-tail,false);
         } else {
-            phaseResult =
-                submitSubdivRange(0u, model.polygonCount, false);
+            phaseResult=submitSubdivRange(0u,model.polygonCount,false);
         }
         g_profileGouraudIndexUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - tIndex);
