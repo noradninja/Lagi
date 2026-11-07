@@ -8347,6 +8347,21 @@ static bool buildLiveTownFrame()
         g_liveTownPolygonLightIndices.resize(g_liveTownStaticPolygonCount);
         g_liveTownMeshRanges = g_liveTownStaticMeshRanges;
         g_liveTownSubmissionRanges = g_liveTownStaticSubmissionRanges;
+        // The cached geometry retains its static order, but interleaved
+        // dynamic submissions may occupy different Azel slots each frame.
+        // Rebind current producer indices without rebuilding any vertices.
+        std::size_t staticRange=0;
+        const auto& frameSubmissions=azel_bridge::published_submissions();
+        for(std::size_t order=0;order<frameSubmissions.size();++order) {
+            const auto& submission=frameSubmissions[order];
+            if(liveTownSubmissionIsDynamic(submission) ||
+                submission.adaptedModelIndex<0)continue;
+            const auto* adapted=azel_bridge::published_adapted_model(
+                static_cast<std::uint32_t>(submission.adaptedModelIndex));
+            if(!adapted || adapted->polygons.empty())continue;
+            if(staticRange<g_liveTownSubmissionRanges.size())
+                g_liveTownSubmissionRanges[staticRange++].azelOrder=order;
+        }
     }
     g_profileBuildCacheUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tCache);
