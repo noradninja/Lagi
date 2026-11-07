@@ -250,20 +250,37 @@ static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface*
     // before the CPU inspects the native selector bytes. Sample twice, well
     // after Camp has settled, then never force this stall again.
     if(g_rbgRatioCompositeFrame && g_spriteLayerPixels) {
-        static unsigned eligibleFrames=0,readbacks=0;
-        ++eligibleFrames;
-        if(readbacks<2 && (eligibleFrames==60u || eligibleFrames==180u)) {
+        // The first eligible frames may precede late native object
+        // submissions. A fixed 60/180-frame audit can therefore sample a
+        // partial VDP1 image and incorrectly report that no lower-priority
+        // sprite pixels exist. Wait until the published polygon set has
+        // remained unchanged for 60 eligible frames, then sample that set.
+        // Reset the finite budget if a later scene/visible-set growth occurs.
+        static unsigned lastPolygonCount=0u,stableFrames=0u,readbacks=0u;
+        const unsigned polygonCount=static_cast<unsigned>(
+            g_liveTownCpuMesh.polygonRecords.size());
+        if(polygonCount!=lastPolygonCount) {
+            lastPolygonCount=polygonCount;
+            stableFrames=0u;
+            readbacks=0u;
+        } else if(stableFrames<240u) {
+            ++stableFrames;
+        }
+        if(polygonCount && readbacks<2 &&
+            (stableFrames==60u || stableFrames==180u)) {
             const auto start=sceKernelGetProcessTimeWide();
             sceGxmFinish(g_probeContext);
             const auto a=lagi::auditVdp1SurfacePriorities(
                 static_cast<const std::uint32_t*>(g_spriteLayerPixels),
                 kWidth,kHeight,kGxmPitch,16u,g_spriteColor);
             logging::writef("[VDP1SurfacePriority] sample=%u frames=%u pixels=%u empty=%u half=%u indexed=%u direct=%u unknown=%u belowRbg=%u equalRbg=%u aboveRbg=%u noPriority=%u PRIR=%04X PRISA=%04X PRISB=%04X waitAndScanUs=%u\n",
-                ++readbacks,eligibleFrames,a.samples,a.empty,a.half,a.indexed,
+                ++readbacks,stableFrames,a.samples,a.empty,a.half,a.indexed,
                 a.direct,a.unknown,a.below,a.equal,a.above,
                 a.nonzeroWithoutPriority,g_spriteColor.prir,g_spriteColor.priority[0],
                 g_spriteColor.priority[1],
                 unsigned(sceKernelGetProcessTimeWide()-start));
+            logging::writef("[VDP1SurfaceAuditContext] polygons=%u stableFrames=%u decodedIndexed=%u direct=%u belowRbg=%u\n",
+                polygonCount,stableFrames,a.indexed,a.direct,a.below);
             logging::writef("[VDP1SurfaceRegions] below=%u,%u,%u/%u,%u,%u/%u,%u,%u above=%u,%u,%u/%u,%u,%u/%u,%u,%u\n",
                 a.regionsBelow[0],a.regionsBelow[1],a.regionsBelow[2],
                 a.regionsBelow[3],a.regionsBelow[4],a.regionsBelow[5],
