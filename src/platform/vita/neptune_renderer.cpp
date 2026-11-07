@@ -558,6 +558,14 @@ static std::vector<LiveTownMeshRange> g_liveTownMeshRanges;
 // clearing this metadata can make cached environment meshes disappear until
 // the next Azel visible-set change forces a static rebuild.
 static std::vector<LiveTownMeshRange> g_liveTownStaticMeshRanges;
+// Retain Azel's submission order across the static-prefix cache. A native
+// frame can interleave static and dynamic submissions; appending all static
+// models first must not become a different VDP1 command order.
+struct LiveTownSubmissionRange {
+    std::size_t first=0,count=0,azelOrder=0;
+};
+static std::vector<LiveTownSubmissionRange> g_liveTownSubmissionRanges;
+static std::vector<LiveTownSubmissionRange> g_liveTownStaticSubmissionRanges;
 static bool g_liveTownPrepared = false;
 static std::size_t g_edgeFirstVertex = 0;
 static std::size_t g_edgeFirstPolygon = 0;
@@ -8155,6 +8163,7 @@ static bool buildLiveTownFrame()
     bool hasBillboards = false;
     g_liveTownSubmissionCount = 0u;
     g_liveTownMeshRanges.clear();
+    g_liveTownSubmissionRanges.clear();
     g_liveTownStaticSubmissionCount = 0u;
     g_liveTownBillboardSubmissionCount = 0u;
     g_liveTownStaticSubmittedPolygons = 0u;
@@ -8280,7 +8289,9 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.polygonTextureIndices.clear();
         g_liveTownLightStates.clear();
         g_liveTownPolygonLightIndices.clear();
-        for (const auto& submission : azel_bridge::published_submissions()) {
+        const auto& orderedSubmissions=azel_bridge::published_submissions();
+        for (std::size_t submissionOrder=0;submissionOrder<orderedSubmissions.size();++submissionOrder) {
+            const auto& submission=orderedSubmissions[submissionOrder];
             if (liveTownSubmissionIsDynamic(submission) ||
                 submission.adaptedModelIndex < 0)
                 continue;
@@ -8297,17 +8308,21 @@ static bool buildLiveTownFrame()
             // cache as task-owned/dynamic submissions.
             const auto* resolved = resolvedLiveTownMaterialIndices(
                 submission.model, submission.modelGeneration, *model);
+            const std::size_t first=g_liveTownCpuMesh.polygonRecords.size();
             appendLiveTownModel(
                 *model,
                 submission.state,
                 resolved && !resolved->empty() ? resolved->data() : nullptr,
                 resolved ? resolved->size() : 0u);
+            const auto count=g_liveTownCpuMesh.polygonRecords.size()-first;
+            if(count)g_liveTownSubmissionRanges.push_back({first,count,submissionOrder});
         }
         g_liveTownStaticSignature = staticSignature;
         g_liveTownStaticVertexCount = g_liveTownCpuMesh.vertices.size();
         g_liveTownStaticPolygonCount = g_liveTownCpuMesh.polygonRecords.size();
         g_liveTownStaticLightStateCount = g_liveTownLightStates.size();
         g_liveTownStaticMeshRanges = g_liveTownMeshRanges;
+        g_liveTownStaticSubmissionRanges = g_liveTownSubmissionRanges;
     } else {
         g_liveTownCpuMesh.vertices.resize(g_liveTownStaticVertexCount);
         g_liveTownCpuMesh.polygonRecords.resize(g_liveTownStaticPolygonCount);
@@ -8331,6 +8346,7 @@ static bool buildLiveTownFrame()
         g_liveTownLightStates.resize(g_liveTownStaticLightStateCount);
         g_liveTownPolygonLightIndices.resize(g_liveTownStaticPolygonCount);
         g_liveTownMeshRanges = g_liveTownStaticMeshRanges;
+        g_liveTownSubmissionRanges = g_liveTownStaticSubmissionRanges;
     }
     g_profileBuildCacheUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tCache);
@@ -8348,7 +8364,9 @@ static bool buildLiveTownFrame()
     const std::uint64_t tObjects = sceKernelGetProcessTimeWide();
     g_profileAppendSetupUs=g_profileAppendStorageUs=0;
     g_profileAppendTransformUs=g_profileAppendLightUs=g_profileAppendBindingUs=0;
-    for (const auto& submission : azel_bridge::published_submissions()) {
+    const auto& orderedDynamicSubmissions=azel_bridge::published_submissions();
+    for(std::size_t submissionOrder=0;submissionOrder<orderedDynamicSubmissions.size();++submissionOrder) {
+        const auto& submission=orderedDynamicSubmissions[submissionOrder];
         if (!liveTownSubmissionIsDynamic(submission) ||
             submission.adaptedModelIndex < 0)
             continue;
@@ -8359,12 +8377,21 @@ static bool buildLiveTownFrame()
 
         const auto* resolved = resolvedLiveTownMaterialIndices(
             submission.model, submission.modelGeneration, *model);
+        const std::size_t first=g_liveTownCpuMesh.polygonRecords.size();
         appendLiveTownModel(
             *model,
             submission.state,
             resolved && !resolved->empty() ? resolved->data() : nullptr,
             resolved ? resolved->size() : 0u);
+        const auto count=g_liveTownCpuMesh.polygonRecords.size()-first;
+        if(count)g_liveTownSubmissionRanges.push_back({first,count,submissionOrder});
     }
+    // The flattening cache is grouped by lifetime, but draw order belongs to
+    // the Azel task frame. Sort only the range descriptors, not cached meshes.
+    std::sort(g_liveTownSubmissionRanges.begin(),g_liveTownSubmissionRanges.end(),
+        [](const LiveTownSubmissionRange&a,const LiveTownSubmissionRange&b){
+            return a.azelOrder<b.azelOrder;
+        });
     g_profileObjectAppendUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tObjects);
     if(g_profileAppendSample) {
