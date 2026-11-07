@@ -12,7 +12,7 @@ float4 main(float2 uv:TEXCOORD0,uniform sampler2D layer:TEXUNIT0,
     uniform sampler2D nbg0:TEXUNIT3,uniform float4 geometry,
     uniform float4 backColor,uniform float4 rbgState,uniform float4 debugInfo) {
     float2 sampleUv=uv;
-    if(debugInfo.x>=0.5f && debugInfo.x<1.5f || debugInfo.x>=2.5f)
+    if((debugInfo.x>=0.5f && debugInfo.x<1.5f) || debugInfo.x>=2.5f)
         sampleUv.x=uv.x<0.5f?uv.x*2.f:uv.x*2.f-1.f;
     float4 src=tex2D(layer,sampleUv*geometry.xy);
     float code=floor(src.a*255+0.5f);
@@ -26,7 +26,7 @@ float4 main(float2 uv:TEXCOORD0,uniform sampler2D layer:TEXUNIT0,
     float sp=decision.a;
     float np=nbg.a>=0.5f?rbgState.x:0;
     float rp=(geometry.z>=0.5f && rbg.a>=0.5f)?geometry.w:0;
-    if(debugInfo.x>=1.5f) {
+    if(debugInfo.x>=1.5f && debugInfo.x<2.5f) {
         // Use the same priority comparisons as the production ratio resolver,
         // without blending. A zero-priority source is never a winner.
         if(sp>0.f && sp>=np && sp>=rp)return float4(1.f,0.f,0.f,1.f);
