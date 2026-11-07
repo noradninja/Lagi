@@ -14,6 +14,10 @@ static const SceGxmProgramParameter *g_spriteGeometry=nullptr,*g_spriteBackColor
 static SceGxmFragmentProgram* g_rbgRatioCompositeProgram=nullptr;
 static SceGxmShaderPatcherId g_rbgRatioCompositeId{};
 static bool g_rbgRatioCompositeRegistered=false,g_rbgRatioCompositeFrame=false;
+static SceGxmFragmentProgram* g_rbgDiagnosticProgram=nullptr;
+static SceGxmShaderPatcherId g_rbgDiagnosticId{};
+static bool g_rbgDiagnosticRegistered=false;
+static const SceGxmProgramParameter *g_diagGeometry=nullptr,*g_diagBack=nullptr,*g_diagState=nullptr,*g_diagInfo=nullptr;
 static const SceGxmProgramParameter *g_rbgRatioGeometry=nullptr,*g_rbgRatioBack=nullptr,*g_rbgRatioState=nullptr;
 static SceGxmFragmentProgram* g_spriteUiPriorityProgram=nullptr;
 static SceGxmShaderPatcherId g_spriteUiPriorityId{};
@@ -64,6 +68,12 @@ static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority) {
 static void releaseSpriteComposite() {
     g_spriteUiPriorityActive=g_spriteUiPriorityFrame=false;
     g_rbgRatioCompositeFrame=false;
+    if(g_probeShaderPatcher && g_rbgDiagnosticProgram)
+        sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_rbgDiagnosticProgram);
+    g_rbgDiagnosticProgram=nullptr;
+    if(g_probeShaderPatcher && g_rbgDiagnosticRegistered)
+        sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_rbgDiagnosticId);
+    g_rbgDiagnosticRegistered=false;
     if(g_probeShaderPatcher && g_rbgRatioCompositeProgram)
         sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_rbgRatioCompositeProgram);
     g_rbgRatioCompositeProgram=nullptr;
@@ -125,6 +135,33 @@ static bool prepareSpriteComposite(bool native,bool menu) {
         if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_rbgRatioCompositeId,
             SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,nullptr,vp,
             &g_rbgRatioCompositeProgram)<0)return false;
+    }
+    // Diagnostic shader stays separate from the production composition path.
+    if(rbgRatio && (g_viewMode==13 || g_viewMode==14) && !g_rbgDiagnosticProgram) {
+        const auto* fp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_rbg_diagnostic_f_gxp_start);
+        const auto* vp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_texture_v_gxp_start);
+        if(sceGxmProgramCheck(fp)>=0) {
+            if(!g_rbgDiagnosticRegistered &&
+               sceGxmShaderPatcherRegisterProgram(g_probeShaderPatcher,fp,&g_rbgDiagnosticId)>=0)
+                g_rbgDiagnosticRegistered=true;
+            if(g_rbgDiagnosticRegistered) {
+                g_diagGeometry=sceGxmProgramFindParameterByName(fp,"geometry");
+                g_diagBack=sceGxmProgramFindParameterByName(fp,"backColor");
+                g_diagState=sceGxmProgramFindParameterByName(fp,"rbgState");
+                g_diagInfo=sceGxmProgramFindParameterByName(fp,"debugInfo");
+                if(g_diagGeometry && g_diagBack && g_diagState && g_diagInfo)
+                    sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_rbgDiagnosticId,
+                        SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,nullptr,vp,
+                        &g_rbgDiagnosticProgram);
+            }
+        }
+        if(!g_rbgDiagnosticProgram) {
+            static unsigned failureBudget=2;
+            if(failureBudget) {
+                --failureBudget;
+                logging::writef("[VDP1Diagnostic] shader unavailable; FULL compositor retained\n");
+            }
+        }
     }
     // Keep the flight shader separate: no extra WORLD branches/samplers in
     // the accepted type3 fragment path.
@@ -244,7 +281,10 @@ static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface*
     }
     if(sceGxmBeginScene(g_probeContext,0,target,nullptr,nullptr,sync,destination,nullptr)<0)return false;
     sceGxmSetVertexProgram(g_probeContext,g_textureVertexProgram);
-    sceGxmSetFragmentProgram(g_probeContext,g_rbgRatioCompositeFrame?g_rbgRatioCompositeProgram:g_spriteCompositeProgram);
+    const bool diagnostic=g_rbgRatioCompositeFrame &&
+        (g_viewMode==13 || g_viewMode==14) && g_rbgDiagnosticProgram;
+    sceGxmSetFragmentProgram(g_probeContext,diagnostic?g_rbgDiagnosticProgram:
+        (g_rbgRatioCompositeFrame?g_rbgRatioCompositeProgram:g_spriteCompositeProgram));
     sceGxmSetCullMode(g_probeContext,SCE_GXM_CULL_NONE);
     sceGxmSetFrontDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetBackDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
@@ -262,13 +302,17 @@ static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface*
     const unsigned nativeBack=g_sceneRbg0.backColor;
     const float back[4]={float(nativeBack&31)/31,float((nativeBack>>5)&31)/31,float((nativeBack>>10)&31)/31,1};
     const float black[4]={0,0,0,1}; // Preserve accepted type3 back-screen behavior.
-    sceGxmSetUniformDataF(f,g_rbgRatioCompositeFrame?g_rbgRatioGeometry:g_spriteGeometry,0,4,geometry);
-    sceGxmSetUniformDataF(f,g_rbgRatioCompositeFrame?g_rbgRatioBack:g_spriteBackColor,0,4,
+    sceGxmSetUniformDataF(f,diagnostic?g_diagGeometry:(g_rbgRatioCompositeFrame?g_rbgRatioGeometry:g_spriteGeometry),0,4,geometry);
+    sceGxmSetUniformDataF(f,diagnostic?g_diagBack:(g_rbgRatioCompositeFrame?g_rbgRatioBack:g_spriteBackColor),0,4,
         g_rbgRatioCompositeFrame?back:black);
     if(g_rbgRatioCompositeFrame) {
         const float state[4]={float((g_spriteColor.bgon&1)?g_spriteColor.prina&7:0),
             float(lagi::rbgColorRatio(g_spriteColor)),(g_spriteColor.ccctl&0x100)?1.f:0.f,0};
-        sceGxmSetUniformDataF(f,g_rbgRatioState,0,4,state);
+        sceGxmSetUniformDataF(f,diagnostic?g_diagState:g_rbgRatioState,0,4,state);
+        if(diagnostic) {
+            const float info[4]={g_viewMode==14?1.f:0.f,0.f,0.f,0.f};
+            sceGxmSetUniformDataF(f,g_diagInfo,0,4,info);
+        }
         sceGxmSetFragmentTexture(g_probeContext,3,(g_spriteColor.bgon&1)?&g_sceneNbg0Texture:&g_spriteLayerTexture);
     }
     sceGxmSetFragmentTexture(g_probeContext,0,&g_spriteLayerTexture);
