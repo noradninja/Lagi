@@ -1,4 +1,5 @@
 #include "lagi/platform.h"
+#include "lagi/vdp1_priority_coverage.h"
 #include "lagi/ui_lut_palette.h"
 #include "lagi/ui_texture_cache_index.h"
 #include "lagi/vdp1_color_calculation.h"
@@ -11648,9 +11649,9 @@ bool submit_vdp1_model(
     // layers. The final combined VDP1 framebuffer cannot recover a higher-
     // priority pixel that an overlapping lower-priority draw replaced.
     // Only report when a native compositor is active; no per-frame texel walk.
-    if (g_rbgRatioCompositeFrame &&
+    if (lagi::rbgLayerCompositeSupported(g_spriteColor) &&
         g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-        model.polygonTextureIndices.size() == model.polygonCount) {
+        model.polygonTextureIndices != nullptr) {
         static unsigned traceBudget=3;
         static std::uint64_t lastKey=~std::uint64_t(0);
         const std::uint64_t key=(std::uint64_t(g_spriteColor.ccctl)<<48) |
@@ -13622,7 +13623,6 @@ static void drawSceneVdp2Background()
     }
 }
 
-#include "lagi/vdp1_priority_coverage.h"
 #include "neptune_sprite_composite.inc"
 #include "neptune_scene_nbg0.inc"
 
