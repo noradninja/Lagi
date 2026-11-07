@@ -16,14 +16,13 @@ static SceGxmShaderPatcherId g_rbgRatioCompositeId{};
 static bool g_rbgRatioCompositeRegistered=false,g_rbgRatioCompositeFrame=false;
 static const SceGxmProgramParameter *g_rbgRatioGeometry=nullptr,*g_rbgRatioBack=nullptr,*g_rbgRatioState=nullptr;
 static SceGxmFragmentProgram* g_spriteUiPriorityProgram=nullptr;
-static SceGxmFragmentProgram* g_spriteUiPriorityAddProgram=nullptr;
 static SceGxmShaderPatcherId g_spriteUiPriorityId{};
 static bool g_spriteUiPriorityRegistered=false,g_spriteUiPriorityFrame=false;
 static const SceGxmProgramParameter *g_spriteUiPriorityGeometry=nullptr,*g_spriteUiTextureSize=nullptr;
 static bool prepareSpriteUiPriority() {
     if(!lagi::spriteUiPrioritySupported(g_spriteColor) || !g_vdp2TextValid ||
         readVdp2Be32(g_vdp2LineScroll,0)==0x01010000u)return false;
-    if(g_spriteUiPriorityProgram && (!(g_spriteColor.ccctl&2u) || g_spriteUiPriorityAddProgram))return true;
+    if(g_spriteUiPriorityProgram)return true;
     const auto* fp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_vdp2_ui_priority_f_gxp_start);
     const auto* vp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_texture_v_gxp_start);
     if(sceGxmProgramCheck(fp)<0)return false;
@@ -34,35 +33,19 @@ static bool prepareSpriteUiPriority() {
     g_spriteUiPriorityGeometry=sceGxmProgramFindParameterByName(fp,"priorityGeometry");
     g_spriteUiTextureSize=sceGxmProgramFindParameterByName(fp,"textureSize");
     if(!g_spriteUiPriorityGeometry || (kStochastic && !g_spriteUiTextureSize))return false;
-    if(!g_spriteUiPriorityProgram &&
-        sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_spriteUiPriorityId,
-            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,nullptr,vp,
-            &g_spriteUiPriorityProgram)<0)return false;
-    if((g_spriteColor.ccctl&2u) && !g_spriteUiPriorityAddProgram) {
-        // CCCTL.NBG1 plus CCCTL.ADD: sum the authored layer colors rather
-        // than inventing a constant alpha for Camp's ground effect.
-        SceGxmBlendInfo add{};
-        add.colorFunc=SCE_GXM_BLEND_FUNC_ADD;
-        add.alphaFunc=SCE_GXM_BLEND_FUNC_ADD;
-        add.colorSrc=SCE_GXM_BLEND_FACTOR_ONE;
-        add.colorDst=SCE_GXM_BLEND_FACTOR_ONE;
-        add.alphaSrc=SCE_GXM_BLEND_FACTOR_ZERO;
-        add.alphaDst=SCE_GXM_BLEND_FACTOR_ONE;
-        add.colorMask=SCE_GXM_COLOR_MASK_ALL;
-        if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_spriteUiPriorityId,
-            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,&add,vp,
-            &g_spriteUiPriorityAddProgram)<0)return false;
-    }
-    return true;
+    // This atlas contains menu/window backing, not the Camp ground glow.
+    // Preserve its established opaque/alpha-tested presentation even when
+    // CCCTL enables NBG1 calculation; that register needs a per-pixel
+    // VDP2 resolver, not a blanket GXM ONE+ONE UI blending state.
+    return sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_spriteUiPriorityId,
+        SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,nullptr,vp,
+        &g_spriteUiPriorityProgram)>=0;
 }
-static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority,bool nbg1) {
+static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority) {
     if(!g_spriteUiPriorityActive)return true;
     // Priority zero disables the native VDP2 layer.
     if(!priority || !g_spriteUiPriorityProgram)return false;
-    const bool addNbg1=nbg1 && (g_spriteColor.ccctl&2u);
-    if(addNbg1 && !g_spriteUiPriorityAddProgram)return false;
-    sceGxmSetFragmentProgram(g_probeContext,
-        addNbg1?g_spriteUiPriorityAddProgram:g_spriteUiPriorityProgram);
+    sceGxmSetFragmentProgram(g_probeContext,g_spriteUiPriorityProgram);
     void* ub=nullptr;
     if(sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext,&ub)<0 || !ub)return false;
     const float geometry[4]={1.f/kGxmPitch,1.f/kHeight,float(priority),0};
@@ -90,9 +73,6 @@ static void releaseSpriteComposite() {
     if(g_probeShaderPatcher && g_spriteUiPriorityProgram)
         sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_spriteUiPriorityProgram);
     g_spriteUiPriorityProgram=nullptr;
-    if(g_probeShaderPatcher && g_spriteUiPriorityAddProgram)
-        sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_spriteUiPriorityAddProgram);
-    g_spriteUiPriorityAddProgram=nullptr;
     if(g_probeShaderPatcher && g_spriteUiPriorityRegistered)
         sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_spriteUiPriorityId);
     g_spriteUiPriorityRegistered=false;

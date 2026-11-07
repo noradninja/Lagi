@@ -298,7 +298,7 @@ static void setStochastic(unsigned w, unsigned h, bool blended=false)
             ub, g_stochasticTextureSizeParam, 0, 4, size);
     }
 }
-static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority,bool nbg1=false);
+static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority);
 static bool g_spriteUiPriorityActive=false;
 
 static void setStochasticGouraud(unsigned w, unsigned h, bool blended=false, bool mesh=false)
@@ -4628,7 +4628,7 @@ static void drawAzelVdp2Nbg1Gpu()
             &g_vdp2Nbg1AtlasTexture, SCE_GXM_TEXTURE_FILTER_POINT);
     }
     if(!setVdp2UiPriority(kVdp2Nbg1AtlasWidth,kVdp2Nbg1AtlasHeight,
-        (g_spriteColor.bgon&2)?(g_spriteColor.prina>>8)&7:0,true))return;
+        (g_spriteColor.bgon&2)?(g_spriteColor.prina>>8)&7:0))return;
 
     void* uniforms = nullptr;
     if (sceGxmReserveVertexDefaultUniformBuffer(
