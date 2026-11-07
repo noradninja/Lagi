@@ -11665,8 +11665,13 @@ bool submit_vdp1_model(
             for(std::size_t polygon=0;polygon<model.polygonCount;++polygon) {
                 const unsigned textureIndex=model.polygonTextureIndices[polygon];
                 if(textureIndex>=g_vdp1GpuTextures.size())continue;
-                const unsigned phase=polygon<g_liveTownShadowFirstPolygon ? 0u :
-                    (polygon<g_liveTownEdgeFirstPolygon ? 1u : 2u);
+                const bool shadow=g_liveTownShadowPolygonCount &&
+                    polygon>=g_liveTownShadowFirstPolygon &&
+                    polygon<g_liveTownShadowFirstPolygon+g_liveTownShadowPolygonCount;
+                const bool edge=g_liveTownEdgePolygonCount &&
+                    polygon>=g_liveTownEdgeFirstPolygon &&
+                    polygon<g_liveTownEdgeFirstPolygon+g_liveTownEdgePolygonCount;
+                const unsigned phase=edge?2u:(shadow?1u:0u);
                 if(visited[phase*g_vdp1GpuTextures.size()+textureIndex])continue;
                 visited[phase*g_vdp1GpuTextures.size()+textureIndex]=1u;
                 const auto& t=g_vdp1GpuTextures[textureIndex];
