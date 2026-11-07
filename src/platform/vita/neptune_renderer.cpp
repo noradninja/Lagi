@@ -12252,6 +12252,120 @@ bool submit_vdp1_model(
         g_profileGouraudBucketUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - tBucket);
 
+        // Native Saturn VDP1 draws are an ordered command stream. Batching
+        // everything by texture permutes overlapping polygons from different
+        // materials; preserve the published polygon sequence instead.
+        // Coalesce only adjacent visible polygons with the same texture and
+        // effective draw policy. Non-native diagnostics keep their old path.
+        if(subdividedTexturedLit &&
+            g_residentVdp1Model==ResidentVdp1Model::LiveTown) {
+            struct NativeOrderedRun {
+                unsigned texture,firstIndex,count;
+                bool ordered;
+            };
+            static std::vector<NativeOrderedRun> orderedRuns;
+            orderedRuns.clear();
+            orderedRuns.reserve(model.polygonCount);
+            const bool depthScene=lagi::native_scene_depth_mode(g_sceneGameMode);
+            std::size_t rangeCursor=0u;
+            unsigned visibleCount=0u,orderedCount=0u;
+            unsigned textureTransitions=0u;
+            unsigned lastTexture=~0u;
+            const std::size_t shadowStart=g_liveTownShadowFirstPolygon;
+            const std::size_t shadowEnd=shadowStart+g_liveTownShadowPolygonCount;
+            for(std::size_t p=0;p<model.polygonCount;++p) {
+                if(!visibleQuads[p])continue;
+                const unsigned texture=model.polygonTextureIndices[p];
+                if(texture>=bucketCount)return false;
+                // Range attribution is generic: do not skip mesh ranges merely
+                // because the flattened scene also contains the Edge actor.
+                while(rangeCursor<g_liveTownMeshRanges.size() &&
+                    p>=g_liveTownMeshRanges[rangeCursor].first+
+                       g_liveTownMeshRanges[rangeCursor].count)
+                    ++rangeCursor;
+                const bool meshRange=rangeCursor<g_liveTownMeshRanges.size() &&
+                    p>=g_liveTownMeshRanges[rangeCursor].first &&
+                    p<g_liveTownMeshRanges[rangeCursor].first+
+                        g_liveTownMeshRanges[rangeCursor].count;
+                const bool shadowRange=g_liveTownShadowPolygonCount &&
+                    p>=shadowStart && p<shadowEnd;
+                const bool ordered=meshRange||shadowRange;
+                const unsigned index=static_cast<unsigned>(p*24u);
+                if(index+24u>g_vdp1SubdivIndexCapacity)return false;
+                std::memcpy(g_vdp1SubdivIndices+index,
+                    g_vdp1SubdivQuadIndices.data()+index,
+                    24u*sizeof(std::uint16_t));
+                if(texture!=lastTexture)++textureTransitions;
+                lastTexture=texture;
+                if(!orderedRuns.empty() &&
+                    orderedRuns.back().texture==texture &&
+                    orderedRuns.back().ordered==ordered &&
+                    orderedRuns.back().firstIndex+orderedRuns.back().count==index)
+                    orderedRuns.back().count+=24u;
+                else
+                    orderedRuns.push_back({texture,index,24u,ordered});
+                ++visibleCount;
+                if(ordered)++orderedCount;
+            }
+            const std::uint64_t drawStart=sceKernelGetProcessTimeWide();
+            for(const auto& run:orderedRuns) {
+                const unsigned texture=run.texture;
+                const bool mesh=g_vdp1GpuTextures[texture].mesh;
+                const bool blended=lagi::vdp1_half_transparent(
+                    g_vdp1GpuTextures[texture].cmdPmod);
+                // Ordered mesh commands previously used unculled two-sided
+                // polygons. Preserve that state, as well as normal scene
+                // depth comparison for genuine 3D world intersections.
+                if(run.ordered) {
+                    sceGxmSetFrontPolygonMode(g_probeContext,SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+                    sceGxmSetBackPolygonMode(g_probeContext,SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+                    sceGxmSetCullMode(g_probeContext,SCE_GXM_CULL_NONE);
+                    sceGxmSetFrontDepthFunc(g_probeContext,
+                        depthScene?depthFunc:SCE_GXM_DEPTH_FUNC_ALWAYS);
+                    sceGxmSetBackDepthFunc(g_probeContext,
+                        depthScene?depthFunc:SCE_GXM_DEPTH_FUNC_ALWAYS);
+                } else {
+                    sceGxmSetCullMode(g_probeContext,cullMode);
+                    sceGxmSetFrontDepthFunc(g_probeContext,depthFunc);
+                    sceGxmSetBackDepthFunc(g_probeContext,depthFunc);
+                }
+                sceGxmSetFrontDepthWriteEnable(g_probeContext,
+                    (!blended && (!run.ordered||depthScene))?
+                    SCE_GXM_DEPTH_WRITE_ENABLED:SCE_GXM_DEPTH_WRITE_DISABLED);
+                sceGxmSetBackDepthWriteEnable(g_probeContext,
+                    (!blended && (!run.ordered||depthScene))?
+                    SCE_GXM_DEPTH_WRITE_ENABLED:SCE_GXM_DEPTH_WRITE_DISABLED);
+                sceGxmSetFragmentProgram(g_probeContext,
+                    blended?g_nativeBlendPrograms[mesh?BlendMeshSubdiv:BlendSubdiv]:
+                    (mesh?g_meshSubdivFragmentProgram:g_texturedGouraudSubdivFragmentProgram));
+                sceGxmSetFragmentTexture(g_probeContext,0,
+                    &g_vdp1GpuTextures[texture].texture);
+                if(sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,
+                    SCE_GXM_INDEX_FORMAT_U16,
+                    g_vdp1SubdivIndices+run.firstIndex,run.count)<0)return false;
+            }
+            sceGxmSetCullMode(g_probeContext,cullMode);
+            sceGxmSetFrontDepthFunc(g_probeContext,depthFunc);
+            sceGxmSetBackDepthFunc(g_probeContext,depthFunc);
+            sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_ENABLED);
+            sceGxmSetBackDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_ENABLED);
+            sceGxmSetFrontPolygonMode(g_probeContext,polygonMode);
+            sceGxmSetBackPolygonMode(g_probeContext,polygonMode);
+            g_profileGouraudIndexUs=static_cast<unsigned>(
+                sceKernelGetProcessTimeWide()-tPayload);
+            g_profileGouraudDrawUs=static_cast<unsigned>(
+                sceKernelGetProcessTimeWide()-drawStart);
+            static unsigned orderedTraceBudget=4u;
+            if(orderedTraceBudget) {
+                --orderedTraceBudget;
+                logging::writef("[NativeVdp1CommandOrder] scene=%u polygons=%u visible=%u runs=%u textureChanges=%u orderedPolys=%u depthScene=%u depthFunc=LEQUAL opaqueWrites=1 halfWrites=0 nativeSourceOrder=1\\n",
+                    unsigned(g_sceneGameMode),unsigned(model.polygonCount),
+                    visibleCount,unsigned(orderedRuns.size()),textureTransitions,
+                    orderedCount,unsigned(depthScene));
+            }
+            return true;
+        }
+
         const auto submitSubdivRange = [&](std::size_t first,
                                            std::size_t count,
                                            bool orderedShadow) -> bool {
