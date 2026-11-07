@@ -14196,7 +14196,7 @@ static void renderBasicWingViewer()
                     floorArea,ordered});
             }
             logging::writef(
-                "[NativePolygonAttribution] mode=%u scene=%u visible=%u valid=%u candidates=%u meshes=%u half=%u edge=%u/%u shadow=%u/%u orderedRanges=%u\\n",
+                "[NativePolygonAttribution] mode=%u scene=%u visible=%u valid=%u candidates=%u meshes=%u half=%u edge=%u/%u shadow=%u/%u orderedRanges=%u\n",
                 unsigned(g_viewMode),unsigned(g_sceneGameMode),
                 unsigned(source.polygonRecords.size()),validCount,
                 unsigned(candidates.size()),meshCount,halfCount,
@@ -14229,15 +14229,22 @@ static void renderBasicWingViewer()
                     // Actual source batches normally test LEQUAL and write
                     // depth; ordered native scene mesh ranges use LEQUAL too.
                     // Half-transparency disables writes, even in ordered runs.
-                    const bool writesDepth=!half;
+                    const bool orderedApplied=c.ordered &&
+                        g_liveTownEdgePolygonCount==0u;
+                    const bool orderedDepth=orderedApplied &&
+                        lagi::native_scene_depth_mode(g_sceneGameMode);
+                    const bool writesDepth=!half &&
+                        (!orderedApplied || orderedDepth);
                     logging::writef(
-                        "[NativePolygonCandidate] rankSet=%u rank=%u p=%u model=%u local=%u group=%u tex=%u PMOD=%04X CTRL=%04X COLR=%04X SRCA=%04X SIZE=%04X mesh=%u half=%u ordered=%u depthTest=LEQUAL depthWrite=%u area=%.0f floorArea=%.0f bbox=(%.1f,%.1f)-(%.1f,%.1f) center=(%.1f,%.1f) depth=%.4f\\n",
+                        "[NativePolygonCandidate] rankSet=%u rank=%u p=%u model=%u local=%u group=%u tex=%u PMOD=%04X CTRL=%04X COLR=%04X SRCA=%04X SIZE=%04X mesh=%u half=%u ordered=%u orderedApplied=%u depthTest=%s depthWrite=%u area=%.0f floorArea=%.0f bbox=(%.1f,%.1f)-(%.1f,%.1f) center=(%.1f,%.1f) depth=%.4f\n",
                         ranking,unsigned(n),unsigned(c.p),unsigned(record.model),
                         unsigned(record.polygonInModel),edge?2u:(shadow?1u:0u),
                         texture,record.cmdPmod,record.cmdCtrl,
                         record.cmdColr,record.cmdSrca,record.cmdSize,
                         unsigned((record.cmdPmod&0x100u)!=0u),unsigned(half),
-                        unsigned(c.ordered),unsigned(writesDepth),c.area,c.floorArea,
+                        unsigned(c.ordered),unsigned(orderedApplied),
+                        orderedApplied && !orderedDepth?"ALWAYS":"LEQUAL",
+                        unsigned(writesDepth),c.area,c.floorArea,
                         c.minX,c.minY,c.maxX,c.maxY,c.cx,c.cy,c.depth);
                 }
             }
