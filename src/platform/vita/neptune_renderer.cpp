@@ -14126,29 +14126,47 @@ static void renderBasicWingViewer()
     if (roomAuthenticCameraMode)
         prepareLiveTownGouraudVisibility(wvp);
 
-    // One-shot, scene-agnostic attribution of the largest visible native
-    // VDP1 mesh quads. Source CMD fields and projected footprint identify
-    // actual ground effects without guessing an object or texture name.
-    // This runs only upon entering the RAW/SPLIT diagnostic views.
+    // Diagnostic view only: attribute large world polygons and floor-region
+    // intersections to their original Saturn commands. No render-path changes.
+    // The trace captures the first eligible RAW/SPLIT frame per scene/view,
+    // not every frame, and is bounded independently of visibility size.
     if (nativeSceneMode && (g_viewMode == 13 || g_viewMode == 14) &&
         g_liveTownGouraudPrepValid &&
         g_liveTownCpuMesh.vertices.size() ==
             g_liveTownCpuMesh.polygonRecords.size() * 6u) {
-        static bool attributed = false;
-        if (!attributed) {
-            attributed = true;
-            struct Candidate {std::size_t p; float area, cx, cy, depth;};
+        static unsigned lastMode=0xffffffffu, lastScene=0xffffffffu;
+        static unsigned attributionBudget=8u;
+        if (attributionBudget &&
+            (lastMode!=unsigned(g_viewMode) || lastScene!=g_sceneGameMode)) {
+            --attributionBudget;
+            lastMode=unsigned(g_viewMode);
+            lastScene=g_sceneGameMode;
+            struct Candidate {
+                std::size_t p;
+                float area,cx,cy,depth,minX,minY,maxX,maxY;
+                float floorArea;
+                bool ordered;
+            };
             std::vector<Candidate> candidates;
-            const auto& mesh=g_liveTownCpuMesh;
+            const auto& source=g_liveTownCpuMesh;
             const unsigned corners[4]={0u,1u,2u,5u};
-            for (std::size_t p=0; p<mesh.polygonRecords.size(); ++p) {
-                const auto& record=mesh.polygonRecords[p];
-                if (!(record.cmdPmod & 0x0100u) ||
-                    !g_liveTownGouraudPrep[p].visible)continue;
+            unsigned meshCount=0u, halfCount=0u, validCount=0u;
+            // Central/lower overlap is only a secondary ranking heuristic,
+            // not a scene-specific material classification.
+            const float floorLeft=float(viewerRenderWidth())*0.2f;
+            const float floorRight=float(viewerRenderWidth())*0.85f;
+            const float floorTop=float(viewerRenderHeight())*0.40f;
+            const float floorBottom=float(viewerRenderHeight());
+            for (std::size_t p=0;p<source.polygonRecords.size();++p) {
+                if (!g_liveTownGouraudPrep[p].visible)continue;
+                const auto& record=source.polygonRecords[p];
+                const bool mesh=(record.cmdPmod & 0x0100u)!=0;
+                if(mesh)++meshCount;
+                if(lagi::vdp1_half_transparent(record.cmdPmod))++halfCount;
                 float minX=1e9f,maxX=-1e9f,minY=1e9f,maxY=-1e9f,depth=0.f;
                 bool valid=true;
-                for (unsigned corner : corners) {
-                    const auto& v=mesh.vertices[p*6u+corner];
+                for (unsigned corner:corners) {
+                    const auto& v=source.vertices[p*6u+corner];
                     const float x=v.x*wvp.m[0]+v.y*wvp.m[4]+v.z*wvp.m[8]+wvp.m[12];
                     const float y=v.x*wvp.m[1]+v.y*wvp.m[5]+v.z*wvp.m[9]+wvp.m[13];
                     const float z=v.x*wvp.m[2]+v.y*wvp.m[6]+v.z*wvp.m[10]+wvp.m[14];
@@ -14161,38 +14179,67 @@ static void renderBasicWingViewer()
                     depth+=z/w;
                 }
                 if(!valid)continue;
-                // Clip bounding bounds to display; far-offscreen oversized
-                // quads should not dominate the attribution ranking.
+                ++validCount;
                 const float x0=std::max(0.f,minX),x1=std::min(float(viewerRenderWidth()),maxX);
                 const float y0=std::max(0.f,minY),y1=std::min(float(viewerRenderHeight()),maxY);
                 const float area=std::max(0.f,x1-x0)*std::max(0.f,y1-y0);
-                if(area>12.f)candidates.push_back({p,area,(minX+maxX)*0.5f,(minY+maxY)*0.5f,depth*0.25f});
+                if(area<16.f)continue;
+                const float fx0=std::max(floorLeft,minX),fx1=std::min(floorRight,maxX);
+                const float fy0=std::max(floorTop,minY),fy1=std::min(floorBottom,maxY);
+                const float floorArea=std::max(0.f,fx1-fx0)*std::max(0.f,fy1-fy0);
+                bool ordered=false;
+                for (const auto& range:g_liveTownMeshRanges) {
+                    if(p>=range.first && p-range.first<range.count){ordered=true;break;}
+                }
+                candidates.push_back({p,area,(minX+maxX)*0.5f,
+                    (minY+maxY)*0.5f,depth*0.25f,minX,minY,maxX,maxY,
+                    floorArea,ordered});
             }
-            std::sort(candidates.begin(),candidates.end(),[](const Candidate&a,const Candidate&b){
-                return a.area>b.area;
-            });
-            logging::writef("[NativeMeshAttribution] visible=%u candidates=%u EdgeFirst=%u EdgeCount=%u meshRanges=%u mode=%u\n",
-                unsigned(g_liveTownCpuMesh.polygonRecords.size()),
-                unsigned(candidates.size()),unsigned(g_liveTownEdgeFirstPolygon),
-                unsigned(g_liveTownEdgePolygonCount),unsigned(g_liveTownMeshRanges.size()),
-                unsigned(g_viewMode));
-            const std::size_t count=std::min(std::size_t(24),candidates.size());
-            for(std::size_t n=0;n<count;++n){
-                const auto& c=candidates[n];
-                const auto& record=mesh.polygonRecords[c.p];
-                const unsigned texture=c.p<mesh.polygonTextureIndices.size()
-                    ? mesh.polygonTextureIndices[c.p]:0xffffu;
-                const auto& v=mesh.vertices[c.p*6u];
-                const bool edge=g_liveTownEdgePolygonCount &&
-                    c.p>=g_liveTownEdgeFirstPolygon &&
-                    c.p<g_liveTownEdgeFirstPolygon+g_liveTownEdgePolygonCount;
-                const bool shadow=g_liveTownShadowPolygonCount &&
-                    c.p>=g_liveTownShadowFirstPolygon &&
-                    c.p<g_liveTownShadowFirstPolygon+g_liveTownShadowPolygonCount;
-                logging::writef("[NativeMeshCandidate] rank=%u polygon=%u group=%u texture=%u PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X CTRL=%04X area=%.0f center=(%.1f,%.1f) depth=%.4f vertex0=(%.3f,%.3f,%.3f)\n",
-                    unsigned(n),unsigned(c.p),edge?2u:(shadow?1u:0u),texture,
-                    record.cmdPmod,record.cmdColr,record.cmdSrca,record.cmdSize,record.cmdCtrl,
-                    c.area,c.cx,c.cy,c.depth,v.x,v.y,v.z);
+            logging::writef(
+                "[NativePolygonAttribution] mode=%u scene=%u visible=%u valid=%u candidates=%u meshes=%u half=%u edge=%u/%u shadow=%u/%u orderedRanges=%u\\n",
+                unsigned(g_viewMode),unsigned(g_sceneGameMode),
+                unsigned(source.polygonRecords.size()),validCount,
+                unsigned(candidates.size()),meshCount,halfCount,
+                unsigned(g_liveTownEdgeFirstPolygon),unsigned(g_liveTownEdgePolygonCount),
+                unsigned(g_liveTownShadowFirstPolygon),unsigned(g_liveTownShadowPolygonCount),
+                unsigned(g_liveTownMeshRanges.size()));
+            // Emit a fixed number of candidates from each ranking. Their
+            // polygon IDs let later tests isolate a source without changing it.
+            for (unsigned ranking=0;ranking<2;++ranking) {
+                std::sort(candidates.begin(),candidates.end(),
+                    [ranking](const Candidate&a,const Candidate&b){
+                        const float aa=ranking?a.floorArea:a.area;
+                        const float bb=ranking?b.floorArea:b.area;
+                        return aa==bb?a.p<b.p:aa>bb;
+                    });
+                const std::size_t count=std::min(std::size_t(24),candidates.size());
+                for(std::size_t n=0;n<count;++n){
+                    const auto& c=candidates[n];
+                    if(ranking && c.floorArea<16.f)break;
+                    const auto& record=source.polygonRecords[c.p];
+                    const unsigned texture=c.p<source.polygonTextureIndices.size()
+                        ? source.polygonTextureIndices[c.p]:0xffffu;
+                    const bool edge=g_liveTownEdgePolygonCount &&
+                        c.p>=g_liveTownEdgeFirstPolygon &&
+                        c.p-g_liveTownEdgeFirstPolygon<g_liveTownEdgePolygonCount;
+                    const bool shadow=g_liveTownShadowPolygonCount &&
+                        c.p>=g_liveTownShadowFirstPolygon &&
+                        c.p-g_liveTownShadowFirstPolygon<g_liveTownShadowPolygonCount;
+                    const bool half=lagi::vdp1_half_transparent(record.cmdPmod);
+                    // Actual source batches normally test LEQUAL and write
+                    // depth; ordered native scene mesh ranges use LEQUAL too.
+                    // Half-transparency disables writes, even in ordered runs.
+                    const bool writesDepth=!half;
+                    logging::writef(
+                        "[NativePolygonCandidate] rankSet=%u rank=%u p=%u model=%u local=%u group=%u tex=%u PMOD=%04X CTRL=%04X COLR=%04X SRCA=%04X SIZE=%04X mesh=%u half=%u ordered=%u depthTest=LEQUAL depthWrite=%u area=%.0f floorArea=%.0f bbox=(%.1f,%.1f)-(%.1f,%.1f) center=(%.1f,%.1f) depth=%.4f\\n",
+                        ranking,unsigned(n),unsigned(c.p),unsigned(record.model),
+                        unsigned(record.polygonInModel),edge?2u:(shadow?1u:0u),
+                        texture,record.cmdPmod,record.cmdCtrl,
+                        record.cmdColr,record.cmdSrca,record.cmdSize,
+                        unsigned((record.cmdPmod&0x100u)!=0u),unsigned(half),
+                        unsigned(c.ordered),unsigned(writesDepth),c.area,c.floorArea,
+                        c.minX,c.minY,c.maxX,c.maxY,c.cx,c.cy,c.depth);
+                }
             }
         }
     }
