@@ -4628,7 +4628,7 @@ static void drawAzelVdp2Nbg1Gpu()
             &g_vdp2Nbg1AtlasTexture, SCE_GXM_TEXTURE_FILTER_POINT);
     }
     if(!setVdp2UiPriority(kVdp2Nbg1AtlasWidth,kVdp2Nbg1AtlasHeight,
-        (g_spriteColor.bgon&2)?(g_spriteColor.prina>>8)&7:0))return;
+        (g_spriteColor.bgon&2)?(g_spriteColor.prina>>8)&7:0,true))return;
 
     void* uniforms = nullptr;
     if (sceGxmReserveVertexDefaultUniformBuffer(

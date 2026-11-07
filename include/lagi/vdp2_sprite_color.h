@@ -55,9 +55,24 @@ constexpr unsigned spritePixelPriority(const Vdp2SpriteColorState& s,unsigned co
 // This deliberately describes a supported state, not a game-mode exception.
 constexpr bool rbgLayerCompositeSupported(const Vdp2SpriteColorState& s) {
     if(((s.spctl&15)!=0 && (s.spctl&15)!=3) || !(s.spctl&0x20) || (s.spctl&0x10) ||
-        !(s.ccctl&0x10) || (s.ccctl&~0x150u) ||
-        s.colorWindow || (s.bgon&0x26) || (s.specialPriority&0x303) ||
+        !(s.ccctl&0x10) || (s.ccctl&~0x152u) ||
+        s.colorWindow || (s.bgon&0x24) || (s.specialPriority&0x303) ||
         (s.specialColor&0x303))return false;
+    // Preserve Saturn NBG1 additive color calculation and its priority.
+    // Other NBG1 modes need a general VDP2 top/second-source resolver.
+    if(s.bgon&2) {
+        if((s.ccctl&0x102u)!=0x102u)return false;
+        const unsigned nbg1=(s.prina>>8)&7u;
+        if(!nbg1 || nbg1<=(s.prir&7u) ||
+            ((s.bgon&1) && nbg1<=(s.prina&7u)))return false;
+        if((s.bgon&8) && ((s.prinb>>8)&7u)<=nbg1)return false;
+        for(unsigned code=128;code<256;++code) {
+            const unsigned priority=spritePixelPriority(s,code);
+            if(priority>=nbg1 &&
+                spriteColorCalculationSelected(s,priority,code==128 || code==255))
+                return false;
+        }
+    } else if(s.ccctl&2u)return false;
     if(s.bgon&8) {
         const unsigned ui=(s.prinb>>8)&7;
         if((s.specialPriority&0xc0) || !ui || ui<=(s.prir&7) ||
@@ -74,7 +89,7 @@ constexpr bool rbgLayerCompositeSupported(const Vdp2SpriteColorState& s) {
 // above RBG0 and any sprite that beats them is opaque at the VDP2 stage.
 // Other states require a top/second-source resolver, not this fast path.
 constexpr bool spriteUiPrioritySupported(const Vdp2SpriteColorState& s) {
-    if(rbgLayerCompositeSupported(s))return (s.bgon&8)!=0;
+    if(rbgLayerCompositeSupported(s))return (s.bgon&0xAu)!=0;
     if((s.spctl&15)!=3 || !(s.spctl&0x20) || (s.bgon&5) ||
         s.colorWindow || (s.ccctl&0x610))return false;
     unsigned first=8,last=0;

@@ -48,6 +48,22 @@ int main(){
         s=base;s.specialColor=bit;assert(!lagi::rbgLayerCompositeSupported(s));
     }
     s=base;s.ccctl|=1;assert(!lagi::rbgLayerCompositeSupported(s));
+    // Actual Camp night registers: RBG0 priority3, NBG1 priority6,
+    // NBG3 priority7; CCCTL enables NBG1+RBG0+sprite and additive mode.
+    s={};s.ccctl=0x152;s.spctl=0x1223;s.bgon=0x1a;
+    s.prir=3;s.prina=0x0600;s.prinb=0x0700;
+    s.priority[0]=0x0204;s.priority[1]=0x0407;
+    s.ratio[0]=0x0010;s.rbgRatio=0x10;s.specialColor=0x8;
+    assert(lagi::rbgLayerCompositeSupported(s));
+    assert(lagi::spriteUiPrioritySupported(s));
+    const auto campLowSprite=lagi::spriteCompositeLookup(s,129+8);
+    assert((campLowSprite&255u)==0u); // RBG0 p3 wins over sprite p2.
+    assert(((campLowSprite>>8)&255u)==3u); // Add, not alpha.
+    auto camp=s;
+    camp.ccctl&=~0x100u;assert(!lagi::rbgLayerCompositeSupported(camp));
+    camp=s;camp.prina=0x0300;assert(!lagi::rbgLayerCompositeSupported(camp));
+    camp=s;camp.prinb=0x0500;assert(!lagi::rbgLayerCompositeSupported(camp));
+    camp=s;camp.spctl=0x1723;assert(!lagi::rbgLayerCompositeSupported(camp));
     s=base;s.colorWindow=1;assert(!lagi::rbgLayerCompositeSupported(s));
     s=base;s.prinb=0x500;assert(!lagi::rbgLayerCompositeSupported(s));
     s=base;s.spctl=0x1323;s.ccctl=0x150;s.priority[0]=0x604;
