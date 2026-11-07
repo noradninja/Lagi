@@ -209,6 +209,33 @@ static bool prepareSpriteComposite(bool native,bool menu) {
 static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface* destination,
     SceGxmSyncObject* sync) {
     sceGxmEndScene(g_probeContext,nullptr,nullptr);
+    // Diagnostic-only sparse readback. The GPU must finish the world pass
+    // before the CPU inspects the native selector bytes. Sample twice, well
+    // after Camp has settled, then never force this stall again.
+    if(g_rbgRatioCompositeFrame && g_spriteLayerPixels) {
+        static unsigned eligibleFrames=0,readbacks=0;
+        ++eligibleFrames;
+        if(readbacks<2 && (eligibleFrames==60u || eligibleFrames==180u)) {
+            const auto start=sceKernelGetProcessTimeWide();
+            sceGxmFinish(g_probeContext);
+            const auto a=lagi::auditVdp1SurfacePriorities(
+                static_cast<const std::uint32_t*>(g_spriteLayerPixels),
+                kWidth,kHeight,kGxmPitch,16u,g_spriteColor);
+            logging::writef("[VDP1SurfacePriority] sample=%u frames=%u pixels=%u empty=%u half=%u indexed=%u direct=%u unknown=%u belowRbg=%u equalRbg=%u aboveRbg=%u noPriority=%u PRIR=%04X PRISA=%04X PRISB=%04X waitAndScanUs=%u\n",
+                ++readbacks,eligibleFrames,a.samples,a.empty,a.half,a.indexed,
+                a.direct,a.unknown,a.below,a.equal,a.above,
+                a.nonzeroWithoutPriority,g_spriteColor.prir,g_spriteColor.priority[0],
+                g_spriteColor.priority[1],
+                unsigned(sceKernelGetProcessTimeWide()-start));
+            logging::writef("[VDP1SurfaceRegions] below=%u,%u,%u/%u,%u,%u/%u,%u,%u above=%u,%u,%u/%u,%u,%u/%u,%u,%u\n",
+                a.regionsBelow[0],a.regionsBelow[1],a.regionsBelow[2],
+                a.regionsBelow[3],a.regionsBelow[4],a.regionsBelow[5],
+                a.regionsBelow[6],a.regionsBelow[7],a.regionsBelow[8],
+                a.regionsAbove[0],a.regionsAbove[1],a.regionsAbove[2],
+                a.regionsAbove[3],a.regionsAbove[4],a.regionsAbove[5],
+                a.regionsAbove[6],a.regionsAbove[7],a.regionsAbove[8]);
+        }
+    }
     if(g_gpuPassSample) {
         const auto start=sceKernelGetProcessTimeWide();
         sceGxmFinish(g_probeContext);

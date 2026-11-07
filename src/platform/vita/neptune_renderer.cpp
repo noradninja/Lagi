@@ -1,5 +1,6 @@
 #include "lagi/platform.h"
 #include "lagi/vdp1_priority_coverage.h"
+#include "lagi/vdp1_surface_priority_audit.h"
 #include "lagi/ui_lut_palette.h"
 #include "lagi/ui_texture_cache_index.h"
 #include "lagi/vdp1_color_calculation.h"
