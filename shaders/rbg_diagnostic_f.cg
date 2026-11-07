@@ -2,8 +2,12 @@
 // RAW (13) shows VDP1 alone; SPLIT (14) shows same-frame VDP1 | resolved RBG0.
 // OWNER (15) shows the winning priority source: red VDP1, blue RBG0,
 // green NBG0, black back screen. This view ignores color calculation.
-// UNDERLAY (16) compares normal RBG0 composition (left) to RBG0 without
-// the lower-priority VDP1 source (right). Both halves use the same frame.
+// UNDERLAY (16) compares normal composition (left) to composition without
+// a real, lower-priority VDP1 second source (right). Empty VDP1 pixels must
+// retain the back-screen/NBG0 source. Both halves use the same frame.
+// SECOND SOURCE (17) shows normal composition left and right-hand color key:
+// red=lower VDP1, green=NBG0, blue=back screen, yellow=VDP1 wins,
+// black=RBG0 absent. The key is diagnostic, not a priority override.
 // Register-gated RBG0/VDP1 calculation over the next raw native source.
 // Do not blend the second source recursively: this is NOT ordinary layered
 // alpha-over. Equal priority: VDP1 > RBG0 > NBG0 > back screen.
@@ -38,7 +42,15 @@ float4 main(float2 uv:TEXCOORD0,uniform sampler2D layer:TEXUNIT0,
     // underneath it. Unlike OWNER, this preserves the normal composite on
     // the left and only suppresses the RBG0/VDP1 second source on the right.
     // It must not affect the production compositor or source priority.
-    if(debugInfo.x>=2.5f && uv.x>=0.5f && rp>sp && rp>=np)
+    if(debugInfo.x>=3.5f && uv.x>=0.5f) {
+        if(rp<0.5f)return float4(0.f,0.f,0.f,1.f);
+        if(sp>=rp && sp>0.f)return float4(1.f,1.f,0.f,1.f);
+        if(np>0.f && np>sp)return float4(0.f,1.f,0.f,1.f);
+        if(sp>0.f && rp>sp)return float4(1.f,0.f,0.f,1.f);
+        return float4(0.f,0.f,1.f,1.f);
+    }
+    if(debugInfo.x>=2.5f && debugInfo.x<3.5f && uv.x>=0.5f &&
+        sp>0.f && rp>sp && rp>=np)
         return float4(rbg.rgb,1.f);
     float3 second=backColor.rgb;
     if(np>0)second=nbg.rgb;
