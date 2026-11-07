@@ -137,7 +137,7 @@ static bool prepareSpriteComposite(bool native,bool menu) {
             &g_rbgRatioCompositeProgram)<0)return false;
     }
     // Diagnostic shader stays separate from the production composition path.
-    if(rbgRatio && (g_viewMode==13 || g_viewMode==14) && !g_rbgDiagnosticProgram) {
+    if(rbgRatio && (g_viewMode==13 || g_viewMode==14 || g_viewMode==15) && !g_rbgDiagnosticProgram) {
         const auto* fp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_rbg_diagnostic_f_gxp_start);
         const auto* vp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_texture_v_gxp_start);
         if(sceGxmProgramCheck(fp)>=0) {
@@ -282,7 +282,7 @@ static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface*
     if(sceGxmBeginScene(g_probeContext,0,target,nullptr,nullptr,sync,destination,nullptr)<0)return false;
     sceGxmSetVertexProgram(g_probeContext,g_textureVertexProgram);
     const bool diagnostic=g_rbgRatioCompositeFrame &&
-        (g_viewMode==13 || g_viewMode==14) && g_rbgDiagnosticProgram;
+        (g_viewMode==13 || g_viewMode==14 || g_viewMode==15) && g_rbgDiagnosticProgram;
     sceGxmSetFragmentProgram(g_probeContext,diagnostic?g_rbgDiagnosticProgram:
         (g_rbgRatioCompositeFrame?g_rbgRatioCompositeProgram:g_spriteCompositeProgram));
     sceGxmSetCullMode(g_probeContext,SCE_GXM_CULL_NONE);
@@ -310,7 +310,7 @@ static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface*
             float(lagi::rbgColorRatio(g_spriteColor)),(g_spriteColor.ccctl&0x100)?1.f:0.f,0};
         sceGxmSetUniformDataF(f,diagnostic?g_diagState:g_rbgRatioState,0,4,state);
         if(diagnostic) {
-            const float info[4]={g_viewMode==14?1.f:0.f,0.f,0.f,0.f};
+            const float info[4]={g_viewMode==15?2.f:(g_viewMode==14?1.f:0.f),0.f,0.f,0.f};
             sceGxmSetUniformDataF(f,g_diagInfo,0,4,info);
         }
         sceGxmSetFragmentTexture(g_probeContext,3,(g_spriteColor.bgon&1)?&g_sceneNbg0Texture:&g_spriteLayerTexture);
