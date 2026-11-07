@@ -12333,7 +12333,8 @@ bool submit_vdp1_model(
             // The static/dynamic cache is intentionally flattened by
             // lifetime. Replay its original Azel submission descriptors.
             // Index writes still address the original per-polygon slots.
-            std::vector<std::uint8_t> replayed(model.polygonCount,0u);
+            static std::vector<std::uint8_t> replayed;
+            replayed.assign(model.polygonCount,0u);
             for(const auto& range:g_liveTownSubmissionRanges) {
                 if(range.first>=model.polygonCount)continue;
                 const std::size_t end=range.first+
