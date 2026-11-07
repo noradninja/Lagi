@@ -8483,7 +8483,7 @@ static bool buildLiveTownFrame()
     g_profilePositionSyncUs = 0u;
     g_profilePositionSyncVertices = 0u;
     g_profilePositionSyncLegacyVertices = 0u;
-    const bool fullSubdivMode = g_viewMode == 7;
+    const bool fullSubdivMode = g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14;
     const bool changed = !g_liveTownPrepared ||
         g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
         g_vdp1TextureDataDirty ||
@@ -11717,7 +11717,7 @@ bool submit_vdp1_model(
         drawState.mode == Vdp1RenderMode::Wireframe;
     const bool subdividedTexturedLit =
         texturedLit &&
-        g_viewMode == 7 &&
+        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14) &&
         liveSubdivisionBuffersReady(model) &&
         g_texturedGouraudSubdivFragmentProgram;
     const bool subdividedGouraudGray =
