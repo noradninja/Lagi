@@ -95,6 +95,7 @@ extern const unsigned char _binary_lagi_rgba_present_f_gxp_start[];
 extern const unsigned char _binary_lagi_scene_nbg0_f_gxp_start[];
 extern const unsigned char _binary_lagi_sprite_composite_f_gxp_start[];
 extern const unsigned char _binary_lagi_rbg_ratio_composite_f_gxp_start[];
+extern const unsigned char _binary_lagi_rbg_diagnostic_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_ui_priority_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_tile16_8bit_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_pages_f_gxp_start[];
@@ -1690,6 +1691,8 @@ static const char* viewerModeLabel(int mode)
     case 8:  return "TEXTURES";
     case 10: return "GREYSCALE LIGHTING";
     case 12: return "COLOR LIGHTING";
+    case 13: return "VDP1 RAW";
+    case 14: return "VDP1 / COMPOSITE SPLIT";
     case 9:  return "QUADS";
     case 11: return "WIRES";
     default: return "";
@@ -14073,11 +14076,11 @@ static void renderBasicWingViewer()
         roomAuthenticCameraMode &&
         (liveSceneLighting ||
          (g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)) &&
-        g_viewMode == 7;
+        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14);
     const bool roomAuthenticTexturedMode =
         roomAuthenticCameraMode &&
         (g_viewMode == 8 ||
-         (g_viewMode == 7 && !liveSceneLighting &&
+         ((g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14) && !liveSceneLighting &&
           !(g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)));
     const bool roomAuthenticFlatMode =
         roomAuthenticCameraMode &&
@@ -14823,16 +14826,16 @@ void begin_frame()
         // Controller state belongs to the game thread. Only the selected view
         // is copied into the next published render frame.
         // Full remains the default; diagnostic lighting closes the cycle.
-        static constexpr int kSceneModes[6] = {7, 8, 11, 9, 10, 12};
+        static constexpr int kSceneModes[8] = {7, 8, 11, 9, 10, 12, 13, 14};
         int sceneModeIndex = 0;
-        for (int i = 0; i < 6; ++i)
+        for (int i = 0; i < 8; ++i)
             if (g_pendingViewMode == kSceneModes[i])
                 sceneModeIndex = i;
 
         if (input::prev_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 5) % 6;
+            sceneModeIndex = (sceneModeIndex + 7) % 8;
         if (input::next_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 1) % 6;
+            sceneModeIndex = (sceneModeIndex + 1) % 8;
         g_pendingViewMode = kSceneModes[sceneModeIndex];
         return;
     }
