@@ -12358,7 +12358,7 @@ bool submit_vdp1_model(
             static unsigned orderedTraceBudget=4u;
             if(orderedTraceBudget) {
                 --orderedTraceBudget;
-                logging::writef("[NativeVdp1CommandOrder] scene=%u polygons=%u visible=%u runs=%u textureChanges=%u orderedPolys=%u depthScene=%u depthFunc=LEQUAL opaqueWrites=1 halfWrites=0 nativeSourceOrder=1\\n",
+                logging::writef("[NativeVdp1CommandOrder] scene=%u polygons=%u visible=%u runs=%u textureChanges=%u orderedPolys=%u depthScene=%u depthFunc=LEQUAL opaqueWrites=1 halfWrites=0 nativeSourceOrder=1\n",
                     unsigned(g_sceneGameMode),unsigned(model.polygonCount),
                     visibleCount,unsigned(orderedRuns.size()),textureTransitions,
                     orderedCount,unsigned(depthScene));
