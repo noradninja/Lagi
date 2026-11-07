@@ -12264,7 +12264,7 @@ bool submit_vdp1_model(
             g_residentVdp1Model==ResidentVdp1Model::LiveTown) {
             struct NativeOrderedRun {
                 unsigned texture,firstIndex,count;
-                bool ordered;
+                bool ordered,blended;
             };
             static std::vector<NativeOrderedRun> orderedRuns;
             orderedRuns.clear();
@@ -12272,7 +12272,8 @@ bool submit_vdp1_model(
             const bool depthScene=lagi::native_scene_depth_mode(g_sceneGameMode);
             std::size_t rangeCursor=0u;
             unsigned visibleCount=0u,orderedCount=0u;
-            unsigned textureTransitions=0u;
+            unsigned textureTransitions=0u,blendStateSplits=0u;
+            unsigned materialPmodMismatches=0u;
             unsigned lastTexture=~0u;
             const std::size_t shadowStart=g_liveTownShadowFirstPolygon;
             const std::size_t shadowEnd=shadowStart+g_liveTownShadowPolygonCount;
@@ -12293,6 +12294,15 @@ bool submit_vdp1_model(
                 const bool shadowRange=g_liveTownShadowPolygonCount &&
                     p>=shadowStart && p<shadowEnd;
                 const bool ordered=meshRange||shadowRange;
+                // The texture cache is not the authority for VDP1 color
+                // calculation: the originating command's PMOD is. Two
+                // consecutive polygons can reuse an uploaded texture while
+                // requiring distinct blend programs and depth-write policy.
+                const bool blended=lagi::vdp1_half_transparent(
+                    g_liveTownCpuMesh.polygonRecords[p].cmdPmod);
+                if(blended!=lagi::vdp1_half_transparent(
+                    g_vdp1GpuTextures[texture].cmdPmod))
+                    ++materialPmodMismatches;
                 const unsigned index=static_cast<unsigned>(p*24u);
                 if(index+24u>g_vdp1SubdivIndexCapacity)return false;
                 std::memcpy(g_vdp1SubdivIndices+index,
@@ -12303,10 +12313,17 @@ bool submit_vdp1_model(
                 if(!orderedRuns.empty() &&
                     orderedRuns.back().texture==texture &&
                     orderedRuns.back().ordered==ordered &&
+                    orderedRuns.back().blended==blended &&
                     orderedRuns.back().firstIndex+orderedRuns.back().count==index)
                     orderedRuns.back().count+=24u;
-                else
-                    orderedRuns.push_back({texture,index,24u,ordered});
+                else {
+                    if(!orderedRuns.empty() &&
+                        orderedRuns.back().texture==texture &&
+                        orderedRuns.back().ordered==ordered &&
+                        orderedRuns.back().blended!=blended)
+                        ++blendStateSplits;
+                    orderedRuns.push_back({texture,index,24u,ordered,blended});
+                }
                 ++visibleCount;
                 if(ordered)++orderedCount;
             }
@@ -12314,8 +12331,7 @@ bool submit_vdp1_model(
             for(const auto& run:orderedRuns) {
                 const unsigned texture=run.texture;
                 const bool mesh=g_vdp1GpuTextures[texture].mesh;
-                const bool blended=lagi::vdp1_half_transparent(
-                    g_vdp1GpuTextures[texture].cmdPmod);
+                const bool blended=run.blended;
                 // Ordered mesh commands previously used unculled two-sided
                 // polygons. Preserve that state, as well as normal scene
                 // depth comparison for genuine 3D world intersections.
@@ -12361,10 +12377,11 @@ bool submit_vdp1_model(
             static unsigned orderedTraceBudget=4u;
             if(orderedTraceBudget) {
                 --orderedTraceBudget;
-                logging::writef("[NativeVdp1CommandOrder] scene=%u polygons=%u visible=%u runs=%u textureChanges=%u orderedPolys=%u depthScene=%u depthFunc=LEQUAL opaqueWrites=1 halfWrites=0 nativeSourceOrder=1\n",
+                logging::writef("[NativeVdp1CommandOrder] scene=%u polygons=%u visible=%u runs=%u textureChanges=%u orderedPolys=%u depthScene=%u depthFunc=LEQUAL opaqueWrites=1 halfWrites=0 nativeSourceOrder=1 blendStateSplits=%u texturePmodMismatches=%u\n",
                     unsigned(g_sceneGameMode),unsigned(model.polygonCount),
                     visibleCount,unsigned(orderedRuns.size()),textureTransitions,
-                    orderedCount,unsigned(depthScene));
+                    orderedCount,unsigned(depthScene),blendStateSplits,
+                    materialPmodMismatches);
             }
             return true;
         }
