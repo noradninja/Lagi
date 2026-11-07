@@ -12273,27 +12273,26 @@ bool submit_vdp1_model(
             orderedRuns.clear();
             orderedRuns.reserve(model.polygonCount);
             const bool depthScene=lagi::native_scene_depth_mode(g_sceneGameMode);
-            std::size_t rangeCursor=0u;
             unsigned visibleCount=0u,orderedCount=0u;
+            unsigned replayedSubmissions=0u,unrangedPolygons=0u;
             unsigned textureTransitions=0u,blendStateSplits=0u;
             unsigned materialPmodMismatches=0u;
             unsigned lastTexture=~0u;
             const std::size_t shadowStart=g_liveTownShadowFirstPolygon;
             const std::size_t shadowEnd=shadowStart+g_liveTownShadowPolygonCount;
-            for(std::size_t p=0;p<model.polygonCount;++p) {
-                if(!visibleQuads[p])continue;
+            // Static-prefix caching changes storage order, not Azel's
+            // native VDP1 submission order. Preserve the latter here.
+            const auto appendPolygon=[&](std::size_t p)->bool {
+                if(!visibleQuads[p])return true;
                 const unsigned texture=model.polygonTextureIndices[p];
                 if(texture>=bucketCount)return false;
-                // Range attribution is generic: do not skip mesh ranges merely
-                // because the flattened scene also contains the Edge actor.
-                while(rangeCursor<g_liveTownMeshRanges.size() &&
-                    p>=g_liveTownMeshRanges[rangeCursor].first+
-                       g_liveTownMeshRanges[rangeCursor].count)
-                    ++rangeCursor;
-                const bool meshRange=rangeCursor<g_liveTownMeshRanges.size() &&
-                    p>=g_liveTownMeshRanges[rangeCursor].first &&
-                    p<g_liveTownMeshRanges[rangeCursor].first+
-                        g_liveTownMeshRanges[rangeCursor].count;
+                // Polygon IDs are not monotonic after the Azel-order replay.
+                bool meshRange=false;
+                for(const auto& range:g_liveTownMeshRanges) {
+                    if(p>=range.first && p-range.first<range.count) {
+                        meshRange=true;break;
+                    }
+                }
                 const bool shadowRange=g_liveTownShadowPolygonCount &&
                     p>=shadowStart && p<shadowEnd;
                 const bool ordered=meshRange||shadowRange;
@@ -12329,6 +12328,29 @@ bool submit_vdp1_model(
                 }
                 ++visibleCount;
                 if(ordered)++orderedCount;
+                return true;
+            };
+            // The static/dynamic cache is intentionally flattened by
+            // lifetime. Replay its original Azel submission descriptors.
+            // Index writes still address the original per-polygon slots.
+            std::vector<std::uint8_t> replayed(model.polygonCount,0u);
+            for(const auto& range:g_liveTownSubmissionRanges) {
+                if(range.first>=model.polygonCount)continue;
+                const std::size_t end=range.first+
+                    std::min(range.count,model.polygonCount-range.first);
+                ++replayedSubmissions;
+                for(std::size_t p=range.first;p<end;++p) {
+                    if(replayed[p])continue;
+                    replayed[p]=1u;
+                    if(!appendPolygon(p))return false;
+                }
+            }
+            // Edge and shadow polygons synthesized by the bridge are not
+            // part of the published ranges; append them once, at the end.
+            for(std::size_t p=0;p<model.polygonCount;++p) {
+                if(replayed[p])continue;
+                ++unrangedPolygons;
+                if(!appendPolygon(p))return false;
             }
             const std::uint64_t drawStart=sceKernelGetProcessTimeWide();
             for(const auto& run:orderedRuns) {
@@ -12380,11 +12402,11 @@ bool submit_vdp1_model(
             static unsigned orderedTraceBudget=4u;
             if(orderedTraceBudget) {
                 --orderedTraceBudget;
-                logging::writef("[NativeVdp1CommandOrder] scene=%u polygons=%u visible=%u runs=%u textureChanges=%u orderedPolys=%u depthScene=%u depthFunc=LEQUAL opaqueWrites=1 halfWrites=0 nativeSourceOrder=1 blendStateSplits=%u texturePmodMismatches=%u\n",
+                logging::writef("[NativeVdp1CommandOrder] scene=%u polygons=%u visible=%u runs=%u textureChanges=%u orderedPolys=%u depthScene=%u depthFunc=LEQUAL opaqueWrites=1 halfWrites=0 nativeSourceOrder=1 azelSubmissionReplay=%u unrangedPolys=%u blendStateSplits=%u texturePmodMismatches=%u\n",
                     unsigned(g_sceneGameMode),unsigned(model.polygonCount),
                     visibleCount,unsigned(orderedRuns.size()),textureTransitions,
-                    orderedCount,unsigned(depthScene),blendStateSplits,
-                    materialPmodMismatches);
+                    orderedCount,unsigned(depthScene),replayedSubmissions,
+                    unrangedPolygons,blendStateSplits,materialPmodMismatches);
             }
             return true;
         }
