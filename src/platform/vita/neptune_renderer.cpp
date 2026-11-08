@@ -12400,6 +12400,133 @@ bool submit_vdp1_model(
                 ++unrangedPolygons;
                 if(!appendPolygon(p))return false;
             }
+            // Diagnostic only: replay-order / vertical-position audit of the
+            // previously identified large floor-effect polygon group. These
+            // indices select log subjects, never change their draw behavior.
+            // Do not confuse flattened storage order with actual draw order.
+            static unsigned overlapTraceBudget=2u;
+            if(overlapTraceBudget && model.polygonCount>637u &&
+                model.vertices && model.polygons &&
+                model.vertexCount>=model.polygonCount*6u &&
+                g_sceneGameMode>=1u && g_sceneGameMode<=2u) {
+                --overlapTraceBudget;
+                struct TraceBounds {
+                    float minX=1e9f,minY=1e9f,maxX=-1e9f,maxY=-1e9f;
+                    float minWorldY=1e9f,maxWorldY=-1e9f;
+                    float centerWorldX=0.f,centerWorldY=0.f,centerWorldZ=0.f;
+                    float meanDepth=0.f;
+                    bool valid=false;
+                };
+                const auto projection=[&](std::size_t p) {
+                    TraceBounds b{};
+                    constexpr unsigned corners[4]={0u,1u,2u,5u};
+                    if(p>=model.polygonCount)return b;
+                    for(unsigned k:corners) {
+                        const auto& v=model.vertices[p*6u+k];
+                        b.minWorldY=std::min(b.minWorldY,v.y);
+                        b.maxWorldY=std::max(b.maxWorldY,v.y);
+                        b.centerWorldX+=v.x*0.25f;
+                        b.centerWorldY+=v.y*0.25f;
+                        b.centerWorldZ+=v.z*0.25f;
+                        const float x=v.x*drawState.wvp[0]+v.y*drawState.wvp[4]+
+                            v.z*drawState.wvp[8]+drawState.wvp[12];
+                        const float y=v.x*drawState.wvp[1]+v.y*drawState.wvp[5]+
+                            v.z*drawState.wvp[9]+drawState.wvp[13];
+                        const float z=v.x*drawState.wvp[2]+v.y*drawState.wvp[6]+
+                            v.z*drawState.wvp[10]+drawState.wvp[14];
+                        const float w=v.x*drawState.wvp[3]+v.y*drawState.wvp[7]+
+                            v.z*drawState.wvp[11]+drawState.wvp[15];
+                        if(w<=0.00001f)return TraceBounds{};
+                        const float sx=(x/w*0.5f+0.5f)*viewerRenderWidth();
+                        const float sy=(0.5f-y/w*0.5f)*viewerRenderHeight();
+                        b.minX=std::min(b.minX,sx);b.maxX=std::max(b.maxX,sx);
+                        b.minY=std::min(b.minY,sy);b.maxY=std::max(b.maxY,sy);
+                        b.meanDepth+=(z/w)*0.25f;
+                    }
+                    b.valid=true;
+                    return b;
+                };
+                std::vector<int> drawOrdinal(model.polygonCount,-1);
+                unsigned ordinal=0u;
+                for(const auto& run:orderedRuns) {
+                    for(unsigned at=0;at<run.count;at+=24u) {
+                        const std::size_t p=(run.firstIndex+at)/24u;
+                        if(p<drawOrdinal.size())drawOrdinal[p]=int(ordinal++);
+                    }
+                }
+                float effectLeft=1e9f,effectTop=1e9f,effectRight=-1e9f,
+                    effectBottom=-1e9f,effectY=0.f;
+                unsigned effectCount=0u;
+                for(std::size_t p=626u;p<=637u;++p) {
+                    const auto b=projection(p);
+                    const auto& rec=model.polygons[p];
+                    if(!b.valid || drawOrdinal[p]<0)continue;
+                    effectLeft=std::min(effectLeft,b.minX);
+                    effectTop=std::min(effectTop,b.minY);
+                    effectRight=std::max(effectRight,b.maxX);
+                    effectBottom=std::max(effectBottom,b.maxY);
+                    effectY+=b.centerWorldY;
+                    ++effectCount;
+                    logging::writef("[VDP1CircleOrder] p=%u drawOrdinal=%d visible=%u sourceModel=%u local=%u PMOD=%04X COLR=%04X xyz=(%.5f,%.5f,%.5f) worldY=%.5f..%.5f screen=(%.1f,%.1f)-(%.1f,%.1f) depth=%.5f\n",
+                        unsigned(p),drawOrdinal[p],unsigned(visibleQuads[p]),
+                        unsigned(rec.model),unsigned(rec.polygonInModel),
+                        rec.cmdPmod,rec.cmdColr,
+                        b.centerWorldX,b.centerWorldY,b.centerWorldZ,
+                        b.minWorldY,b.maxWorldY,b.minX,b.minY,b.maxX,b.maxY,b.meanDepth);
+                }
+                if(effectCount) {
+                    effectY/=effectCount;
+                    struct Overlap {std::size_t p;float area;TraceBounds b;};
+                    std::vector<Overlap> overlaps;
+                    overlaps.reserve(model.polygonCount);
+                    for(std::size_t p=0;p<model.polygonCount;++p) {
+                        if((p>=626u&&p<=637u)||drawOrdinal[p]<0)continue;
+                        const auto b=projection(p);
+                        if(!b.valid)continue;
+                        const float w=std::min(effectRight,b.maxX)-
+                            std::max(effectLeft,b.minX);
+                        const float h=std::min(effectBottom,b.maxY)-
+                            std::max(effectTop,b.minY);
+                        if(w>0.f&&h>0.f)overlaps.push_back({p,w*h,b});
+                    }
+                    std::sort(overlaps.begin(),overlaps.end(),
+                        [](const Overlap&a,const Overlap&b) {
+                            return a.area==b.area?a.p<b.p:a.area>b.area;
+                        });
+                    logging::writef("[VDP1CircleOverlap] effectPolys=%u effectCenterY=%.5f bbox=(%.1f,%.1f)-(%.1f,%.1f) overlapping=%u shadowRange=%u/%u edgeRange=%u/%u drawCount=%u\n",
+                        effectCount,effectY,effectLeft,effectTop,
+                        effectRight,effectBottom,unsigned(overlaps.size()),
+                        unsigned(g_liveTownShadowFirstPolygon),
+                        unsigned(g_liveTownShadowPolygonCount),
+                        unsigned(g_liveTownEdgeFirstPolygon),
+                        unsigned(g_liveTownEdgePolygonCount),ordinal);
+                    const auto reportOverlap=[&](std::size_t p,float area,
+                        const TraceBounds& b,const char* label) {
+                        const auto& rec=model.polygons[p];
+                        logging::writef("[VDP1CircleOther] type=%s p=%u drawOrdinal=%d PMOD=%04X COLR=%04X model=%u local=%u area=%.1f xyz=(%.5f,%.5f,%.5f) worldY=%.5f..%.5f deltaY=%.5f screen=(%.1f,%.1f)-(%.1f,%.1f) depth=%.5f\n",
+                            label,unsigned(p),drawOrdinal[p],rec.cmdPmod,
+                            rec.cmdColr,unsigned(rec.model),
+                            unsigned(rec.polygonInModel),area,
+                            b.centerWorldX,b.centerWorldY,b.centerWorldZ,
+                            b.minWorldY,b.maxWorldY,
+                            effectY-b.centerWorldY,
+                            b.minX,b.minY,b.maxX,b.maxY,b.meanDepth);
+                    };
+                    for(std::size_t i=0;i<std::min(std::size_t(16),overlaps.size());++i)
+                        reportOverlap(overlaps[i].p,overlaps[i].area,
+                            overlaps[i].b,"largest-overlap");
+                    const auto shadowEnd=std::min(model.polygonCount,
+                        g_liveTownShadowFirstPolygon+g_liveTownShadowPolygonCount);
+                    for(std::size_t p=g_liveTownShadowFirstPolygon,
+                        n=0;p<shadowEnd&&n<8;++p) {
+                        if(drawOrdinal[p]<0)continue;
+                        const auto b=projection(p);
+                        if(!b.valid)continue;
+                        reportOverlap(p,0.f,b,"edge-shadow");
+                        ++n;
+                    }
+                }
+            }
             const std::uint64_t drawStart=sceKernelGetProcessTimeWide();
             for(const auto& run:orderedRuns) {
                 const unsigned texture=run.texture;
