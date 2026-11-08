@@ -1714,6 +1714,9 @@ static const char* viewerModeLabel(int mode)
     case 18: return "VDP1 DEPTH: ORDER ONLY";
     case 19: return "VDP1 DEPTH: TEST ONLY";
     case 20: return "VDP1 ORDER: CIRCLE FIRST";
+    case 21: return "VDP1 CIRCLE Y: ZERO";
+    case 22: return "VDP1 CIRCLE Y: -0.015";
+    case 23: return "VDP1 CIRCLE Y: -0.030";
     case 9:  return "QUADS";
     case 11: return "WIRES";
     default: return "";
@@ -8605,7 +8608,7 @@ static bool buildLiveTownFrame()
     g_profilePositionSyncUs = 0u;
     g_profilePositionSyncVertices = 0u;
     g_profilePositionSyncLegacyVertices = 0u;
-    const bool fullSubdivMode = g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20;
+    const bool fullSubdivMode = g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23;
     const bool changed = !g_liveTownPrepared ||
         g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
         g_vdp1TextureDataDirty ||
@@ -11839,7 +11842,7 @@ bool submit_vdp1_model(
         drawState.mode == Vdp1RenderMode::Wireframe;
     const bool subdividedTexturedLit =
         texturedLit &&
-        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20) &&
+        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23) &&
         liveSubdivisionBuffersReady(model) &&
         g_texturedGouraudSubdivFragmentProgram;
     const bool subdividedGouraudGray =
@@ -12163,6 +12166,32 @@ bool submit_vdp1_model(
                 g_liveTownStaticPolygonCount)
             g_sceneSubdivPositionValid.assign(g_liveTownStaticPolygonCount, 0u);
         g_sceneSubdivShadeStates.resize(model.polygonCount);
+        // GPU-only vertical-position experiment. Never modify Azel's
+        // authoritative CPU model or the production FULL view.
+        const unsigned circleHeightMode=(g_viewMode>=21 && g_viewMode<=23)
+            ? unsigned(g_viewMode) : 0u;
+        const float circleHeightOffset=circleHeightMode==21u ? -0.01514f :
+            (circleHeightMode==22u ? -0.03014f :
+            (circleHeightMode==23u ? -0.04514f : 0.0f));
+        unsigned circleMaterialMatches=0u;
+        if(model.polygonCount>637u) {
+            for(unsigned p=626u;p<=637u;++p)
+                circleMaterialMatches+=unsigned(model.polygons[p].cmdColr==0x2100u);
+        }
+        const bool circleIdentified=circleMaterialMatches>=2u;
+        static unsigned previousCircleHeightMode=~0u;
+        if(previousCircleHeightMode!=circleHeightMode) {
+            previousCircleHeightMode=circleHeightMode;
+            // Invalidate cached static GPU coordinates on transitions,
+            // including when returning from a diagnostic to FULL.
+            if(sceneStaticPositions && circleIdentified) {
+                for(unsigned p=626u;p<=637u && p<g_sceneSubdivPositionValid.size();++p)
+                    g_sceneSubdivPositionValid[p]=0u;
+            }
+            logging::writef("[VDP1CircleHeight] view=%u offsetY=%.5f identified=%u matches=%u restoredOnExit=1 gpuOnly=1\n",
+                g_viewMode,double(circleHeightOffset),unsigned(circleIdentified),
+                circleMaterialMatches);
+        }
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             if (!g_liveTownGouraudPrep[p].visible)
@@ -12186,7 +12215,10 @@ bool submit_vdp1_model(
                 model.vertices[p * 6u + cornerVertex[3]];
             const auto& shade = model.gouraud555[p];
 
+            const bool heightTarget=circleIdentified &&
+                p>=626u && p<=637u && model.polygons[p].cmdColr==0x2100u;
             const bool updatePosition =
+                (heightTarget && circleHeightMode!=0u) ||
                 g_liveTownStaticRebuilt ||
                 p >= static_cast<unsigned int>(
                     g_liveTownStaticPolygonCount) ||
@@ -12219,6 +12251,8 @@ bool submit_vdp1_model(
                 fillMidpointGrid3x3(a.x, b.x, c.x, d.x, gridX);
                 fillMidpointGrid3x3(a.y, b.y, c.y, d.y, gridY);
                 fillMidpointGrid3x3(a.z, b.z, c.z, d.z, gridZ);
+                if(heightTarget && circleHeightMode!=0u)
+                    for(float& y : gridY)y+=circleHeightOffset;
             }
 
             const unsigned int baseVertex = p * 9u;
@@ -14508,11 +14542,11 @@ static void renderBasicWingViewer()
         roomAuthenticCameraMode &&
         (liveSceneLighting ||
          (g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)) &&
-        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20);
+        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23);
     const bool roomAuthenticTexturedMode =
         roomAuthenticCameraMode &&
         (g_viewMode == 8 ||
-         ((g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20) && !liveSceneLighting &&
+         ((g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23) && !liveSceneLighting &&
           !(g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)));
     const bool roomAuthenticFlatMode =
         roomAuthenticCameraMode &&
@@ -14562,7 +14596,7 @@ static void renderBasicWingViewer()
     // intersections to their original Saturn commands. No render-path changes.
     // The trace captures the first eligible RAW/SPLIT frame per scene/view,
     // not every frame, and is bounded independently of visibility size.
-    if (nativeSceneMode && (g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20) &&
+    if (nativeSceneMode && (g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23) &&
         g_liveTownGouraudPrepValid &&
         g_liveTownCpuMesh.vertices.size() ==
             g_liveTownCpuMesh.polygonRecords.size() * 6u) {
@@ -14779,7 +14813,7 @@ static void renderBasicWingViewer()
     if (!roomMode) {
         // Diagnostics 18/19 compare depth only, never reinterpret their IDs
         // as VDP1 render modes. Keep the same FULL material/shading path.
-        renderMode = (g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20)
+        renderMode = (g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23)
             ? Vdp1RenderMode::TexturedGouraud
             : static_cast<Vdp1RenderMode>(g_viewMode);
     } else if (roomAuthenticFlatMode) {
@@ -15387,16 +15421,16 @@ void begin_frame()
         // Controller state belongs to the game thread. Only the selected view
         // is copied into the next published render frame.
         // Full remains the default; diagnostic lighting closes the cycle.
-        static constexpr int kSceneModes[14] = {7, 18, 19, 20, 8, 11, 9, 10, 12, 13, 14, 15, 16, 17};
+        static constexpr int kSceneModes[17] = {7, 18, 19, 20, 21, 22, 23, 8, 11, 9, 10, 12, 13, 14, 15, 16, 17};
         int sceneModeIndex = 0;
-        for (int i = 0; i < 14; ++i)
+        for (int i = 0; i < 17; ++i)
             if (g_pendingViewMode == kSceneModes[i])
                 sceneModeIndex = i;
 
         if (input::prev_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 13) % 14;
+            sceneModeIndex = (sceneModeIndex + 16) % 17;
         if (input::next_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 1) % 14;
+            sceneModeIndex = (sceneModeIndex + 1) % 17;
         g_pendingViewMode = kSceneModes[sceneModeIndex];
         return;
     }
@@ -16584,7 +16618,8 @@ bool presentation_active()
         g_pendingViewMode == 10 || g_pendingViewMode == 9 ||
         g_pendingViewMode == 11 || g_pendingViewMode == 12 ||
         g_pendingViewMode == 18 || g_pendingViewMode == 19 ||
-        g_pendingViewMode == 20;
+        g_pendingViewMode == 20 || g_pendingViewMode == 21 ||
+        g_pendingViewMode == 22 || g_pendingViewMode == 23;
     const bool nativeSceneReady =
         g_sceneGameMode != 0u && (g_nativeSceneViewValid || g_townCameraReady);
     const bool legacyRoomReady =
