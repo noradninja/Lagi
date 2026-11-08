@@ -76,6 +76,10 @@ int main() {
     s.specialColor=0x000c; // NBG1 CRAM-MSB mode
     assert(lagi::scrollSpecialColorCalculationSelected(s,1,true,false,0,true));
     assert(!lagi::scrollSpecialColorCalculationSelected(s,1,true,true,10,false));
+    s.pncn1=0x8000;
+    assert(!lagi::nbg1AuxiliarySpecialColor(s));
+    s.pncn1=0x8100;
+    assert(lagi::nbg1AuxiliarySpecialColor(s));
     s.ccctl=0;
     assert(!lagi::scrollSpecialColorCalculationSelected(s,1,true,true,10,true));
     puts("PASS VDP2 sprite selection, exhaustive RGB555 ratio and type-3 selector preservation; GPU appearance pending");
