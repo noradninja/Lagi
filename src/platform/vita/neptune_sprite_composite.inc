@@ -405,6 +405,26 @@ static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface*
                 unsigned(sceKernelGetProcessTimeWide()-start));
             logging::writef("[VDP1SurfaceAuditContext] polygons=%u stableFrames=%u decodedIndexed=%u direct=%u belowRbg=%u\n",
                 polygonCount,stableFrames,a.indexed,a.direct,a.below);
+            // Reuse this existing finite GPU wait: no extra readbacks,
+            // render passes, or per-frame CPU/GPU synchronization.
+            if(g_vdp1CircleAuditCount &&
+                g_vdp1CircleAuditScene==g_sceneGameMode) {
+                const auto* pixels=static_cast<const std::uint32_t*>(g_spriteLayerPixels);
+                logging::writef("[VDP1CirclePixelAudit] sample=%u count=%u scene=%u PRIR=%04X SPCTL=%04X\n",
+                    readbacks,g_vdp1CircleAuditCount,g_sceneGameMode,
+                    g_spriteColor.prir,g_spriteColor.spctl);
+                for(unsigned probe=0;probe<g_vdp1CircleAuditCount;++probe) {
+                    const auto& at=g_vdp1CircleAuditPoints[probe];
+                    if(at.x<0||at.y<0||at.x>=kWidth||at.y>=kHeight)continue;
+                    const auto pixel=pixels[std::size_t(at.y)*kGxmPitch+unsigned(at.x)];
+                    const unsigned code=pixel>>24u;
+                    const unsigned decision=lagi::spriteCompositeLookup(g_spriteColor,code);
+                    logging::writef("[VDP1CirclePixel] probe=%u at=%d,%d circle=%u overlap=%u raw=%08X code=%u priority=%u operation=%u belowRbg=%u\n",
+                        probe,at.x,at.y,at.circle,at.other,pixel,code,
+                        (decision>>24u)&255u,(decision>>8u)&255u,
+                        unsigned(((decision>>24u)&255u)<(g_spriteColor.prir&7u)));
+                }
+            }
             logging::writef("[VDP1SurfaceRegions] below=%u,%u,%u/%u,%u,%u/%u,%u,%u above=%u,%u,%u/%u,%u,%u/%u,%u,%u\n",
                 a.regionsBelow[0],a.regionsBelow[1],a.regionsBelow[2],
                 a.regionsBelow[3],a.regionsBelow[4],a.regionsBelow[5],
