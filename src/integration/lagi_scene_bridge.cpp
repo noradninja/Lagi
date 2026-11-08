@@ -287,6 +287,8 @@ void sync_presentation_state()
             sprite.rbgRatio=regs->m10C_CCRR;
             sprite.specialPriority=regs->mEA_SFPRMD;
             sprite.specialColor=regs->mEE_SFCCMD;
+            sprite.sfsel=regs->m24_SFSEL;
+            sprite.sfcode=regs->m26_SFCODE;
             sprite.bgon=regs->m20_BGON; sprite.prir=regs->mFC_PRIR;
             sprite.prina=regs->mF8_PRINA; sprite.prinb=regs->mFA_PRINB;
             sprite.spctl=regs->mE0_SPCTL;
