@@ -15,6 +15,9 @@ float4 main(float2 uv : TEXCOORD0, float4 fragCoord : WPOS,
             uniform sampler2D spriteDecisions : TEXUNIT3,
             uniform float4 priorityGeometry,
 #endif
+#if defined(LAGI_NBG1_DOT_PASS) && LAGI_NBG1_DOT_PASS == 1
+            uniform float4 nbg1BlendParams,
+#endif
             uniform float4 textureSize)
 {
 #if LAGI_VDP2_UI_PRIORITY
@@ -51,5 +54,16 @@ float4 main(float2 uv : TEXCOORD0, float4 fragCoord : WPOS,
     float4 color = tex2D(tex,uv);
 #endif
     if (color.a < 0.5f) discard;
+#if defined(LAGI_NBG1_DOT_PASS)
+    // Native NBG1 atlas reserves alpha=128 for selected color-calculation
+    // dots, alpha=255 for opaque dots. Never use the selector as opacity.
+#if LAGI_NBG1_DOT_PASS == 1
+    if (color.a > 0.75f) discard;
+    color.a = nbg1BlendParams.x; // ratio alpha, or 1 for additive
+#else
+    if (color.a < 0.75f) discard;
+    color.a = 1.0f;
+#endif
+#endif
     return color;
 }
