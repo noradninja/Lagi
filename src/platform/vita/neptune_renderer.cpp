@@ -4509,6 +4509,7 @@ static void drawAzelVdp2Nbg1Gpu()
     std::uint16_t uniqueTiles[kVdp2Nbg1MaxTiles]{};
     unsigned int uniqueCount = 0u;
     unsigned int cellCount = 0u;
+    unsigned int specialDotTexels = 0u;
 
     const float renderAspect =
         static_cast<float>(viewerRenderWidth()) /
@@ -4540,12 +4541,12 @@ static void drawAzelVdp2Nbg1Gpu()
                 (slot >> 3) * kTileSize;
             for (int py = 0; py < kTileSize; ++py) {
                 for (int px = 0; px < kTileSize; ++px) {
+                    const auto decoded=decodeVdp2Nbg1Pixel(patternName,px,py);
                     g_vdp2Nbg1AtlasPixels[
                         (atlasY + py) *
                             kVdp2Nbg1AtlasWidth +
-                        atlasX + px] =
-                        decodeVdp2Nbg1Pixel(
-                            patternName, px, py);
+                        atlasX + px] = decoded;
+                    if((decoded>>24)==128u)++specialDotTexels;
                 }
             }
             return static_cast<int>(slot);
@@ -4689,7 +4690,15 @@ static void drawAzelVdp2Nbg1Gpu()
     sceGxmSetFragmentTexture(
         g_probeContext, 0,
         &g_vdp2Nbg1AtlasTexture);
-    if(nbg1SpecialCompositeActive()) {
+    if(nbg1SpecialCompositeActive() && specialDotTexels) {
+        static unsigned reportBudget=8u;
+        if(reportBudget) {
+            --reportBudget;
+            logging::writef("[VDP2NBG1Special] selectedDots=%u uniqueTiles=%u cells=%u SFCCMD=%04X PNCN1=%04X SFCODE=%04X ratio=%u additive=%u\n",
+                specialDotTexels,uniqueCount,cellCount,g_spriteColor.specialColor,
+                g_spriteColor.pncn1,g_spriteColor.sfcode,
+                unsigned(g_spriteColor.nbg1Ratio),unsigned((g_spriteColor.ccctl&0x100u)!=0u));
+        }
         // Normal pixels and special-color pixels form disjoint masks.
         // Both passes apply VDP1's completed-pixel priority test.
         if(!setNbg1DotPass(0,kVdp2Nbg1AtlasWidth,kVdp2Nbg1AtlasHeight))return;
