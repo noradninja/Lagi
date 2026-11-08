@@ -263,13 +263,17 @@ void sync_presentation_state()
             p[7][0]=(regs->m3A_PLSZ&1)?1024:512;
             p[7][1]=(regs->m3A_PLSZ&2)?1024:512;
             p[7][2]=regs->mF8_PRINA&7;
-            // This overlay pass lies above primary world sprites and below
-            // NBG1. Other priority bands need their own compositor stage.
-            // WORLD's authored NBG0 priority is below both the map
-            // rotation layer and its primary VDP1 geometry.
-            nbg.behindWorld = gGameStatus.m0_gameMode == 6 && !nbg.additive &&
-                p[7][2] < (regs->mF0_PRISA & 7) &&
-                (!(regs->m20_BGON & 0x10) || p[7][2] < (regs->mFC_PRIR & 7));
+            // Normal fields also author an NBG0 layer below both RBG0
+            // and VDP1, e.g. Garil Desert A5: BGON=001B,
+            // PRINA=0602, PRIR=0003, PRISA=0405. Previously this
+            // layer was discarded because only WORLD mode could use the
+            // behind-world band. Preserve Saturn's priority ordering
+            // instead of drawing it as a foreground overlay.
+            nbg.behindWorld =
+                (gGameStatus.m0_gameMode == 3 ||
+                 gGameStatus.m0_gameMode == 6) && !nbg.additive &&
+                lagi::sceneNbg0BehindWorldBand(regs->m20_BGON,
+                    regs->mF8_PRINA,regs->mF0_PRISA,regs->mFC_PRIR);
             nbg.enabled = nbg.enabled && (nbg.behindWorld ||
                 lagi::sceneNbg0OverlayBand(regs->m20_BGON,regs->mF8_PRINA,regs->mF0_PRISA));
             lagi::platform::renderer::presentation_set_scene_nbg0(nbg);
