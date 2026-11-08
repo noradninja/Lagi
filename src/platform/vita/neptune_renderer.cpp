@@ -10341,13 +10341,15 @@ bool submit_vdp1_model(
                     ? g_textureFragmentProgram
                     : g_probeFragmentProgram))));
 
-    // Saturn VDP1 rasterizes distorted sprites (CMDCTRL type 2) and other
-    // submitted quads without GPU backface culling. Azel has already chosen
-    // which faces to submit. Applying GXM triangle winding culling here can
-    // discard one or both halves of an authored double-sided VDP1 quad,
-    // particularly the distant FLD_A5 cliff-ring strips. The town/field
-    // projection handedness no longer needs rasterizer-side compensation.
-    const SceGxmCullMode cullMode = SCE_GXM_CULL_NONE;
+    // Winding compensation follows the projection actually used by the
+    // current draw state. Field mode no longer receives the town X mirror,
+    // so it does not need an extra rasterizer-side inversion.
+    const SceGxmCullMode cullMode =
+        wireframe
+            ? SCE_GXM_CULL_NONE
+            : (drawState.reverseCullWinding
+                ? SCE_GXM_CULL_CCW
+                : SCE_GXM_CULL_CW);
     sceGxmSetCullMode(g_probeContext, cullMode);
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext,
