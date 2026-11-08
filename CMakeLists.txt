@@ -180,6 +180,25 @@ add_custom_command(OUTPUT "${LAGI_VDP2_UI_PRIORITY_OBJ}"
  lagi_vdp2_ui_priority_f.gxp "${LAGI_VDP2_UI_PRIORITY_OBJ}"
  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_ui_priority_f.gxp" VERBATIM)
+# Disjoint NBG1 passes preserve per-dot Saturn color calculation.
+foreach(pass IN ITEMS 0 1)
+ set(LAGI_NBG1_DOT_${pass}_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_nbg1_dot_${pass}_f_gxp.o")
+ set_source_files_properties("${LAGI_NBG1_DOT_${pass}_OBJ}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_nbg1_dot_${pass}_f.gxp"
+  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_nbg1_dot_f.cg"
+  -DLAGI_NBG1_DOT_PASS=${pass}
+  -DLAGI_DITHER_LOOKUP=$<BOOL:${LAGI_DITHER_LOOKUP}>
+  -DLAGI_UI_DITHER=$<BOOL:${LAGI_STOCHASTIC_FILTER}> -Wperf -fastprecision -O3
+  -o "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_nbg1_dot_${pass}_f.gxp"
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vdp2_nbg1_dot_f.cg"
+   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/stochastic_f.cg" VERBATIM)
+ add_custom_command(OUTPUT "${LAGI_NBG1_DOT_${pass}_OBJ}"
+  COMMAND "${CMAKE_OBJCOPY}" -I binary -O elf32-littlearm -B arm
+  "lagi_vdp2_nbg1_dot_${pass}_f.gxp" "${LAGI_NBG1_DOT_${pass}_OBJ}"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_nbg1_dot_${pass}_f.gxp" VERBATIM)
+endforeach()
 set(LAGI_RBG_TILE_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f_gxp.o")
 # Every RBG variant shares exact float VRAM addressing and coefficient math
 # with the generic shader. Reduced precision can corrupt addresses/selection.
@@ -5828,6 +5847,8 @@ add_executable(lagi
  ${LAGI_RBG_RATIO_COMPOSITE_OBJ}
  ${LAGI_RBG_DIAGNOSTIC_OBJ}
  ${LAGI_VDP2_UI_PRIORITY_OBJ}
+ ${LAGI_NBG1_DOT_0_OBJ}
+ ${LAGI_NBG1_DOT_1_OBJ}
  ${LAGI_COLOR_MESH_OBJ}
  ${LAGI_RBG_TILE_OBJ}
  ${LAGI_RBG_PAGES_OBJ}
