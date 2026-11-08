@@ -7,6 +7,7 @@ struct Vdp2SpriteColorState {
     std::uint16_t ccctl=0,spctl=0,craofb=0;
     std::uint16_t priority[4]{},ratio[4]{};
     std::uint16_t colorWindow=0,window[8]{};
+    std::uint16_t sfsel=0,sfcode=0; // VDP2 0x24/0x26, per-dot special function selection
     std::uint16_t bgon=0,prir=0,prina=0,prinb=0;
     std::uint16_t rbgRatio=0; // Native CCRR; sprite CCRS is a different selector.
     std::uint16_t specialPriority=0,specialColor=0;
@@ -16,6 +17,30 @@ struct Vdp2SpriteColorState {
 // A nonzero NBG1 mode does not change RBG0's color-calculation mode.
 constexpr unsigned specialColorMode(const Vdp2SpriteColorState& s,unsigned layer) {
     return layer<5u ? ((s.specialColor>>(layer*2u))&3u) : 0u;
+}
+// Sega VDP2: SFSEL chooses SFCODE A/B for each scroll layer.
+// Each SFCODE bit covers TWO adjacent values of dotColor's low nibble.
+constexpr bool specialFunctionDotMatch(const Vdp2SpriteColorState& s,
+    unsigned layer,unsigned dotColor) {
+    if(layer>=5u)return false;
+    const unsigned mask=((s.sfsel>>layer)&1u)
+        ? ((s.sfcode>>8)&0xffu) : (s.sfcode&0xffu);
+    return (mask & (1u<<((dotColor&15u)>>1u)))!=0u;
+}
+// Normal and special scroll-screen color calculation selection. The special
+// mode applies only when this screen is the winning/top priority source.
+// patternSpecial is the pattern-name SCC bit (or PNCN auxiliary SCC bit
+// for one-word names), and cramMsb is the selected CRAM color's MSB.
+constexpr bool scrollSpecialColorCalculationSelected(
+    const Vdp2SpriteColorState& s,unsigned layer,bool topImage,
+    bool patternSpecial,unsigned dotColor,bool cramMsb) {
+    if(layer>=5u || !topImage || !(s.ccctl&(1u<<layer)))return false;
+    switch(specialColorMode(s,layer)) {
+    case 0:return true; // Entire enabled screen
+    case 1:return patternSpecial; // Character
+    case 2:return patternSpecial && specialFunctionDotMatch(s,layer,dotColor);
+    default:return cramMsb; // CRAM color's MSB
+    }
 }
 constexpr unsigned rbgColorRatio(const Vdp2SpriteColorState& s) {return s.rbgRatio&31u;}
 // Type-3 indexed VDP1 pixels: retain PRIS/CCRS selectors after CRAM lookup.
