@@ -10468,6 +10468,18 @@ bool submit_vdp1_model(
                         nz[corner] = z/w;
                     }
                 }
+                const float minScreenX = (std::min)( (std::min)(nx[0], nx[1]),
+                    (std::min)(nx[2], nx[3])) * 0.5f +
+                    0.5f;
+                const float maxScreenX = (std::max)( (std::max)(nx[0], nx[1]),
+                    (std::max)(nx[2], nx[3])) * 0.5f +
+                    0.5f;
+                const float minScreenY = 0.5f -
+                    (std::max)((std::max)(ny[0], ny[1]),
+                        (std::max)(ny[2], ny[3])) * 0.5f;
+                const float maxScreenY = 0.5f -
+                    (std::min)((std::min)(ny[0], ny[1]),
+                        (std::min)(ny[2], ny[3])) * 0.5f;
                 const float area0 =
                     (nx[1]-nx[0])*(ny[2]-ny[0]) -
                     (ny[1]-ny[0])*(nx[2]-nx[0]);
@@ -10493,12 +10505,15 @@ bool submit_vdp1_model(
                 logging::writef(
                     "[GarilCliffQuad] model=%04X obj=%08X local=%u global=%u "
                     "prep=%u out=%02X behind=%u area=%.6f/%.6f "
+                    "screenN=%.4f,%.4f:%.4f,%.4f "
                     "z=%.4f,%.4f,%.4f,%.4f w=%.4f,%.4f,%.4f,%.4f "
                     "tex=%u valid=%u opaque=%u CTRL=%04X PMOD=%04X "
                     "COLR=%04X SRCA=%04X SIZE=%04X\n",
                     range.model, range.object, local, p,
                     prep ? 1u : 0u, commonOutcode, behind,
-                    area0, area1, nz[0], nz[1], nz[2], nz[3],
+                    area0, area1,
+                    minScreenX, minScreenY, maxScreenX, maxScreenY,
+                    nz[0], nz[1], nz[2], nz[3],
                     cw[0],cw[1],cw[2],cw[3],
                     material, materialValid ? 1u : 0u, opaque ? 1u : 0u,
                     model.polygons[p].cmdCtrl, model.polygons[p].cmdPmod,
