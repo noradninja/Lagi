@@ -54,6 +54,9 @@ int main() {
     const auto twice=lagi::spriteRatioRgb555(31,
         lagi::spriteRatioRgb555(31,31<<10,16),16);
     assert(once!=twice);
+    assert(lagi::nbg1DotMaterial(0u,true)==0u);
+    assert(lagi::nbg1DotMaterial(0xff123456u,false)==0xff123456u);
+    assert(lagi::nbg1DotMaterial(0xff123456u,true)==0x80123456u);
     // SFCCMD=0008 is NBG1 mode 2 and leaves RBG0 in mode 0.
     s={};s.specialColor=0x0008;s.ccctl=0x0012;
     assert(lagi::specialColorMode(s,1)==2);
