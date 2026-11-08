@@ -310,6 +310,17 @@ static unsigned int g_fieldProbeFrames = 0u;
 static unsigned int g_fieldProbeBudget = 0u;
 static bool g_fieldProbeActive = false;
 
+// FLD_A5 only, bounded read-only trace of original 20-quad cliff submissions.
+// Reconstructed each sampled frame to preserve identities across static
+// geometry cache hits; never changes visibility, material or draw state.
+struct GarilCliffTraceRange {
+    unsigned int first, count, model, object;
+};
+static std::vector<GarilCliffTraceRange> g_garilCliffTraceRanges;
+static bool g_garilCliffTraceFrame = false;
+static unsigned int g_garilCliffTraceSampleCount = 0u;
+static unsigned int g_garilCliffTraceFrameCounter = 0u;
+
 static std::uint32_t fieldRecordHash(const azel::SaturnPolygonRecord& r)
 {
     std::uint32_t hash = 2166136261u;
@@ -7252,6 +7263,52 @@ static bool buildLiveTownFrame()
     g_profileObjectAppendUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tObjects);
 
+    // Rebuild per-instance global polygon offsets in precisely the same
+    // static-then-dynamic order as appendLiveTownModel(). This is read-only:
+    // static-prefix cache hits do not call appendLiveTownModel() again.
+    g_garilCliffTraceRanges.clear();
+    g_garilCliffTraceFrame = g_sceneGameMode == 3u &&
+        g_garilCliffTraceSampleCount < 3u &&
+        (++g_garilCliffTraceFrameCounter % 120u == 1u);
+    if (g_garilCliffTraceFrame) {
+        ++g_garilCliffTraceSampleCount;
+        unsigned int globalPolygon = 0u;
+        for (unsigned int pass = 0u; pass < 2u; ++pass) {
+            for (const auto& submission : azel_bridge::published_submissions()) {
+                if (submission.adaptedModelIndex < 0 ||
+                    !submission.state.hasModelMatrix ||
+                    submissionIsDynamic(submission) != (pass == 1u))
+                    continue;
+                const auto* source = azel_bridge::published_adapted_model(
+                    static_cast<std::uint32_t>(submission.adaptedModelIndex));
+                if (!source)
+                    continue;
+                const unsigned int count =
+                    static_cast<unsigned int>(source->polygons.size());
+                // Model-table offsets in the subfield bundle, not model data
+                // addresses. The known cliff ring consists of neighboring
+                // 20-quad entries; do not identify unrelated models by shape.
+                if (submission.modelTableOffset >= 0x4A0u &&
+                    submission.modelTableOffset <= 0x4C0u &&
+                    count == 20u &&
+                    g_garilCliffTraceRanges.size() < 12u) {
+                    g_garilCliffTraceRanges.push_back({
+                        globalPolygon, count, submission.modelTableOffset,
+                        submission.objectIndex});
+                }
+                globalPolygon += count;
+            }
+        }
+        logging::writef(
+            "[GarilCliffTrace] sample=%u ranges=%u mapped=%u static=%u "
+            "published=%u\n",
+            g_garilCliffTraceSampleCount,
+            static_cast<unsigned>(g_garilCliffTraceRanges.size()),
+            globalPolygon,
+            static_cast<unsigned>(g_liveTownStaticPolygonCount),
+            static_cast<unsigned>(azel_bridge::published_submissions().size()));
+    }
+
     const std::uint64_t tEdge = sceKernelGetProcessTimeWide();
     // Town mode owns Edge. Field mode publishes its dragon/rider hierarchy
     // through Azel's normal addObjectToDrawList() path, so never inject the
@@ -10351,6 +10408,112 @@ bool submit_vdp1_model(
                 ? SCE_GXM_CULL_CCW
                 : SCE_GXM_CULL_CW);
     sceGxmSetCullMode(g_probeContext, cullMode);
+
+    // The GXM submission count alone cannot distinguish clipping from
+    // winding or depth. Log original per-quad projected areas, homogeneous
+    // outcodes and resolved material at the last CPU->GPU draw boundary.
+    // These are predictions of rasterizer eligibility, NOT proof of pixels
+    // passing fragment/depth tests (GXM does not expose a per-quad count).
+    if (g_garilCliffTraceFrame &&
+        g_sceneGameMode == 3u &&
+        g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+        model.vertices == g_liveTownCpuMesh.vertices.data()) {
+        ViewerMat4 traceWvp{};
+        std::memcpy(traceWvp.m, drawState.wvp, sizeof(traceWvp.m));
+        logging::writef(
+            "[GarilCliffDrawState] sample=%u mode=%u cull=%u depth=LESS_EQUAL "
+            "frontWrite=1 reverse=%u near=%.5f far=%.5f\n",
+            g_garilCliffTraceSampleCount,
+            static_cast<unsigned>(drawState.mode),
+            static_cast<unsigned>(cullMode),
+            drawState.reverseCullWinding ? 1u : 0u,
+            g_nativeSceneNearPlane, g_nativeSceneFarPlane);
+        for (const auto& range : g_garilCliffTraceRanges) {
+            if (range.first + range.count > model.polygonCount)
+                continue;
+            unsigned int prepVisible = 0u;
+            unsigned int entirelyOutside = 0u;
+            unsigned int clippedW = 0u;
+            unsigned int degenerate = 0u;
+            unsigned int unresolved = 0u;
+            unsigned int negativeArea = 0u, positiveArea = 0u;
+            for (unsigned int local = 0u; local < range.count; ++local) {
+                const unsigned int p = range.first + local;
+                const unsigned int cornerIndex[4] = {0u,1u,2u,5u};
+                float nx[4]{}, ny[4]{}, nz[4]{}, cw[4]{};
+                unsigned int commonOutcode = 0x3Fu;
+                unsigned int behind = 0u;
+                for (unsigned int corner = 0u; corner < 4u; ++corner) {
+                    const auto& v = model.vertices[p*6u + cornerIndex[corner]];
+                    const float x = v.x*traceWvp.m[0] + v.y*traceWvp.m[4] +
+                        v.z*traceWvp.m[8] + traceWvp.m[12];
+                    const float y = v.x*traceWvp.m[1] + v.y*traceWvp.m[5] +
+                        v.z*traceWvp.m[9] + traceWvp.m[13];
+                    const float z = v.x*traceWvp.m[2] + v.y*traceWvp.m[6] +
+                        v.z*traceWvp.m[10] + traceWvp.m[14];
+                    const float w = v.x*traceWvp.m[3] + v.y*traceWvp.m[7] +
+                        v.z*traceWvp.m[11] + traceWvp.m[15];
+                    cw[corner] = w;
+                    unsigned int outcode = 0u;
+                    if (x < -w) outcode |= 1u;
+                    if (x >  w) outcode |= 2u;
+                    if (y < -w) outcode |= 4u;
+                    if (y >  w) outcode |= 8u;
+                    if (z < 0.0f) outcode |= 16u;
+                    if (z > w) outcode |= 32u;
+                    commonOutcode &= outcode;
+                    if (w <= 0.00001f) ++behind;
+                    if (w > 0.00001f) {
+                        nx[corner] = x/w; ny[corner] = y/w;
+                        nz[corner] = z/w;
+                    }
+                }
+                const float area0 =
+                    (nx[1]-nx[0])*(ny[2]-ny[0]) -
+                    (ny[1]-ny[0])*(nx[2]-nx[0]);
+                const float area1 =
+                    (nx[2]-nx[0])*(ny[3]-ny[0]) -
+                    (ny[2]-ny[0])*(nx[3]-nx[0]);
+                const bool prep = g_liveTownGouraudPrepValid &&
+                    p < g_liveTownGouraudPrep.size() &&
+                    g_liveTownGouraudPrep[p].visible;
+                const unsigned int material = model.polygonTextureIndices[p];
+                const bool materialValid = material < model.textureCount &&
+                    material < g_vdp1GpuTextures.size();
+                const bool opaque = materialValid &&
+                    g_vdp1GpuTextures[material].opaque;
+                prepVisible += prep ? 1u : 0u;
+                entirelyOutside += commonOutcode != 0u;
+                clippedW += behind != 0u;
+                degenerate += std::fabs(area0) < 1e-7f ||
+                    std::fabs(area1) < 1e-7f;
+                unresolved += !materialValid;
+                positiveArea += area0 > 1e-7f;
+                negativeArea += area0 < -1e-7f;
+                logging::writef(
+                    "[GarilCliffQuad] model=%04X obj=%08X local=%u global=%u "
+                    "prep=%u out=%02X behind=%u area=%.6f/%.6f "
+                    "z=%.4f,%.4f,%.4f,%.4f w=%.4f,%.4f,%.4f,%.4f "
+                    "tex=%u valid=%u opaque=%u CTRL=%04X PMOD=%04X "
+                    "COLR=%04X SRCA=%04X SIZE=%04X\n",
+                    range.model, range.object, local, p,
+                    prep ? 1u : 0u, commonOutcode, behind,
+                    area0, area1, nz[0], nz[1], nz[2], nz[3],
+                    cw[0],cw[1],cw[2],cw[3],
+                    material, materialValid ? 1u : 0u, opaque ? 1u : 0u,
+                    model.polygons[p].cmdCtrl, model.polygons[p].cmdPmod,
+                    model.polygons[p].cmdColr, model.polygons[p].cmdSrca,
+                    model.polygons[p].cmdSize);
+            }
+            logging::writef(
+                "[GarilCliffSummary] model=%04X obj=%08X total=%u "
+                "prepVisible=%u allOutside=%u behindW=%u degenerate=%u "
+                "badMaterial=%u areaPositive=%u areaNegative=%u\n",
+                range.model, range.object, range.count, prepVisible,
+                entirelyOutside, clippedW, degenerate, unresolved,
+                positiveArea, negativeArea);
+        }
+    }
     sceGxmSetDefaultRegionClipAndViewport(
         g_probeContext,
         viewerRenderWidth() - 1,
