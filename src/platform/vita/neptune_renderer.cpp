@@ -14820,12 +14820,44 @@ static void renderBasicWingViewer()
                 const std::size_t end=std::min(range.first+range.count,
                     g_liveTownCpuMesh.polygonRecords.size());
                 unsigned visible=0u,clipped=0u,nearHorizon=0u;
+                unsigned clipSide=0u,clipNear=0u,clipFar=0u,clipBehind=0u,clipMixed=0u;
                 float minX=1e9f,minY=1e9f,maxX=-1e9f,maxY=-1e9f;
                 float minDepth=1e9f,maxDepth=-1e9f;
                 std::size_t example=end;
                 for(std::size_t p=range.first;p<end;++p) {
                     const bool shown=g_liveTownGouraudPrep[p].visible;
-                    if(!shown){++clipped;continue;}
+                    if(!shown) {
+                        ++clipped;
+                        // Mirror the exact conservative outcode test in
+                        // prepareLiveTownGouraudVisibility. Report whether
+                        // Garil's distant field geometry is rejected by the
+                        // near/far plane or simply lies outside the raster.
+                        const unsigned corners[4]={0u,1u,2u,5u};
+                        unsigned shared=0x3fu;
+                        bool behind=false;
+                        for(unsigned corner:corners) {
+                            const auto& v=g_liveTownCpuMesh.vertices[p*6u+corner];
+                            const float x=v.x*wvp.m[0]+v.y*wvp.m[4]+v.z*wvp.m[8]+wvp.m[12];
+                            const float y=v.x*wvp.m[1]+v.y*wvp.m[5]+v.z*wvp.m[9]+wvp.m[13];
+                            const float z=v.x*wvp.m[2]+v.y*wvp.m[6]+v.z*wvp.m[10]+wvp.m[14];
+                            const float w=v.x*wvp.m[3]+v.y*wvp.m[7]+v.z*wvp.m[11]+wvp.m[15];
+                            unsigned out=0u;
+                            if(x < -w)out|=1u;
+                            if(x >  w)out|=2u;
+                            if(y < -w)out|=4u;
+                            if(y >  w)out|=8u;
+                            if(z < 0.f)out|=16u;
+                            if(z > w)out|=32u;
+                            shared&=out;
+                            if(w<=0.00001f)behind=true;
+                        }
+                        if(behind)++clipBehind;
+                        else if(shared&32u)++clipFar;
+                        else if(shared&16u)++clipNear;
+                        else if(shared&15u)++clipSide;
+                        else ++clipMixed;
+                        continue;
+                    }
                     ++visible;
                     // Screen bounds from the same four transformed corners
                     // consumed by Neptune; clip coverage at the raster.
@@ -14862,7 +14894,7 @@ static void renderBasicWingViewer()
                     unsigned(g_liveTownCpuMesh.polygonRecords[example].cmdPmod):0u;
                 logging::writef(
                     "[FieldVdp1Range] order=%u cell=%d obj=%08X table=%08X base=%u count=%u visible=%u rejected=%u horizon=%u "
-                    "bounds=(%.1f,%.1f)-(%.1f,%.1f) depth=(%.5f,%.5f) example=%u tex=%u PMOD=%04X dynamic=%u\n",
+                    "bounds=(%.1f,%.1f)-(%.1f,%.1f) depth=(%.5f,%.5f) example=%u tex=%u PMOD=%04X dynamic=%u rejectSide=%u rejectNear=%u rejectFar=%u rejectBehind=%u rejectMixed=%u\n",
                     unsigned(range.azelOrder),int(submission.cellIndex),
                     unsigned(submission.objectIndex),unsigned(submission.modelTableOffset),
                     unsigned(range.first),unsigned(end-range.first),
@@ -14871,7 +14903,8 @@ static void renderBasicWingViewer()
                     double(visible?maxX:0.f),double(visible?maxY:0.f),
                     double(visible?minDepth:0.f),double(visible?maxDepth:0.f),
                     unsigned(example<end?example:0xffffffffu),
-                    exTexture,exPmod,unsigned(submission.state.dynamic));
+                    exTexture,exPmod,unsigned(submission.state.dynamic),
+                    clipSide,clipNear,clipFar,clipBehind,clipMixed);
             }
         }
     }
