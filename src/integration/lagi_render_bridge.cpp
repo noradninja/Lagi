@@ -1071,7 +1071,7 @@ static void record_submission(sProcessed3dModel* model, bool billboard,
                 for(unsigned row=0;row<3;++row) {
                     for(unsigned col=0;col<4;++col) {
                         std::int64_t sum=col==3 ?
-                            (std::int64_t(view[row*4+3])<<16) : 0;
+                            (std::int64_t(view[row*4+3])*65536) : 0;
                         for(unsigned k=0;k<3;++k)
                             sum+=std::int64_t(view[row*4+k]) *
                                  g_lastState.modelMatrix[k*4+col];
