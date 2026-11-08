@@ -290,6 +290,7 @@ void sync_presentation_state()
             sprite.sfsel=regs->m24_SFSEL;
             sprite.sfcode=regs->m26_SFCODE;
             sprite.pncn1=regs->m32_PNCN1;
+            sprite.nbg1Ratio=(regs->m108_CCRNA>>8)&31u;
             sprite.bgon=regs->m20_BGON; sprite.prir=regs->mFC_PRIR;
             sprite.prina=regs->mF8_PRINA; sprite.prinb=regs->mFA_PRINB;
             sprite.spctl=regs->mE0_SPCTL;
