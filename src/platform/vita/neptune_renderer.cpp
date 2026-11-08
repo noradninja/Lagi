@@ -12411,7 +12411,11 @@ bool submit_vdp1_model(
             } else if(circleDepthCompare) {
                 g_circleDepthCompareActive=true;
                 g_circleDepthCompareScene=g_sceneGameMode;
-                g_circleDepthComparePhase=g_circleDepthCompareFrame++&1u;
+                // Four A/B pairs, then hold production depth while the
+                // user remains in this diagnostic view.
+                g_circleDepthComparePhase=g_circleDepthCompareFrame<8u ?
+                    (g_circleDepthCompareFrame&1u) : 0u;
+                ++g_circleDepthCompareFrame;
                 static unsigned traceBudget=16u;
                 if(traceBudget) {
                     --traceBudget;
