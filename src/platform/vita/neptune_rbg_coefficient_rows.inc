@@ -33,6 +33,45 @@ static bool prepareRbgCoefficientRows() {
             table?g_sceneRbg0.coefficientB:g_sceneRbg0.coefficientA,
             base,size,enabled,rows[table]))return status(1);
     }
+    // Garil A5's RPMD=2 background is not the A3 repeated VDP1 sprite
+    // strip. It selects rotation parameter B (sky) where A's coefficient
+    // carries the invalid bit. Trace the authored selection boundary before
+    // making changes to its map, window or compositing policy. This uses
+    // already-decoded CPU rows: no GPU readback or per-frame work.
+    if(mode==2u && g_sceneGameMode==3u) {
+        static unsigned a5SelectionReports=0u;
+        if(a5SelectionReports<3u) {
+            ++a5SelectionReports;
+            unsigned aRows=0u,bRows=0u,transitions=0u;
+            int firstB=-1,lastB=-1;
+            bool previousB=rows[0][0].invalid>=0.5f;
+            for(unsigned y=0;y<224u;++y) {
+                const bool useB=rows[0][y].invalid>=0.5f;
+                if(useB) {
+                    ++bRows;
+                    if(firstB<0)firstB=int(y);
+                    lastB=int(y);
+                } else ++aRows;
+                if(y && useB!=previousB)++transitions;
+                previousB=useB;
+            }
+            logging::writef(
+                "[A5RotationSelection] RPMD=%u KTCTL=%04X KTAOF=%04X Arows=%u Brows=%u changes=%u firstB=%d lastB=%d "
+                "y0=%u y32=%u y64=%u y96=%u y112=%u y128=%u y160=%u y192=%u y223=%u "
+                "Acoeff0=%.5f Bcoeff0=%.5f\n",
+                mode,ktctl,ktaof,aRows,bRows,transitions,firstB,lastB,
+                unsigned(rows[0][0].invalid>=0.5f),
+                unsigned(rows[0][32].invalid>=0.5f),
+                unsigned(rows[0][64].invalid>=0.5f),
+                unsigned(rows[0][96].invalid>=0.5f),
+                unsigned(rows[0][112].invalid>=0.5f),
+                unsigned(rows[0][128].invalid>=0.5f),
+                unsigned(rows[0][160].invalid>=0.5f),
+                unsigned(rows[0][192].invalid>=0.5f),
+                unsigned(rows[0][223].invalid>=0.5f),
+                double(rows[0][0].scale),double(rows[1][0].scale));
+        }
+    }
     if(!g_rbgCoefficientRowsAttempted) {
         g_rbgCoefficientRowsAttempted=true;
         g_rbgCoefficientRowsPixels=probeGpuAlloc(sizeof(rows),SCE_GXM_MEMORY_ATTRIB_READ,
