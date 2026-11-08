@@ -97,6 +97,8 @@ extern const unsigned char _binary_lagi_sprite_composite_f_gxp_start[];
 extern const unsigned char _binary_lagi_rbg_ratio_composite_f_gxp_start[];
 extern const unsigned char _binary_lagi_rbg_diagnostic_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_ui_priority_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_nbg1_dot_0_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_nbg1_dot_1_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_tile16_8bit_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_pages_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_rows_f_gxp_start[];
@@ -4380,8 +4382,12 @@ static std::uint32_t decodeVdp2Chsz1Pixel(
     int px,
     int py,
     unsigned int caos,
-    unsigned int supplementalCharacterName)
+    unsigned int supplementalCharacterName,
+    unsigned* outDot=nullptr,
+    bool* outCramMsb=nullptr)
 {
+    if(outDot)*outDot=0u;
+    if(outCramMsb)*outCramMsb=false;
     const unsigned int flip =
         (patternName >> 10) & 3u;
     int x = px;
@@ -4448,6 +4454,7 @@ static std::uint32_t decodeVdp2Chsz1Pixel(
             : static_cast<unsigned int>(packed >> 4);
     if (!colorIndex)
         return 0u;
+    if(outDot)*outDot=colorIndex;
 
     const unsigned int paladdr =
         ((patternName & 0xF000u) >> 8) |
@@ -4460,17 +4467,29 @@ static std::uint32_t decodeVdp2Chsz1Pixel(
     if (cramOffset + 1u >= kVdp2CramSnapshotBytes)
         return 0u;
 
-    return vdp2Rgb555ToAbgr(
-        readVdp2Be16(g_vdp2Cram, cramOffset));
+    const auto cramColor=readVdp2Be16(g_vdp2Cram, cramOffset);
+    if(outCramMsb)*outCramMsb=(cramColor&0x8000u)!=0u;
+    return vdp2Rgb555ToAbgr(cramColor);
 }
 
+static bool nbg1SpecialCompositeActive();
+static bool setNbg1DotPass(unsigned pass,unsigned width,unsigned height);
 static std::uint32_t decodeVdp2Nbg1Pixel(
     std::uint16_t patternName,
     int px,
     int py)
 {
     // Town NBG1: 4bpp, CHSZ=1, PNB=1, CNSM=0, SCN=0, CAOS=7.
-    return decodeVdp2Chsz1Pixel(patternName, px, py, 7u, 0u);
+    unsigned dot=0;bool cramMsb=false;
+    const auto color=decodeVdp2Chsz1Pixel(
+        patternName,px,py,7u,0u,&dot,&cramMsb);
+    if(!color || !nbg1SpecialCompositeActive())return color;
+    // This 1-word character mode takes SCC from PNCN1's auxiliary bit 8.
+    // Alpha 128 is a material selector, never physical transparency.
+    const bool selected=lagi::scrollSpecialColorCalculationSelected(
+        g_spriteColor,1u,true,lagi::nbg1AuxiliarySpecialColor(g_spriteColor),
+        dot,cramMsb);
+    return selected ? ((color&0x00ffffffu)|0x80000000u) : color;
 }
 
 static void drawAzelVdp2Nbg1Gpu()
@@ -4670,6 +4689,14 @@ static void drawAzelVdp2Nbg1Gpu()
     sceGxmSetFragmentTexture(
         g_probeContext, 0,
         &g_vdp2Nbg1AtlasTexture);
+    if(nbg1SpecialCompositeActive()) {
+        // Normal pixels and special-color pixels form disjoint masks.
+        // Both passes apply VDP1's completed-pixel priority test.
+        if(!setNbg1DotPass(0,kVdp2Nbg1AtlasWidth,kVdp2Nbg1AtlasHeight))return;
+        sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,
+            SCE_GXM_INDEX_FORMAT_U16,g_vdp2Nbg1Indices,cellCount*6u);
+        if(!setNbg1DotPass(1,kVdp2Nbg1AtlasWidth,kVdp2Nbg1AtlasHeight))return;
+    }
     sceGxmDraw(
         g_probeContext,
         SCE_GXM_PRIMITIVE_TRIANGLES,
