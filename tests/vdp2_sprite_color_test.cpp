@@ -82,7 +82,10 @@ int main() {
         assert(((decision>>8)&0xffu)==3u); // sprite's own CC is additive
         assert((decision&0xffu)==0u); // sprite is below RBG0
         // RBG0 top image adds the selected second image in RGB555.
-        assert(lagi::spriteRatioRgb555(0x001fu,0x7c00u,16)!=0);
+        assert(lagi::vdp2AddRgb555(0x001fu,0x7c00u)==0xfc1fu);
+        assert(lagi::vdp2AddRgb555(0x7fffu,0x7fffu)==0xffffu);
+        assert(lagi::vdp2AddRgb555(0x0000u,0x0000u)==0x8000u);
+        assert(lagi::spriteRatioRgb555(0x001fu,0x7c00u,16)==0xc00eu);
     }
     // SFCCMD=0008 is NBG1 mode 2 and leaves RBG0 in mode 0.
     s={};s.specialColor=0x0008;s.ccctl=0x0012;
