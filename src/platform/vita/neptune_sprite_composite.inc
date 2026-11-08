@@ -370,6 +370,85 @@ static bool prepareSpriteComposite(bool native,bool menu) {
 static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface* destination,
     SceGxmSyncObject* sync) {
     sceGxmEndScene(g_probeContext,nullptr,nullptr);
+    // Camp circle depth A/B: the ONLY state changed between two adjacent
+    // frames is the depth policy of polygons 626..637. Compare the completed
+    // VDP1 world surface, before RBG0 composition, within their projected
+    // screen-space rectangle. This is a diagnostic *difference mask*, not
+    // proof that any individual pixel belongs exclusively to the circle.
+    // Results can be contaminated by scene/camera motion between frames.
+    // No additional render target, shader, or persistent output modification.
+    if(g_viewMode==24 && g_circleDepthCompareActive &&
+       g_circleDepthCompareScene==g_sceneGameMode &&
+       g_circleDepthCompareFrame<=8u && g_spriteLayerPixels) {
+        static std::vector<std::uint32_t> baseline;
+        static int baselineX=0,baselineY=0,baselineW=0,baselineH=0;
+        static unsigned baselineFrame=0;
+        const int left=std::max(0,int(std::floor(g_circleDepthCompareRect[0])));
+        const int top=std::max(0,int(std::floor(g_circleDepthCompareRect[1])));
+        const int right=std::min(kWidth,int(std::ceil(g_circleDepthCompareRect[2])));
+        const int bottom=std::min(kHeight,int(std::ceil(g_circleDepthCompareRect[3])));
+        const int width=std::max(0,right-left),height=std::max(0,bottom-top);
+        if(width && height) {
+            const auto start=sceKernelGetProcessTimeWide();
+            sceGxmFinish(g_probeContext);
+            const auto* pixels=static_cast<const std::uint32_t*>(g_spriteLayerPixels);
+            if(g_circleDepthComparePhase==0u) {
+                baseline.resize(std::size_t(width)*height);
+                for(int y=0;y<height;++y)
+                    std::memcpy(baseline.data()+std::size_t(y)*width,
+                        pixels+std::size_t(top+y)*kGxmPitch+left,
+                        std::size_t(width)*sizeof(std::uint32_t));
+                baselineX=left;baselineY=top;
+                baselineW=width;baselineH=height;
+                baselineFrame=g_circleDepthCompareFrame;
+                logging::writef("[CampCircleDepthCoverage] phase=A frame=%u rect=(%d,%d)-(%d,%d) pixels=%u gpuReadUs=%u\n",
+                    baselineFrame,left,top,right,bottom,unsigned(baseline.size()),
+                    unsigned(sceKernelGetProcessTimeWide()-start));
+            } else {
+                const bool paired=baselineFrame+1u==g_circleDepthCompareFrame &&
+                    left==baselineX && top==baselineY &&
+                    width==baselineW && height==baselineH &&
+                    baseline.size()==std::size_t(width)*height;
+                if(!paired) {
+                    logging::writef("[CampCircleDepthCoverage] phase=B frame=%u comparable=0 reason=region-or-frame-changed A=%u (%d,%d %dx%d) B=(%d,%d %dx%d)\n",
+                        g_circleDepthCompareFrame,baselineFrame,baselineX,baselineY,
+                        baselineW,baselineH,left,top,width,height);
+                } else {
+                    unsigned changed=0,appeared=0,disappeared=0,
+                        replaced=0,aPresent=0,bPresent=0;
+                    int minX=right,minY=bottom,maxX=left,maxY=top;
+                    for(int y=0;y<height;++y) {
+                        const auto* row=pixels+std::size_t(top+y)*kGxmPitch+left;
+                        for(int x=0;x<width;++x) {
+                            const auto a=baseline[std::size_t(y)*width+x];
+                            const auto b=row[x];
+                            const bool aVisible=(a>>24u)>=128u;
+                            const bool bVisible=(b>>24u)>=128u;
+                            aPresent+=unsigned(aVisible);
+                            bPresent+=unsigned(bVisible);
+                            if(a==b)continue;
+                            ++changed;
+                            appeared+=unsigned(!aVisible && bVisible);
+                            disappeared+=unsigned(aVisible && !bVisible);
+                            replaced+=unsigned(aVisible && bVisible);
+                            minX=std::min(minX,left+x);
+                            minY=std::min(minY,top+y);
+                            maxX=std::max(maxX,left+x);
+                            maxY=std::max(maxY,top+y);
+                        }
+                    }
+                    logging::writef("[CampCircleDepthCoverage] phase=B frame=%u comparable=1 rect=(%d,%d)-(%d,%d) testedPixels=%u Avisible=%u Bvisible=%u rawChanged=%u appeared=%u disappeared=%u replaced=%u diffBbox=(%d,%d)-(%d,%d) gpuReadUs=%u caution=adjacent-frame-motion\n",
+                        g_circleDepthCompareFrame,left,top,right,bottom,
+                        unsigned(std::size_t(width)*height),aPresent,bPresent,
+                        changed,appeared,disappeared,replaced,
+                        changed?minX:-1,changed?minY:-1,
+                        changed?maxX:-1,changed?maxY:-1,
+                        unsigned(sceKernelGetProcessTimeWide()-start));
+                }
+                baselineFrame=0u;
+            }
+        }
+    }
     // Diagnostic-only sparse readback. The GPU must finish the world pass
     // before the CPU inspects the native selector bytes. Sample twice, well
     // after Camp has settled, then never force this stall again.
