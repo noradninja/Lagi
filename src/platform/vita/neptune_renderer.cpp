@@ -14198,7 +14198,31 @@ static void drawSceneVdp2Background()
     if (!g_sceneRbg0Enabled || !g_sceneRbg0ColorBuffer)
         return;
     sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
-    sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
+    // When NBG0 is the lower Saturn priority, it has already been drawn
+    // beneath RBG0. Preserve it through transparent RBG0 dots: the
+    // normal opaque texture program would overwrite them with black.
+    // The existing RGBA over program accepts the resolved binary-alpha
+    // RBG0 surface and leaves opaque RBG0 pixels completely unchanged.
+    const bool backgroundOverNbg0 =
+        g_sceneNbg0.enabled && g_sceneNbg0.behindWorld &&
+        !g_sceneNbg0.additive && g_sceneNbg0Pixels &&
+        g_sceneNbg0OverProgram && g_rgbaPresentInfo;
+    sceGxmSetFragmentProgram(g_probeContext,
+        backgroundOverNbg0 ? g_sceneNbg0OverProgram : g_textureFragmentProgram);
+    if (backgroundOverNbg0) {
+        void* fragmentUniforms = nullptr;
+        if (sceGxmReserveFragmentDefaultUniformBuffer(
+                g_probeContext, &fragmentUniforms) < 0 || !fragmentUniforms)
+            return;
+        const float presentInfo[4] = {1.0f,0.0f,0.0f,0.0f};
+        sceGxmSetUniformDataF(fragmentUniforms,
+            g_rgbaPresentInfo,0,4,presentInfo);
+        static unsigned backgroundUnderlayReports=0;
+        if(backgroundUnderlayReports++<4u)
+            logging::writef("[RBG0NBG0Underlay] blend=alpha-over NBG0=%u RBG0=%u priorityNBG0=%u priorityRBG0=%u\n",
+                unsigned(g_sceneNbg0.enabled),unsigned(g_sceneRbg0Enabled),
+                unsigned(g_sceneNbg0.gpu[7][2]),unsigned(g_spriteColor.prir&7u));
+    }
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
