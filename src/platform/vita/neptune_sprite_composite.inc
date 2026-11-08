@@ -23,6 +23,91 @@ static SceGxmFragmentProgram* g_spriteUiPriorityProgram=nullptr;
 static SceGxmShaderPatcherId g_spriteUiPriorityId{};
 static bool g_spriteUiPriorityRegistered=false,g_spriteUiPriorityFrame=false;
 static const SceGxmProgramParameter *g_spriteUiPriorityGeometry=nullptr,*g_spriteUiTextureSize=nullptr;
+static SceGxmShaderPatcherId g_nbg1NormalId{},g_nbg1SpecialId{};
+static bool g_nbg1NormalRegistered=false,g_nbg1SpecialRegistered=false;
+static SceGxmFragmentProgram* g_nbg1NormalProgram=nullptr;
+static SceGxmFragmentProgram* g_nbg1SpecialAddProgram=nullptr;
+static SceGxmFragmentProgram* g_nbg1SpecialRatioProgram=nullptr;
+static const SceGxmProgramParameter* g_nbg1NormalGeometry=nullptr;
+static const SceGxmProgramParameter* g_nbg1NormalSize=nullptr;
+static const SceGxmProgramParameter* g_nbg1SpecialGeometry=nullptr;
+static const SceGxmProgramParameter* g_nbg1SpecialSize=nullptr;
+static const SceGxmProgramParameter* g_nbg1SpecialBlendParams=nullptr;
+static bool prepareNbg1DotPrograms() {
+    if(g_nbg1NormalProgram && g_nbg1SpecialAddProgram &&
+        g_nbg1SpecialRatioProgram)return true;
+    const auto* vp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_texture_v_gxp_start);
+    const auto* normal=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_vdp2_nbg1_dot_0_f_gxp_start);
+    const auto* special=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_vdp2_nbg1_dot_1_f_gxp_start);
+    if(sceGxmProgramCheck(normal)<0 || sceGxmProgramCheck(special)<0)return false;
+    if(!g_nbg1NormalRegistered) {
+        if(sceGxmShaderPatcherRegisterProgram(g_probeShaderPatcher,normal,&g_nbg1NormalId)<0)return false;
+        g_nbg1NormalRegistered=true;
+    }
+    if(!g_nbg1SpecialRegistered) {
+        if(sceGxmShaderPatcherRegisterProgram(g_probeShaderPatcher,special,&g_nbg1SpecialId)<0)return false;
+        g_nbg1SpecialRegistered=true;
+    }
+    g_nbg1NormalGeometry=sceGxmProgramFindParameterByName(normal,"priorityGeometry");
+    g_nbg1NormalSize=sceGxmProgramFindParameterByName(normal,"textureSize");
+    g_nbg1SpecialGeometry=sceGxmProgramFindParameterByName(special,"priorityGeometry");
+    g_nbg1SpecialSize=sceGxmProgramFindParameterByName(special,"textureSize");
+    g_nbg1SpecialBlendParams=sceGxmProgramFindParameterByName(special,"nbg1BlendParams");
+    if(!g_nbg1NormalGeometry || !g_nbg1SpecialGeometry ||
+        !g_nbg1SpecialBlendParams || (kStochastic && (!g_nbg1NormalSize || !g_nbg1SpecialSize)))return false;
+    if(!g_nbg1NormalProgram && sceGxmShaderPatcherCreateFragmentProgram(
+        g_probeShaderPatcher,g_nbg1NormalId,SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+        SCE_GXM_MULTISAMPLE_NONE,nullptr,vp,&g_nbg1NormalProgram)<0)return false;
+    SceGxmBlendInfo blend{};
+    blend.colorFunc=SCE_GXM_BLEND_FUNC_ADD;
+    blend.alphaFunc=SCE_GXM_BLEND_FUNC_ADD;
+    blend.colorSrc=SCE_GXM_BLEND_FACTOR_ONE;
+    blend.colorDst=SCE_GXM_BLEND_FACTOR_ONE;
+    blend.alphaSrc=SCE_GXM_BLEND_FACTOR_ONE;
+    blend.alphaDst=SCE_GXM_BLEND_FACTOR_ONE;
+    blend.colorMask=SCE_GXM_COLOR_MASK_ALL;
+    if(!g_nbg1SpecialAddProgram && sceGxmShaderPatcherCreateFragmentProgram(
+        g_probeShaderPatcher,g_nbg1SpecialId,SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+        SCE_GXM_MULTISAMPLE_NONE,&blend,vp,&g_nbg1SpecialAddProgram)<0)return false;
+    blend.colorSrc=SCE_GXM_BLEND_FACTOR_SRC_ALPHA;
+    blend.colorDst=SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    if(!g_nbg1SpecialRatioProgram && sceGxmShaderPatcherCreateFragmentProgram(
+        g_probeShaderPatcher,g_nbg1SpecialId,SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+        SCE_GXM_MULTISAMPLE_NONE,&blend,vp,&g_nbg1SpecialRatioProgram)<0)return false;
+    logging::writef("[VDP2NBG1Special] opaque/add/ratio programs ready\n");
+    return true;
+}
+static bool nbg1SpecialCompositeActive() {
+    return g_spriteUiPriorityActive && (g_spriteColor.bgon&2u) &&
+        (g_spriteColor.ccctl&2u) && g_nbg1NormalProgram &&
+        g_nbg1SpecialAddProgram && g_nbg1SpecialRatioProgram;
+}
+static bool setNbg1DotPass(unsigned pass,unsigned width,unsigned height) {
+    if(!nbg1SpecialCompositeActive() || pass>1u)return false;
+    const bool add=(g_spriteColor.ccctl&0x100u)!=0u;
+    sceGxmSetFragmentProgram(g_probeContext,pass?
+        (add?g_nbg1SpecialAddProgram:g_nbg1SpecialRatioProgram):g_nbg1NormalProgram);
+    void* ub=nullptr;
+    if(sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext,&ub)<0 || !ub)return false;
+    const float geometry[4]={1.f/kGxmPitch,1.f/kHeight,
+        float((g_spriteColor.prina>>8)&7u),0.f};
+    sceGxmSetUniformDataF(ub,pass?g_nbg1SpecialGeometry:g_nbg1NormalGeometry,0,4,geometry);
+    if(kStochastic) {
+        const float size[4]={float(width),float(height),1.f/width,1.f/height};
+        sceGxmSetUniformDataF(ub,pass?g_nbg1SpecialSize:g_nbg1NormalSize,0,4,size);
+#if LAGI_DITHER_LOOKUP
+        sceGxmSetFragmentTexture(g_probeContext,1,&g_ditherOffsetsTexture);
+#endif
+    }
+    if(pass) {
+        const float params[4]={add?1.f:
+            float(31u-(g_spriteColor.nbg1Ratio&31u))/32.f,0,0,0};
+        sceGxmSetUniformDataF(ub,g_nbg1SpecialBlendParams,0,4,params);
+    }
+    sceGxmSetFragmentTexture(g_probeContext,2,&g_spriteLayerTexture);
+    sceGxmSetFragmentTexture(g_probeContext,3,&g_spriteLookupTexture);
+    return true;
+}
 static bool prepareSpriteUiPriority() {
     if(!lagi::spriteUiPrioritySupported(g_spriteColor) || !g_vdp2TextValid ||
         readVdp2Be32(g_vdp2LineScroll,0)==0x01010000u)return false;
@@ -66,6 +151,15 @@ static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority) {
     return true;
 }
 static void releaseSpriteComposite() {
+    if(g_probeShaderPatcher) {
+        if(g_nbg1NormalProgram)sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_nbg1NormalProgram);
+        if(g_nbg1SpecialAddProgram)sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_nbg1SpecialAddProgram);
+        if(g_nbg1SpecialRatioProgram)sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_nbg1SpecialRatioProgram);
+        if(g_nbg1NormalRegistered)sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_nbg1NormalId);
+        if(g_nbg1SpecialRegistered)sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_nbg1SpecialId);
+    }
+    g_nbg1NormalProgram=g_nbg1SpecialAddProgram=g_nbg1SpecialRatioProgram=nullptr;
+    g_nbg1NormalRegistered=g_nbg1SpecialRegistered=false;
     g_spriteUiPriorityActive=g_spriteUiPriorityFrame=false;
     g_rbgRatioCompositeFrame=false;
     if(g_probeShaderPatcher && g_rbgDiagnosticProgram)
@@ -249,6 +343,12 @@ static bool prepareSpriteComposite(bool native,bool menu) {
     auto* lookup=static_cast<std::uint32_t*>(g_spriteLookupPixels);
     for(unsigned i=0;i<256;++i)lookup[i]=lagi::spriteCompositeLookup(g_spriteColor,i);
     g_spriteUiPriorityFrame=prepareSpriteUiPriority();
+    if(g_spriteUiPriorityFrame && (g_spriteColor.bgon&2u) &&
+        (g_spriteColor.ccctl&2u) && !prepareNbg1DotPrograms()) {
+        static unsigned errorBudget=4;
+        if(errorBudget) {--errorBudget;logging::writef(
+            "[VDP2NBG1Special] shader unavailable; using original NBG1 path\n");}
+    }
     if(rbgRatio && (g_spriteColor.bgon&0xAu) && !g_spriteUiPriorityFrame) {
         // Preserve NBG1/3 versus completed VDP1 sprite priorities,
         // including Camp's NBG1 additive calculation.
