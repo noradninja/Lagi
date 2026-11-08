@@ -14907,6 +14907,101 @@ static void renderBasicWingViewer()
                     clipSide,clipNear,clipFar,clipBehind,clipMixed);
             }
         }
+
+        // FLD_A5 cliff ring: original 20-quad models at subfield model-table
+        // offsets 0x4A0..0x4C0. All values are from the same WVP and flattened
+        // geometry as the actual GXM submission, without changing rendering.
+        // Unlike generic first-48 range tracing, do not miss these objects
+        // when numerous other field submissions precede them.
+        unsigned cliffObjects=0u;
+        for(const auto& range:g_liveTownSubmissionRanges) {
+            if(range.azelOrder>=submissions.size())continue;
+            const auto& submission=submissions[range.azelOrder];
+            if(submission.modelTableOffset<0x4A0u ||
+               submission.modelTableOffset>0x4C0u ||
+               range.count!=20u)continue;
+            const auto end=std::min(range.first+range.count,
+                g_liveTownCpuMesh.polygonRecords.size());
+            if(end-range.first!=20u)continue;
+            ++cliffObjects;
+            unsigned pass=0u,side=0u,near=0u,far=0u,behind=0u;
+            unsigned validMaterial=0u, opaqueMaterial=0u;
+            unsigned posArea=0u,negArea=0u,mixedWinding=0u;
+            for(std::size_t p=range.first;p<end;++p) {
+                const unsigned cornerIndices[4]={0u,1u,2u,5u};
+                float px[4]{},py[4]{},pz[4]{},pw[4]{};
+                unsigned shared=0x3fu,negativeW=0u;
+                for(unsigned c=0u;c<4u;++c) {
+                    const auto& v=g_liveTownCpuMesh.vertices[p*6u+cornerIndices[c]];
+                    const float x=v.x*wvp.m[0]+v.y*wvp.m[4]+v.z*wvp.m[8]+wvp.m[12];
+                    const float y=v.x*wvp.m[1]+v.y*wvp.m[5]+v.z*wvp.m[9]+wvp.m[13];
+                    const float z=v.x*wvp.m[2]+v.y*wvp.m[6]+v.z*wvp.m[10]+wvp.m[14];
+                    const float w=v.x*wvp.m[3]+v.y*wvp.m[7]+v.z*wvp.m[11]+wvp.m[15];
+                    unsigned code=0u;
+                    if(x < -w)code|=1u;
+                    if(x >  w)code|=2u;
+                    if(y < -w)code|=4u;
+                    if(y >  w)code|=8u;
+                    if(z < 0.f)code|=16u;
+                    if(z > w)code|=32u;
+                    shared&=code;
+                    if(w<=0.00001f)++negativeW;
+                    px[c]=w>0.00001f?x/w:0.f;
+                    py[c]=w>0.00001f?y/w:0.f;
+                    pz[c]=w>0.00001f?z/w:0.f;
+                    pw[c]=w;
+                }
+                const float area0=(px[1]-px[0])*(py[2]-py[0])-
+                    (py[1]-py[0])*(px[2]-px[0]);
+                const float area1=(px[2]-px[0])*(py[3]-py[0])-
+                    (py[2]-py[0])*(px[3]-px[0]);
+                const bool visible=g_liveTownGouraudPrep[p].visible;
+                pass+=unsigned(visible);
+                side+=unsigned((shared&15u)!=0u);
+                near+=unsigned((shared&16u)!=0u);
+                far+=unsigned((shared&32u)!=0u);
+                behind+=unsigned(negativeW!=0u);
+                posArea+=unsigned(area0>1e-7f);
+                negArea+=unsigned(area0< -1e-7f);
+                mixedWinding+=unsigned(area0*area1< -1e-10f);
+                const auto material=g_liveTownCpuMesh.polygonTextureIndices[p];
+                const bool materialOk=material<g_staticRoomCpuMesh.decodedTextureData.size();
+                validMaterial+=unsigned(materialOk);
+                opaqueMaterial+=unsigned(materialOk &&
+                    g_staticRoomCpuMesh.decodedTextureData[material].opaque);
+                const auto& cmd=g_liveTownCpuMesh.polygonRecords[p];
+                logging::writef(
+                    "[GarilCliffQuad] sample=%u table=%04X obj=%08X local=%u "
+                    "global=%u visible=%u out=%02X behind=%u "
+                    "area=%.7f/%.7f xy0=%.4f,%.4f xy2=%.4f,%.4f "
+                    "z=%.4f,%.4f,%.4f,%.4f "
+                    "w=%.4f,%.4f,%.4f,%.4f material=%u valid=%u opaque=%u "
+                    "CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
+                    fieldVdp1TraceFrame,unsigned(submission.modelTableOffset),
+                    unsigned(submission.objectIndex),unsigned(p-range.first),
+                    unsigned(p),unsigned(visible),shared,negativeW,
+                    double(area0),double(area1),
+                    double(px[0]),double(py[0]),double(px[2]),double(py[2]),
+                    double(pz[0]),double(pz[1]),double(pz[2]),double(pz[3]),
+                    double(pw[0]),double(pw[1]),double(pw[2]),double(pw[3]),
+                    unsigned(material),unsigned(materialOk),
+                    unsigned(materialOk &&
+                        g_staticRoomCpuMesh.decodedTextureData[material].opaque),
+                    unsigned(cmd.cmdCtrl),unsigned(cmd.cmdPmod),
+                    unsigned(cmd.cmdColr),unsigned(cmd.cmdSrca),unsigned(cmd.cmdSize));
+            }
+            logging::writef(
+                "[GarilCliffSummary] sample=%u table=%04X obj=%08X "
+                "pass=%u/20 rejectSide=%u rejectNear=%u rejectFar=%u "
+                "behindW=%u positiveArea=%u negativeArea=%u mixedTriangle=%u "
+                "materials=%u opaque=%u view=%d near=%.5f far=%.5f\n",
+                fieldVdp1TraceFrame,unsigned(submission.modelTableOffset),
+                unsigned(submission.objectIndex),pass,side,near,far,behind,
+                posArea,negArea,mixedWinding,validMaterial,opaqueMaterial,
+                g_viewMode,double(g_nativeSceneNearPlane),double(g_nativeSceneFarPlane));
+        }
+        logging::writef("[GarilCliffSample] sample=%u objects=%u\n",
+            fieldVdp1TraceFrame,cliffObjects);
     }
 
     // Diagnostic view only: attribute large world polygons and floor-region
