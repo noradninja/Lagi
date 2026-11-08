@@ -20,6 +20,12 @@ struct Vdp2SpriteColorState {
 constexpr unsigned specialColorMode(const Vdp2SpriteColorState& s,unsigned layer) {
     return layer<5u ? ((s.specialColor>>(layer*2u))&3u) : 0u;
 }
+// Preserve a per-dot color-calculation selector in the unused intermediate
+// atlas alpha byte; this is metadata, never an opacity fraction.
+constexpr std::uint32_t nbg1DotMaterial(std::uint32_t abgr,bool selected) {
+    return selected && (abgr&0xff000000u)
+        ? (abgr&0x00ffffffu)|0x80000000u : abgr;
+}
 // 1-word NBG1 pattern names with PNCN1=PNB1/CNSM0 obtain their
 // special-color bit from auxiliary PNCN1 bit 8 (SCC), not from the
 // palette number or character index in the tile map.
