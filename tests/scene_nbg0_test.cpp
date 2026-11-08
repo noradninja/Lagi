@@ -90,6 +90,15 @@ int main(){
     assert(lagi::sceneNbg0OverlayBand(0x1b,0x605,0x404)); // Native E011 priorities.
     assert(!lagi::sceneNbg0OverlayBand(0x1b,0x603,0x404));
     assert(!lagi::sceneNbg0OverlayBand(0x1b,0x607,0x404));
+    // Garil Desert A5: normal-background priority 2 lies beneath both
+    // RBG0 priority 3 and the main VDP1 priority 5.
+    assert(lagi::sceneNbg0Supported(0x0111,0x8000,0x0052,0));
+    assert(lagi::sceneNbg0BehindWorldBand(0x001b,0x0602,0x0405,0x0003));
+    assert(!lagi::sceneNbg0OverlayBand(0x001b,0x0602,0x0405));
+    assert(!lagi::sceneNbg0BehindWorldBand(0x001a,0x0602,0x0405,0x0003)); // NBG0 off
+    assert(!lagi::sceneNbg0BehindWorldBand(0x001b,0x0600,0x0405,0x0003)); // zero priority
+    assert(!lagi::sceneNbg0BehindWorldBand(0x001b,0x0603,0x0405,0x0003)); // at RBG0 priority
+    assert(!lagi::sceneNbg0BehindWorldBand(0x001b,0x0605,0x0405,0x0006)); // at VDP1 priority
     float4 s[8];s[1]={0x1f000,0x1f000,0x1f000,0x1f000};
     s[2]={0,0,1,1};s[3]={0x24000,14,1,0};s[7]={512,512,5,0};
     for(unsigned i=0;i<1024;++i)word(0x1f000+i*2,0x400); // Horizontal flip.
