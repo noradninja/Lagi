@@ -14913,10 +14913,11 @@ static void renderBasicWingViewer()
         // geometry as the actual GXM submission, without changing rendering.
         // Unlike generic first-48 range tracing, do not miss these objects
         // when numerous other field submissions precede them.
+        const auto& cliffSubmissions=azel_bridge::published_submissions();
         unsigned cliffObjects=0u;
         for(const auto& range:g_liveTownSubmissionRanges) {
-            if(range.azelOrder>=submissions.size())continue;
-            const auto& submission=submissions[range.azelOrder];
+            if(range.azelOrder>=cliffSubmissions.size())continue;
+            const auto& submission=cliffSubmissions[range.azelOrder];
             if(submission.modelTableOffset<0x4A0u ||
                submission.modelTableOffset>0x4C0u ||
                range.count!=20u)continue;
