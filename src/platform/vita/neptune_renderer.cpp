@@ -15560,17 +15560,20 @@ void begin_frame()
     if (!g_debugVisible) {
         // Controller state belongs to the game thread. Only the selected view
         // is copied into the next published render frame.
-        // Full remains the default; diagnostic lighting closes the cycle.
-        static constexpr int kSceneModes[18] = {7, 18, 19, 20, 21, 22, 23, 24, 8, 11, 9, 10, 12, 13, 14, 15, 16, 17};
+        // Keep the extended VDP1/RBG0 diagnostics (13..24) compiled,
+        // but remove them from the user-facing view cycle. FULL remains
+        // the fallback if a diagnostic was previously selected.
+        static constexpr int kSceneModes[] = {7, 8, 11, 9, 10, 12};
+        constexpr int kModeCount = int(sizeof(kSceneModes) / sizeof(kSceneModes[0]));
         int sceneModeIndex = 0;
-        for (int i = 0; i < 18; ++i)
+        for (int i = 0; i < kModeCount; ++i)
             if (g_pendingViewMode == kSceneModes[i])
                 sceneModeIndex = i;
 
         if (input::prev_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 17) % 18;
+            sceneModeIndex = (sceneModeIndex + kModeCount - 1) % kModeCount;
         if (input::next_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 1) % 18;
+            sceneModeIndex = (sceneModeIndex + 1) % kModeCount;
         g_pendingViewMode = kSceneModes[sceneModeIndex];
         return;
     }
@@ -16863,7 +16866,10 @@ void presentation_publish_frame()
             g_pendingNativeSceneViewMatrix,
             sizeof(g_nativeSceneViewMatrix));
     }
-    g_viewMode = g_pendingViewMode;
+    // Extended diagnostic view modes remain in the source for future
+    // investigation but are not reachable or executed in normal builds.
+    g_viewMode = (g_pendingViewMode >= 13 && g_pendingViewMode <= 24)
+        ? 7 : g_pendingViewMode;
     g_profileTasksUs = g_pendingProfileTasksUs;
     g_profileGameWaitUs = g_pendingProfileGameWaitUs;
     std::memcpy(g_sceneColorOffset, g_pendingSceneColorOffset, sizeof(g_sceneColorOffset));
