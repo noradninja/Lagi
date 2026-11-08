@@ -1061,6 +1061,71 @@ static void record_submission(sProcessed3dModel* model, bool billboard,
                 g_lastState.modelMatrix[3],g_lastState.modelMatrix[7],
                 g_lastState.modelMatrix[11],
                 int(g_lastState.localCoordinatesX),int(g_lastState.localCoordinatesY));
+            // Diagnostic only: forward-project the published world matrix
+            // through the SAME captured Azel view and compare it against the
+            // original pCurrentMatrix. A nonzero residual distinguishes an
+            // invalid inverse/scope from a later compositor problem.
+            if (hasCurrent && hasView) {
+                std::int32_t roundTrip[12]{};
+                std::int32_t basisMaxError=0;
+                for(unsigned row=0;row<3;++row) {
+                    for(unsigned col=0;col<4;++col) {
+                        std::int64_t sum=col==3 ?
+                            (std::int64_t(view[row*4+3])<<16) : 0;
+                        for(unsigned k=0;k<3;++k)
+                            sum+=std::int64_t(view[row*4+k]) *
+                                 g_lastState.modelMatrix[k*4+col];
+                        roundTrip[row*4+col]=std::int32_t(sum>>16);
+                        if(col<3) {
+                            const auto difference=std::int64_t(
+                                roundTrip[row*4+col])-current[row*4+col];
+                            const auto absolute=difference<0?-difference:difference;
+                            if(absolute>basisMaxError)
+                                basisMaxError=std::int32_t(absolute);
+                        }
+                    }
+                }
+                const auto& vertex=cached->value.vertices[0];
+                const double source[3]={double(vertex.x),double(vertex.y),
+                    double(vertex.z)};
+                double original[3]{},reprojected[3]{};
+                for(unsigned row=0;row<3;++row) {
+                    original[row]=double(current[row*4+3])/65536.0;
+                    reprojected[row]=double(roundTrip[row*4+3])/65536.0;
+                    for(unsigned col=0;col<3;++col) {
+                        original[row]+=source[col]*
+                            (double(current[row*4+col])/65536.0);
+                        reprojected[row]+=source[col]*
+                            (double(roundTrip[row*4+col])/65536.0);
+                    }
+                }
+                lagi::platform::logging::writef(
+                    "[CampCircleRoundTrip] model=%p submission=%u "
+                    "scope=%u viewValid=%u explicit=%u "
+                    "viewT=(%d,%d,%d) currentT=(%d,%d,%d) "
+                    "worldT=(%d,%d,%d) returnT=(%d,%d,%d) "
+                    "translationError=(%lld,%lld,%lld) basisMaxError=%d "
+                    "source=(%.8f,%.8f,%.8f) "
+                    "azelView=(%.8f,%.8f,%.8f) "
+                    "neptuneView=(%.8f,%.8f,%.8f) "
+                    "delta=(%.8f,%.8f,%.8f)\n",
+                    static_cast<void*>(model),g_submissionCount,
+                    unsigned(g_viewRelativeScope),unsigned(g_nativeSceneViewValid),
+                    unsigned(g_hasPendingTownSubmission),
+                    view[3],view[7],view[11],current[3],current[7],current[11],
+                    g_lastState.modelMatrix[3],g_lastState.modelMatrix[7],
+                    g_lastState.modelMatrix[11],roundTrip[3],roundTrip[7],
+                    roundTrip[11],
+                    static_cast<long long>(std::int64_t(roundTrip[3])-current[3]),
+                    static_cast<long long>(std::int64_t(roundTrip[7])-current[7]),
+                    static_cast<long long>(std::int64_t(roundTrip[11])-current[11]),
+                    basisMaxError,source[0],source[1],source[2],
+                    original[0],original[1],original[2],
+                    reprojected[0],reprojected[1],reprojected[2],
+                    reprojected[0]-original[0],
+                    reprojected[1]-original[1],
+                    reprojected[2]-original[2]);
+            }
         }
     }
     RenderSubmission submission = g_hasPendingTownSubmission
