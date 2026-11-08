@@ -573,6 +573,13 @@ static std::vector<LiveTownSubmissionRange> g_liveTownStaticSubmissionRanges;
 struct Vdp1CircleAuditPoint {int x=0,y=0;unsigned circle=0,other=0;};
 static Vdp1CircleAuditPoint g_vdp1CircleAuditPoints[12]{};
 static unsigned g_vdp1CircleAuditCount=0,g_vdp1CircleAuditScene=~0u;
+// Diagnostic mode 24: A/B sample of only the Camp circle's depth policy.
+// A = production depth test/writes, B = always pass/no writes.
+// The world shaders, textures and all unrelated polygon states stay identical.
+static bool g_circleDepthCompareActive=false;
+static unsigned g_circleDepthComparePhase=0,g_circleDepthCompareFrame=0;
+static float g_circleDepthCompareRect[4]{};
+static unsigned g_circleDepthCompareScene=~0u;
 static bool g_liveTownPrepared = false;
 static std::size_t g_edgeFirstVertex = 0;
 static std::size_t g_edgeFirstPolygon = 0;
@@ -1717,6 +1724,7 @@ static const char* viewerModeLabel(int mode)
     case 21: return "VDP1 CIRCLE Y: ZERO";
     case 22: return "VDP1 CIRCLE Y: -0.015";
     case 23: return "VDP1 CIRCLE Y: -0.030";
+    case 24: return "CIRCLE DEPTH A/B";
     case 9:  return "QUADS";
     case 11: return "WIRES";
     default: return "";
@@ -8640,7 +8648,7 @@ static bool buildLiveTownFrame()
     g_profilePositionSyncUs = 0u;
     g_profilePositionSyncVertices = 0u;
     g_profilePositionSyncLegacyVertices = 0u;
-    const bool fullSubdivMode = g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23;
+    const bool fullSubdivMode = g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24;
     const bool changed = !g_liveTownPrepared ||
         g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
         g_vdp1TextureDataDirty ||
@@ -11874,7 +11882,7 @@ bool submit_vdp1_model(
         drawState.mode == Vdp1RenderMode::Wireframe;
     const bool subdividedTexturedLit =
         texturedLit &&
-        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23) &&
+        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24) &&
         liveSubdivisionBuffersReady(model) &&
         g_texturedGouraudSubdivFragmentProgram;
     const bool subdividedGouraudGray =
@@ -12387,6 +12395,35 @@ bool submit_vdp1_model(
             orderedRuns.clear();
             orderedRuns.reserve(model.polygonCount);
             const bool depthScene=lagi::native_scene_depth_mode(g_sceneGameMode);
+            // Only recognized Camp circle materials qualify. Count once per
+            // world submission (not per draw run), alternating A/B frames.
+            unsigned circleDepthMatches=0u;
+            if(g_viewMode==24 && depthScene && model.polygonCount>637u &&
+               model.polygons) {
+                for(unsigned p=626u;p<=637u;++p)
+                    circleDepthMatches+=unsigned(visibleQuads[p] &&
+                        model.polygons[p].cmdColr==0x2100u);
+            }
+            const bool circleDepthCompare=circleDepthMatches>=2u;
+            if(g_viewMode!=24) {
+                g_circleDepthCompareActive=false;
+                g_circleDepthCompareFrame=0;
+            } else if(circleDepthCompare) {
+                g_circleDepthCompareActive=true;
+                g_circleDepthCompareScene=g_sceneGameMode;
+                g_circleDepthComparePhase=g_circleDepthCompareFrame++&1u;
+                static unsigned traceBudget=16u;
+                if(traceBudget) {
+                    --traceBudget;
+                    logging::writef("[CampCircleDepthAB] frame=%u phase=%c circlePolys=%u scene=%u policy=%s\n",
+                        g_circleDepthCompareFrame,
+                        g_circleDepthComparePhase?'B':'A',
+                        circleDepthMatches,g_sceneGameMode,
+                        g_circleDepthComparePhase?"ALWAYS_NO_WRITE":"LEQUAL_WRITE");
+                }
+            } else {
+                g_circleDepthCompareActive=false;
+            }
             // Three controlled depth policies use the identical Azel-sorted
             // command stream and subdivision/index buffers. Diagnostics alter
             // only depth comparison and writes; production remains unchanged.
@@ -12431,7 +12468,16 @@ bool submit_vdp1_model(
                     24u*sizeof(std::uint16_t));
                 if(texture!=lastTexture)++textureTransitions;
                 lastTexture=texture;
-                if(!orderedRuns.empty() &&
+                // In mode 24 the circle must have its own draw runs;
+                // otherwise a coalesced run would change unrelated polygons.
+                const bool circleRunBoundary=circleDepthCompare &&
+                    ((p>=626u && p<=637u) ||
+                     (!orderedRuns.empty() &&
+                      (orderedRuns.back().firstIndex+
+                       orderedRuns.back().count-24u)/24u>=626u &&
+                      (orderedRuns.back().firstIndex+
+                       orderedRuns.back().count-24u)/24u<=637u));
+                if(!circleRunBoundary && !orderedRuns.empty() &&
                     orderedRuns.back().texture==texture &&
                     orderedRuns.back().ordered==ordered &&
                     orderedRuns.back().blended==blended &&
@@ -12612,6 +12658,12 @@ bool submit_vdp1_model(
                 }
                 if(effectCount) {
                     effectY/=effectCount;
+                    if(g_circleDepthCompareActive) {
+                        g_circleDepthCompareRect[0]=effectLeft;
+                        g_circleDepthCompareRect[1]=effectTop;
+                        g_circleDepthCompareRect[2]=effectRight;
+                        g_circleDepthCompareRect[3]=effectBottom;
+                    }
                     g_vdp1CircleAuditCount=0;
                     g_vdp1CircleAuditScene=g_sceneGameMode;
                     const auto addProbe=[&](float x,float y,unsigned other) {
@@ -12704,11 +12756,15 @@ bool submit_vdp1_model(
                     sceGxmSetFrontDepthFunc(g_probeContext,depthFunc);
                     sceGxmSetBackDepthFunc(g_probeContext,depthFunc);
                 }
-                if(depthDiagnostic==1u) {
+                const unsigned runPolygon=run.firstIndex/24u;
+                const bool circleOverride=circleDepthCompare &&
+                    g_circleDepthComparePhase==1u && run.count==24u &&
+                    runPolygon>=626u && runPolygon<=637u;
+                if(depthDiagnostic==1u || circleOverride) {
                     sceGxmSetFrontDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
                     sceGxmSetBackDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
                 }
-                const auto writes=depthDiagnostic==0u && !blended &&
+                const auto writes=depthDiagnostic==0u && !circleOverride && !blended &&
                     (!run.ordered||depthScene) ?
                     SCE_GXM_DEPTH_WRITE_ENABLED:SCE_GXM_DEPTH_WRITE_DISABLED;
                 sceGxmSetFrontDepthWriteEnable(g_probeContext,writes);
@@ -14574,11 +14630,11 @@ static void renderBasicWingViewer()
         roomAuthenticCameraMode &&
         (liveSceneLighting ||
          (g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)) &&
-        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23);
+        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24);
     const bool roomAuthenticTexturedMode =
         roomAuthenticCameraMode &&
         (g_viewMode == 8 ||
-         ((g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23) && !liveSceneLighting &&
+         ((g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24) && !liveSceneLighting &&
           !(g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)));
     const bool roomAuthenticFlatMode =
         roomAuthenticCameraMode &&
@@ -14628,7 +14684,7 @@ static void renderBasicWingViewer()
     // intersections to their original Saturn commands. No render-path changes.
     // The trace captures the first eligible RAW/SPLIT frame per scene/view,
     // not every frame, and is bounded independently of visibility size.
-    if (nativeSceneMode && (g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23) &&
+    if (nativeSceneMode && (g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24) &&
         g_liveTownGouraudPrepValid &&
         g_liveTownCpuMesh.vertices.size() ==
             g_liveTownCpuMesh.polygonRecords.size() * 6u) {
@@ -14845,7 +14901,7 @@ static void renderBasicWingViewer()
     if (!roomMode) {
         // Diagnostics 18/19 compare depth only, never reinterpret their IDs
         // as VDP1 render modes. Keep the same FULL material/shading path.
-        renderMode = (g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23)
+        renderMode = (g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24)
             ? Vdp1RenderMode::TexturedGouraud
             : static_cast<Vdp1RenderMode>(g_viewMode);
     } else if (roomAuthenticFlatMode) {
@@ -15453,16 +15509,16 @@ void begin_frame()
         // Controller state belongs to the game thread. Only the selected view
         // is copied into the next published render frame.
         // Full remains the default; diagnostic lighting closes the cycle.
-        static constexpr int kSceneModes[17] = {7, 18, 19, 20, 21, 22, 23, 8, 11, 9, 10, 12, 13, 14, 15, 16, 17};
+        static constexpr int kSceneModes[18] = {7, 18, 19, 20, 21, 22, 23, 24, 8, 11, 9, 10, 12, 13, 14, 15, 16, 17};
         int sceneModeIndex = 0;
-        for (int i = 0; i < 17; ++i)
+        for (int i = 0; i < 18; ++i)
             if (g_pendingViewMode == kSceneModes[i])
                 sceneModeIndex = i;
 
         if (input::prev_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 16) % 17;
+            sceneModeIndex = (sceneModeIndex + 17) % 18;
         if (input::next_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 1) % 17;
+            sceneModeIndex = (sceneModeIndex + 1) % 18;
         g_pendingViewMode = kSceneModes[sceneModeIndex];
         return;
     }
@@ -16651,7 +16707,8 @@ bool presentation_active()
         g_pendingViewMode == 11 || g_pendingViewMode == 12 ||
         g_pendingViewMode == 18 || g_pendingViewMode == 19 ||
         g_pendingViewMode == 20 || g_pendingViewMode == 21 ||
-        g_pendingViewMode == 22 || g_pendingViewMode == 23;
+        g_pendingViewMode == 22 || g_pendingViewMode == 23 ||
+        g_pendingViewMode == 24;
     const bool nativeSceneReady =
         g_sceneGameMode != 0u && (g_nativeSceneViewValid || g_townCameraReady);
     const bool legacyRoomReady =
