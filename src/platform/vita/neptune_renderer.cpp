@@ -1706,6 +1706,8 @@ static const char* viewerModeLabel(int mode)
     case 15: return "VDP1 / RBG0 OWNER";
     case 16: return "RBG0 / NO VDP1 UNDERLAY";
     case 17: return "RBG0 SECOND SOURCE";
+    case 18: return "VDP1 DEPTH: ORDER ONLY";
+    case 19: return "VDP1 DEPTH: TEST ONLY";
     case 9:  return "QUADS";
     case 11: return "WIRES";
     default: return "";
@@ -8597,7 +8599,7 @@ static bool buildLiveTownFrame()
     g_profilePositionSyncUs = 0u;
     g_profilePositionSyncVertices = 0u;
     g_profilePositionSyncLegacyVertices = 0u;
-    const bool fullSubdivMode = g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17;
+    const bool fullSubdivMode = g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19;
     const bool changed = !g_liveTownPrepared ||
         g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
         g_vdp1TextureDataDirty ||
@@ -11831,7 +11833,7 @@ bool submit_vdp1_model(
         drawState.mode == Vdp1RenderMode::Wireframe;
     const bool subdividedTexturedLit =
         texturedLit &&
-        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17) &&
+        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19) &&
         liveSubdivisionBuffersReady(model) &&
         g_texturedGouraudSubdivFragmentProgram;
     const bool subdividedGouraudGray =
@@ -12313,6 +12315,11 @@ bool submit_vdp1_model(
             orderedRuns.clear();
             orderedRuns.reserve(model.polygonCount);
             const bool depthScene=lagi::native_scene_depth_mode(g_sceneGameMode);
+            // Three controlled depth policies use the identical Azel-sorted
+            // command stream and subdivision/index buffers. Diagnostics alter
+            // only depth comparison and writes; production remains unchanged.
+            const unsigned depthDiagnostic=g_viewMode==18 ? 1u :
+                (g_viewMode==19 ? 2u : 0u);
             unsigned visibleCount=0u,orderedCount=0u;
             unsigned replayedSubmissions=0u,unrangedPolygons=0u;
             unsigned textureTransitions=0u,blendStateSplits=0u;
@@ -12414,12 +12421,15 @@ bool submit_vdp1_model(
                     sceGxmSetFrontDepthFunc(g_probeContext,depthFunc);
                     sceGxmSetBackDepthFunc(g_probeContext,depthFunc);
                 }
-                sceGxmSetFrontDepthWriteEnable(g_probeContext,
-                    (!blended && (!run.ordered||depthScene))?
-                    SCE_GXM_DEPTH_WRITE_ENABLED:SCE_GXM_DEPTH_WRITE_DISABLED);
-                sceGxmSetBackDepthWriteEnable(g_probeContext,
-                    (!blended && (!run.ordered||depthScene))?
-                    SCE_GXM_DEPTH_WRITE_ENABLED:SCE_GXM_DEPTH_WRITE_DISABLED);
+                if(depthDiagnostic==1u) {
+                    sceGxmSetFrontDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
+                    sceGxmSetBackDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
+                }
+                const auto writes=depthDiagnostic==0u && !blended &&
+                    (!run.ordered||depthScene) ?
+                    SCE_GXM_DEPTH_WRITE_ENABLED:SCE_GXM_DEPTH_WRITE_DISABLED;
+                sceGxmSetFrontDepthWriteEnable(g_probeContext,writes);
+                sceGxmSetBackDepthWriteEnable(g_probeContext,writes);
                 sceGxmSetFragmentProgram(g_probeContext,
                     blended?g_nativeBlendPrograms[mesh?BlendMeshSubdiv:BlendSubdiv]:
                     (mesh?g_meshSubdivFragmentProgram:g_texturedGouraudSubdivFragmentProgram));
@@ -12440,6 +12450,15 @@ bool submit_vdp1_model(
                 sceKernelGetProcessTimeWide()-tPayload);
             g_profileGouraudDrawUs=static_cast<unsigned>(
                 sceKernelGetProcessTimeWide()-drawStart);
+            static int lastDepthDiagnostic=-1;
+            if(lastDepthDiagnostic!=int(depthDiagnostic)) {
+                lastDepthDiagnostic=int(depthDiagnostic);
+                logging::writef("[NativeVdp1DepthDiagnostic] policy=%u label=%s scene=%u runs=%u visible=%u ordered=%u\n",
+                    depthDiagnostic,depthDiagnostic==1u?"ORDER_ONLY":
+                    (depthDiagnostic==2u?"TEST_ONLY":"CURRENT"),
+                    unsigned(g_sceneGameMode),unsigned(orderedRuns.size()),
+                    visibleCount,orderedCount);
+            }
             static unsigned orderedTraceBudget=4u;
             if(orderedTraceBudget) {
                 --orderedTraceBudget;
@@ -14272,11 +14291,11 @@ static void renderBasicWingViewer()
         roomAuthenticCameraMode &&
         (liveSceneLighting ||
          (g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)) &&
-        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17);
+        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19);
     const bool roomAuthenticTexturedMode =
         roomAuthenticCameraMode &&
         (g_viewMode == 8 ||
-         ((g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17) && !liveSceneLighting &&
+         ((g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19) && !liveSceneLighting &&
           !(g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)));
     const bool roomAuthenticFlatMode =
         roomAuthenticCameraMode &&
@@ -14326,7 +14345,7 @@ static void renderBasicWingViewer()
     // intersections to their original Saturn commands. No render-path changes.
     // The trace captures the first eligible RAW/SPLIT frame per scene/view,
     // not every frame, and is bounded independently of visibility size.
-    if (nativeSceneMode && (g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17) &&
+    if (nativeSceneMode && (g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19) &&
         g_liveTownGouraudPrepValid &&
         g_liveTownCpuMesh.vertices.size() ==
             g_liveTownCpuMesh.polygonRecords.size() * 6u) {
@@ -15147,16 +15166,16 @@ void begin_frame()
         // Controller state belongs to the game thread. Only the selected view
         // is copied into the next published render frame.
         // Full remains the default; diagnostic lighting closes the cycle.
-        static constexpr int kSceneModes[11] = {7, 8, 11, 9, 10, 12, 13, 14, 15, 16, 17};
+        static constexpr int kSceneModes[13] = {7, 18, 19, 8, 11, 9, 10, 12, 13, 14, 15, 16, 17};
         int sceneModeIndex = 0;
-        for (int i = 0; i < 11; ++i)
+        for (int i = 0; i < 13; ++i)
             if (g_pendingViewMode == kSceneModes[i])
                 sceneModeIndex = i;
 
         if (input::prev_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 10) % 11;
+            sceneModeIndex = (sceneModeIndex + 12) % 13;
         if (input::next_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 1) % 11;
+            sceneModeIndex = (sceneModeIndex + 1) % 13;
         g_pendingViewMode = kSceneModes[sceneModeIndex];
         return;
     }
@@ -16342,7 +16361,8 @@ bool presentation_active()
     const bool sceneMode =
         g_pendingViewMode == 7 || g_pendingViewMode == 8 ||
         g_pendingViewMode == 10 || g_pendingViewMode == 9 ||
-        g_pendingViewMode == 11 || g_pendingViewMode == 12;
+        g_pendingViewMode == 11 || g_pendingViewMode == 12 ||
+        g_pendingViewMode == 18 || g_pendingViewMode == 19;
     const bool nativeSceneReady =
         g_sceneGameMode != 0u && (g_nativeSceneViewValid || g_townCameraReady);
     const bool legacyRoomReady =
