@@ -1713,6 +1713,7 @@ static const char* viewerModeLabel(int mode)
     case 17: return "RBG0 SECOND SOURCE";
     case 18: return "VDP1 DEPTH: ORDER ONLY";
     case 19: return "VDP1 DEPTH: TEST ONLY";
+    case 20: return "VDP1 ORDER: CIRCLE FIRST";
     case 9:  return "QUADS";
     case 11: return "WIRES";
     default: return "";
@@ -8604,7 +8605,7 @@ static bool buildLiveTownFrame()
     g_profilePositionSyncUs = 0u;
     g_profilePositionSyncVertices = 0u;
     g_profilePositionSyncLegacyVertices = 0u;
-    const bool fullSubdivMode = g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19;
+    const bool fullSubdivMode = g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20;
     const bool changed = !g_liveTownPrepared ||
         g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
         g_vdp1TextureDataDirty ||
@@ -11838,7 +11839,7 @@ bool submit_vdp1_model(
         drawState.mode == Vdp1RenderMode::Wireframe;
     const bool subdividedTexturedLit =
         texturedLit &&
-        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19) &&
+        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20) &&
         liveSubdivisionBuffersReady(model) &&
         g_texturedGouraudSubdivFragmentProgram;
     const bool subdividedGouraudGray =
@@ -12404,6 +12405,63 @@ bool submit_vdp1_model(
                 if(replayed[p])continue;
                 ++unrangedPolygons;
                 if(!appendPolygon(p))return false;
+            }
+            // Controlled order experiment only (view 20). Reuse the exact
+            // visible quads, index slots, textures, shading, and draw policy.
+            // Split native runs into individual quads so no unrelated polygon
+            // moves with a coalesced texture/material run. Move the identified
+            // capture group to the front, then replay all other polygons in
+            // their original relative Azel order. FULL is untouched.
+            if(g_viewMode==20 && model.polygonCount>637u && model.polygons) {
+                unsigned matching=0u;
+                for(std::size_t p=626u;p<=637u;++p)
+                    matching+=unsigned(visibleQuads[p] &&
+                        model.polygons[p].cmdColr==0x2100u);
+                if(matching>=2u) {
+                    static std::vector<NativeOrderedRun> reordered;
+                    reordered.clear();
+                    reordered.reserve(model.polygonCount);
+                    const auto append=[&](const NativeOrderedRun& parent,
+                        unsigned index) {
+                        if(!reordered.empty() &&
+                           reordered.back().texture==parent.texture &&
+                           reordered.back().ordered==parent.ordered &&
+                           reordered.back().blended==parent.blended &&
+                           reordered.back().firstIndex+reordered.back().count==index)
+                            reordered.back().count+=24u;
+                        else
+                            reordered.push_back({parent.texture,index,24u,
+                                parent.ordered,parent.blended});
+                    };
+                    unsigned moved=0u;
+                    for(unsigned phase=0u;phase<2u;++phase) {
+                        for(const auto& run:orderedRuns) {
+                            for(unsigned offset=0u;offset<run.count;offset+=24u) {
+                                const unsigned index=run.firstIndex+offset;
+                                const std::size_t p=index/24u;
+                                const bool circle=p>=626u&&p<=637u &&
+                                    model.polygons[p].cmdColr==0x2100u;
+                                if(circle==(phase==0u)) {
+                                    append(run,index);
+                                    if(circle)++moved;
+                                }
+                            }
+                        }
+                    }
+                    orderedRuns.swap(reordered);
+                    static int lastMove=-1;
+                    if(lastMove!=int(moved)) {
+                        lastMove=int(moved);
+                        logging::writef("[VDP1OrderExperiment] view=20 mode=CIRCLE_FIRST moved=%u total=%u firstOrdinal=0 productionOrderUnchanged=1\n",
+                            moved,visibleCount);
+                    }
+                } else {
+                    static bool warned=false;
+                    if(!warned) {
+                        warned=true;
+                        logging::writef("[VDP1OrderExperiment] view=20 inactive: expected material group absent\n");
+                    }
+                }
             }
             // Diagnostic only: replay-order / vertical-position audit of the
             // previously identified large floor-effect polygon group. These
@@ -14450,11 +14508,11 @@ static void renderBasicWingViewer()
         roomAuthenticCameraMode &&
         (liveSceneLighting ||
          (g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)) &&
-        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19);
+        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20);
     const bool roomAuthenticTexturedMode =
         roomAuthenticCameraMode &&
         (g_viewMode == 8 ||
-         ((g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19) && !liveSceneLighting &&
+         ((g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20) && !liveSceneLighting &&
           !(g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)));
     const bool roomAuthenticFlatMode =
         roomAuthenticCameraMode &&
@@ -14504,7 +14562,7 @@ static void renderBasicWingViewer()
     // intersections to their original Saturn commands. No render-path changes.
     // The trace captures the first eligible RAW/SPLIT frame per scene/view,
     // not every frame, and is bounded independently of visibility size.
-    if (nativeSceneMode && (g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19) &&
+    if (nativeSceneMode && (g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20) &&
         g_liveTownGouraudPrepValid &&
         g_liveTownCpuMesh.vertices.size() ==
             g_liveTownCpuMesh.polygonRecords.size() * 6u) {
@@ -14721,7 +14779,7 @@ static void renderBasicWingViewer()
     if (!roomMode) {
         // Diagnostics 18/19 compare depth only, never reinterpret their IDs
         // as VDP1 render modes. Keep the same FULL material/shading path.
-        renderMode = (g_viewMode == 18 || g_viewMode == 19)
+        renderMode = (g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20)
             ? Vdp1RenderMode::TexturedGouraud
             : static_cast<Vdp1RenderMode>(g_viewMode);
     } else if (roomAuthenticFlatMode) {
@@ -15329,16 +15387,16 @@ void begin_frame()
         // Controller state belongs to the game thread. Only the selected view
         // is copied into the next published render frame.
         // Full remains the default; diagnostic lighting closes the cycle.
-        static constexpr int kSceneModes[13] = {7, 18, 19, 8, 11, 9, 10, 12, 13, 14, 15, 16, 17};
+        static constexpr int kSceneModes[14] = {7, 18, 19, 20, 8, 11, 9, 10, 12, 13, 14, 15, 16, 17};
         int sceneModeIndex = 0;
-        for (int i = 0; i < 13; ++i)
+        for (int i = 0; i < 14; ++i)
             if (g_pendingViewMode == kSceneModes[i])
                 sceneModeIndex = i;
 
         if (input::prev_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 12) % 13;
+            sceneModeIndex = (sceneModeIndex + 13) % 14;
         if (input::next_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 1) % 13;
+            sceneModeIndex = (sceneModeIndex + 1) % 14;
         g_pendingViewMode = kSceneModes[sceneModeIndex];
         return;
     }
@@ -16525,7 +16583,8 @@ bool presentation_active()
         g_pendingViewMode == 7 || g_pendingViewMode == 8 ||
         g_pendingViewMode == 10 || g_pendingViewMode == 9 ||
         g_pendingViewMode == 11 || g_pendingViewMode == 12 ||
-        g_pendingViewMode == 18 || g_pendingViewMode == 19;
+        g_pendingViewMode == 18 || g_pendingViewMode == 19 ||
+        g_pendingViewMode == 20;
     const bool nativeSceneReady =
         g_sceneGameMode != 0u && (g_nativeSceneViewValid || g_townCameraReady);
     const bool legacyRoomReady =
