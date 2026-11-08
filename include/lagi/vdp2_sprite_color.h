@@ -11,6 +11,12 @@ struct Vdp2SpriteColorState {
     std::uint16_t rbgRatio=0; // Native CCRR; sprite CCRS is a different selector.
     std::uint16_t specialPriority=0,specialColor=0;
 };
+// SFCCMD (0x1800EE): two bits per VDP2 background layer.
+// 0=NBG0/RBG1, 1=NBG1/EXBG, 2=NBG2, 3=NBG3, 4=RBG0.
+// A nonzero NBG1 mode does not change RBG0's color-calculation mode.
+constexpr unsigned specialColorMode(const Vdp2SpriteColorState& s,unsigned layer) {
+    return layer<5u ? ((s.specialColor>>(layer*2u))&3u) : 0u;
+}
 constexpr unsigned rbgColorRatio(const Vdp2SpriteColorState& s) {return s.rbgRatio&31u;}
 // Type-3 indexed VDP1 pixels: retain PRIS/CCRS selectors after CRAM lookup.
 // 128 is reserved for a VDP1 half-transparent RGB result; 255 is direct RGB.
