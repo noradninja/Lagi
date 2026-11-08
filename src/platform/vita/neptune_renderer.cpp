@@ -12804,12 +12804,7 @@ bool submit_vdp1_model(
                     sceGxmSetBackDepthFunc(g_probeContext,
                         depthScene?depthFunc:SCE_GXM_DEPTH_FUNC_ALWAYS);
                 } else {
-                    // Saturn VDP1 polygon emission does not request GPU
-                    // back-face culling. Azel already chooses field geometry;
-                    // reject no submitted field face merely for its winding.
-                    // Keep town/battle and 2D sprite culling unchanged.
-                    sceGxmSetCullMode(g_probeContext,
-                        g_sceneGameMode==3u ? SCE_GXM_CULL_NONE : cullMode);
+                    sceGxmSetCullMode(g_probeContext,cullMode);
                     sceGxmSetFrontDepthFunc(g_probeContext,depthFunc);
                     sceGxmSetBackDepthFunc(g_probeContext,depthFunc);
                 }
