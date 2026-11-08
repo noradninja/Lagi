@@ -568,6 +568,11 @@ struct LiveTownSubmissionRange {
 };
 static std::vector<LiveTownSubmissionRange> g_liveTownSubmissionRanges;
 static std::vector<LiveTownSubmissionRange> g_liveTownStaticSubmissionRanges;
+// Diagnostic readback points selected from projected overlaps of the
+// previously identified circle polygons and other VDP1 submissions.
+struct Vdp1CircleAuditPoint {int x=0,y=0;unsigned circle=0,other=0;};
+static Vdp1CircleAuditPoint g_vdp1CircleAuditPoints[12]{};
+static unsigned g_vdp1CircleAuditCount=0,g_vdp1CircleAuditScene=~0u;
 static bool g_liveTownPrepared = false;
 static std::size_t g_edgeFirstVertex = 0;
 static std::size_t g_edgeFirstPolygon = 0;
@@ -12476,6 +12481,17 @@ bool submit_vdp1_model(
                 }
                 if(effectCount) {
                     effectY/=effectCount;
+                    g_vdp1CircleAuditCount=0;
+                    g_vdp1CircleAuditScene=g_sceneGameMode;
+                    const auto addProbe=[&](float x,float y,unsigned other) {
+                        if(g_vdp1CircleAuditCount>=12u)return;
+                        const int ix=int(std::floor(x)),iy=int(std::floor(y));
+                        if(ix<0||iy<0||ix>=kWidth||iy>=kHeight)return;
+                        g_vdp1CircleAuditPoints[g_vdp1CircleAuditCount++] =
+                            {ix,iy,626u,other};
+                    };
+                    addProbe((effectLeft+effectRight)*0.5f,
+                        (effectTop+effectBottom)*0.5f,~0u);
                     struct Overlap {std::size_t p;float area;TraceBounds b;};
                     std::vector<Overlap> overlaps;
                     overlaps.reserve(model.polygonCount);
@@ -12512,9 +12528,18 @@ bool submit_vdp1_model(
                             effectY-b.centerWorldY,
                             b.minX,b.minY,b.maxX,b.maxY,b.meanDepth);
                     };
-                    for(std::size_t i=0;i<std::min(std::size_t(16),overlaps.size());++i)
+                    for(std::size_t i=0;i<std::min(std::size_t(16),overlaps.size());++i) {
                         reportOverlap(overlaps[i].p,overlaps[i].area,
                             overlaps[i].b,"largest-overlap");
+                        if(i<10u) {
+                            const auto& b=overlaps[i].b;
+                            addProbe((std::max(effectLeft,b.minX)+
+                                std::min(effectRight,b.maxX))*0.5f,
+                                (std::max(effectTop,b.minY)+
+                                std::min(effectBottom,b.maxY))*0.5f,
+                                unsigned(overlaps[i].p));
+                        }
+                    }
                     const auto shadowEnd=std::min(model.polygonCount,
                         g_liveTownShadowFirstPolygon+g_liveTownShadowPolygonCount);
                     for(std::size_t p=g_liveTownShadowFirstPolygon,
