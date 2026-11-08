@@ -7688,7 +7688,7 @@ static void appendLiveTownModel(
                 "[CampCircleVertex] polygonBase=%u source=(%.8f,%.8f,%.8f) "
                 "basisY=(%.8f,%.8f,%.8f) linearY=%.8f "
                 "translationY=%.8f predictedY=%.8f finalY=%.8f "
-                "projectionShiftY=%.8f billboard=%u\\n",
+                "projectionShiftY=%.8f billboard=%u\n",
                 unsigned(polygonBase),double(source.x),double(source.y),
                 double(source.z),double(m[4]),double(m[5]),double(m[6]),
                 double(linearY),double(m[7]),double(translatedY),
