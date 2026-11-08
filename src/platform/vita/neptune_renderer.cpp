@@ -5258,6 +5258,31 @@ static void drawPublishedVdp1Ui(
     bool nativeCanvas = false)
 {
     const auto& commands = azel_bridge::published_vdp1_ui_commands();
+    if(g_sceneGameMode==3u && pass==Vdp1UiPass::Background) {
+        static unsigned fieldSpriteTraceFrame=0u;
+        ++fieldSpriteTraceFrame;
+        if(fieldSpriteTraceFrame==30u || fieldSpriteTraceFrame==90u) {
+            unsigned backgrounds=0u,world=0u,other=0u;
+            for(const auto& command:commands) {
+                if(isVdp1BackgroundCommand(command))++backgrounds;
+                else if(command.hasWorldDepth)++world;
+                else ++other;
+            }
+            logging::writef("[FieldVdp1Sprites] sample=%u total=%u background=%u world=%u other=%u\n",
+                fieldSpriteTraceFrame,unsigned(commands.size()),backgrounds,world,other);
+            unsigned reported=0u;
+            for(const auto& command:commands) {
+                if(reported++>=24u)break;
+                logging::writef("[FieldVdp1Sprite] type=%u SRCA=%04X SIZE=%04X PMOD=%04X COLR=%04X "
+                    "A=(%d,%d) B=(%d,%d) hasDepth=%u depth=%.6f world=%u sort=%04X background=%u\n",
+                    unsigned(command.cmdCtrl&15u),unsigned(command.cmdSrca),
+                    unsigned(command.cmdSize),unsigned(command.cmdPmod),unsigned(command.cmdColr),
+                    int(command.xa),int(command.ya),int(command.xb),int(command.yb),
+                    unsigned(command.hasDepth),double(command.depth),unsigned(command.hasWorldDepth),
+                    unsigned(command.nativeSortKey),unsigned(isVdp1BackgroundCommand(command)));
+            }
+        }
+    }
     if (commands.empty() || !g_textureVertexProgram ||
         !g_textureFragmentProgram || !g_textureWvpParam ||
         !ensureVdp1UiBuffers())
@@ -14772,6 +14797,84 @@ static void renderBasicWingViewer()
 
     if (roomAuthenticCameraMode)
         prepareLiveTownGouraudVisibility(wvp);
+
+    // Compare native field VDP1 production against its actual GXM
+    // visibility result. A3 and A5 use the same submission interface,
+    // so retain Azel cell/object/model IDs rather than classifying
+    // distant scenery by guessed texture or by field-specific offsets.
+    // Two bounded snapshots, with no GPU readback or altered draw state.
+    if(g_sceneGameMode==3u && nativeSceneMode && g_liveTownGouraudPrepValid) {
+        static unsigned fieldVdp1TraceFrame=0u;
+        ++fieldVdp1TraceFrame;
+        if(fieldVdp1TraceFrame==30u || fieldVdp1TraceFrame==90u) {
+            const auto& submissions=azel_bridge::published_submissions();
+            logging::writef("[FieldVdp1Trace] sample=%u view=%d submissions=%u ranges=%u polys=%u near=%.5f far=%.5f\n",
+                fieldVdp1TraceFrame,g_viewMode,unsigned(submissions.size()),
+                unsigned(g_liveTownSubmissionRanges.size()),
+                unsigned(g_liveTownCpuMesh.polygonRecords.size()),
+                double(g_nativeSceneNearPlane),double(g_nativeSceneFarPlane));
+            unsigned reported=0u;
+            for(const auto& range:g_liveTownSubmissionRanges) {
+                if(reported++>=48u)break;
+                const auto& submission=submissions[range.azelOrder];
+                const std::size_t end=std::min(range.first+range.count,
+                    g_liveTownCpuMesh.polygonRecords.size());
+                unsigned visible=0u,clipped=0u,nearHorizon=0u;
+                float minX=1e9f,minY=1e9f,maxX=-1e9f,maxY=-1e9f;
+                float minDepth=1e9f,maxDepth=-1e9f;
+                std::size_t example=end;
+                for(std::size_t p=range.first;p<end;++p) {
+                    const bool shown=g_liveTownGouraudPrep[p].visible;
+                    if(!shown){++clipped;continue;}
+                    ++visible;
+                    // Screen bounds from the same four transformed corners
+                    // consumed by Neptune; clip coverage at the raster.
+                    const unsigned corners[4]={0u,1u,2u,5u};
+                    float ymin=1e9f,ymax=-1e9f,depth=0.f;
+                    bool valid=true;
+                    for(unsigned c:corners) {
+                        const auto& v=g_liveTownCpuMesh.vertices[p*6u+c];
+                        const float x=v.x*wvp.m[0]+v.y*wvp.m[4]+v.z*wvp.m[8]+wvp.m[12];
+                        const float y=v.x*wvp.m[1]+v.y*wvp.m[5]+v.z*wvp.m[9]+wvp.m[13];
+                        const float z=v.x*wvp.m[2]+v.y*wvp.m[6]+v.z*wvp.m[10]+wvp.m[14];
+                        const float w=v.x*wvp.m[3]+v.y*wvp.m[7]+v.z*wvp.m[11]+wvp.m[15];
+                        if(w<=0.00001f){valid=false;break;}
+                        const float sx=(x/w*0.5f+0.5f)*viewerRenderWidth();
+                        const float sy=(0.5f-y/w*0.5f)*viewerRenderHeight();
+                        minX=std::min(minX,sx);maxX=std::max(maxX,sx);
+                        minY=std::min(minY,sy);maxY=std::max(maxY,sy);
+                        ymin=std::min(ymin,sy);ymax=std::max(ymax,sy);
+                        depth+=z/w;
+                    }
+                    if(!valid)continue;
+                    depth*=0.25f;
+                    minDepth=std::min(minDepth,depth);
+                    maxDepth=std::max(maxDepth,depth);
+                    if(ymin<viewerRenderHeight()*0.65f &&
+                       ymax>viewerRenderHeight()*0.15f) {
+                        ++nearHorizon;
+                        if(example==end)example=p;
+                    }
+                }
+                const unsigned exTexture=example<end?
+                    unsigned(g_liveTownCpuMesh.polygonTextureIndices[example]):65535u;
+                const unsigned exPmod=example<end?
+                    unsigned(g_liveTownCpuMesh.polygonRecords[example].cmdPmod):0u;
+                logging::writef(
+                    "[FieldVdp1Range] order=%u cell=%d obj=%08X table=%08X base=%u count=%u visible=%u rejected=%u horizon=%u "
+                    "bounds=(%.1f,%.1f)-(%.1f,%.1f) depth=(%.5f,%.5f) example=%u tex=%u PMOD=%04X dynamic=%u\n",
+                    unsigned(range.azelOrder),int(submission.cellIndex),
+                    unsigned(submission.objectIndex),unsigned(submission.modelTableOffset),
+                    unsigned(range.first),unsigned(end-range.first),
+                    visible,clipped,nearHorizon,
+                    double(visible?minX:0.f),double(visible?minY:0.f),
+                    double(visible?maxX:0.f),double(visible?maxY:0.f),
+                    double(visible?minDepth:0.f),double(visible?maxDepth:0.f),
+                    unsigned(example<end?example:0xffffffffu),
+                    exTexture,exPmod,unsigned(submission.state.dynamic));
+            }
+        }
+    }
 
     // Diagnostic view only: attribute large world polygons and floor-region
     // intersections to their original Saturn commands. No render-path changes.
