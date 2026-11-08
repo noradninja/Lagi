@@ -1044,7 +1044,7 @@ static void record_submission(sProcessed3dModel* model, bool billboard,
                 "currentYBasis=(%d,%d,%d) "
                 "viewYBasis=(%d,%d,%d) "
                 "worldYBasis=(%d,%d,%d) "
-                "worldT=(%d,%d,%d) local=(%d,%d)\\n",
+                "worldT=(%d,%d,%d) local=(%d,%d)\n",
                 static_cast<void*>(model),g_submissionCount,
                 unsigned(g_hasPendingTownSubmission),
                 unsigned(g_viewRelativeScope),unsigned(hasView),
