@@ -1,0 +1,4 @@
+// NBG1 selected/normal dot variants retain native VDP1 priority masking.
+// LAGI_NBG1_DOT_PASS is 0 for normal dots and 1 for special-color dots.
+#define LAGI_VDP2_UI_PRIORITY 1
+#include "stochastic_f.cg"
