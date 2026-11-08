@@ -12404,7 +12404,9 @@ bool submit_vdp1_model(
                     circleDepthMatches+=unsigned(visibleQuads[p] &&
                         model.polygons[p].cmdColr==0x2100u);
             }
-            const bool circleDepthCompare=circleDepthMatches>=2u;
+            // Wait for the complete twelve-polygon effect, not an early
+            // partial submission while the Camp scene is being populated.
+            const bool circleDepthCompare=circleDepthMatches==12u;
             if(g_viewMode!=24) {
                 g_circleDepthCompareActive=false;
                 g_circleDepthCompareFrame=0;
