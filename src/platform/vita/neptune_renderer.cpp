@@ -15087,8 +15087,39 @@ static void renderBasicWingViewer()
         }
     }
 
+    // Temporary A/B isolation for Garil's VDP1 horizon discrepancy.
+    // Both phases use the identical FULL shading, camera and world draw.
+    // Phase A: ordinary VDP1+VDP2 sprite compositor.
+    // Phase B: render VDP2 first, then VDP1 world directly to the target.
+    // Restrict to native field scenes with an NBG0 underlay (A5-style
+    // backgrounds); earlier fields, menus and diagnostic modes are unchanged.
+    // This tests compositing only, not camera projection or texture decode.
+    const bool garilCompositeProbe =
+        nativeSceneMode && g_sceneGameMode==3u && g_viewMode==7 &&
+        g_sceneRbg0Enabled && g_sceneNbg0.enabled &&
+        g_sceneNbg0.behindWorld && !nativeMenuFrame;
+    static unsigned garilCompositeProbeFrame=0u;
+    static int lastGarilCompositePhase=-1;
+    bool garilDirectPhase=false;
+    if(garilCompositeProbe) {
+        const unsigned cycle=(garilCompositeProbeFrame++ % 180u);
+        garilDirectPhase=cycle>=120u;
+        const int phase=garilDirectPhase?1:0;
+        if(phase!=lastGarilCompositePhase) {
+            lastGarilCompositePhase=phase;
+            logging::writef(
+                "[GarilCompositeAB] phase=%c direct=%u frame=%u view=%d nbg0=%u behind=%u rbg0=%u half=%u\n",
+                garilDirectPhase?'B':'A',unsigned(garilDirectPhase),
+                garilCompositeProbeFrame,g_viewMode,
+                unsigned(g_sceneNbg0.enabled),unsigned(g_sceneNbg0.behindWorld),
+                unsigned(g_sceneRbg0Enabled),unsigned(g_halfResolution));
+        }
+    } else {
+        lastGarilCompositePhase=-1;
+    }
     const std::uint64_t clearStartUs = sceKernelGetProcessTimeWide();
-    const bool spriteComposite=prepareSpriteComposite(nativeSceneMode &&
+    const bool spriteComposite=prepareSpriteComposite(
+        nativeSceneMode && !garilDirectPhase &&
         (roomAuthenticLitMode || roomAuthenticTexturedMode),nativeMenuFrame);
     // The compositor writes every final-target pixel, including transparent
     // VDP1 holes resolved to RBG0/BACK. Only its input surface needs clearing.
