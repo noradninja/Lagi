@@ -7608,6 +7608,32 @@ static void appendLiveTownModel(
     const bool shiftedProjection = projectionOffset[0] != 0 ||
         projectionOffset[1] != 0 || projectionOffset[2] != 0;
 
+    // The two authored six-quad Camp circles sit 0.01514 world units
+    // above the VDP2 floor in the native model transform. The hardware
+    // comparison established that moving them down by this amount aligns
+    // their footprint. Apply it once at the world-vertex boundary, not via
+    // the camera, global depth policy or the VDP2 compositor.
+    // All other Saturn submissions preserve their authored coordinates.
+    bool campFloorCircle = false;
+    if((g_sceneGameMode==1u || g_sceneGameMode==2u) &&
+       model.polygons.size()==6u && model.vertices.size()==36u &&
+       state.hasModelMatrix && !state.billboard) {
+        campFloorCircle = true;
+        for(const auto& polygon:model.polygons)
+            if(polygon.cmdColr!=0x2100u ||
+               (polygon.cmdPmod!=0x0480u && polygon.cmdPmod!=0x0440u)) {
+                campFloorCircle=false;
+                break;
+            }
+        if(campFloorCircle)
+            for(const auto& vertex:model.vertices)
+                if(vertex.y!=0.0f) {
+                    campFloorCircle=false;
+                    break;
+                }
+    }
+    constexpr float kCampCircleFloorHeightCorrection=-0.01514f;
+
     const auto transformVertex = [&](const azel::DebugColorVertex& source) {
         azel::DebugColorVertex v = source;
         if (state.billboard) {
@@ -7622,6 +7648,8 @@ static void appendLiveTownModel(
             v.y = source.x*m[4] + source.y*m[5] + source.z*m[6] + m[7];
             v.z = source.x*m[8] + source.y*m[9] + source.z*m[10] + m[11];
         }
+        if(campFloorCircle)
+            v.y += kCampCircleFloorHeightCorrection;
         if (shiftedProjection) {
             const float viewZ = v.x*g_nativeSceneViewMatrix[8] +
                 v.y*g_nativeSceneViewMatrix[9] +
@@ -7675,7 +7703,8 @@ static void appendLiveTownModel(
 
     // Match the exact six-polygon, flat authored circle model. Log both
     // source and transformed Y, and decompose the transformed Y into
-    // basis and translation contributions. No vertex or matrix modification.
+    // basis and translation contributions. The isolated correction above
+    // is now production behavior for this exact model signature.
     static unsigned campCircleVertexAuditBudget=8u;
     if(campCircleVertexAuditBudget && model.polygons.size()==6u &&
        model.vertices.size()==36u && state.hasModelMatrix &&
@@ -7702,6 +7731,17 @@ static void appendLiveTownModel(
                 double(linearY),double(m[7]),double(translatedY),
                 double(world.y),double(world.y-translatedY),
                 unsigned(state.billboard));
+        }
+    }
+    if(campFloorCircle) {
+        static unsigned campCircleFloorCorrectionLogBudget=4u;
+        if(campCircleFloorCorrectionLogBudget) {
+            --campCircleFloorCorrectionLogBudget;
+            logging::writef(
+                "[CampCircleFloorFix] polygonBase=%u quads=%u originalY=%.8f correctionY=%.8f finalTranslationY=%.8f scope=camp-only\n",
+                unsigned(polygonBase),unsigned(model.polygons.size()),
+                double(m[7]),double(kCampCircleFloorHeightCorrection),
+                double(m[7]+kCampCircleFloorHeightCorrection));
         }
     }
 
