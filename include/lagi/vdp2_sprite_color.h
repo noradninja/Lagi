@@ -9,6 +9,7 @@ struct Vdp2SpriteColorState {
     std::uint16_t colorWindow=0,window[8]{};
     std::uint16_t sfsel=0,sfcode=0; // VDP2 0x24/0x26, per-dot special function selection
     std::uint16_t pncn1=0; // NBG1 one-word pattern auxiliary special-color bit
+    std::uint16_t nbg1Ratio=0; // CCRNA bits 8-12: NBG1 ratio
     std::uint16_t bgon=0,prir=0,prina=0,prinb=0;
     std::uint16_t rbgRatio=0; // Native CCRR; sprite CCRS is a different selector.
     std::uint16_t specialPriority=0,specialColor=0;
