@@ -14560,7 +14560,11 @@ static void renderBasicWingViewer()
 
     Vdp1RenderMode renderMode = Vdp1RenderMode::PolygonColor;
     if (!roomMode) {
-        renderMode = static_cast<Vdp1RenderMode>(g_viewMode);
+        // Diagnostics 18/19 compare depth only, never reinterpret their IDs
+        // as VDP1 render modes. Keep the same FULL material/shading path.
+        renderMode = (g_viewMode == 18 || g_viewMode == 19)
+            ? Vdp1RenderMode::TexturedGouraud
+            : static_cast<Vdp1RenderMode>(g_viewMode);
     } else if (roomAuthenticFlatMode) {
         renderMode = Vdp1RenderMode::PolygonColor;
     } else if (roomAuthenticLightingOnlyMode) {
