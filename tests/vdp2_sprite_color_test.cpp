@@ -54,5 +54,29 @@ int main() {
     const auto twice=lagi::spriteRatioRgb555(31,
         lagi::spriteRatioRgb555(31,31<<10,16),16);
     assert(once!=twice);
+    // SFCCMD=0008 is NBG1 mode 2 and leaves RBG0 in mode 0.
+    s={};s.specialColor=0x0008;s.ccctl=0x0012;
+    assert(lagi::specialColorMode(s,1)==2);
+    assert(lagi::specialColorMode(s,4)==0);
+    s.sfcode=0x0004; // A: dot codes 4/5
+    for(unsigned dot=0;dot<256;++dot) {
+        const bool matches=((dot&15)==4 || (dot&15)==5);
+        assert(lagi::specialFunctionDotMatch(s,1,dot)==matches);
+        assert(lagi::scrollSpecialColorCalculationSelected(s,1,true,true,dot,false)==matches);
+        assert(!lagi::scrollSpecialColorCalculationSelected(s,1,true,false,dot,false));
+        assert(!lagi::scrollSpecialColorCalculationSelected(s,1,false,true,dot,false));
+    }
+    s.sfcode=0x2004;s.sfsel=2; // NBG1 selects B: dot codes A/B
+    assert(lagi::specialFunctionDotMatch(s,1,10));
+    assert(lagi::specialFunctionDotMatch(s,1,11));
+    assert(!lagi::specialFunctionDotMatch(s,1,4));
+    s.specialColor=0x0004; // NBG1 character mode
+    assert(lagi::scrollSpecialColorCalculationSelected(s,1,true,true,0,false));
+    assert(!lagi::scrollSpecialColorCalculationSelected(s,1,true,false,10,true));
+    s.specialColor=0x000c; // NBG1 CRAM-MSB mode
+    assert(lagi::scrollSpecialColorCalculationSelected(s,1,true,false,0,true));
+    assert(!lagi::scrollSpecialColorCalculationSelected(s,1,true,true,10,false));
+    s.ccctl=0;
+    assert(!lagi::scrollSpecialColorCalculationSelected(s,1,true,true,10,true));
     puts("PASS VDP2 sprite selection, exhaustive RGB555 ratio and type-3 selector preservation; GPU appearance pending");
 }
