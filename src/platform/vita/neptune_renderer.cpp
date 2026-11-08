@@ -12593,11 +12593,17 @@ bool submit_vdp1_model(
                 for(std::size_t p=626u;p<=637u;++p)
                     recognizedCircle+=unsigned(model.polygons[p].cmdColr==0x2100u);
             }
-            if(overlapTraceBudget && recognizedCircle>=2u &&
+            // The overlap logger has a tiny lifetime budget. Mode 24 must
+            // still refresh its projected circle rectangle every A/B frame,
+            // even if that earlier log-only budget was already exhausted.
+            const bool depthCoverageBounds=g_circleDepthCompareActive &&
+                g_viewMode==24 && g_circleDepthCompareFrame<=8u;
+            if((overlapTraceBudget || depthCoverageBounds) &&
+                recognizedCircle>=2u &&
                 model.vertices && model.polygons &&
                 model.vertexCount>=model.polygonCount*6u &&
                 g_sceneGameMode>=1u && g_sceneGameMode<=2u) {
-                --overlapTraceBudget;
+                if(overlapTraceBudget)--overlapTraceBudget;
                 struct TraceBounds {
                     float minX=1e9f,minY=1e9f,maxX=-1e9f,maxY=-1e9f;
                     float minWorldY=1e9f,maxWorldY=-1e9f;
