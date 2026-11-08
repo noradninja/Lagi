@@ -10683,12 +10683,31 @@ bool submit_vdp1_model(
                          : g_textureFragmentProgram);
                 sceGxmSetFragmentTexture(
                     g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
-                sceGxmDraw(
+                const int drawResult = sceGxmDraw(
                     g_probeContext,
                     SCE_GXM_PRIMITIVE_TRIANGLES,
                     SCE_GXM_INDEX_FORMAT_U16,
                     g_vdp1TextureIndices + batch.firstIndex,
                     batch.indexCount);
+                if (g_garilCliffTraceFrame && g_sceneGameMode == 3u) {
+                    for (const auto& range : g_garilCliffTraceRanges) {
+                        unsigned int matchedIndices = 0u;
+                        for (unsigned int k = 0u; k < batch.indexCount; ++k) {
+                            const unsigned int p =
+                                g_vdp1TextureIndices[batch.firstIndex+k] / 6u;
+                            matchedIndices += p >= range.first &&
+                                p < range.first + range.count;
+                        }
+                        if (matchedIndices)
+                            logging::writef(
+                                "[GarilCliffDraw] path=base model=%04X "
+                                "obj=%08X tex=%u indices=%u matched=%u "
+                                "mesh=%u result=%d\n",
+                                range.model, range.object, t,
+                                batch.indexCount, matchedIndices,
+                                mesh ? 1u : 0u, drawResult);
+                    }
+                }
 
                 if (orderedShadow) {
                     sceGxmSetCullMode(g_probeContext, cullMode);
@@ -11047,12 +11066,31 @@ bool submit_vdp1_model(
                         &g_vdp1GpuTextures[t].texture);
                 }
 
-                sceGxmDraw(
+                const int drawResult = sceGxmDraw(
                     g_probeContext,
                     SCE_GXM_PRIMITIVE_TRIANGLES,
                     SCE_GXM_INDEX_FORMAT_U16,
                     g_vdp1SubdivIndices + batch.firstIndex,
                     batch.indexCount);
+                if (g_garilCliffTraceFrame && g_sceneGameMode == 3u) {
+                    for (const auto& range : g_garilCliffTraceRanges) {
+                        unsigned int matchedIndices = 0u;
+                        for (unsigned int k = 0u; k < batch.indexCount; ++k) {
+                            const unsigned int p =
+                                g_vdp1SubdivIndices[batch.firstIndex+k] / 9u;
+                            matchedIndices += p >= range.first &&
+                                p < range.first + range.count;
+                        }
+                        if (matchedIndices)
+                            logging::writef(
+                                "[GarilCliffDraw] path=subdiv model=%04X "
+                                "obj=%08X tex=%u indices=%u matched=%u "
+                                "mesh=%u result=%d\n",
+                                range.model, range.object, t,
+                                batch.indexCount, matchedIndices,
+                                mesh ? 1u : 0u, drawResult);
+                    }
+                }
 
                 if (orderedShadow) {
                     sceGxmSetCullMode(g_probeContext, cullMode);
