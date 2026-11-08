@@ -4489,7 +4489,7 @@ static std::uint32_t decodeVdp2Nbg1Pixel(
     const bool selected=lagi::scrollSpecialColorCalculationSelected(
         g_spriteColor,1u,true,lagi::nbg1AuxiliarySpecialColor(g_spriteColor),
         dot,cramMsb);
-    return selected ? ((color&0x00ffffffu)|0x80000000u) : color;
+    return lagi::nbg1DotMaterial(color,selected);
 }
 
 static void drawAzelVdp2Nbg1Gpu()
