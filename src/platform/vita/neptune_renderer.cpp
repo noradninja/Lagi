@@ -4659,8 +4659,13 @@ static void drawAzelVdp2Nbg1Gpu()
         g_probeContext, g_textureVertexProgram);
     sceGxmSetFragmentProgram(
         g_probeContext, g_textureFragmentProgram);
-    if (kStochastic) {
+    if (kStochastic)
         setStochastic(kVdp2Nbg1AtlasWidth, kVdp2Nbg1AtlasHeight);
+    // The alpha byte is a binary per-dot calculation selector. LINEAR
+    // filtering would interpolate 0x80 and 0xFF across tile boundaries
+    // and make one Saturn dot change the blend mode of its neighbours.
+    // Require POINT for this native metadata pass even without dithering.
+    if(kStochastic || (nbg1SpecialCompositeActive() && specialDotTexels)) {
         sceGxmTextureSetMinFilter(
             &g_vdp2Nbg1AtlasTexture, SCE_GXM_TEXTURE_FILTER_POINT);
         sceGxmTextureSetMagFilter(
