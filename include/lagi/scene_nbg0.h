@@ -35,4 +35,14 @@ constexpr bool sceneNbg0OverlayBand(unsigned bgon,unsigned prina,unsigned prisa)
     const unsigned p=prina&7;
     return p>(prisa&7) && (!(bgon&2) || p<((prina>>8)&7));
 }
+// NBG0's lower-priority band is part of the original Saturn scene, not
+// an overlay. It belongs underneath both the primary VDP1 sprites and
+// RBG0 (when enabled); opaque foregrounds can then cover it normally.
+// Do not reinterpret a disabled or zero-priority NBG0 layer as a backdrop.
+constexpr bool sceneNbg0BehindWorldBand(unsigned bgon,unsigned prina,
+                                        unsigned prisa,unsigned prir) {
+    const unsigned p=prina&7u;
+    return (bgon&1u) && p && p<(prisa&7u) &&
+        (!(bgon&0x10u) || (p<(prir&7u)));
+}
 }
