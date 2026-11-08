@@ -176,6 +176,17 @@ constexpr std::uint32_t spriteCompositeLookup(const Vdp2SpriteColorState& s,unsi
     const unsigned present=(s.prir&7)>p?0:op;
     return present|(op<<8)|(r<<16)|(p<<24);
 }
+// Saturn RGB555 additive color calculation saturates each channel
+// independently. The top image determines whether this calculation runs;
+// a lower-priority VDP1 color supplies the second image unmodified.
+constexpr std::uint16_t vdp2AddRgb555(std::uint16_t top,std::uint16_t second) {
+    unsigned out=0x8000u;
+    for(unsigned shift=0;shift<15;shift+=5) {
+        const unsigned sum=((top>>shift)&31u)+((second>>shift)&31u);
+        out|=(sum>31u?31u:sum)<<shift;
+    }
+    return static_cast<std::uint16_t>(out);
+}
 // Exact RGB555 ratio oracle. The GPU compositor must reproduce this rather
 // than interpreting CCRS as an ordinary source alpha divided by 31.
 constexpr std::uint16_t spriteRatioRgb555(std::uint16_t top,
