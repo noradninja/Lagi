@@ -57,6 +57,33 @@ int main() {
     assert(lagi::nbg1DotMaterial(0u,true)==0u);
     assert(lagi::nbg1DotMaterial(0xff123456u,false)==0xff123456u);
     assert(lagi::nbg1DotMaterial(0xff123456u,true)==0x80123456u);
+    // Native Camp register snapshot and the actual submitted floor polygon
+    // COLR=2100 from the VDP1 command stream. This is a general Saturn
+    // top/second-image selection test, not a Camp rendering exception.
+    {
+        lagi::Vdp2SpriteColorState camp{};
+        camp.ccctl=0x0152;camp.spctl=0x1223;
+        camp.priority[0]=0x0204;camp.priority[1]=0x0407;
+        camp.ratio[0]=0x0010;
+        camp.prir=0x0003;camp.prina=0x0600;camp.prinb=0x0700;
+        camp.bgon=0x001a;camp.specialColor=0x0008;
+        camp.rbgRatio=0x0010;
+        assert(lagi::rbgLayerCompositeSupported(camp));
+        assert(lagi::specialColorMode(camp,4)==0);
+        assert((camp.ccctl&0x10)!=0); // RBG0 color calculation enabled
+        assert((camp.ccctl&0x100)!=0); // additive, not ratio blending
+        assert((camp.ccctl&0x200)==0); // top-image ratio selection
+        // The type-3 palette word 2100 selects PRISA's second bank, i.e. 2.
+        constexpr unsigned word=0x2100;
+        const unsigned code=lagi::spriteType3Metadata(0xffaa2200u,word)>>24;
+        assert(code==137u);
+        const unsigned decision=lagi::spriteCompositeLookup(camp,code);
+        assert((decision>>24)==2u); // sprite second image
+        assert(((decision>>8)&0xffu)==3u); // sprite's own CC is additive
+        assert((decision&0xffu)==0u); // sprite is below RBG0
+        // RBG0 top image adds the selected second image in RGB555.
+        assert(lagi::spriteRatioRgb555(0x001fu,0x7c00u,16)!=0);
+    }
     // SFCCMD=0008 is NBG1 mode 2 and leaves RBG0 in mode 0.
     s={};s.specialColor=0x0008;s.ccctl=0x0012;
     assert(lagi::specialColorMode(s,1)==2);
