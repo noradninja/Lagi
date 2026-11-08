@@ -126,10 +126,11 @@ static bool prepareSpriteComposite(bool native,bool menu) {
     const std::uint64_t specialState=
         std::uint64_t(g_spriteColor.specialColor) |
         (std::uint64_t(g_spriteColor.sfsel)<<16) |
-        (std::uint64_t(g_spriteColor.sfcode)<<32);
+        (std::uint64_t(g_spriteColor.sfcode)<<32) |
+        (std::uint64_t(g_spriteColor.pncn1&0x100u)<<40);
     if(native && !menu && specialState!=lastSpecialState) {
         lastSpecialState=specialState;
-        logging::writef("[VDP2SpecialColorModes] SFCCMD=%04X NBG0=%u NBG1=%u NBG2=%u NBG3=%u RBG0=%u CCCTL=%04X SFSEL=%04X SFCODE=%04X NBG1Mask=%02X\n",
+        logging::writef("[VDP2SpecialColorModes] SFCCMD=%04X NBG0=%u NBG1=%u NBG2=%u NBG3=%u RBG0=%u CCCTL=%04X SFSEL=%04X SFCODE=%04X NBG1Mask=%02X PNCN1=%04X NBG1SCC=%u\n",
             g_spriteColor.specialColor,
             lagi::specialColorMode(g_spriteColor,0),
             lagi::specialColorMode(g_spriteColor,1),
@@ -139,7 +140,8 @@ static bool prepareSpriteComposite(bool native,bool menu) {
             g_spriteColor.ccctl,g_spriteColor.sfsel,g_spriteColor.sfcode,
             unsigned((g_spriteColor.sfsel&2u)
                 ? ((g_spriteColor.sfcode>>8)&0xffu)
-                : (g_spriteColor.sfcode&0xffu)));
+                : (g_spriteColor.sfcode&0xffu)),
+            g_spriteColor.pncn1,unsigned(lagi::nbg1AuxiliarySpecialColor(g_spriteColor)));
     }
     if(!supported)return false;
     if(rbgRatio && !g_rbgRatioCompositeProgram) {
