@@ -7665,6 +7665,38 @@ static void appendLiveTownModel(
         }
     }
 
+    // Match the exact six-polygon, flat authored circle model. Log both
+    // source and transformed Y, and decompose the transformed Y into
+    // basis and translation contributions. No vertex or matrix modification.
+    static unsigned campCircleVertexAuditBudget=8u;
+    if(campCircleVertexAuditBudget && model.polygons.size()==6u &&
+       model.vertices.size()==36u && state.hasModelMatrix &&
+       g_liveTownCpuMesh.vertices.size()>=vertexBase+36u) {
+        unsigned materialMatches=0u,flatVertices=0u;
+        for(const auto& q:model.polygons)
+            materialMatches+=unsigned(q.cmdColr==0x2100u &&
+                (q.cmdPmod==0x0480u || q.cmdPmod==0x0440u));
+        for(const auto& v:model.vertices)
+            flatVertices+=unsigned(v.y==0.0f);
+        if(materialMatches==6u && flatVertices==model.vertices.size()) {
+            --campCircleVertexAuditBudget;
+            const auto& source=model.vertices[0];
+            const auto& world=g_liveTownCpuMesh.vertices[vertexBase];
+            const float linearY=source.x*m[4]+source.y*m[5]+source.z*m[6];
+            const float translatedY=linearY+m[7];
+            logging::writef(
+                "[CampCircleVertex] polygonBase=%u source=(%.8f,%.8f,%.8f) "
+                "basisY=(%.8f,%.8f,%.8f) linearY=%.8f "
+                "translationY=%.8f predictedY=%.8f finalY=%.8f "
+                "projectionShiftY=%.8f billboard=%u\\n",
+                unsigned(polygonBase),double(source.x),double(source.y),
+                double(source.z),double(m[4]),double(m[5]),double(m[6]),
+                double(linearY),double(m[7]),double(translatedY),
+                double(world.y),double(world.y-translatedY),
+                unsigned(state.billboard));
+        }
+    }
+
     appendPhase(g_profileAppendTransformUs);
     LivePolygonLightState polygonLight{};
     polygonLight.additionalLight=state.additionalLight;
