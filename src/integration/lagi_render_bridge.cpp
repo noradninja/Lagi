@@ -1009,6 +1009,60 @@ static void record_submission(sProcessed3dModel* model, bool billboard,
     } else {
         g_lastAdaptedModel = nullptr;
     }
+    // Camp floor-effect source audit. Identify the two authored six-quad
+    // models by their VDP1 material pattern, not by frame-local polygon IDs.
+    // Capture Azel's actual 16.16 submission matrix BEFORE camera removal
+    // is evaluated again, alongside the view and resulting world matrix.
+    // Read-only, bounded, and shared across the whole run (not per frame).
+    static unsigned campCircleMatrixAuditBudget=8u;
+    if(campCircleMatrixAuditBudget && cached &&
+       cached->value.polygons.size()==6u && !billboard) {
+        const auto& quads=cached->value.polygons;
+        unsigned matching=0u, flat=0u;
+        for(const auto& q:quads)
+            if(q.cmdColr==0x2100u &&
+               (q.cmdPmod==0x0480u || q.cmdPmod==0x0440u))
+                ++matching;
+        for(const auto& vertex:cached->value.vertices)
+            if(vertex.y==0.0f)++flat;
+        if(matching==6u && flat==cached->value.vertices.size()) {
+            --campCircleMatrixAuditBudget;
+            std::int32_t current[12]{};
+            const bool hasCurrent=(&pCurrentMatrix && pCurrentMatrix);
+            if(hasCurrent)copyMatrixRaw(*pCurrentMatrix,current);
+            const bool hasView=g_viewRelativeScope || g_nativeSceneViewValid;
+            const std::int32_t* view=g_viewRelativeScope ?
+                g_viewScopeMatrix : g_nativeSceneViewMatrix;
+            std::int32_t reconstructed[12]{};
+            if(hasCurrent && hasView)
+                removeViewTransform(view,*pCurrentMatrix,reconstructed);
+            lagi::platform::logging::writef(
+                "[CampCircleMatrix] model=%p submission=%u explicit=%u "
+                "viewScope=%u hasView=%u hasCurrent=%u "
+                "sourceY=%.8f currentY=%d viewY=%d recomputedY=%d "
+                "publishedY=%d deltaPublished=%d "
+                "currentYBasis=(%d,%d,%d) "
+                "viewYBasis=(%d,%d,%d) "
+                "worldYBasis=(%d,%d,%d) "
+                "worldT=(%d,%d,%d) local=(%d,%d)\\n",
+                static_cast<void*>(model),g_submissionCount,
+                unsigned(g_hasPendingTownSubmission),
+                unsigned(g_viewRelativeScope),unsigned(hasView),
+                unsigned(hasCurrent),double(cached->value.vertices[0].y),
+                current[7],hasView?view[7]:0,
+                hasCurrent&&hasView?reconstructed[7]:0,
+                g_lastState.modelMatrix[7],
+                hasCurrent&&hasView ?
+                    g_lastState.modelMatrix[7]-reconstructed[7]:0,
+                current[4],current[5],current[6],
+                hasView?view[4]:0,hasView?view[5]:0,hasView?view[6]:0,
+                g_lastState.modelMatrix[4],g_lastState.modelMatrix[5],
+                g_lastState.modelMatrix[6],
+                g_lastState.modelMatrix[3],g_lastState.modelMatrix[7],
+                g_lastState.modelMatrix[11],
+                int(g_lastState.localCoordinatesX),int(g_lastState.localCoordinatesY));
+        }
+    }
     RenderSubmission submission = g_hasPendingTownSubmission
         ? g_pendingTownSubmission : RenderSubmission{};
     submission.model = model;
