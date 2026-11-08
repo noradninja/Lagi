@@ -19,6 +19,12 @@ struct Vdp2SpriteColorState {
 constexpr unsigned specialColorMode(const Vdp2SpriteColorState& s,unsigned layer) {
     return layer<5u ? ((s.specialColor>>(layer*2u))&3u) : 0u;
 }
+// 1-word NBG1 pattern names with PNCN1=PNB1/CNSM0 obtain their
+// special-color bit from auxiliary PNCN1 bit 8 (SCC), not from the
+// palette number or character index in the tile map.
+constexpr bool nbg1AuxiliarySpecialColor(const Vdp2SpriteColorState& s) {
+    return (s.pncn1&0x0100u)!=0u;
+}
 // Sega VDP2: SFSEL chooses SFCODE A/B for each scroll layer.
 // Each SFCODE bit covers TWO adjacent values of dotColor's low nibble.
 constexpr bool specialFunctionDotMatch(const Vdp2SpriteColorState& s,
