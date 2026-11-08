@@ -119,6 +119,22 @@ static bool prepareSpriteComposite(bool native,bool menu) {
             g_spriteColor.colorWindow,menu?1u:0u,native?1u:0u,unsigned(rbgRatio),
             g_spriteColor.specialPriority,g_spriteColor.specialColor,g_spriteColor.rbgRatio);
     }
+    // SFCCMD=0008 configures per-dot NBG1 color calculation, not RBG0.
+    // Record each background's actual mode without changing the RBG0
+    // second-source path based on an unrelated layer's control bits.
+    static unsigned lastSpecialModes=~0u;
+    const unsigned specialModes=g_spriteColor.specialColor&0x03ffu;
+    if(native && !menu && specialModes!=lastSpecialModes) {
+        lastSpecialModes=specialModes;
+        logging::writef("[VDP2SpecialColorModes] SFCCMD=%04X NBG0=%u NBG1=%u NBG2=%u NBG3=%u RBG0=%u CCCTL=%04X\n",
+            g_spriteColor.specialColor,
+            lagi::specialColorMode(g_spriteColor,0),
+            lagi::specialColorMode(g_spriteColor,1),
+            lagi::specialColorMode(g_spriteColor,2),
+            lagi::specialColorMode(g_spriteColor,3),
+            lagi::specialColorMode(g_spriteColor,4),
+            g_spriteColor.ccctl);
+    }
     if(!supported)return false;
     if(rbgRatio && !g_rbgRatioCompositeProgram) {
         const auto* fp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_rbg_ratio_composite_f_gxp_start);
