@@ -122,18 +122,24 @@ static bool prepareSpriteComposite(bool native,bool menu) {
     // SFCCMD=0008 configures per-dot NBG1 color calculation, not RBG0.
     // Record each background's actual mode without changing the RBG0
     // second-source path based on an unrelated layer's control bits.
-    static unsigned lastSpecialModes=~0u;
-    const unsigned specialModes=g_spriteColor.specialColor&0x03ffu;
-    if(native && !menu && specialModes!=lastSpecialModes) {
-        lastSpecialModes=specialModes;
-        logging::writef("[VDP2SpecialColorModes] SFCCMD=%04X NBG0=%u NBG1=%u NBG2=%u NBG3=%u RBG0=%u CCCTL=%04X\n",
+    static std::uint64_t lastSpecialState=~std::uint64_t(0);
+    const std::uint64_t specialState=
+        std::uint64_t(g_spriteColor.specialColor) |
+        (std::uint64_t(g_spriteColor.sfsel)<<16) |
+        (std::uint64_t(g_spriteColor.sfcode)<<32);
+    if(native && !menu && specialState!=lastSpecialState) {
+        lastSpecialState=specialState;
+        logging::writef("[VDP2SpecialColorModes] SFCCMD=%04X NBG0=%u NBG1=%u NBG2=%u NBG3=%u RBG0=%u CCCTL=%04X SFSEL=%04X SFCODE=%04X NBG1Mask=%02X\n",
             g_spriteColor.specialColor,
             lagi::specialColorMode(g_spriteColor,0),
             lagi::specialColorMode(g_spriteColor,1),
             lagi::specialColorMode(g_spriteColor,2),
             lagi::specialColorMode(g_spriteColor,3),
             lagi::specialColorMode(g_spriteColor,4),
-            g_spriteColor.ccctl);
+            g_spriteColor.ccctl,g_spriteColor.sfsel,g_spriteColor.sfcode,
+            unsigned((g_spriteColor.sfsel&2u)
+                ? ((g_spriteColor.sfcode>>8)&0xffu)
+                : (g_spriteColor.sfcode&0xffu)));
     }
     if(!supported)return false;
     if(rbgRatio && !g_rbgRatioCompositeProgram) {
