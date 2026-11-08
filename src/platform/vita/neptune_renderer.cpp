@@ -12186,9 +12186,26 @@ bool submit_vdp1_model(
                     const bool ordered=(model.polygons[p].cmdPmod&0x0100u) ||
                         lagi::vdp1_half_transparent(model.polygons[p].cmdPmod);
                     std::size_t next=p+1;
-                    while(next<end && model.polygonTextureIndices[next]==texture &&
-                        bool((model.polygons[next].cmdPmod&0x0100u) ||
-                            lagi::vdp1_half_transparent(model.polygons[next].cmdPmod))==ordered)++next;
+                    if(ordered) {
+                        // Preserve Saturn submission order for mesh and
+                        // half-transparency, including the source material.
+                        while(next<end &&
+                            model.polygonTextureIndices[next]==texture &&
+                            ((model.polygons[next].cmdPmod&0x0100u) ||
+                             lagi::vdp1_half_transparent(model.polygons[next].cmdPmod)))
+                            ++next;
+                    } else {
+                        // Ordinary opaque geometry is depth-tested. Bucket
+                        // the entire contiguous opaque phase by texture,
+                        // rather than issuing one draw and scanning every
+                        // texture bucket for each consecutive material run.
+                        // This matches FULL's draw batching without moving
+                        // any mesh/blended polygons across an opaque phase.
+                        while(next<end &&
+                            !(model.polygons[next].cmdPmod&0x0100u) &&
+                            !lagi::vdp1_half_transparent(model.polygons[next].cmdPmod))
+                            ++next;
+                    }
                     if(!submitRange(p,next-p,ordered))return false;
                     p=next;
                 }
