@@ -12410,7 +12410,14 @@ bool submit_vdp1_model(
             // indices select log subjects, never change their draw behavior.
             // Do not confuse flattened storage order with actual draw order.
             static unsigned overlapTraceBudget=2u;
-            if(overlapTraceBudget && model.polygonCount>637u &&
+            // The polygon IDs are frame-local. Avoid exhausting the
+            // finite capture on a different room with >=638 polygons.
+            unsigned recognizedCircle=0u;
+            if(model.polygonCount>637u && model.polygons) {
+                for(std::size_t p=626u;p<=637u;++p)
+                    recognizedCircle+=unsigned(model.polygons[p].cmdColr==0x2100u);
+            }
+            if(overlapTraceBudget && recognizedCircle>=2u &&
                 model.vertices && model.polygons &&
                 model.vertexCount>=model.polygonCount*6u &&
                 g_sceneGameMode>=1u && g_sceneGameMode<=2u) {
