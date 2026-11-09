@@ -4479,6 +4479,15 @@ void pauseCutscene]=]
    "const sVec3_FP& edgePos = static_cast<sEdgeTask*>(npcData0.m70_npcPointerArray[0].workArea)->mE8.m0_position;"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/camp/twn_camp.cpp")
+  # Log once per camp entry and per authored NPC creation, not per frame.
+  # The generated Azel source no longer contains its original PDS.h include.
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  string(REPLACE "    gTWN_CAMP->makeCurrent();"
+   "    gTWN_CAMP->makeCurrent();\n    lagi::platform::logging::writef(\"[CampSetup] entry=%u setups=%u rider1=%u rider2=%u metGash=%u\\n\", unsigned(arg),unsigned(gTWN_CAMP->mTownSetups.size()), unsigned(mainGameState.gameStats.m2_rider1), unsigned(mainGameState.gameStats.m3_rider2), unsigned(mainGameState.getBit(4*8+5)));"
+   source_text "${source_text}")
+  string(REPLACE "    registerNpcs(gTWN_CAMP->mTownSetups, gTWN_CAMP->getSaturnPtr(0x6057f88), arg);"
+   "    registerNpcs(gTWN_CAMP->mTownSetups, gTWN_CAMP->getSaturnPtr(0x6057f88), arg);\n    lagi::platform::logging::writef(\"[CampSetup] register entry=%u script=%08X setupSelection=%d scriptCount=%u\\n\", unsigned(arg), unsigned(npcData0.m104_currentScript.m0_scriptPtr.m_offset),int(npcData0.m5E),unsigned(gTWN_CAMP->mTownSetups.size()));"
+   source_text "${source_text}")
   string(REPLACE "for (int i = 0; i < 8; i++)"
    "for (int i = 0; i < 9; i++)" source_text "${source_text}")
   if(NOT source_text MATCHES "for \\(int i = 0; i < 9; i\\+\\+\\)")
@@ -4741,6 +4750,13 @@ static s32 lagiCampRandomChoice(s32 limit)
    "        case 0x06080148:\n            assert(size == 0x17C);\n            return lagiCreateCampNPC(parent, arg);\n        case 0x0607B5BC:\n            assert(size == 0x1B4);\n            return lagiCreateCampInteractiveActor(parent, arg);\n        case 0x60800E8:" source_text "${source_text}")
   string(REPLACE "        for (int i = 0; i < 9; i++) {"
    "        overlayScriptFunctions.m_oneArg[0x06057B62] = {&lagiCampInteractiveActorReady, \"Camp interactive actor ready\"};\n        overlayScriptFunctions.m_oneArg[0x06057B76] = {&lagiCampToggleInteractiveActor, \"Camp toggle interactive actor\"};\n        for (int i = 0; i < 9; i++) {" source_text "${source_text}")
+  # Report the original PRG descriptor and NPC slot before factory dispatch.
+  string(REPLACE "return lagiCreateCampNPC(parent, arg);"
+   "lagi::platform::logging::writef(\"[CampNPC] kind=person descriptor=%08X slot=%u\\n\",unsigned(arg.m_offset),unsigned(readSaturnU16(arg + 0x20)));\n            return lagiCreateCampNPC(parent, arg);"
+   source_text "${source_text}")
+  string(REPLACE "return lagiCreateCampInteractiveActor(parent, arg);"
+   "lagi::platform::logging::writef(\"[CampNPC] kind=interactive descriptor=%08X slot=%u\\n\",unsigned(arg.m_offset),unsigned(readSaturnU16(arg + 0x20)));\n            return lagiCreateCampInteractiveActor(parent, arg);"
+   source_text "${source_text}")
   if(NOT source_text MATCHES "return lagiCreateCampInteractiveActor" OR
      NOT source_text MATCHES "m_oneArg\\[0x06057B62\\]" OR
      NOT source_text MATCHES "m_oneArg\\[0x06057B76\\]")
