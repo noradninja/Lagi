@@ -3590,9 +3590,9 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleIntro.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # Bounded A5 intro lifecycle diagnostics; preserve every upstream decision.
-  string(REPLACE "#include \"PDS.h\""
-   "#include \"PDS.h\"\n#include \"lagi/platform.h\""
-   source_text "${source_text}")
+  # The generated Azel source has already rewritten PDS.h to the Vita
+  # prelude, so the original include is no longer a reliable anchor.
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
   set(a5_intro_create "p_workArea createBattleIntroTask(p_workArea parent)\n{")
   string(FIND "${source_text}" "${a5_intro_create}" a5_intro_create_found)
   if(a5_intro_create_found LESS 0)
@@ -3611,9 +3611,9 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleEngine.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # Report transition edges only, not each battle frame.
-  string(REPLACE "#include \"PDS.h\""
-   "#include \"PDS.h\"\n#include \"lagi/platform.h\""
-   source_text "${source_text}")
+  # The generated Azel source has already rewritten PDS.h to the Vita
+  # prelude, so the original include is no longer a reliable anchor.
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
   set(a5_mode_anchor "void updateBattleIntro(s_battleEngine* pThis)\n{")
   string(FIND "${source_text}" "${a5_mode_anchor}" a5_mode_found)
   if(a5_mode_found LESS 0)
