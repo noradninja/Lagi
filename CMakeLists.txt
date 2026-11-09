@@ -4894,6 +4894,34 @@ void townCamera_update(sCameraTask* pThis)]=] source_text "${source_text}")
    string(REPLACE "${light_line}" "${light_line}\n    lagiTraceTownLight(\"${light_arg}\",${light_arg});" source_text "${source_text}")
   endforeach()
  elseif(relative_path STREQUAL "town/town.cpp")
+  # Trace Gash's PRG record 0607B660 (resource index 36 = Z_A_GS.MCB)
+  # from the authored script through native grid object creation.
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  set(gash_register_anchor "s32 initNPCFromStruct(sSaturnPtr r4)\n{")
+  string(FIND "${source_text}" "${gash_register_anchor}" gash_register_found)
+  if(gash_register_found LESS 0)
+   message(FATAL_ERROR "Gash registration adapter anchor changed")
+  endif()
+  string(REPLACE "${gash_register_anchor}"
+   "${gash_register_anchor}\n    if (gCurrentTownOverlay && gCurrentTownOverlay->m_name == \"TWN_CAMP.PRG\" && r4.m_offset == 0x0607B660) {\n        lagi::platform::logging::writef(\"[CampGashRegister] record=%08X resource=%d factory=%08X poolFree=%d grid=%dx%d currentCell=%d,%d\\n\", unsigned(r4.m_offset), int(readSaturnS32(r4)), unsigned(readSaturnEA(r4 + 4).m_offset), gTownGrid.m144_nextFreeObjectListNode != nullptr, int(gTownGrid.m0_sizeX), int(gTownGrid.m4_sizeY), int(gTownGrid.m10_currentX), int(gTownGrid.m14_currentY));\n    }"
+   source_text "${source_text}")
+  set(gash_cell_anchor "            sSaturnPtr r12 = readSaturnEA(r14->m4 + 4);")
+  string(FIND "${source_text}" "${gash_cell_anchor}" gash_cell_found)
+  if(gash_cell_found LESS 0)
+   message(FATAL_ERROR "Gash cell factory adapter anchor changed")
+  endif()
+  string(REPLACE "${gash_cell_anchor}"
+   "${gash_cell_anchor}\n            if (gCurrentTownOverlay && gCurrentTownOverlay->m_name == \"TWN_CAMP.PRG\" && r14->m4.m_offset == 0x0607B660) {\n                lagi::platform::logging::writef(\"[CampGashGrid] cell=%d,%d record=%08X factory=%08X resource=%d\\n\", r4_currentX, r5_currentY, unsigned(r14->m4.m_offset), unsigned(r12.m_offset), int(r3));\n            }"
+   source_text "${source_text}")
+  set(gash_setup_anchor "    npcData0.m5E = arg;")
+  string(FIND "${source_text}" "${gash_setup_anchor}" gash_setup_found)
+  if(gash_setup_found LESS 0)
+   message(FATAL_ERROR "Camp setup selection adapter anchor changed")
+  endif()
+  string(REPLACE "${gash_setup_anchor}"
+   "    if (gCurrentTownOverlay && gCurrentTownOverlay->m_name == \"TWN_CAMP.PRG\") {\n        lagi::platform::logging::writef(\"[CampSetupSelect] entry=%d selected=%d prior=%d\\n\", int(npcData0.m5D), int(arg), int(npcData0.m5E));\n    }\n${gash_setup_anchor}"
+   source_text "${source_text}")
+
   # The ring is 8x8, not two rows. Overlay replacement clears the object
   # list; stale cells in any other row must not survive into its reset.
   set(town_ring_old "    gWorldGrid.m40_cellTasks[0].fill(nullptr);\n    gWorldGrid.m40_cellTasks[1].fill(nullptr);")
