@@ -14908,6 +14908,9 @@ static void renderBasicWingViewer()
             }
         }
 
+        // Bound the expensive per-quad projection to the same two field snapshots.
+        // Sampling every field frame previously produced >47K diagnostic records.
+        if (fieldVdp1TraceFrame == 30u || fieldVdp1TraceFrame == 90u) {
         // FLD_A5 cliff ring: original 20-quad models at subfield model-table
         // offsets 0x4A0..0x4C0. All values are from the same WVP and flattened
         // geometry as the actual GXM submission, without changing rendering.
@@ -14971,7 +14974,7 @@ static void renderBasicWingViewer()
                 opaqueMaterial+=unsigned(materialOk &&
                     g_staticRoomCpuMesh.decodedTextureData[material].opaque);
                 const auto& cmd=g_liveTownCpuMesh.polygonRecords[p];
-                logging::writef(
+                if (p-range.first < 4u) logging::writef(
                     "[GarilCliffQuad] sample=%u table=%04X obj=%08X local=%u "
                     "global=%u visible=%u out=%02X behind=%u "
                     "area=%.7f/%.7f xy0=%.4f,%.4f xy2=%.4f,%.4f "
@@ -15003,6 +15006,7 @@ static void renderBasicWingViewer()
         }
         logging::writef("[GarilCliffSample] sample=%u objects=%u\n",
             fieldVdp1TraceFrame,cliffObjects);
+        }
     }
 
     // Diagnostic view only: attribute large world polygons and floor-region
