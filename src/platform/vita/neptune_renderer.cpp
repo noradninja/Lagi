@@ -12524,6 +12524,34 @@ bool submit_vdp1_model(
             unsigned lastTexture=~0u;
             const std::size_t shadowStart=g_liveTownShadowFirstPolygon;
             const std::size_t shadowEnd=shadowStart+g_liveTownShadowPolygonCount;
+            // Garil A5 cliff models are 20-quads each, with Saturn source
+            // object addresses 0608DD2C..0608DDBC (stride 0x18). Identify
+            // their original Azel submission ranges, not material indices,
+            // so other field geometry keeps its existing raster state.
+            static std::vector<std::uint8_t> garilCliffPolygon;
+            garilCliffPolygon.assign(model.polygonCount,0u);
+            unsigned garilCliffObjects=0u;
+            if(g_sceneGameMode==3u &&
+               g_residentVdp1Model==ResidentVdp1Model::LiveTown) {
+                const auto& sources=azel_bridge::published_submissions();
+                for(const auto& range:g_liveTownSubmissionRanges) {
+                    if(range.azelOrder>=sources.size() ||
+                       range.count!=20u || range.first>=model.polygonCount)
+                        continue;
+                    const auto& source=sources[range.azelOrder];
+                    const unsigned obj=unsigned(source.objectIndex);
+                    const unsigned table=unsigned(source.modelTableOffset);
+                    if(obj<0x0608DD2Cu || obj>0x0608DDBCu ||
+                       (obj-0x0608DD2Cu)%0x18u!=0u ||
+                       table<0x4A0u || table>0x4C0u)
+                        continue;
+                    const std::size_t last=std::min(
+                        range.first+range.count,model.polygonCount);
+                    for(std::size_t p=range.first;p<last;++p)
+                        garilCliffPolygon[p]=1u;
+                    ++garilCliffObjects;
+                }
+            }
             // Static-prefix caching changes storage order, not Azel's
             // native VDP1 submission order. Preserve the latter here.
             const auto appendPolygon=[&](std::size_t p)->bool {
@@ -12565,7 +12593,14 @@ bool submit_vdp1_model(
                        orderedRuns.back().count-24u)/24u>=626u &&
                       (orderedRuns.back().firstIndex+
                        orderedRuns.back().count-24u)/24u<=637u));
-                if(!circleRunBoundary && !orderedRuns.empty() &&
+                // Do not coalesce a cliff quad with ordinary scene geometry:
+                // their culling policies differ in this A/B experiment.
+                const bool cliffRunBoundary=!orderedRuns.empty() &&
+                    garilCliffPolygon[p]!=garilCliffPolygon[
+                        (orderedRuns.back().firstIndex+
+                         orderedRuns.back().count-24u)/24u];
+                if(!circleRunBoundary && !cliffRunBoundary &&
+                   !orderedRuns.empty() &&
                     orderedRuns.back().texture==texture &&
                     orderedRuns.back().ordered==ordered &&
                     orderedRuns.back().blended==blended &&
@@ -12829,6 +12864,14 @@ bool submit_vdp1_model(
                     }
                 }
             }
+            static unsigned garilCliffCullTraceBudget=2u;
+            if(garilCliffObjects && garilCliffCullTraceBudget) {
+                --garilCliffCullTraceBudget;
+                logging::writef(
+                    "[GarilCliffCullAB] view=%d scene=%u objects=%u "
+                    "policy=UNCULL_KNOWN_CLIFFS_ONLY otherPolys=UNCHANGED\\n",
+                    g_viewMode,unsigned(g_sceneGameMode),garilCliffObjects);
+            }
             const std::uint64_t drawStart=sceKernelGetProcessTimeWide();
             for(const auto& run:orderedRuns) {
                 const unsigned texture=run.texture;
@@ -12846,7 +12889,11 @@ bool submit_vdp1_model(
                     sceGxmSetBackDepthFunc(g_probeContext,
                         depthScene?depthFunc:SCE_GXM_DEPTH_FUNC_ALWAYS);
                 } else {
-                    sceGxmSetCullMode(g_probeContext,cullMode);
+                    const std::size_t firstPolygon=run.firstIndex/24u;
+                    const bool garilCliff=firstPolygon<garilCliffPolygon.size() &&
+                        garilCliffPolygon[firstPolygon]!=0u;
+                    sceGxmSetCullMode(g_probeContext,
+                        garilCliff ? SCE_GXM_CULL_NONE : cullMode);
                     sceGxmSetFrontDepthFunc(g_probeContext,depthFunc);
                     sceGxmSetBackDepthFunc(g_probeContext,depthFunc);
                 }
