@@ -214,10 +214,10 @@ add_custom_command(OUTPUT "${LAGI_RBG_TILE_OBJ}"
  lagi_vdp2_rbg0_tile16_8bit_f.gxp "${LAGI_RBG_TILE_OBJ}"
  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_tile16_8bit_f.gxp" VERBATIM)
-option(LAGI_VDP2_SPRITE_COMPOSITE "Experimental separate native VDP1/VDP2 composition" OFF)
+option(LAGI_VDP2_SPRITE_COMPOSITE "Experimental separate native VDP1/VDP2 composition" ON)
 option(LAGI_GPU_PASS_TIMING "Sample serialized native GPU pass timing (diagnostic stalls)" OFF)
-option(LAGI_RBG_DECODED_PAGES "Cache native RBG source pages before GPU rotation" OFF)
-option(LAGI_RBG_COEFFICIENT_ROWS "Predecode scanline-constant native RBG coefficients" OFF)
+option(LAGI_RBG_DECODED_PAGES "Cache native RBG source pages before GPU rotation" ON)
+option(LAGI_RBG_COEFFICIENT_ROWS "Predecode scanline-constant native RBG coefficients" ON)
 option(LAGI_WORLD_MAP_BRINGUP "Enable the in-progress native WORLD scene for device testing" OFF)
 option(LAGI_FIELD_MOTION_TRACE "Bounded field motion/snapshot cadence diagnostics" OFF)
 set(LAGI_RBG_ROWS_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f_gxp.o")
