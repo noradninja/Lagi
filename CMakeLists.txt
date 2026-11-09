@@ -3759,6 +3759,18 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    string(REPLACE "                overlayStart_BTL_A3(pThis);" "                if (!lagiEnterNativeA3Battle(pThis)) return;" source_text "${source_text}")
    string(REPLACE "                overlayStart_BTL_A3_2(pThis);" "                if (!lagiEnterNativeA3Battle(pThis)) return;" source_text "${source_text}")
    string(REPLACE "                overlayStart_BTL_T0(pThis);" "                if (!lagiEnterNativeA3Battle(pThis)) return;" source_text "${source_text}")
+   # Restore the three authored Garil battle entries. All other unsupported
+   # overlays remain disconnected by the fallback regex below.
+   foreach(a5_overlay A5 A5_2 A5_3)
+    set(a5_dispatch "                overlayStart_BTL_${a5_overlay}(pThis);")
+    string(FIND "${source_text}" "${a5_dispatch}" a5_dispatch_found)
+    if(a5_dispatch_found LESS 0)
+     message(FATAL_ERROR "Garil battle dispatch anchor missing: ${a5_overlay}")
+    endif()
+    string(REPLACE "${a5_dispatch}"
+     "                if (!lagiEnterNativeA3Battle(pThis)) return;"
+     source_text "${source_text}")
+   endforeach()
    # A retry after main-task allocation failure must not push fonts twice.
    set(battle_fonts_old [=[        loadFnt("ITEM.FNT");
         pThis->m2_numLoadedFnt++;
@@ -5758,6 +5770,12 @@ if(LAGI_BATTLE_NATIVE_BUILD)
    RELATIVE "${LAGI_AZEL_SOURCE_ROOT}"
    "${LAGI_AZEL_SOURCE_ROOT}/field/field_a5/*.cpp")
   list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES ${LAGI_WORLD_A5_SOURCES})
+  # The A5 PRG family (normal desert, Rahab, and Zusu) uses the existing
+  # native battle main-task/engine path; compile the original Azel modules.
+  file(GLOB LAGI_BATTLE_A5_SOURCES CONFIGURE_DEPENDS
+   RELATIVE "${LAGI_AZEL_SOURCE_ROOT}"
+   "${LAGI_AZEL_SOURCE_ROOT}/battle/BTL_A5/*.cpp")
+  list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES ${LAGI_BATTLE_A5_SOURCES})
   list(APPEND LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
    field/fieldModelRender.cpp field/fieldAnimRingSubTask.cpp)
  endif()
