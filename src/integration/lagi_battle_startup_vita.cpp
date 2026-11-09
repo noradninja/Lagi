@@ -7,6 +7,9 @@
 #include "battle/battleGenericData.h"
 #include "battle/BTL_A3/BTL_A3.h"
 #include "battle/BTL_A3_2/BTL_A3_2.h"
+#include "battle/BTL_A5/BTL_A5.h"
+#include "battle/BTL_A5/BTL_A5_2.h"
+#include "battle/BTL_A5/BTL_A5_3.h"
 #include "battle/BTL_T0/BTL_T0.h"
 #include "commonOverlay.h"
 
@@ -38,7 +41,13 @@ bool lagiPrepareNativeA3Battle()
     if(overlay<0 || static_cast<std::size_t>(overlay)>=gCommonFile->battleOverlaySetup.size())
         return reject("overlay index outside COMMON table");
     const auto& entry=gCommonFile->battleOverlaySetup[overlay];
-    if(entry.m4_prg!="BTL_A3.PRG" && entry.m4_prg!="BTL_A3_2.PRG" && entry.m4_prg!="BTL_T0.PRG")return reject("overlay not integrated: "+entry.m4_prg);
+    const bool desertOverlay = entry.m4_prg=="BTL_A5.PRG" ||
+        entry.m4_prg=="BTL_A5_2.PRG" || entry.m4_prg=="BTL_A5_3.PRG";
+    if(entry.m4_prg!="BTL_A3.PRG" && entry.m4_prg!="BTL_A3_2.PRG" &&
+       entry.m4_prg!="BTL_T0.PRG" && !desertOverlay)
+        return reject("overlay not integrated: "+entry.m4_prg);
+    if(desertOverlay && getFileSize(entry.m4_prg.c_str())==0u)
+        return reject("desert battle overlay missing: "+entry.m4_prg);
     if(sub<0 || static_cast<unsigned>(sub)>=entry.mC_numSubBattles)
         return reject("subbattle index outside authored overlay");
     if(entry.m4_prg=="BTL_T0.PRG" && getFileSize("BTL_T0.PRG")<392928u)
@@ -70,6 +79,9 @@ bool lagiEnterNativeA3Battle(s_workArea* parent)
     if(name=="BTL_A3.PRG") task=overlayStart_BTL_A3(parent);
     else if(name=="BTL_A3_2.PRG") task=overlayStart_BTL_A3_2(parent);
     else if(name=="BTL_T0.PRG") task=overlayStart_BTL_T0(parent);
+    else if(name=="BTL_A5.PRG") task=overlayStart_BTL_A5(parent);
+    else if(name=="BTL_A5_2.PRG") task=overlayStart_BTL_A5_2(parent);
+    else if(name=="BTL_A5_3.PRG") task=overlayStart_BTL_A5_3(parent);
     else return reject("overlay entry not integrated: "+name);
     if(!task)
         return reject("native battle main-task allocation failed: "+name);
