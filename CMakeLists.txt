@@ -3620,7 +3620,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    message(FATAL_ERROR "A5 battle mode trace anchor changed")
   endif()
   string(REPLACE "${a5_mode_anchor}"
-   "${a5_mode_anchor}\n    static int lagiLastBattleMode=-1, lagiLastBattleSubmode=-1;\n    static unsigned lagiModeTraceBudget=48;\n    const int lagiCurrentMode=int(pThis->m38C_battleMode);\n    const int lagiCurrentSubmode=int(pThis->m38D_battleSubMode);\n    if(lagiModeTraceBudget && (lagiCurrentMode!=lagiLastBattleMode || lagiCurrentSubmode!=lagiLastBattleSubmode)) {\n        --lagiModeTraceBudget;\n        lagi::platform::logging::writef(\"[GarilBattleMode] mode=%d submode=%d\n\", lagiCurrentMode,lagiCurrentSubmode);\n    }\n    lagiLastBattleMode=lagiCurrentMode;\n    lagiLastBattleSubmode=lagiCurrentSubmode;"
+   "${a5_mode_anchor}\n    static int lagiLastBattleMode=-1, lagiLastBattleSubmode=-1;\n    static unsigned lagiModeTraceBudget=48;\n    const int lagiCurrentMode=int(pThis->m38C_battleMode);\n    const int lagiCurrentSubmode=int(pThis->m38D_battleSubMode);\n    if(lagiModeTraceBudget && (lagiCurrentMode!=lagiLastBattleMode || lagiCurrentSubmode!=lagiLastBattleSubmode)) {\n        --lagiModeTraceBudget;\n        lagi::platform::logging::writef(\"[GarilBattleMode] mode=%d submode=%d\\n\", lagiCurrentMode,lagiCurrentSubmode);\n    }\n    lagiLastBattleMode=lagiCurrentMode;\n    lagiLastBattleSubmode=lagiCurrentSubmode;"
    source_text "${source_text}")
 
   set(stat_count_anchor "void increaseStatsCount(int statIndex)\n{")
