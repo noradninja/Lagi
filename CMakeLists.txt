@@ -3588,6 +3588,27 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "${laser_palette_old}"
    "u16 charColor = pTrail->m14_vdp1Param + readSaturnU16(config + 0x08);"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleIntro.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # Bounded A5 intro lifecycle diagnostics; preserve every upstream decision.
+  string(REPLACE "#include \"PDS.h\""
+   "#include \"PDS.h\"\\n#include \"lagi/platform.h\""
+   source_text "${source_text}")
+  set(a5_intro_create "p_workArea createBattleIntroTask(p_workArea parent)\\n{")
+  string(FIND "${source_text}" "${a5_intro_create}" a5_intro_create_found)
+  if(a5_intro_create_found LESS 0)
+   message(FATAL_ERROR "A5 intro creation trace anchor changed")
+  endif()
+  string(REPLACE "${a5_intro_create}"
+   "${a5_intro_create}\\n    lagi::platform::logging::writef(\"[GarilBattleIntro] create overlay=%d sub=%d\\\\n\", int(gBattleManager->m2_currentBattleOverlayId), int(gBattleManager->m6_subBattleId));"
+   source_text "${source_text}")
+  set(a5_intro_end "    if (pThis->m0_frameIndex > 0x95)\\n    {")
+  string(FIND "${source_text}" "${a5_intro_end}" a5_intro_end_found)
+  if(a5_intro_end_found LESS 0)
+   message(FATAL_ERROR "A5 intro completion trace anchor changed")
+  endif()
+  string(REPLACE "${a5_intro_end}"
+   "${a5_intro_end}\\n        lagi::platform::logging::writef(\"[GarilBattleIntro] finish frame=%d\\\\n\",int(pThis->m0_frameIndex));"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleEngine.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set(stat_count_anchor "void increaseStatsCount(int statIndex)\n{")
   string(FIND "${source_text}" "${stat_count_anchor}" stat_count_begin)
