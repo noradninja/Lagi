@@ -38,6 +38,17 @@ bool lagiPrepareNativeA3Battle()
     if(!gBattleManager || !gCommonFile)return reject("native manager/COMMON unavailable");
     const int overlay=gBattleManager->m2_currentBattleOverlayId;
     const int sub=gBattleManager->m6_subBattleId;
+    // Capture the authored secondary rider selection before A5 initializes.
+    // Type 2 is Gash/Gush; zero means the save does not request a passenger.
+    static int lastRiderOverlay=-1, lastRiderSub=-1;
+    if(overlay!=lastRiderOverlay || sub!=lastRiderSub) {
+        lastRiderOverlay=overlay;
+        lastRiderSub=sub;
+        lagi::platform::logging::writef(
+            "[GarilBattleRiders] overlay=%d sub=%d rider1=%u rider2=%u\n",
+            overlay,sub,unsigned(mainGameState.gameStats.m2_rider1),
+            unsigned(mainGameState.gameStats.m3_rider2));
+    }
     if(overlay<0 || static_cast<std::size_t>(overlay)>=gCommonFile->battleOverlaySetup.size())
         return reject("overlay index outside COMMON table");
     const auto& entry=gCommonFile->battleOverlaySetup[overlay];
