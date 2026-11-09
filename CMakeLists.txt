@@ -4808,6 +4808,17 @@ static s32 lagiCampRandomChoice(s32 limit)
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 2)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townScript.cpp")
+  # Opcode 21's dispatch bound is the byte following the opcode (arg).
+  # Upstream incorrectly reads the high byte of the first Saturn EA in the
+  # switch table. TWN_CAMP.PRG 06057FA1 declares 9 entries; its first target
+  # begins with 0x06, incorrectly excluding camp entries 6, 7, and 8.
+  set(camp_switch_bad "r13_pThis->m118_currentResult < readSaturnU8(r14)")
+  string(FIND "${source_text}" "${camp_switch_bad}" camp_switch_bad_found)
+  if(camp_switch_bad_found LESS 0)
+   message(FATAL_ERROR "Town script opcode 21 dispatch boundary changed")
+  endif()
+  string(REPLACE "${camp_switch_bad}" "r13_pThis->m118_currentResult < arg"
+   source_text "${source_text}")
   string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
    "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"kernel/moduleManager.h\"\n#include \"lagi/town_yes_no.h\""
    source_text "${source_text}")
