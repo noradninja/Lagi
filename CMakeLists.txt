@@ -4483,7 +4483,7 @@ void pauseCutscene]=]
   # The generated Azel source no longer contains its original PDS.h include.
   set(source_text "#include \"lagi/platform.h\"\n${source_text}")
   string(REPLACE "    gTWN_CAMP->makeCurrent();"
-   "    gTWN_CAMP->makeCurrent();\n    lagi::platform::logging::writef(\"[CampSetup] entry=%u setups=%u rider1=%u rider2=%u metGash=%u npcRequires39=%u npcBlocked40=%u\\n\", unsigned(arg),unsigned(gTWN_CAMP->mTownSetups.size()), unsigned(mainGameState.gameStats.m2_rider1), unsigned(mainGameState.gameStats.m3_rider2), unsigned(mainGameState.getBit(4*8+5)), unsigned(mainGameState.getBit(39)), unsigned(mainGameState.getBit(40)));"
+   "    gTWN_CAMP->makeCurrent();\n    lagi::platform::logging::writef(\"[CampSetup] entry=%u setups=%u rider1=%u rider2=%u metGash=%u gashFlag3373=%u gashBlock3374=%u expectedRegister=%u\\n\", unsigned(arg),unsigned(gTWN_CAMP->mTownSetups.size()), unsigned(mainGameState.gameStats.m2_rider1), unsigned(mainGameState.gameStats.m3_rider2), unsigned(mainGameState.getBit(4*8+5)), unsigned(mainGameState.getBit(3334+39)), unsigned(mainGameState.getBit(3334+40)), unsigned(mainGameState.getBit(3334+39) && !mainGameState.getBit(3334+40))));"
    source_text "${source_text}")
   string(REPLACE "    registerNpcs(gTWN_CAMP->mTownSetups, gTWN_CAMP->getSaturnPtr(0x6057f88), arg);"
    "    registerNpcs(gTWN_CAMP->mTownSetups, gTWN_CAMP->getSaturnPtr(0x6057f88), arg);\n    lagi::platform::logging::writef(\"[CampSetup] register entry=%u script=%08X setupSelection=%d scriptCount=%u\\n\", unsigned(arg), unsigned(npcData0.m104_currentScript.m0_scriptPtr.m_offset),int(npcData0.m5E),unsigned(gTWN_CAMP->mTownSetups.size()));"
