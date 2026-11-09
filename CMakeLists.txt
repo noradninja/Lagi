@@ -218,7 +218,7 @@ option(LAGI_VDP2_SPRITE_COMPOSITE "Experimental separate native VDP1/VDP2 compos
 option(LAGI_GPU_PASS_TIMING "Sample serialized native GPU pass timing (diagnostic stalls)" OFF)
 option(LAGI_RBG_DECODED_PAGES "Cache native RBG source pages before GPU rotation" ON)
 option(LAGI_RBG_COEFFICIENT_ROWS "Predecode scanline-constant native RBG coefficients" ON)
-option(LAGI_WORLD_MAP_BRINGUP "Enable the in-progress native WORLD scene for device testing" OFF)
+option(LAGI_WORLD_MAP_BRINGUP "Enable the in-progress native WORLD scene for device testing" ON)
 option(LAGI_FIELD_MOTION_TRACE "Bounded field motion/snapshot cadence diagnostics" OFF)
 set(LAGI_RBG_ROWS_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f_gxp.o")
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp"
@@ -5945,7 +5945,7 @@ endif()
 
 # Isolated A/B candidate: do not change native simulation or renderer shaders.
 # Default OFF until a matched hardware encounter establishes benefit/correctness.
-option(LAGI_OPTIMIZE_RENDER_BRIDGE "Experiment: optimize Lagi scene submission bridge" OFF)
+option(LAGI_OPTIMIZE_RENDER_BRIDGE "Experiment: optimize Lagi scene submission bridge" ON)
 if(LAGI_OPTIMIZE_RENDER_BRIDGE)
  set_source_files_properties(src/integration/lagi_render_bridge.cpp
   PROPERTIES COMPILE_OPTIONS "-O2;-fwrapv;-fno-strict-aliasing;-fno-fast-math;-ffp-contract=off"
