@@ -150,13 +150,37 @@ sSaturnMemoryFile::sSaturnMemoryFile(const char* fileName, u32 base)
       m_dataSize(0),
       m_base(base)
 {
+    // Read-only checkpoints for camp save-load initialization. The crash
+    // report places TWN_CAMP.PRG on the main-thread stack after the previous
+    // TWN_RUIN.PRG load. Keep logging confined to those two overlays.
+    const bool traceTownOverlay = m_name == "TWN_CAMP.PRG" ||
+        m_name == "TWN_RUIN.PRG";
+    if (traceTownOverlay)
+        lagi::platform::logging::writef(
+            "[TownOverlayLoadTrace] begin name=%s base=%08X\n",
+            m_name.c_str(), static_cast<unsigned>(m_base));
     std::vector<u8> data;
-    if (!readDiscFile(fileName, data))
+    const bool readOk = readDiscFile(fileName, data);
+    if (traceTownOverlay)
+        lagi::platform::logging::writef(
+            "[TownOverlayLoadTrace] read name=%s ok=%u bytes=%u\n",
+            m_name.c_str(), readOk ? 1u : 0u,
+            static_cast<unsigned>(data.size()));
+    if (!readOk)
         return;
 
     m_data = new u8[data.size()];
+    if (traceTownOverlay)
+        lagi::platform::logging::writef(
+            "[TownOverlayLoadTrace] allocated name=%s ptr=%p bytes=%u\n",
+            m_name.c_str(), static_cast<void*>(m_data),
+            static_cast<unsigned>(data.size()));
     std::memcpy(m_data, data.data(), data.size());
     m_dataSize = static_cast<u32>(data.size());
+    if (traceTownOverlay)
+        lagi::platform::logging::writef(
+            "[TownOverlayLoadTrace] copied name=%s size=%u\n",
+            m_name.c_str(), static_cast<unsigned>(m_dataSize));
 
     lagi::platform::logging::writef(
         "[AzelFS] loaded %s (%u bytes) from mounted disc\n",
