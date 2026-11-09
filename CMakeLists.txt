@@ -3610,6 +3610,19 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    "${a5_intro_end}\n        lagi::platform::logging::writef(\"[GarilBattleIntro] finish frame=%d\\n\",int(pThis->m0_frameIndex));"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleEngine.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # Report transition edges only, not each battle frame.
+  string(REPLACE "#include \"PDS.h\""
+   "#include \"PDS.h\"\n#include \"lagi/platform.h\""
+   source_text "${source_text}")
+  set(a5_mode_anchor "void updateBattleIntro(s_battleEngine* pThis)\n{")
+  string(FIND "${source_text}" "${a5_mode_anchor}" a5_mode_found)
+  if(a5_mode_found LESS 0)
+   message(FATAL_ERROR "A5 battle mode trace anchor changed")
+  endif()
+  string(REPLACE "${a5_mode_anchor}"
+   "${a5_mode_anchor}\n    static int lagiLastBattleMode=-1, lagiLastBattleSubmode=-1;\n    static unsigned lagiModeTraceBudget=48;\n    const int lagiCurrentMode=int(pThis->m38C_battleMode);\n    const int lagiCurrentSubmode=int(pThis->m38D_battleSubMode);\n    if(lagiModeTraceBudget && (lagiCurrentMode!=lagiLastBattleMode || lagiCurrentSubmode!=lagiLastBattleSubmode)) {\n        --lagiModeTraceBudget;\n        lagi::platform::logging::writef(\"[GarilBattleMode] mode=%d submode=%d\n\", lagiCurrentMode,lagiCurrentSubmode);\n    }\n    lagiLastBattleMode=lagiCurrentMode;\n    lagiLastBattleSubmode=lagiCurrentSubmode;"
+   source_text "${source_text}")
+
   set(stat_count_anchor "void increaseStatsCount(int statIndex)\n{")
   string(FIND "${source_text}" "${stat_count_anchor}" stat_count_begin)
   string(FIND "${source_text}" "void battleEngine_updateBattleMode_0_shootEnemyWithGun(" stat_count_end)
