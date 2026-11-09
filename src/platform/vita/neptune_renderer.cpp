@@ -12869,7 +12869,7 @@ bool submit_vdp1_model(
                 --garilCliffCullTraceBudget;
                 logging::writef(
                     "[GarilCliffCullAB] view=%d scene=%u objects=%u "
-                    "policy=UNCULL_KNOWN_CLIFFS_ONLY otherPolys=UNCHANGED\\n",
+                    "policy=UNCULL_KNOWN_CLIFFS_ONLY otherPolys=UNCHANGED\n",
                     g_viewMode,unsigned(g_sceneGameMode),garilCliffObjects);
             }
             const std::uint64_t drawStart=sceKernelGetProcessTimeWide();
