@@ -1127,6 +1127,37 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
     message(FATAL_ERROR "Native navigator dialog anchor changed: ${anchor}")
    endif()
   endforeach()
+  # Restore the native multi-page dialog arrows using Azel's existing COMMON
+  # VDP1 cursor sprites (same records, positions and palette as battle items).
+  set(dialog_page_arrows_old [=[
+    if (pThis->m3_quantity > 0)
+    {
+        assert(0);
+    }
+
+    if (pThis->m4_quantityMax > pThis->m3_quantity)
+    {
+        assert(0);
+    }]=])
+  set(dialog_page_arrows_new [=[
+    if (pThis->m3_quantity > 0)
+    {
+        drawMultiChoiceVdp1Cursor((pThis->m14_x + 2) * 8,
+            (pThis->m16_y * 8 + (pThis->m1C_height * 8) / 2) - 8,
+            gCommonFile->getSaturnPtr(0x21003A), 0x760);
+    }
+
+    if (pThis->m4_quantityMax > pThis->m3_quantity)
+    {
+        drawMultiChoiceVdp1Cursor((pThis->m14_x + pThis->m1A_width - 2) * 8,
+            (pThis->m16_y * 8 + (pThis->m1C_height * 8) / 2) - 8,
+            gCommonFile->getSaturnPtr(0x210030), 0x760);
+    }]=])
+  string(FIND "${source_text}" "${dialog_page_arrows_old}" dialog_page_arrows_found)
+  if(dialog_page_arrows_found LESS 0)
+   message(FATAL_ERROR "Native multi-page dialog drawing anchor changed")
+  endif()
+  string(REPLACE "${dialog_page_arrows_old}" "${dialog_page_arrows_new}" source_text "${source_text}")
   string(REPLACE "${navigator_cancel_old}" "${navigator_cancel_new}" source_text "${source_text}")
   string(REPLACE "${navigator_delete_old}" "${navigator_delete_new}" source_text "${source_text}")
  endif()
