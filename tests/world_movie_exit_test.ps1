@@ -63,6 +63,19 @@ try{
     }
  }
 
+ # The B2 and A7_2 map tasks share these original instruction ranges.
+ foreach($range in @(
+    @(0x06054374,0x06057C70,0x13E),
+    @(0x0605415C,0x06057A58,0x218),
+    @(0x060547E8,0x060580E4,0x220)
+ )){
+    for($offset=0;$offset-lt$range[2];$offset+=2){
+        $b2=Read-Native 259485 0x06054000 ($range[0]+$offset) 2
+        $a7=Read-Native 259304 0x06054000 ($range[1]+$offset) 2
+        if($b2-ne$a7){throw ('B2/A7_2 shared map instruction differs at {0:X8}'-f($range[0]+$offset))}
+    }
+ }
+
  $slot=Read-Native 58 0x6006000 (0x6027AAC+(0x54-1)*2) 2
  if(0x6027AA8+$slot-ne0x6027C7A){throw 'Native status54 switch target differs'}
  foreach($status in @(0x55,0x56,0x5A)) {

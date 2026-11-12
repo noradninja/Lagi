@@ -92,10 +92,12 @@ to the battle task allocator at 060312EE. That task has update
 to the disc. B2's map uses the same five files and VRAM destinations
 as the existing A7_2 environment: FNS_A7_2.SCB at 10000,
 FNS_A7_2.PNB at 1F000, FRS_A7_2.SCB at 40000, FRS_A7_2.PNB
-at 60000 and SPACE.PNB at 64000. B2 supplies its own map init,
-update and draw callbacks and layer/rotation data. The file
-transfers can reuse the existing loader, while the rest of
-the map task still needs a B2 implementation.
+at 60000 and SPACE.PNB at 64000. B2 and A7_2 also share substantial map task code. Disc 1
+checks match the first 013E bytes of initialization, the 0218-byte
+update range and the 0220-byte draw range. The first initialization
+differences are relocated overlay data pointers, including palette
+and layer records. The existing Azel A7_2 environment is a source
+for the port once the remaining data and callback ranges are checked.
 
 The Disc 1 WORLD route fixture passes the Garil entry 6 gate through
 status 56, mode 3/field 3 and FLD_A5.PRG/FNT. The A5 structural audit
