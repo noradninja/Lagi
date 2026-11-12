@@ -5110,6 +5110,32 @@ static s32 lagiCampRandomChoice(s32 limit)
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 2)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townScript.cpp")
+  # On an unsupported authored opcode, retain the exact Saturn script cursor
+  # and result in the synchronous Vita fatal trace before the existing assert.
+  # No interpreter behavior or error handling is changed.
+  set(town_unknown_opcode_old [=[
+        default:
+            assert(0);
+        }
+    } while (1);
+}]=])
+  set(town_unknown_opcode_new [=[
+        default:
+            lagiSetTownScriptFatalContext((r14 - 1).m_offset,
+                unsigned(r0_opcode), r13_pThis->m118_currentResult);
+            assert(0);
+        }
+    } while (1);
+}]=])
+  string(FIND "${source_text}" "${town_unknown_opcode_old}" town_unknown_opcode_found)
+  if(town_unknown_opcode_found LESS 0)
+   message(FATAL_ERROR "Town script unknown-opcode fatal anchor changed")
+  endif()
+  string(REPLACE "${town_unknown_opcode_old}" "${town_unknown_opcode_new}"
+    source_text "${source_text}")
+  string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
+    "#include \"lagi/lagi_azel_upstream_prelude.h\"\\nextern \"C\" void lagiSetTownScriptFatalContext(unsigned, unsigned, int);"
+    source_text "${source_text}")
   # Saturn MAIN0600D028 loads the signed operand threshold 1000.
   # Town opcodes 15-18 and 20 add 3334 only at or above that threshold
   # (0600D27A, 0600D2BA, 0600D306, 0600D348, 0600D37E).
