@@ -2323,6 +2323,21 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    "    pRider1State = pLoadRiderWorkArea;"
    "    pLoadRiderWorkArea->m14_weaponModelIndex = riderType >= 6 ? 0xBC : 0;\n    pRider1State = pLoadRiderWorkArea;"
    source_text "${source_text}")
+  string(REPLACE "#include \"commonOverlay.h\""
+   "#include \"commonOverlay.h\"\n\nvoid invalidateVdp1TextureRange(u32 vdp1Offset, u32 size);"
+   source_text "${source_text}")
+  # Changing riders overwrites the same VDP1 addresses. Drop cached
+  # textures for the bytes written by a successful character load.
+  foreach(rider_vram IN ITEMS 16000 17400)
+   set(rider_cgb_load "            loadFile(r13->m_CGBName, getVdp1Pointer(0x25C${rider_vram}), 0);")
+   string(FIND "${source_text}" "${rider_cgb_load}" rider_cgb_position)
+   if(rider_cgb_position LESS 0)
+    message(FATAL_ERROR "Azel rider texture load boundary changed at ${rider_vram}")
+   endif()
+   string(REPLACE "${rider_cgb_load}"
+    "            if (loadFile(r13->m_CGBName, getVdp1Pointer(0x25C${rider_vram}), 0) == 0)\n                invalidateVdp1TextureRange(0x${rider_vram}, getFileSize(r13->m_CGBName));"
+    source_text "${source_text}")
+  endforeach()
   # COMMON rider definition 6 uses hotpoints at 00202F00.
   string(REPLACE
    "    gRiderTable[1].m_pExtraData = readRiderDefinitionSub(gCommonFile->getSaturnPtr(0x2020fc));"
