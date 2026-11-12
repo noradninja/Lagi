@@ -81,7 +81,11 @@ engine entry at 060A415C selects a single formation callback
 06054C88 (argument 0, flags 1), position data 060A4078, map task
 factory 06054A0E and text data 060A3FBC. The map factory passes
 work-area size C0 and task definition 060A46B8 to the native task
-constructor. The formation and map tasks remain unported.
+constructor. Its init, update and draw callbacks are 06054374,
+0605415C and 060547E8. The formation factory passes 060A482C
+to the battle task allocator at 060312EE. That task has update
+06054CF2 and cleanup 06054DA2. Both task definitions are now pinned
+to the disc. Their implementations remain unported.
 
 The Disc 1 WORLD route fixture passes the Garil entry 6 gate through
 status 56, mode 3/field 3 and FLD_A5.PRG/FNT. The A5 structural audit
