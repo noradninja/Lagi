@@ -116,7 +116,13 @@ count to 1..16, matching Lagi's dragonFieldTaskUpdateSub2 service.
 The new update and draw pointers are written relative to the task
 header at work area minus E8. The update at 0607B8F0 can restore
 riders 6/7 and the original Floater update/draw pair. The task
-callback bodies still need to be ported.
+callback bodies still need to be ported. Both updates call 0607B738
+first. It clears FC and the two collision accumulators at 1F8/1FC,
+copies position 08/0C/10 to previous position 14/18/1C, invokes the
+movement callback at F0 and tail-calls terrain resolution at 0607862A.
+These operations correspond to Lagi's dragonFieldTaskUpdateSub1.
+Both native draw callbacks start at shared helper 0607BBC4 before
+their separate rider and dragon drawing paths.
 
 Camp's "Crossing the Garil Desert" topic calls 0605A9AD. The full
 conversation sets operand 041B at 0605ABC5 (resolved bit 4385)
