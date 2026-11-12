@@ -1769,10 +1769,23 @@ void loadRider2IfChanged(u32 rider)
   set(rider_change_replacement [=[s_loadRiderWorkArea* loadRider(s_workArea* owner, u8 riderType);
 s_loadRiderWorkArea* loadRider2(s_workArea* owner, u8 riderType);
 
+static bool riderUsesCurrentAssets(const s_loadRiderWorkArea& previous, u32 rider)
+{
+    if (previous.mC_riderType != rider)
+        return false;
+
+    // Embedded riders borrow the active dragon bundle. A dragon reload
+    // allocates a new host bundle even when the rider type stays the same.
+    if (rider >= 6 && gDragonState->mC_dragonType == DR_LEVEL_8_FLOATER)
+        return previous.m0_riderBundle == gDragonState->m0_pDragonModelBundle;
+
+    return true;
+}
+
 void loadRiderIfChanged(u32 rider)
 {
     s_loadRiderWorkArea* previous = pRider1State;
-    if (previous->mC_riderType == rider)
+    if (riderUsesCurrentAssets(*previous, rider))
         return;
 
     mainGameState.gameStats.m2_rider1 = static_cast<u8>(rider);
@@ -1783,7 +1796,7 @@ void loadRiderIfChanged(u32 rider)
 void loadRider2IfChanged(u32 rider)
 {
     s_loadRiderWorkArea* previous = pRider2State;
-    if (previous->mC_riderType == rider)
+    if (riderUsesCurrentAssets(*previous, rider))
         return;
 
     mainGameState.gameStats.m3_rider2 = static_cast<u8>(rider);
