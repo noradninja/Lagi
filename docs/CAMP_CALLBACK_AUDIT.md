@@ -72,7 +72,12 @@ The later Paet gift route dispatches EVT008 (14), then battle 15,
 then Camp 5A. COMMON 00212F9E maps battle 15 to overlay 4, sub-battle
 0. The overlay record names BTL_B2.PRG and BTL_B2.FNT. Lagi now
 has the authored exit transitions, while its battle dispatcher
-still lacks BTL_B2.
+still lacks BTL_B2. The Disc 1 overlay at LBA 259485 uses the shared
+battle-main task, sound bank 20, PCM 100, asset list 060A3BC4 and
+engine data 060A415C. The overlay's unique resources include
+B2CMN.CGB, TGD.MCB/CGB and VALNA.MCB/CGB. Its entry callbacks and
+data addresses are pinned in the movie-exit fixture. The B2 battle
+engine dispatch and encounter callbacks remain unported.
 
 The Disc 1 WORLD route fixture passes the Garil entry 6 gate through
 status 56, mode 3/field 3 and FLD_A5.PRG/FNT. The A5 structural audit

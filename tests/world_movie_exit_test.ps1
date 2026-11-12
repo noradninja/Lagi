@@ -35,6 +35,26 @@ try{
     throw 'Native status15 story flag or Camp setup differs'
  }
 
+ # Status 15 selects the original B2 battle before Camp 5A.
+ if((Read-Native 182 0x200000 0x212F9E 2)-ne0x0400-or
+    (Read-Native 182 0x200000 (0x2005DC+4*0x14+4) 4)-ne0x2012C4){
+    throw 'Native gift battle overlay or sub-battle differs'
+ }
+ $expectedBattle='BTL_B2.PRG'
+ for($i=0;$i-lt$expectedBattle.Length;$i++){
+    if((Read-Native 182 0x200000 (0x2012C4+$i) 1)-ne[int]$expectedBattle[$i]){
+        throw 'Native gift battle overlay filename differs'
+    }
+ }
+ foreach($pair in @(
+    @(0x06054054,0x06054034), @(0x06054058,0x0605400A),
+    @(0x0605406C,0x060A3BC4), @(0x06054078,0x060A415C)
+ )){
+    if((Read-Native 259485 0x06054000 $pair[0] 4)-ne$pair[1]){
+        throw 'Native B2 entry callbacks or data references differ'
+    }
+ }
+
  $slot=Read-Native 58 0x6006000 (0x6027AAC+(0x54-1)*2) 2
  if(0x6027AA8+$slot-ne0x6027C7A){throw 'Native status54 switch target differs'}
  foreach($status in @(0x55,0x56,0x5A)) {
