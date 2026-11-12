@@ -2516,6 +2516,21 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
         if (!(pThis->m65 & 4))]=] source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  # FLD_A5 0607C2D0 reloads the saved dragon and both riders when the
+  # field task's +3E reload flag is 1. The shared initializer owns this
+  # flag, along with the native HP/BP refill and completion state.
+  set(field_player_reload_old [=[        assert(0);
+        //updateDragonIfCursorChanged(mainGameState.gameStats.dragonLevel);
+        //loadRiderIfChanged(mainGameState.gameStats.rider1);
+        //loadRider2IfChanged(mainGameState.gameStats.rider1);]=])
+  set(field_player_reload_new [=[        updateDragonIfCursorChanged(mainGameState.gameStats.m1_dragonLevel);
+        loadRiderIfChanged(mainGameState.gameStats.m2_rider1);
+        loadRider2IfChanged(mainGameState.gameStats.m3_rider2);]=])
+  string(FIND "${source_text}" "${field_player_reload_old}" field_player_reload_position)
+  if(field_player_reload_position LESS 0)
+   message(FATAL_ERROR "Azel field player reload boundary changed")
+  endif()
+  string(REPLACE "${field_player_reload_old}" "${field_player_reload_new}" source_text "${source_text}")
   if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
    set(source_text "#include \"lagi/garil_script_native.h\"\n#include \"lagi/garil_script_choice.h\"\n${source_text}")
    set(garil_choice_anchor "        case 31: // used for dialog \"do you want to save\"")
