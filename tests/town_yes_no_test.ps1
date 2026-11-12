@@ -22,6 +22,18 @@ try {
        (Read-Native 58 0x06006000 0x0601C6EC 16) -ne 'E0-18-81-4A-E0-14-81-4B-E0-10-81-4D-E0-04-81-4E') {
         throw 'Native Yes/No opcode/task/text/layout binding differs'
     }
+    # The intro flag is set before the prompt. The result alone selects
+    # the reply, so reading the flag cannot stand in for Yes.
+    if ((Read-Native 239428 0x06054000 0x06058911 3) -ne '11-04-1A' -or
+        (Read-Native 239428 0x06054000 0x06058A6C 24) -ne '0F-09-04-1A-07-00-00-09-06-06-C9-52-26-08-00-01-05-09-00-09-06-05-8C-50' -or
+        (Read-Native 239428 0x06054000 0x06058A84 8) -ne '07-00-00-09-06-06-C9-5C' -or
+        (Read-Native 239428 0x06054000 0x06058C50 12) -ne '07-01-00-09-06-06-D5-42-06-06-14-A5') {
+        throw 'Gash lift conversation or Yes/No branch differs'
+    }
+    if ((Read-Native 239428 0x06054000 0x060591D8 12) -ne '30-09-00-3C-00-6A-00-01-2B-01-00-6A' -or
+        (Read-Native 239428 0x06054000 0x0605930D 7) -ne '0F-00-C4-0F-09-00-2F') {
+        throw 'Gash gift inventory or story operands differ'
+    }
 } finally { $disc.Dispose() }
 $generated=Get-Content -Raw "$repo/$Build/azel_upstream/town_townScript.cpp"
 $start=$generated.IndexOf('        case 38: // native MAIN0600D660')
