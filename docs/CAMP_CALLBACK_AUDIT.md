@@ -46,7 +46,11 @@ presence in Garil.
 
 Camp's Gash interaction at 060588A5 reaches the topic menus and returns
 through 06058F21 -> 06058F30. The gift is a separate Camp script. The
-call at 0606034C enters 06058F77, where the script requires NPC state 3,
+call at 0606034C enters 06058F77 after selecting "Leave the Camp."
+For example, the menu at 06060184 calls its choice table at 06060190,
+whose first entry is the departure script 06060295. The gift runs
+during departure, before the fade and town termination. The script
+requires NPC state 3,
 operand 002E set, operand 0030 clear and item 006A absent. The scene
 plays the conversation about Paet's missing ship parts, presents item
 006A at 060591D8, adds one at 060591E0 and sets operands 00C4 and 002F

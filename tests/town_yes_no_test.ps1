@@ -30,6 +30,10 @@ try {
         (Read-Native 239428 0x06054000 0x06058C50 12) -ne '07-01-00-09-06-06-D5-42-06-06-14-A5') {
         throw 'Gash lift conversation or Yes/No branch differs'
     }
+    if ((Read-Native 239428 0x06054000 0x06060184 20) -ne '27-02-00-09-06-06-53-D8-06-06-53-E7-15-02-00-09-06-06-02-95' -or
+        (Read-Native 239428 0x06054000 0x0606034C 8) -ne '06-09-00-09-06-05-8F-77') {
+        throw 'Leave the Camp no longer dispatches the gift scene'
+    }
     if ((Read-Native 239428 0x06054000 0x060591D8 12) -ne '30-09-00-3C-00-6A-00-01-2B-01-00-6A' -or
         (Read-Native 239428 0x06054000 0x0605930D 7) -ne '0F-00-C4-0F-09-00-2F') {
         throw 'Gash gift inventory or story operands differ'
