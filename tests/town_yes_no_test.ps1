@@ -34,6 +34,11 @@ try {
         (Read-Native 239428 0x06054000 0x0606034C 8) -ne '06-09-00-09-06-05-8F-77') {
         throw 'Leave the Camp no longer dispatches the gift scene'
     }
+    if ((Read-Native 239428 0x06054000 0x06058011 8) -ne '06-00-09-06-06-5F-98-01' -or
+        (Read-Native 239428 0x06054000 0x06065F98 12) -ne '07-01-00-09-06-00-CC-B4-00-00-00-03' -or
+        (Read-Native 239428 0x06054000 0x06060354 20) -ne '07-01-00-09-06-07-1E-20-00-00-00-1E-20-07-00-09-06-03-01-1E') {
+        throw 'Camp setup 3 or departure fade and termination differ'
+    }
     if ((Read-Native 239428 0x06054000 0x060591D8 12) -ne '30-09-00-3C-00-6A-00-01-2B-01-00-6A' -or
         (Read-Native 239428 0x06054000 0x0605930D 7) -ne '0F-00-C4-0F-09-00-2F') {
         throw 'Gash gift inventory or story operands differ'
