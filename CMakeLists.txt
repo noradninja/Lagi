@@ -5136,6 +5136,50 @@ static s32 lagiCampRandomChoice(s32 limit)
   string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
     "#include \"lagi/lagi_azel_upstream_prelude.h\"\nextern \"C\" void lagiSetTownScriptFatalContext(unsigned, unsigned, int);"
     source_text "${source_text}")
+  # A second bytecode form (opcode 31) waits on a native return value.
+  # Like opcode 7, its continuation is determined by the authored argument
+  # count before entering a callback. Preserve that cursor independently of
+  # any callback or dispatcher side effects, retaining the original retry.
+  set(town_wait_native_old [=[
+        case 31: // wait for native function to return != 0
+            {
+                sSaturnPtr r14Back = r14 - 1;
+                r14 = callNativeWithArguments(r13_pThis, r14);
+                if (r13_pThis->m118_currentResult == 0)
+                {
+                    return r14Back;
+                }
+            }
+            break;]=])
+  set(town_wait_native_new [=[
+        case 31: // wait for native function to return != 0
+            {
+                const sSaturnPtr callStart = r14;
+                const sSaturnPtr r14Back = callStart - 1;
+                const u8 argumentCount = readSaturnU8(callStart);
+                const sSaturnPtr functionAndArguments = getAlignOn4(callStart + 1);
+                const sSaturnPtr authoredNext =
+                    functionAndArguments + (argumentCount + 1) * 4;
+                const sSaturnPtr dispatcherNext =
+                    callNativeWithArguments(r13_pThis, callStart);
+                lagiSetTownScriptNativeContext(31, r14Back.m_offset,
+                    argumentCount, dispatcherNext.m_offset, authoredNext.m_offset);
+                if (r13_pThis->m118_currentResult == 0)
+                {
+                    return r14Back;
+                }
+                r14 = authoredNext;
+            }
+            break;]=])
+  string(FIND "${source_text}" "${town_wait_native_old}" town_wait_native_found)
+  if(town_wait_native_found LESS 0)
+   message(FATAL_ERROR "Town native-wait cursor anchor changed")
+  endif()
+  string(REPLACE "${town_wait_native_old}" "${town_wait_native_new}"
+    source_text "${source_text}")
+  string(REPLACE "extern \"C\" void lagiSetTownScriptFatalContext(unsigned, unsigned, int);"
+    "extern \"C\" void lagiSetTownScriptFatalContext(unsigned, unsigned, int);\\nextern \"C\" void lagiSetTownScriptNativeContext(unsigned, unsigned, unsigned, unsigned, unsigned);"
+    source_text "${source_text}")
   # Saturn MAIN0600D028 loads the signed operand threshold 1000.
   # Town opcodes 15-18 and 20 add 3334 only at or above that threshold
   # (0600D27A, 0600D2BA, 0600D306, 0600D348, 0600D37E).
