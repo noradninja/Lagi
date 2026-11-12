@@ -5245,6 +5245,8 @@ static s32 lagiCampRandomChoice(s32 limit)
                 functionAndArguments + (argumentCount + 1) * 4;
             const sSaturnPtr dispatcherNext =
                 callNativeWithArguments(r13_pThis, callStart);
+            lagiSetTownScriptNativeContext(7, (callStart - 1).m_offset,
+                argumentCount, dispatcherNext.m_offset, authoredNext.m_offset);
             if (dispatcherNext != authoredNext)
             {
                 PDS_Log("[TownScriptCursor] call=%08X argc=%u returned=%08X authored=%08X\n",
