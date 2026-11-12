@@ -60,6 +60,15 @@ assigns rider type 2, and field rendering consumes the saved rider
 value. The original assignment on the Cainus-to-Garil route still
 needs verification before changing rider state.
 
+The Disc 1 A5 initializer calls 0607C2D0 through 06072ECE. That
+routine reads rider slot 2 at 0604A6BF (game stats base 0604A6BC,
+offset 3) and passes the stored value to MAIN 0600B444 at 0607C2FE.
+MAIN 0600B444 writes the requested value to that same byte and
+dispatches the rider loader. A different A5 path at 0607BAA8 passes
+literal type 2 through this service after its condition at 0607BA9E.
+That path is outside the initial reload. Its ownership and the
+condition leading to it remain to be traced before porting it.
+
 ## VDP2 wide-view projection alignment - 2026-11-06
 
 User chose to preserve the current wide camera view. The 3D path already
