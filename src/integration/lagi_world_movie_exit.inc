@@ -1,3 +1,13 @@
+    case 0x14: // EVT008
+        // MAIN 06027DEA sets the Camp gift prerequisite and queues battle 15.
+        mainGameState.setBit(5 * 8 + 6);
+        setNextGameStatus(0x15);
+        if (mainGameState.gameStats.m1_dragonLevel != DR_LEVEL_2_STRIPE_WING)
+        {
+            updateDragonIfCursorChanged(DR_LEVEL_2_STRIPE_WING);
+        }
+        return 0;
+
     case 0x54: // WORLD's Village of Cainus arrival movie
         // MAIN 06027AA4's slot54 resolves to06027C7A. The native handler
         // updates these MSB-first story bits, then requests55/TWN_CAMP.

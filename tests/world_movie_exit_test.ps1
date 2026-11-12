@@ -6,6 +6,19 @@ try{
  function Read-Native([long]$lba,[long]$base,[long]$ea,[int]$count){
   $n=0L;for($i=0;$i-lt$count;$i++){$offset=$ea+$i-$base;$disc.Position=($lba+[long][Math]::Floor($offset/2048))*2352+16+($offset%2048);$b=$disc.ReadByte();if($b-lt0){throw 'Short disc read'};$n=($n-shl8)-bor$b};return $n
  }
+ $giftSlot=Read-Native 58 0x6006000 (0x6027AAC+(0x14-1)*2) 2
+ if(0x6027AA8+$giftSlot-ne0x6027DEA){throw 'Native status14 switch target differs'}
+ foreach($word in @(
+  @(0x6027DEA,0xD329), @(0x6027DEC,0xD22B), @(0x6027DF2,0x201B),
+  @(0x6027DF4,0x2300), @(0x6027DF6,0xB98B), @(0x6027DF8,0xE415),
+  @(0x6027DFA,0xA209), @(0x6027DFC,0xE302), @(0x6028210,0x2F32)
+ )){
+  if((Read-Native 58 0x6006000 $word[0] 2)-ne$word[1]){throw 'Native status14 progression differs'}
+ }
+ if((Read-Native 58 0x6006000 0x6027E90 4)-ne0x0604A3FD-or
+    (Read-Native 58 0x6006000 0x6027E9C 4)-ne0x06042F1A-or
+    (Read-Native 58 0x6006000 0x6042F1A 1)-ne0x02){throw 'Native status14 gift bit differs'}
+
  $slot=Read-Native 58 0x6006000 (0x6027AAC+(0x54-1)*2) 2
  if(0x6027AA8+$slot-ne0x6027C7A){throw 'Native status54 switch target differs'}
  foreach($status in @(0x55,0x56)) {
