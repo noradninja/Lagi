@@ -1749,6 +1749,52 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
 } while (false)
 ]=])
  elseif(relative_path STREQUAL "mainMenuDebugTasks.cpp")
+  # MAIN0600B412/0600B444 keep the existing owner, retire a changed
+  # rider task and reload its slot under that owner.
+  set(rider_change_anchor [=[void loadRiderIfChanged(u32 rider)
+{
+    if (pRider1State->mC_riderType != rider)
+    {
+        assert(0);
+    }
+}
+
+void loadRider2IfChanged(u32 rider)
+{
+    if (pRider2State->mC_riderType != rider)
+    {
+        assert(0);
+    }
+}]=])
+  set(rider_change_replacement [=[s_loadRiderWorkArea* loadRider(s_workArea* owner, u8 riderType);
+s_loadRiderWorkArea* loadRider2(s_workArea* owner, u8 riderType);
+
+void loadRiderIfChanged(u32 rider)
+{
+    s_loadRiderWorkArea* previous = pRider1State;
+    if (previous->mC_riderType == rider)
+        return;
+
+    mainGameState.gameStats.m2_rider1 = static_cast<u8>(rider);
+    loadRider(previous->m_ParentWorkArea, mainGameState.gameStats.m2_rider1);
+    previous->getTask()->markFinished();
+}
+
+void loadRider2IfChanged(u32 rider)
+{
+    s_loadRiderWorkArea* previous = pRider2State;
+    if (previous->mC_riderType == rider)
+        return;
+
+    mainGameState.gameStats.m3_rider2 = static_cast<u8>(rider);
+    loadRider2(previous->m_ParentWorkArea, mainGameState.gameStats.m3_rider2);
+    previous->getTask()->markFinished();
+}]=])
+  string(FIND "${source_text}" "${rider_change_anchor}" rider_change_position)
+  if(rider_change_position LESS 0)
+   message(FATAL_ERROR "Azel rider change boundary changed")
+  endif()
+  string(REPLACE "${rider_change_anchor}" "${rider_change_replacement}" source_text "${source_text}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_native_color_draw.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_native_color_draw.inc" native_color_draw)
