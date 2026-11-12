@@ -108,6 +108,28 @@ try {
    throw ('Garil rider transition instruction differs at {0:X8}'-f$pair[0])
   }
  }
+ # Embedded rider hierarchy, weapon, pose and animation slots in KTEI.MCB.
+ foreach($pair in @(
+  @(0x08,0x5AA8), @(0x0C,0x5B68), @(0xBC,0x597C),
+  @(0xC4,0x5D3C), @(0xC8,0x5F7C), @(0xE0,0x6DB4), @(0x124,0xC6D4)
+ )) {
+  if((Read-Native $pair[0] 4 0 217907)-ne$pair[1]){
+   throw ('Native Floater rider bundle slot differs at {0:X}'-f$pair[0])
+  }
+ }
+ function Count-RiderBones([int]$node, [Collections.Generic.HashSet[int]]$seen) {
+  if(!$node){return 0}
+  if($node-lt0-or$node+12-gt74124-or!$seen.Add($node)){throw 'Invalid Floater rider hierarchy'}
+  $child=Read-Native ($node+4) 4 0 217907
+  $next=Read-Native ($node+8) 4 0 217907
+  return 1+(Count-RiderBones $child $seen)+(Count-RiderBones $next $seen)
+ }
+ foreach($pair in @(@(0x5AA8,0x6DB4), @(0x5B68,0xC6D4))){
+  $bones=Count-RiderBones $pair[0] ([Collections.Generic.HashSet[int]]::new())
+  if($bones-ne(Read-Native ($pair[1]+2) 2 0 217907)){
+   throw 'Floater rider animation and model hierarchy disagree'
+  }
+ }
  Write-Output 'PASS native A5 saved rider reload, Floater type-change guard, and rider/callback transitions'
 
  Write-Output 'PASS original Garil entry6 gate006C -> status56 -> mode3/field3 -> FLD_A5.PRG/FNT; no story bits changed; not a live travel test'
