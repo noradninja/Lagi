@@ -82,6 +82,32 @@ try {
   @(0x06030102,0xE600),@(0x0603011A,0x432B))) {
   if((Read-Native $pair[0] 2 0x06006000 58)-ne$pair[1]){throw 'WORLD preparation addressing differs'}
  }
+ # A5 startup chooses a distinct Floater task and reloads the saved rider.
+ # Its previous-type guard owns the later switch to Edge and Gash.
+ foreach($pair in @(
+  @(0x06072F40,0x0607C2D0), @(0x0607C430,0x0604A6BC),
+  @(0x0607C43C,0x0600B444), @(0x0607C444,0x0609FDA4),
+  @(0x0607C448,0x0609FDB4), @(0x0609FDA8,0x0607BA6C),
+  @(0x0607BAF0,0x0600B412), @(0x0607BAF4,0x0600B444),
+  @(0x0607BAF8,0x0607B8F0), @(0x0607BAFC,0x0607BECC)
+ )) {
+  if((Read-Native $pair[0] 4 0x06054000 244678)-ne$pair[1]){
+   throw ('Garil rider transition address differs at {0:X8}'-f$pair[0])
+  }
+ }
+ foreach($pair in @(
+  @(0x0607C2FE,0x84E3), @(0x0607BA84,0x901B), @(0x0607BABE,0x0100),
+  @(0x0607BA88,0x03EE), @(0x0607BA8A,0x3320), @(0x0607BA8C,0x8938),
+  @(0x0607BA9E,0x8808), @(0x0607BAA0,0x892E),
+  @(0x0607BAA6,0xE401), @(0x0607BAAC,0xE402),
+  @(0x0607B96C,0xE406), @(0x0607B972,0xE407)
+ )) {
+  if((Read-Native $pair[0] 2 0x06054000 244678)-ne$pair[1]){
+   throw ('Garil rider transition instruction differs at {0:X8}'-f$pair[0])
+  }
+ }
+ Write-Output 'PASS native A5 saved rider reload, Floater type-change guard, and rider/callback transitions'
+
  Write-Output 'PASS original Garil entry6 gate006C -> status56 -> mode3/field3 -> FLD_A5.PRG/FNT; no story bits changed; not a live travel test'
  Write-Output 'PASS native field/town preparation tables and MAIN060100F2 call sites; file-service semantics remain under recovery'
  Write-Output 'PASS original A5 entry script table and subfield0 location-label script; not an A5 execution or gameplay test'
