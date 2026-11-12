@@ -2559,6 +2559,33 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
    message(FATAL_ERROR "Azel field player reload boundary changed")
   endif()
   string(REPLACE "${field_player_reload_old}" "${field_player_reload_new}" source_text "${source_text}")
+  set(garil_rider_snapshot_anchor [=[    if (gDragonState->mC_dragonType == DR_LEVEL_8_FLOATER)
+    {
+        assert(0);
+    }
+    else
+    {
+        createSubTaskWithArg<s_dragonTaskWorkArea, s32>(pWorkArea, param);
+    }]=])
+  set(garil_rider_snapshot "    if (getFieldTaskPtr()->m2C_currentFieldIndex == 3)
+    {
+        PDS_Log(\"[GarilFieldRiders] sub=%d entry=%d reload=%u dragon=%d saved=%u/%u loaded=%d/%d\\n\",
+            int(getFieldTaskPtr()->m2E_currentSubFieldIndex),
+            int(getFieldTaskPtr()->m30_fieldEntryPoint),
+            unsigned(getFieldTaskPtr()->updateDragonAndRiderOnInit),
+            int(gDragonState->mC_dragonType),
+            unsigned(mainGameState.gameStats.m2_rider1),
+            unsigned(mainGameState.gameStats.m3_rider2),
+            pRider1State ? int(pRider1State->mC_riderType) : -1,
+            pRider2State ? int(pRider2State->mC_riderType) : -1);
+    }
+
+${garil_rider_snapshot_anchor}")
+  string(FIND "${source_text}" "${garil_rider_snapshot_anchor}" garil_rider_snapshot_position)
+  if(garil_rider_snapshot_position LESS 0)
+   message(FATAL_ERROR "Garil rider snapshot boundary changed")
+  endif()
+  string(REPLACE "${garil_rider_snapshot_anchor}" "${garil_rider_snapshot}" source_text "${source_text}")
   if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
    set(source_text "#include \"lagi/garil_script_native.h\"\n#include \"lagi/garil_script_choice.h\"\n${source_text}")
    set(garil_choice_anchor "        case 31: // used for dialog \"do you want to save\"")
