@@ -67,8 +67,20 @@ offset 3) and passes the stored value to MAIN 0600B444 at 0607C2FE.
 MAIN 0600B444 writes the requested value to that same byte and
 dispatches the rider loader. A different A5 path at 0607BAA8 passes
 literal type 2 through this service after its condition at 0607BA9E.
-That path is outside the initial reload. Its ownership and the
-condition leading to it remain to be traced before porting it.
+A5 startup selects the task definition at 0609FDA4 for a Floater
+(dragon type 8) and 0609FDB4 otherwise. The Floater task's update
+pointer is 0607BA6C. Its branch at 0607BA9E checks the live dragon
+type again before invoking the rider setters with types 1 and 2 and
+installing the next callbacks. That assignment belongs to the
+field dragon task. The event that drives it still needs recovery.
+
+Camp's "Crossing the Garil Desert" topic calls 0605A9AD. The full
+conversation sets operand 041B at 0605ABC5 (resolved bit 4385)
+after Gash explains the underground route. Garil's own overlay
+contains voiced dialogue addressing Gash, including the oasis
+line referenced at 060603E8. These anchors identify Camp's topic
+state and a later Garil dialogue scene independently of the
+rider-slot assignment.
 
 ## VDP2 wide-view projection alignment - 2026-11-06
 
