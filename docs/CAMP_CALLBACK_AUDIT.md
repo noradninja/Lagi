@@ -72,7 +72,14 @@ A5 startup selects the task definition at 0609FDA4 for a Floater
 pointer is 0607BA6C. Its branch at 0607BA9E checks the live dragon
 type again before invoking the rider setters with types 1 and 2 and
 installing the next callbacks. That assignment belongs to the
-field dragon task. The event that drives it still needs recovery.
+field dragon task. The entry guard at 0607BA84..0607BA8C compares
+the live dragon type with the task's previous type at offset 0100.
+On a change it caches the live type, calls 0607664E with argument 1,
+then takes the rider 1/2 branch when the live type is 8. The same
+branch installs callbacks 0607B8F0 and 0607BECC. Azel's shared
+field dragon update has the previous-type comparison but asserts
+on Floater at this point. Recovering those A5 callbacks and the
+associated resource transition is required to replace that path.
 
 Camp's "Crossing the Garil Desert" topic calls 0605A9AD. The full
 conversation sets operand 041B at 0605ABC5 (resolved bit 4385)
