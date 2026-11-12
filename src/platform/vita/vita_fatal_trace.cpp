@@ -52,7 +52,7 @@ void report(const char* reason,const char* detail,void* caller,const char* conte
         }
         if(townScriptFaultValid.load(std::memory_order_acquire)) {
             n=std::snprintf(buffer,sizeof(buffer),
-                "[FatalTownScript] saturnEA=%08X opcode=%02X result=%d\\n",
+                "[FatalTownScript] saturnEA=%08X opcode=%02X result=%d\n",
                 townScriptFaultAddress.load(std::memory_order_relaxed),
                 townScriptFaultOpcode.load(std::memory_order_relaxed),
                 townScriptFaultResult.load(std::memory_order_relaxed));
