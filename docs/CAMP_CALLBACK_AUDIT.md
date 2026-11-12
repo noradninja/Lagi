@@ -60,6 +60,20 @@ One original writer of bit 46 is the MAIN status 14 handler at
 06027DEA..06027DF4 (byte 5, mask 02), followed by status 15. Cainus
 arrival status 54 does not itself set that gift prerequisite.
 
+The initial Cainus conversation at 060588A5 contains Gash's request
+for a lift across the desert. It checks operand 041A at 06058911.
+The first conversation sets it at 06058A6C before the Yes/No prompt
+at 06058A78. The result check at 06058A79 sends Yes to 06058A84,
+where Gash offers to navigate, and No to 06058C50. Operand 041A
+therefore records that the introduction played, including on the
+No path. It cannot by itself distinguish consent to take Gash.
+
+The later Paet gift route dispatches EVT008 (14), then battle 15,
+then Camp 5A. COMMON 00212F9E maps battle 15 to overlay 4, sub-battle
+0. The overlay record names BTL_B2.PRG and BTL_B2.FNT. Lagi now
+has the authored exit transitions, while its battle dispatcher
+still lacks BTL_B2.
+
 The Disc 1 WORLD route fixture passes the Garil entry 6 gate through
 status 56, mode 3/field 3 and FLD_A5.PRG/FNT. The A5 structural audit
 decodes 1,457 instructions from the script table with 28 native calls.
