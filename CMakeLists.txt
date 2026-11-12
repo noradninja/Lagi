@@ -5134,7 +5134,7 @@ static s32 lagiCampRandomChoice(s32 limit)
   string(REPLACE "${town_unknown_opcode_old}" "${town_unknown_opcode_new}"
     source_text "${source_text}")
   string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
-    "#include \"lagi/lagi_azel_upstream_prelude.h\"\\nextern \"C\" void lagiSetTownScriptFatalContext(unsigned, unsigned, int);"
+    "#include \"lagi/lagi_azel_upstream_prelude.h\"\nextern \"C\" void lagiSetTownScriptFatalContext(unsigned, unsigned, int);"
     source_text "${source_text}")
   # Saturn MAIN0600D028 loads the signed operand threshold 1000.
   # Town opcodes 15-18 and 20 add 3334 only at or above that threshold
