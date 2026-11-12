@@ -108,6 +108,22 @@ try {
    throw ('Garil rider transition instruction differs at {0:X8}'-f$pair[0])
   }
  }
+ # The Floater draw chooses the first rider's attachment based on rider slot 2.
+ foreach($pair in @(
+  @(0x0607C1E6,0x84A3), @(0x0607C1E8,0x8807), @(0x0607C1EA,0x8F03),
+  @(0x0607C1F0,0xA002), @(0x0607C1F2,0xE500), @(0x0607C1F6,0xE501),
+  @(0x0607C1F8,0xB8CB), @(0x0607C23E,0xE501), @(0x0607C240,0xB8A7)
+ )) {
+  if((Read-Native $pair[0] 2 0x06054000 244678)-ne$pair[1]){
+   throw ('Native Floater rider attachment differs at {0:X8}'-f$pair[0])
+  }
+ }
+ $floaterHotspots=@(0,3,0,4,0,0,0,1,0,0)
+ for($i=0;$i-lt$floaterHotspots.Length;$i++){
+  if((Read-Native (0x0609F9C8+8*40+$i*4) 4 0x06054000 244678)-ne$floaterHotspots[$i]){
+   throw 'Native Floater hotspot table differs'
+  }
+ }
  # Embedded rider hierarchy, weapon, pose and animation slots in KTEI.MCB.
  foreach($pair in @(
   @(0x08,0x5AA8), @(0x0C,0x5B68), @(0xBC,0x597C),
