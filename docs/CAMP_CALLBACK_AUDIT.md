@@ -41,6 +41,25 @@ packaging succeeds. Hardware acceptance remains open for voice, dialogue
 advance, topic selection and menu exit, the gift, recruitment and Gash's
 presence in Garil.
 
+### Disc 1 gift and field handoff
+
+Camp's Gash interaction at 060588A5 reaches the topic menus and returns
+through 06058F21 -> 06058F30. The gift is a separate Camp script. The
+call at 0606034C enters 06058F77, where the script requires NPC state 3,
+operand 002E set, operand 0030 clear and item 006A absent. The scene
+plays the conversation about Paet's missing ship parts, presents item
+006A at 060591D8, adds one at 060591E0 and sets operands 00C4 and 002F
+at 0605930D and 06059310. The caller fades and invokes the town
+termination service at 06060361.
+
+The Disc 1 WORLD route fixture passes the Garil entry 6 gate through
+status 56, mode 3/field 3 and FLD_A5.PRG/FNT. The A5 structural audit
+decodes 1,457 instructions from the script table with 28 native calls.
+Neither check exercises the secondary rider. Azel's A3 battle startup
+assigns rider type 2, and field rendering consumes the saved rider
+value. The original assignment on the Cainus-to-Garil route still
+needs verification before changing rider state.
+
 ## VDP2 wide-view projection alignment - 2026-11-06
 
 User chose to preserve the current wide camera view. The 3D path already
