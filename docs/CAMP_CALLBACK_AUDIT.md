@@ -19,9 +19,10 @@ PCM mixer at 22050 Hz (18000 Hz on Disc 4), while retaining its existing
 create/wait/delete lifecycle. The EPK packet path remains available.
 
 Cainus arrival (status 54) sets story bit 39 (MSB-first byte 4, mask
-01) before requesting Camp (status 55). Camp opcode 17 reads operands
-40 and 39 directly through Lagi's Camp adapter. Azel's generic
-decompiler adds 3334 and therefore displays operand 39 as 3373.
+01) before requesting Camp (status 55). The Saturn town interpreter
+reads operands 40 and 39 directly. Azel's decompiler displays operand 39
+as 3373 because its offset guard is inverted. Lagi's generated interpreter
+now applies the native +3334 only to operands at or above 1000.
 The same arrival handler sets WORLD's Garil gate (bit 108). Camp and
 Garil normally return to WORLD (status 4F), so opening the destination
 and confirming Gash's recruitment are separate checks.

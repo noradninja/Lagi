@@ -4963,53 +4963,20 @@ static s32 lagiCampRandomChoice(s32 limit)
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 2)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townScript.cpp")
-  # MAIN game-status 0x54 (Cainus arrival) writes MSB-first story bit 39.
-  # CAMP entry 1's authored opcode-17 checks operands 40 then 39 before
-  # registering Gash at 0607B660. The upstream generic town-script +3334
-  # mapping targets a different variable bank, so these two story checks
-  # must read the same low-index bits as the native movie transition.
-  # Scope the correction to CAMP and these two operands. Preserve all
-  # other scripted bit mappings and the original Saturn PRG unchanged.
-  set(cainus_story_bit_anchor [=[        case 17:
-        {
-            r14 = getAlignOn2(r14);
-            s16 r4 = readSaturnS16(r14);
-            r14 += 2;
-            if (r4 < 1000)
-            {
-                r4 += 3334;
-            }
+  # Saturn MAIN0600D028 loads the signed operand threshold 1000.
+  # Town opcodes 15-18 and 20 add 3334 only at or above that threshold
+  # (0600D27A, 0600D2BA, 0600D306, 0600D348, 0600D37E).
+  foreach(operand IN ITEMS r4 var0)
+   set(town_bit_guard "if (${operand} < 1000)")
+   string(REGEX MATCHALL "if \\(${operand} < 1000\\)" town_bit_guards "${source_text}")
+   list(LENGTH town_bit_guards town_bit_guard_count)
+   if((operand STREQUAL "r4" AND NOT town_bit_guard_count EQUAL 3) OR
+      (operand STREQUAL "var0" AND NOT town_bit_guard_count EQUAL 2))
+    message(FATAL_ERROR "Town script bit operand boundary changed for ${operand}")
+   endif()
+   string(REPLACE "${town_bit_guard}" "if (${operand} >= 1000)" source_text "${source_text}")
+  endforeach()
 
-            r13_pThis->m118_currentResult = (mainGameState.getBit(r4) != 0);
-            break;
-        }]=])
-  set(cainus_story_bit_corrected [=[        case 17:
-        {
-            r14 = getAlignOn2(r14);
-            s16 r4 = readSaturnS16(r14);
-            r14 += 2;
-            // Native MAIN 0x54 sets story bit 39 directly. CAMP's
-            // getbit(39)/getbit(40) checks must address those story bits.
-            const bool cainusStoryFlag =
-                gCurrentTownOverlay &&
-                gCurrentTownOverlay->m_name == "TWN_CAMP.PRG" &&
-                (r4 == 39 || r4 == 40);
-            if (r4 < 1000 && !cainusStoryFlag)
-            {
-                r4 += 3334;
-            }
-
-            r13_pThis->m118_currentResult = (mainGameState.getBit(r4) != 0);
-            break;
-        }]=])
-  string(FIND "${source_text}" "${cainus_story_bit_anchor}" cainus_story_bit_found)
-  if(cainus_story_bit_found LESS 0)
-    message(FATAL_ERROR "Cainus CAMP story flag read boundary changed")
-  endif()
-  string(REPLACE "${cainus_story_bit_anchor}" "${cainus_story_bit_corrected}"
-    source_text "${source_text}")
-
-  # Opcode 21's dispatch bound is the byte following the opcode (arg).
   # Upstream incorrectly reads the high byte of the first Saturn EA in the
   # switch table. TWN_CAMP.PRG 06057FA1 declares 9 entries; its first target
   # begins with 0x06, incorrectly excluding camp entries 6, 7, and 8.
