@@ -1266,6 +1266,10 @@ void lagiPauseCutscenePCM(const void* owner,bool paused)
 {
     if(g_cutscenePCMOwner==owner)g_cutscenePCM.pause(paused);
 }
+unsigned lagiCutscenePCMQueued(const void* owner)
+{
+    return g_cutscenePCMOwner==owner ? g_cutscenePCM.queued() : 0u;
+}
 
 extern "C" void lagi_audio_stop_worker_for_shutdown() {
     if (g_audioWorkerThread >= 0) {

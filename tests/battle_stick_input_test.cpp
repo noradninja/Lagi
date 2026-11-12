@@ -2,18 +2,17 @@
 #include <cassert>
 #include <cstdio>
 int main() {
-    using lagi::input_bridge::battle_stick_directions;
-    assert(battle_stick_directions(1,1,false)==0);
-    assert(battle_stick_directions(0,0,true)==0);
-    assert(battle_stick_directions(.48f,-.48f,true)==0);
-    assert(battle_stick_directions(-1,0,true)==0x40);
-    assert(battle_stick_directions(1,0,true)==0x80);
-    assert(battle_stick_directions(0,-1,true)==0x10);
-    assert(battle_stick_directions(0,1,true)==0x20);
-    assert(battle_stick_directions(1,-1,true)==0x90);
+    using lagi::input_bridge::stick_directions;
+    assert(stick_directions(0,0)==0);
+    assert(stick_directions(.48f,-.48f)==0);
+    assert(stick_directions(-1,0)==0x40);
+    assert(stick_directions(1,0)==0x80);
+    assert(stick_directions(0,-1)==0x10);
+    assert(stick_directions(0,1)==0x20);
+    assert(stick_directions(1,-1)==0x90);
     unsigned short previous=0x80;
-    unsigned short combined=0x80|battle_stick_directions(1,0,true);
+    unsigned short combined=0x80|stick_directions(1,0);
     assert((combined & ~previous)==0); // D-pad/stick handoff stays held.
-    assert((battle_stick_directions(-1,0,true)&~previous)==0x40);
-    std::puts("Battle stick direction checks PASS");
+    assert((stick_directions(-1,0)&~previous)==0x40);
+    std::puts("Shared stick direction checks PASS");
 }

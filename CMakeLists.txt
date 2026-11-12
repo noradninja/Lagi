@@ -4203,6 +4203,130 @@ GfsHn GFS_Open(const std::string& name)
 }]=]
    source_text "${source_text}")
 
+  # Town dialogue voice files are headerless, big-endian, mono 16-bit PCM.
+  # They use the same 22.05 kHz rate as Azel's battle voice task (18 kHz on
+  # Disc 4). Keep the authored town task and wait/delete lifecycle, but mark
+  # these streams so Draw feeds raw samples instead of interpreting them as
+  # EPK command packets.
+  set(town_raw_pcm_open [=[    if (!pThis->m0)
+    {
+        lagi::platform::logging::writef(
+            "[AzelCutscene] open failed: %s\n", streamFileName.c_str());
+        pThis->m4.m28.m0 = -1;
+        pThis->m0 = &pThis->m4;
+    }]=])
+  set(town_raw_pcm_open_marked [=[    if (!pThis->m0)
+    {
+        lagi::platform::logging::writef(
+            "[AzelCutscene] open failed: %s\n", streamFileName.c_str());
+        pThis->m4.m28.m0 = -1;
+        pThis->m0 = &pThis->m4;
+    }
+    else if (streamFileName.size() >= 4 &&
+             streamFileName.compare(streamFileName.size() - 4, 4, ".PCM") == 0)
+    {
+        auto* metadata = reinterpret_cast<sPCMStreamMetadata*>(
+            pThis->m1D4 + 0x20000);
+        *metadata = sPCMStreamMetadata{};
+        const u32 sampleRate = azelCdNumber == 3 ? 18000u : 22050u;
+        metadata->m0_headerSize = 0;
+        metadata->m4_channels = 1;
+        metadata->m5_bitDepth = 16;
+        metadata->m8_sampleRateFP = sampleRate << 16;
+        metadata->mC_frameRate = 60;
+        metadata->m10_totalFrames = static_cast<u32>(
+            (static_cast<u64>(pThis->m0->m198.m18_fileSize / 2u) * 60u) /
+            sampleRate);
+        pThis->m0->m194 = metadata;
+        pThis->m0->m28.m60 = sampleRate;
+        pThis->m0->m28.m70 = pThis->m0->m198.m18_fileSize / 2u;
+        lagi::platform::logging::writef(
+            "[TownPCM] raw file=%s rate=%u samples=%u frames=%u\n",
+            streamFileName.c_str(), sampleRate, pThis->m0->m28.m70,
+            metadata->m10_totalFrames);
+    }]=])
+  string(FIND "${source_text}" "${town_raw_pcm_open}" town_raw_pcm_open_found)
+  if(town_raw_pcm_open_found LESS 0)
+   message(FATAL_ERROR "Town raw PCM open boundary changed")
+  endif()
+  string(REPLACE "${town_raw_pcm_open}" "${town_raw_pcm_open_marked}"
+   source_text "${source_text}")
+
+  set(town_cutscene_draw_anchor
+   "void sCutsceneTask::cutsceneDrawSub0(sCutsceneTask* pThis, s32 r5)")
+  string(FIND "${source_text}" "${town_cutscene_draw_anchor}" town_pcm_draw_found)
+  if(town_pcm_draw_found LESS 0)
+   message(FATAL_ERROR "Town raw PCM draw boundary changed")
+  endif()
+  string(REPLACE "${town_cutscene_draw_anchor}" [=[static bool lagiIsRawTownPCM(const sStreamingFile* stream)
+{
+    return stream && stream->m194 ==
+        reinterpret_cast<const sPCMStreamMetadata*>(stream->m18_audioBuffer);
+}
+
+static void lagiUpdateRawTownPCM(sStreamingFile* stream)
+{
+    if (!stream || stream->m28.m0 < 0 || stream->m28.m0 == 5)
+        return;
+
+    updateStreamingFileRead(stream);
+    if (stream->m28.m0 == 2)
+        stream->m28.m0 = 3;
+
+    const u32 readableEnd = std::min(
+        stream->m28.m24_currentPositionInFile,
+        static_cast<u32>(stream->m198.m18_fileSize));
+    u32 available = readableEnd > stream->m28.m28
+        ? readableEnd - stream->m28.m28 : 0u;
+    available &= ~1u;
+    if (available)
+    {
+        const u32 bytes = std::min<u32>(available, 0x4000u);
+        const auto* read = stream->m28.m34_pBufferRead;
+        const auto* boundary = stream->m28.m38;
+        const std::size_t contiguous = std::min<std::size_t>(
+            bytes, static_cast<std::size_t>(boundary - read));
+        const int result = lagiSubmitCutscenePCM(
+            stream, read, bytes, stream->m28.m60, 1, 16,
+            stream->m28.m3C, contiguous);
+        if (result == 0)
+        {
+            executeCutsceneCommandsSub0Sub0(stream, bytes);
+            stream->m28.m84_frameIndex = static_cast<u32>(
+                (static_cast<u64>(stream->m28.m28 / 2u) * 60u) /
+                stream->m28.m60);
+        }
+        else if (result == -2)
+        {
+            lagi::platform::logging::writef(
+                "[TownPCM] invalid raw stream consumed=%u bytes=%u\n",
+                stream->m28.m28, bytes);
+            stream->m28.m0 = -1;
+        }
+    }
+
+    if (stream->m28.m28 >= stream->m198.m18_fileSize &&
+        lagiCutscenePCMQueued(stream) == 0)
+    {
+        stream->m28.m84_frameIndex = stream->m194->m10_totalFrames;
+        stream->m28.m0 = 5;
+    }
+}
+
+void sCutsceneTask::cutsceneDrawSub0(sCutsceneTask* pThis, s32 r5)]=]
+   source_text "${source_text}")
+  string(REPLACE
+   "    updateCutsceneStreaming(pThis->m0);"
+   [=[    if (lagiIsRawTownPCM(pThis->m0))
+        lagiUpdateRawTownPCM(pThis->m0);
+    else
+        updateCutsceneStreaming(pThis->m0);]=]
+   source_text "${source_text}")
+  if(NOT source_text MATCHES "TownPCM.*raw file" OR
+     NOT source_text MATCHES "lagiUpdateRawTownPCM")
+   message(FATAL_ERROR "Town raw PCM bridge did not apply")
+  endif()
+
   # Generic close/completion path. Every town script already waits on state 5.
   string(REPLACE
    [=[void updateStreamingFileReadSub0(sStreamingFile* iParm1)
@@ -4896,6 +5020,62 @@ static s32 lagiCampRandomChoice(s32 limit)
   endif()
   string(REPLACE "${camp_switch_bad}" "r13_pThis->m118_currentResult < arg"
    source_text "${source_text}")
+  # Native callbacks may touch the active script owner. Preserve the authored
+  # bytecode continuation before dispatch instead of recomputing it from a
+  # caller-local argument count after the callback returns. The matching Vita
+  # dump changed argc 2 to 0 across 06070268, which shortened the call by 8
+  # bytes and resumed inside its operands.
+  set(town_native_return_old [=[    sSaturnPtr functionEA = readSaturnEA(r14);
+
+    switch (numArguments)]=])
+  set(town_native_return_new [=[    sSaturnPtr functionEA = readSaturnEA(r14);
+    const sSaturnPtr authoredNext = r14 + (numArguments + 1) * 4;
+
+    switch (numArguments)]=])
+  string(FIND "${source_text}" "${town_native_return_old}" town_native_return_found)
+  if(town_native_return_found LESS 0)
+   message(FATAL_ERROR "Town native-call return boundary changed")
+  endif()
+  string(REPLACE "${town_native_return_old}" "${town_native_return_new}"
+   source_text "${source_text}")
+  string(REPLACE "    return r14 + (numArguments + 1) * 4;"
+   "    return authoredNext;" source_text "${source_text}")
+  # A matching Vita core resumed Camp's two-argument 06070268 call at
+  # 06058F28 (its first argument) instead of the authored next opcode at
+  # 06058F30. Compute the bytecode cursor before native dispatch and enforce
+  # it afterward. This is output-preserving for every valid call and prevents
+  # native service work from changing interpreter control flow.
+  set(town_native_cursor_old [=[        case 7: //callNative
+            r14 = callNativeWithArguments(r13_pThis, r14);
+
+            // hack: this isn't in the original assembly, but allow returning null for unhandled functions and just stopping the script
+            //if (r14.isNull())
+            //    return r14;
+            break;]=])
+  set(town_native_cursor_new [=[        case 7: //callNative
+        {
+            const sSaturnPtr callStart = r14;
+            const u8 argumentCount = readSaturnU8(callStart);
+            const sSaturnPtr functionAndArguments = getAlignOn4(callStart + 1);
+            const sSaturnPtr authoredNext =
+                functionAndArguments + (argumentCount + 1) * 4;
+            const sSaturnPtr dispatcherNext =
+                callNativeWithArguments(r13_pThis, callStart);
+            if (dispatcherNext != authoredNext)
+            {
+                PDS_Log("[TownScriptCursor] call=%08X argc=%u returned=%08X authored=%08X\n",
+                    callStart.m_offset - 1, unsigned(argumentCount),
+                    dispatcherNext.m_offset, authoredNext.m_offset);
+            }
+            r14 = authoredNext;
+            break;
+        }]=])
+  string(FIND "${source_text}" "${town_native_cursor_old}" town_native_cursor_found)
+  if(town_native_cursor_found LESS 0)
+   message(FATAL_ERROR "Town native-call cursor boundary changed")
+  endif()
+  string(REPLACE "${town_native_cursor_old}" "${town_native_cursor_new}"
+   source_text "${source_text}")
   string(REPLACE "#include \"lagi/lagi_azel_upstream_prelude.h\""
    "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"kernel/moduleManager.h\"\n#include \"lagi/town_yes_no.h\""
    source_text "${source_text}")
@@ -4946,6 +5126,16 @@ sKernelScriptFunctions gKernelScriptFunctions =]=]
   if(NOT source_text MATCHES "return npcData0.m70_npcPointerArray\\[r4\\].workArea;")
    message(FATAL_ERROR "Native town task lookup adapter did not apply")
   endif()
+  # Dialogue advancement is physically Saturn B/C regardless of a stale or
+  # legacy saved action table. Retain any configured action masks as well.
+  set(town_dialog_confirm_old [=[(graphicEngineStatus.m4514.mD8_buttonConfig[0][1] | graphicEngineStatus.m4514.mD8_buttonConfig[0][2])]=])
+  set(town_dialog_confirm_new [=[(graphicEngineStatus.m4514.mD8_buttonConfig[0][1] | graphicEngineStatus.m4514.mD8_buttonConfig[0][2] | 0x0006u)]=])
+  string(FIND "${source_text}" "${town_dialog_confirm_old}" town_dialog_confirm_found)
+  if(town_dialog_confirm_found LESS 0)
+   message(FATAL_ERROR "Town dialogue confirm-mask boundary changed")
+  endif()
+  string(REPLACE "${town_dialog_confirm_old}" "${town_dialog_confirm_new}"
+   source_text "${source_text}")
   string(REPLACE
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 6)"
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"

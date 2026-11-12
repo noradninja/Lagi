@@ -1,5 +1,38 @@
 # Camp callback audit — 2026-11-05
 
+## Gash dialogue checkpoint — 2026-11-12
+
+The matching Vita dump places the menu-exit fault at script cursor `06058F28`,
+inside the two-argument native call at `06058F21`; its authored continuation
+is `06058F30`. The native-call helper now computes the continuation before
+invoking the callback. Opcode 7 also checks the helper's returned cursor
+against the bytecode size and resumes at the authored next opcode.
+
+Physical Vita buttons retain Square=A, Cross=B, Circle=C, Triangle=Y,
+L1=L, R1=R and Start=Start. The left stick supplies D-pad bits in all game
+modes; the D-pad supplies analog axes where the physical stick is neutral.
+Town dialogue accepts physical B/C in addition to configured action masks.
+
+Original Disc 1 Camp voice files are headerless signed big-endian 16-bit
+mono PCM. The town cutscene task now routes `.PCM` through Lagi's streamed
+PCM mixer at 22050 Hz (18000 Hz on Disc 4), while retaining its existing
+create/wait/delete lifecycle. The EPK packet path remains available.
+
+Static story anchors: Camp entry 1 reads story bits 40 and 39 and registers
+Gash for `bit39 && !bit40`. Gash's `0607B660` record uses resource 36
+(`Z_A_GS.MCB`), NPC definition `06080148` and interaction script `060588A5`.
+The original PRG has a receive-item instruction at `060591D8` followed by
+an add-item instruction at `060591E0`, both for item `006A` count 1. Their
+runtime reachability and the later recruitment dialogue still need device
+confirmation. The existing A3 battle startup assigns secondary rider type 2,
+which the rider loaders consume; the Garil startup trace observes that value.
+No story flag or item was injected by this checkpoint.
+
+Camp task, PCM, EPK and stick fixtures pass, and Vita ELF/VELF/SELF/VPK
+packaging succeeds. Hardware acceptance remains open for voice, dialogue
+advance, topic selection and menu exit, the gift, recruitment and Gash's
+presence in Garil.
+
 ## VDP2 wide-view projection alignment - 2026-11-06
 
 User chose to preserve the current wide camera view. The 3D path already
