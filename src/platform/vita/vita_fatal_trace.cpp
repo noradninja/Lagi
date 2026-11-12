@@ -18,6 +18,12 @@ extern "C" [[noreturn]] void __wrap_abort();
 namespace {
 std::atomic_flag reporting=ATOMIC_FLAG_INIT;
 std::atomic<const char*> stage{"before E011 startup"};
+std::atomic<bool> townNativeValid{false};
+std::atomic<unsigned> townNativeOpcode{0};
+std::atomic<unsigned> townNativeAddress{0};
+std::atomic<unsigned> townNativeArgc{0};
+std::atomic<unsigned> townNativeDispatcherNext{0};
+std::atomic<unsigned> townNativeAuthoredNext{0};
 std::atomic<bool> townScriptFaultValid{false};
 std::atomic<unsigned> townScriptFaultAddress{0};
 std::atomic<unsigned> townScriptFaultOpcode{0};
@@ -50,6 +56,16 @@ void report(const char* reason,const char* detail,void* caller,const char* conte
             n=std::snprintf(buffer,sizeof(buffer),"[FatalAssert] %.480s\n",context);
             if(n>0)sceIoWrite(fd,buffer,n<int(sizeof(buffer))?n:int(sizeof(buffer))-1);
         }
+        if(townNativeValid.load(std::memory_order_acquire)) {
+            n=std::snprintf(buffer,sizeof(buffer),
+                "[FatalTownNative] opcode=%u at=%08X argc=%u returned=%08X authored=%08X\n",
+                townNativeOpcode.load(std::memory_order_relaxed),
+                townNativeAddress.load(std::memory_order_relaxed),
+                townNativeArgc.load(std::memory_order_relaxed),
+                townNativeDispatcherNext.load(std::memory_order_relaxed),
+                townNativeAuthoredNext.load(std::memory_order_relaxed));
+            if(n>0)sceIoWrite(fd,buffer,n<int(sizeof(buffer))?n:int(sizeof(buffer))-1);
+        }
         if(townScriptFaultValid.load(std::memory_order_acquire)) {
             n=std::snprintf(buffer,sizeof(buffer),
                 "[FatalTownScript] saturnEA=%08X opcode=%02X result=%d\n",
@@ -75,6 +91,16 @@ void report(const char* reason,const char* detail,void* caller,const char* conte
 }
 
 extern "C" void lagiSetE011FatalStage(const char* value) { stage.store(value,std::memory_order_relaxed); }
+extern "C" void lagiSetTownScriptNativeContext(unsigned opcode,unsigned address,
+    unsigned argc,unsigned returned,unsigned authored)
+{
+    townNativeOpcode.store(opcode,std::memory_order_relaxed);
+    townNativeAddress.store(address,std::memory_order_relaxed);
+    townNativeArgc.store(argc,std::memory_order_relaxed);
+    townNativeDispatcherNext.store(returned,std::memory_order_relaxed);
+    townNativeAuthoredNext.store(authored,std::memory_order_relaxed);
+    townNativeValid.store(true,std::memory_order_release);
+}
 extern "C" void lagiSetTownScriptFatalContext(unsigned address,unsigned opcode,int result)
 {
     townScriptFaultAddress.store(address,std::memory_order_relaxed);
