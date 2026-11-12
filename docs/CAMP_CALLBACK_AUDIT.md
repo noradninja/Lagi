@@ -53,6 +53,13 @@ plays the conversation about Paet's missing ship parts, presents item
 at 0605930D and 06059310. The caller fades and invokes the town
 termination service at 06060361.
 
+Camp entry 3 checks the same story pair as the gift (bit 48 clear,
+bit 46 set) at 0605814E and 0605815C before registering NPC record
+0607B6B4. This is a separate registration from entry 1's 0607B660.
+One original writer of bit 46 is the MAIN status 14 handler at
+06027DEA..06027DF4 (byte 5, mask 02), followed by status 15. Cainus
+arrival status 54 does not itself set that gift prerequisite.
+
 The Disc 1 WORLD route fixture passes the Garil entry 6 gate through
 status 56, mode 3/field 3 and FLD_A5.PRG/FNT. The A5 structural audit
 decodes 1,457 instructions from the script table with 28 native calls.
@@ -78,8 +85,12 @@ On a change it caches the live type, calls 0607664E with argument 1,
 then takes the rider 1/2 branch when the live type is 8. The same
 branch installs callbacks 0607B8F0 and 0607BECC. Azel's shared
 field dragon update has the previous-type comparison but asserts
-on Floater at this point. Recovering those A5 callbacks and the
-associated resource transition is required to replace that path.
+on Floater at this point. The call at 0607664E routes to 06075E04, which clamps the laser
+count to 1..16, matching Lagi's dragonFieldTaskUpdateSub2 service.
+The new update and draw pointers are written relative to the task
+header at work area minus E8. The update at 0607B8F0 can restore
+riders 6/7 and the original Floater update/draw pair. The task
+callback bodies still need to be ported.
 
 Camp's "Crossing the Garil Desert" topic calls 0605A9AD. The full
 conversation sets operand 041B at 0605ABC5 (resolved bit 4385)
