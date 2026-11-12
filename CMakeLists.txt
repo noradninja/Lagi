@@ -2251,6 +2251,37 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_tutorial_panel.inc" tutorial_panel_native)
   string(REPLACE "${tutorial_panel_old}" "${tutorial_panel_native}\n" source_text "${source_text}")
 
+ elseif(relative_path STREQUAL "dragonRider.cpp")
+  # MAIN0600B09C and 0600B188 point rider types 6/7 at the loaded dragon
+  # bundle (native destination 00220EA4), with animation slots E0/124.
+  set(rider_bundle_anchor [=[    else
+    {
+        assert(0);
+    }
+
+    s_fileBundle* pBundle = pLoadRiderWorkArea->m0_riderBundle;]=])
+  set(rider_bundle_replacement [=[    else
+    {
+        pLoadRiderWorkArea->m0_riderBundle = gDragonState->m0_pDragonModelBundle;
+        pAnimation = pLoadRiderWorkArea->m0_riderBundle->getAnimation(riderType == 6 ? 0xE0 : 0x124);
+    }
+
+    s_fileBundle* pBundle = pLoadRiderWorkArea->m0_riderBundle;]=])
+  string(FIND "${source_text}" "${rider_bundle_anchor}" rider_bundle_position)
+  if(rider_bundle_position LESS 0)
+   message(FATAL_ERROR "Azel embedded rider bundle boundary changed")
+  endif()
+  string(REPLACE "${rider_bundle_anchor}" "${rider_bundle_replacement}" source_text "${source_text}")
+  # The primary loader writes the embedded weapon model in the branch delay slot.
+  string(REPLACE
+   "    pRider1State = pLoadRiderWorkArea;"
+   "    pLoadRiderWorkArea->m14_weaponModelIndex = riderType >= 6 ? 0xBC : 0;\n    pRider1State = pLoadRiderWorkArea;"
+   source_text "${source_text}")
+  # COMMON rider definition 6 uses hotpoints at 00202F00.
+  string(REPLACE
+   "    gRiderTable[1].m_pExtraData = readRiderDefinitionSub(gCommonFile->getSaturnPtr(0x2020fc));"
+   "    gRiderTable[1].m_pExtraData = readRiderDefinitionSub(gCommonFile->getSaturnPtr(0x2020fc));\n    gRiderTable[6].m_pExtraData = readRiderDefinitionSub(gCommonFile->getSaturnPtr(0x202f00));"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldDragon.cpp")
   set(map_exploration_old [=[static void fieldTerrainCallback(s32 subFieldIndex, sVec3_FP* pPos, sVec3_FP* pAngle)
 {
