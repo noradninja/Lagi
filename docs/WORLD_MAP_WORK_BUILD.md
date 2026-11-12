@@ -1,5 +1,78 @@
 # WORLD/Garil work-machine build — 2026-11-05
 
+## Current work-machine resume — 2026-11-12
+
+Use branch `diagnostics/garil-cliff-current`. The Gash dialogue checkpoint is
+commit `608244f38485ab660f143e94efbfb17c12d0c829`; the documentation update
+commit immediately after it is the branch tip to pull. The older
+`feature/light-state-index` commands below describe a historical checkpoint,
+not this one. `docs/CAMP_CALLBACK_AUDIT.md` records the crash, input, raw PCM
+and story-data findings.
+
+On the work machine, preserve any tracked edits before switching or pulling:
+
+```powershell
+Set-Location C:\Dev\Lagi
+git status --short
+if (git status --porcelain --untracked-files=no) {
+    throw 'Tracked edits exist; preserve or reconcile them before pulling.'
+}
+git fetch origin
+if ($LASTEXITCODE) { throw 'Fetch failed' }
+git switch diagnostics/garil-cliff-current
+if ($LASTEXITCODE) { throw 'Branch switch failed' }
+git pull --ff-only origin diagnostics/garil-cliff-current
+if ($LASTEXITCODE) { throw 'Pull failed; do not reset the checkout' }
+git -c core.longpaths=true submodule update --init --recursive
+if ($LASTEXITCODE) { throw 'Submodule update failed' }
+git rev-parse HEAD
+```
+
+Use a new build directory and the current comparison settings. The successful
+2026-11-11 Vita cache had Release, full resolution, native A3, WORLD, VDP2
+sprite composite, RBG decoded pages/coefficient rows, stochastic filter,
+dither lookup, Azel probe and ruins trim ON; GPU pass timing and battle link
+audit OFF. It had both Neptune and render bridge optimization ON. Keep that
+combination for this checkpoint; the older profile table below pins render
+bridge optimization OFF and is not the matching build.
+
+```powershell
+$env:VITASDK = 'C:\Dev\VitaSDK'
+$env:PSP2CGC = 'C:\Dev\sdk\host_tools\bin\psp2cgc.exe'
+$env:PATH = "$env:VITASDK\bin;$env:PATH"
+$gashBuild = 'build/gash-dialog-20261112'
+cmake -S . -B $gashBuild -G Ninja `
+    -DCMAKE_BUILD_TYPE=Release `
+    -DLAGI_FULLRES=ON -DLAGI_BATTLE_NATIVE_BUILD=ON `
+    -DLAGI_BATTLE_EXECUTE_A3=ON -DLAGI_WORLD_MAP_BRINGUP=ON `
+    -DLAGI_VDP2_SPRITE_COMPOSITE=ON -DLAGI_RBG_DECODED_PAGES=ON `
+    -DLAGI_RBG_COEFFICIENT_ROWS=ON -DLAGI_STOCHASTIC_FILTER=ON `
+    -DLAGI_DITHER_LOOKUP=ON -DLAGI_OPTIMIZE_NEPTUNE=ON `
+    -DLAGI_OPTIMIZE_RENDER_BRIDGE=ON -DLAGI_AZEL_PROBE=ON `
+    -DLAGI_AZEL_RUINS_LINK_TRIM=ON -DLAGI_GPU_PASS_TIMING=OFF `
+    -DLAGI_BATTLE_LINK_AUDIT=OFF
+if ($LASTEXITCODE) { throw 'Configure failed' }
+cmake --build $gashBuild --target Lagi.vpk --parallel 8
+if ($LASTEXITCODE) { throw 'Build/package failed' }
+$gashRevision = (git rev-parse --short=12 HEAD).Trim()
+$gashArchive = Join-Path 'build/hardware' $gashRevision
+New-Item -ItemType Directory -Force -Path $gashArchive | Out-Null
+Copy-Item -LiteralPath "$gashBuild/Lagi.vpk", "$gashBuild/lagi.velf", "$gashBuild/lagi" -Destination $gashArchive
+Get-FileHash -LiteralPath "$gashArchive/Lagi.vpk" -Algorithm SHA256
+```
+
+The already built checkpoint VPK on the source machine has SHA256
+`CF50B47B33033C1CC0D81A50962E794A2874CAAFB5EC7399CBCD70342B829699`.
+The work-machine package may differ byte for byte due to SDK or packaging
+details; archive its own VPK, VELF and unstripped `lagi` together.
+
+One Vita capture should approach Gash, hear his voice, advance dialogue with
+Cross and Circle, navigate topics with both D-pad and left stick, select a
+topic and exit without a crash. Continue the authored gift/recruitment route
+into Garil if reachable, and retain the matching log and any dump. A full
+Vita runtime pass has not yet been observed for this checkpoint. Do not set
+story bits or skip dialogue to reach Gash.
+
 Branch: `feature/light-state-index`. Read `WORLD_MAP_HANDOFF.md` for native
 pipeline changes and acceptance limits. This is still bring-up, not a claim
 that camp/Garil progression or the 33 ms deadline passes on hardware.
