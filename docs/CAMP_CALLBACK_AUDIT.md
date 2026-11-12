@@ -85,7 +85,13 @@ constructor. Its init, update and draw callbacks are 06054374,
 0605415C and 060547E8. The formation factory passes 060A482C
 to the battle task allocator at 060312EE. That task has update
 06054CF2 and cleanup 06054DA2. Both task definitions are now pinned
-to the disc. Their implementations remain unported.
+to the disc. B2's map uses the same five files and VRAM destinations
+as the existing A7_2 environment: FNS_A7_2.SCB at 10000,
+FNS_A7_2.PNB at 1F000, FRS_A7_2.SCB at 40000, FRS_A7_2.PNB
+at 60000 and SPACE.PNB at 64000. B2 supplies its own map init,
+update and draw callbacks and layer/rotation data. The file
+transfers can reuse the existing loader, while the rest of
+the map task still needs a B2 implementation.
 
 The Disc 1 WORLD route fixture passes the Garil entry 6 gate through
 status 56, mode 3/field 3 and FLD_A5.PRG/FNT. The A5 structural audit
