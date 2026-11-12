@@ -39,6 +39,16 @@ try {
         (Read-Native 239428 0x06054000 0x06060354 20) -ne '07-01-00-09-06-07-1E-20-00-00-00-1E-20-07-00-09-06-03-01-1E') {
         throw 'Camp setup 3 or departure fade and termination differ'
     }
+    $giftGuards = @(
+        '07-00-09-00-09-06-00-CD-D4-08-09-00-03-05-09-00-09-06-05-93-38',
+        '11-09-00-2E-08-09-00-01-05-09-00-09-06-05-93-38',
+        '11-09-00-30-08-09-00-00-05-09-00-09-06-05-93-38',
+        '29-09-00-6A-08-09-00-00-05-09-00-09-06-05-93-38'
+    ) -join '-'
+    if ((Read-Native 239428 0x06054000 0x06058F77 69) -ne $giftGuards -or
+        (Read-Native 239428 0x06054000 0x06059338 1) -ne '01') {
+        throw 'Gift setup, story or inventory guard differs'
+    }
     if ((Read-Native 239428 0x06054000 0x060591D8 12) -ne '30-09-00-3C-00-6A-00-01-2B-01-00-6A' -or
         (Read-Native 239428 0x06054000 0x0605930D 7) -ne '0F-00-C4-0F-09-00-2F') {
         throw 'Gash gift inventory or story operands differ'
