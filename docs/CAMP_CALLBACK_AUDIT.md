@@ -18,6 +18,14 @@ mono PCM. The town cutscene task now routes `.PCM` through Lagi's streamed
 PCM mixer at 22050 Hz (18000 Hz on Disc 4), while retaining its existing
 create/wait/delete lifecycle. The EPK packet path remains available.
 
+Cainus arrival (status 54) sets story bit 39 (MSB-first byte 4, mask
+01) before requesting Camp (status 55). Camp opcode 17 reads operands
+40 and 39 directly through Lagi's Camp adapter. Azel's generic
+decompiler adds 3334 and therefore displays operand 39 as 3373.
+The same arrival handler sets WORLD's Garil gate (bit 108). Camp and
+Garil normally return to WORLD (status 4F), so opening the destination
+and confirming Gash's recruitment are separate checks.
+
 Static story anchors: Camp entry 1 reads story bits 40 and 39 and registers
 Gash for `bit39 && !bit40`. Gash's `0607B660` record uses resource 36
 (`Z_A_GS.MCB`), NPC definition `06080148` and interaction script `060588A5`.
