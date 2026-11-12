@@ -39,6 +39,11 @@ try {
         (Read-Native 239428 0x06054000 0x06060354 20) -ne '07-01-00-09-06-07-1E-20-00-00-00-1E-20-07-00-09-06-03-01-1E') {
         throw 'Camp setup 3 or departure fade and termination differ'
     }
+    # COMMON item 006A supplies the actual received-item and inventory label.
+    if ((Read-Native 182 0x00200000 (0x0020C3F4 + 12*0x6A + 4) 4) -ne '00-20-D2-34' -or
+        (Read-Native 182 0x00200000 0x0020D234 11) -ne '53-68-69-70-20-50-61-72-74-73-00') {
+        throw 'Gift item 006A is no longer labeled Ship Parts'
+    }
     $giftGuards = @(
         '07-00-09-00-09-06-00-CD-D4-08-09-00-03-05-09-00-09-06-05-93-38',
         '11-09-00-2E-08-09-00-01-05-09-00-09-06-05-93-38',

@@ -52,7 +52,7 @@ whose first entry is the departure script 06060295. The gift runs
 during departure, before the fade and town termination. The script
 requires NPC state 3,
 operand 002E set, operand 0030 clear and item 006A absent. The scene
-plays the conversation about Paet's missing ship parts, presents item
+plays the conversation about Paet's missing ship parts, presents Ship Parts, item
 006A at 060591D8, adds one at 060591E0 and sets operands 00C4 and 002F
 at 0605930D and 06059310. The caller fades and invokes the town
 termination service at 06060361.
