@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+constexpr int DR_LEVEL_0_BASIC_WING = 0;
 constexpr int DR_LEVEL_2_STRIPE_WING = 2;
 struct GameState {
     struct { int m1_dragonLevel = 0; } gameStats;
@@ -27,6 +28,11 @@ int main(){
     pending=0x4F;calls=0;
     assert(exitStatus(0x14)==0);
     assert(pending==0x4F && calls==1 && dragonChanges==1);
+    pending=calls=0;
+    expectedGiftFlags[11]|=0x10;
+    assert(exitStatus(0x15)==0);
+    assert(pending==0x5A && calls==1 && mainGameState.bitField==expectedGiftFlags);
+    assert(dragonChanges==2 && mainGameState.gameStats.m1_dragonLevel==0);
     for(unsigned value=0;value<256;++value){
         for(unsigned i=0;i<32;++i)mainGameState.bitField[i]=std::uint8_t(value+i*7);
         // Start with Garil locked, regardless of the surrounding byte pattern.
@@ -45,7 +51,7 @@ int main(){
         }
     }
     pending=0x4F;calls=0;exitStatus(0x54);assert(pending==0x4F && calls==1);
-    for(int status : {0x55,0x56})
+    for(int status : {0x55,0x56,0x5A})
         for(unsigned value=0;value<256;++value){
             for(unsigned i=0;i<32;++i)mainGameState.bitField[i]=std::uint8_t(value+i*7);
             const auto before=mainGameState.bitField;

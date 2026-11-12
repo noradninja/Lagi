@@ -8,6 +8,16 @@
         }
         return 0;
 
+    case 0x15: // battle preceding the Camp gift
+        // MAIN 06027DFE records the battle and requests Camp setup 3.
+        mainGameState.setBit(11 * 8 + 3);
+        setNextGameStatus(0x5A);
+        if (mainGameState.gameStats.m1_dragonLevel != DR_LEVEL_0_BASIC_WING)
+        {
+            updateDragonIfCursorChanged(DR_LEVEL_0_BASIC_WING);
+        }
+        return 0;
+
     case 0x54: // WORLD's Village of Cainus arrival movie
         // MAIN 06027AA4's slot54 resolves to06027C7A. The native handler
         // updates these MSB-first story bits, then requests55/TWN_CAMP.
@@ -19,7 +29,8 @@
         break;
     case 0x55: // Cainus camp
     case 0x56: // Garil Desert
-        // Both native jump-table slots resolve to MAIN060283F0: request
+    case 0x5A: // Camp gift setup
+        // These native jump-table slots resolve to MAIN060283F0: request
         // WORLD4F without story mutations. setNextGameStatus retains any
         // already pending authored destination, just like MAIN06027110.
         setNextGameStatus(0x4F);

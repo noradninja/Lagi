@@ -19,9 +19,25 @@ try{
     (Read-Native 58 0x6006000 0x6027E9C 4)-ne0x06042F1A-or
     (Read-Native 58 0x6006000 0x6042F1A 1)-ne0x02){throw 'Native status14 gift bit differs'}
 
+ $battleSlot=Read-Native 58 0x6006000 (0x6027AAC+(0x15-1)*2) 2
+ if(0x6027AA8+$battleSlot-ne0x6027DFE){throw 'Native status15 switch target differs'}
+ foreach($word in @(
+  @(0x6027DFE,0xD31A), @(0x6027E00,0xD227), @(0x6027E06,0x201B),
+  @(0x6027E08,0x2300), @(0x6027E0A,0xB981), @(0x6027E0C,0xE45A),
+  @(0x6027E0E,0xA1FF), @(0x6027E10,0xE300)
+ )){
+  if((Read-Native 58 0x6006000 $word[0] 2)-ne$word[1]){throw 'Native status15 progression differs'}
+ }
+ if((Read-Native 58 0x6006000 0x6027E68 4)-ne0x0604A403-or
+    (Read-Native 58 0x6006000 0x6027EA0 4)-ne0x06042F17-or
+    (Read-Native 58 0x6006000 0x6042F17 1)-ne0x10-or
+    (Read-Native 182 0x200000 (0x212EAC+0x5A*2) 2)-ne0x0203){
+    throw 'Native status15 story flag or Camp setup differs'
+ }
+
  $slot=Read-Native 58 0x6006000 (0x6027AAC+(0x54-1)*2) 2
  if(0x6027AA8+$slot-ne0x6027C7A){throw 'Native status54 switch target differs'}
- foreach($status in @(0x55,0x56)) {
+ foreach($status in @(0x55,0x56,0x5A)) {
   $target=0x6027AA8+(Read-Native 58 0x6006000 (0x6027AAC+($status-1)*2) 2)
   if($target-ne0x60283F0){throw 'Native camp/Garil return target differs'}
  }
