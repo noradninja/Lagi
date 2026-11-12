@@ -82,10 +82,13 @@ engine dispatch and encounter callbacks remain unported.
 The Disc 1 WORLD route fixture passes the Garil entry 6 gate through
 status 56, mode 3/field 3 and FLD_A5.PRG/FNT. The A5 structural audit
 decodes 1,457 instructions from the script table with 28 native calls.
-Neither check exercises the secondary rider. Azel's A3 battle startup
-assigns rider type 2, and field rendering consumes the saved rider
-value. The original assignment on the Cainus-to-Garil route still
-needs verification before changing rider state.
+Neither check exercises the secondary rider. Disc 1 MAIN 060118B2 selects rider 2 for field index 3, but the
+caller at 060119CA reads the debug field selection at task offset
+0036. Azel's setupPlayer carries that mapping and is called from
+the debug selector. The A3 battle initializer likewise assigns
+rider 2 in its debug startup path. Neither write establishes
+the live assignment on WORLD travel. The original Garil field
+task's own conditional assignment is traced below.
 
 The Disc 1 A5 initializer calls 0607C2D0 through 06072ECE. That
 routine reads rider slot 2 at 0604A6BF (game stats base 0604A6BC,
