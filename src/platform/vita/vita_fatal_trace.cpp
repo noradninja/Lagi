@@ -18,6 +18,10 @@ extern "C" [[noreturn]] void __wrap_abort();
 namespace {
 std::atomic_flag reporting=ATOMIC_FLAG_INIT;
 std::atomic<const char*> stage{"before E011 startup"};
+std::atomic<bool> townScriptFaultValid{false};
+std::atomic<unsigned> townScriptFaultAddress{0};
+std::atomic<unsigned> townScriptFaultOpcode{0};
+std::atomic<int> townScriptFaultResult{0};
 #if LAGI_HAS_UNWIND
 struct Trace { std::uintptr_t addresses[32]{}; unsigned count{}; };
 _Unwind_Reason_Code collect(_Unwind_Context* context,void* opaque)
@@ -46,6 +50,14 @@ void report(const char* reason,const char* detail,void* caller,const char* conte
             n=std::snprintf(buffer,sizeof(buffer),"[FatalAssert] %.480s\n",context);
             if(n>0)sceIoWrite(fd,buffer,n<int(sizeof(buffer))?n:int(sizeof(buffer))-1);
         }
+        if(townScriptFaultValid.load(std::memory_order_acquire)) {
+            n=std::snprintf(buffer,sizeof(buffer),
+                "[FatalTownScript] saturnEA=%08X opcode=%02X result=%d\\n",
+                townScriptFaultAddress.load(std::memory_order_relaxed),
+                townScriptFaultOpcode.load(std::memory_order_relaxed),
+                townScriptFaultResult.load(std::memory_order_relaxed));
+            if(n>0)sceIoWrite(fd,buffer,n<int(sizeof(buffer))?n:int(sizeof(buffer))-1);
+        }
         // Caller is written before unwinding: missing EH tables must not lose it.
         #if LAGI_HAS_UNWIND
         Trace trace;
@@ -63,6 +75,13 @@ void report(const char* reason,const char* detail,void* caller,const char* conte
 }
 
 extern "C" void lagiSetE011FatalStage(const char* value) { stage.store(value,std::memory_order_relaxed); }
+extern "C" void lagiSetTownScriptFatalContext(unsigned address,unsigned opcode,int result)
+{
+    townScriptFaultAddress.store(address,std::memory_order_relaxed);
+    townScriptFaultOpcode.store(opcode,std::memory_order_relaxed);
+    townScriptFaultResult.store(result,std::memory_order_relaxed);
+    townScriptFaultValid.store(true,std::memory_order_release);
+}
 extern "C" [[noreturn]] void __real_abort();
 extern "C" [[noreturn]] void __wrap_abort()
 {
