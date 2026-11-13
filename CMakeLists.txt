@@ -2909,6 +2909,46 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
    "    playPCMFile(pPcmName);"
    "    lagiAzelFieldPlayPCM(pPcmName);"
    source_text "${source_text}")
+  # Attribute each authored Garil cliff placement before the grid can reject it.
+  set(garil_grid_clip_anchor "            if (!r13->m12FC_isObjectClipped(&r14->m4, r15))\n            {\n                u32 var_54 = 0;")
+  string(FIND "${source_text}" "${garil_grid_clip_anchor}" garil_grid_clip_found)
+  if(garil_grid_clip_found LESS 0)
+   message(FATAL_ERROR "Garil grid visibility trace anchor changed")
+  endif()
+  set(garil_grid_clip_trace [=[            const bool clipped = r13->m12FC_isObjectClipped(&r14->m4, r15) != 0;
+            const u32 objectEa = r14->EA.m_offset;
+            if (objectEa >= 0x0608D7EC && objectEa < 0x0608E23C &&
+                getFieldTaskPtr()->m2C_currentFieldIndex == 3 &&
+                getFieldTaskPtr()->m2E_currentSubFieldIndex == 0)
+            {
+                bool cliff = false;
+                for (unsigned lod = 0; lod < 4; ++lod)
+                {
+                    const u32 offset = r14->m0_modelsOffets[lod];
+                    cliff |= offset >= 0x4A0 && offset <= 0x4C0 && (offset & 3) == 0;
+                }
+                if (cliff)
+                {
+                    static unsigned char seen[0xA50]{};
+                    auto& flags = seen[objectEa - 0x0608D7EC];
+                    const unsigned flag = clipped ? 1u : 2u;
+                    if (!(flags & flag))
+                    {
+                        flags |= flag;
+                        PDS_Log("[GarilGridCliff] cell=%d object=%08X clipped=%u pos=%08X,%08X,%08X rot=%04X,%04X,%04X lod=%04X,%04X,%04X,%04X\n",
+                            int(pTypedWorkAread->m14_index), unsigned(objectEa), unsigned(clipped),
+                            unsigned(r14->m4[0].asS32()), unsigned(r14->m4[1].asS32()), unsigned(r14->m4[2].asS32()),
+                            unsigned(u16(r14->m10[0])), unsigned(u16(r14->m10[1])), unsigned(u16(r14->m10[2])),
+                            unsigned(r14->m0_modelsOffets[0]), unsigned(r14->m0_modelsOffets[1]),
+                            unsigned(r14->m0_modelsOffets[2]), unsigned(r14->m0_modelsOffets[3]));
+                    }
+                }
+            }
+            if (!clipped)
+            {
+                u32 var_54 = 0;]=])
+  string(REPLACE "${garil_grid_clip_anchor}" "${garil_grid_clip_trace}" source_text "${source_text}")
+
   # Phase 4 static field-grid bridge. Azel still performs clipping and LOD
   # selection; Lagi only publishes the selected rigid environment object with
   # its stable pre-view world transform.
