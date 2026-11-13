@@ -1719,7 +1719,7 @@ static const char* viewerModeLabel(int mode)
     case 16: return "RBG0 / NO VDP1 UNDERLAY";
     case 17: return "RBG0 SECOND SOURCE";
     case 18: return "GARIL: CLIFF DEPTH BYPASS";
-    case 19: return "GARIL: SKIP LATE NBG0";
+    case 19: return "GARIL: SKIP NBG0";
     case 20: return "VDP1 ORDER: CIRCLE FIRST";
     case 21: return "VDP1 CIRCLE Y: ZERO";
     case 22: return "VDP1 CIRCLE Y: -0.015";
@@ -14964,6 +14964,16 @@ static void renderBasicWingViewer()
         lastCliffProjectionView = g_viewMode;
         if (fieldVdp1TraceFrame == 30u || fieldVdp1TraceFrame == 90u ||
             enteredCliffComparison) {
+        logging::writef(
+            "[GarilCliffCamera] sample=%u view=%d matrix="
+            "%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g\n",
+            fieldVdp1TraceFrame, g_viewMode,
+            g_nativeSceneViewMatrix[0], g_nativeSceneViewMatrix[1],
+            g_nativeSceneViewMatrix[2], g_nativeSceneViewMatrix[3],
+            g_nativeSceneViewMatrix[4], g_nativeSceneViewMatrix[5],
+            g_nativeSceneViewMatrix[6], g_nativeSceneViewMatrix[7],
+            g_nativeSceneViewMatrix[8], g_nativeSceneViewMatrix[9],
+            g_nativeSceneViewMatrix[10], g_nativeSceneViewMatrix[11]);
         // FLD_A5 cliff ring: original 20-quad models at subfield model-table
         // offsets 0x4A0..0x4C0. All values are from the same WVP and flattened
         // geometry as the actual GXM submission, without changing rendering.
@@ -15270,7 +15280,8 @@ static void renderBasicWingViewer()
 
     unsigned int vdp1UiSpriteSlot = 0u;
     if (nativeSceneMode) {
-        if (!spriteComposite && g_sceneNbg0.behindWorld) drawSceneNbg0Gpu();
+        if (!spriteComposite && g_sceneNbg0.behindWorld && g_viewMode != 19)
+            drawSceneNbg0Gpu();
         if (!spriteComposite) drawSceneVdp2Background();
         // Azel's far-plane VDP1 sprites (for example the flight horizon
         // strip) sit above RBG0 but behind world geometry. Foreground VDP1
