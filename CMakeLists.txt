@@ -5206,6 +5206,18 @@ static s32 lagiCampRandomChoice(s32 limit)
   endif()
   string(REPLACE "${camp_switch_bad}" "r13_pThis->m118_currentResult < arg"
    source_text "${source_text}")
+  # A second request to open already-open bars is a no-op. Falling into
+  # opcode 27 consumes the following native call as a string pointer.
+  set(town_bars_open_tail [=[                return r14;
+            }
+        case 27: // draw string]=])
+  string(FIND "${source_text}" "${town_bars_open_tail}" town_bars_open_position)
+  if(town_bars_open_position LESS 0)
+   message(FATAL_ERROR "Town cinematic bar opcode boundary changed")
+  endif()
+  string(REPLACE "${town_bars_open_tail}"
+   "                return r14;\n            }\n            break;\n        case 27: // draw string"
+   source_text "${source_text}")
   # Native callbacks may touch the active script owner. Preserve the authored
   # bytecode continuation before dispatch instead of recomputing it from a
   # caller-local argument count after the callback returns. The matching Vita
