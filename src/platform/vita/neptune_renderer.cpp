@@ -12524,8 +12524,8 @@ bool submit_vdp1_model(
             unsigned lastTexture=~0u;
             const std::size_t shadowStart=g_liveTownShadowFirstPolygon;
             const std::size_t shadowEnd=shadowStart+g_liveTownShadowPolygonCount;
-            // Garil A5 cliff models are 20-quads each, with Saturn source
-            // object addresses 0608DD2C..0608DDBC (stride 0x18). Identify
+            // Garil A5 cliff models are 20-quads each. Match the model table
+            // across all four open-desert cells. Identify
             // their original Azel submission ranges, not material indices,
             // so other field geometry keeps its existing raster state.
             static std::vector<std::uint8_t> garilCliffPolygon;
@@ -12541,9 +12541,8 @@ bool submit_vdp1_model(
                     const auto& source=sources[range.azelOrder];
                     const unsigned obj=unsigned(source.objectIndex);
                     const unsigned table=unsigned(source.modelTableOffset);
-                    if(obj<0x0608DD2Cu || obj>0x0608DDBCu ||
-                       (obj-0x0608DD2Cu)%0x18u!=0u ||
-                       table<0x4A0u || table>0x4C0u)
+                    if(obj<0x0608D7ECu || obj>=0x0608E23Cu ||
+                       table<0x4A0u || table>0x4C0u || (table&3u)!=0u)
                         continue;
                     const std::size_t last=std::min(
                         range.first+range.count,model.polygonCount);
