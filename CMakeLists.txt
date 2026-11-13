@@ -5243,6 +5243,9 @@ static s32 lagiCampRandomChoice(s32 limit)
             const sSaturnPtr functionAndArguments = getAlignOn4(callStart + 1);
             const sSaturnPtr authoredNext =
                 functionAndArguments + (argumentCount + 1) * 4;
+            // Capture the pending call before the callback can fault.
+            lagiSetTownScriptNativeContext(7, (callStart - 1).m_offset,
+                argumentCount, 0, authoredNext.m_offset);
             const sSaturnPtr dispatcherNext =
                 callNativeWithArguments(r13_pThis, callStart);
             lagiSetTownScriptNativeContext(7, (callStart - 1).m_offset,
