@@ -5160,6 +5160,8 @@ static s32 lagiCampRandomChoice(s32 limit)
                 const sSaturnPtr functionAndArguments = getAlignOn4(callStart + 1);
                 const sSaturnPtr authoredNext =
                     functionAndArguments + (argumentCount + 1) * 4;
+                lagiSetTownScriptNativeContext(31, r14Back.m_offset,
+                    argumentCount, 0, authoredNext.m_offset);
                 const sSaturnPtr dispatcherNext =
                     callNativeWithArguments(r13_pThis, callStart);
                 lagiSetTownScriptNativeContext(31, r14Back.m_offset,
