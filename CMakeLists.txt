@@ -2910,6 +2910,7 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
    "    lagiAzelFieldPlayPCM(pPcmName);"
    source_text "${source_text}")
   # Attribute each authored Garil cliff placement before the grid can reject it.
+  string(PREPEND source_text "#include \"lagi/platform.h\"\n")
   set(garil_grid_clip_anchor "            if (!r13->m12FC_isObjectClipped(&r14->m4, r15))\n            {\n                u32 var_54 = 0;")
   string(FIND "${source_text}" "${garil_grid_clip_anchor}" garil_grid_clip_found)
   if(garil_grid_clip_found LESS 0)
@@ -2935,7 +2936,7 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
                     if (!(flags & flag))
                     {
                         flags |= flag;
-                        PDS_Log("[GarilGridCliff] cell=%d object=%08X clipped=%u pos=%08X,%08X,%08X rot=%04X,%04X,%04X lod=%04X,%04X,%04X,%04X\n",
+                        lagi::platform::logging::writef("[GarilGridCliff] cell=%d object=%08X clipped=%u pos=%08X,%08X,%08X rot=%04X,%04X,%04X lod=%04X,%04X,%04X,%04X\n",
                             int(pTypedWorkAread->m14_index), unsigned(objectEa), unsigned(clipped),
                             unsigned(r14->m4[0].asS32()), unsigned(r14->m4[1].asS32()), unsigned(r14->m4[2].asS32()),
                             unsigned(u16(r14->m10[0])), unsigned(u16(r14->m10[1])), unsigned(u16(r14->m10[2])),
