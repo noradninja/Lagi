@@ -1210,6 +1210,11 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_world_movie_exit.inc")
    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_world_movie_exit.inc" world_movie_exit_service)
+   # MAIN status 0A branches through 06027DFC, setting desired rider 2
+   # before the common transition reload at 06028482.
+   string(REPLACE "        mainGameState.clearBit(13 * 8 + 0);\n        setNextGameStatus(0x4F);\n        break;"
+    "        mainGameState.clearBit(13 * 8 + 0);\n        setNextGameStatus(0x4F);\n        loadRider2IfChanged(2);\n        return 0;"
+    source_text "${source_text}")
    set(world_movie_exit_anchor "    case 0x4A: // load savegame?")
    string(FIND "${source_text}" "${world_movie_exit_anchor}" world_movie_exit_found)
    if(world_movie_exit_found LESS 0)
