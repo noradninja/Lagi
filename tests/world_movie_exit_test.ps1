@@ -6,6 +6,18 @@ try{
  function Read-Native([long]$lba,[long]$base,[long]$ea,[int]$count){
   $n=0L;for($i=0;$i-lt$count;$i++){$offset=$ea+$i-$base;$disc.Position=($lba+[long][Math]::Floor($offset/2048))*2352+16+($offset%2048);$b=$disc.ReadByte();if($b-lt0){throw 'Short disc read'};$n=($n-shl8)-bor$b};return $n
  }
+ # Status 0A requests WORLD, then writes desired secondary rider 2.
+ $gashSlot=Read-Native 58 0x6006000 (0x6027AAC+(0x0A-1)*2) 2
+ if(0x6027AA8+$gashSlot-ne0x6027C50){throw 'Native status0A switch target differs'}
+ foreach($word in @(
+  @(0x6027C74,0xE44F), @(0x6027C76,0xA0C0),
+  @(0x6027DFA,0xA209), @(0x6027DFC,0xE302), @(0x6028210,0x2F32),
+  @(0x6028466,0x8423), @(0x6028482,0xD329)
+ )){
+  if((Read-Native 58 0x6006000 $word[0] 2)-ne$word[1]){throw 'Native Gash rider transition differs'}
+ }
+ if((Read-Native 58 0x6006000 0x6028528 4)-ne0x0600B444){throw 'Native secondary rider setter differs'}
+
  $giftSlot=Read-Native 58 0x6006000 (0x6027AAC+(0x14-1)*2) 2
  if(0x6027AA8+$giftSlot-ne0x6027DEA){throw 'Native status14 switch target differs'}
  foreach($word in @(
