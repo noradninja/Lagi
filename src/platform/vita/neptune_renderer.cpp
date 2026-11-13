@@ -14957,7 +14957,13 @@ static void renderBasicWingViewer()
 
         // Bound the expensive per-quad projection to the same two field snapshots.
         // Sampling every field frame previously produced >47K diagnostic records.
-        if (fieldVdp1TraceFrame == 30u || fieldVdp1TraceFrame == 90u) {
+        static int lastCliffProjectionView = -1;
+        const bool enteredCliffComparison =
+            (g_viewMode == 18 || g_viewMode == 19) &&
+            lastCliffProjectionView != g_viewMode;
+        lastCliffProjectionView = g_viewMode;
+        if (fieldVdp1TraceFrame == 30u || fieldVdp1TraceFrame == 90u ||
+            enteredCliffComparison) {
         // FLD_A5 cliff ring: original 20-quad models at subfield model-table
         // offsets 0x4A0..0x4C0. All values are from the same WVP and flattened
         // geometry as the actual GXM submission, without changing rendering.
