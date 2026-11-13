@@ -1,5 +1,15 @@
 # Camp callback audit — 2026-11-05
 
+## Gash Camp Vita retest — 2026-11-13
+
+The user confirmed that Gash's Camp interactions work on Vita and that
+Quit returns without a crash after d28e0be. Garil still enters without
+Gash riding behind Edge, and the distant cliffs are missing. The nearby
+cliff geometry is visible in the capture. The distant skyline's draw
+path still needs confirmation. The custom A5 draw stub at 0605F6F0
+references the sandworm dust quad list at 0608C508, so that stub alone
+does not explain the skyline.
+
 ## Gash dialogue checkpoint — 2026-11-12
 
 The matching Vita dump places the menu-exit fault at script cursor `06058F28`,
