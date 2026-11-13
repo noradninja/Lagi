@@ -2943,6 +2943,38 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
                             unsigned(r14->m0_modelsOffets[0]), unsigned(r14->m0_modelsOffets[1]),
                             unsigned(r14->m0_modelsOffets[2]), unsigned(r14->m0_modelsOffets[3]));
                     }
+                    if (clipped && !(flags & 4u))
+                    {
+                        flags |= 4u;
+                        const u32 modelOffset = r14->m0_modelsOffets[0];
+                        sProcessed3dModel* model =
+                            pTypedWorkAread->m0_memoryLayout.m0_mainMemoryBundle->get3DModel(modelOffset);
+                        sMatrix4x3 objectMatrix;
+                        initMatrixToIdentity(&objectMatrix);
+                        translateMatrix(&r14->m4, &objectMatrix);
+                        rotateMatrixZYX_s16(r14->m10, &objectMatrix);
+                        unsigned visibleVertices = 0;
+                        unsigned firstVisible = ~0u;
+                        for (unsigned vertex = 0; vertex < model->m4_numVertices; ++vertex)
+                        {
+                            sVec3_FP worldVertex;
+                            transformAndAddVec(model->m8_vertices[vertex].toSVec3_FP(),
+                                worldVertex, objectMatrix);
+                            if (!r13->m12FC_isObjectClipped(&worldVertex, r15))
+                            {
+                                if (firstVisible == ~0u)
+                                    firstVisible = vertex;
+                                ++visibleVertices;
+                            }
+                        }
+                        lagi::platform::logging::writef(
+                            "[GarilGridExtent] cell=%d object=%08X model=%04X radius=%08X "
+                            "vertices=%u visibleVertices=%u firstVisible=%d\n",
+                            int(pTypedWorkAread->m14_index), unsigned(objectEa),
+                            unsigned(modelOffset), unsigned(model->m0_radius.asS32()),
+                            unsigned(model->m4_numVertices), visibleVertices,
+                            firstVisible == ~0u ? -1 : int(firstVisible));
+                    }
                 }
             }
             if (!clipped)
