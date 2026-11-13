@@ -1718,8 +1718,8 @@ static const char* viewerModeLabel(int mode)
     case 15: return "VDP1 / RBG0 OWNER";
     case 16: return "RBG0 / NO VDP1 UNDERLAY";
     case 17: return "RBG0 SECOND SOURCE";
-    case 18: return "VDP1 DEPTH: ORDER ONLY";
-    case 19: return "VDP1 DEPTH: TEST ONLY";
+    case 18: return "GARIL: CLIFF DEPTH BYPASS";
+    case 19: return "GARIL: SKIP LATE NBG0";
     case 20: return "VDP1 ORDER: CIRCLE FIRST";
     case 21: return "VDP1 CIRCLE Y: ZERO";
     case 22: return "VDP1 CIRCLE Y: -0.015";
@@ -12512,11 +12512,7 @@ bool submit_vdp1_model(
             } else {
                 g_circleDepthCompareActive=false;
             }
-            // Three controlled depth policies use the identical Azel-sorted
-            // command stream and subdivision/index buffers. Diagnostics alter
-            // only depth comparison and writes; production remains unchanged.
-            const unsigned depthDiagnostic=g_viewMode==18 ? 1u :
-                (g_viewMode==19 ? 2u : 0u);
+            const bool cliffDepthBypass = g_viewMode == 18;
             unsigned visibleCount=0u,orderedCount=0u;
             unsigned replayedSubmissions=0u,unrangedPolygons=0u;
             unsigned textureTransitions=0u,blendStateSplits=0u;
@@ -12871,6 +12867,7 @@ bool submit_vdp1_model(
                     "policy=UNCULL_KNOWN_CLIFFS_ONLY otherPolys=UNCHANGED\n",
                     g_viewMode,unsigned(g_sceneGameMode),garilCliffObjects);
             }
+            unsigned cliffRuns=0u, cliffQuads=0u;
             const std::uint64_t drawStart=sceKernelGetProcessTimeWide();
             for(const auto& run:orderedRuns) {
                 const unsigned texture=run.texture;
@@ -12879,6 +12876,10 @@ bool submit_vdp1_model(
                 // Ordered mesh commands previously used unculled two-sided
                 // polygons. Preserve that state, as well as normal scene
                 // depth comparison for genuine 3D world intersections.
+                const unsigned runPolygon=run.firstIndex/24u;
+                const bool garilCliff=runPolygon<garilCliffPolygon.size() &&
+                    garilCliffPolygon[runPolygon]!=0u;
+                const bool bypassDepth=cliffDepthBypass && garilCliff;
                 if(run.ordered) {
                     sceGxmSetFrontPolygonMode(g_probeContext,SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
                     sceGxmSetBackPolygonMode(g_probeContext,SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
@@ -12888,23 +12889,19 @@ bool submit_vdp1_model(
                     sceGxmSetBackDepthFunc(g_probeContext,
                         depthScene?depthFunc:SCE_GXM_DEPTH_FUNC_ALWAYS);
                 } else {
-                    const std::size_t firstPolygon=run.firstIndex/24u;
-                    const bool garilCliff=firstPolygon<garilCliffPolygon.size() &&
-                        garilCliffPolygon[firstPolygon]!=0u;
                     sceGxmSetCullMode(g_probeContext,
                         garilCliff ? SCE_GXM_CULL_NONE : cullMode);
                     sceGxmSetFrontDepthFunc(g_probeContext,depthFunc);
                     sceGxmSetBackDepthFunc(g_probeContext,depthFunc);
                 }
-                const unsigned runPolygon=run.firstIndex/24u;
                 const bool circleOverride=circleDepthCompare &&
                     g_circleDepthComparePhase==1u && run.count==24u &&
                     runPolygon>=626u && runPolygon<=637u;
-                if(depthDiagnostic==1u || circleOverride) {
+                if(bypassDepth || circleOverride) {
                     sceGxmSetFrontDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
                     sceGxmSetBackDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
                 }
-                const auto writes=depthDiagnostic==0u && !circleOverride && !blended &&
+                const auto writes=!bypassDepth && !circleOverride && !blended &&
                     (!run.ordered||depthScene) ?
                     SCE_GXM_DEPTH_WRITE_ENABLED:SCE_GXM_DEPTH_WRITE_DISABLED;
                 sceGxmSetFrontDepthWriteEnable(g_probeContext,writes);
@@ -12917,6 +12914,10 @@ bool submit_vdp1_model(
                 if(sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,
                     SCE_GXM_INDEX_FORMAT_U16,
                     g_vdp1SubdivIndices+run.firstIndex,run.count)<0)return false;
+                if(garilCliff) {
+                    ++cliffRuns;
+                    cliffQuads+=run.count/24u;
+                }
             }
             sceGxmSetCullMode(g_probeContext,cullMode);
             sceGxmSetFrontDepthFunc(g_probeContext,depthFunc);
@@ -12929,15 +12930,15 @@ bool submit_vdp1_model(
                 sceKernelGetProcessTimeWide()-tPayload);
             g_profileGouraudDrawUs=static_cast<unsigned>(
                 sceKernelGetProcessTimeWide()-drawStart);
-            static int lastDepthDiagnostic=-1;
-            if(lastDepthDiagnostic!=int(depthDiagnostic)) {
-                lastDepthDiagnostic=int(depthDiagnostic);
-                logging::writef("[NativeVdp1DepthDiagnostic] policy=%u label=%s scene=%u runs=%u visible=%u ordered=%u\n",
-                    depthDiagnostic,depthDiagnostic==1u?"ORDER_ONLY":
-                    (depthDiagnostic==2u?"TEST_ONLY":"CURRENT"),
-                    unsigned(g_sceneGameMode),unsigned(orderedRuns.size()),
-                    visibleCount,orderedCount);
+            static int lastCliffView=-1;
+            if(garilCliffObjects && lastCliffView!=g_viewMode) {
+                lastCliffView=g_viewMode;
+                logging::writef(
+                    "[GarilCliffDraw] view=%d objects=%u runs=%u quads=%u depth=%s\n",
+                    g_viewMode,garilCliffObjects,cliffRuns,cliffQuads,
+                    cliffDepthBypass?"ALWAYS_NO_WRITE":"SCENE");
             }
+            if(!garilCliffObjects)lastCliffView=-1;
             static unsigned orderedTraceBudget=4u;
             if(orderedTraceBudget) {
                 --orderedTraceBudget;
@@ -15413,7 +15414,17 @@ static void renderBasicWingViewer()
                 return;
             }
             g_spriteUiPriorityActive=priorityUi;
-            if (!spriteComposite && !g_sceneNbg0.behindWorld) drawSceneNbg0Gpu();
+            const bool lateNbg0 = !spriteComposite && !g_sceneNbg0.behindWorld;
+            if (lateNbg0 && g_viewMode != 19) drawSceneNbg0Gpu();
+            static int lastGarilComposeView = -1;
+            if (g_sceneGameMode == 3u && lastGarilComposeView != g_viewMode) {
+                lastGarilComposeView = g_viewMode;
+                logging::writef(
+                    "[GarilCliffCompose] view=%d spriteComposite=%u lateNbg0=%u skipped=%u\n",
+                    g_viewMode, unsigned(spriteComposite), unsigned(lateNbg0),
+                    unsigned(lateNbg0 && g_viewMode == 19));
+            }
+            if (g_sceneGameMode != 3u) lastGarilComposeView = -1;
             drawAzelVdp2Nbg1Gpu();
             drawAzelVdp2CinematicBarsGpu();
             drawAzelVdp2TextLayerGpu();
@@ -15883,21 +15894,22 @@ void begin_frame()
     if (!g_debugVisible) {
         // Controller state belongs to the game thread. Only the selected view
         // is copied into the next published render frame.
-        // Keep the extended VDP1/RBG0 diagnostics (13..24) compiled,
-        // but remove them from the user-facing view cycle. FULL remains
-        // the fallback if a diagnostic was previously selected.
         static constexpr int kSceneModes[] = {7, 8, 11, 9, 10, 12};
-        constexpr int kModeCount = int(sizeof(kSceneModes) / sizeof(kSceneModes[0]));
+        static constexpr int kFieldModes[] = {7, 18, 19, 8, 11, 9, 10, 12};
+        const bool field = g_pendingSceneGameMode == 3u;
+        const int* modes = field ? kFieldModes : kSceneModes;
+        constexpr int kFieldModeCount = int(sizeof(kFieldModes) / sizeof(kFieldModes[0]));
+        const int kModeCount = field ? kFieldModeCount : int(sizeof(kSceneModes) / sizeof(kSceneModes[0]));
         int sceneModeIndex = 0;
         for (int i = 0; i < kModeCount; ++i)
-            if (g_pendingViewMode == kSceneModes[i])
+            if (g_pendingViewMode == modes[i])
                 sceneModeIndex = i;
 
         if (input::prev_mode_pressed())
             sceneModeIndex = (sceneModeIndex + kModeCount - 1) % kModeCount;
         if (input::next_mode_pressed())
             sceneModeIndex = (sceneModeIndex + 1) % kModeCount;
-        g_pendingViewMode = kSceneModes[sceneModeIndex];
+        g_pendingViewMode = modes[sceneModeIndex];
         return;
     }
 
@@ -17189,9 +17201,9 @@ void presentation_publish_frame()
             g_pendingNativeSceneViewMatrix,
             sizeof(g_nativeSceneViewMatrix));
     }
-    // Extended diagnostic view modes remain in the source for future
-    // investigation but are not reachable or executed in normal builds.
-    g_viewMode = (g_pendingViewMode >= 13 && g_pendingViewMode <= 24)
+    const bool fieldComparison = g_sceneGameMode == 3u &&
+        (g_pendingViewMode == 18 || g_pendingViewMode == 19);
+    g_viewMode = !fieldComparison && g_pendingViewMode >= 13 && g_pendingViewMode <= 24
         ? 7 : g_pendingViewMode;
     g_profileTasksUs = g_pendingProfileTasksUs;
     g_profileGameWaitUs = g_pendingProfileGameWaitUs;
