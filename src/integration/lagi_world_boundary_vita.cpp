@@ -433,7 +433,8 @@ struct LagiWorldBoundary : s_workAreaTemplate<LagiWorldBoundary> {
         // WORLD 060570B4..DA applies pitch/yaw, scale, and then roll.
         buildRotationMatrixPitchYaw(-0x4000000 - pitch,
                                     -display.rotation[1].asS32());
-        scaleRotationMatrix(fixedPoint(environment.scale));
+        const fixedPoint rotationScale(environment.scale);
+        scaleRotationMatrix(rotationScale, rotationScale);
         writeRotationParams(-display.rotation[2].asS32());
         TranslateEnvironmentRotation(environmentCamera,fixedPoint(environment.scale),
                                      fixedPoint(environment.planeHeight));

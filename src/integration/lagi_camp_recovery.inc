@@ -3,7 +3,7 @@
 #include "lagi_camp_recovery_effect.inc"
 
 void sCampDragon_Draw(sTownDragon*);
-int scriptFunction_0606c952(); // Native no-op camera update0606B396.
+int disableCameraUpdate(); // Native no-op camera update0606B396.
 
 static s32 lagiCampRecoveryDivide(s32 n,s32 d){return FP_Div(n,d).asS32();}
 static s32 lagiCampRecoveryMultiply(s32 a,s32 b){return MTH_Mul(a,b).asS32();}
@@ -32,7 +32,7 @@ static s32 lagiCampRecoveryUpdate(sCampDragon* dragon)
                 factor,lagiCampRecoveryMultiply);
             // Native0606CA50 stores the target and disables camera updates.
             twnMainLogicTask->m44_cameraTarget={target[0],target[1],target[2]};
-            scriptFunction_0606c952();
+            disableCameraUpdate();
         },
         [&](){sCampDragon_UpdateMode4Mode9(dragon,10);},
         [&](){return dragon->m14_readyState==10;},

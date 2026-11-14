@@ -102,7 +102,7 @@ struct sE011Schedule : s_workAreaTemplate<sE011Schedule>
 {
     sSaturnPtr table;
     static void Update(sE011Schedule* task) {
-        if(readSaturnS32(task->table)<=0 || e006_scriptFunction_605861eSub0()) {
+        if(readSaturnS32(task->table)<=0 || townIsCutsceneDone()) {
             task->getTask()->markFinished();return;
         }
         // Native samples the clock once, before the catch-up loop.

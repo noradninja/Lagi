@@ -1087,7 +1087,7 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
    source_text "${source_text}")
   set(collection_offset_old "pThis->m2C_localOffset[2] = 0;")
   set(collection_offset_new "pThis->m2C_localOffset[2] = pThis->m34_randomizedLifetime; // LAGI_NATIVE_COLLECTION_RADIUS: 0607BAE4")
-  set(collection_draw_old [=[        // TODO: FUN_0602f610 — draw billboard sprite at cameraSpacePos with scaledOpacity
+  set(collection_draw_old [=[        // TODO: FUN_0602f610 - draw billboard sprite at cameraSpacePos with scaledOpacity
         Unimplemented();]=])
   set(collection_draw_new [=[        // LAGI_NATIVE_COLLECTION_BURST: 0607BC06..52 -> 0602F610.
         std::array<sVec3_FP, 2> radial = {*pThis->m8_pPosition, cameraSpacePos};
@@ -1173,7 +1173,7 @@ function(lagi_prepare_upstream_azel_source relative_path out_var)
  # Scope this to maps: aliasing normal-box callback status changed its
  # early-return behavior and was rejected by hardware testing.
  if(relative_path STREQUAL "field/fieldItemBox_type1.cpp")
-  string(FIND "${source_text}" "(pThis->m88_poseIdx == 0)" map_visibility_anchor)
+  string(FIND "${source_text}" "(pThis->m8D_visibilityFlag != 0)" map_visibility_anchor)
   if(map_visibility_anchor LESS 0)
    message(FATAL_ERROR "Native map visibility anchor changed")
   endif()
@@ -1633,8 +1633,8 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
    source_text "${source_text}")
 
   string(REPLACE
-   "// ============================================================================\n// clearMovieVdp2Vram  –  06010584"
-   "#endif // desktop movie stream backend\n\nstatic void openMovieStream(const char* cpkFileName)\n{\n    lagiAzelMovieStreamOpen(cpkFileName);\n}\n\nvoid closeMovieStream()\n{\n    lagiAzelMovieStreamClose();\n}\n\n// ============================================================================\n// clearMovieVdp2Vram  –  06010584"
+   "// ============================================================================\n// clearMovieVdp2Vram  -  06010584"
+   "#endif // desktop movie stream backend\n\nstatic void openMovieStream(const char* cpkFileName)\n{\n    lagiAzelMovieStreamOpen(cpkFileName);\n}\n\nvoid closeMovieStream()\n{\n    lagiAzelMovieStreamClose();\n}\n\n// ============================================================================\n// clearMovieVdp2Vram  -  06010584"
    source_text "${source_text}")
 
   string(REPLACE
@@ -1643,8 +1643,8 @@ s32 resetVdp2StringsSub1(u16* pData)]=]
    source_text "${source_text}")
 
   string(REPLACE
-   "// ============================================================================\n// createMovieDebugTask  –  0602a314"
-   "#endif // desktop decoder polling\n\nu32 lastUpdateFunction()\n{\n    return static_cast<u32>(lagiAzelMovieLastUpdate());\n}\n\n// ============================================================================\n// createMovieDebugTask  –  0602a314"
+   "// ============================================================================\n// createMovieDebugTask  -  0602a314"
+   "#endif // desktop decoder polling\n\nu32 lastUpdateFunction()\n{\n    return static_cast<u32>(lagiAzelMovieLastUpdate());\n}\n\n// ============================================================================\n// createMovieDebugTask  -  0602a314"
    source_text "${source_text}")
 
  # The Vita host owns filesystem access for files inside the mounted game
@@ -1870,7 +1870,7 @@ void loadRider2IfChanged(u32 rider)
    string(REPLACE "${allocator_pop_old}" "        lagiPopDramFileTable(prev); // native parent table at allocator +18" source_text "${source_text}")
    string(REPLACE "void resetTempAllocators()\n{" "void resetTempAllocators()\n{\n    lagiResetDramFileTables();" source_text "${source_text}")
   endif()
-  set(menu_font_delete_old "    // clearSaveText(graphicEngineStatus.m40AC.fontIndex) — unloads menu font")
+  set(menu_font_delete_old "    // clearSaveText(graphicEngineStatus.m40AC.fontIndex) - unloads menu font")
   set(menu_font_delete_new "    lagiAzelUnloadFontByIndex(graphicEngineStatus.m40AC.fontIndex); // LAGI_MENU_FONT_DELETE: native 0601579A.")
   string(FIND "${source_text}" "${menu_font_delete_old}" menu_font_delete_position)
   if(menu_font_delete_position LESS 0)
@@ -2815,7 +2815,7 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   endif()
   string(REPLACE "${navigator_default_old}" "${navigator_default_new}" source_text "${source_text}")
   # Native 06073172: table at 060525D8 -> slot 2 -> first byte != 0.
-  set(navigator_dispatch_anchor "    case 0x060730bc: // 060730bc — destination multichoice dialog")
+  set(navigator_dispatch_anchor "    case 0x060730bc: // 060730bc - destination multichoice dialog")
   string(FIND "${source_text}" "${navigator_dispatch_anchor}" navigator_dispatch_match)
   if(navigator_dispatch_match LESS 0)
    message(FATAL_ERROR "Native navigator selected-text dispatch anchor changed")
@@ -2896,7 +2896,7 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   # interpreter with stale/poisoned state before a script is queued.
   string(REPLACE
    "void s_fieldScriptWorkArea::Init(s_fieldScriptWorkArea* pFieldScriptWorkArea)\n{\n    s_fieldTaskWorkArea* pFieldTaskWorkArea = getFieldTaskPtr();"
-   "void s_fieldScriptWorkArea::Init(s_fieldScriptWorkArea* pFieldScriptWorkArea)\n{\n    pFieldScriptWorkArea->m4_currentScript = sSaturnPtr::getNull();\n    pFieldScriptWorkArea->m30_cinematicBarTask = nullptr;\n    pFieldScriptWorkArea->m34 = 0;\n    pFieldScriptWorkArea->m38_dialogStringTask = nullptr;\n    pFieldScriptWorkArea->m3C_multichoiceTask = nullptr;\n    pFieldScriptWorkArea->m40_receivedItemTask = nullptr;\n    pFieldScriptWorkArea->m44_multiChoiceData = nullptr;\n    pFieldScriptWorkArea->m48_cutsceneTask = nullptr;\n    pFieldScriptWorkArea->m4C_PCMPlaying = 0;\n    pFieldScriptWorkArea->m50_scriptDelay = 0;\n    pFieldScriptWorkArea->m54_currentResult = 0;\n    pFieldScriptWorkArea->m58 = 0;\n    pFieldScriptWorkArea->m5C = 0;\n    pFieldScriptWorkArea->m60_canSkipScript = 0;\n    pFieldScriptWorkArea->m64 = 0;\n    pFieldScriptWorkArea->m80 = nullptr;\n    pFieldScriptWorkArea->m84 = nullptr;\n    s_fieldTaskWorkArea* pFieldTaskWorkArea = getFieldTaskPtr();"
+   "void s_fieldScriptWorkArea::Init(s_fieldScriptWorkArea* pFieldScriptWorkArea)\n{\n    pFieldScriptWorkArea->m4_currentScript = sSaturnPtr::getNull();\n    pFieldScriptWorkArea->m30_cinematicBarTask = nullptr;\n    pFieldScriptWorkArea->m34 = 0;\n    pFieldScriptWorkArea->m38_dialogStringTask = nullptr;\n    pFieldScriptWorkArea->m3C_multichoiceTask = nullptr;\n    pFieldScriptWorkArea->m40_receivedItemTask = nullptr;\n    pFieldScriptWorkArea->m44_multiChoiceData = nullptr;\n    pFieldScriptWorkArea->m48_cutsceneTask = nullptr;\n    pFieldScriptWorkArea->m4C_PCMTask = nullptr;\n    pFieldScriptWorkArea->m50_scriptDelay = 0;\n    pFieldScriptWorkArea->m54_currentResult = 0;\n    pFieldScriptWorkArea->m58_debugFastForward = 0;\n    pFieldScriptWorkArea->m5C = 0;\n    pFieldScriptWorkArea->m60_canSkipScript = 0;\n    pFieldScriptWorkArea->m64_isExitingField = 0;\n    pFieldScriptWorkArea->m80 = nullptr;\n    pFieldScriptWorkArea->m84 = nullptr;\n    s_fieldTaskWorkArea* pFieldTaskWorkArea = getFieldTaskPtr();"
    source_text "${source_text}")
 
   # Field scripts own the decision to play PCM; Lagi supplies the platform
@@ -3237,25 +3237,25 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
    string(REPLACE "    ${e014_stage}" "    lagiSetE011FatalStage(\"E014: ${e014_stage}\");\n    ${e014_stage}" source_text "${source_text}")
   endforeach()
   string(REPLACE "#include \"twn_e014.h\"" "#include \"town/e014/twn_e014.h\"" source_text "${source_text}")
-  set(source_text "int scriptFunction_6056926();\nint scriptFunction_6057470();\n${source_text}")
+  set(source_text "int enableMainLogic();\nint townDeleteCutscene();\n${source_text}")
   string(REPLACE "    overlayScriptFunctions.m_zeroArg[0x6057724]"
-   "    overlayScriptFunctions.m_zeroArg[0x60577BC] = {&scriptFunction_6057470, \"E014 close cutscene\"};\n    overlayScriptFunctions.m_zeroArg[0x6056C72] = {&scriptFunction_6056926, \"E014 restore main logic\"};\n    overlayScriptFunctions.m_zeroArg[0x6057724]" source_text "${source_text}")
+   "    overlayScriptFunctions.m_zeroArg[0x60577BC] = {&townDeleteCutscene, \"E014 close cutscene\"};\n    overlayScriptFunctions.m_zeroArg[0x6056C72] = {&enableMainLogic, \"E014 restore main logic\"};\n    overlayScriptFunctions.m_zeroArg[0x6057724]" source_text "${source_text}")
  elseif(relative_path STREQUAL "town/e011/twn_e011.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # Native MAIN 060324F0 stores R7 as a 16-byte transfer count. The host
   # helper accepts bytes instead. E011 supplies C0 blocks, not C0 bytes.
-  set(e011_line_setup "setupCinematicBarData(1, *(std::array<u32, 256>*)pThis->m40_heapPtr, 0x25E24000, 0xC0);")
+  set(e011_line_setup "setupCinematicBarData(1, { (u32*)pThis->m40_heapPtr, 0xC00 / 4 }, 0x25E24000, 0xC0);")
   string(FIND "${source_text}" "${e011_line_setup}" e011_line_found)
   if(e011_line_found LESS 0)
    message(FATAL_ERROR "Native E011 line-table transfer boundary changed")
   endif()
   string(REPLACE "${e011_line_setup}"
-   "setupCinematicBarData(1, *(std::array<u32, 256>*)pThis->m40_heapPtr, 0x25E24000, 0xC00); // LAGI_E011_LINE_BYTES"
+   "setupCinematicBarData(1, { (u32*)pThis->m40_heapPtr, 0xC00 / 4 }, 0x25E24000, 0xC00); // LAGI_E011_LINE_BYTES"
    source_text "${source_text}")
   string(REPLACE "    u8 m80_debugEnabled;"
    "    u8 m80_debugEnabled;\n    alignas(u32) std::array<u8, 0xC00> lagiLineDma{}; // Stable Saturn-order DMA shadow."
    source_text "${source_text}")
-  string(REPLACE "drawCinematicBar(1);"
-   "lagi::serializeNativeLineTable(pThis->m40_heapPtr, pThis->lagiLineDma.data(), 224u*3u);\n        vdpVar1[1].m0_source[0] = reinterpret_cast<u32*>(pThis->lagiLineDma.data());\n        drawCinematicBar(1);"
+  string(REPLACE "        drawCinematicBar(1);"
+   "        lagi::serializeNativeLineTable(pThis->m40_heapPtr, pThis->lagiLineDma.data(), 224u*3u);\n        vdpVar1[1].m0_source[0] = reinterpret_cast<u32*>(pThis->lagiLineDma.data());\n        drawCinematicBar(1);"
    source_text "${source_text}")
   set(source_text "#include \"lagi/native_line_table.h\"\n${source_text}")
   set(source_text "extern \"C\" void lagiSetE011FatalStage(const char*);\n${source_text}")
@@ -3298,9 +3298,9 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   string(REPLACE "    overlayScriptFunctions.m_twoArg[0x605cbd0]"
    "    overlayScriptFunctions.m_oneArg[0x605890C] = {&lagiE011StartSchedule, \"E011 native schedule\"};\n    overlayScriptFunctions.m_oneArg[0x605809E] = {&lagiE011StartPaletteSequence, \"E011 palette sequence\"};\n    overlayScriptFunctions.m_oneArg[0x60557E0] = {&lagiE011SetScreenWave, \"E011 screen wave\"};\n    overlayScriptFunctions.m_oneArg[0x6055872] = {&lagiE011SetScreenTracking, \"E011 screen tracking\"};\n    overlayScriptFunctions.m_twoArg[0x605cbd0]"
    source_text "${source_text}")
-  set(source_text "static int lagiE011StartPaletteSequence(int);\nstatic int lagiE011SetScreenWave(int);\nstatic int lagiE011SetScreenTracking(int);\nstatic int lagiE011FadeColor(int,int,int);\nint scriptFunction_6056926();\nint scriptFunction_6057470();\n${source_text}\n#include \"lagi_e011_later_callbacks.inc\"\n")
+  set(source_text "static int lagiE011StartPaletteSequence(int);\nstatic int lagiE011SetScreenWave(int);\nstatic int lagiE011SetScreenTracking(int);\nstatic int lagiE011FadeColor(int,int,int);\nint enableMainLogic();\nint townDeleteCutscene();\n${source_text}\n#include \"lagi_e011_later_callbacks.inc\"\n")
   string(REPLACE "    overlayScriptFunctions.m_twoArg[0x605cbd0]"
-   "    overlayScriptFunctions.m_zeroArg[0x60584E4] = {&e006_scriptFunction_6057438, \"E011 remaining frames\"};\n    overlayScriptFunctions.m_zeroArg[0x605851C] = {&scriptFunction_6057470, \"E011 close cutscene\"};\n    overlayScriptFunctions.m_zeroArg[0x60579D2] = {&scriptFunction_6056926, \"E011 restore main logic\"};\n    overlayScriptFunctions.m_threeArg[0x605948C] = {&lagiE011FadeColor, \"E011 native color fade\"};\n    overlayScriptFunctions.m_twoArg[0x605cbd0]"
+   "    overlayScriptFunctions.m_zeroArg[0x60584E4] = {&townGetCutsceneHalfPosition, \"E011 remaining frames\"};\n    overlayScriptFunctions.m_zeroArg[0x605851C] = {&townDeleteCutscene, \"E011 close cutscene\"};\n    overlayScriptFunctions.m_zeroArg[0x60579D2] = {&enableMainLogic, \"E011 restore main logic\"};\n    overlayScriptFunctions.m_threeArg[0x605948C] = {&lagiE011FadeColor, \"E011 native color fade\"};\n    overlayScriptFunctions.m_twoArg[0x605cbd0]"
    source_text "${source_text}")
   set(e011_attached_draw "    static void Draw(sE011Task1* pThis)\n    {\n        pushCurrentMatrix();")
   string(FIND "${source_text}" "${e011_attached_draw}" e011_attached_found)
@@ -3473,8 +3473,8 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
  elseif(relative_path STREQUAL "field/fieldBeamSpark.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_field_beam_spark_draw.inc")
-  set(spark_alt_draw_anchor "// 0606a400 (A7) / 0606be34 (A3) — alternate update installed when mC == 0 && m10 == 0\n// Not a real function — Ghidra misidentifies boundaries here (dead code / inline fragment)\nvoid beamSpark_UpdateAlt(sBeamSpark* pThis)\n{\n}")
-  set(spark_draw_anchor "// 06069f58 (A7) / 0606b98c (A3) — draw\nvoid beamSpark_Draw(sBeamSpark* pThis)\n{\n    Unimplemented();\n}")
+  set(spark_alt_draw_anchor "// 0606a400 (A7) / 0606be34 (A3) - alternate update installed when mC == 0 && m10 == 0\n// Not a real function - Ghidra misidentifies boundaries here (dead code / inline fragment)\nvoid beamSpark_UpdateAlt(sBeamSpark* pThis)\n{\n}")
+  set(spark_draw_anchor "// 06069f58 (A7) / 0606b98c (A3) - draw\nvoid beamSpark_Draw(sBeamSpark* pThis)\n{\n    Unimplemented();\n}")
   foreach(spark_boundary IN ITEMS spark_alt_draw_anchor spark_draw_anchor)
    string(FIND "${source_text}" "${${spark_boundary}}" spark_draw_found)
    if(spark_draw_found LESS 0)
@@ -3573,7 +3573,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    message(FATAL_ERROR "Native bile factory boundary changed")
   endif()
   string(REPLACE "${death_bile_anchor}" "${death_bile_service}\n${death_bile_anchor}" source_text "${source_text}")
-  set(death_bile_old "Unimplemented(); // FUN_0605a4ec — death bile projectile")
+  set(death_bile_old "Unimplemented(); // FUN_0605a4ec - death bile projectile")
   string(FIND "${source_text}" "${death_bile_old}" death_bile_found)
   if(death_bile_found LESS 0)
    message(FATAL_ERROR "Native death bile caller changed")
@@ -3636,7 +3636,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
         break;]=])
   string(REPLACE "        break;" "        return; // Native countdown skips the common increment." devour_wait_new "${devour_wait_old}")
   set(devour_approach_old [=[        MTH_Mul(gBattleManager->m10_battleOverlay->m18_dragon->m8_position[0] - pThis->m308_eatDragonPosition[0], 0x28F);
-        return; // early return — skip m2C4 increment]=])
+        return; // early return - skip m2C4 increment]=])
   set(devour_closeup_old [=[            pThis->m2CC = gBattleManager->m10_battleOverlay->m18_dragon->m8_position;
             pThis->m2CC[1] += 0xA000;
             pThis->m2CC[0] += MTH_Mul(0x4000, getSin((pThis->m278_targetedQuadrant << 0x1A) >> 16));
@@ -3660,7 +3660,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
     pushCurrentMatrix();
     translateCurrentMatrix(pThis->m28_position);
     rotateCurrentMatrixYXZ(*pThis->mC_rotationPtr);
-    // Draw using the model's draw function — but we don't have a model
+    // Draw using the model's draw function - but we don't have a model
     // The smoke puff is a visual-only effect; skip for now
     popMatrix();
 }]=])
@@ -3683,7 +3683,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_native_two_pose_morph.inc" arachnoth_morph_service)
   string(REPLACE "void arachnothFormation_update(sArachnothFormation* pThis)"
    "${arachnoth_morph_service}\nvoid arachnothFormation_update(sArachnothFormation* pThis)" source_text "${source_text}")
-  set(arachnoth_morph_old "    // TODO: arachnothFormation_updateSub8 — applies m288[2] jaw rotation to sub-model bones")
+  set(arachnoth_morph_old "    // TODO: arachnothFormation_updateSub8 - applies m288[2] jaw rotation to sub-model bones")
   string(FIND "${source_text}" "${arachnoth_morph_old}" arachnoth_morph_found)
   if(arachnoth_morph_found LESS 0)
    message(FATAL_ERROR "Native Arachnoth two-pose morph boundary changed")
@@ -4197,19 +4197,14 @@ static void lagiPatchModelAddresses(sProcessed3dModel* model, u32 offset)
  elseif(relative_path STREQUAL "field/fieldCutsceneTask2.cpp")
   set(source_text "#include \"lagi/platform.h\"\n${source_text}")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_excavation_camera_cut.inc" excavation_camera_cut)
-  set(camera_cut_anchor "void s_cutsceneTask2::UpdateSub1()\n{")
+  set(camera_cut_anchor "        endCutsceneTask(pThis);")
   string(FIND "${source_text}" "${camera_cut_anchor}" camera_cut_found)
   if(camera_cut_found LESS 0)
    message(FATAL_ERROR "Excavation camera completion boundary changed")
   endif()
-  string(REPLACE "${camera_cut_anchor}" "${excavation_camera_cut}\n${camera_cut_anchor}\n    lagiCutCompletedExcavationCamera();" source_text "${source_text}")
-  set(cinematic_end_trace "void s_cutsceneTask2::UpdateSub1()\n{")
-  string(FIND "${source_text}" "${cinematic_end_trace}" cinematic_end_found)
-  if(cinematic_end_found LESS 0)
-   message(FATAL_ERROR "Field cinematic timeline end boundary changed")
-  endif()
-  string(REPLACE "${cinematic_end_trace}"
-   "${cinematic_end_trace}\n    static unsigned timelineBudget=16;\n    if(timelineBudget){--timelineBudget;lagi::platform::logging::writef(\"[FieldExitTimeline] event=cameraEnd frames=%d flags=%u fadeStopped=%d field=%d sub=%d\\n\",int(m60),unsigned(m0),int(g_fadeControls.m0_fade0.m20_stopped),int(getFieldTaskPtr()->m2C_currentFieldIndex),int(getFieldTaskPtr()->m2E_currentSubFieldIndex));}"
+  string(REPLACE "void s_cutsceneTask2::Update(s_cutsceneTask2* pThis)" "${excavation_camera_cut}\nvoid s_cutsceneTask2::Update(s_cutsceneTask2* pThis)" source_text "${source_text}")
+  string(REPLACE "${camera_cut_anchor}"
+   "        static unsigned timelineBudget=16;\n        if(timelineBudget){--timelineBudget;lagi::platform::logging::writef(\"[FieldExitTimeline] event=cameraEnd frames=%d flags=%u fadeStopped=%d field=%d sub=%d\\n\",int(pThis->m60),unsigned(pThis->m0),int(g_fadeControls.m0_fade0.m20_stopped),int(getFieldTaskPtr()->m2C_currentFieldIndex),int(getFieldTaskPtr()->m2E_currentSubFieldIndex));}\n        lagiCutCompletedExcavationCamera();\n${camera_cut_anchor}"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townCutscene.cpp")
   set(epk_cinematic_tick "void sCutsceneTask::Draw(sCutsceneTask* pThis)\n{")
@@ -4552,36 +4547,14 @@ void sCutsceneTask::cutsceneDrawSub0(sCutsceneTask* pThis, s32 r5)]=]
    message(FATAL_ERROR "Town raw PCM bridge did not apply")
   endif()
 
-  # Generic close/completion path. Every town script already waits on state 5.
-  string(REPLACE
-   [=[void updateStreamingFileReadSub0(sStreamingFile* iParm1)
-{
-    Unimplemented();
-}]=]
-   [=[void updateStreamingFileReadSub0(sStreamingFile* iParm1)
-{
-    if (!iParm1)
-        return;
-
-    lagiStopCutscenePCM(iParm1);
-
-    LagiGfsHandle* stream = lagiGfsHandle(iParm1->m198.m0_gfsHandle);
-    if (stream)
-    {
-        lagi::disc::close_file(stream->file);
-        delete stream;
-        iParm1->m198.m0_gfsHandle.fHandle = nullptr;
-    }
-
-    if (iParm1->m28.m0 != 5)
-        lagi::platform::logging::writef(
-            "[AzelCutscene] complete state=%d frame=%u total=%u consumed=%u read=%u\n",
-            iParm1->m28.m0, iParm1->m28.m84_frameIndex,
-            iParm1->m194 ? iParm1->m194->m10_totalFrames : 0u,
-            iParm1->m28.m28, iParm1->m28.m24_currentPositionInFile);
-    iParm1->m198.m8_readIsPending = 0;
-    iParm1->m28.m0 = 5;
-}]=]
+  # Azel owns stream completion. Stop the Vita PCM service before its teardown.
+  set(town_stream_cleanup "    executeCutsceneCommandsSub2(pStreamingFile);")
+  string(FIND "${source_text}" "${town_stream_cleanup}" town_stream_cleanup_found)
+  if(town_stream_cleanup_found LESS 0)
+   message(FATAL_ERROR "Town stream completion boundary changed")
+  endif()
+  string(REPLACE "${town_stream_cleanup}"
+   "    lagiStopCutscenePCM(pStreamingFile);\n${town_stream_cleanup}"
    source_text "${source_text}")
 
   # Preserve all four bytes of a wrapped command header. The reconstructed
@@ -4743,7 +4716,7 @@ void sCutsceneTask::cutsceneDrawSub0(sCutsceneTask* pThis, s32 r5)]=]
         stream->m28.m3C,contiguous);
     if(result==-2) {
         lagi::platform::logging::writef("[EPKAudio] invalid packet/format bytes=%u\n",size);
-        updateStreamingFileReadSub0(stream);
+        stopPCMStreaming(stream);
         return -1;
     }
     return result; // busy keeps Azel's packet at the read cursor for retry
@@ -5014,31 +4987,39 @@ static s32 lagiCampRandomChoice(s32 limit)
   set(camp_shared_npc_source "${LAGI_AZEL_SOURCE_ROOT}/town/zoah/twn_zoah.cpp")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${camp_shared_npc_source}")
   file(READ "${camp_shared_npc_source}" camp_shared_npc_text)
-  string(FIND "${camp_shared_npc_text}" "// Set NPC animation and control state" camp_shared_npc_start)
-  if(camp_shared_npc_start LESS 0)
-   message(FATAL_ERROR "Shared NPC script service definitions changed")
-  endif()
-  string(SUBSTRING "${camp_shared_npc_text}" ${camp_shared_npc_start} -1 camp_shared_npc_text)
+  set(camp_town_script_source "${LAGI_AZEL_SOURCE_ROOT}/town/townScript.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${camp_town_script_source}")
+  file(READ "${camp_town_script_source}" camp_town_script_text)
   set(camp_shared_npc_bodies "")
-  foreach(camp_npc_function IN ITEMS setupZoahNPCAnimation turnNpcTowardsNpc turnNpcBackToSavedAngle scheduleNpcAnimation)
-   string(FIND "${camp_shared_npc_text}" "static s32 ${camp_npc_function}(" camp_npc_function_start)
+  foreach(camp_npc_function IN ITEMS setupNpcAnimation turnNpcToAngle turnNpcTowardsNpc turnNpcBackToSavedAngle scheduleNpcAnimation)
+   set(camp_npc_source "${camp_town_script_text}")
+   if(camp_npc_function STREQUAL "scheduleNpcAnimation")
+    set(camp_npc_source "${camp_shared_npc_text}")
+   endif()
+   if(camp_npc_function STREQUAL "turnNpcToAngle")
+    set(camp_npc_signature "static void turnNpcToAngle(")
+   else()
+    set(camp_npc_signature "s32 ${camp_npc_function}(")
+   endif()
+   string(FIND "${camp_npc_source}" "${camp_npc_signature}" camp_npc_function_start REVERSE)
    if(camp_npc_function_start LESS 0)
     message(FATAL_ERROR "Shared NPC function missing: ${camp_npc_function}")
    endif()
-   string(SUBSTRING "${camp_shared_npc_text}" ${camp_npc_function_start} -1 camp_npc_function_tail)
-   string(FIND "${camp_npc_function_tail}" "\n// " camp_npc_function_end)
+   string(SUBSTRING "${camp_npc_source}" ${camp_npc_function_start} -1 camp_npc_function_tail)
+   string(FIND "${camp_npc_function_tail}" "\n}\n" camp_npc_function_end)
    if(camp_npc_function_end LESS 0)
     message(FATAL_ERROR "Shared NPC function boundary changed: ${camp_npc_function}")
    endif()
+   math(EXPR camp_npc_function_end "${camp_npc_function_end} + 2")
    string(SUBSTRING "${camp_npc_function_tail}" 0 ${camp_npc_function_end} camp_npc_function_body)
    string(REPLACE "\r\n" "\n" camp_npc_function_body "${camp_npc_function_body}")
-   if(camp_npc_function STREQUAL "setupZoahNPCAnimation" OR camp_npc_function STREQUAL "scheduleNpcAnimation")
+   if(camp_npc_function STREQUAL "setupNpcAnimation" OR camp_npc_function STREQUAL "scheduleNpcAnimation")
     string(REPLACE "{\n    sNPC* pNPC ="
      "{\n    animIndex = static_cast<s8>(animIndex);\n    controlState = static_cast<s8>(controlState);\n    sNPC* pNPC ="
      camp_npc_function_body "${camp_npc_function_body}")
    endif()
    # Retain the return registers from Camp's concrete entry points as well.
-   if(camp_npc_function STREQUAL "setupZoahNPCAnimation")
+   if(camp_npc_function STREQUAL "setupNpcAnimation")
     set(camp_npc_return "return pNPC->mE_controlState;")
    elseif(camp_npc_function STREQUAL "scheduleNpcAnimation")
     set(camp_npc_return "return animIndex == 0 ? 0x159 : controlState;")
@@ -5054,7 +5035,8 @@ static s32 lagiCampRandomChoice(s32 limit)
   string(REPLACE "sZoahNPC" "sNPC" camp_shared_npc_bodies "${camp_shared_npc_bodies}")
   string(REGEX REPLACE "static_cast<sNPC\\*>\\((pNPC[12]?)\\)" "\\1"
    camp_shared_npc_bodies "${camp_shared_npc_bodies}")
-  string(REPLACE "setupZoahNPCAnimation" "lagiCampSetNpcAnimation" camp_shared_npc_bodies "${camp_shared_npc_bodies}")
+  string(REPLACE "setupNpcAnimation" "lagiCampSetNpcAnimation" camp_shared_npc_bodies "${camp_shared_npc_bodies}")
+  string(REPLACE "turnNpcToAngle" "lagiCampTurnNpcToAngle" camp_shared_npc_bodies "${camp_shared_npc_bodies}")
   string(REPLACE "turnNpcTowardsNpc" "lagiCampTurnNpcTowardsNpc" camp_shared_npc_bodies "${camp_shared_npc_bodies}")
   string(REPLACE "turnNpcBackToSavedAngle" "lagiCampTurnNpcBack" camp_shared_npc_bodies "${camp_shared_npc_bodies}")
   string(REPLACE "scheduleNpcAnimation" "lagiCampScheduleNpcAnimation" camp_shared_npc_bodies "${camp_shared_npc_bodies}")
@@ -5081,7 +5063,7 @@ static s32 lagiCampRandomChoice(s32 limit)
    "${LAGI_AZEL_SOURCE_ROOT}/town/townEdge.cpp")
   file(READ "${camp_shared_npc_source}" camp_actor_source)
   string(FIND "${camp_actor_source}" "static void updateZoahNPCSub1(sNPC* pThis)" camp_actor_start)
-  string(FIND "${camp_actor_source}" "// Set NPC animation and control state" camp_actor_end)
+  string(FIND "${camp_actor_source}" "// Script: create cutscene EPK player" camp_actor_end)
   if(camp_actor_start LESS 0 OR camp_actor_end LESS camp_actor_start)
    message(FATAL_ERROR "Shared Camp actor body boundaries changed")
   endif()
@@ -6238,6 +6220,8 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  field/fieldEncounterTask.cpp
  field/fieldCamera.cpp
  field/fieldDragon.cpp
+ field/fieldPCMTask.cpp
+ audio/pcmVoiceTask.cpp
  field/fieldVisibilityGrid.cpp
  field/fieldRadar.cpp
  field/fieldCutsceneTask.cpp
@@ -6266,6 +6250,7 @@ set(LAGI_AZEL_TOWN_RUNTIME_RELATIVE_SOURCES
  field/field_a3/a3_crane_upper.cpp
  field/field_a3/a3_dynamic_mine_cart.cpp
  field/field_a3/a3_fan.cpp
+ field/field_a3/a3_flag.cpp
  field/field_a3/a3_static_mine_cart.cpp
  field/field_a3/a3_waterfall.cpp
  field/field_a3/o_fld_a3.cpp
