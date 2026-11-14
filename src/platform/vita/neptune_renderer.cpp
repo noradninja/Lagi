@@ -14282,6 +14282,13 @@ static bool renderSceneVdp2BackgroundPass(bool frontend = false)
     return submitted;
 }
 
+static bool useFieldBackScreen()
+{
+    return g_sceneGameMode == 3u && g_sceneRbg0Enabled &&
+        (static_cast<unsigned>(g_sceneRbg0.ctrl[0]) & 3u) == 2u &&
+        g_sceneNbg0OverProgram && g_rgbaPresentInfo;
+}
+
 static void drawSceneVdp2Background()
 {
     if (!g_sceneRbg0Enabled || !g_sceneRbg0ColorBuffer)
@@ -14297,8 +14304,8 @@ static void drawSceneVdp2Background()
         !g_sceneNbg0.additive && g_sceneNbg0Pixels &&
         g_sceneNbg0OverProgram && g_rgbaPresentInfo;
     sceGxmSetFragmentProgram(g_probeContext,
-        backgroundOverNbg0 ? g_sceneNbg0OverProgram : g_textureFragmentProgram);
-    if (backgroundOverNbg0) {
+        (backgroundOverNbg0 || useFieldBackScreen()) ? g_sceneNbg0OverProgram : g_textureFragmentProgram);
+    if (backgroundOverNbg0 || useFieldBackScreen()) {
         void* fragmentUniforms = nullptr;
         if (sceGxmReserveFragmentDefaultUniformBuffer(
                 g_probeContext, &fragmentUniforms) < 0 || !fragmentUniforms)
@@ -15280,6 +15287,13 @@ static void renderBasicWingViewer()
 
     unsigned int vdp1UiSpriteSlot = 0u;
     if (nativeSceneMode) {
+        if (!spriteComposite && useFieldBackScreen()) {
+            const unsigned color = g_sceneRbg0.backColor;
+            drawColorOffsetPass(g_colorOffsetAddFragmentProgram,
+                (color & 31u) * 255u / 31u,
+                ((color >> 5) & 31u) * 255u / 31u,
+                ((color >> 10) & 31u) * 255u / 31u);
+        }
         if (!spriteComposite && g_sceneNbg0.behindWorld && g_viewMode != 19)
             drawSceneNbg0Gpu();
         if (!spriteComposite) drawSceneVdp2Background();
