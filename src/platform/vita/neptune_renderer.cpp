@@ -9081,6 +9081,12 @@ static int viewerRenderHeight()
     return g_halfResolution ? (kHeight / 2) : kHeight;
 }
 
+extern "C" int lagiVdp1BackgroundHalfWidth()
+{
+    // Invert the horizontal transform used for native distorted sprites.
+    const int denominator = 4 * viewerRenderHeight();
+    return (176 * 3 * viewerRenderWidth() + denominator - 1) / denominator;
+}
 static int viewerRenderPitch()
 {
     return g_halfResolution ? 512 : 1024;

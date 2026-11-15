@@ -20,6 +20,10 @@ static void lagiA5HorizonUpdate(sA5EncounterConfigTask* task)
     task->m8_scrollX = scroll % task->m18_range2 - task->m18_range2;
 }
 
+#if LAGI_NEPTUNE_RENDERER
+extern "C" int lagiVdp1BackgroundHalfWidth();
+#endif
+
 // FLD_A5 06055400 and MAIN 0602D9BC.
 static void lagiA5HorizonDraw(sA5EncounterConfigTask* task)
 {
@@ -30,6 +34,16 @@ static void lagiA5HorizonDraw(sA5EncounterConfigTask* task)
     auto& context = graphicEngineStatus.m14_vdp1Context[0];
     const s32 halfWidth = static_cast<s16>(projection.VDP1_X2) >> 1;
     const s32 width = task->m18_range2;
+    s32 coverage = halfWidth;
+#if LAGI_NEPTUNE_RENDERER
+    const s32 renderHalfWidth = lagiVdp1BackgroundHalfWidth();
+    if (renderHalfWidth > coverage)
+        coverage = renderHalfWidth;
+#endif
+    // Extend by whole tiles so the original camera-relative phase survives.
+    s32 firstX = task->m8_scrollX - halfWidth;
+    while (firstX > -coverage)
+        firstX -= width;
     const s32 top = -task->mC_horizonY - task->m1A_range3;
     const s32 bottom = -task->mC_horizonY;
     const s32 sortZ = projection.m14_farClipDistance.asS32() - 1;
@@ -37,7 +51,7 @@ static void lagiA5HorizonDraw(sA5EncounterConfigTask* task)
         * static_cast<u32>(projection.m38_oneOverFarClip.asS32())) >> 16);
     const float depth = static_cast<float>(sortZ) / projection.m14_farClipDistance.asS32();
 
-    for (s32 x = task->m8_scrollX - halfWidth; x <= halfWidth && context.mC < 1018; x += width)
+    for (s32 x = firstX; x <= coverage && context.mC < 1018; x += width)
     {
         auto& command = *context.m0_currentVdp1WriteEA;
         command = {};
