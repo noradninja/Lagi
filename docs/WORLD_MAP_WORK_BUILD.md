@@ -1,5 +1,18 @@
 # WORLD/Garil work-machine build — 2026-11-05
 
+## Garil horizon and widescreen coverage — 2026-11-15
+
+- `b3b4b60` restores the original Garil horizon task recovered from the Saturn
+  command capture. The blue-gray strip is a run of 64×31 VDP1 distorted
+  sprites behind the pillars. The nearby cliffs are separate meshes.
+- `e0eccb8` extends the tile run to Neptune's wide viewport using whole tiles
+  on the original scroll grid. The Vita package built successfully, and the
+  user confirmed on Vita that the clipping issue is corrected.
+- The captured edge gap is explained by viewport coverage. No mesh culling
+  change was required for this fix. The investigation did not establish a
+  separate mesh clipping cause.
+
+
 ## Current work-machine resume — 2026-11-12
 
 Use branch `diagnostics/garil-cliff-current`. The Gash dialogue checkpoint is
