@@ -3060,6 +3060,22 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   endif()
   string(REPLACE "getBit(0xA * 8 + 1)" "getBit(0xA * 8 + 6)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/o_fld_a5.cpp")
+  set(a5_horizon_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_a5_horizon.inc")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${a5_horizon_path}")
+  file(READ "${a5_horizon_path}" a5_horizon_source)
+  set(a5_horizon_task "static void createA5_encounterConfigInner")
+  set(a5_horizon_callbacks "{ &a5EncounterConfigInit, nullptr, nullptr, nullptr }")
+  string(FIND "${source_text}" "${a5_horizon_task}" a5_horizon_task_position)
+  string(FIND "${source_text}" "${a5_horizon_callbacks}" a5_horizon_callbacks_position)
+  if(a5_horizon_task_position LESS 0 OR a5_horizon_callbacks_position LESS 0)
+   message(FATAL_ERROR "Original Garil horizon task boundary changed")
+  endif()
+  string(REPLACE "    s16 m10_radarOffset;" "    s32 m8_scrollX;\n    s32 mC_horizonY;\n    s16 m10_radarOffset;"
+   source_text "${source_text}")
+  string(REPLACE "${a5_horizon_task}" "${a5_horizon_source}\n${a5_horizon_task}" source_text "${source_text}")
+  string(REPLACE "${a5_horizon_callbacks}" "{ &a5EncounterConfigInit, &lagiA5HorizonUpdate, &lagiA5HorizonDraw, nullptr }"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "field/field_a5/a5_exitTriggerEntity.cpp")
   # A5 06056714/0605672E write child+10 (stored intensity), NOT current
   # intensity at native+C. Saturn offsets cannot index a C++ work area.
