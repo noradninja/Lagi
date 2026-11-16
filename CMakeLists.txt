@@ -3257,16 +3257,6 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   string(REPLACE "    overlayScriptFunctions.m_zeroArg[0x6057724]"
    "    overlayScriptFunctions.m_zeroArg[0x60577BC] = {&townDeleteCutscene, \"E014 close cutscene\"};\n    overlayScriptFunctions.m_zeroArg[0x6056C72] = {&enableMainLogic, \"E014 restore main logic\"};\n    overlayScriptFunctions.m_zeroArg[0x6057724]" source_text "${source_text}")
  elseif(relative_path STREQUAL "town/e011/twn_e011.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
-  # Native MAIN 060324F0 stores R7 as a 16-byte transfer count. The host
-  # helper accepts bytes instead. E011 supplies C0 blocks, not C0 bytes.
-  set(e011_line_setup "setupCinematicBarData(1, { (u32*)pThis->m40_heapPtr, 0xC00 / 4 }, 0x25E24000, 0xC0);")
-  string(FIND "${source_text}" "${e011_line_setup}" e011_line_found)
-  if(e011_line_found LESS 0)
-   message(FATAL_ERROR "Native E011 line-table transfer boundary changed")
-  endif()
-  string(REPLACE "${e011_line_setup}"
-   "setupCinematicBarData(1, { (u32*)pThis->m40_heapPtr, 0xC00 / 4 }, 0x25E24000, 0xC00); // LAGI_E011_LINE_BYTES"
-   source_text "${source_text}")
   string(REPLACE "    u8 m80_debugEnabled;"
    "    u8 m80_debugEnabled;\n    alignas(u32) std::array<u8, 0xC00> lagiLineDma{}; // Stable Saturn-order DMA shadow."
    source_text "${source_text}")
