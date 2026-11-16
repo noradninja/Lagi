@@ -6708,6 +6708,10 @@ set_property(SOURCE src/integration/lagi_runtime.cpp src/integration/lagi_input_
  LAGI_BATTLE_BUILD_NATIVE=$<BOOL:${LAGI_BATTLE_NATIVE_BUILD}>
  LAGI_BATTLE_BUILD_EXECUTE_A3=$<BOOL:${LAGI_BATTLE_EXECUTE_A3}>
  LAGI_BATTLE_BUILD_LINK_AUDIT=$<BOOL:${LAGI_BATTLE_LINK_AUDIT}>)
+option(LAGI_RECORD_AZEL_INPUT "Record per-update Azel input for Saturn replay" OFF)
+if(LAGI_RECORD_AZEL_INPUT)
+ set_property(SOURCE src/integration/lagi_input_bridge.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_RECORD_AZEL_INPUT=1)
+endif()
 target_include_directories(lagi PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}/src/integration")
 target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceProcessmgr_stub SceSysmem_stub SceSysmodule_stub)
 if(LAGI_BATTLE_NATIVE_BUILD)
