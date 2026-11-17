@@ -1,5 +1,31 @@
 # Camp callback audit — 2026-11-05
 
+## Gash ride and Nanyd Swarm handoff
+
+The Vita input recorder captured the pre-Arachnoth save through Garil
+battle startup. Rider 2 changes from 0 to 2 at the E014 exit
+(status 0A to WORLD 4F) and remains 2 through Camp 55, Garil 56 and
+BTL_A5 overlay 1, subbattle 1. The user saw Gash on the dragon in
+combat. Camp playback logged T_GS_327.PCM and T_EG_316.PCM from the
+authored Crossing the Garil Desert topic. Camp departure retains the
+rider already selected at E014.
+
+The original Saturn replay accepted Yes, opened the conversation menu,
+played the Crossing topic, and entered Garil through the world map.
+The uninterrupted Camp departure avoided the sound wait seen when
+restoring the field checkpoint. The Saturn capture shows subtitle 4
+during mode 7, submode 2. Restoring the Vita save's HP and Saturn battle
+control defaults in a scratch checkpoint allowed the engine to reach
+mode 10 (hex) and accept a gun attack in mode 00.
+
+Disc 1 BTL_A5 state 1 checks flag 2000 at 0605CEE8, creates the
+subtitle and B_A5_00.PCM task at 0605CEFC, then restores the camera.
+State 2 retains the original 54 (hex) counter and sets flag 100
+(hex) to signal cinematic completion. Lagi's test build uses the
+mounted file and the battle text table for playback. The host PCM and
+task lifecycle checks passed. Vita playback and the return of attack
+control remain unverified for the test build.
+
 ## Gash Camp Vita retest — 2026-11-13
 
 The user confirmed that Gash's Camp interactions work on Vita and that
