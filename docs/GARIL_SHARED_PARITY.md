@@ -44,7 +44,7 @@ remain open. This checkpoint does not claim those are fixed.
 
 ## Native trace findings still to implement
 
-- Queen loss at formation 0605CDFA..CE4E waits for the player turn, checks
+- Queen loss at formation 0605CDFA..CE4E waits for intro completion, checks
   m1D4 and mF0, enters battle mode 7, clears formation attack state and sets
   formation state 9. States 9/10 issue Scatter and signal surviving actors.
   The upstream simplified formation omits this path.
@@ -57,3 +57,14 @@ remain open. This checkpoint does not claim those are fixed.
 - Shared formationTriggerAttack/Followup are stubs because native enemy
   work-area offsets cannot describe expanded C++ tasks. Implement a typed
   actor interface rather than adding byte-offset casts for each overlay.
+
+## Enemy record identity correction
+
+Both A5 enemy constructors incorrectly read a word at position-table +0xC.
+Swarm positions there start with 00009000, so this selected enemy record 0
+instead of the group's native 0xF/0x10 records. Subbattle 4 did the same read
+through a null table. Original 0605E2B4 and 0605BC42 load entity-group +0xC
+directly and add the leader variant. Both constructors now share that typed
+lookup. This repairs a definite invalid read and restores authored HP/reward
+identity, but other subbattle 4 constructor/target/damage accesses remain open;
+no whole-encounter crash acceptance is claimed.

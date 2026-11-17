@@ -3910,6 +3910,19 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "void setupConditionalLightColor(int param_1);"
    "void increaseStatsCount(int statIndex);\nvoid setupConditionalLightColor(int param_1);"
    source_text "${source_text}")
+  string(REPLACE
+   "readSaturnS16(pParent->mE0_entityGroup.m8_dataTable + 0xC) + iVar6"
+   "lagiBattleEnemyType(pParent->mE0_entityGroup, iVar6)"
+   source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_single.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(a5_single_type "readSaturnS16(pParent->mE0_entityGroup.m8_dataTable + 0xC) + isLead")
+  string(FIND "${source_text}" "${a5_single_type}" a5_single_type_found)
+  if(a5_single_type_found LESS 0)
+   message(FATAL_ERROR "A5 single enemy record boundary changed")
+  endif()
+  string(REPLACE "${a5_single_type}"
+   "lagiBattleEnemyType(pParent->mE0_entityGroup, isLead)" source_text "${source_text}")
+  set(source_text "#include \"lagi_battle_enemy_lifecycle.h\"\n${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_formation.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_intro.inc")

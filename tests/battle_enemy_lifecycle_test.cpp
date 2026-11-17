@@ -30,6 +30,10 @@ void vdp2DebugPrintSetPosition(int,int){assert(false);}void vdp2PrintfSmallFont(
 // PRODUCTION_NOTIFICATION
 // PRODUCTION_UPDATE
 int main(){
+ struct Group{int mC_formationNameIndex;void* m8_dataTable=nullptr;};
+ assert(lagiBattleEnemyType(Group{15},0)==15);
+ assert(lagiBattleEnemyType(Group{15},1)==16);
+ assert(lagiBattleEnemyType(Group{17},1)==18);
  s16 hp=100;sVec3_FP pos{1,2,3};sEnemyLifeMeterTask meter;
  meter.m0=&pos;meter.m24=&hp;meter.m1C=100;
  hp=80;meter.m31|=2;createEnemyLifeMeterTask_update(&meter);

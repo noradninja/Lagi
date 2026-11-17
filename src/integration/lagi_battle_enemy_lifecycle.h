@@ -10,3 +10,12 @@ inline void lagiBattleEnemyDefeated(LifeMeter* meter)
     if (meter)
         meter->m31 |= 1 | 8;
 }
+
+// Native entity-group +0xC is the enemy record ID. Group +8 is a position
+// table, not a descriptor whose +0xC contains an ID (A5 0605E2B2..E2BA,
+// 0605BC3E..BC46). Keep this typed for expanded host/Vita group layouts.
+template<class EntityGroup>
+inline int lagiBattleEnemyType(const EntityGroup& group, int variant)
+{
+    return group.mC_formationNameIndex + variant;
+}
