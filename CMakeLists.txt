@@ -3890,6 +3890,26 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
                     pModel->m58_targetablePositions[target++] = position;
         }
         popMatrix();]=] source_text "${source_text}")
+  # Restore the native death tail (0605E706..E778). Rewards remain owned by
+  # battleEnemyLifeMeter, exactly as in Valley combat.
+  set(a5_death_old [=[            playSystemSoundEffect(0x65);
+            pThis->m28_state = 7;]=])
+  string(FIND "${source_text}" "${a5_death_old}" a5_death_found)
+  if(a5_death_found LESS 0)
+   message(FATAL_ERROR "A5 enemy death boundary changed")
+  endif()
+  string(REPLACE "${a5_death_old}" [=[            playSystemSoundEffect(0x65);
+            BTL_A5_enemy_cleanup(pThis, nullptr);
+            increaseStatsCount(8);
+            lagiBattleEnemyDefeated(pThis->mAC_lifeMeter);
+            pThis->m58_gravityY = -0x160;
+            pThis->m6C_deathRotX = ((randomNumber() & 3) + 1) * 0x2D82D8;
+            pThis->m70_deathRotY = ((randomNumber() & 3) + 1) * 0x5B05B0;
+            pThis->m28_state = 7;]=] source_text "${source_text}")
+  set(source_text "#include \"lagi_battle_enemy_lifecycle.h\"\n${source_text}")
+  string(REPLACE "void setupConditionalLightColor(int param_1);"
+   "void increaseStatsCount(int statIndex);\nvoid setupConditionalLightColor(int param_1);"
+   source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_formation.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_intro.inc")
@@ -6230,6 +6250,18 @@ void inventoryPrintBerserk(s32 row, eItems item, s32 contextFlags)
   message(FATAL_ERROR
    "Upstream Azel source no longer contains the expected PDS.h include: "
    "${relative_path}")
+ endif()
+
+ if(LAGI_BATTLE_NATIVE_BUILD AND relative_path STREQUAL "battle/BTL_A3/baldor.cpp")
+  set(valley_defeat [=[        pThis->m40_enemyLifeMeterTask->m31 |= 1;
+        pThis->m40_enemyLifeMeterTask->m31 |= 8;]=])
+  string(FIND "${source_text}" "${valley_defeat}" valley_defeat_found)
+  if(valley_defeat_found LESS 0)
+   message(FATAL_ERROR "Valley life-meter defeat boundary changed")
+  endif()
+  string(REPLACE "${valley_defeat}"
+   "        lagiBattleEnemyDefeated(pThis->m40_enemyLifeMeterTask);" source_text "${source_text}")
+  set(source_text "#include \"lagi_battle_enemy_lifecycle.h\"\n${source_text}")
  endif()
 
  string(REPLACE "/" "_" generated_name "${relative_path}")
