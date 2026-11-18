@@ -68,3 +68,71 @@ directly and add the leader variant. Both constructors now share that typed
 lookup. This repairs a definite invalid read and restores authored HP/reward
 identity, but other subbattle 4 constructor/target/damage accesses remain open;
 no whole-encounter crash acceptance is claimed.
+
+## Hardware acceptance update and formation control trace — 2026-11-18
+
+The user confirms that checkpoint 1 (the shared enemy-death lifecycle,
+including death motion, meter retirement and rewards) works as expected in the
+current Vita build. Treat this as hardware acceptance for that tested path,
+not proof that all encounters or variants terminate correctly. No need to
+retest checkpoint 1 as the primary next gate unless a later change regresses it.
+
+Next gate: restore the authored queen-loss -> Scatter -> encounter-completion
+control flow using existing Azel battle and formation facilities. Do not
+invent an A5-specific battle exit or directly set result/story state.
+
+Pinned repository baseline: `816c5aa9bca3424e261cabb85e3a2b7a0dc642ef`;
+pinned Azel submodule: `4cebb24b91ed1499b8754cf992c2fc90dbfb044d`.
+
+### Trace of the known implementation gap
+
+- `AzelLib/battle/BTL_A5/BTL_A5_formation.cpp`:
+  `BTL_A5_formationTask_Update` (0605CD10) increments the engine's active
+  formation count; removes finished entity pointers; enters cleanup state
+  0xB when every entity is dead. Its current switch only handles 0, 1, 2,
+  3, 4, and 0xB; **9 and 10 are missing** and fall through the default,
+  which forces state 0xB. The 0xB timer subsequently releases the two NPC
+  references and marks the formation finished.
+- `BTL_A5_enemy_Update` increments `mF0_flag` when a lead enemy is killed
+  and increments `mE0_entityGroup.mF_deadCount` when any enemy is killed.
+  The Vita death adapter now also performs cleanup and shared meter
+  notification. These counters must remain distinct: leader loss is not
+  identical to all-enemies-dead.
+- Prior Disc 1 native trace locates the leader-loss branch around
+  `0605CDFA..0605CE4E`: it checks `m1D4_flag` and `mF0_flag`,
+  advances through battle mode 7 and formation states 9/10, signals
+  surviving actors, and initiates Scatter. The exact arguments, branch
+  order, counter timing and action flags **must be pinned from BTL_A5.PRG**
+  before implementing these states; these details are not established by
+  the upstream C++ translation alone.
+- `AzelLib/battle/battleFormationBase.cpp`:
+  `formationTriggerAttack` (0609B60A) and
+  `formationTriggerAttackFollowup` (0609B65E) already iterate entity
+  arrays and remove finished references but leave the live-actor flag
+  write/clear as `Unimplemented()`. They currently expect Saturn's
+  `entity+0x14` attack-flags layout, which cannot be assumed for a native
+  C++ task.
+- The shared `formationSubStateMachine` has the established
+  attack/follow-up protocol (states 2/3/4) and calls those functions.
+  Restore a typed live-actor command/flag interface at the shared layer
+  and make the A5 actor satisfy that interface; do not introduce unsafe
+  Saturn offset casts or an A5-exclusive replacement engine.
+
+### Implementation acceptance boundaries
+
+1. Verify the native queen-loss branch using the exact Disc 1
+   `BTL_A5.PRG` bytes; distinguish the conditional leader-loss transition
+   from the all-enemies-dead cleanup path.
+2. Implement the smallest typed actor interface required by the shared
+   formation signaling services, with a host fixture for set/clear and
+   finished/null entities. No modifications to `extern/Azel`.
+3. Restore A5's missing authored states via a guarded Lagi source adapter.
+   Test the state transition, signal lifetime, one-shot Scatter, and ordinary
+   all-dead retirement independently before a Vita build.
+4. Hardware acceptance: queen gun death signals the survivors, displays
+   the authored Scatter action, permits the encounter to end normally,
+   and reaches the existing battle results/field return path; no regression
+   to the already accepted death/reward lifecycle.
+
+This trace checkpoint is documentation only: it does not claim Scatter is
+implemented or hardware-tested.
