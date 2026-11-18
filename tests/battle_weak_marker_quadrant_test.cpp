@@ -17,6 +17,17 @@ int main()
                         (flags&1) && !(flags&2) && !(flags&4);
                     assert(nativeWeakMarkerVisible(value,index,q)==expected);
                 }
+    // Ordinary WEAK sprites do not require the gun selected-target bit.
+    for (unsigned q=0; q<4; ++q)
+        for (unsigned mask=0; mask<16; ++mask)
+        {
+            const auto flags = std::uint32_t(mask) << 28;
+            assert(lagi::nativeTargetQuadrantEligible(flags, 1, q) ==
+                   bool(mask & (8u >> q)));
+            assert(!lagi::nativeTargetQuadrantEligible(flags, 0, q));
+            assert(!lagi::nativeTargetQuadrantEligible(flags | 0x100000u, 1, q));
+            assert(!lagi::nativeTargetQuadrantEligible(flags | 0x40000u, 1, q));
+        }
     // A weak-point selection made while behind must not bleed into front.
     const auto backOnly = 0x20000000u | 0x00200000u;
     assert(!nativeWeakMarkerVisible(backOnly,2,0));

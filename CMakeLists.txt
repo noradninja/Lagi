@@ -3551,6 +3551,19 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
     "${weak_anchor}\n    if (!pThis->m84_pTargetable || !lagi::nativeWeakMarkerVisible(pThis->m84_pTargetable->m50_flags, pThis->m84_pTargetable->m5A, static_cast<unsigned>(gBattleManager->m10_battleOverlay->m4_battleEngine->m22C_dragonCurrentQuadrant))) { pThis->m_DrawMethod = nullptr; return; }"
     source_text "${source_text}")
   endforeach()
+  # Ordinary WEAK sprites are emitted by subtask0, while selected
+  # target markers are subtask1. Guard both draw paths on the native
+  # current-quadrant eligible index, even if update/draw order changes.
+  foreach(weak_cursor IN ITEMS sBaldorSubTask0_draw sBaldorSubTask0_draw1)
+   set(weak_cursor_anchor "void ${weak_cursor}(sBaldorSubTask* pThis)\n{")
+   string(FIND "${source_text}" "${weak_cursor_anchor}" weak_cursor_found)
+   if(weak_cursor_found LESS 0)
+    message(FATAL_ERROR "Native WEAK sprite draw boundary changed: ${weak_cursor}")
+   endif()
+   string(REPLACE "${weak_cursor_anchor}"
+    "${weak_cursor_anchor}\n    if (!pThis->m84_pTargetable || !lagi::nativeTargetQuadrantEligible(pThis->m84_pTargetable->m50_flags, pThis->m84_pTargetable->m5A, static_cast<unsigned>(gBattleManager->m10_battleOverlay->m4_battleEngine->m22C_dragonCurrentQuadrant))) { pThis->m_DrawMethod = nullptr; return; }"
+    source_text "${source_text}")
+  endforeach()
   # Draw may still run after Update marks a task finished, or while updates
   # are paused. Honor the native target retirement bit at packet emission too.
   foreach(cursor_draw IN ITEMS sBaldorSubTask0_draw sBaldorSubTask0_draw1 sBaldorSubTask1_draw)
