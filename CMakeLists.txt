@@ -3880,6 +3880,25 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "${a5_target_metadata}" [=[(*pModel->m40)[i].m0[j].m10,
                     (*pModel->m40)[i].m0[j].m0]=] source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_enemy.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # Original A5 0605EFEC seeds entity+0x170/0x174/0x178 escape direction;
+  # 0605EAA4 adds it to the position/orbit target each movement frame.
+  set(escape_offset_struct "    u8 m170_pad4[0x17C - 0x170];")
+  string(FIND "${source_text}" "${escape_offset_struct}" escape_offset_found)
+  if(escape_offset_found LESS 0)
+   message(FATAL_ERROR "A5 escape offset work-area boundary changed")
+  endif()
+  string(REPLACE "${escape_offset_struct}" "    sVec3_FP m170_scatterOffset;" source_text "${source_text}")
+  set(escape_interp_anchor "    // simple position interpolation toward target (move 1/4 of the way each frame)")
+  string(FIND "${source_text}" "${escape_interp_anchor}" escape_interp_found)
+  if(escape_interp_found LESS 0)
+   message(FATAL_ERROR "A5 native escape interpolation boundary changed")
+  endif()
+  string(REPLACE "${escape_interp_anchor}" [=[
+    // Native 0605EAA4: displacement at +0x170 is added to the current
+    // formation/orbit target before the shared position interpolation.
+    if (pThis->m28_state == 6)
+        pThis->m60_targetPosition += pThis->m170_scatterOffset;
+    // simple position interpolation toward target (move 1/4 of the way each frame)]=] source_text "${source_text}")
   set(a5_scatter_actor_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_a5_scatter_actor.inc")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${a5_scatter_actor_path}")
   file(READ "${a5_scatter_actor_path}" a5_scatter_actor)
@@ -3908,6 +3927,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
             pThis->mAC_lifeMeter->getTask()->markFinished();
             pThis->mAC_lifeMeter = nullptr;
         }
+        lagiA5BeginScatterFlight(pThis, pEngine);
         pThis->m24_counter = 0;
         pThis->m28_state = 6;
     }
@@ -3956,6 +3976,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
             pThis->m6C_deathRotX = ((randomNumber() & 3) + 1) * 0x2D82D8;
             pThis->m70_deathRotY = ((randomNumber() & 3) + 1) * 0x5B05B0;
             pThis->m28_state = 7;]=] source_text "${source_text}")
+  set(source_text "#include \"lagi/native_scatter_flight.h\"\n${source_text}")
   set(source_text "#include \"lagi_a5_scatter_lifecycle.h\"\n${source_text}")
   set(source_text "#include \"lagi_battle_enemy_lifecycle.h\"\n${source_text}")
   string(REPLACE "void setupConditionalLightColor(int param_1);"
