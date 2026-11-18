@@ -194,3 +194,36 @@ correct typed actor/task signal, with host coverage for live and
 finished entities, then the A5 formation-state restoration.
 
 This is a static PRG/source trace, not a Vita gameplay fix.
+
+## Correction: native Scatter producer AND consumer — 2026-11-18
+
+**Supersedes the mistaken task-header destination claim in the preceding
+disassembly checkpoint.** The native instruction flow uses two different
+pointers, not one:
+
+- `0605D0C8..D0D0`: take the entity work-area pointer, subtract `0x18`
+  to reach its task header, then inspect header `+0x14` bit 1 to skip a
+  finished task.
+- `0605D0D2..D0E0`: reload the entity work-area pointer (without
+  subtracting `0x18`), load its **own** `+0x14` flags, OR with bit
+  `0x8`, and write that work-area flag back.
+- `0605E814..E85E`: the native A5 enemy state-zero path checks work-area
+  `+0x14` bit `0x8` at `0605E844..E848`. If set, it calls
+  `0605EFEC`, invokes `06061CF6`, and switches the enemy state to
+  **6**. Thus the original flag has an actual area actor consumer and
+  is not a scheduler signal.
+- `0605E936..E9DA`: state 6 updates escape movement relative to the
+  battle position and advances its 16-bit frame counter. At 90 frames
+  it resets the counter and marks the enemy task finished when the
+  appropriate formation guard permits it.
+- The original state-9 call `06070A7E(3,40,0)` invokes the battle
+  command/display pathway (eventually `0601C018`); its exact text
+  presentation mapping to existing Azel functions is still to be pinned.
+
+The previously committed generic **task-header** bit-8 helper is not a
+correct Scatter implementation; do not call it from A5. Replace it with a
+typed actor work-area flag interface, keeping finished-task filtering
+separate. Restore the native state-0 -> state-6 escape sequence; do not
+shortcut survivor retirement or change the shared result owner. Source
+for these findings: uploaded Disc 1 `BTL_A5.PRG` at the addresses
+above and pinned upstream A5 actor/formation implementations.
