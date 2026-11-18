@@ -227,3 +227,59 @@ separate. Restore the native state-0 -> state-6 escape sequence; do not
 shortcut survivor retirement or change the shared result owner. Source
 for these findings: uploaded Disc 1 `BTL_A5.PRG` at the addresses
 above and pinned upstream A5 actor/formation implementations.
+
+## First end-to-end Scatter Vita candidate — 2026-11-18
+
+Implementation branch checkpoint: `33c8badc9cd088845454388f0da5472079512374`.
+
+**Important correction:** the native state-9 loop tests TASK HEADER +0x14 bit 1
+for finished, but writes bit 8 to ENEMY WORK AREA +0x14. The historical
+mistaken task-flag helper was removed; `lagi_formation_actor_signal.h`
+iterates typed Azel entities and dispatches actor-specific writes. A5
+registers `lagiA5SignalActorFlags` to set its `m14_flags` bit 8.
+
+Atomic functional changes:
+- `b709b54`: replace incorrect task-header signaling with typed work-area
+  actor signaling; retain finished/null filtering.
+- `fbda4d5`: register the A5 typed flag receiver in generated Azel source.
+- `0d39bb3`: restore A5 state-0 -> state-6 escape and count/finish
+  boundary, without death rewards.
+- `6592d1a`: restore lead-death guard and formation state 9, feeding the
+  existing battle mode 7 and shared completion flags, never a private
+  result/exit pipeline.
+- `6d82818`: add executable production-include host fixture for queen
+  loss, intro gating, once-only signal, ten-leader variant, and normal
+  all-dead guard.
+- `33c8bad`: retire the separately dragon-owned enemy life meter when
+  an enemy begins escaping, avoiding dangling position/health references
+  and without granting XP/Dyne.
+
+Static source boundary audit: original upstream A5 actor and formation
+anchors each occur exactly once; current CMake patch references all
+added integration files. An equivalent formation sequence was compiled
+and run with GCC on the analysis host; the committed MSVC fixture can
+be run with `tests/battle_a5_scatter_sequence_test.ps1`.
+**This is not a verified Vita build** and is not whole-game acceptance.
+
+### Targeted hardware test
+
+1. Pull `diagnostics/garil-cliff-current` at the candidate commit and
+   build with the usual native battle flags. Start from the established
+   pre-join Camp save, progress into the first Nanyd swarm.
+2. Shoot the lead/queen Nanyd while leaving survivors alive. Confirm
+   queen death/rewards still use the accepted shared lifecycle.
+3. Observe whether remaining Nanyds receive the escape behavior, their
+   life meters disappear, and the encounter transitions through the
+   existing results then field return. Neither a hang nor a crash is
+   acceptable.
+4. Record video plus log, particularly any battle-mode transitions
+   following the queen's death. Check whether the sequence works on
+   repeated encounters after returning to the field.
+
+Limitations still open: native `06070A7E(3,40,0)` Scatter display call is
+not yet mapped to its existing battle text/presentation service, so the
+authored text may be absent. The A5 state-6 escape currently restores the
+state and retirement timer; its detailed native movement requires a later
+parity pass. Subbattle-4 enemy constructor/lifecycle and worm story
+cutscene remain separate acceptance gates. A Vita test is intended to
+validate the handoff and termination first, not claim visual parity.
