@@ -3541,16 +3541,13 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   # Never change target registration, damage, or gun/laser eligibility here.
   set(source_text "#include \"lagi/native_weak_marker_visibility.h\"\n${source_text}")
   set(weak_draw "void sBaldorSubTask1_draw(sBaldorSubTask* pThis)\n{")
-  set(weak_update "void sBaldorSubTask1_update(sBaldorSubTask* pThis)\n{")
-  foreach(weak_anchor IN ITEMS "${weak_draw}" "${weak_update}")
-   string(FIND "${source_text}" "${weak_anchor}" weak_pos)
-   if(weak_pos LESS 0)
-    message(FATAL_ERROR "Weak marker quadrant boundary changed")
-   endif()
-   string(REPLACE "${weak_anchor}"
-    "${weak_anchor}\n    if (!pThis->m84_pTargetable || !lagi::nativeWeakMarkerVisible(pThis->m84_pTargetable->m50_flags, pThis->m84_pTargetable->m5A, static_cast<unsigned>(gBattleManager->m10_battleOverlay->m4_battleEngine->m22C_dragonCurrentQuadrant))) { pThis->m_DrawMethod = nullptr; return; }"
-    source_text "${source_text}")
-  endforeach()
+  string(FIND "${source_text}" "${weak_draw}" weak_pos)
+  if(weak_pos LESS 0)
+   message(FATAL_ERROR "Selected target marker draw boundary changed")
+  endif()
+  string(REPLACE "${weak_draw}"
+   "${weak_draw}\n    if (!pThis->m84_pTargetable || !lagi::nativeWeakMarkerVisible(pThis->m84_pTargetable->m50_flags, pThis->m84_pTargetable->m5A, static_cast<unsigned>(gBattleManager->m10_battleOverlay->m4_battleEngine->m22C_dragonCurrentQuadrant))) { pThis->m_DrawMethod = nullptr; return; }"
+   source_text "${source_text}")
   # Ordinary WEAK sprites are emitted by subtask0, while selected
   # target markers are subtask1. Guard both draw paths on the native
   # current-quadrant eligible index, even if update/draw order changes.
