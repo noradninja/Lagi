@@ -40,6 +40,12 @@ struct sBTL_A5_FormationTask {
 };
 enum class eBattleModes { m7 = 7 };
 static int modeCalls = 0;
+static int displayCalls = 0;
+void battleEngine_displayAttackName(int textIndex, int duration, int option)
+{
+    assert(textIndex == 3 && duration == 40 && option == 0);
+    ++displayCalls;
+}
 void battleEngine_SetBattleMode(eBattleModes mode)
 {
     assert(mode == eBattleModes::m7);
@@ -83,12 +89,13 @@ int main()
     assert(formation.m28_state == 11 && formation.m26_counter2 == 0);
     assert(members[0] == nullptr && lead.flags == 0);
     assert(survivor.flags == 8 && second.flags == 8);
+    assert(displayCalls == 1);
     assert(engine.m188_flags.m10000);
     assert(engine.m188_flags.m100_attackAnimationFinished);
 
     // Queen-loss path must be one-shot, without a second mode transition.
     lagiA5BeginQueenScatter(&formation, &engine);
-    assert(modeCalls == 1);
+    assert(modeCalls == 1 && displayCalls == 1);
 
     // The ten-leader variant disables queen-loss Scatter.
     Actor* lone[] = {&survivor};
