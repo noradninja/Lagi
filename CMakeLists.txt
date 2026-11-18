@@ -3561,6 +3561,29 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
     "${weak_cursor_anchor}\n    if (!pThis->m84_pTargetable || !lagi::nativeTargetQuadrantEligible(pThis->m84_pTargetable->m50_flags, pThis->m84_pTargetable->m5A, static_cast<unsigned>(gBattleManager->m10_battleOverlay->m4_battleEngine->m22C_dragonCurrentQuadrant))) { pThis->m_DrawMethod = nullptr; return; }"
     source_text "${source_text}")
   endforeach()
+  # Original WEAK target sprites are tied to view-space hotspot depth.
+  # Without a producer depth tag Neptune classifies them as always-front
+  # screen UI, so the WEAK text and sprite bleed through enemy geometry.
+  set(weak_depth_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_weak_cursor_world_depth.inc")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${weak_depth_path}")
+  file(READ "${weak_depth_path}" weak_depth_source)
+  set(weak_depth_anchor "void sBaldorSubTask0_draw1(sBaldorSubTask* pThis)\n{")
+  string(FIND "${source_text}" "${weak_depth_anchor}" weak_depth_found)
+  if(weak_depth_found LESS 0)
+   message(FATAL_ERROR "Native WEAK packet depth insertion boundary changed")
+  endif()
+  string(REPLACE "${weak_depth_anchor}"
+   "${weak_depth_source}\n${weak_depth_anchor}" source_text "${source_text}")
+  foreach(weak_cursor IN ITEMS sBaldorSubTask0_draw sBaldorSubTask0_draw1 sBaldorSubTask1_draw)
+   set(depth_cursor_anchor "void ${weak_cursor}(sBaldorSubTask* pThis)\n{")
+   string(FIND "${source_text}" "${depth_cursor_anchor}" depth_cursor_found)
+   if(depth_cursor_found LESS 0)
+    message(FATAL_ERROR "WEAK cursor producer depth boundary changed: ${weak_cursor}")
+   endif()
+   string(REPLACE "${depth_cursor_anchor}"
+    "${depth_cursor_anchor}\n    lagi::WeakCursorWorldDepthScope weakDepthScope(graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA, pThis->m84_pTargetable ? pThis->m84_pTargetable->m4_pPosition : nullptr);"
+    source_text "${source_text}")
+  endforeach()
   # Draw may still run after Update marks a task finished, or while updates
   # are paused. Honor the native target retirement bit at packet emission too.
   foreach(cursor_draw IN ITEMS sBaldorSubTask0_draw sBaldorSubTask0_draw1 sBaldorSubTask1_draw)
