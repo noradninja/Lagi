@@ -3874,6 +3874,24 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    message(FATAL_ERROR "A5 typed Scatter actor boundary changed")
   endif()
   string(REPLACE "${a5_actor_anchor}" "${a5_scatter_actor}\n${a5_actor_anchor}" source_text "${source_text}")
+  # Native A5 0605E844..E85E consumes work-area flag 8; 0605E936
+  # retires escape-state actors without awarding death rewards.
+  set(a5_scatter_state_anchor "    // check for damage (only in alive state)")
+  string(FIND "${source_text}" "${a5_scatter_state_anchor}" a5_scatter_state_found)
+  if(a5_scatter_state_found LESS 0)
+   message(FATAL_ERROR "A5 native Scatter update boundary changed")
+  endif()
+  string(REPLACE "${a5_scatter_state_anchor}" [=[
+    if (pThis->m28_state == 0 && (pThis->m14_flags & 8))
+    {
+        BTL_A5_enemy_cleanup(pThis, nullptr);
+        pThis->m24_counter = 0;
+        pThis->m28_state = 6;
+    }
+    if (lagiA5ScatterRetireIfComplete(pThis))
+        return;
+
+    // check for damage (only in alive state)]=] source_text "${source_text}")
   set(a5_target_init "    initBattleEnemyTargetables(pEntity, pEntity->m29_modelCount, pEntity->m2C_models);")
   string(REPLACE "${a5_target_init}" [=[    pEntity->mB4 = 0;
     pEntity->mB8_damageCallback0 = 0x060a3a4c;
@@ -3915,6 +3933,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
             pThis->m6C_deathRotX = ((randomNumber() & 3) + 1) * 0x2D82D8;
             pThis->m70_deathRotY = ((randomNumber() & 3) + 1) * 0x5B05B0;
             pThis->m28_state = 7;]=] source_text "${source_text}")
+  set(source_text "#include \"lagi_a5_scatter_lifecycle.h\"\n${source_text}")
   set(source_text "#include \"lagi_battle_enemy_lifecycle.h\"\n${source_text}")
   string(REPLACE "void setupConditionalLightColor(int param_1);"
    "void increaseStatsCount(int statIndex);\nvoid setupConditionalLightColor(int param_1);"
