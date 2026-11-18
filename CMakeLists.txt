@@ -3885,6 +3885,14 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
     if (pThis->m28_state == 0 && (pThis->m14_flags & 8))
     {
         BTL_A5_enemy_cleanup(pThis, nullptr);
+        // Survivors flee without a kill reward. Their life meters are
+        // separate dragon-owned tasks that still point at this actor's
+        // position/health; retire them before destroying the actor.
+        if (pThis->mAC_lifeMeter)
+        {
+            pThis->mAC_lifeMeter->getTask()->markFinished();
+            pThis->mAC_lifeMeter = nullptr;
+        }
         pThis->m24_counter = 0;
         pThis->m28_state = 6;
     }
