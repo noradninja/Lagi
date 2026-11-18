@@ -3,6 +3,7 @@
 // Native A5 BTL_A5.PRG 0605CDF4..CE4E / 0605D0A0..D124.
 // Task-header finished checks and work-area flag 8 are separate operations.
 void lagiA5SignalActorFlags(p_workArea actor, u32 flags);
+void battleEngine_displayAttackName(int textIndex, int duration, int param3);
 
 static void lagiA5BeginQueenScatter(sBTL_A5_FormationTask* formation,
                                      s_battleEngine* engine)
@@ -37,9 +38,10 @@ static void lagiA5UpdateQueenScatter(sBTL_A5_FormationTask* formation,
             lagiA5SignalActorFlags(actor, static_cast<u32>(flags));
         });
 
-    // Native state 9 uses the existing enemy-attack text/animation timing.
-    // The original 06070A7E(3, 40, 0) display call still requires
-    // its correct native text-display mapping; do not invent a replacement.
+    // Original A5 0605D0F6 calls 06070A7E(3, 40, 0).
+    // The existing Azel attack-name service owns the original text table,
+    // bottom-of-screen display task, and presentation lifetime.
+    battleEngine_displayAttackName(3, 40, 0);
     engine->m188_flags.m10000 = 1;
     engine->m188_flags.m100_attackAnimationFinished = 1;
     formation->m28_state = 0xB;
