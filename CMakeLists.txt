@@ -3865,6 +3865,15 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "${a5_target_metadata}" [=[(*pModel->m40)[i].m0[j].m10,
                     (*pModel->m40)[i].m0[j].m0]=] source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_enemy.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(a5_scatter_actor_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_a5_scatter_actor.inc")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${a5_scatter_actor_path}")
+  file(READ "${a5_scatter_actor_path}" a5_scatter_actor)
+  set(a5_actor_anchor "// 060a3bc0")
+  string(FIND "${source_text}" "${a5_actor_anchor}" a5_actor_found)
+  if(a5_actor_found LESS 0)
+   message(FATAL_ERROR "A5 typed Scatter actor boundary changed")
+  endif()
+  string(REPLACE "${a5_actor_anchor}" "${a5_scatter_actor}\n${a5_actor_anchor}" source_text "${source_text}")
   set(a5_target_init "    initBattleEnemyTargetables(pEntity, pEntity->m29_modelCount, pEntity->m2C_models);")
   string(REPLACE "${a5_target_init}" [=[    pEntity->mB4 = 0;
     pEntity->mB8_damageCallback0 = 0x060a3a4c;
