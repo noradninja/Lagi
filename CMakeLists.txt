@@ -3539,16 +3539,16 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   # Marker display must obey both selected-target ownership and the
   # authored quadrant eligibility (native high-nibble mask and m5A index).
   # Never change target registration, damage, or gun/laser eligibility here.
-  set(source_text "#include \"lagi/native_weak_marker_visibility.h\"\\n${source_text}")
-  set(weak_draw "void sBaldorSubTask1_draw(sBaldorSubTask* pThis)\\n{")
-  set(weak_update "void sBaldorSubTask1_update(sBaldorSubTask* pThis)\\n{")
+  set(source_text "#include \"lagi/native_weak_marker_visibility.h\"\n${source_text}")
+  set(weak_draw "void sBaldorSubTask1_draw(sBaldorSubTask* pThis)\n{")
+  set(weak_update "void sBaldorSubTask1_update(sBaldorSubTask* pThis)\n{")
   foreach(weak_anchor IN ITEMS "${weak_draw}" "${weak_update}")
    string(FIND "${source_text}" "${weak_anchor}" weak_pos)
    if(weak_pos LESS 0)
     message(FATAL_ERROR "Weak marker quadrant boundary changed")
    endif()
    string(REPLACE "${weak_anchor}"
-    "${weak_anchor}\\n    if (!pThis->m84_pTargetable || !lagi::nativeWeakMarkerVisible(pThis->m84_pTargetable->m50_flags, pThis->m84_pTargetable->m5A, static_cast<unsigned>(gBattleManager->m10_battleOverlay->m4_battleEngine->m22C_dragonCurrentQuadrant))) { pThis->m_DrawMethod = nullptr; return; }"
+    "${weak_anchor}\n    if (!pThis->m84_pTargetable || !lagi::nativeWeakMarkerVisible(pThis->m84_pTargetable->m50_flags, pThis->m84_pTargetable->m5A, static_cast<unsigned>(gBattleManager->m10_battleOverlay->m4_battleEngine->m22C_dragonCurrentQuadrant))) { pThis->m_DrawMethod = nullptr; return; }"
     source_text "${source_text}")
   endforeach()
   # Draw may still run after Update marks a task finished, or while updates
