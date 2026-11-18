@@ -49,3 +49,61 @@ while moving between quadrants. If the wrong-side issue remains, trace the
 live authored hotspot flags, selectable indices, target positions and selected
 flag lifecycle rather than inventing an extra visibility filter. Accepted
 ordering, normal combat performance and Goals1-6 remain regression gates.
+
+## Hardware regression and renderer depth diagnosis — 2026-11-18
+
+User hardware acceptance: Garil queen-loss **Scatter works**. The WEAK
+sprites and text remain visible through the enemy from inappropriate
+angles in both Garil Desert and preceding Valley combat, after the
+earlier quadrant-only marker-gating attempt. Keep Scatter untouched.
+
+Original Disc 1 `BTL_A5.PRG` at Saturn `060B10D8` includes a
+Nanyd hotspot with flags `F0000200`; the high nibble explicitly allows
+all four quadrants. Therefore a target-quadrant gate cannot solve the
+visibility problem for this authored hotspot.
+
+Further source path:
+
+- `battleTargetable.cpp::isSpriteVisible` projects the existing
+  hotspot/view-space `m4_pPosition` and tests viewport and clip planes.
+  It does **not** test occlusion by the 3D enemy mesh.
+- The ordinary WEAK sprite and label are emitted by
+  `sBaldorSubTask0_draw`, including the paired original VDP1
+  textured sprites. The other two cursor draws use the same target
+  position. All three previously provided Saturn bucket keys but
+  **no Neptune world-depth tags**.
+- `lagi_runtime.cpp` captures producer-owned
+  `lagiRecordVdp1WorldDepth` metadata. Without it,
+  `neptune_renderer.cpp` puts these commands in the foreground
+  screen UI pass with GXM depth function ALWAYS. This is why a
+  target with all-quadrant eligibility appears above the mesh
+  instead of behind it.
+- `neptune_renderer.cpp` routes tagged scene commands to
+  WorldEffects with GXM LEQUAL and derives depth from view-space Z.
+  Both field-hosted (scene mode 3) and direct (mode 4) battles
+  support native scene depth.
+
+Atomic implementation:
+- `8ff9614` registers a scoped depth-tagging producer for the three
+  shared cursor/WEAK draw callbacks in the generated native battle
+  source. The scope only tags commands actually emitted by that
+  callback using its existing target view Z. It does not alter
+  target masks, flags, damage, texture IDs, or unrelated HUD sprites.
+- `7362abe` adds a host fixture for multi-command tagging,
+  absence of emitted commands, null target pointers, and nonpositive
+  view Z. Equivalent fixture compiled and passed under GCC;
+  full Vita build not yet verified.
+
+The user's log `lagi(20261118-202354).log` confirms a
+native battle-enabled build and Garil battle mode transitions, but
+does not include a per-weak-marker occlusion trace. This diagnosis
+combines confirmed native hotspot data and traced Neptune pass
+semantics; actual occlusion remains a **hardware acceptance gate**.
+
+Next device comparison: leave the Scatter regression alone; enter
+Valley and Garil battle, orbit the dragon so the same weak hotspot
+moves behind/in front of its mesh, and observe BOTH sprite and WEAK
+text. Confirm markers occlude on the rear side, remain visible on the
+exposed side, and do not affect ordinary targeting or other HUD UI.
+Use the existing `spriteWorldTagged` scene statistics for supporting
+evidence if available.
