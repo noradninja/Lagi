@@ -136,3 +136,61 @@ pinned Azel submodule: `4cebb24b91ed1499b8754cf992c2fc90dbfb044d`.
 
 This trace checkpoint is documentation only: it does not claim Scatter is
 implemented or hardware-tested.
+
+## Disc 1 original PRG queen-loss disassembly checkpoint — 2026-11-18
+
+Received three distinct PRGs. **Only `BTL_A5.PRG` (418,316 bytes,
+SHA-256 `639328c247713e686e6b638caa94396092e7cc89e46cfab66f3d09067dfc0186`)**
+was selected for this trace because its code at 0605CD10 matches the original
+routine entry. The other uploads (`BTL_A5_2.PRG`, 419,380 bytes; and
+`BTL_A5_3.PRG`, 365,872 bytes) differ and must not be mixed into the
+Disc 1 interpretation without identifying their overlay mappings.
+
+For the selected file, Saturn VA `0x06054000` corresponds to file offset
+zero; native function `0605CD10` starts at offset `0x8D10`. The byte
+sequences are from the uploaded file, not inferred from the incomplete C++
+translation.
+
+### Confirmed native control-flow details
+
+- At `0605CDF4..CE06`, the branch uses the result of a previous
+  original helper, checks formation field `+0x1D4` and field `+0xF0`
+  and skips the special path if the required conditions do not hold.
+- At `0605CE0C..CE4E`, that path sets battle mode **7**, clears the
+  shared engine control fields, writes formation state **9**, and
+  branches into the common update tail.
+- The jump table based at `0605CEA8` indexes states 0 through 11.
+  **Correction to the previous trace note:** state **9** starts at
+  `0605D0A0`; state **10** branches to the generic state-11 cleanup
+  transition at `0605D172`. State 8 starts at `0605D06A`.
+  The earlier loose description of states 9/10 both initiating Scatter
+  was imprecise.
+- In state 9, `0605D0A0..D0B2` waits for battle-engine flag
+  `0x2000`. When set, `0605D0B4..D0F4` loops the formation entity
+  slots. Each live entry's work-area pointer is converted to its task
+  header by subtracting `0x18`; the task flags at header `+0x14`
+  are tested for bit 1 (finished). Surviving entries receive **bit 8
+  in the task-header flags**, using the same `+0x14` field, rather than
+  a write to the enemy's `m14_flags` member.
+- State 9 then calls native `06070A7E` with `r4=3, r5=40, r6=0`,
+  sets battle-engine flags at `+0x188` using masks `0x00010000`
+  and `0x00000100`, and advances to formation state **11**.
+- Upstream `s_task::m14_flags` currently defines finished=1,
+  paused=2, deleting=4, and does not assign a meaning to bit 8.
+  Upstream A5 enemy update also has no explicit response to task flag
+  8. Merely writing the native bit into a C++ `s_task` would **not**
+  restore its original consumer semantics. Those semantics require
+  an independent task/actor trace before writing a functional adapter.
+
+### Decision
+
+Do not equate native task-header bit 8 with `sBTL_A5_Enemy::m14_flags`,
+or shortcut it to `markFinished()`. Determine its original scheduler or
+actor response, plus the 06070A7E display command, before coding Scatter.
+The absence of state 9 in the upstream C++ switch is confirmed; the
+missing **consumer** of bit 8 is a separate concrete integration gap.
+The next useful change should be an atomic implementation of the
+correct typed actor/task signal, with host coverage for live and
+finished entities, then the A5 formation-state restoration.
+
+This is a static PRG/source trace, not a Vita gameplay fix.
