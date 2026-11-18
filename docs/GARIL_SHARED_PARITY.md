@@ -283,3 +283,66 @@ state and retirement timer; its detailed native movement requires a later
 parity pass. Subbattle-4 enemy constructor/lifecycle and worm story
 cutscene remain separate acceptance gates. A Vita test is intended to
 validate the handoff and termination first, not claim visual parity.
+
+## Queen-loss Scatter presentation and escape motion, plus weak markers — 2026-11-18
+
+**Hardware report at prior `4645997` checkpoint:** queen loss ends the fight,
+but no "Scatter" UI is displayed and surviving Nanyds do not visibly fly
+away. Weak-point sprites remain visible from the wrong battle quadrants.
+
+Disc 1 `PDS_Disc_1_contents.zip` is in the user Library; the archive includes
+`BTL_A5.PRG`, `BTL_A5_2.PRG`, `BTL_A5_3.PRG` and all accompanying
+original Disc 1 data. The Disc 1 A5 executable provides the following
+direct cross-checks:
+
+- The text table at Saturn `060ABDE4` references `060ABC24` ("Nanyd
+  Swarm"); its fourth pointer at `060ABDF0` references `060ABC42`,
+  the literal **"Scatter"**. State 9's native call
+  `06070A7E(3,40,0)` therefore maps to the existing shared
+  `battleEngine_displayAttackName(3,40,0)`. The adapter now calls
+  that service, not a one-off VDP1/VDP2 label.
+- `0605E84E..E85E` consumes the enemy work-area bit 8 and enters state 6.
+  The native helper `0605EFEC..F090` initializes three fixed-point
+  escape offsets at actor fields `+0x170,+0x174,+0x178`. It uses a
+  `-0x14000` Y bias and normalizes/scales with the `0x60000`
+  value before cleanup of targetability.
+- `0605EAA4..EB20` reads each entity's current formation position,
+  adds its offset vector and orbit velocity, and passes the resulting
+  target to the normal position interpolation. The upstream simplified
+  C++ actor still models fields `+0x170..178` as unused padding and
+  omits their addition to the movement target. The Lagi guarded adapter
+  now restores typed `m170_scatterOffset` and its state-6 integration.
+  **Limitation:** the Vita typed battle center substitutes for the
+  native reference-position transform. This is a directional parity
+  step, not proof of exact Saturn path geometry.
+
+Weak marker trace:
+
+- Authored target eligibility is already computed in
+  `battleOverlay_C.cpp`, with each target's high-nibble quadrant mask
+  and current one-based selectable index `m5A`; do not rework the
+  selection engine or invent per-enemy facing flags.
+- `battleTargetable.cpp` has **two separate UI families**.
+  `sBaldorSubTask0_draw` emits the ordinary normal/WEAK reticule, while
+  `sBaldorSubTask1_draw` emits the selected-target marker. The first
+  guarded change covered only subtask1. Follow-up commit now gates
+  both subtask0 draw methods on native current-quadrant eligibility,
+  without requiring selection bit `0x200000` for ordinary markers.
+- Both marker families also check the current selectable index and
+  authored quadrant mask at draw time, preventing stale one-frame
+  visibility when the dragon changes quadrants.
+
+Relevant atomic commits:
+
+- `7b77a91`: restore the shared Scatter display command.
+- `6ef4002`: add once-only command assertion to host sequence fixture.
+- `87d89f0` + `c1f3646`: selected-marker gate and CMake escape fix.
+- `94a3160`: native A5 escape offset integration and host vector fixture.
+- `a0c2a30`: ordinary WEAK reticule draw gates.
+
+**Next Vita acceptance:** repeat the queen-loss sequence with survivors:
+verify Scatter text, survivor flight motion and existing result/field return.
+Also orbit an enemy with a rear-only weak point through all four quadrants;
+the WEAK sprite must appear only in authored eligible quadrants and remain
+targetable when visible. Gather video/log for comparison. No change to
+the previously accepted queen defeat rewards is intended.
