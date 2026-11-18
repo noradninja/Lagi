@@ -3962,6 +3962,33 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   endif()
   string(REPLACE "${nanyd_anchor}" "${nanyd_intro}
 ${nanyd_anchor}" source_text "${source_text}")
+  # Restore native A5 queen-loss: special branch 0605CDF4..CE4E and
+  # state 9 0605D0A0..D124. Shared battle engine remains the owner.
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_a5_scatter_formation.inc"
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_formation_actor_signal.h")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_a5_scatter_formation.inc" a5_scatter_formation)
+  string(REPLACE "${nanyd_anchor}" "${a5_scatter_formation}\n${nanyd_anchor}" source_text "${source_text}")
+  set(a5_scatter_pre_switch "    // state machine\n    switch (pThis->m28_state)")
+  string(FIND "${source_text}" "${a5_scatter_pre_switch}" a5_scatter_switch_found)
+  if(a5_scatter_switch_found LESS 0)
+   message(FATAL_ERROR "A5 queen-loss state machine boundary changed")
+  endif()
+  string(REPLACE "${a5_scatter_pre_switch}" [=[
+    lagiA5BeginQueenScatter(pThis, pEngine);
+    // state machine
+    switch (pThis->m28_state)]=] source_text "${source_text}")
+  set(a5_scatter_case_anchor "    case 0xB:\n    {")
+  string(FIND "${source_text}" "${a5_scatter_case_anchor}" a5_scatter_case_found)
+  if(a5_scatter_case_found LESS 0)
+   message(FATAL_ERROR "A5 queen-loss state 9 boundary changed")
+  endif()
+  string(REPLACE "${a5_scatter_case_anchor}" [=[
+    case 9:
+        lagiA5UpdateQueenScatter(pThis, pEngine);
+        break;
+    case 0xB:
+    {]=] source_text "${source_text}")
   set(nanyd_start [=[        if (pEngine->m188_flags.m2000)
         {
             pThis->m28_state = 2;]=])
