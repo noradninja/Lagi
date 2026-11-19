@@ -151,3 +151,58 @@ user-provided recordings, and distinguish the native target-type,
 damage-multiplier and depth mechanisms. Only then patch the shared
 renderer/target presentation path. Do not alter the already accepted
 Garil Scatter code or upstream `extern/Azel`.
+
+## A3/A5 source-to-PRG reticule discriminator — 2026-11-18
+
+This extends the source audit after both Valley and Desert Vita recordings
+still show the WEAK text/sprite from unexpected angles at branch
+`87dfc28`. The older hard draw-quadrant gates and producer Z tagging did
+not resolve the report. The original Disc 1 `BTL_A3.PRG` and
+`BTL_A5.PRG` are available from `PDS_Disc_1_contents.zip`.
+
+Disc 1 A3 executable matches the native shared reticule function entry
+`06069094` (file offset `0x15094` relative to `06054000`);
+the selected-marker routine begins at `0606970C` (`0x1570C`).
+The pinned Azel `battleTargetable.cpp` translations confirm that
+`sBaldorSubTask0_draw` emits the sprite described there as the
+"WEAK reticule" based on target flag `0x20000`, not on
+`sBattleTargetable::m60`. In the shared `battleEngine.cpp`, that
+bit is set by laser-target selection. Thus equating `0x20000`
+with "rear quadrant" or "weak damage" would produce a false fix.
+
+The original shared selected-marker draw uses `m60 > 10` to select
+one visual size sequence. Independent source consumers
+`battleDamageDisplay.cpp` and `battleDamageNumber.cpp`
+use `m60 > 10` to classify a critical/weak hit, while
+`BTL_A3/urchin.cpp::urchinUpdateSub4` writes `m60` from
+the authored orientation-by-quadrant coefficient table. This is
+**weakness strength**, not the high-nibble gun targetability mask
+or a blanket marker-visibility rule. The A5 shared targetable
+factory initializes `m60=10` unless another actor overrides it.
+Using a global `m60 > 10` hide condition would therefore
+suppress valid A5 markers and is not source-faithful.
+
+Native marker commands pass the hotspot view position to the
+viewport projection. Our earlier producer scope tags commands with
+that position's Z and the Vita renderer routes tags to the
+depth-tested WorldEffects pass. The observed failure can still mean
+(a) the hotspot is transformed into the wrong view depth,
+(b) its authored position places it in front of the mesh, or
+(c) a different compositor/depth representation prevents
+occlusion. Those are **hypotheses**, not established causes.
+
+Atomic commit `e1f576a` adds a probe-only, bounded
+`[WeakCursorNative]` line at the **shared** emitter
+(`battleTargetable.cpp` generated via CMake). It samples
+normal versus selected emitter, quadrant, target flags, index,
+`m60`, laser-selection state and raw view-space XYZ, up to 32
+state changes across the session. No functional visibility,
+targeting, damage, camera or Scatter behavior is altered.
+
+**Next acceptance input**: collect a Valley Urchin video and
+`lagi.log` from this commit, rotating front to back in one
+encounter. Correlate the recorded `m60` values with quadrant
+and the producer's Z; use compositor depth evidence before any
+new functional code. Apply the eventual correction to the
+shared battle presentation layer; do not add Valley/Garil
+special cases or edit `extern/Azel`.
