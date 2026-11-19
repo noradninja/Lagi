@@ -35,15 +35,14 @@ struct WeakCursorWorldDepthScope
 // angle-dependent damage multiplier. A bounded producer trace is needed to
 // distinguish a wrong authored weak state from an incorrectly projected or
 // occluded hotspot. This changes neither draws nor battle state.
-#if defined(LAGI_AZEL_PROBE) && LAGI_AZEL_PROBE
+// This .inc is included exclusively by the native battle CMake adapter.
+// Keep the 32-sample probe available in Rider Release builds as well.
 #include "lagi/platform.h"
-#endif
 namespace lagi {
 template <typename Targetable>
 inline void traceWeakCursor(const Targetable* target, unsigned quadrant,
                             unsigned cursorKind)
 {
-#if defined(LAGI_AZEL_PROBE) && LAGI_AZEL_PROBE
     if (!target || !target->m4_pPosition || quadrant >= 4 || cursorKind >= 2)
         return;
     // At most 32 entries across the entire run. One for each kind,
@@ -66,10 +65,6 @@ inline void traceWeakCursor(const Targetable* target, unsigned quadrant,
         static_cast<int>(pos[2].asS32()),
         static_cast<int>(pos[0].asS32()),
         static_cast<int>(pos[1].asS32()), total);
-#else
-    (void)target;
-    (void)quadrant;
-    (void)cursorKind;
-#endif
+
 }
 } // namespace lagi
