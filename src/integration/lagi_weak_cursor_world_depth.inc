@@ -37,12 +37,15 @@ struct WeakCursorWorldDepthScope
 // occluded hotspot. This changes neither draws nor battle state.
 // This .inc is included exclusively by the native battle CMake adapter.
 // Keep the 32-sample probe available in Rider Release builds as well.
+#if defined(LAGI_PLATFORM_VITA)
 #include "lagi/platform.h"
+#endif
 namespace lagi {
 template <typename Targetable>
 inline void traceWeakCursor(const Targetable* target, unsigned quadrant,
                             unsigned cursorKind)
 {
+#if defined(LAGI_PLATFORM_VITA)
     if (!target || !target->m4_pPosition || quadrant >= 4 || cursorKind >= 2)
         return;
     // At most 32 entries across the entire run. One for each kind,
@@ -65,6 +68,10 @@ inline void traceWeakCursor(const Targetable* target, unsigned quadrant,
         static_cast<int>(pos[2].asS32()),
         static_cast<int>(pos[0].asS32()),
         static_cast<int>(pos[1].asS32()), total);
-
+#else
+    (void)target;
+    (void)quadrant;
+    (void)cursorKind;
+#endif
 }
 } // namespace lagi
