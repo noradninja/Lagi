@@ -107,3 +107,47 @@ text. Confirm markers occlude on the rear side, remain visible on the
 exposed side, and do not affect ordinary targeting or other HUD UI.
 Use the existing `spriteWorldTagged` scene statistics for supporting
 evidence if available.
+
+## Shared original battle reticule trace — 2026-11-18 follow-up
+
+Hardware videos in Valley (Gelata Urchins) and Garil Desert show that
+weak-point imagery/text is visible on the wrong side even after native
+quadrant gating and the producer world-depth patch. This is a **global
+battle-target presentation problem**, not an A3 or A5-only behavior.
+
+Important separation confirmed from pinned upstream source:
+
+1. `battleOverlay_C.cpp::sBattleOverlayTask_C_Update` owns
+   quadrant targeting eligibility: high nibble of `m50_flags`,
+   current dragon quadrant, and one-based selectable `m5A`.
+   This is **not** identical to weak-damage status.
+2. `BTL_A3/urchin.cpp::urchinUpdateSub4` computes the authored
+   per-quadrant **damage/weakness coefficient** in target `m60`
+   using `enemyQuadrantsTable[formationOrientation][dragonQuadrant]`
+   and the creature's own `mCC->m28` table. Called during its normal
+   actor update, not a bespoke UI fix.
+3. `battleTargetable.cpp::sBaldorSubTask1_draw` already has
+   `if (target->m60 > 10)` for the native selected cursor's
+   special resizing/visual response. Its update chooses normal,
+   anti-laser and anti-shot cursor types from flags `0x1000`,
+   `0x400`, `0x800`, `0x200`.
+4. The separate always-present `sBaldorSubTask0_draw` chooses
+   its so-called normal vs "Weak reticule" sprite family from
+   bit `0x20000`, which the **shared battleEngine.cpp laser
+   selection** pathway sets. That bit is not authored rear weakness.
+   Therefore directly reinterpreting `0x20000` as rear-facing
+   weakness or suppressing every target marker by angle would
+   change the original game's targeting semantics.
+5. Existing producer Z-tag patch `8ff9614` fixes an independent
+   renderer depth classification defect, but the videos do not
+   validate its sufficiency for correct WEAK labeling.
+
+**Next required trace before another functional commit:** compare
+original A3 `BTL_A3.PRG` and A5 `BTL_A5.PRG` implementation of
+`sBaldorSubTask0_draw`, `sBaldorSubTask1_draw` and their update
+functions against these C++ translations. Identify the exact sprite
+source(s) corresponding to the on-screen "WEAK" label in the
+user-provided recordings, and distinguish the native target-type,
+damage-multiplier and depth mechanisms. Only then patch the shared
+renderer/target presentation path. Do not alter the already accepted
+Garil Scatter code or upstream `extern/Azel`.
