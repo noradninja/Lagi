@@ -23,6 +23,7 @@ option(LAGI_AZEL_RUINS_LINK_TRIM "Temporarily discard unreachable Azel code for 
 option(LAGI_BATTLE_NATIVE_BUILD "Compile native battle engine/A3 bring-up dependencies (does not enable encounters)" ON)
 option(LAGI_BATTLE_LINK_AUDIT "Retain native A3 battle entry to audit its full link graph without executing it" OFF)
 option(LAGI_BATTLE_EXECUTE_A3 "Enable experimental native BTL_A3 encounter startup (hardware validation required)" ON)
+option(LAGI_WEAK_CURSOR_DEPTH_PROBE "Experimental WEAK cursor depth tags and trace (OFF for encounter regression comparison)" OFF)
 if(LAGI_BATTLE_EXECUTE_A3 AND NOT LAGI_BATTLE_NATIVE_BUILD)
  message(FATAL_ERROR "LAGI_BATTLE_EXECUTE_A3 requires LAGI_BATTLE_NATIVE_BUILD")
 endif()
@@ -3561,6 +3562,9 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
     "${weak_cursor_anchor}\n    if (!pThis->m84_pTargetable || !lagi::nativeTargetQuadrantEligible(pThis->m84_pTargetable->m50_flags, pThis->m84_pTargetable->m5A, static_cast<unsigned>(gBattleManager->m10_battleOverlay->m4_battleEngine->m22C_dragonCurrentQuadrant))) { pThis->m_DrawMethod = nullptr; return; }"
     source_text "${source_text}")
   endforeach()
+  # Isolate experimental cursor depth/trace effects without changing
+  # the previously accepted targeting and encounter logic.
+  if(LAGI_WEAK_CURSOR_DEPTH_PROBE)
   # Original WEAK target sprites are tied to view-space hotspot depth.
   # Without a producer depth tag Neptune classifies them as always-front
   # screen UI, so the WEAK text and sprite bleed through enemy geometry.
@@ -3589,6 +3593,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
     "${depth_cursor_anchor}\n    lagi::traceWeakCursor(pThis->m84_pTargetable, static_cast<unsigned>(gBattleManager->m10_battleOverlay->m4_battleEngine->m22C_dragonCurrentQuadrant), ${weak_trace_kind});\n    lagi::WeakCursorWorldDepthScope weakDepthScope(graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA, pThis->m84_pTargetable ? pThis->m84_pTargetable->m4_pPosition : nullptr);"
     source_text "${source_text}")
   endforeach()
+  endif()
   # Draw may still run after Update marks a task finished, or while updates
   # are paused. Honor the native target retirement bit at packet emission too.
   foreach(cursor_draw IN ITEMS sBaldorSubTask0_draw sBaldorSubTask0_draw1 sBaldorSubTask1_draw)
