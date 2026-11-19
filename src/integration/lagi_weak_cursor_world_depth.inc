@@ -4,16 +4,16 @@
 // Scope only the three native target-indicator emitters; do not infer
 // world depth for unrelated HUD/radar/menus from their sprite address.
 namespace lagi {
-template <typename Command>
+template <typename Cursor>
 struct WeakCursorWorldDepthScope
 {
-    Command*& cursor;
-    Command* begin;
+    Cursor& cursor;
+    Cursor begin;
     float z;
     bool valid;
 
     template <typename Position>
-    WeakCursorWorldDepthScope(Command*& current, const Position* position)
+    WeakCursorWorldDepthScope(Cursor& current, const Position* position)
         : cursor(current), begin(current),
           z(position ? static_cast<float>((*position)[2].asS32()) / 65536.0f : 0.0f),
           valid(position != nullptr)
@@ -25,8 +25,8 @@ struct WeakCursorWorldDepthScope
         if (!valid || z <= 0.0f)
             return;
         const float viewZ[4] = {z, z, z, z};
-        for (Command* command = begin; command < cursor; ++command)
-            lagiRecordVdp1WorldDepth(command, viewZ);
+        for (auto it = begin; it != cursor; ++it)
+            lagiRecordVdp1WorldDepth(&*it, viewZ);
     }
 };
 } // namespace lagi

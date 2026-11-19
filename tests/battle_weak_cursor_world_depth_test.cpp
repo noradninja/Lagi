@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstdint>
+#include <vector>
 
 struct Fixed {
     std::int32_t raw;
@@ -24,8 +25,8 @@ void lagiRecordVdp1WorldDepth(const void* command, const float z[4])
 
 int main()
 {
-    Command commands[5]{};
-    Command* cursor = commands;
+    std::vector<Command> commands(5);
+    auto cursor = commands.begin();
     Position front{{{0}, {0}, {12 * 65536}}};
     {
         lagi::WeakCursorWorldDepthScope scope(cursor, &front);
@@ -34,7 +35,7 @@ int main()
     assert(notifications == 3);
     for (int i = 0; i < 3; ++i)
     {
-        assert(last[i] == &commands[i]);
+        assert(last[i] == &commands[static_cast<std::size_t>(i)]);
         assert(depth[i] == 12.0f);
     }
     // No command emission means no metadata, including early-return draws.
