@@ -3580,8 +3580,13 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    if(depth_cursor_found LESS 0)
     message(FATAL_ERROR "WEAK cursor producer depth boundary changed: ${weak_cursor}")
    endif()
+   if(weak_cursor STREQUAL "sBaldorSubTask1_draw")
+    set(weak_trace_kind 1)
+   else()
+    set(weak_trace_kind 0)
+   endif()
    string(REPLACE "${depth_cursor_anchor}"
-    "${depth_cursor_anchor}\n    lagi::WeakCursorWorldDepthScope weakDepthScope(graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA, pThis->m84_pTargetable ? pThis->m84_pTargetable->m4_pPosition : nullptr);"
+    "${depth_cursor_anchor}\n    lagi::traceWeakCursor(pThis->m84_pTargetable, static_cast<unsigned>(gBattleManager->m10_battleOverlay->m4_battleEngine->m22C_dragonCurrentQuadrant), ${weak_trace_kind});\n    lagi::WeakCursorWorldDepthScope weakDepthScope(graphicEngineStatus.m14_vdp1Context[0].m0_currentVdp1WriteEA, pThis->m84_pTargetable ? pThis->m84_pTargetable->m4_pPosition : nullptr);"
     source_text "${source_text}")
   endforeach()
   # Draw may still run after Update marks a task finished, or while updates
