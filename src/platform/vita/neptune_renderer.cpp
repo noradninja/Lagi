@@ -1,8 +1,11 @@
 #include "lagi/platform.h"
+#include "lagi/vdp1_priority_coverage.h"
+#include "lagi/vdp1_surface_priority_audit.h"
 #include "lagi/ui_lut_palette.h"
 #include "lagi/ui_texture_cache_index.h"
 #include "lagi/vdp1_color_calculation.h"
 #include "lagi/rbg_format.h"
+#include "lagi/saturn_presentation.h"
 #include "lagi/rbg_decoded_page.h"
 #include "lagi/native_scene_mode.h"
 #if LAGI_FIELD_MOTION_TRACE
@@ -12,11 +15,14 @@
 
 unsigned char* getVdp1Pointer(unsigned int EA);
 #include "lagi/debug_mesh.h"
+#include "lagi/ui_edge_anchor.h"
 #include "lagi/shared_color_offset.h"
 #include "lagi/nbg0_line_rows.h"
 #include "lagi/vdp1_renderer.h"
 #include "lagi/lagi_town_runtime.h"
 #include "lagi/lagi_render_bridge.h"
+#include "lagi/lagi_point_light.h"
+#include "lagi/lagi_corner_point_light.h"
 #include "lagi/lagi_screen_depth.h"
 #include "lagi/lagi_projection_offset.h"
 #include "lagi/lagi_vdp1_quad_geometry.h"
@@ -39,6 +45,7 @@ unsigned char* getVdp1Pointer(unsigned int EA);
 #include <cstring>
 #include <cctype>
 #include <cmath>
+#include <limits>
 #include <unordered_set>
 #include <unordered_map>
 #include <atomic>
@@ -74,6 +81,7 @@ namespace lagi::platform::renderer {
 extern "C" {
 extern const unsigned char _binary_lagi_color_v_gxp_start[];
 extern const unsigned char _binary_lagi_color_f_gxp_start[];
+extern const unsigned char _binary_lagi_color_mesh_f_gxp_start[];
 extern const unsigned char _binary_lagi_texture_v_gxp_start[];
 extern const unsigned char _binary_lagi_texture_f_gxp_start[];
 extern const unsigned char _binary_lagi_stochastic_f_gxp_start[];
@@ -86,6 +94,11 @@ extern const unsigned char _binary_lagi_vdp2_nbg_f_gxp_start[];
 extern const unsigned char _binary_lagi_rgba_present_f_gxp_start[];
 extern const unsigned char _binary_lagi_scene_nbg0_f_gxp_start[];
 extern const unsigned char _binary_lagi_sprite_composite_f_gxp_start[];
+extern const unsigned char _binary_lagi_rbg_ratio_composite_f_gxp_start[];
+extern const unsigned char _binary_lagi_rbg_diagnostic_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_ui_priority_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_nbg1_dot_0_f_gxp_start[];
+extern const unsigned char _binary_lagi_vdp2_nbg1_dot_1_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_tile16_8bit_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_pages_f_gxp_start[];
 extern const unsigned char _binary_lagi_vdp2_rbg0_rows_f_gxp_start[];
@@ -212,6 +225,9 @@ static bool g_probeVertexRegistered = false;
 static bool g_probeFragmentRegistered = false;
 static SceGxmVertexProgram* g_probeVertexProgram = nullptr;
 static SceGxmFragmentProgram* g_probeFragmentProgram = nullptr;
+static SceGxmShaderPatcherId g_solidMeshFragmentProgramId{};
+static bool g_solidMeshFragmentRegistered=false;
+static SceGxmFragmentProgram* g_solidMeshFragmentProgram=nullptr;
 static SceGxmFragmentProgram* g_fadeFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_colorOffsetAddFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_colorOffsetSubtractFragmentProgram = nullptr;
@@ -252,8 +268,9 @@ static SceGxmFragmentProgram* g_textureFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_stochasticFragmentProgram = nullptr;
 static SceGxmFragmentProgram* g_stochasticGouraudFragmentProgram = nullptr;
 enum NativeBlendProgram { BlendTexture, BlendStochastic, BlendSubdiv,
-    BlendStochasticGouraud, BlendMesh, BlendMeshSubdiv, BlendLitHalf, BlendSolid, BlendCount };
+    BlendStochasticGouraud, BlendMesh, BlendMeshSubdiv, BlendLitHalf, BlendSolid, BlendSolidMesh, BlendCount };
 static SceGxmFragmentProgram* g_nativeBlendPrograms[BlendCount]{};
+#include "neptune_solid_material.inc"
 static const SceGxmProgramParameter* g_stochasticTextureSizeParam = nullptr;
 static const SceGxmProgramParameter* g_stochasticGouraudTextureSizeParam = nullptr;
 // Subdiv opaque/blended, then stochastic opaque/blended. Only mesh sprites
@@ -286,6 +303,8 @@ static void setStochastic(unsigned w, unsigned h, bool blended=false)
             ub, g_stochasticTextureSizeParam, 0, 4, size);
     }
 }
+static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority);
+static bool g_spriteUiPriorityActive=false;
 
 static void setStochasticGouraud(unsigned w, unsigned h, bool blended=false, bool mesh=false)
 {
@@ -336,6 +355,8 @@ static const SceGxmProgramParameter* g_vdp2Rbg0InfoParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0FormatParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0LayerWindowParam = nullptr;
 static const SceGxmProgramParameter* g_vdp2Rbg0LayerWindowInfoParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0PatternBanksParam = nullptr;
+static const SceGxmProgramParameter* g_vdp2Rbg0CharacterBanksParam = nullptr;
 static void releaseRbgTileProgram();
 static SceGxmShaderPatcherId g_meshFragmentProgramId{};
 static bool g_meshFragmentRegistered = false;
@@ -417,6 +438,14 @@ static azel::BasicWingDebugMesh g_liveTownCpuMesh{};
 
 struct LivePolygonLightState {
     lagi::AdditionalModelLight additionalLight{};
+    std::int32_t additionalPointParams[5]{};
+    std::int32_t additionalPointView[12]{};
+    bool additionalPointPerCorner=false;
+    bool nativePrimaryPointPerCorner=false;
+    std::array<lagi::AdditionalModelLight, lagi::kMaxTransientLaserLights> transientLaserLights{};
+    std::uint8_t transientLaserLightCount=0;
+    std::array<lagi::TransientLaserLight, lagi::kMaxTransientLaserLights> transientLaserSources{};
+    std::int32_t modelBasis[9]{};
     std::int32_t vector[3]{};
     std::uint16_t color[3]{};
     std::uint32_t falloff[3]{};
@@ -429,10 +458,20 @@ struct LivePolygonLightState {
 
     bool valid = false;
 };
-static std::vector<LivePolygonLightState> g_liveTownPolygonLights;
+// A submission shares one captured light state across all its polygons.
+// Keep only a compact index per polygon; copying the full transient arrays
+// into every polygon made both dynamic append and static refresh scale with
+// polygon count even though the source state is identical within a model.
+static std::vector<LivePolygonLightState> g_liveTownLightStates;
+static std::vector<std::uint32_t> g_liveTownPolygonLightIndices;
 // A static CPU cache hit does not imply that an offscreen quad has had its
 // current positions written to the reused subdivision GPU buffer.
 static std::vector<std::uint8_t> g_sceneSubdivPositionValid;
+struct SubdivShadeState {
+    std::array<std::uint32_t,12> cornerBits{};
+    bool valid = false;
+};
+static std::vector<SubdivShadeState> g_sceneSubdivShadeStates;
 
 // Render-thread-only, bounded field diagnostics. Hash explicit fields, never
 // structure padding. Samples retain exact submission/local/global identity.
@@ -472,8 +511,9 @@ static void traceFieldPolygonStage(const char* stage)
     for (const auto& probe : g_fieldPolygonProbes) {
         const auto p = probe.polygon;
         if (p >= g_liveTownCpuMesh.gouraud555.size() ||
-            p >= g_liveTownPolygonLights.size()) continue;
-        const auto& light = g_liveTownPolygonLights[p];
+            p >= g_liveTownPolygonLightIndices.size() ||
+            g_liveTownPolygonLightIndices[p] >= g_liveTownLightStates.size()) continue;
+        const auto& light = g_liveTownLightStates[g_liveTownPolygonLightIndices[p]];
         const auto& shade = g_liveTownCpuMesh.gouraud555[p];
         logging::writef(
             "[FieldPolygonStage] frame=%u stage=%s cell=%u obj=%08X "
@@ -498,6 +538,7 @@ static std::uint64_t g_liveTownSignature = 0;
 static std::uint64_t g_liveTownStaticSignature = 0;
 static std::size_t g_liveTownStaticVertexCount = 0;
 static std::size_t g_liveTownStaticPolygonCount = 0;
+static std::size_t g_liveTownStaticLightStateCount = 0;
 static bool g_liveTownStaticRebuilt = true;
 
 static std::size_t g_liveTownShadowFirstPolygon = 0;
@@ -519,6 +560,26 @@ static std::vector<LiveTownMeshRange> g_liveTownMeshRanges;
 // clearing this metadata can make cached environment meshes disappear until
 // the next Azel visible-set change forces a static rebuild.
 static std::vector<LiveTownMeshRange> g_liveTownStaticMeshRanges;
+// Retain Azel's submission order across the static-prefix cache. A native
+// frame can interleave static and dynamic submissions; appending all static
+// models first must not become a different VDP1 command order.
+struct LiveTownSubmissionRange {
+    std::size_t first=0,count=0,azelOrder=0;
+};
+static std::vector<LiveTownSubmissionRange> g_liveTownSubmissionRanges;
+static std::vector<LiveTownSubmissionRange> g_liveTownStaticSubmissionRanges;
+// Diagnostic readback points selected from projected overlaps of the
+// previously identified circle polygons and other VDP1 submissions.
+struct Vdp1CircleAuditPoint {int x=0,y=0;unsigned circle=0,other=0;};
+static Vdp1CircleAuditPoint g_vdp1CircleAuditPoints[12]{};
+static unsigned g_vdp1CircleAuditCount=0,g_vdp1CircleAuditScene=~0u;
+// Diagnostic mode 24: A/B sample of only the Camp circle's depth policy.
+// A = production depth test/writes, B = always pass/no writes.
+// The world shaders, textures and all unrelated polygon states stay identical.
+static bool g_circleDepthCompareActive=false;
+static unsigned g_circleDepthComparePhase=0,g_circleDepthCompareFrame=0;
+static float g_circleDepthCompareRect[4]{};
+static unsigned g_circleDepthCompareScene=~0u;
 static bool g_liveTownPrepared = false;
 static std::size_t g_edgeFirstVertex = 0;
 static std::size_t g_edgeFirstPolygon = 0;
@@ -687,6 +748,7 @@ static unsigned int g_liveTownStaticIdentityMisses = 0u;
 static unsigned int g_profileTasksUs = 0;
 static unsigned int g_profilePositionSyncUs = 0;
 static unsigned int g_profilePositionSyncVertices = 0;
+static unsigned int g_profilePositionSyncLegacyVertices = 0;
 static unsigned int g_profileGameWaitUs = 0;
 static unsigned int g_profileRenderCpuPrepUs = 0;
 static unsigned int g_profileBuildUs = 0;
@@ -721,6 +783,13 @@ static std::uint64_t g_profileAppendBindingUs = 0;
 static unsigned int g_profileObjectMaterialResolveUs = 0;
 static unsigned int g_profileObjectMaterialCacheMisses = 0;
 static unsigned int g_profileLightingUs = 0;
+static unsigned int g_profileTransientMaxPerPolygon = 0;
+static unsigned int g_profileTransientLitPolygons = 0;
+static unsigned int g_profileTransientCornerTests = 0;
+static unsigned int g_profilePrimaryCornerTests = 0;
+static unsigned int g_profilePrimaryCornerReuses = 0;
+static unsigned int g_profileTransientCornerHits = 0;
+static unsigned int g_profileTransientCornerReuses = 0;
 static unsigned int g_profileSubmitUs = 0;
 static unsigned int g_profileGouraudProjectUs = 0;
 static unsigned int g_profileGouraudPayloadUs = 0;
@@ -730,6 +799,8 @@ static unsigned int g_profileGouraudDrawUs = 0;
 static unsigned int g_profileGouraudVisibleQuads = 0;
 static unsigned int g_profileGouraudTotalQuads = 0;
 static unsigned int g_profileGouraudPrepUs = 0;
+static unsigned int g_profileSubdivShadeReusedQuads = 0;
+static unsigned int g_profileSubdivShadeWrittenQuads = 0;
 static unsigned int g_profileClearUs = 0;
 static unsigned int g_profileBeginSceneUs = 0;
 static unsigned int g_profileComposeUs = 0;
@@ -829,6 +900,9 @@ struct GpuMode1Texture {
     unsigned int height = 0;
     bool opaque = false;
     bool mesh = false;
+    // Native palette/RGB selector coverage, computed at decode/upload time.
+    // Used to audit composed-image priority without inspecting GPU memory.
+    std::uint8_t nativeSelectorMask = 0;
     std::uint16_t cmdPmod = 0, cmdColr = 0, cmdSrca = 0, cmdSize = 0;
 };
 
@@ -852,6 +926,7 @@ static bool g_vdp1BaseTexturedPayloadValid = false;
 // Lightweight VDP1 2D/UI translator. These resources are separate from the
 // resident 3D town mesh so UI commands never invalidate or rebuild it.
 struct Vdp1UiTextureCacheEntry {
+    bool contentsDirty = false;
     std::uint16_t cmdPmod = 0;
     std::uint16_t cmdColr = 0;
     std::uint16_t cmdSrca = 0;
@@ -966,6 +1041,7 @@ struct RbgGpuState {
     unsigned backColor=0;
     float parameterFormat[2]{};
     float planesA[16]{}, planesB[16]{}, ctrl[16]{}, plsz = 0.0f;
+    std::uint16_t ramctl=0;
     float format[4]{}, transformA[8]{}, transformB[8]{};
     float coefficientA[4]{}, coefficientB[4]{};
 };
@@ -1008,6 +1084,13 @@ static std::uint32_t g_frontendVdp2Generations[kSceneVdp2BlockCount]{};
 static bool g_frontendVdp2RawInitialized=false;
 static SceGxmTexture g_rbgDecodedAtlasTexture{};
 static SceGxmTexture g_rbgCoefficientRowsTexture{};
+static SceGxmTexture g_rbgPaletteLutTexture{};
+static void* g_rbgPaletteLutPixels=nullptr;
+static SceUID g_rbgPaletteLutUid=-1;
+static bool g_rbgPaletteLutInitialized=false;
+static unsigned char g_rbgPaletteLutSource[0x1000]{};
+static void releaseRbgPaletteLut();
+static bool prepareRbgPaletteLut(const void* rawTextureData);
 static bool g_rbgCoefficientRowsReady=false;
 static void releaseRbgCoefficientRows();
 static float g_rbgDecodedPlanesA[16]{},g_rbgDecodedPlanesB[16]{};
@@ -1020,7 +1103,9 @@ static constexpr unsigned int kSceneRbg0Width = 352u;
 static constexpr unsigned int kSceneRbg0Height = 224u;
 static constexpr unsigned int kSceneRbg0Pitch = 384u;
 static SceUID g_sceneRbg0ColorUid = -1;
+static unsigned int g_sceneGameMode = 0u;
 static std::uint32_t* g_sceneRbg0ColorBuffer = nullptr;
+
 static SceGxmColorSurface g_sceneRbg0ColorSurface{};
 static SceGxmTexture g_sceneRbg0ResolvedTexture{};
 static std::atomic<unsigned int> g_azelColorOffsetEnable{0};
@@ -1117,7 +1202,7 @@ static bool g_townPlayerReady = false;
 static bool g_pendingScenePlayerPresent = false;
 static bool g_scenePlayerPresent = false;
 static bool g_townCameraReady = false;
-static unsigned int g_sceneGameMode = 0u;
+
 static float g_townPlayerPosition[3]{};
 static float g_townPlayerYaw = 0.0f;
 static float g_townCameraPosition[3]{};
@@ -1182,7 +1267,9 @@ static bool g_pendingVdp2TextValid = false;
 static lagi::MenuNbg2State g_pendingMenuNbg2{},g_menuNbg2{};
 static lagi::Vdp2SpriteColorState g_pendingSpriteColor{},g_spriteColor{};
 static std::uint32_t nativeSpriteMetadata(std::uint32_t rgba,unsigned code) {
-    return LAGI_VDP2_SPRITE_COMPOSITE ? lagi::spriteType3Metadata(rgba,code) : rgba;
+    if(!LAGI_VDP2_SPRITE_COMPOSITE)return rgba;
+    return (g_spriteColor.spctl&15)==0 ? lagi::spriteType0Metadata(rgba,code)
+        : lagi::spriteType3Metadata(rgba,code);
 }
 static void releaseSpriteComposite();
 static bool g_vdp2TextValid = false;
@@ -1366,12 +1453,15 @@ static void recordFlightPresentation(
         ? nowUs - window.lastUs : 0u;
     const unsigned int intervalVblanks = window.lastUs != 0u
         ? g_lastPresentVcount - window.lastVcount : 0u;
-    if (g_profileRenderUs > 33333u || intervalVblanks > 2u) {
+    if (g_profileRenderUs > 30000u || intervalVblanks > 2u) {
         logging::writef(
             "[FlightPresentOutlier] mode=%u baseline=%u render=%uus "
             "build=%uus interval=%lluus vblanks=%u present=%uus "
             "rebuild=%u rbg=%u cpuprep=%u submit=%u compose=%u "
-            "gxmend=%u gxmfinish=%u rbgPrep=%u rbgResolve=%u\n",
+            "gxmend=%u gxmfinish=%u rbgPrep=%u rbgResolve=%u "
+            "light=%u primaryTests=%u primaryReuses=%u transientMax=%u transientTests=%u transientHits=%u transientReuses=%u "
+            "gourPrep=%u polys=%u spriteDraws=%u spritePixels=%llu "
+            "fadeR=%d fadeG=%d fadeB=%d\n",
             static_cast<unsigned int>(g_viewMode), window.lastUs != 0u ? 1u : 0u,
             g_profileRenderUs, g_profileBuildUs,
             static_cast<unsigned long long>(intervalUs), intervalVblanks,
@@ -1379,7 +1469,16 @@ static void recordFlightPresentation(
             g_sceneRbg0Enabled ? 1u : 0u,
             g_profileRenderCpuPrepUs, g_profileSubmitUs, g_profileComposeUs,
             g_profileGxmEndSceneUs, g_profileGxmFinishUs,
-            g_profileRbgPrepareUs, g_profileRbgResolveUs);
+            g_profileRbgPrepareUs, g_profileRbgResolveUs,
+            g_profileLightingUs, g_profilePrimaryCornerTests,
+            g_profilePrimaryCornerReuses, g_profileTransientMaxPerPolygon,
+            g_profileTransientCornerTests, g_profileTransientCornerHits,
+            g_profileTransientCornerReuses,
+            g_profileGouraudPrepUs,
+            static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
+            g_profileSprites.draws,
+            static_cast<unsigned long long>(g_profileSprites.bboxPixels),
+            g_sceneColorOffset[0], g_sceneColorOffset[1], g_sceneColorOffset[2]);
     }
     if (window.lastUs != 0u) {
         const std::uint64_t intervalUs = nowUs - window.lastUs;
@@ -1611,8 +1710,21 @@ static const char* viewerModeLabel(int mode)
 {
     switch (mode) {
     case 7:  return "FULL";
-    case 8:  return "TEXTURE";
-    case 10: return "LIGHTING";
+    case 8:  return "TEXTURES";
+    case 10: return "GREYSCALE LIGHTING";
+    case 12: return "COLOR LIGHTING";
+    case 13: return "VDP1 RAW";
+    case 14: return "VDP1 / COMPOSITE SPLIT";
+    case 15: return "VDP1 / RBG0 OWNER";
+    case 16: return "RBG0 / NO VDP1 UNDERLAY";
+    case 17: return "RBG0 SECOND SOURCE";
+    case 18: return "GARIL: CLIFF DEPTH BYPASS";
+    case 19: return "GARIL: SKIP NBG0";
+    case 20: return "VDP1 ORDER: CIRCLE FIRST";
+    case 21: return "VDP1 CIRCLE Y: ZERO";
+    case 22: return "VDP1 CIRCLE Y: -0.015";
+    case 23: return "VDP1 CIRCLE Y: -0.030";
+    case 24: return "CIRCLE DEPTH A/B";
     case 9:  return "QUADS";
     case 11: return "WIRES";
     default: return "";
@@ -1624,29 +1736,30 @@ static void drawViewerModeOverlay(
     int pitch,
     int mode)
 {
+    if (mode == 7 || !buffer)
+        return;
     const char* label = viewerModeLabel(mode);
-    const int length =
-        static_cast<int>(std::strlen(label));
-    static constexpr int advance = 6;
+    if (!label[0])
+        return;
     static constexpr int marginX = 8;
     static constexpr int marginY = 8;
-    static constexpr int textHeight = 7;
+    const auto& font = lagi::frontend::font();
+    const int height = font.ready() ? lagi::frontend::LatinFont::height : 7;
+    const int y = viewerRenderHeight() - marginY - height;
 
-    const int x =
-        std::max(
-            0,
-            viewerRenderWidth() - marginX - length * advance);
-    const int y =
-        viewerRenderHeight() - marginY - textHeight;
-
-    // One-pixel black offset gives the text enough contrast over bright
-    // textures without adding a large opaque diagnostic panel.
-    drawTextSmallToBuffer(
-        buffer, pitch, x + 1, y + 1,
-        label, 0xFF000000u);
-    drawTextSmallToBuffer(
-        buffer, pitch, x, y,
-        label, 0xFFFFFFFFu);
+    // The native ASCII.CGZ font is the primary diagnostic label; the small
+    // built-in face remains only a fallback when that resource is unavailable.
+    if (font.ready()) {
+        font.draw(buffer, viewerRenderWidth(), viewerRenderHeight(), pitch,
+            marginX + 1, y + 1, label, 0xFF000000u);
+        font.draw(buffer, viewerRenderWidth(), viewerRenderHeight(), pitch,
+            marginX, y, label, 0xFFFFFFFFu);
+    } else {
+        drawTextSmallToBuffer(buffer, pitch, marginX + 1, y + 1,
+            label, 0xFF000000u);
+        drawTextSmallToBuffer(buffer, pitch, marginX, y,
+            label, 0xFFFFFFFFu);
+    }
 }
 
 // Forward declarations used by the decoded title cache helpers below.
@@ -2291,6 +2404,8 @@ static void drawAzelVdp2TextLayerGpu(int outputWidth = 0, int outputHeight = 0)
         sceGxmTextureSetMagFilter(
             &g_vdp2TextLayerTexture, SCE_GXM_TEXTURE_FILTER_POINT);
     }
+    if(!setVdp2UiPriority(kVdp2TextLayerWidth,kVdp2TextLayerHeight,
+        (g_spriteColor.bgon&8)?(g_spriteColor.prinb>>8)&7:0))return;
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
 
     void* uniforms = nullptr;
@@ -2447,6 +2562,18 @@ void invalidate_vdp1_texture_range(unsigned int start, unsigned int size)
 
 static void applyPendingRendererInvalidation()
 {
+    // Metadata is decoded into cached texture alpha. Crossing SPCTL formats
+    // invalidates model and UI payloads on their owning render thread, even
+    // if neither VRAM nor CRAM changed. Register-only changes need no decode.
+    static bool decodedType0=true;
+    const bool type0=(g_spriteColor.spctl&15)==0;
+    if(LAGI_VDP2_SPRITE_COMPOSITE && decodedType0!=type0) {
+        decodedType0=type0;
+        ++g_nativeTextureGeneration;
+        g_liveTownSignature=0;g_liveTownPrepared=false;
+        g_vdp1TextureDataDirty=true;
+        for(auto& entry:g_vdp1UiTextureCache)entry.contentsDirty=true;
+    }
     const std::uint32_t flags = g_rendererInvalidationFlags.exchange(
         0u, std::memory_order_acquire);
     if (flags == 0u)
@@ -2478,6 +2605,11 @@ static void applyPendingRendererInvalidation()
     g_vdp1TextureDataDirty = true;
     const auto pixelWrites = g_pendingVdp1Writes.consume();
     const auto paletteWrites = g_pendingCramWrites.consume();
+    for (auto& entry : g_vdp1UiTextureCache)
+        entry.contentsDirty |= uiTextureDependsOnWrites(entry.cmdPmod,entry.cmdColr,
+            entry.cmdSrca,entry.cmdSize,pixelWrites,paletteWrites,
+            (flags & kRendererInvalidateVdp1Textures)!=0u,
+            (flags & kRendererInvalidateCram)!=0u);
     const auto previousGeneration = g_nativeTextureGeneration++;
     // Only advance entries already valid at the previous epoch. Older stale
     // entries must remain stale until first use decodes them. GPU generations
@@ -2500,10 +2632,14 @@ bool init()
 {
     logging::writef(
         "[NeptuneBuild] optimized=%u fieldDescriptorIndex=1 sharedRbg0=1 "
-        "rbg0NativeResolve=1 pooledFieldTextures=1 coefficientRows=%u motionTrace=%u\n",
+        "rbg0NativeResolve=1 pooledFieldTextures=1 coefficientRows=%u motionTrace=%u "
+        "lightStateIndex=1 transientCornerPrep=1 deadlineOutlier30=1 "
+        "spriteComposite=%u decodedPages=%u\n",
         static_cast<unsigned int>(LAGI_NEPTUNE_OPTIMIZED),
         static_cast<unsigned int>(LAGI_RBG_COEFFICIENT_ROWS),
-        static_cast<unsigned int>(LAGI_FIELD_MOTION_TRACE));
+        static_cast<unsigned int>(LAGI_FIELD_MOTION_TRACE),
+        static_cast<unsigned int>(LAGI_VDP2_SPRITE_COMPOSITE),
+        static_cast<unsigned int>(LAGI_RBG_DECODED_PAGES));
     logging::writef(
         "[DitherFilter] enabled=%u pattern=screen-2x2 sampling=%s\n",
         static_cast<unsigned int>(kStochastic),
@@ -2645,6 +2781,7 @@ void shutdown()
     releaseRbgTileProgram();
     releaseRbgDecodedPages();
     releaseRbgCoefficientRows();
+    releaseRbgPaletteLut();
     freeMovieMappedBlock(g_nbg0RowsUid,g_nbg0RowsPixels);
     freeSimpleMappedProbe(g_sceneVdp2RawUid, g_sceneVdp2GpuRaw);
     freeSimpleMappedProbe(g_sceneNbg0Uid,g_sceneNbg0Pixels);
@@ -2722,6 +2859,7 @@ void shutdown()
     g_vdp1SubdivVertexCapacity = 0u;
     g_vdp1SubdivIndexCapacity = 0u;
     g_vdp1SubdivQuadIndices.clear();
+    g_sceneSubdivShadeStates.clear();
     freeVdp1Textures(true);
     freeMovieResources();
 
@@ -3027,6 +3165,14 @@ void shutdown()
             sceGxmShaderPatcherReleaseFragmentProgram(
                 g_probeShaderPatcher, g_probeFragmentProgram);
             g_probeFragmentProgram = nullptr;
+        }
+        if(g_solidMeshFragmentProgram) {
+            sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_solidMeshFragmentProgram);
+            g_solidMeshFragmentProgram=nullptr;
+        }
+        if(g_solidMeshFragmentRegistered) {
+            sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_solidMeshFragmentProgramId);
+            g_solidMeshFragmentRegistered=false;
         }
         if (g_probeVertexProgram) {
             sceGxmShaderPatcherReleaseVertexProgram(
@@ -3656,6 +3802,15 @@ static RbgGpuState makeRbgGpuState(const FrontendRbg0State& state)
     rbg.enabled=(state.bgon&0x10u)!=0;
     rbg.layerEnable=state.bgon;
     rbg.backColor=state.backColor;
+    rbg.ramctl=state.ramctl;
+    static unsigned bankReports=0,lastRamctl=~0u;
+    if(rbg.enabled && lastRamctl!=state.ramctl && bankReports<16) {
+        ++bankReports;lastRamctl=state.ramctl;
+        logging::writef("[RBG0BankAccess] RAMCTL=%04X mapA=%05X nameRoleA=%u mapB=%05X nameRoleB=%u\n",
+            unsigned(state.ramctl),unsigned(state.planeA[0]),
+            lagi::rbgBankRole(state.ramctl,state.planeA[0]),unsigned(state.planeB[0]),
+            lagi::rbgBankRole(state.ramctl,state.planeB[0]));
+    }
     for (unsigned int i = 0; i < 16u; ++i) {
         rbg.planesA[i] =
             static_cast<float>(state.planeA[i]);
@@ -4246,8 +4401,12 @@ static std::uint32_t decodeVdp2Chsz1Pixel(
     int px,
     int py,
     unsigned int caos,
-    unsigned int supplementalCharacterName)
+    unsigned int supplementalCharacterName,
+    unsigned* outDot=nullptr,
+    bool* outCramMsb=nullptr)
 {
+    if(outDot)*outDot=0u;
+    if(outCramMsb)*outCramMsb=false;
     const unsigned int flip =
         (patternName >> 10) & 3u;
     int x = px;
@@ -4314,6 +4473,7 @@ static std::uint32_t decodeVdp2Chsz1Pixel(
             : static_cast<unsigned int>(packed >> 4);
     if (!colorIndex)
         return 0u;
+    if(outDot)*outDot=colorIndex;
 
     const unsigned int paladdr =
         ((patternName & 0xF000u) >> 8) |
@@ -4326,17 +4486,29 @@ static std::uint32_t decodeVdp2Chsz1Pixel(
     if (cramOffset + 1u >= kVdp2CramSnapshotBytes)
         return 0u;
 
-    return vdp2Rgb555ToAbgr(
-        readVdp2Be16(g_vdp2Cram, cramOffset));
+    const auto cramColor=readVdp2Be16(g_vdp2Cram, cramOffset);
+    if(outCramMsb)*outCramMsb=(cramColor&0x8000u)!=0u;
+    return vdp2Rgb555ToAbgr(cramColor);
 }
 
+static bool nbg1SpecialCompositeActive();
+static bool setNbg1DotPass(unsigned pass,unsigned width,unsigned height);
 static std::uint32_t decodeVdp2Nbg1Pixel(
     std::uint16_t patternName,
     int px,
     int py)
 {
     // Town NBG1: 4bpp, CHSZ=1, PNB=1, CNSM=0, SCN=0, CAOS=7.
-    return decodeVdp2Chsz1Pixel(patternName, px, py, 7u, 0u);
+    unsigned dot=0;bool cramMsb=false;
+    const auto color=decodeVdp2Chsz1Pixel(
+        patternName,px,py,7u,0u,&dot,&cramMsb);
+    if(!color || !nbg1SpecialCompositeActive())return color;
+    // This 1-word character mode takes SCC from PNCN1's auxiliary bit 8.
+    // Alpha 128 is a material selector, never physical transparency.
+    const bool selected=lagi::scrollSpecialColorCalculationSelected(
+        g_spriteColor,1u,true,lagi::nbg1AuxiliarySpecialColor(g_spriteColor),
+        dot,cramMsb);
+    return lagi::nbg1DotMaterial(color,selected);
 }
 
 static void drawAzelVdp2Nbg1Gpu()
@@ -4356,6 +4528,7 @@ static void drawAzelVdp2Nbg1Gpu()
     std::uint16_t uniqueTiles[kVdp2Nbg1MaxTiles]{};
     unsigned int uniqueCount = 0u;
     unsigned int cellCount = 0u;
+    unsigned int specialDotTexels = 0u;
 
     const float renderAspect =
         static_cast<float>(viewerRenderWidth()) /
@@ -4387,12 +4560,12 @@ static void drawAzelVdp2Nbg1Gpu()
                 (slot >> 3) * kTileSize;
             for (int py = 0; py < kTileSize; ++py) {
                 for (int px = 0; px < kTileSize; ++px) {
+                    const auto decoded=decodeVdp2Nbg1Pixel(patternName,px,py);
                     g_vdp2Nbg1AtlasPixels[
                         (atlasY + py) *
                             kVdp2Nbg1AtlasWidth +
-                        atlasX + px] =
-                        decodeVdp2Nbg1Pixel(
-                            patternName, px, py);
+                        atlasX + px] = decoded;
+                    if((decoded>>24)==128u)++specialDotTexels;
                 }
             }
             return static_cast<int>(slot);
@@ -4505,13 +4678,19 @@ static void drawAzelVdp2Nbg1Gpu()
         g_probeContext, g_textureVertexProgram);
     sceGxmSetFragmentProgram(
         g_probeContext, g_textureFragmentProgram);
-    if (kStochastic) {
+    if (kStochastic)
         setStochastic(kVdp2Nbg1AtlasWidth, kVdp2Nbg1AtlasHeight);
-        sceGxmTextureSetMinFilter(
-            &g_vdp2Nbg1AtlasTexture, SCE_GXM_TEXTURE_FILTER_POINT);
-        sceGxmTextureSetMagFilter(
-            &g_vdp2Nbg1AtlasTexture, SCE_GXM_TEXTURE_FILTER_POINT);
-    }
+    // The alpha byte is a binary per-dot calculation selector. LINEAR
+    // filtering would interpolate 0x80 and 0xFF across tile boundaries
+    // and make one Saturn dot change the blend mode of its neighbours.
+    // Require POINT for this native metadata pass even without dithering.
+    const auto nbg1Filter=(kStochastic ||
+        (nbg1SpecialCompositeActive() && specialDotTexels))
+        ? SCE_GXM_TEXTURE_FILTER_POINT : SCE_GXM_TEXTURE_FILTER_LINEAR;
+    sceGxmTextureSetMinFilter(&g_vdp2Nbg1AtlasTexture,nbg1Filter);
+    sceGxmTextureSetMagFilter(&g_vdp2Nbg1AtlasTexture,nbg1Filter);
+    if(!setVdp2UiPriority(kVdp2Nbg1AtlasWidth,kVdp2Nbg1AtlasHeight,
+        (g_spriteColor.bgon&2)?(g_spriteColor.prina>>8)&7:0))return;
 
     void* uniforms = nullptr;
     if (sceGxmReserveVertexDefaultUniformBuffer(
@@ -4534,6 +4713,22 @@ static void drawAzelVdp2Nbg1Gpu()
     sceGxmSetFragmentTexture(
         g_probeContext, 0,
         &g_vdp2Nbg1AtlasTexture);
+    if(nbg1SpecialCompositeActive() && specialDotTexels) {
+        static unsigned reportBudget=8u;
+        if(reportBudget) {
+            --reportBudget;
+            logging::writef("[VDP2NBG1Special] selectedDots=%u uniqueTiles=%u cells=%u SFCCMD=%04X PNCN1=%04X SFCODE=%04X ratio=%u additive=%u\n",
+                specialDotTexels,uniqueCount,cellCount,g_spriteColor.specialColor,
+                g_spriteColor.pncn1,g_spriteColor.sfcode,
+                unsigned(g_spriteColor.nbg1Ratio),unsigned((g_spriteColor.ccctl&0x100u)!=0u));
+        }
+        // Normal pixels and special-color pixels form disjoint masks.
+        // Both passes apply VDP1's completed-pixel priority test.
+        if(!setNbg1DotPass(0,kVdp2Nbg1AtlasWidth,kVdp2Nbg1AtlasHeight))return;
+        sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,
+            SCE_GXM_INDEX_FORMAT_U16,g_vdp2Nbg1Indices,cellCount*6u);
+        if(!setNbg1DotPass(1,kVdp2Nbg1AtlasWidth,kVdp2Nbg1AtlasHeight))return;
+    }
     sceGxmDraw(
         g_probeContext,
         SCE_GXM_PRIMITIVE_TRIANGLES,
@@ -4679,7 +4874,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
     std::size_t cacheIndex=0;
     if (g_vdp1UiTextureIndex.find(cacheKey,cacheIndex)) {
         auto& entry=g_vdp1UiTextureCache[cacheIndex];
-        if (!hasPalette || (entry.hasPalette && entry.palette==palette)) {
+        if (!entry.contentsDirty && (!hasPalette || (entry.hasPalette && entry.palette==palette))) {
             ++g_profileSprites.cacheHits;
             return &entry.gpu;
         }
@@ -4825,6 +5020,7 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
                 decoded.rgba.data(),decoded.width,decoded.height);
             refreshEntry->palette=palette;
             refreshEntry->hasPalette=hasPalette;
+            refreshEntry->contentsDirty=false;
             ++g_profileSprites.paletteRefreshes;
             return &refreshEntry->gpu;
         }
@@ -5062,6 +5258,31 @@ static void drawPublishedVdp1Ui(
     bool nativeCanvas = false)
 {
     const auto& commands = azel_bridge::published_vdp1_ui_commands();
+    if(g_sceneGameMode==3u && pass==Vdp1UiPass::Background) {
+        static unsigned fieldSpriteTraceFrame=0u;
+        ++fieldSpriteTraceFrame;
+        if(fieldSpriteTraceFrame==30u || fieldSpriteTraceFrame==90u) {
+            unsigned backgrounds=0u,world=0u,other=0u;
+            for(const auto& command:commands) {
+                if(isVdp1BackgroundCommand(command))++backgrounds;
+                else if(command.hasWorldDepth)++world;
+                else ++other;
+            }
+            logging::writef("[FieldVdp1Sprites] sample=%u total=%u background=%u world=%u other=%u\n",
+                fieldSpriteTraceFrame,unsigned(commands.size()),backgrounds,world,other);
+            unsigned reported=0u;
+            for(const auto& command:commands) {
+                if(reported++>=24u)break;
+                logging::writef("[FieldVdp1Sprite] type=%u SRCA=%04X SIZE=%04X PMOD=%04X COLR=%04X "
+                    "A=(%d,%d) B=(%d,%d) hasDepth=%u depth=%.6f world=%u sort=%04X background=%u\n",
+                    unsigned(command.cmdCtrl&15u),unsigned(command.cmdSrca),
+                    unsigned(command.cmdSize),unsigned(command.cmdPmod),unsigned(command.cmdColr),
+                    int(command.xa),int(command.ya),int(command.xb),int(command.yb),
+                    unsigned(command.hasDepth),double(command.depth),unsigned(command.hasWorldDepth),
+                    unsigned(command.nativeSortKey),unsigned(isVdp1BackgroundCommand(command)));
+            }
+        }
+    }
     if (commands.empty() || !g_textureVertexProgram ||
         !g_textureFragmentProgram || !g_textureWvpParam ||
         !ensureVdp1UiBuffers())
@@ -5180,9 +5401,7 @@ static void drawPublishedVdp1Ui(
                     expand(c & 31u), expand((c >> 5) & 31u), expand((c >> 10) & 31u),
                     static_cast<std::uint8_t>(lagi::vdp1_half_transparent(command.cmdPmod) ? 128u : 255u)};
             sceGxmSetVertexProgram(g_probeContext, g_probeVertexProgram);
-            sceGxmSetFragmentProgram(g_probeContext, lagi::vdp1_half_transparent(command.cmdPmod)
-                ? (LAGI_VDP2_SPRITE_COMPOSITE ? g_nativeBlendPrograms[BlendSolid] : g_fadeFragmentProgram)
-                : g_probeFragmentProgram);
+            sceGxmSetFragmentProgram(g_probeContext,nativeSolidFragmentProgram(command.cmdPmod));
             const auto solidPolygonMode = commandType == 6u
                 ? SCE_GXM_POLYGON_MODE_LINE : SCE_GXM_POLYGON_MODE_TRIANGLE_FILL;
             sceGxmSetFrontPolygonMode(g_probeContext, solidPolygonMode);
@@ -5466,6 +5685,10 @@ static void drawPublishedVdp1Ui(
             pos[0][1] = pos[1][1] = radarY(command.ya);
             pos[2][1] = pos[3][1] = radarY(command.ya + height);
         }
+        if(command.leftEdgeAnchored && !nativeCanvas && commandType==0u) {
+            const float shift=lagi::uiLeftEdgeShift(command.leftEdgeOrigin,saturnAspectCorrection);
+            for(auto& point:pos)point[0]+=shift;
+        }
         if (commandType == 0x0002u) {
             // Distorted sprite: Azel supplies all four projected corners.
             // D5's native particles and name-entry exit sprite use this path.
@@ -5743,6 +5966,8 @@ static bool uploadVdp1Textures(const Vdp1ModelSource& model,
         const auto opacityStartUs = sceKernelGetProcessTimeWide();
         gpu.opaque = source.opacityKnown ? source.opaque
             : texturePixelsOpaque(source.rgba.data(), source.rgba.size());
+        gpu.nativeSelectorMask = lagi::vdp1PrioritySelectorCoverage(
+            source.rgba.data(),source.rgba.size());
         opacityUs += sceKernelGetProcessTimeWide() - opacityStartUs;
         gpu.mesh = (source.cmdPmod & 0x0100u) != 0u;
         gpu.cmdPmod = source.cmdPmod;
@@ -6031,6 +6256,7 @@ static void releaseResidentVdp1Model(bool preserveTextures = false)
     g_vdp1SubdivVertexCapacity = 0u;
     g_vdp1SubdivIndexCapacity = 0u;
     g_vdp1SubdivQuadIndices.clear();
+    g_sceneSubdivShadeStates.clear();
 
     p = g_vdp1SubdivWireVertices;
     freeMapped(g_vdp1SubdivWireVertexUid, p);
@@ -6112,15 +6338,15 @@ bool prepare_vdp1_model(
         model.texturesValid() && subdivVertexCount &&
         subdivVertexCount <= 65535u && subdivIndexCount <= 65535u;
 
-    // Allocate field capacity ahead of ordinary cell visibility growth.
-    // 2048 quads exceeds the observed FLD_A3 traversal peak; retain exact
-    // active counts everywhere below. Cap subdivision capacity at its existing
-    // 16-bit index-count limit, and preserve other modes' allocation behavior.
+    // Reserve the bounded native-scene subdivision capacity at first use.
+    // A flight-only 2048-quad reservation forced every mapped geometry stream
+    // to be released/reallocated as soon as a larger combat formation arrived.
+    // The existing 16-bit index-count ceiling is only 2730 quads. Reserve that
+    // same ceiling for every native scene; retain exact active counts below.
     const bool reserveSceneCapacity = preserveResidentTextures &&
         lagi::native_scene_mode(g_sceneGameMode) && subdivBuffersRequired;
     const std::size_t allocationPolygons = reserveSceneCapacity
-        ? std::min<std::size_t>(65535u / 24u,
-            std::max<std::size_t>(2048u, model.polygonCount + model.polygonCount / 4u))
+        ? 65535u / 24u
         : model.polygonCount;
     const unsigned int allocationVertices = reserveSceneCapacity
         ? std::max(vertexCount, static_cast<unsigned int>(allocationPolygons * 6u))
@@ -6282,6 +6508,7 @@ bool prepare_vdp1_model(
             // Prepare can reuse storage with a different polygon association.
             // Invalidate independently of the CPU static-prefix rebuild flag.
             g_sceneSubdivPositionValid.clear();
+            g_sceneSubdivShadeStates.clear();
             if (reuseGeometry) {
                 // Positions, UVs, and topology are rewritten below into the
                 // already-mapped capacity. No allocation is required.
@@ -6637,14 +6864,10 @@ static void azelProjectionScales(
         (176.0f / 112.0f) *
         heightFactor;
 
-    // The Saturn 352x224 image is authored for a 4:3 display. The Vita
-    // framebuffer is 16:9, so compress X into the centered 4:3 presentation
-    // area while preserving Azel's original projection math.
-    const float intendedAspect = 4.0f / 3.0f;
-    const float vitaAspect =
-        static_cast<float>(kWidth) /
-        static_cast<float>(kHeight);
-    outXScale *= intendedAspect / vitaAspect;
+    // Preserve the accepted wide camera: native projected points use the
+    // Saturn 4:3 horizontal scale on Vita, exposing additional world rays at
+    // the sides. Live RBG sampling applies its inverse about native X=176.
+    outXScale *= lagi::saturnDisplayXScale(kWidth, kHeight);
 }
 
 static ViewerMat4 buildAzelProjection(
@@ -7178,7 +7401,10 @@ static Vdp1ModelSource liveTownVdp1Source()
 {
     Vdp1ModelSource source{};
     source.vertices = g_liveTownCpuMesh.vertices.data();
-    source.lightingVertices = g_liveTownCpuMesh.lightingVertices.data();
+    // Live append previously copied every transformed vertex into an identical
+    // second array. The lighting source needs the same immutable positions;
+    // normals and current Gouraud payload remain in their separate records.
+    source.lightingVertices = source.vertices;
     source.vertexCount = g_liveTownCpuMesh.vertices.size();
     source.polygons = g_liveTownCpuMesh.polygonRecords.data();
     source.gouraud555 = g_liveTownCpuMesh.gouraud555.data();
@@ -7369,14 +7595,24 @@ static void appendLiveTownModel(
     if(neededVertices>g_liveTownCpuMesh.vertices.capacity())
         g_liveTownCpuMesh.vertices.reserve(std::max(neededVertices,
             g_liveTownCpuMesh.vertices.capacity()*2u));
-    if(neededVertices>g_liveTownCpuMesh.lightingVertices.capacity())
-        g_liveTownCpuMesh.lightingVertices.reserve(std::max(neededVertices,
-            g_liveTownCpuMesh.lightingVertices.capacity()*2u));
     // Copy immutable descriptors directly into their final slots. resize()
     // first value-initialized their full lighting payload only to overwrite
     // it below for every dynamic model, on every frame.
     g_liveTownCpuMesh.polygonRecords.insert(g_liveTownCpuMesh.polygonRecords.end(),
         model.polygons.begin(),model.polygons.end());
+    // Apply sparse frame-owned material updates to the final descriptors,
+    // never the cached model. Existing Gouraud payload/GXM draw does the rest:
+    // no extra draw pass, texture upload, mesh adaptation or GPU synchronization.
+    const auto& animated=azel_bridge::published_animated_colors();
+    if(state.animatedColorStart<=animated.size() &&
+       state.animatedColorCount<=animated.size()-state.animatedColorStart) {
+        for(std::size_t i=0;i<state.animatedColorCount;++i) {
+            const auto& color=animated[state.animatedColorStart+i];
+            if(color.polygon<model.polygons.size())
+                lagi::applyNativeAnimatedColor(
+                    g_liveTownCpuMesh.polygonRecords[polygonBase+color.polygon],color);
+        }
+    }
     g_liveTownCpuMesh.polygonTextureIndices.resize(
         polygonBase + model.polygons.size());
     g_liveTownCpuMesh.gouraud555.resize(
@@ -7397,6 +7633,32 @@ static void appendLiveTownModel(
     const bool shiftedProjection = projectionOffset[0] != 0 ||
         projectionOffset[1] != 0 || projectionOffset[2] != 0;
 
+    // The two authored six-quad Camp circles sit 0.01514 world units
+    // above the VDP2 floor in the native model transform. The hardware
+    // comparison established that moving them down by this amount aligns
+    // their footprint. Apply it once at the world-vertex boundary, not via
+    // the camera, global depth policy or the VDP2 compositor.
+    // All other Saturn submissions preserve their authored coordinates.
+    bool campFloorCircle = false;
+    if((g_sceneGameMode==1u || g_sceneGameMode==2u) &&
+       model.polygons.size()==6u && model.vertices.size()==36u &&
+       state.hasModelMatrix && !state.billboard) {
+        campFloorCircle = true;
+        for(const auto& polygon:model.polygons)
+            if(polygon.cmdColr!=0x2100u ||
+               (polygon.cmdPmod!=0x0480u && polygon.cmdPmod!=0x0440u)) {
+                campFloorCircle=false;
+                break;
+            }
+        if(campFloorCircle)
+            for(const auto& vertex:model.vertices)
+                if(vertex.y!=0.0f) {
+                    campFloorCircle=false;
+                    break;
+                }
+    }
+    constexpr float kCampCircleFloorHeightCorrection=-0.01514f;
+
     const auto transformVertex = [&](const azel::DebugColorVertex& source) {
         azel::DebugColorVertex v = source;
         if (state.billboard) {
@@ -7411,6 +7673,8 @@ static void appendLiveTownModel(
             v.y = source.x*m[4] + source.y*m[5] + source.z*m[6] + m[7];
             v.z = source.x*m[8] + source.y*m[9] + source.z*m[10] + m[11];
         }
+        if(campFloorCircle)
+            v.y += kCampCircleFloorHeightCorrection;
         if (shiftedProjection) {
             const float viewZ = v.x*g_nativeSceneViewMatrix[8] +
                 v.y*g_nativeSceneViewMatrix[9] +
@@ -7429,30 +7693,96 @@ static void appendLiveTownModel(
     // transforms per quad. Keep a defensive generic fallback for any future
     // adapter that does not use the canonical six-vertices-per-quad layout.
     if (model.vertices.size() == model.polygons.size() * 6u) {
+        const bool hasPositionSources=model.positionSources.size()==model.vertices.size();
         for (std::size_t p = 0; p < model.polygons.size(); ++p) {
             const std::size_t srcBase = p * 6u;
-            const auto a = transformVertex(model.vertices[srcBase + 0u]);
-            const auto b = transformVertex(model.vertices[srcBase + 1u]);
-            const auto c = transformVertex(model.vertices[srcBase + 2u]);
-            const auto d = transformVertex(model.vertices[srcBase + 5u]);
+            const auto corner=[&](unsigned k) {
+                const auto& source=model.vertices[srcBase+k];
+                const auto prior=hasPositionSources?model.positionSources[srcBase+k]:srcBase;
+                // Earlier quads are already appended with this submission's
+                // matrix, billboard basis and projection offset. Never reuse
+                // across submissions or frames, or copy a prior face's color.
+                if(prior<srcBase) {
+                    auto v=source;
+                    const auto& position=g_liveTownCpuMesh.vertices[vertexBase+prior];
+                    v.x=position.x;v.y=position.y;v.z=position.z;
+                    return v;
+                }
+                return transformVertex(source);
+            };
+            const auto a = corner(0u);
+            const auto b = corner(1u);
+            const auto c = corner(2u);
+            const auto d = corner(5u);
 
             const azel::DebugColorVertex quad[6]={a,b,c,a,c,d};
             g_liveTownCpuMesh.vertices.insert(g_liveTownCpuMesh.vertices.end(),
                 quad,quad+6);
-            g_liveTownCpuMesh.lightingVertices.insert(
-                g_liveTownCpuMesh.lightingVertices.end(),quad,quad+6);
         }
     } else {
         for (std::size_t i = 0; i < model.vertices.size(); ++i) {
             const auto v = transformVertex(model.vertices[i]);
             g_liveTownCpuMesh.vertices.push_back(v);
-            g_liveTownCpuMesh.lightingVertices.push_back(v);
+        }
+    }
+
+    // Match the exact six-polygon, flat authored circle model. Log both
+    // source and transformed Y, and decompose the transformed Y into
+    // basis and translation contributions. The isolated correction above
+    // is now production behavior for this exact model signature.
+    static unsigned campCircleVertexAuditBudget=8u;
+    if(campCircleVertexAuditBudget && model.polygons.size()==6u &&
+       model.vertices.size()==36u && state.hasModelMatrix &&
+       g_liveTownCpuMesh.vertices.size()>=vertexBase+36u) {
+        unsigned materialMatches=0u,flatVertices=0u;
+        for(const auto& q:model.polygons)
+            materialMatches+=unsigned(q.cmdColr==0x2100u &&
+                (q.cmdPmod==0x0480u || q.cmdPmod==0x0440u));
+        for(const auto& v:model.vertices)
+            flatVertices+=unsigned(v.y==0.0f);
+        if(materialMatches==6u && flatVertices==model.vertices.size()) {
+            --campCircleVertexAuditBudget;
+            const auto& source=model.vertices[0];
+            const auto& world=g_liveTownCpuMesh.vertices[vertexBase];
+            const float linearY=source.x*m[4]+source.y*m[5]+source.z*m[6];
+            const float translatedY=linearY+m[7];
+            logging::writef(
+                "[CampCircleVertex] polygonBase=%u source=(%.8f,%.8f,%.8f) "
+                "basisY=(%.8f,%.8f,%.8f) linearY=%.8f "
+                "translationY=%.8f predictedY=%.8f finalY=%.8f "
+                "projectionShiftY=%.8f billboard=%u\n",
+                unsigned(polygonBase),double(source.x),double(source.y),
+                double(source.z),double(m[4]),double(m[5]),double(m[6]),
+                double(linearY),double(m[7]),double(translatedY),
+                double(world.y),double(world.y-translatedY),
+                unsigned(state.billboard));
+        }
+    }
+    if(campFloorCircle) {
+        static unsigned campCircleFloorCorrectionLogBudget=4u;
+        if(campCircleFloorCorrectionLogBudget) {
+            --campCircleFloorCorrectionLogBudget;
+            logging::writef(
+                "[CampCircleFloorFix] polygonBase=%u quads=%u originalY=%.8f correctionY=%.8f finalTranslationY=%.8f scope=camp-only\n",
+                unsigned(polygonBase),unsigned(model.polygons.size()),
+                double(m[7]),double(kCampCircleFloorHeightCorrection),
+                double(m[7]+kCampCircleFloorHeightCorrection));
         }
     }
 
     appendPhase(g_profileAppendTransformUs);
     LivePolygonLightState polygonLight{};
     polygonLight.additionalLight=state.additionalLight;
+    polygonLight.additionalPointPerCorner=state.additionalPointPerCorner;
+    polygonLight.nativePrimaryPointPerCorner=state.nativePrimaryPointPerCorner;
+    std::copy(std::begin(state.additionalPointParams),std::end(state.additionalPointParams),polygonLight.additionalPointParams);
+    std::copy(std::begin(state.additionalPointView),std::end(state.additionalPointView),polygonLight.additionalPointView);
+    polygonLight.transientLaserLights=state.transientLaserLights;
+    polygonLight.transientLaserLightCount=state.transientLaserLightCount;
+    polygonLight.transientLaserSources=state.transientLaserSources;
+    for(unsigned row=0;row<3;++row)
+        for(unsigned col=0;col<3;++col)
+            polygonLight.modelBasis[row*3+col]=state.modelMatrix[row*4+col];
     if (state.hasLight) {
         // Match Azel's renderer: rotate the captured camera/world-space light
         // into model space once per submission. This is algebraically the
@@ -7484,9 +7814,12 @@ static void appendLiveTownModel(
     }
 
     // Every polygon in this submission shares the captured model-space light.
-    // Construct the final values once rather than zeroing then assigning.
-    g_liveTownPolygonLights.insert(g_liveTownPolygonLights.end(),
-        model.polygons.size(),polygonLight);
+    if (!model.polygons.empty()) {
+        const auto lightIndex = static_cast<std::uint32_t>(g_liveTownLightStates.size());
+        g_liveTownLightStates.push_back(polygonLight);
+        g_liveTownPolygonLightIndices.insert(g_liveTownPolygonLightIndices.end(),
+            model.polygons.size(),lightIndex);
+    }
     appendPhase(g_profileAppendLightUs);
     std::size_t runStart = 0u;
     std::size_t runCount = 0u;
@@ -7697,6 +8030,23 @@ static void appendLiveTownEdge()
         sceKernelGetProcessTimeWide() - tAppend);
 }
 
+static bool liveTownSubmissionIsDynamic(
+    const azel_bridge::RenderSubmission& submission)
+{
+    if (submission.state.dynamic || submission.state.billboard)
+        return true;
+
+    LiveTownInstanceKey key{};
+    key.model = submission.model;
+    key.sceneMode = g_sceneGameMode;
+    key.bundleIndex = submission.bundleIndex;
+    key.cellIndex = submission.cellIndex;
+    key.objectIndex = submission.objectIndex;
+    key.modelTableOffset = submission.modelTableOffset;
+    return g_liveTownAutoDynamicIdentities.find(key) !=
+        g_liveTownAutoDynamicIdentities.end();
+}
+
 static void refreshLiveTownStaticLighting()
 {
     std::size_t polygonBase = 0u;
@@ -7734,7 +8084,7 @@ static void refreshLiveTownStaticLighting()
         };
 
     for (const auto& submission : azel_bridge::published_submissions()) {
-        if (submission.state.dynamic ||
+        if (liveTownSubmissionIsDynamic(submission) ||
             submission.adaptedModelIndex < 0)
             continue;
 
@@ -7745,7 +8095,7 @@ static void refreshLiveTownStaticLighting()
 
         const std::size_t polygonCount = model->polygons.size();
         if (polygonBase + polygonCount > g_liveTownStaticPolygonCount ||
-            polygonBase + polygonCount > g_liveTownPolygonLights.size())
+            polygonBase + polygonCount > g_liveTownPolygonLightIndices.size())
             break;
 
         if (g_fieldProbeActive && polygonBase + polygonCount <=
@@ -7809,6 +8159,21 @@ static void refreshLiveTownStaticLighting()
 
         LivePolygonLightState light{};
         light.additionalLight=submission.state.additionalLight;
+        light.additionalPointPerCorner=submission.state.additionalPointPerCorner;
+        light.nativePrimaryPointPerCorner=submission.state.nativePrimaryPointPerCorner;
+        std::copy(std::begin(submission.state.additionalPointParams),std::end(submission.state.additionalPointParams),light.additionalPointParams);
+        std::copy(std::begin(submission.state.additionalPointView),std::end(submission.state.additionalPointView),light.additionalPointView);
+        // Static geometry reuses its polygons across frames. Re-snapshot
+        // transient shot lights here just as appendLiveTownModel() does for
+        // dynamic objects, otherwise the cached environment never receives
+        // the current laser's position, color, or light count.
+        light.transientLaserLights=submission.state.transientLaserLights;
+        light.transientLaserSources=submission.state.transientLaserSources;
+        light.transientLaserLightCount=submission.state.transientLaserLightCount;
+        for(unsigned row=0;row<3;++row)
+            for(unsigned col=0;col<3;++col)
+                light.modelBasis[row*3+col]=
+                    submission.state.modelMatrix[row*4+col];
         if (submission.state.hasLight) {
             // Static geometry keeps model-space normals across cache hits.
             // Refresh the current Azel light in that same model space instead
@@ -7880,11 +8245,25 @@ static void refreshLiveTownStaticLighting()
             --fieldFalloffCompareBudget;
         }
 
-        for (std::size_t p = 0; p < polygonCount; ++p)
-            g_liveTownPolygonLights[polygonBase + p] = light;
+        if (polygonCount) {
+            const auto lightIndex = g_liveTownPolygonLightIndices[polygonBase];
+            if (lightIndex >= g_liveTownLightStates.size()) return;
+            g_liveTownLightStates[lightIndex] = light;
+        }
 
         polygonBase += polygonCount;
     }
+}
+
+// Shared with submission: do not infer a subdivision route from view mode
+// alone. Allocation, shader availability and capacity may require fallback.
+static bool liveSubdivisionBuffersReady(const Vdp1ModelSource& model)
+{
+    return g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+        g_vdp1SubdivVertices && g_vdp1SubdivIndices &&
+        g_vdp1SubdivVertexCapacity >= model.polygonCount * 9u &&
+        g_vdp1SubdivIndexCapacity >= model.polygonCount * 24u &&
+        g_gouraudSubdivVertexProgram;
 }
 
 static bool buildLiveTownFrame()
@@ -7943,6 +8322,7 @@ static bool buildLiveTownFrame()
     bool hasBillboards = false;
     g_liveTownSubmissionCount = 0u;
     g_liveTownMeshRanges.clear();
+    g_liveTownSubmissionRanges.clear();
     g_liveTownStaticSubmissionCount = 0u;
     g_liveTownBillboardSubmissionCount = 0u;
     g_liveTownStaticSubmittedPolygons = 0u;
@@ -7981,22 +8361,6 @@ static bool buildLiveTownFrame()
         history.valid = true;
     }
 
-    const auto submissionIsDynamic =
-        [](const azel_bridge::RenderSubmission& submission) {
-            if (submission.state.dynamic || submission.state.billboard)
-                return true;
-
-            LiveTownInstanceKey key{};
-            key.model = submission.model;
-            key.sceneMode = g_sceneGameMode;
-            key.bundleIndex = submission.bundleIndex;
-            key.cellIndex = submission.cellIndex;
-            key.objectIndex = submission.objectIndex;
-            key.modelTableOffset = submission.modelTableOffset;
-            return g_liveTownAutoDynamicIdentities.find(key) !=
-                g_liveTownAutoDynamicIdentities.end();
-        };
-
     for (const auto& submission : azel_bridge::published_submissions()) {
         if (submission.adaptedModelIndex < 0)
             continue;
@@ -8009,13 +8373,13 @@ static bool buildLiveTownFrame()
             ++g_liveTownBillboardSubmissionCount;
             g_liveTownBillboardSubmittedPolygons +=
                 static_cast<unsigned int>(model->polygons.size());
-        } else if (!submissionIsDynamic(submission)) {
+        } else if (!liveTownSubmissionIsDynamic(submission)) {
             ++g_liveTownStaticSubmissionCount;
             g_liveTownStaticSubmittedPolygons +=
                 static_cast<unsigned int>(model->polygons.size());
         }
 
-        if (!submissionIsDynamic(submission)) {
+        if (!liveTownSubmissionIsDynamic(submission)) {
             // Geometry/material identity only. Lighting is renderer state and
             // must not invalidate/rebuild the static world mesh.
             staticSignature ^= static_cast<std::uint64_t>(
@@ -8077,14 +8441,17 @@ static bool buildLiveTownFrame()
         staticSignature != g_liveTownStaticSignature;
     if (g_liveTownStaticRebuilt) {
         g_sceneSubdivPositionValid.clear();
+        g_sceneSubdivShadeStates.clear();
         g_liveTownCpuMesh.vertices.clear();
-        g_liveTownCpuMesh.lightingVertices.clear();
         g_liveTownCpuMesh.polygonRecords.clear();
         g_liveTownCpuMesh.gouraud555.clear();
         g_liveTownCpuMesh.polygonTextureIndices.clear();
-        g_liveTownPolygonLights.clear();
-        for (const auto& submission : azel_bridge::published_submissions()) {
-            if (submissionIsDynamic(submission) ||
+        g_liveTownLightStates.clear();
+        g_liveTownPolygonLightIndices.clear();
+        const auto& orderedSubmissions=azel_bridge::published_submissions();
+        for (std::size_t submissionOrder=0;submissionOrder<orderedSubmissions.size();++submissionOrder) {
+            const auto& submission=orderedSubmissions[submissionOrder];
+            if (liveTownSubmissionIsDynamic(submission) ||
                 submission.adaptedModelIndex < 0)
                 continue;
             const auto* model = azel_bridge::published_adapted_model(
@@ -8100,19 +8467,23 @@ static bool buildLiveTownFrame()
             // cache as task-owned/dynamic submissions.
             const auto* resolved = resolvedLiveTownMaterialIndices(
                 submission.model, submission.modelGeneration, *model);
+            const std::size_t first=g_liveTownCpuMesh.polygonRecords.size();
             appendLiveTownModel(
                 *model,
                 submission.state,
                 resolved && !resolved->empty() ? resolved->data() : nullptr,
                 resolved ? resolved->size() : 0u);
+            const auto count=g_liveTownCpuMesh.polygonRecords.size()-first;
+            if(count)g_liveTownSubmissionRanges.push_back({first,count,submissionOrder});
         }
         g_liveTownStaticSignature = staticSignature;
         g_liveTownStaticVertexCount = g_liveTownCpuMesh.vertices.size();
         g_liveTownStaticPolygonCount = g_liveTownCpuMesh.polygonRecords.size();
+        g_liveTownStaticLightStateCount = g_liveTownLightStates.size();
         g_liveTownStaticMeshRanges = g_liveTownMeshRanges;
+        g_liveTownStaticSubmissionRanges = g_liveTownSubmissionRanges;
     } else {
         g_liveTownCpuMesh.vertices.resize(g_liveTownStaticVertexCount);
-        g_liveTownCpuMesh.lightingVertices.resize(g_liveTownStaticVertexCount);
         g_liveTownCpuMesh.polygonRecords.resize(g_liveTownStaticPolygonCount);
         g_liveTownCpuMesh.gouraud555.resize(g_liveTownStaticPolygonCount);
 
@@ -8131,8 +8502,25 @@ static bool buildLiveTownFrame()
 
         g_liveTownCpuMesh.polygonTextureIndices.resize(
             g_liveTownStaticPolygonCount);
-        g_liveTownPolygonLights.resize(g_liveTownStaticPolygonCount);
+        g_liveTownLightStates.resize(g_liveTownStaticLightStateCount);
+        g_liveTownPolygonLightIndices.resize(g_liveTownStaticPolygonCount);
         g_liveTownMeshRanges = g_liveTownStaticMeshRanges;
+        g_liveTownSubmissionRanges = g_liveTownStaticSubmissionRanges;
+        // The cached geometry retains its static order, but interleaved
+        // dynamic submissions may occupy different Azel slots each frame.
+        // Rebind current producer indices without rebuilding any vertices.
+        std::size_t staticRange=0;
+        const auto& frameSubmissions=azel_bridge::published_submissions();
+        for(std::size_t order=0;order<frameSubmissions.size();++order) {
+            const auto& submission=frameSubmissions[order];
+            if(liveTownSubmissionIsDynamic(submission) ||
+                submission.adaptedModelIndex<0)continue;
+            const auto* adapted=azel_bridge::published_adapted_model(
+                static_cast<std::uint32_t>(submission.adaptedModelIndex));
+            if(!adapted || adapted->polygons.empty())continue;
+            if(staticRange<g_liveTownSubmissionRanges.size())
+                g_liveTownSubmissionRanges[staticRange++].azelOrder=order;
+        }
     }
     g_profileBuildCacheUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tCache);
@@ -8150,8 +8538,10 @@ static bool buildLiveTownFrame()
     const std::uint64_t tObjects = sceKernelGetProcessTimeWide();
     g_profileAppendSetupUs=g_profileAppendStorageUs=0;
     g_profileAppendTransformUs=g_profileAppendLightUs=g_profileAppendBindingUs=0;
-    for (const auto& submission : azel_bridge::published_submissions()) {
-        if (!submissionIsDynamic(submission) ||
+    const auto& orderedDynamicSubmissions=azel_bridge::published_submissions();
+    for(std::size_t submissionOrder=0;submissionOrder<orderedDynamicSubmissions.size();++submissionOrder) {
+        const auto& submission=orderedDynamicSubmissions[submissionOrder];
+        if (!liveTownSubmissionIsDynamic(submission) ||
             submission.adaptedModelIndex < 0)
             continue;
         const auto* model = azel_bridge::published_adapted_model(
@@ -8161,11 +8551,49 @@ static bool buildLiveTownFrame()
 
         const auto* resolved = resolvedLiveTownMaterialIndices(
             submission.model, submission.modelGeneration, *model);
+        const std::size_t first=g_liveTownCpuMesh.polygonRecords.size();
         appendLiveTownModel(
             *model,
             submission.state,
             resolved && !resolved->empty() ? resolved->data() : nullptr,
             resolved ? resolved->size() : 0u);
+        const auto count=g_liveTownCpuMesh.polygonRecords.size()-first;
+        if(count)g_liveTownSubmissionRanges.push_back({first,count,submissionOrder});
+    }
+    // The flattening cache is grouped by lifetime, but draw order belongs to
+    // the Azel task frame. Sort only the range descriptors, not cached meshes.
+    std::sort(g_liveTownSubmissionRanges.begin(),g_liveTownSubmissionRanges.end(),
+        [](const LiveTownSubmissionRange&a,const LiveTownSubmissionRange&b){
+            return a.azelOrder<b.azelOrder;
+        });
+    if(g_profileAppendSample && !g_liveTownSubmissionRanges.empty()) {
+        unsigned materialRuns=0, orderedRuns=0, discontinuities=0;
+        std::size_t previousEnd=0;
+        bool firstRange=true;
+        for(const auto& range:g_liveTownSubmissionRanges) {
+            if(!firstRange && range.first!=previousEnd)++discontinuities;
+            firstRange=false;
+            previousEnd=range.first+range.count;
+            const auto end=std::min(previousEnd,g_liveTownCpuMesh.polygonRecords.size());
+            for(std::size_t p=range.first;p<end;) {
+                const auto& record=g_liveTownCpuMesh.polygonRecords[p];
+                const unsigned texture=g_liveTownCpuMesh.polygonTextureIndices[p];
+                const bool ordered=(record.cmdPmod&0x0100u) ||
+                    lagi::vdp1_half_transparent(record.cmdPmod);
+                ++materialRuns;
+                if(ordered)++orderedRuns;
+                std::size_t next=p+1;
+                while(next<end &&
+                    g_liveTownCpuMesh.polygonTextureIndices[next]==texture &&
+                    bool((g_liveTownCpuMesh.polygonRecords[next].cmdPmod&0x0100u) ||
+                        lagi::vdp1_half_transparent(g_liveTownCpuMesh.polygonRecords[next].cmdPmod))==ordered)
+                    ++next;
+                p=next;
+            }
+        }
+        logging::writef("[NativeOrderReplay] submissions=%u runs=%u orderedRuns=%u storageDiscontinuities=%u polygons=%u originalOrder=1 depthOpaque=LEQUAL depthOrdered=native\n",
+            unsigned(g_liveTownSubmissionRanges.size()),materialRuns,orderedRuns,
+            discontinuities,unsigned(g_liveTownCpuMesh.polygonRecords.size()));
     }
     g_profileObjectAppendUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tObjects);
@@ -8240,7 +8668,7 @@ static bool buildLiveTownFrame()
         g_liveTownCpuMesh.vertices.size() > 65535u ||
         g_liveTownCpuMesh.polygonTextureIndices.size() !=
             g_liveTownCpuMesh.polygonRecords.size() ||
-        g_liveTownPolygonLights.size() !=
+        g_liveTownPolygonLightIndices.size() !=
             g_liveTownCpuMesh.polygonRecords.size()) {
         static bool loggedInvalidGeometry = false;
         if (!loggedInvalidGeometry) {
@@ -8284,7 +8712,8 @@ static bool buildLiveTownFrame()
     const std::uint64_t tUpload = sceKernelGetProcessTimeWide();
     g_profilePositionSyncUs = 0u;
     g_profilePositionSyncVertices = 0u;
-    const bool fullSubdivMode = g_viewMode == 7;
+    g_profilePositionSyncLegacyVertices = 0u;
+    const bool fullSubdivMode = g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24;
     const bool changed = !g_liveTownPrepared ||
         g_residentVdp1Model != ResidentVdp1Model::LiveTown ||
         g_vdp1TextureDataDirty ||
@@ -8301,6 +8730,14 @@ static bool buildLiveTownFrame()
         g_residentVdp1Model = ResidentVdp1Model::LiveTown;
         g_liveTownPrepared = true;
     } else {
+        const bool subdivisionOnly = fullSubdivMode &&
+            liveSubdivisionBuffersReady(liveTownVdp1Source()) &&
+            g_vdp1TexturedReady && g_vdp1GouraudVertices &&
+            g_vdp1TextureIndices && liveTownVdp1Source().texturesValid() &&
+            g_texturedGouraudSubdivFragmentProgram &&
+            ((g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid) || std::any_of(
+                g_liveTownLightStates.begin(),g_liveTownLightStates.end(),
+                [](const LivePolygonLightState& light){return light.valid;}));
         // LAGI_LIVE_POSITION_SYNC_BEGIN
         const std::size_t firstDynamicVertex = g_liveTownStaticRebuilt
             ? 0u : g_liveTownStaticVertexCount;
@@ -8313,23 +8750,28 @@ static bool buildLiveTownFrame()
                 (g_liveTownCpuMesh.vertices.size() - firstDynamicVertex) *
                     sizeof(g_liveTownCpuMesh.vertices[0]));
         }
-        for (std::size_t i = firstDynamicVertex;
-             i < g_liveTownCpuMesh.vertices.size(); ++i) {
-            const auto& v = g_liveTownCpuMesh.vertices[i];
-            g_vdp1TextureVertices[i].x = v.x;
-            g_vdp1TextureVertices[i].y = v.y;
-            g_vdp1TextureVertices[i].z = v.z;
-        }
-        for (std::size_t i = firstDynamicVertex;
-             i < g_liveTownCpuMesh.vertices.size(); ++i) {
-            const auto& v = g_liveTownCpuMesh.vertices[i];
-            g_vdp1GouraudVertices[i].x = v.x;
-            g_vdp1GouraudVertices[i].y = v.y;
-            g_vdp1GouraudVertices[i].z = v.z;
+        // Subdivision uploads its own current positions from model.vertices.
+        // These legacy streams are used only by base/diagnostic fallback.
+        if (!subdivisionOnly) {
+            for (std::size_t i = firstDynamicVertex;
+                 i < g_liveTownCpuMesh.vertices.size(); ++i) {
+                const auto& v = g_liveTownCpuMesh.vertices[i];
+                g_vdp1TextureVertices[i].x = v.x;
+                g_vdp1TextureVertices[i].y = v.y;
+                g_vdp1TextureVertices[i].z = v.z;
+            }
+            for (std::size_t i = firstDynamicVertex;
+                 i < g_liveTownCpuMesh.vertices.size(); ++i) {
+                const auto& v = g_liveTownCpuMesh.vertices[i];
+                g_vdp1GouraudVertices[i].x = v.x;
+                g_vdp1GouraudVertices[i].y = v.y;
+                g_vdp1GouraudVertices[i].z = v.z;
+            }
         }
         g_profilePositionSyncVertices = static_cast<unsigned int>(
             g_liveTownCpuMesh.vertices.size() > firstDynamicVertex
                 ? g_liveTownCpuMesh.vertices.size() - firstDynamicVertex : 0u);
+        g_profilePositionSyncLegacyVertices = subdivisionOnly ? 0u : g_profilePositionSyncVertices;
         g_profilePositionSyncUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - positionSyncStartUs);
         // LAGI_LIVE_POSITION_SYNC_END
@@ -8639,6 +9081,12 @@ static int viewerRenderHeight()
     return g_halfResolution ? (kHeight / 2) : kHeight;
 }
 
+extern "C" int lagiVdp1BackgroundHalfWidth()
+{
+    // Invert the horizontal transform used for native distorted sprites.
+    const int denominator = 4 * viewerRenderHeight();
+    return (176 * 3 * viewerRenderWidth() + denominator - 1) / denominator;
+}
 static int viewerRenderPitch()
 {
     return g_halfResolution ? 512 : 1024;
@@ -8762,15 +9210,6 @@ static void prepareLiveTownGouraudVisibility(const ViewerMat4& wvp)
                 projectable = false;
                 continue;
             }
-
-            const float invW = 1.0f / clipW;
-            prep.screen[corner].x =
-                (clipX * invW * 0.5f + 0.5f) *
-                static_cast<float>(viewerRenderWidth());
-            prep.screen[corner].y =
-                (0.5f - clipY * invW * 0.5f) *
-                static_cast<float>(viewerRenderHeight());
-            prep.screen[corner].valid = true;
         }
 
         prep.visible = projectable && sharedOutcode == 0u;
@@ -8780,6 +9219,27 @@ static void prepareLiveTownGouraudVisibility(const ViewerMat4& wvp)
 
     g_profileGouraudPrepUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - prepStartUs);
+}
+
+// The GPU subdivision path needs only homogeneous clip visibility. Recover
+// screen payload lazily for the nonsubdivided Gouraud fallback, preserving
+// the original reciprocal/multiply order rather than changing its rounding.
+static void projectLiveTownGouraudScreen(const ViewerMat4& wvp,
+    std::size_t polygon, GouraudQuadPrep& prep)
+{
+    if (!prep.visible || prep.screen[0].valid)
+        return;
+    static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
+    for (unsigned corner = 0; corner < 4u; ++corner) {
+        const auto& v = g_liveTownCpuMesh.vertices[polygon * 6u + cornerVertex[corner]];
+        const float clipX = v.x*wvp.m[0] + v.y*wvp.m[4] + v.z*wvp.m[8] + wvp.m[12];
+        const float clipY = v.x*wvp.m[1] + v.y*wvp.m[5] + v.z*wvp.m[9] + wvp.m[13];
+        const float clipW = v.x*wvp.m[3] + v.y*wvp.m[7] + v.z*wvp.m[11] + wvp.m[15];
+        const float invW = 1.0f / clipW;
+        prep.screen[corner].x = (clipX * invW * 0.5f + 0.5f) * static_cast<float>(viewerRenderWidth());
+        prep.screen[corner].y = (0.5f - clipY * invW * 0.5f) * static_cast<float>(viewerRenderHeight());
+        prep.screen[corner].valid = true;
+    }
 }
 
 static void generateAzelFalloff(
@@ -9852,6 +10312,18 @@ void show_game_presentation()
 
     status("[PASS] GXM CREATE FRAGMENT PROGRAM", 0xFF80E0FFu);
 
+    const auto* solidMeshGxp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_color_mesh_f_gxp_start);
+    if(sceGxmProgramCheck(solidMeshGxp)<0 || sceGxmShaderPatcherRegisterProgram(
+        g_probeShaderPatcher,solidMeshGxp,&g_solidMeshFragmentProgramId)<0) {
+        failure("[FAIL] SOLID MESH REGISTER");return;
+    }
+    g_solidMeshFragmentRegistered=true;
+    if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_solidMeshFragmentProgramId,
+        SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,kMultisampleMode,nullptr,vertexProgram,
+        &g_solidMeshFragmentProgram)<0) {
+        failure("[FAIL] SOLID MESH PROGRAM");return;
+    }
+
     SceGxmBlendInfo fadeBlend{};
     fadeBlend.colorFunc = SCE_GXM_BLEND_FUNC_ADD;
     fadeBlend.alphaFunc = SCE_GXM_BLEND_FUNC_ADD;
@@ -10082,6 +10554,10 @@ void show_game_presentation()
                 vdp2Rbg0FragmentGxp, "rbg0LayerWindow");
             g_vdp2Rbg0LayerWindowInfoParam = sceGxmProgramFindParameterByName(
                 vdp2Rbg0FragmentGxp, "rbg0LayerWindowInfo");
+            g_vdp2Rbg0PatternBanksParam = sceGxmProgramFindParameterByName(
+                vdp2Rbg0FragmentGxp,"rbg0PatternBanks");
+            g_vdp2Rbg0CharacterBanksParam = sceGxmProgramFindParameterByName(
+                vdp2Rbg0FragmentGxp,"rbg0CharacterBanks");
             if (!g_vdp2Rbg0Transform0Param ||
                 !g_vdp2Rbg0Transform1Param ||
                 !g_vdp2Rbg0CoefficientParam ||
@@ -10089,7 +10565,8 @@ void show_game_presentation()
                 !g_vdp2Rbg0SwitchCoefficientParam ||
                 !g_vdp2Rbg0SwitchInfoParam ||
                 !g_vdp2Rbg0FormatParam ||
-                !g_vdp2Rbg0LayerWindowParam || !g_vdp2Rbg0LayerWindowInfoParam) {
+                !g_vdp2Rbg0LayerWindowParam || !g_vdp2Rbg0LayerWindowInfoParam ||
+                !g_vdp2Rbg0PatternBanksParam || !g_vdp2Rbg0CharacterBanksParam) {
                 logging::writef(
                     "[NeptuneVDP2] RBG0 compact uniforms unavailable; "
                     "disabling RBG0\n");
@@ -10862,6 +11339,7 @@ void show_game_presentation()
         !createNativeBlend(BlendMesh,g_meshFragmentProgramId,textureVertexGxp,kMultisampleMode) ||
         !createNativeBlend(BlendMeshSubdiv,g_meshFragmentProgramId,gouraudSubdivVertexGxp,kMultisampleMode) ||
         !createNativeBlend(BlendLitHalf,g_texturedLitHalfFragmentProgramId,gouraudPayloadVertexGxp,kMultisampleMode) ||
+        !createNativeBlend(BlendSolidMesh,g_solidMeshFragmentProgramId,vertexProgram,kMultisampleMode) ||
         (LAGI_VDP2_SPRITE_COMPOSITE && !createNativeBlend(BlendSolid,g_probeFragmentProgramId,vertexProgram,kMultisampleMode))) {
         failure("[FAIL] NATIVE VDP1 BLEND PROGRAMS"); return;
     }
@@ -11407,6 +11885,59 @@ bool submit_vdp1_model(
         !g_vdp1Indices)
         return false;
 
+    // Auditing the _visible materials_ is necessary before splitting VDP1
+    // layers. The final combined VDP1 framebuffer cannot recover a higher-
+    // priority pixel that an overlapping lower-priority draw replaced.
+    // Only report when a native compositor is active; no per-frame texel walk.
+    if (lagi::rbgLayerCompositeSupported(g_spriteColor) &&
+        g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
+        model.polygonTextureIndices != nullptr) {
+        static unsigned traceBudget=3;
+        static std::uint64_t lastKey=~std::uint64_t(0);
+        const std::uint64_t key=(std::uint64_t(g_spriteColor.ccctl)<<48) |
+            (std::uint64_t(g_spriteColor.spctl)<<32) |
+            (std::uint64_t(g_spriteColor.priority[0])<<16) |
+            std::uint64_t(g_nativeTextureGeneration&0xffffu);
+        if(traceBudget && key!=lastKey) {
+            lastKey=key;--traceBudget;
+            unsigned counts[3][3]{};
+            unsigned reported=0;
+            std::vector<std::uint8_t> visited(g_vdp1GpuTextures.size()*3u,0u);
+            for(std::size_t polygon=0;polygon<model.polygonCount;++polygon) {
+                const unsigned textureIndex=model.polygonTextureIndices[polygon];
+                if(textureIndex>=g_vdp1GpuTextures.size())continue;
+                const bool shadow=g_liveTownShadowPolygonCount &&
+                    polygon>=g_liveTownShadowFirstPolygon &&
+                    polygon<g_liveTownShadowFirstPolygon+g_liveTownShadowPolygonCount;
+                const bool edge=g_liveTownEdgePolygonCount &&
+                    polygon>=g_liveTownEdgeFirstPolygon &&
+                    polygon<g_liveTownEdgeFirstPolygon+g_liveTownEdgePolygonCount;
+                const unsigned phase=edge?2u:(shadow?1u:0u);
+                if(visited[phase*g_vdp1GpuTextures.size()+textureIndex])continue;
+                visited[phase*g_vdp1GpuTextures.size()+textureIndex]=1u;
+                const auto& t=g_vdp1GpuTextures[textureIndex];
+                const auto coverage=lagi::vdp1PriorityCoverage(
+                    t.nativeSelectorMask,g_spriteColor,g_spriteColor.prir&7);
+                if(coverage.below)++counts[phase][0];
+                if(coverage.above)++counts[phase][1];
+                if(coverage.below && coverage.above)++counts[phase][2];
+                if(coverage.below && reported<24u) {
+                    ++reported;
+                    logging::writef("[NativePriorityMaterial] phase=%u texture=%u selectorMask=%02X below=%u above=%u PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
+                        phase,textureIndex,unsigned(t.nativeSelectorMask),
+                        unsigned(coverage.below),unsigned(coverage.above),
+                        t.cmdPmod,t.cmdColr,t.cmdSrca,t.cmdSize);
+                }
+            }
+            logging::writef("[NativePriorityCoverage] CCCTL=%04X SPCTL=%04X PRISA=%04X PRISB=%04X PRIR=%04X world=%u/%u/%u shadow=%u/%u/%u edge=%u/%u/%u (below/above/mixed RBG)\n",
+                g_spriteColor.ccctl,g_spriteColor.spctl,
+                g_spriteColor.priority[0],g_spriteColor.priority[1],g_spriteColor.prir,
+                counts[0][0],counts[0][1],counts[0][2],
+                counts[1][0],counts[1][1],counts[1][2],
+                counts[2][0],counts[2][1],counts[2][2]);
+        }
+    }
+
     const bool textured =
         drawState.mode == Vdp1RenderMode::Textured &&
         g_vdp1TexturedReady && model.texturesValid() &&
@@ -11422,16 +11953,12 @@ bool submit_vdp1_model(
         drawState.mode == Vdp1RenderMode::Wireframe;
     const bool subdividedTexturedLit =
         texturedLit &&
-        g_viewMode == 7 &&
-        g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-        g_vdp1SubdivVertices && g_vdp1SubdivIndices &&
-        g_vdp1SubdivVertexCapacity >= model.polygonCount * 9u &&
-        g_vdp1SubdivIndexCapacity >= model.polygonCount * 24u &&
-        g_gouraudSubdivVertexProgram &&
+        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24) &&
+        liveSubdivisionBuffersReady(model) &&
         g_texturedGouraudSubdivFragmentProgram;
     const bool subdividedGouraudGray =
         gouraudGray &&
-        g_viewMode == 10 &&
+        (g_viewMode == 10 || g_viewMode == 12) &&
         g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
         g_vdp1SubdivVertices && g_vdp1SubdivIndices &&
         g_vdp1SubdivVertexCapacity >= model.polygonCount * 9u &&
@@ -11682,69 +12209,45 @@ bool submit_vdp1_model(
         };
 
         if (g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-            g_liveTownEdgePolygonCount != 0u) {
-            const std::size_t worldEnd =
-                g_liveTownShadowPolygonCount != 0u
-                    ? g_liveTownShadowFirstPolygon
-                    : g_liveTownEdgeFirstPolygon;
-
-            // 1. Town/world and task-owned objects.
-            if (!submitRange(0u, worldEnd, false))
-                return false;
-
-            // 2. Edge's ordered VDP1 mesh shadow.
-            if (g_liveTownShadowPolygonCount != 0u &&
-                !submitRange(
-                    g_liveTownShadowFirstPolygon,
-                    g_liveTownShadowPolygonCount,
-                    true))
-                return false;
-
-            // 3. Edge actor. Normal depth testing now places Edge over its
-            // shadow while the already-rendered town remains underneath.
-            if (!submitRange(
-                    g_liveTownEdgeFirstPolygon,
-                    g_liveTownEdgePolygonCount,
-                    false))
-                return false;
-
-            const std::size_t tailFirst =
-                g_liveTownEdgeFirstPolygon +
-                g_liveTownEdgePolygonCount;
-            if (tailFirst < model.polygonCount &&
-                !submitRange(
-                    tailFirst,
-                    model.polygonCount - tailFirst,
-                    false))
-                return false;
-            return true;
-        }
-
-        if (g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-            !g_liveTownMeshRanges.empty()) {
-            std::size_t cursor = 0u;
-            for (const auto& meshRange : g_liveTownMeshRanges) {
-                if (meshRange.first > cursor &&
-                    !submitRange(
-                        cursor,
-                        meshRange.first - cursor,
-                        false))
-                    return false;
-
-                if (!submitRange(
-                        meshRange.first,
-                        meshRange.count,
-                        true))
-                    return false;
-
-                cursor = meshRange.first + meshRange.count;
+            !g_liveTownSubmissionRanges.empty()) {
+            for(const auto& range:g_liveTownSubmissionRanges) {
+                const std::size_t end=std::min(range.first+range.count,model.polygonCount);
+                for(std::size_t p=range.first;p<end;) {
+                    const unsigned texture=model.polygonTextureIndices[p];
+                    const bool ordered=(model.polygons[p].cmdPmod&0x0100u) ||
+                        lagi::vdp1_half_transparent(model.polygons[p].cmdPmod);
+                    std::size_t next=p+1;
+                    if(ordered) {
+                        // Preserve Saturn submission order for mesh and
+                        // half-transparency, including the source material.
+                        while(next<end &&
+                            model.polygonTextureIndices[next]==texture &&
+                            ((model.polygons[next].cmdPmod&0x0100u) ||
+                             lagi::vdp1_half_transparent(model.polygons[next].cmdPmod)))
+                            ++next;
+                    } else {
+                        // Ordinary opaque geometry is depth-tested. Bucket
+                        // the entire contiguous opaque phase by texture,
+                        // rather than issuing one draw and scanning every
+                        // texture bucket for each consecutive material run.
+                        // This matches FULL's draw batching without moving
+                        // any mesh/blended polygons across an opaque phase.
+                        while(next<end &&
+                            !(model.polygons[next].cmdPmod&0x0100u) &&
+                            !lagi::vdp1_half_transparent(model.polygons[next].cmdPmod))
+                            ++next;
+                    }
+                    if(!submitRange(p,next-p,ordered))return false;
+                    p=next;
+                }
             }
-            if (cursor < model.polygonCount &&
-                !submitRange(
-                    cursor,
-                    model.polygonCount - cursor,
-                    false))
-                return false;
+            if(g_liveTownShadowPolygonCount &&
+                !submitRange(g_liveTownShadowFirstPolygon,g_liveTownShadowPolygonCount,true))return false;
+            if(g_liveTownEdgePolygonCount &&
+                !submitRange(g_liveTownEdgeFirstPolygon,g_liveTownEdgePolygonCount,false))return false;
+            const std::size_t tail=g_liveTownEdgeFirstPolygon+g_liveTownEdgePolygonCount;
+            if(g_liveTownEdgePolygonCount && tail<model.polygonCount &&
+                !submitRange(tail,model.polygonCount-tail,false))return false;
             return true;
         }
 
@@ -11790,6 +12293,33 @@ bool submit_vdp1_model(
         if (sceneStaticPositions && g_sceneSubdivPositionValid.size() !=
                 g_liveTownStaticPolygonCount)
             g_sceneSubdivPositionValid.assign(g_liveTownStaticPolygonCount, 0u);
+        g_sceneSubdivShadeStates.resize(model.polygonCount);
+        // GPU-only vertical-position experiment. Never modify Azel's
+        // authoritative CPU model or the production FULL view.
+        const unsigned circleHeightMode=(g_viewMode>=21 && g_viewMode<=23)
+            ? unsigned(g_viewMode) : 0u;
+        const float circleHeightOffset=circleHeightMode==21u ? -0.01514f :
+            (circleHeightMode==22u ? -0.03014f :
+            (circleHeightMode==23u ? -0.04514f : 0.0f));
+        unsigned circleMaterialMatches=0u;
+        if(model.polygonCount>637u) {
+            for(unsigned p=626u;p<=637u;++p)
+                circleMaterialMatches+=unsigned(model.polygons[p].cmdColr==0x2100u);
+        }
+        const bool circleIdentified=circleMaterialMatches>=2u;
+        static unsigned previousCircleHeightMode=~0u;
+        if(previousCircleHeightMode!=circleHeightMode) {
+            previousCircleHeightMode=circleHeightMode;
+            // Invalidate cached static GPU coordinates on transitions,
+            // including when returning from a diagnostic to FULL.
+            if(sceneStaticPositions && circleIdentified) {
+                for(unsigned p=626u;p<=637u && p<g_sceneSubdivPositionValid.size();++p)
+                    g_sceneSubdivPositionValid[p]=0u;
+            }
+            logging::writef("[VDP1CircleHeight] view=%u offsetY=%.5f identified=%u matches=%u restoredOnExit=1 gpuOnly=1\n",
+                g_viewMode,double(circleHeightOffset),unsigned(circleIdentified),
+                circleMaterialMatches);
+        }
         for (unsigned int p = 0;
              p < static_cast<unsigned int>(model.polygonCount); ++p) {
             if (!g_liveTownGouraudPrep[p].visible)
@@ -11813,28 +12343,44 @@ bool submit_vdp1_model(
                 model.vertices[p * 6u + cornerVertex[3]];
             const auto& shade = model.gouraud555[p];
 
+            const bool heightTarget=circleIdentified &&
+                p>=626u && p<=637u && model.polygons[p].cmdColr==0x2100u;
             const bool updatePosition =
+                (heightTarget && circleHeightMode!=0u) ||
                 g_liveTownStaticRebuilt ||
                 p >= static_cast<unsigned int>(
                     g_liveTownStaticPolygonCount) ||
                 (sceneStaticPositions && !g_sceneSubdivPositionValid[p]);
 
+            // Compare authored corner bits in CPU memory. Identical inputs
+            // produce identical midpoint shade payloads; avoid reading the
+            // GPU-mapped stream merely to decide whether to write it again.
+            std::array<std::uint32_t,12> shadeBits{};
+            static_assert(sizeof(shade.corner)==sizeof(shadeBits));
+            std::memcpy(shadeBits.data(),shade.corner,sizeof(shade.corner));
+            auto& shadeState=g_sceneSubdivShadeStates[p];
+            const bool updateShade=!shadeState.valid ||
+                shadeState.cornerBits!=shadeBits;
             float gridR[9], gridG[9], gridB[9];
-            fillMidpointGrid3x3(
-                shade.corner[0][0], shade.corner[1][0],
-                shade.corner[2][0], shade.corner[3][0], gridR);
-            fillMidpointGrid3x3(
-                shade.corner[0][1], shade.corner[1][1],
-                shade.corner[2][1], shade.corner[3][1], gridG);
-            fillMidpointGrid3x3(
-                shade.corner[0][2], shade.corner[1][2],
-                shade.corner[2][2], shade.corner[3][2], gridB);
+            if (updateShade || g_fieldProbeActive) {
+                fillMidpointGrid3x3(
+                    shade.corner[0][0], shade.corner[1][0],
+                    shade.corner[2][0], shade.corner[3][0], gridR);
+                fillMidpointGrid3x3(
+                    shade.corner[0][1], shade.corner[1][1],
+                    shade.corner[2][1], shade.corner[3][1], gridG);
+                fillMidpointGrid3x3(
+                    shade.corner[0][2], shade.corner[1][2],
+                    shade.corner[2][2], shade.corner[3][2], gridB);
+            }
 
             float gridX[9], gridY[9], gridZ[9];
             if (updatePosition) {
                 fillMidpointGrid3x3(a.x, b.x, c.x, d.x, gridX);
                 fillMidpointGrid3x3(a.y, b.y, c.y, d.y, gridY);
                 fillMidpointGrid3x3(a.z, b.z, c.z, d.z, gridZ);
+                if(heightTarget && circleHeightMode!=0u)
+                    for(float& y : gridY)y+=circleHeightOffset;
             }
 
             const unsigned int baseVertex = p * 9u;
@@ -11870,9 +12416,18 @@ bool submit_vdp1_model(
                     dst.y = gridY[i];
                     dst.z = gridZ[i];
                 }
-                dst.shadeR = gridR[i];
-                dst.shadeG = gridG[i];
-                dst.shadeB = gridB[i];
+                if (updateShade) {
+                    dst.shadeR = gridR[i];
+                    dst.shadeG = gridG[i];
+                    dst.shadeB = gridB[i];
+                }
+            }
+            if (updateShade) {
+                shadeState.cornerBits=shadeBits;
+                shadeState.valid=true;
+                ++g_profileSubdivShadeWrittenQuads;
+            } else {
+                ++g_profileSubdivShadeReusedQuads;
             }
             if (sceneStaticPositions && p < g_sceneSubdivPositionValid.size())
                 g_sceneSubdivPositionValid[p] = 1u;
@@ -11912,6 +12467,495 @@ bool submit_vdp1_model(
             g_vdp1TextureBatches.resize(bucketCount);
         g_profileGouraudBucketUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - tBucket);
+
+        // Native Saturn VDP1 draws are an ordered command stream. Batching
+        // everything by texture permutes overlapping polygons from different
+        // materials; preserve the published polygon sequence instead.
+        // Coalesce only adjacent visible polygons with the same texture and
+        // effective draw policy. Non-native diagnostics keep their old path.
+        if(subdividedTexturedLit &&
+            g_residentVdp1Model==ResidentVdp1Model::LiveTown) {
+            struct NativeOrderedRun {
+                unsigned texture,firstIndex,count;
+                bool ordered,blended;
+            };
+            static std::vector<NativeOrderedRun> orderedRuns;
+            orderedRuns.clear();
+            orderedRuns.reserve(model.polygonCount);
+            const bool depthScene=lagi::native_scene_depth_mode(g_sceneGameMode);
+            // Only recognized Camp circle materials qualify. Count once per
+            // world submission (not per draw run), alternating A/B frames.
+            unsigned circleDepthMatches=0u;
+            if(g_viewMode==24 && depthScene && model.polygonCount>637u &&
+               model.polygons) {
+                for(unsigned p=626u;p<=637u;++p)
+                    circleDepthMatches+=unsigned(visibleQuads[p] &&
+                        model.polygons[p].cmdColr==0x2100u);
+            }
+            // Wait for the complete twelve-polygon effect, not an early
+            // partial submission while the Camp scene is being populated.
+            const bool circleDepthCompare=circleDepthMatches==12u;
+            if(g_viewMode!=24) {
+                g_circleDepthCompareActive=false;
+                g_circleDepthCompareFrame=0;
+            } else if(circleDepthCompare) {
+                g_circleDepthCompareActive=true;
+                g_circleDepthCompareScene=g_sceneGameMode;
+                // Four A/B pairs, then hold production depth while the
+                // user remains in this diagnostic view.
+                g_circleDepthComparePhase=g_circleDepthCompareFrame<8u ?
+                    (g_circleDepthCompareFrame&1u) : 0u;
+                ++g_circleDepthCompareFrame;
+                static unsigned traceBudget=16u;
+                if(traceBudget) {
+                    --traceBudget;
+                    logging::writef("[CampCircleDepthAB] frame=%u phase=%c circlePolys=%u scene=%u policy=%s\n",
+                        g_circleDepthCompareFrame,
+                        g_circleDepthComparePhase?'B':'A',
+                        circleDepthMatches,g_sceneGameMode,
+                        g_circleDepthComparePhase?"ALWAYS_NO_WRITE":"LEQUAL_WRITE");
+                }
+            } else {
+                g_circleDepthCompareActive=false;
+            }
+            const bool cliffDepthBypass = g_viewMode == 18;
+            unsigned visibleCount=0u,orderedCount=0u;
+            unsigned replayedSubmissions=0u,unrangedPolygons=0u;
+            unsigned textureTransitions=0u,blendStateSplits=0u;
+            unsigned materialPmodMismatches=0u;
+            unsigned lastTexture=~0u;
+            const std::size_t shadowStart=g_liveTownShadowFirstPolygon;
+            const std::size_t shadowEnd=shadowStart+g_liveTownShadowPolygonCount;
+            // Garil A5 cliff models are 20-quads each. Match the model table
+            // across all four open-desert cells. Identify
+            // their original Azel submission ranges, not material indices,
+            // so other field geometry keeps its existing raster state.
+            static std::vector<std::uint8_t> garilCliffPolygon;
+            garilCliffPolygon.assign(model.polygonCount,0u);
+            unsigned garilCliffObjects=0u;
+            if(g_sceneGameMode==3u &&
+               g_residentVdp1Model==ResidentVdp1Model::LiveTown) {
+                const auto& sources=azel_bridge::published_submissions();
+                for(const auto& range:g_liveTownSubmissionRanges) {
+                    if(range.azelOrder>=sources.size() ||
+                       range.count!=20u || range.first>=model.polygonCount)
+                        continue;
+                    const auto& source=sources[range.azelOrder];
+                    const unsigned obj=unsigned(source.objectIndex);
+                    const unsigned table=unsigned(source.modelTableOffset);
+                    if(obj<0x0608D7ECu || obj>=0x0608E23Cu ||
+                       table<0x4A0u || table>0x4C0u || (table&3u)!=0u)
+                        continue;
+                    const std::size_t last=std::min(
+                        range.first+range.count,model.polygonCount);
+                    for(std::size_t p=range.first;p<last;++p)
+                        garilCliffPolygon[p]=1u;
+                    ++garilCliffObjects;
+                }
+            }
+            // Static-prefix caching changes storage order, not Azel's
+            // native VDP1 submission order. Preserve the latter here.
+            const auto appendPolygon=[&](std::size_t p)->bool {
+                if(!visibleQuads[p])return true;
+                const unsigned texture=model.polygonTextureIndices[p];
+                if(texture>=bucketCount)return false;
+                // Polygon IDs are not monotonic after the Azel-order replay.
+                bool meshRange=false;
+                for(const auto& range:g_liveTownMeshRanges) {
+                    if(p>=range.first && p-range.first<range.count) {
+                        meshRange=true;break;
+                    }
+                }
+                const bool shadowRange=g_liveTownShadowPolygonCount &&
+                    p>=shadowStart && p<shadowEnd;
+                const bool ordered=meshRange||shadowRange;
+                // The texture cache is not the authority for VDP1 color
+                // calculation: the originating command's PMOD is. Two
+                // consecutive polygons can reuse an uploaded texture while
+                // requiring distinct blend programs and depth-write policy.
+                const bool blended=lagi::vdp1_half_transparent(
+                    g_liveTownCpuMesh.polygonRecords[p].cmdPmod);
+                if(blended!=lagi::vdp1_half_transparent(
+                    g_vdp1GpuTextures[texture].cmdPmod))
+                    ++materialPmodMismatches;
+                const unsigned index=static_cast<unsigned>(p*24u);
+                if(index+24u>g_vdp1SubdivIndexCapacity)return false;
+                std::memcpy(g_vdp1SubdivIndices+index,
+                    g_vdp1SubdivQuadIndices.data()+index,
+                    24u*sizeof(std::uint16_t));
+                if(texture!=lastTexture)++textureTransitions;
+                lastTexture=texture;
+                // In mode 24 the circle must have its own draw runs;
+                // otherwise a coalesced run would change unrelated polygons.
+                const bool circleRunBoundary=circleDepthCompare &&
+                    ((p>=626u && p<=637u) ||
+                     (!orderedRuns.empty() &&
+                      (orderedRuns.back().firstIndex+
+                       orderedRuns.back().count-24u)/24u>=626u &&
+                      (orderedRuns.back().firstIndex+
+                       orderedRuns.back().count-24u)/24u<=637u));
+                // Do not coalesce a cliff quad with ordinary scene geometry:
+                // their culling policies differ in this A/B experiment.
+                const bool cliffRunBoundary=!orderedRuns.empty() &&
+                    garilCliffPolygon[p]!=garilCliffPolygon[
+                        (orderedRuns.back().firstIndex+
+                         orderedRuns.back().count-24u)/24u];
+                if(!circleRunBoundary && !cliffRunBoundary &&
+                   !orderedRuns.empty() &&
+                    orderedRuns.back().texture==texture &&
+                    orderedRuns.back().ordered==ordered &&
+                    orderedRuns.back().blended==blended &&
+                    orderedRuns.back().firstIndex+orderedRuns.back().count==index)
+                    orderedRuns.back().count+=24u;
+                else {
+                    if(!orderedRuns.empty() &&
+                        orderedRuns.back().texture==texture &&
+                        orderedRuns.back().ordered==ordered &&
+                        orderedRuns.back().blended!=blended)
+                        ++blendStateSplits;
+                    orderedRuns.push_back({texture,index,24u,ordered,blended});
+                }
+                ++visibleCount;
+                if(ordered)++orderedCount;
+                return true;
+            };
+            // The static/dynamic cache is intentionally flattened by
+            // lifetime. Replay its original Azel submission descriptors.
+            // Index writes still address the original per-polygon slots.
+            static std::vector<std::uint8_t> replayed;
+            replayed.assign(model.polygonCount,0u);
+            for(const auto& range:g_liveTownSubmissionRanges) {
+                if(range.first>=model.polygonCount)continue;
+                const std::size_t end=range.first+
+                    std::min(range.count,model.polygonCount-range.first);
+                ++replayedSubmissions;
+                for(std::size_t p=range.first;p<end;++p) {
+                    if(replayed[p])continue;
+                    replayed[p]=1u;
+                    if(!appendPolygon(p))return false;
+                }
+            }
+            // Edge and shadow polygons synthesized by the bridge are not
+            // part of the published ranges; append them once, at the end.
+            for(std::size_t p=0;p<model.polygonCount;++p) {
+                if(replayed[p])continue;
+                ++unrangedPolygons;
+                if(!appendPolygon(p))return false;
+            }
+            // Controlled order experiment only (view 20). Reuse the exact
+            // visible quads, index slots, textures, shading, and draw policy.
+            // Split native runs into individual quads so no unrelated polygon
+            // moves with a coalesced texture/material run. Move the identified
+            // capture group to the front, then replay all other polygons in
+            // their original relative Azel order. FULL is untouched.
+            if(g_viewMode==20 && model.polygonCount>637u && model.polygons) {
+                unsigned matching=0u;
+                for(std::size_t p=626u;p<=637u;++p)
+                    matching+=unsigned(visibleQuads[p] &&
+                        model.polygons[p].cmdColr==0x2100u);
+                if(matching>=2u) {
+                    static std::vector<NativeOrderedRun> reordered;
+                    reordered.clear();
+                    reordered.reserve(model.polygonCount);
+                    const auto append=[&](const NativeOrderedRun& parent,
+                        unsigned index) {
+                        if(!reordered.empty() &&
+                           reordered.back().texture==parent.texture &&
+                           reordered.back().ordered==parent.ordered &&
+                           reordered.back().blended==parent.blended &&
+                           reordered.back().firstIndex+reordered.back().count==index)
+                            reordered.back().count+=24u;
+                        else
+                            reordered.push_back({parent.texture,index,24u,
+                                parent.ordered,parent.blended});
+                    };
+                    unsigned moved=0u;
+                    for(unsigned phase=0u;phase<2u;++phase) {
+                        for(const auto& run:orderedRuns) {
+                            for(unsigned offset=0u;offset<run.count;offset+=24u) {
+                                const unsigned index=run.firstIndex+offset;
+                                const std::size_t p=index/24u;
+                                const bool circle=p>=626u&&p<=637u &&
+                                    model.polygons[p].cmdColr==0x2100u;
+                                if(circle==(phase==0u)) {
+                                    append(run,index);
+                                    if(circle)++moved;
+                                }
+                            }
+                        }
+                    }
+                    orderedRuns.swap(reordered);
+                    static int lastMove=-1;
+                    if(lastMove!=int(moved)) {
+                        lastMove=int(moved);
+                        logging::writef("[VDP1OrderExperiment] view=20 mode=CIRCLE_FIRST moved=%u total=%u firstOrdinal=0 productionOrderUnchanged=1\n",
+                            moved,visibleCount);
+                    }
+                } else {
+                    static bool warned=false;
+                    if(!warned) {
+                        warned=true;
+                        logging::writef("[VDP1OrderExperiment] view=20 inactive: expected material group absent\n");
+                    }
+                }
+            }
+            // Diagnostic only: replay-order / vertical-position audit of the
+            // previously identified large floor-effect polygon group. These
+            // indices select log subjects, never change their draw behavior.
+            // Do not confuse flattened storage order with actual draw order.
+            static unsigned overlapTraceBudget=2u;
+            // The polygon IDs are frame-local. Avoid exhausting the
+            // finite capture on a different room with >=638 polygons.
+            unsigned recognizedCircle=0u;
+            if(model.polygonCount>637u && model.polygons) {
+                for(std::size_t p=626u;p<=637u;++p)
+                    recognizedCircle+=unsigned(model.polygons[p].cmdColr==0x2100u);
+            }
+            // The overlap logger has a tiny lifetime budget. Mode 24 must
+            // still refresh its projected circle rectangle every A/B frame,
+            // even if that earlier log-only budget was already exhausted.
+            const bool depthCoverageBounds=g_circleDepthCompareActive &&
+                g_viewMode==24 && g_circleDepthCompareFrame<=8u;
+            if((overlapTraceBudget || depthCoverageBounds) &&
+                recognizedCircle>=2u &&
+                model.vertices && model.polygons &&
+                model.vertexCount>=model.polygonCount*6u &&
+                g_sceneGameMode>=1u && g_sceneGameMode<=2u) {
+                if(overlapTraceBudget)--overlapTraceBudget;
+                struct TraceBounds {
+                    float minX=1e9f,minY=1e9f,maxX=-1e9f,maxY=-1e9f;
+                    float minWorldY=1e9f,maxWorldY=-1e9f;
+                    float centerWorldX=0.f,centerWorldY=0.f,centerWorldZ=0.f;
+                    float meanDepth=0.f;
+                    bool valid=false;
+                };
+                const auto projection=[&](std::size_t p) {
+                    TraceBounds b{};
+                    constexpr unsigned corners[4]={0u,1u,2u,5u};
+                    if(p>=model.polygonCount)return b;
+                    for(unsigned k:corners) {
+                        const auto& v=model.vertices[p*6u+k];
+                        b.minWorldY=std::min(b.minWorldY,v.y);
+                        b.maxWorldY=std::max(b.maxWorldY,v.y);
+                        b.centerWorldX+=v.x*0.25f;
+                        b.centerWorldY+=v.y*0.25f;
+                        b.centerWorldZ+=v.z*0.25f;
+                        const float x=v.x*drawState.wvp[0]+v.y*drawState.wvp[4]+
+                            v.z*drawState.wvp[8]+drawState.wvp[12];
+                        const float y=v.x*drawState.wvp[1]+v.y*drawState.wvp[5]+
+                            v.z*drawState.wvp[9]+drawState.wvp[13];
+                        const float z=v.x*drawState.wvp[2]+v.y*drawState.wvp[6]+
+                            v.z*drawState.wvp[10]+drawState.wvp[14];
+                        const float w=v.x*drawState.wvp[3]+v.y*drawState.wvp[7]+
+                            v.z*drawState.wvp[11]+drawState.wvp[15];
+                        if(w<=0.00001f)return TraceBounds{};
+                        const float sx=(x/w*0.5f+0.5f)*viewerRenderWidth();
+                        const float sy=(0.5f-y/w*0.5f)*viewerRenderHeight();
+                        b.minX=std::min(b.minX,sx);b.maxX=std::max(b.maxX,sx);
+                        b.minY=std::min(b.minY,sy);b.maxY=std::max(b.maxY,sy);
+                        b.meanDepth+=(z/w)*0.25f;
+                    }
+                    b.valid=true;
+                    return b;
+                };
+                std::vector<int> drawOrdinal(model.polygonCount,-1);
+                unsigned ordinal=0u;
+                for(const auto& run:orderedRuns) {
+                    for(unsigned at=0;at<run.count;at+=24u) {
+                        const std::size_t p=(run.firstIndex+at)/24u;
+                        if(p<drawOrdinal.size())drawOrdinal[p]=int(ordinal++);
+                    }
+                }
+                float effectLeft=1e9f,effectTop=1e9f,effectRight=-1e9f,
+                    effectBottom=-1e9f,effectY=0.f;
+                unsigned effectCount=0u;
+                for(std::size_t p=626u;p<=637u;++p) {
+                    const auto b=projection(p);
+                    const auto& rec=model.polygons[p];
+                    if(!b.valid || drawOrdinal[p]<0)continue;
+                    effectLeft=std::min(effectLeft,b.minX);
+                    effectTop=std::min(effectTop,b.minY);
+                    effectRight=std::max(effectRight,b.maxX);
+                    effectBottom=std::max(effectBottom,b.maxY);
+                    effectY+=b.centerWorldY;
+                    ++effectCount;
+                    logging::writef("[VDP1CircleOrder] p=%u drawOrdinal=%d visible=%u sourceModel=%u local=%u PMOD=%04X COLR=%04X xyz=(%.5f,%.5f,%.5f) worldY=%.5f..%.5f screen=(%.1f,%.1f)-(%.1f,%.1f) depth=%.5f\n",
+                        unsigned(p),drawOrdinal[p],unsigned(visibleQuads[p]),
+                        unsigned(rec.model),unsigned(rec.polygonInModel),
+                        rec.cmdPmod,rec.cmdColr,
+                        b.centerWorldX,b.centerWorldY,b.centerWorldZ,
+                        b.minWorldY,b.maxWorldY,b.minX,b.minY,b.maxX,b.maxY,b.meanDepth);
+                }
+                if(effectCount) {
+                    effectY/=effectCount;
+                    if(g_circleDepthCompareActive) {
+                        g_circleDepthCompareRect[0]=effectLeft;
+                        g_circleDepthCompareRect[1]=effectTop;
+                        g_circleDepthCompareRect[2]=effectRight;
+                        g_circleDepthCompareRect[3]=effectBottom;
+                    }
+                    g_vdp1CircleAuditCount=0;
+                    g_vdp1CircleAuditScene=g_sceneGameMode;
+                    const auto addProbe=[&](float x,float y,unsigned other) {
+                        if(g_vdp1CircleAuditCount>=12u)return;
+                        const int ix=int(std::floor(x)),iy=int(std::floor(y));
+                        if(ix<0||iy<0||ix>=kWidth||iy>=kHeight)return;
+                        g_vdp1CircleAuditPoints[g_vdp1CircleAuditCount++] =
+                            {ix,iy,626u,other};
+                    };
+                    addProbe((effectLeft+effectRight)*0.5f,
+                        (effectTop+effectBottom)*0.5f,~0u);
+                    struct Overlap {std::size_t p;float area;TraceBounds b;};
+                    std::vector<Overlap> overlaps;
+                    overlaps.reserve(model.polygonCount);
+                    for(std::size_t p=0;p<model.polygonCount;++p) {
+                        if((p>=626u&&p<=637u)||drawOrdinal[p]<0)continue;
+                        const auto b=projection(p);
+                        if(!b.valid)continue;
+                        const float w=std::min(effectRight,b.maxX)-
+                            std::max(effectLeft,b.minX);
+                        const float h=std::min(effectBottom,b.maxY)-
+                            std::max(effectTop,b.minY);
+                        if(w>0.f&&h>0.f)overlaps.push_back({p,w*h,b});
+                    }
+                    std::sort(overlaps.begin(),overlaps.end(),
+                        [](const Overlap&a,const Overlap&b) {
+                            return a.area==b.area?a.p<b.p:a.area>b.area;
+                        });
+                    logging::writef("[VDP1CircleOverlap] effectPolys=%u effectCenterY=%.5f bbox=(%.1f,%.1f)-(%.1f,%.1f) overlapping=%u shadowRange=%u/%u edgeRange=%u/%u drawCount=%u\n",
+                        effectCount,effectY,effectLeft,effectTop,
+                        effectRight,effectBottom,unsigned(overlaps.size()),
+                        unsigned(g_liveTownShadowFirstPolygon),
+                        unsigned(g_liveTownShadowPolygonCount),
+                        unsigned(g_liveTownEdgeFirstPolygon),
+                        unsigned(g_liveTownEdgePolygonCount),ordinal);
+                    const auto reportOverlap=[&](std::size_t p,float area,
+                        const TraceBounds& b,const char* label) {
+                        const auto& rec=model.polygons[p];
+                        logging::writef("[VDP1CircleOther] type=%s p=%u drawOrdinal=%d PMOD=%04X COLR=%04X model=%u local=%u area=%.1f xyz=(%.5f,%.5f,%.5f) worldY=%.5f..%.5f deltaY=%.5f screen=(%.1f,%.1f)-(%.1f,%.1f) depth=%.5f\n",
+                            label,unsigned(p),drawOrdinal[p],rec.cmdPmod,
+                            rec.cmdColr,unsigned(rec.model),
+                            unsigned(rec.polygonInModel),area,
+                            b.centerWorldX,b.centerWorldY,b.centerWorldZ,
+                            b.minWorldY,b.maxWorldY,
+                            effectY-b.centerWorldY,
+                            b.minX,b.minY,b.maxX,b.maxY,b.meanDepth);
+                    };
+                    for(std::size_t i=0;i<std::min(std::size_t(16),overlaps.size());++i) {
+                        reportOverlap(overlaps[i].p,overlaps[i].area,
+                            overlaps[i].b,"largest-overlap");
+                        if(i<10u) {
+                            const auto& b=overlaps[i].b;
+                            addProbe((std::max(effectLeft,b.minX)+
+                                std::min(effectRight,b.maxX))*0.5f,
+                                (std::max(effectTop,b.minY)+
+                                std::min(effectBottom,b.maxY))*0.5f,
+                                unsigned(overlaps[i].p));
+                        }
+                    }
+                    const auto shadowEnd=std::min(model.polygonCount,
+                        g_liveTownShadowFirstPolygon+g_liveTownShadowPolygonCount);
+                    for(std::size_t p=g_liveTownShadowFirstPolygon,
+                        n=0;p<shadowEnd&&n<8;++p) {
+                        if(drawOrdinal[p]<0)continue;
+                        const auto b=projection(p);
+                        if(!b.valid)continue;
+                        reportOverlap(p,0.f,b,"edge-shadow");
+                        ++n;
+                    }
+                }
+            }
+            static unsigned garilCliffCullTraceBudget=2u;
+            if(garilCliffObjects && garilCliffCullTraceBudget) {
+                --garilCliffCullTraceBudget;
+                logging::writef(
+                    "[GarilCliffCullAB] view=%d scene=%u objects=%u "
+                    "policy=UNCULL_KNOWN_CLIFFS_ONLY otherPolys=UNCHANGED\n",
+                    g_viewMode,unsigned(g_sceneGameMode),garilCliffObjects);
+            }
+            unsigned cliffRuns=0u, cliffQuads=0u;
+            const std::uint64_t drawStart=sceKernelGetProcessTimeWide();
+            for(const auto& run:orderedRuns) {
+                const unsigned texture=run.texture;
+                const bool mesh=g_vdp1GpuTextures[texture].mesh;
+                const bool blended=run.blended;
+                // Ordered mesh commands previously used unculled two-sided
+                // polygons. Preserve that state, as well as normal scene
+                // depth comparison for genuine 3D world intersections.
+                const unsigned runPolygon=run.firstIndex/24u;
+                const bool garilCliff=runPolygon<garilCliffPolygon.size() &&
+                    garilCliffPolygon[runPolygon]!=0u;
+                const bool bypassDepth=cliffDepthBypass && garilCliff;
+                if(run.ordered) {
+                    sceGxmSetFrontPolygonMode(g_probeContext,SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+                    sceGxmSetBackPolygonMode(g_probeContext,SCE_GXM_POLYGON_MODE_TRIANGLE_FILL);
+                    sceGxmSetCullMode(g_probeContext,SCE_GXM_CULL_NONE);
+                    sceGxmSetFrontDepthFunc(g_probeContext,
+                        depthScene?depthFunc:SCE_GXM_DEPTH_FUNC_ALWAYS);
+                    sceGxmSetBackDepthFunc(g_probeContext,
+                        depthScene?depthFunc:SCE_GXM_DEPTH_FUNC_ALWAYS);
+                } else {
+                    sceGxmSetCullMode(g_probeContext,
+                        garilCliff ? SCE_GXM_CULL_NONE : cullMode);
+                    sceGxmSetFrontDepthFunc(g_probeContext,depthFunc);
+                    sceGxmSetBackDepthFunc(g_probeContext,depthFunc);
+                }
+                const bool circleOverride=circleDepthCompare &&
+                    g_circleDepthComparePhase==1u && run.count==24u &&
+                    runPolygon>=626u && runPolygon<=637u;
+                if(bypassDepth || circleOverride) {
+                    sceGxmSetFrontDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
+                    sceGxmSetBackDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
+                }
+                const auto writes=!bypassDepth && !circleOverride && !blended &&
+                    (!run.ordered||depthScene) ?
+                    SCE_GXM_DEPTH_WRITE_ENABLED:SCE_GXM_DEPTH_WRITE_DISABLED;
+                sceGxmSetFrontDepthWriteEnable(g_probeContext,writes);
+                sceGxmSetBackDepthWriteEnable(g_probeContext,writes);
+                sceGxmSetFragmentProgram(g_probeContext,
+                    blended?g_nativeBlendPrograms[mesh?BlendMeshSubdiv:BlendSubdiv]:
+                    (mesh?g_meshSubdivFragmentProgram:g_texturedGouraudSubdivFragmentProgram));
+                sceGxmSetFragmentTexture(g_probeContext,0,
+                    &g_vdp1GpuTextures[texture].texture);
+                if(sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,
+                    SCE_GXM_INDEX_FORMAT_U16,
+                    g_vdp1SubdivIndices+run.firstIndex,run.count)<0)return false;
+                if(garilCliff) {
+                    ++cliffRuns;
+                    cliffQuads+=run.count/24u;
+                }
+            }
+            sceGxmSetCullMode(g_probeContext,cullMode);
+            sceGxmSetFrontDepthFunc(g_probeContext,depthFunc);
+            sceGxmSetBackDepthFunc(g_probeContext,depthFunc);
+            sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_ENABLED);
+            sceGxmSetBackDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_ENABLED);
+            sceGxmSetFrontPolygonMode(g_probeContext,polygonMode);
+            sceGxmSetBackPolygonMode(g_probeContext,polygonMode);
+            g_profileGouraudIndexUs=static_cast<unsigned>(
+                sceKernelGetProcessTimeWide()-tPayload);
+            g_profileGouraudDrawUs=static_cast<unsigned>(
+                sceKernelGetProcessTimeWide()-drawStart);
+            static int lastCliffView=-1;
+            if(garilCliffObjects && lastCliffView!=g_viewMode) {
+                lastCliffView=g_viewMode;
+                logging::writef(
+                    "[GarilCliffDraw] view=%d objects=%u runs=%u quads=%u depth=%s\n",
+                    g_viewMode,garilCliffObjects,cliffRuns,cliffQuads,
+                    cliffDepthBypass?"ALWAYS_NO_WRITE":"SCENE");
+            }
+            if(!garilCliffObjects)lastCliffView=-1;
+            static unsigned orderedTraceBudget=4u;
+            if(orderedTraceBudget) {
+                --orderedTraceBudget;
+                logging::writef("[NativeVdp1CommandOrder] scene=%u polygons=%u visible=%u runs=%u textureChanges=%u orderedPolys=%u depthScene=%u depthFunc=LEQUAL opaqueWrites=1 halfWrites=0 nativeSourceOrder=1 azelSubmissionReplay=%u unrangedPolys=%u blendStateSplits=%u texturePmodMismatches=%u\n",
+                    unsigned(g_sceneGameMode),unsigned(model.polygonCount),
+                    visibleCount,unsigned(orderedRuns.size()),textureTransitions,
+                    orderedCount,unsigned(depthScene),replayedSubmissions,
+                    unrangedPolygons,blendStateSplits,materialPmodMismatches);
+            }
+            return true;
+        }
 
         const auto submitSubdivRange = [&](std::size_t first,
                                            std::size_t count,
@@ -12064,62 +13108,31 @@ bool submit_vdp1_model(
         bool phaseResult = true;
         if (subdividedTexturedLit &&
             g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-            g_liveTownEdgePolygonCount != 0u) {
-            const std::size_t worldEnd =
-                g_liveTownShadowPolygonCount != 0u
-                    ? g_liveTownShadowFirstPolygon
-                    : g_liveTownEdgeFirstPolygon;
-
-            phaseResult =
-                submitSubdivRange(0u, worldEnd, false) &&
-                (g_liveTownShadowPolygonCount == 0u ||
-                 submitSubdivRange(
-                    g_liveTownShadowFirstPolygon,
-                    g_liveTownShadowPolygonCount,
-                    true)) &&
-                submitSubdivRange(
-                    g_liveTownEdgeFirstPolygon,
-                    g_liveTownEdgePolygonCount,
-                    false);
-
-            const std::size_t tailFirst =
-                g_liveTownEdgeFirstPolygon +
-                g_liveTownEdgePolygonCount;
-            if (phaseResult && tailFirst < model.polygonCount)
-                phaseResult = submitSubdivRange(
-                    tailFirst,
-                    model.polygonCount - tailFirst,
-                    false);
-        } else if (
-            subdividedTexturedLit &&
-            g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-            !g_liveTownMeshRanges.empty()) {
-            std::size_t cursor = 0u;
-            for (const auto& meshRange : g_liveTownMeshRanges) {
-                if (phaseResult &&
-                    meshRange.first > cursor) {
-                    phaseResult = submitSubdivRange(
-                        cursor,
-                        meshRange.first - cursor,
-                        false);
+            !g_liveTownSubmissionRanges.empty()) {
+            for(const auto& range:g_liveTownSubmissionRanges) {
+                const std::size_t end=std::min(range.first+range.count,model.polygonCount);
+                for(std::size_t p=range.first;p<end && phaseResult;) {
+                    const unsigned texture=model.polygonTextureIndices[p];
+                    const bool ordered=(model.polygons[p].cmdPmod&0x0100u) ||
+                        lagi::vdp1_half_transparent(model.polygons[p].cmdPmod);
+                    std::size_t next=p+1;
+                    while(next<end && model.polygonTextureIndices[next]==texture &&
+                        bool((model.polygons[next].cmdPmod&0x0100u) ||
+                            lagi::vdp1_half_transparent(model.polygons[next].cmdPmod))==ordered)++next;
+                    phaseResult=submitSubdivRange(p,next-p,ordered);
+                    p=next;
                 }
-                if (phaseResult) {
-                    phaseResult = submitSubdivRange(
-                        meshRange.first,
-                        meshRange.count,
-                        true);
-                }
-                cursor = meshRange.first + meshRange.count;
+                if(!phaseResult)break;
             }
-            if (phaseResult && cursor < model.polygonCount) {
-                phaseResult = submitSubdivRange(
-                    cursor,
-                    model.polygonCount - cursor,
-                    false);
-            }
+            if(phaseResult && g_liveTownShadowPolygonCount)
+                phaseResult=submitSubdivRange(g_liveTownShadowFirstPolygon,g_liveTownShadowPolygonCount,true);
+            if(phaseResult && g_liveTownEdgePolygonCount)
+                phaseResult=submitSubdivRange(g_liveTownEdgeFirstPolygon,g_liveTownEdgePolygonCount,false);
+            const std::size_t tail=g_liveTownEdgeFirstPolygon+g_liveTownEdgePolygonCount;
+            if(phaseResult && g_liveTownEdgePolygonCount && tail<model.polygonCount)
+                phaseResult=submitSubdivRange(tail,model.polygonCount-tail,false);
         } else {
-            phaseResult =
-                submitSubdivRange(0u, model.polygonCount, false);
+            phaseResult=submitSubdivRange(0u,model.polygonCount,false);
         }
         g_profileGouraudIndexUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - tIndex);
@@ -12179,9 +13192,10 @@ bool submit_vdp1_model(
 
             ViewerScreenPoint screen[4];
             if (useLiveTownPrep) {
-                const auto& prep = g_liveTownGouraudPrep[p];
+                auto& prep = g_liveTownGouraudPrep[p];
                 if (!prep.visible)
                     continue;
+                projectLiveTownGouraudScreen(wvp, p, prep);
                 std::memcpy(screen, prep.screen, sizeof(screen));
             } else {
                 const std::uint64_t tProject = sceKernelGetProcessTimeWide();
@@ -12820,6 +13834,7 @@ static bool renderCinepakResolvePass()
 }
 
 #include "neptune_rbg_tile_program.inc"
+#include "neptune_rbg_palette_lut.inc"
 
 static bool drawVdp2Rbg0Gpu(
     const RbgGpuState& rbg, const void* rawTextureData,
@@ -12827,15 +13842,20 @@ static bool drawVdp2Rbg0Gpu(
     float xExtent, bool frontend)
 {
     bool rbgSubmitted = true;
-    const bool decodedPages=frontend?g_frontendRbgDecodedReady:g_rbgDecodedPagesReady;
-    selectRbgTileProgram(((!frontend && g_sceneVdp2ByteTextureValid) || decodedPages) && lagi::rbgTile16EightBit(
-        static_cast<unsigned>(rbg.format[0]),static_cast<unsigned>(rbg.format[1])),
+    const bool decodedSource=frontend?g_frontendRbgDecodedReady:g_rbgDecodedPagesReady;
+    // Both the field and front-end use the same live Saturn CRAM snapshot.
+    // If the small lookup texture cannot be prepared, use the existing raw
+    // shader path rather than displaying stale or incorrect palette data.
+    const bool decodedPages=decodedSource && prepareRbgPaletteLut(rawTextureData);
+    selectRbgTileProgram(decodedPages || ((!frontend && g_sceneVdp2ByteTextureValid) && lagi::rbgTile16EightBit(
+        static_cast<unsigned>(rbg.format[0]),static_cast<unsigned>(rbg.format[1]))),
         decodedPages,
         !frontend && g_rbgCoefficientRowsReady);
     if(g_rbgTileBound)
         sceGxmSetFragmentTexture(g_probeContext,1,&g_sceneVdp2ByteTexture);
     if(g_rbgDecodedBound) {
         sceGxmSetFragmentTexture(g_probeContext,1,&g_rbgDecodedAtlasTexture);
+        sceGxmSetFragmentTexture(g_probeContext,3,&g_rbgPaletteLutTexture);
     }
     if(g_rbgRowsBound)
         sceGxmSetFragmentTexture(g_probeContext,2,&g_rbgCoefficientRowsTexture);
@@ -12904,21 +13924,50 @@ static bool drawVdp2Rbg0Gpu(
             rbgUniforms,
             g_vdp2Rbg0InfoParam,
             0, 4, rbgInfo);
-        float parameterFormat[4] = {
-            rbg.format[0], rbg.format[1], rbg.format[2],
-            rbg.parameterFormat[coefficientEnableBit == 1u ? 0u : 1u]
+        // The 16x16 8-bit shader does not use CHCTLB's other fields. Decode
+        // the published register bits once per draw, not for every RBG pixel.
+        // The generic program keeps receiving the original register words.
+        const auto makeFormat = [&](float packed, float (&out)[4]) {
+            if (g_rbgTileBound || g_rbgDecodedBound) {
+                const unsigned int pncr = static_cast<unsigned int>(rbg.format[1]);
+                const unsigned int craofb = static_cast<unsigned int>(rbg.format[2]);
+                const unsigned int bits = static_cast<unsigned int>(packed);
+                const auto decoded = lagi::rbgSpecializedFormat(pncr, craofb, bits);
+                out[0] = static_cast<float>(decoded.scn);
+                out[1] = static_cast<float>(decoded.caos);
+                out[2] = static_cast<float>(decoded.plsz);
+                out[3] = static_cast<float>(decoded.screenOverAndR0tpon);
+                if(g_rbgDecodedBound && (static_cast<unsigned>(rbg.format[0])&0x7000u)==0)
+                    out[3]+=8.f; // Decoded-page OVPNR uses native 4-bit dots.
+            } else {
+                out[0] = rbg.format[0];
+                out[1] = rbg.format[1];
+                out[2] = rbg.format[2];
+                out[3] = packed;
+            }
         };
+        float parameterFormat[4];
+        makeFormat(rbg.parameterFormat[coefficientEnableBit == 1u ? 0u : 1u],
+            parameterFormat);
         sceGxmSetUniformDataF(
             rbgUniforms,
             g_vdp2Rbg0FormatParam,
             0, 4, parameterFormat);
         const float layerWindowInfo[4] = {
-            rbg.ctrl[3], rbg.ctrl[7], rbg.ctrl[5], 0.0f
+            rbg.ctrl[3], rbg.ctrl[7], rbg.ctrl[5],
+            lagi::rbgProjectionInverseXScale(frontend, kWidth, kHeight)
         };
         sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0LayerWindowParam,
             0, 4, &rbg.ctrl[8]);
         sceGxmSetUniformDataF(rbgUniforms, g_vdp2Rbg0LayerWindowInfoParam,
             0, 4, layerWindowInfo);
+        float patternBanks[4],characterBanks[4];
+        lagi::rbgBankPermissions(rbg.ramctl,2,patternBanks);
+        lagi::rbgBankPermissions(rbg.ramctl,3,characterBanks);
+        if(g_vdp2Rbg0PatternBanksParam) sceGxmSetUniformDataF(rbgUniforms,
+            g_vdp2Rbg0PatternBanksParam,0,4,patternBanks);
+        if(g_vdp2Rbg0CharacterBanksParam) sceGxmSetUniformDataF(rbgUniforms,
+            g_vdp2Rbg0CharacterBanksParam,0,4,characterBanks);
         const float switchSize = (ktctl & 0x2u) ? 2.0f : 4.0f;
         const float switchInfo[4] = {
             static_cast<float>(ktaof & 7u) * switchSize * 65536.0f,
@@ -12939,9 +13988,8 @@ static bool drawVdp2Rbg0Gpu(
             static_cast<float>((ktaof >> 8u) & 7u) * bSize * 65536.0f,
             (ktctl & 0x100u) ? 1.0f : 0.0f, bSize, bShared ? 1.0f : 0.0f
         };
-        const float bFormat[4] = {
-            rbg.format[0], rbg.format[1], rbg.format[2], rbg.parameterFormat[1]
-        };
+        float bFormat[4];
+        makeFormat(rbg.parameterFormat[1], bFormat);
         const float* bValues[9] = {
             g_rbgDecodedBound?g_rbgDecodedPlanesB:rbg.planesB,
             g_rbgDecodedBound?g_rbgDecodedPlanesB+4:rbg.planesB+4,
@@ -13240,12 +14288,43 @@ static bool renderSceneVdp2BackgroundPass(bool frontend = false)
     return submitted;
 }
 
+static bool useFieldBackScreen()
+{
+    return g_sceneGameMode == 3u && g_sceneRbg0Enabled &&
+        (static_cast<unsigned>(g_sceneRbg0.ctrl[0]) & 3u) == 2u &&
+        g_sceneNbg0OverProgram && g_rgbaPresentInfo;
+}
+
 static void drawSceneVdp2Background()
 {
     if (!g_sceneRbg0Enabled || !g_sceneRbg0ColorBuffer)
         return;
     sceGxmSetVertexProgram(g_probeContext, g_textureVertexProgram);
-    sceGxmSetFragmentProgram(g_probeContext, g_textureFragmentProgram);
+    // When NBG0 is the lower Saturn priority, it has already been drawn
+    // beneath RBG0. Preserve it through transparent RBG0 dots: the
+    // normal opaque texture program would overwrite them with black.
+    // The existing RGBA over program accepts the resolved binary-alpha
+    // RBG0 surface and leaves opaque RBG0 pixels completely unchanged.
+    const bool backgroundOverNbg0 =
+        g_sceneNbg0.enabled && g_sceneNbg0.behindWorld &&
+        !g_sceneNbg0.additive && g_sceneNbg0Pixels &&
+        g_sceneNbg0OverProgram && g_rgbaPresentInfo;
+    sceGxmSetFragmentProgram(g_probeContext,
+        (backgroundOverNbg0 || useFieldBackScreen()) ? g_sceneNbg0OverProgram : g_textureFragmentProgram);
+    if (backgroundOverNbg0 || useFieldBackScreen()) {
+        void* fragmentUniforms = nullptr;
+        if (sceGxmReserveFragmentDefaultUniformBuffer(
+                g_probeContext, &fragmentUniforms) < 0 || !fragmentUniforms)
+            return;
+        const float presentInfo[4] = {1.0f,0.0f,0.0f,0.0f};
+        sceGxmSetUniformDataF(fragmentUniforms,
+            g_rgbaPresentInfo,0,4,presentInfo);
+        static unsigned backgroundUnderlayReports=0;
+        if(backgroundUnderlayReports++<4u)
+            logging::writef("[RBG0NBG0Underlay] blend=alpha-over NBG0=%u RBG0=%u priorityNBG0=%u priorityRBG0=%u\n",
+                unsigned(g_sceneNbg0.enabled),unsigned(g_sceneRbg0Enabled),
+                unsigned(g_sceneNbg0.gpu[7][2]),unsigned(g_spriteColor.prir&7u));
+    }
     sceGxmSetCullMode(g_probeContext, SCE_GXM_CULL_NONE);
     sceGxmSetFrontDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetBackDepthFunc(g_probeContext, SCE_GXM_DEPTH_FUNC_ALWAYS);
@@ -13674,12 +14753,15 @@ static void renderBasicWingViewer()
     // No scene build on some menu/transition frames: never report old sync work.
     g_profilePositionSyncUs = 0u;
     g_profilePositionSyncVertices = 0u;
+    g_profilePositionSyncLegacyVertices = 0u;
     g_profileMenuBackingDecodeUs = 0u;
     g_profileMenuTextDecodeUs = 0u;
     g_profileMenuSubmitUs = 0u;
     g_profileMenuTransferUs = 0u;
     g_profileBuildUs = 0u;
     g_profileLightingUs = 0u;
+    g_profileSubdivShadeReusedQuads = 0u;
+    g_profileSubdivShadeWrittenQuads = 0u;
     g_profileSubmitUs = 0u;
     g_profileGxmWaitUs = 0u;
     g_profileGxmEndSceneUs = 0u;
@@ -13719,25 +14801,25 @@ static void renderBasicWingViewer()
     const bool liveSceneLighting =
         nativeSceneMode &&
         std::any_of(
-            g_liveTownPolygonLights.begin(),
-            g_liveTownPolygonLights.end(),
+            g_liveTownLightStates.begin(),
+            g_liveTownLightStates.end(),
             [](const LivePolygonLightState& light) { return light.valid; });
     const bool roomAuthenticLitMode =
         roomAuthenticCameraMode &&
         (liveSceneLighting ||
          (g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)) &&
-        g_viewMode == 7;
+        (g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24);
     const bool roomAuthenticTexturedMode =
         roomAuthenticCameraMode &&
         (g_viewMode == 8 ||
-         (g_viewMode == 7 && !liveSceneLighting &&
+         ((g_viewMode == 7 || g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24) && !liveSceneLighting &&
           !(g_staticRoomCpuReady && g_staticRoomCpuMesh.lightingValid)));
     const bool roomAuthenticFlatMode =
         roomAuthenticCameraMode &&
         g_viewMode == 9;
     const bool roomAuthenticLightingOnlyMode =
         roomAuthenticCameraMode &&
-        g_viewMode == 10;
+        (g_viewMode == 10 || g_viewMode == 12);
     const bool roomAuthenticWireframeMode =
         roomAuthenticCameraMode &&
         g_viewMode == 11;
@@ -13775,6 +14857,358 @@ static void renderBasicWingViewer()
 
     if (roomAuthenticCameraMode)
         prepareLiveTownGouraudVisibility(wvp);
+
+    // Compare native field VDP1 production against its actual GXM
+    // visibility result. A3 and A5 use the same submission interface,
+    // so retain Azel cell/object/model IDs rather than classifying
+    // distant scenery by guessed texture or by field-specific offsets.
+    // Two bounded snapshots, with no GPU readback or altered draw state.
+    if(g_sceneGameMode==3u && nativeSceneMode && g_liveTownGouraudPrepValid) {
+        static unsigned fieldVdp1TraceFrame=0u;
+        ++fieldVdp1TraceFrame;
+        if(fieldVdp1TraceFrame==30u || fieldVdp1TraceFrame==90u) {
+            const auto& submissions=azel_bridge::published_submissions();
+            logging::writef("[FieldVdp1Trace] sample=%u view=%d submissions=%u ranges=%u polys=%u near=%.5f far=%.5f\n",
+                fieldVdp1TraceFrame,g_viewMode,unsigned(submissions.size()),
+                unsigned(g_liveTownSubmissionRanges.size()),
+                unsigned(g_liveTownCpuMesh.polygonRecords.size()),
+                double(g_nativeSceneNearPlane),double(g_nativeSceneFarPlane));
+            unsigned reported=0u;
+            for(const auto& range:g_liveTownSubmissionRanges) {
+                if(reported++>=48u)break;
+                const auto& submission=submissions[range.azelOrder];
+                const std::size_t end=std::min(range.first+range.count,
+                    g_liveTownCpuMesh.polygonRecords.size());
+                unsigned visible=0u,clipped=0u,nearHorizon=0u;
+                unsigned clipSide=0u,clipNear=0u,clipFar=0u,clipBehind=0u,clipMixed=0u;
+                float minX=1e9f,minY=1e9f,maxX=-1e9f,maxY=-1e9f;
+                float minDepth=1e9f,maxDepth=-1e9f;
+                std::size_t example=end;
+                for(std::size_t p=range.first;p<end;++p) {
+                    const bool shown=g_liveTownGouraudPrep[p].visible;
+                    if(!shown) {
+                        ++clipped;
+                        // Mirror the exact conservative outcode test in
+                        // prepareLiveTownGouraudVisibility. Report whether
+                        // Garil's distant field geometry is rejected by the
+                        // near/far plane or simply lies outside the raster.
+                        const unsigned corners[4]={0u,1u,2u,5u};
+                        unsigned shared=0x3fu;
+                        bool behind=false;
+                        for(unsigned corner:corners) {
+                            const auto& v=g_liveTownCpuMesh.vertices[p*6u+corner];
+                            const float x=v.x*wvp.m[0]+v.y*wvp.m[4]+v.z*wvp.m[8]+wvp.m[12];
+                            const float y=v.x*wvp.m[1]+v.y*wvp.m[5]+v.z*wvp.m[9]+wvp.m[13];
+                            const float z=v.x*wvp.m[2]+v.y*wvp.m[6]+v.z*wvp.m[10]+wvp.m[14];
+                            const float w=v.x*wvp.m[3]+v.y*wvp.m[7]+v.z*wvp.m[11]+wvp.m[15];
+                            unsigned out=0u;
+                            if(x < -w)out|=1u;
+                            if(x >  w)out|=2u;
+                            if(y < -w)out|=4u;
+                            if(y >  w)out|=8u;
+                            if(z < 0.f)out|=16u;
+                            if(z > w)out|=32u;
+                            shared&=out;
+                            if(w<=0.00001f)behind=true;
+                        }
+                        if(behind)++clipBehind;
+                        else if(shared&32u)++clipFar;
+                        else if(shared&16u)++clipNear;
+                        else if(shared&15u)++clipSide;
+                        else ++clipMixed;
+                        continue;
+                    }
+                    ++visible;
+                    // Screen bounds from the same four transformed corners
+                    // consumed by Neptune; clip coverage at the raster.
+                    const unsigned corners[4]={0u,1u,2u,5u};
+                    float ymin=1e9f,ymax=-1e9f,depth=0.f;
+                    bool valid=true;
+                    for(unsigned c:corners) {
+                        const auto& v=g_liveTownCpuMesh.vertices[p*6u+c];
+                        const float x=v.x*wvp.m[0]+v.y*wvp.m[4]+v.z*wvp.m[8]+wvp.m[12];
+                        const float y=v.x*wvp.m[1]+v.y*wvp.m[5]+v.z*wvp.m[9]+wvp.m[13];
+                        const float z=v.x*wvp.m[2]+v.y*wvp.m[6]+v.z*wvp.m[10]+wvp.m[14];
+                        const float w=v.x*wvp.m[3]+v.y*wvp.m[7]+v.z*wvp.m[11]+wvp.m[15];
+                        if(w<=0.00001f){valid=false;break;}
+                        const float sx=(x/w*0.5f+0.5f)*viewerRenderWidth();
+                        const float sy=(0.5f-y/w*0.5f)*viewerRenderHeight();
+                        minX=std::min(minX,sx);maxX=std::max(maxX,sx);
+                        minY=std::min(minY,sy);maxY=std::max(maxY,sy);
+                        ymin=std::min(ymin,sy);ymax=std::max(ymax,sy);
+                        depth+=z/w;
+                    }
+                    if(!valid)continue;
+                    depth*=0.25f;
+                    minDepth=std::min(minDepth,depth);
+                    maxDepth=std::max(maxDepth,depth);
+                    if(ymin<viewerRenderHeight()*0.65f &&
+                       ymax>viewerRenderHeight()*0.15f) {
+                        ++nearHorizon;
+                        if(example==end)example=p;
+                    }
+                }
+                const unsigned exTexture=example<end?
+                    unsigned(g_liveTownCpuMesh.polygonTextureIndices[example]):65535u;
+                const unsigned exPmod=example<end?
+                    unsigned(g_liveTownCpuMesh.polygonRecords[example].cmdPmod):0u;
+                logging::writef(
+                    "[FieldVdp1Range] order=%u cell=%d obj=%08X table=%08X base=%u count=%u visible=%u rejected=%u horizon=%u "
+                    "bounds=(%.1f,%.1f)-(%.1f,%.1f) depth=(%.5f,%.5f) example=%u tex=%u PMOD=%04X dynamic=%u rejectSide=%u rejectNear=%u rejectFar=%u rejectBehind=%u rejectMixed=%u\n",
+                    unsigned(range.azelOrder),int(submission.cellIndex),
+                    unsigned(submission.objectIndex),unsigned(submission.modelTableOffset),
+                    unsigned(range.first),unsigned(end-range.first),
+                    visible,clipped,nearHorizon,
+                    double(visible?minX:0.f),double(visible?minY:0.f),
+                    double(visible?maxX:0.f),double(visible?maxY:0.f),
+                    double(visible?minDepth:0.f),double(visible?maxDepth:0.f),
+                    unsigned(example<end?example:0xffffffffu),
+                    exTexture,exPmod,unsigned(submission.state.dynamic),
+                    clipSide,clipNear,clipFar,clipBehind,clipMixed);
+            }
+        }
+
+        // Bound the expensive per-quad projection to the same two field snapshots.
+        // Sampling every field frame previously produced >47K diagnostic records.
+        static int lastCliffProjectionView = -1;
+        const bool enteredCliffComparison =
+            (g_viewMode == 18 || g_viewMode == 19) &&
+            lastCliffProjectionView != g_viewMode;
+        lastCliffProjectionView = g_viewMode;
+        if (fieldVdp1TraceFrame == 30u || fieldVdp1TraceFrame == 90u ||
+            enteredCliffComparison) {
+        logging::writef(
+            "[GarilCliffCamera] sample=%u view=%d matrix="
+            "%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g\n",
+            fieldVdp1TraceFrame, g_viewMode,
+            g_nativeSceneViewMatrix[0], g_nativeSceneViewMatrix[1],
+            g_nativeSceneViewMatrix[2], g_nativeSceneViewMatrix[3],
+            g_nativeSceneViewMatrix[4], g_nativeSceneViewMatrix[5],
+            g_nativeSceneViewMatrix[6], g_nativeSceneViewMatrix[7],
+            g_nativeSceneViewMatrix[8], g_nativeSceneViewMatrix[9],
+            g_nativeSceneViewMatrix[10], g_nativeSceneViewMatrix[11]);
+        // FLD_A5 cliff ring: original 20-quad models at subfield model-table
+        // offsets 0x4A0..0x4C0. All values are from the same WVP and flattened
+        // geometry as the actual GXM submission, without changing rendering.
+        // Unlike generic first-48 range tracing, do not miss these objects
+        // when numerous other field submissions precede them.
+        const auto& cliffSubmissions=azel_bridge::published_submissions();
+        unsigned cliffObjects=0u;
+        for(const auto& range:g_liveTownSubmissionRanges) {
+            if(range.azelOrder>=cliffSubmissions.size())continue;
+            const auto& submission=cliffSubmissions[range.azelOrder];
+            if(submission.modelTableOffset<0x4A0u ||
+               submission.modelTableOffset>0x4C0u ||
+               range.count!=20u)continue;
+            const auto end=std::min(range.first+range.count,
+                g_liveTownCpuMesh.polygonRecords.size());
+            if(end-range.first!=20u)continue;
+            ++cliffObjects;
+            unsigned pass=0u,side=0u,near=0u,far=0u,behind=0u;
+            unsigned validMaterial=0u, opaqueMaterial=0u;
+            unsigned posArea=0u,negArea=0u,mixedWinding=0u;
+            for(std::size_t p=range.first;p<end;++p) {
+                const unsigned cornerIndices[4]={0u,1u,2u,5u};
+                float px[4]{},py[4]{},pz[4]{},pw[4]{};
+                unsigned shared=0x3fu,negativeW=0u;
+                for(unsigned c=0u;c<4u;++c) {
+                    const auto& v=g_liveTownCpuMesh.vertices[p*6u+cornerIndices[c]];
+                    const float x=v.x*wvp.m[0]+v.y*wvp.m[4]+v.z*wvp.m[8]+wvp.m[12];
+                    const float y=v.x*wvp.m[1]+v.y*wvp.m[5]+v.z*wvp.m[9]+wvp.m[13];
+                    const float z=v.x*wvp.m[2]+v.y*wvp.m[6]+v.z*wvp.m[10]+wvp.m[14];
+                    const float w=v.x*wvp.m[3]+v.y*wvp.m[7]+v.z*wvp.m[11]+wvp.m[15];
+                    unsigned code=0u;
+                    if(x < -w)code|=1u;
+                    if(x >  w)code|=2u;
+                    if(y < -w)code|=4u;
+                    if(y >  w)code|=8u;
+                    if(z < 0.f)code|=16u;
+                    if(z > w)code|=32u;
+                    shared&=code;
+                    if(w<=0.00001f)++negativeW;
+                    px[c]=w>0.00001f?x/w:0.f;
+                    py[c]=w>0.00001f?y/w:0.f;
+                    pz[c]=w>0.00001f?z/w:0.f;
+                    pw[c]=w;
+                }
+                const float area0=(px[1]-px[0])*(py[2]-py[0])-
+                    (py[1]-py[0])*(px[2]-px[0]);
+                const float area1=(px[2]-px[0])*(py[3]-py[0])-
+                    (py[2]-py[0])*(px[3]-px[0]);
+                const bool visible=g_liveTownGouraudPrep[p].visible;
+                pass+=unsigned(visible);
+                side+=unsigned((shared&15u)!=0u);
+                near+=unsigned((shared&16u)!=0u);
+                far+=unsigned((shared&32u)!=0u);
+                behind+=unsigned(negativeW!=0u);
+                posArea+=unsigned(area0>1e-7f);
+                negArea+=unsigned(area0< -1e-7f);
+                mixedWinding+=unsigned(area0*area1< -1e-10f);
+                const auto material=g_liveTownCpuMesh.polygonTextureIndices[p];
+                const bool materialOk=material<g_staticRoomCpuMesh.decodedTextureData.size();
+                validMaterial+=unsigned(materialOk);
+                opaqueMaterial+=unsigned(materialOk &&
+                    g_staticRoomCpuMesh.decodedTextureData[material].opaque);
+                const auto& cmd=g_liveTownCpuMesh.polygonRecords[p];
+                if (p-range.first < 4u) logging::writef(
+                    "[GarilCliffQuad] sample=%u table=%04X obj=%08X local=%u "
+                    "global=%u visible=%u out=%02X behind=%u "
+                    "area=%.7f/%.7f xy0=%.4f,%.4f xy2=%.4f,%.4f "
+                    "z=%.4f,%.4f,%.4f,%.4f "
+                    "w=%.4f,%.4f,%.4f,%.4f material=%u valid=%u opaque=%u "
+                    "CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
+                    fieldVdp1TraceFrame,unsigned(submission.modelTableOffset),
+                    unsigned(submission.objectIndex),unsigned(p-range.first),
+                    unsigned(p),unsigned(visible),shared,negativeW,
+                    double(area0),double(area1),
+                    double(px[0]),double(py[0]),double(px[2]),double(py[2]),
+                    double(pz[0]),double(pz[1]),double(pz[2]),double(pz[3]),
+                    double(pw[0]),double(pw[1]),double(pw[2]),double(pw[3]),
+                    unsigned(material),unsigned(materialOk),
+                    unsigned(materialOk &&
+                        g_staticRoomCpuMesh.decodedTextureData[material].opaque),
+                    unsigned(cmd.cmdCtrl),unsigned(cmd.cmdPmod),
+                    unsigned(cmd.cmdColr),unsigned(cmd.cmdSrca),unsigned(cmd.cmdSize));
+            }
+            logging::writef(
+                "[GarilCliffSummary] sample=%u table=%04X obj=%08X "
+                "pass=%u/20 rejectSide=%u rejectNear=%u rejectFar=%u "
+                "behindW=%u positiveArea=%u negativeArea=%u mixedTriangle=%u "
+                "materials=%u opaque=%u view=%d near=%.5f far=%.5f\n",
+                fieldVdp1TraceFrame,unsigned(submission.modelTableOffset),
+                unsigned(submission.objectIndex),pass,side,near,far,behind,
+                posArea,negArea,mixedWinding,validMaterial,opaqueMaterial,
+                g_viewMode,double(g_nativeSceneNearPlane),double(g_nativeSceneFarPlane));
+        }
+        logging::writef("[GarilCliffSample] sample=%u objects=%u\n",
+            fieldVdp1TraceFrame,cliffObjects);
+        }
+    }
+
+    // Diagnostic view only: attribute large world polygons and floor-region
+    // intersections to their original Saturn commands. No render-path changes.
+    // The trace captures the first eligible RAW/SPLIT frame per scene/view,
+    // not every frame, and is bounded independently of visibility size.
+    if (nativeSceneMode && (g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24) &&
+        g_liveTownGouraudPrepValid &&
+        g_liveTownCpuMesh.vertices.size() ==
+            g_liveTownCpuMesh.polygonRecords.size() * 6u) {
+        static unsigned lastMode=0xffffffffu, lastScene=0xffffffffu;
+        static unsigned attributionBudget=8u;
+        if (attributionBudget &&
+            (lastMode!=unsigned(g_viewMode) || lastScene!=g_sceneGameMode)) {
+            --attributionBudget;
+            lastMode=unsigned(g_viewMode);
+            lastScene=g_sceneGameMode;
+            struct Candidate {
+                std::size_t p;
+                float area,cx,cy,depth,minX,minY,maxX,maxY;
+                float floorArea;
+                bool ordered;
+            };
+            std::vector<Candidate> candidates;
+            const auto& source=g_liveTownCpuMesh;
+            const unsigned corners[4]={0u,1u,2u,5u};
+            unsigned meshCount=0u, halfCount=0u, validCount=0u;
+            // Central/lower overlap is only a secondary ranking heuristic,
+            // not a scene-specific material classification.
+            const float floorLeft=float(viewerRenderWidth())*0.2f;
+            const float floorRight=float(viewerRenderWidth())*0.85f;
+            const float floorTop=float(viewerRenderHeight())*0.40f;
+            const float floorBottom=float(viewerRenderHeight());
+            for (std::size_t p=0;p<source.polygonRecords.size();++p) {
+                if (!g_liveTownGouraudPrep[p].visible)continue;
+                const auto& record=source.polygonRecords[p];
+                const bool mesh=(record.cmdPmod & 0x0100u)!=0;
+                if(mesh)++meshCount;
+                if(lagi::vdp1_half_transparent(record.cmdPmod))++halfCount;
+                float minX=1e9f,maxX=-1e9f,minY=1e9f,maxY=-1e9f,depth=0.f;
+                bool valid=true;
+                for (unsigned corner:corners) {
+                    const auto& v=source.vertices[p*6u+corner];
+                    const float x=v.x*wvp.m[0]+v.y*wvp.m[4]+v.z*wvp.m[8]+wvp.m[12];
+                    const float y=v.x*wvp.m[1]+v.y*wvp.m[5]+v.z*wvp.m[9]+wvp.m[13];
+                    const float z=v.x*wvp.m[2]+v.y*wvp.m[6]+v.z*wvp.m[10]+wvp.m[14];
+                    const float w=v.x*wvp.m[3]+v.y*wvp.m[7]+v.z*wvp.m[11]+wvp.m[15];
+                    if(w<=0.00001f){valid=false;break;}
+                    const float px=(x/w*0.5f+0.5f)*viewerRenderWidth();
+                    const float py=(0.5f-y/w*0.5f)*viewerRenderHeight();
+                    minX=std::min(minX,px);maxX=std::max(maxX,px);
+                    minY=std::min(minY,py);maxY=std::max(maxY,py);
+                    depth+=z/w;
+                }
+                if(!valid)continue;
+                ++validCount;
+                const float x0=std::max(0.f,minX),x1=std::min(float(viewerRenderWidth()),maxX);
+                const float y0=std::max(0.f,minY),y1=std::min(float(viewerRenderHeight()),maxY);
+                const float area=std::max(0.f,x1-x0)*std::max(0.f,y1-y0);
+                if(area<16.f)continue;
+                const float fx0=std::max(floorLeft,minX),fx1=std::min(floorRight,maxX);
+                const float fy0=std::max(floorTop,minY),fy1=std::min(floorBottom,maxY);
+                const float floorArea=std::max(0.f,fx1-fx0)*std::max(0.f,fy1-fy0);
+                bool ordered=false;
+                for (const auto& range:g_liveTownMeshRanges) {
+                    if(p>=range.first && p-range.first<range.count){ordered=true;break;}
+                }
+                candidates.push_back({p,area,(minX+maxX)*0.5f,
+                    (minY+maxY)*0.5f,depth*0.25f,minX,minY,maxX,maxY,
+                    floorArea,ordered});
+            }
+            logging::writef(
+                "[NativePolygonAttribution] mode=%u scene=%u visible=%u valid=%u candidates=%u meshes=%u half=%u edge=%u/%u shadow=%u/%u orderedRanges=%u\n",
+                unsigned(g_viewMode),unsigned(g_sceneGameMode),
+                unsigned(source.polygonRecords.size()),validCount,
+                unsigned(candidates.size()),meshCount,halfCount,
+                unsigned(g_liveTownEdgeFirstPolygon),unsigned(g_liveTownEdgePolygonCount),
+                unsigned(g_liveTownShadowFirstPolygon),unsigned(g_liveTownShadowPolygonCount),
+                unsigned(g_liveTownMeshRanges.size()));
+            // Emit a fixed number of candidates from each ranking. Their
+            // polygon IDs let later tests isolate a source without changing it.
+            for (unsigned ranking=0;ranking<2;++ranking) {
+                std::sort(candidates.begin(),candidates.end(),
+                    [ranking](const Candidate&a,const Candidate&b){
+                        const float aa=ranking?a.floorArea:a.area;
+                        const float bb=ranking?b.floorArea:b.area;
+                        return aa==bb?a.p<b.p:aa>bb;
+                    });
+                const std::size_t count=std::min(std::size_t(24),candidates.size());
+                for(std::size_t n=0;n<count;++n){
+                    const auto& c=candidates[n];
+                    if(ranking && c.floorArea<16.f)break;
+                    const auto& record=source.polygonRecords[c.p];
+                    const unsigned texture=c.p<source.polygonTextureIndices.size()
+                        ? source.polygonTextureIndices[c.p]:0xffffu;
+                    const bool edge=g_liveTownEdgePolygonCount &&
+                        c.p>=g_liveTownEdgeFirstPolygon &&
+                        c.p-g_liveTownEdgeFirstPolygon<g_liveTownEdgePolygonCount;
+                    const bool shadow=g_liveTownShadowPolygonCount &&
+                        c.p>=g_liveTownShadowFirstPolygon &&
+                        c.p-g_liveTownShadowFirstPolygon<g_liveTownShadowPolygonCount;
+                    const bool half=lagi::vdp1_half_transparent(record.cmdPmod);
+                    // Actual source batches normally test LEQUAL and write
+                    // depth; ordered native scene mesh ranges use LEQUAL too.
+                    // Half-transparency disables writes, even in ordered runs.
+                    const bool orderedApplied=c.ordered &&
+                        g_liveTownEdgePolygonCount==0u;
+                    const bool orderedDepth=orderedApplied &&
+                        lagi::native_scene_depth_mode(g_sceneGameMode);
+                    const bool writesDepth=!half &&
+                        (!orderedApplied || orderedDepth);
+                    logging::writef(
+                        "[NativePolygonCandidate] rankSet=%u rank=%u p=%u model=%u local=%u group=%u tex=%u PMOD=%04X CTRL=%04X COLR=%04X SRCA=%04X SIZE=%04X mesh=%u half=%u ordered=%u orderedApplied=%u depthTest=%s depthWrite=%u area=%.0f floorArea=%.0f bbox=(%.1f,%.1f)-(%.1f,%.1f) center=(%.1f,%.1f) depth=%.4f\n",
+                        ranking,unsigned(n),unsigned(c.p),unsigned(record.model),
+                        unsigned(record.polygonInModel),edge?2u:(shadow?1u:0u),
+                        texture,record.cmdPmod,record.cmdCtrl,
+                        record.cmdColr,record.cmdSrca,record.cmdSize,
+                        unsigned((record.cmdPmod&0x100u)!=0u),unsigned(half),
+                        unsigned(c.ordered),unsigned(orderedApplied),
+                        orderedApplied && !orderedDepth?"ALWAYS":"LEQUAL",
+                        unsigned(writesDepth),c.area,c.floorArea,
+                        c.minX,c.minY,c.maxX,c.maxY,c.cx,c.cy,c.depth);
+                }
+            }
+        }
+    }
 
     const int gxmPitch = viewerRenderPitch();
 
@@ -13859,6 +15293,15 @@ static void renderBasicWingViewer()
 
     unsigned int vdp1UiSpriteSlot = 0u;
     if (nativeSceneMode) {
+        if (!spriteComposite && useFieldBackScreen()) {
+            const unsigned color = g_sceneRbg0.backColor;
+            drawColorOffsetPass(g_colorOffsetAddFragmentProgram,
+                (color & 31u) * 255u / 31u,
+                ((color >> 5) & 31u) * 255u / 31u,
+                ((color >> 10) & 31u) * 255u / 31u);
+        }
+        if (!spriteComposite && g_sceneNbg0.behindWorld && g_viewMode != 19)
+            drawSceneNbg0Gpu();
         if (!spriteComposite) drawSceneVdp2Background();
         // Azel's far-plane VDP1 sprites (for example the flight horizon
         // strip) sit above RBG0 but behind world geometry. Foreground VDP1
@@ -13869,7 +15312,11 @@ static void renderBasicWingViewer()
 
     Vdp1RenderMode renderMode = Vdp1RenderMode::PolygonColor;
     if (!roomMode) {
-        renderMode = static_cast<Vdp1RenderMode>(g_viewMode);
+        // Diagnostics 18/19 compare depth only, never reinterpret their IDs
+        // as VDP1 render modes. Keep the same FULL material/shading path.
+        renderMode = (g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24)
+            ? Vdp1RenderMode::TexturedGouraud
+            : static_cast<Vdp1RenderMode>(g_viewMode);
     } else if (roomAuthenticFlatMode) {
         renderMode = Vdp1RenderMode::PolygonColor;
     } else if (roomAuthenticLightingOnlyMode) {
@@ -13890,9 +15337,23 @@ static void renderBasicWingViewer()
 
     if (roomAuthenticCameraMode &&
         (roomAuthenticLitMode || roomAuthenticLightingOnlyMode)) {
+        static std::vector<azel::SaturnGouraud555Quad> grayModeColorBackup;
+        static bool previousGrayMode = false;
+        if (previousGrayMode && !g_liveTownStaticRebuilt &&
+            grayModeColorBackup.size() == g_liveTownCpuMesh.gouraud555.size())
+            g_liveTownCpuMesh.gouraud555 = grayModeColorBackup;
         const std::uint64_t lightingStartUs = sceKernelGetProcessTimeWide();
         traceFieldPolygonStage("before");
         updateLiveTownAzelLighting();
+        previousGrayMode = g_viewMode == 10;
+        if (previousGrayMode) {
+            grayModeColorBackup = g_liveTownCpuMesh.gouraud555;
+            for (auto& quad : g_liveTownCpuMesh.gouraud555)
+                for (auto& corner : quad.corner) {
+                    const float gray = (corner[0] + corner[1] + corner[2]) / 3.0f;
+                    corner[0] = corner[1] = corner[2] = gray;
+                }
+        }
         traceFieldPolygonStage("after");
         if (g_fieldProbeActive) {
             for (const auto& probe : g_fieldPolygonProbes) {
@@ -13976,19 +15437,46 @@ static void renderBasicWingViewer()
             // Share slots so later overlay draws cannot overwrite queued data.
             drawPublishedVdp1Ui(
                 Vdp1UiPass::WorldEffects, &vdp1UiSpriteSlot);
+            // VDP1 priority belongs to the completed framebuffer pixel, not
+            // to individual commands. Finish foreground emission before the
+            // one existing resolve, then let NBG1/3 compare against that image.
+            const bool priorityUi=spriteComposite && g_spriteUiPriorityFrame;
+            const bool completedForeground=priorityUi || (spriteComposite && g_rbgRatioCompositeFrame);
+            if(completedForeground)drawPublishedVdp1Ui(
+                Vdp1UiPass::Foreground, &vdp1UiSpriteSlot);
             if (spriteComposite && !finishSpriteComposite(renderTarget,colorSurface,syncObject)) {
                 logging::writef("[VDP2SpriteComposite] FAIL finishing world layer\n");
                 sceGxmEndScene(g_probeContext,nullptr,nullptr);
                 sceGxmFinish(g_probeContext);
                 return;
             }
-            drawSceneNbg0Gpu();
+            g_spriteUiPriorityActive=priorityUi;
+            const bool lateNbg0 = !spriteComposite && !g_sceneNbg0.behindWorld;
+            if (lateNbg0 && g_viewMode != 19) drawSceneNbg0Gpu();
+            static int lastGarilComposeView = -1;
+            if (g_sceneGameMode == 3u && lastGarilComposeView != g_viewMode) {
+                lastGarilComposeView = g_viewMode;
+                logging::writef(
+                    "[GarilCliffCompose] view=%d spriteComposite=%u lateNbg0=%u skipped=%u\n",
+                    g_viewMode, unsigned(spriteComposite), unsigned(lateNbg0),
+                    unsigned(lateNbg0 && g_viewMode == 19));
+            }
+            if (g_sceneGameMode != 3u) lastGarilComposeView = -1;
             drawAzelVdp2Nbg1Gpu();
             drawAzelVdp2CinematicBarsGpu();
             drawAzelVdp2TextLayerGpu();
-            drawPublishedVdp1Ui(
+            if(!completedForeground)drawPublishedVdp1Ui(
                 Vdp1UiPass::Foreground, &vdp1UiSpriteSlot);
+            g_spriteUiPriorityActive=false;
         }
+    }
+
+    // Menu composition previously skipped native fading altogether. Apply
+    // it once after backing, models, text and VDP1 UI only when the native
+    // registers prove every layer uses the same offset. Mixed per-layer
+    // offsets must not be flattened into a replacement fullscreen fade.
+    if (nativeMenuFrame && frontendHasSharedColorOffset()) {
+        drawAzelColorOffsetForLayer(1u, true);
     }
 
     // All native scenes share Azel's published primary fade state. Neptune
@@ -14077,7 +15565,8 @@ static void renderBasicWingViewer()
     // detailed heartbeat. Emit only one aggregate line per 120 field frames.
     // This measures renderer work; it is not a display/game frame-time claim.
     struct FlightTimingWindow {
-        unsigned int frames = 0u, over25 = 0u, overDeadline = 0u;
+        unsigned int frames = 0u, over20 = 0u, over25 = 0u;
+        unsigned int over30 = 0u, overDeadline = 0u;
         unsigned int maxRender = 0u, maxBuild = 0u, rebuilds = 0u;
         unsigned int maxFieldLog = 0u;
         std::uint64_t totalRender = 0u;
@@ -14095,16 +15584,20 @@ static void renderBasicWingViewer()
         flightTiming.maxRender = std::max(flightTiming.maxRender, g_profileRenderUs);
         flightTiming.maxBuild = std::max(flightTiming.maxBuild, g_profileBuildUs);
         flightTiming.maxFieldLog = std::max(flightTiming.maxFieldLog, g_profileFieldStreamLogUs);
+        flightTiming.over20 += g_profileRenderUs > 20000u;
         flightTiming.over25 += g_profileRenderUs > 25000u;
+        flightTiming.over30 += g_profileRenderUs > 30000u;
         flightTiming.overDeadline += g_profileRenderUs > 33333u;
         flightTiming.rebuilds += g_liveTownStaticRebuilt;
         if (flightTiming.frames == 120u) {
             logging::writef(
                 "[FlightTimingWindow] mode=%u frames=%u mean=%uus max=%uus "
-                "over25=%u over33333=%u maxBuild=%uus rebuilds=%u maxFieldLog=%uus rendererOnly=1\n",
+                "over20=%u over25=%u over30=%u over33333=%u "
+                "maxBuild=%uus rebuilds=%u maxFieldLog=%uus rendererOnly=1\n",
                 flightTimingMode, flightTiming.frames,
                 static_cast<unsigned int>(flightTiming.totalRender / flightTiming.frames),
-                flightTiming.maxRender, flightTiming.over25, flightTiming.overDeadline,
+                flightTiming.maxRender, flightTiming.over20, flightTiming.over25,
+                flightTiming.over30, flightTiming.overDeadline,
                 flightTiming.maxBuild, flightTiming.rebuilds, flightTiming.maxFieldLog);
             flightTiming = {};
         }
@@ -14127,16 +15620,17 @@ static void renderBasicWingViewer()
         (((scenePerfHeartbeat++ % 60u) == 0u) || perfMenuChanged || slowMenuSample)) {
         logging::writef(
             "[ScenePerf] build=%uus scan=%u cache=%u obj=%u edge=%u upload=%u "
-            "light=%u gourPrep=%u gourPayload=%u gourBucket=%u "
+            "light=%u primaryTests=%u primaryReuses=%u transientMax=%u transientPolys=%u transientTests=%u transientHits=%u transientReuses=%u gourPrep=%u gourPayload=%u gourBucket=%u "
             "gourIndex=%u gourDraw=%u clear=%u begin=%u submit=%u compose=%u "
             "cpuprep=%u gxmwait=%u gxmend=%u gxmfinish=%u "
             "render=%u polys=%u verts=%u "
             "staticRebuilt=%u rbgEnabled=%u rbgPrep=%uus rbgResolve=%uus nbg0Resolve=%uus rbgRawBytes=%u "
             "menuBackingDecode=%u menuTextDecode=%u menuSubmit=%u menuTransfer=%u "
             "menuId=%u saveLayout=%u menuNbg2=%u menuRaster=rows-v1 tasks=%u uiOnly=%u slowSample=%u "
-            "positionSync=%u positionSyncVerts=%u submissions=%u "
+            "positionSync=%u positionSyncVerts=%u positionSyncLegacyVerts=%u submissions=%u "
             "spriteDraws=%u spriteWorldTagged=%u spriteShaded=%u spriteBboxPixels=%llu "
-            "spriteCacheHits=%u spriteCacheMisses=%u spritePaletteRefresh=%u spriteSlotSkips=%u gpuSerialized=%u\n",
+            "spriteCacheHits=%u spriteCacheMisses=%u spritePaletteRefresh=%u spriteSlotSkips=%u gpuSerialized=%u "
+            "subdivShadeReused=%u subdivShadeWritten=%u\n",
             g_profileBuildUs,
             g_profileBuildScanUs,
             g_profileBuildCacheUs,
@@ -14144,6 +15638,13 @@ static void renderBasicWingViewer()
             g_profileBuildEdgeUs,
             g_profileBuildUploadUs,
             g_profileLightingUs,
+            g_profilePrimaryCornerTests,
+            g_profilePrimaryCornerReuses,
+            g_profileTransientMaxPerPolygon,
+            g_profileTransientLitPolygons,
+            g_profileTransientCornerTests,
+            g_profileTransientCornerHits,
+            g_profileTransientCornerReuses,
             g_profileGouraudPrepUs,
             g_profileGouraudPayloadUs,
             g_profileGouraudBucketUs,
@@ -14178,19 +15679,16 @@ static void renderBasicWingViewer()
             slowMenuSample ? 1u : 0u,
             g_profilePositionSyncUs,
             g_profilePositionSyncVertices,
+            g_profilePositionSyncLegacyVertices,
             g_liveTownSubmissionCount,
             g_profileSprites.draws,g_profileSprites.worldTagged,g_profileSprites.shaded,
             static_cast<unsigned long long>(g_profileSprites.bboxPixels),
             g_profileSprites.cacheHits,g_profileSprites.cacheMisses,
-            g_profileSprites.paletteRefreshes,g_profileSprites.slotSkips,g_gpuPassSample?1u:0u);
+            g_profileSprites.paletteRefreshes,g_profileSprites.slotSkips,g_gpuPassSample?1u:0u,
+            g_profileSubdivShadeReusedQuads,g_profileSubdivShadeWrittenQuads);
     }
 
-    if (g_showThreadTimingOsd) {
-        drawViewerModeOverlay(
-            colorBuffer,
-            gxmPitch,
-            g_viewMode);
-    }
+    drawViewerModeOverlay(colorBuffer,gxmPitch,g_viewMode);
 
     if (g_showThreadTimingOsd && roomAuthenticCameraMode) {
         char thread0[64], thread1[64], thread2[64], thread3[64];
@@ -14433,17 +15931,22 @@ void begin_frame()
     if (!g_debugVisible) {
         // Controller state belongs to the game thread. Only the selected view
         // is copied into the next published render frame.
-        static constexpr int kSceneModes[5] = {7, 8, 10, 9, 11};
+        static constexpr int kSceneModes[] = {7, 8, 11, 9, 10, 12};
+        static constexpr int kFieldModes[] = {7, 18, 19, 8, 11, 9, 10, 12};
+        const bool field = g_pendingSceneGameMode == 3u;
+        const int* modes = field ? kFieldModes : kSceneModes;
+        constexpr int kFieldModeCount = int(sizeof(kFieldModes) / sizeof(kFieldModes[0]));
+        const int kModeCount = field ? kFieldModeCount : int(sizeof(kSceneModes) / sizeof(kSceneModes[0]));
         int sceneModeIndex = 0;
-        for (int i = 0; i < 5; ++i)
-            if (g_pendingViewMode == kSceneModes[i])
+        for (int i = 0; i < kModeCount; ++i)
+            if (g_pendingViewMode == modes[i])
                 sceneModeIndex = i;
 
         if (input::prev_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 4) % 5;
+            sceneModeIndex = (sceneModeIndex + kModeCount - 1) % kModeCount;
         if (input::next_mode_pressed())
-            sceneModeIndex = (sceneModeIndex + 1) % 5;
-        g_pendingViewMode = kSceneModes[sceneModeIndex];
+            sceneModeIndex = (sceneModeIndex + 1) % kModeCount;
+        g_pendingViewMode = modes[sceneModeIndex];
         return;
     }
 
@@ -15206,9 +16709,16 @@ void end_frame()
 
 static void updateLiveTownAzelLighting()
 {
+    g_profilePrimaryCornerTests = 0u;
+    g_profilePrimaryCornerReuses = 0u;
+    g_profileTransientMaxPerPolygon = 0u;
+    g_profileTransientLitPolygons = 0u;
+    g_profileTransientCornerTests = 0u;
+    g_profileTransientCornerHits = 0u;
+    g_profileTransientCornerReuses = 0u;
     if (g_liveTownCpuMesh.gouraud555.size() !=
             g_liveTownCpuMesh.polygonRecords.size() ||
-        g_liveTownPolygonLights.size() !=
+        g_liveTownPolygonLightIndices.size() !=
             g_liveTownCpuMesh.polygonRecords.size())
         return;
 
@@ -15284,6 +16794,43 @@ static void updateLiveTownAzelLighting()
     std::int16_t falloffMap[32][3]{};
     bool haveFalloff = false;
     static bool reportedLiveLighting = false;
+    // Hardware shot-light coverage diagnostic: first 24 frames with transient
+    // sources; sample only every third frame and avoid per-polygon logs.
+    static unsigned laserCoverageFrames=0;
+    bool laserCoveragePresent=false;
+    unsigned laserCoverageCandidates=0,laserCoverageRejected=0;
+    unsigned laserCoverageCorners=0,laserCoverageFacing=0;
+    unsigned laserCoverageQuantized=0,laserCoverageSaturated=0;
+    int laserCoveragePeakDelta=0;
+    // Bounded diagnostic only; no impact on native lighting arithmetic.
+    // Eight samples over the first 32 point-lit frames, up to three polygons
+    // per sampled frame. This spans the LCS pickup without flooding lagi.log.
+    static unsigned pointTraceLitFrames = 0;
+    unsigned pointTraceSamplesThisFrame = 0;
+    bool pointTraceActiveThisFrame = false;
+
+    // Adjacent polygons often submit the same authored vertex more than once.
+    // A direct-mapped, frame-stamped cache reuses the complete native result
+    // only for the identical light state, source slot, and float coordinates.
+    // Slot four is reserved for the authored primary point source; transient
+    // sources occupy slots zero through three.
+    // Collisions merely cause a fresh evaluation; they cannot change color.
+    struct TransientCornerCacheEntry {
+        std::uint64_t frame = 0;
+        std::uint32_t lightIndex = 0, sourceIndex = 0;
+        std::uint32_t positionBits[3]{};
+        lagi::AdditionalModelLight result{};
+        bool accepted = false;
+    };
+    static std::array<TransientCornerCacheEntry, 4096> transientCornerCache{};
+    static std::uint64_t transientCornerCacheFrame = 0;
+    const std::uint64_t cacheFrame = ++transientCornerCacheFrame;
+    // A light state is shared by its polygons. Its view/model rotation is
+    // frame-invariant even though each corner has a different point delta.
+    static std::vector<lagi::PreparedPointCornerBasis> primaryCornerBasis;
+    static std::vector<std::uint8_t> primaryCornerBasisReady;
+    primaryCornerBasis.resize(g_liveTownLightStates.size());
+    primaryCornerBasisReady.assign(g_liveTownLightStates.size(),0u);
 
     for (std::size_t p = 0;
          p < g_liveTownCpuMesh.polygonRecords.size(); ++p) {
@@ -15291,12 +16838,25 @@ static void updateLiveTownAzelLighting()
             continue;
 
         const auto& record = g_liveTownCpuMesh.polygonRecords[p];
-        const auto& light = g_liveTownPolygonLights[p];
+        const std::uint32_t lightIndex = g_liveTownPolygonLightIndices[p];
+        const auto& light = g_liveTownLightStates[lightIndex];
         const unsigned mode = (record.lightingControl >> 8) & 3u;
         auto& out = g_liveTownCpuMesh.gouraud555[p];
         out = {};
+        if (light.transientLaserLightCount) {
+            laserCoveragePresent=true;
+            ++laserCoverageCandidates;
+            if (!light.valid || mode==0u || record.lightingCount==0u)
+                ++laserCoverageRejected;
+        }
         if (!light.valid || mode == 0u || record.lightingCount == 0u)
             continue;
+        if (light.transientLaserLightCount) {
+            ++g_profileTransientLitPolygons;
+            g_profileTransientMaxPerPolygon = std::max<unsigned int>(
+                g_profileTransientMaxPerPolygon,
+                light.transientLaserLightCount);
+        }
 
         if (!haveFalloff ||
             cachedFalloff[0] != light.falloff[0] ||
@@ -15334,6 +16894,17 @@ static void updateLiveTownAzelLighting()
             if (normalIndex >= record.lightingCount)
                 continue;
 
+            // Native mode 1 uses the same normal and base colour at every
+            // corner. With no per-corner point source, all four results are
+            // identical, including falloff and RGB555 quantization.
+            if (corner && mode == 1u &&
+                !light.additionalPointPerCorner &&
+                !light.transientLaserLightCount) {
+                for (unsigned channel = 0; channel < 3u; ++channel)
+                    out.corner[corner][channel] = out.corner[0][channel];
+                continue;
+            }
+
             const auto& lighting = record.lighting[normalIndex];
             const int dotProduct =
                 static_cast<int>(lighting.normal[0]) * light.vector[0] +
@@ -15351,7 +16922,7 @@ static void updateLiveTownAzelLighting()
                         lighting.color[channel]);
             }
 
-            if (dotProduct > 0) {
+            if (dotProduct > 0 && !light.nativePrimaryPointPerCorner) {
                 const int dotHi = static_cast<int>(
                     static_cast<std::uint32_t>(dotProduct) >> 16);
 
@@ -15364,7 +16935,174 @@ static void updateLiveTownAzelLighting()
                 accum[2] += light.color[0] * dotHi;
             }
 
-            lagi::accumulate_additional_model_light(light.additionalLight,lighting.normal,accum);
+            const bool pointTraceEligible = light.additionalLight.active;
+            if (pointTraceEligible) pointTraceActiveThisFrame = true;
+            const int beforePoint[3] = {accum[0], accum[1], accum[2]};
+            if(light.additionalPointPerCorner && light.additionalLight.active) {
+                ++g_profilePrimaryCornerTests;
+                const auto& vtx=g_liveTownCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
+                const float world[3]={vtx.x,vtx.y,vtx.z};
+                std::uint32_t positionBits[3];
+                std::memcpy(positionBits,world,sizeof(positionBits));
+                constexpr std::uint32_t primarySlot=lagi::kMaxTransientLaserLights;
+                std::uint32_t hash=lightIndex*0x9E3779B9u+primarySlot;
+                for(const auto bits:positionBits)
+                    hash=(hash^bits)*0x85EBCA6Bu;
+                auto& cached=transientCornerCache[
+                    hash&(transientCornerCache.size()-1u)];
+                lagi::AdditionalModelLight cornerLight{};
+                bool accepted=false;
+                if(cached.frame==cacheFrame &&
+                    cached.lightIndex==lightIndex &&
+                    cached.sourceIndex==primarySlot &&
+                    std::memcmp(cached.positionBits,positionBits,
+                        sizeof(positionBits))==0) {
+                    ++g_profilePrimaryCornerReuses;
+                    accepted=cached.accepted;
+                    cornerLight=cached.result;
+                } else {
+                    if (!primaryCornerBasisReady[lightIndex]) {
+                        primaryCornerBasis[lightIndex]=lagi::prepare_point_corner_basis(
+                            light.modelBasis,light.additionalPointView);
+                        primaryCornerBasisReady[lightIndex]=1u;
+                    }
+                    std::int32_t primaryCornerMatrix[12];
+                    lagi::prepare_point_corner_matrix(world,light.additionalPointView,
+                        primaryCornerMatrix);
+                    accepted=lagi::evaluate_point_at_corner_prepared_basis(
+                        primaryCornerMatrix,light.additionalPointParams,
+                        light.additionalLight.color,
+                        primaryCornerBasis[lightIndex],cornerLight);
+                    cached.frame=cacheFrame;
+                    cached.lightIndex=lightIndex;
+                    cached.sourceIndex=primarySlot;
+                    std::memcpy(cached.positionBits,positionBits,
+                        sizeof(positionBits));
+                    cached.accepted=accepted;
+                    cached.result=cornerLight;
+                }
+                if(accepted)
+                    lagi::accumulate_additional_model_light(cornerLight,lighting.normal,accum);
+            } else {
+                lagi::accumulate_additional_model_light(light.additionalLight,lighting.normal,accum);
+            }
+            // A maximum of four extra native point contributions, per model,
+            // before the already-existing single RGB555 quantization.
+            const bool traceLaserCoverage=light.transientLaserLightCount &&
+                laserCoverageFrames<24u && laserCoverageFrames%3u==0u;
+            const int preLaserRGB[3]={accum[0],accum[1],accum[2]};
+            bool laserFacing=false;
+            std::int32_t transientCornerMatrix[12];
+            bool transientCornerMatrixReady=false;
+            const auto& transientVertex=
+                g_liveTownCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
+            const float transientWorld[3]={
+                transientVertex.x,transientVertex.y,transientVertex.z};
+            std::uint32_t transientPositionBits[3]{};
+            if(light.transientLaserLightCount)
+                std::memcpy(transientPositionBits,transientWorld,
+                    sizeof(transientPositionBits));
+            for(unsigned transient=0;transient<light.transientLaserLightCount;++transient) {
+                // Same native evaluator and one accumulator as collection lights.
+                // A transient shot supplies world-space point parameters.
+                const auto& source=light.transientLaserSources[transient];
+                if(!source.range) continue;
+                ++g_profileTransientCornerTests;
+                std::uint32_t hash=lightIndex*0x9E3779B9u+transient;
+                for(const auto bits:transientPositionBits)
+                    hash=(hash^bits)*0x85EBCA6Bu;
+                auto& cached=transientCornerCache[
+                    hash&(transientCornerCache.size()-1u)];
+                lagi::AdditionalModelLight vertexLight{};
+                bool accepted=false;
+                if(cached.frame==cacheFrame &&
+                    cached.lightIndex==lightIndex &&
+                    cached.sourceIndex==transient &&
+                    std::memcmp(cached.positionBits,transientPositionBits,
+                        sizeof(transientPositionBits))==0) {
+                    ++g_profileTransientCornerReuses;
+                    accepted=cached.accepted;
+                    vertexLight=cached.result;
+                } else {
+                    if(!transientCornerMatrixReady) {
+                        lagi::prepare_point_corner_matrix(transientWorld,nullptr,
+                            transientCornerMatrix);
+                        transientCornerMatrixReady=true;
+                    }
+                    const std::int32_t hi=
+                        static_cast<std::int16_t>(source.range>>8);
+                    const std::int32_t params[5]={
+                        source.worldPosition[0],source.worldPosition[1],
+                        source.worldPosition[2],
+                        static_cast<std::int32_t>(source.range<<12),hi*hi};
+                    accepted=lagi::evaluate_point_at_corner_prepared(
+                        transientCornerMatrix,params,source.color,
+                        light.modelBasis,nullptr,vertexLight);
+                    cached.frame=cacheFrame;
+                    cached.lightIndex=lightIndex;
+                    cached.sourceIndex=transient;
+                    std::memcpy(cached.positionBits,transientPositionBits,
+                        sizeof(transientPositionBits));
+                    cached.accepted=accepted;
+                    cached.result=vertexLight;
+                }
+                if(!accepted)
+                    continue;
+                ++g_profileTransientCornerHits;
+                if(traceLaserCoverage) {
+                    const std::int64_t dot=
+                        std::int64_t(lighting.normal[0])*vertexLight.vector[0]+
+                        std::int64_t(lighting.normal[1])*vertexLight.vector[1]+
+                        std::int64_t(lighting.normal[2])*vertexLight.vector[2];
+                    laserFacing|=(dot>=65536);
+                }
+                lagi::accumulate_additional_model_light(vertexLight,lighting.normal,accum);
+            }
+            if(traceLaserCoverage) {
+                ++laserCoverageCorners;
+                laserCoverageFacing+=unsigned(laserFacing);
+                bool visibleChange=false,clipped=false;
+                for(unsigned channel=0;channel<3;++channel) {
+                    const int before=std::clamp(preLaserRGB[channel],0,0x1F00)>>8;
+                    const int after=std::clamp(accum[channel],0,0x1F00)>>8;
+                    visibleChange|=after>before;
+                    clipped|=accum[channel]>0x1F00;
+                    laserCoveragePeakDelta=std::max(laserCoveragePeakDelta,
+                        accum[channel]-preLaserRGB[channel]);
+                }
+                laserCoverageQuantized+=unsigned(visibleChange);
+                laserCoverageSaturated+=unsigned(clipped);
+            }
+            if (pointTraceEligible && corner == 0u &&
+                pointTraceLitFrames < 32u &&
+                (pointTraceLitFrames % 4u) == 0u &&
+                pointTraceSamplesThisFrame < 3u) {
+                // Dot is signed 16.16 with Saturn model-space normals.
+                const std::int64_t pointDot =
+                    std::int64_t(lighting.normal[0]) * light.additionalLight.vector[0] +
+                    std::int64_t(lighting.normal[1]) * light.additionalLight.vector[1] +
+                    std::int64_t(lighting.normal[2]) * light.additionalLight.vector[2];
+                logging::writef(
+                    "[PointGouraudTrace] litFrame=%u polygon=%u mode=%u depthIndex=%d "
+                    "normal=%d,%d,%d baseDot=%d pointDot=%lld "
+                    "base=%d,%d,%d add=%d,%d,%d summed=%d,%d,%d "
+                    "rgb555=%u,%u,%u clipped=%u,%u,%u pointColor=%u,%u,%u\n",
+                    pointTraceLitFrames, static_cast<unsigned>(p), mode, depthIndex,
+                    int(lighting.normal[0]), int(lighting.normal[1]), int(lighting.normal[2]),
+                    dotProduct, static_cast<long long>(pointDot),
+                    beforePoint[0], beforePoint[1], beforePoint[2],
+                    accum[0]-beforePoint[0], accum[1]-beforePoint[1], accum[2]-beforePoint[2],
+                    accum[0], accum[1], accum[2],
+                    unsigned(std::clamp(accum[0],0,0x1F00)>>8),
+                    unsigned(std::clamp(accum[1],0,0x1F00)>>8),
+                    unsigned(std::clamp(accum[2],0,0x1F00)>>8),
+                    unsigned(accum[0]>0x1F00),unsigned(accum[1]>0x1F00),
+                    unsigned(accum[2]>0x1F00),
+                    unsigned(light.additionalLight.color[2]),
+                    unsigned(light.additionalLight.color[1]),
+                    unsigned(light.additionalLight.color[0]));
+                ++pointTraceSamplesThisFrame;
+            }
 
             for (unsigned channel = 0; channel < 3; ++channel) {
                 const int gouraud5 =
@@ -15374,6 +17112,18 @@ static void updateLiveTownAzelLighting()
             }
         }
     }
+    if (laserCoveragePresent && laserCoverageFrames<24u) {
+        if(laserCoverageFrames%3u==0u)
+            logging::writef(
+                "[FieldLaserCoverage] frame=%u candidatePolys=%u rejectedPolys=%u "
+                "sampledCorners=%u facingCorners=%u changedRGB555=%u saturatedRGB555=%u peakAccumDelta=%d\n",
+                laserCoverageFrames,laserCoverageCandidates,laserCoverageRejected,
+                laserCoverageCorners,laserCoverageFacing,laserCoverageQuantized,
+                laserCoverageSaturated,laserCoveragePeakDelta);
+        ++laserCoverageFrames;
+    }
+    if (pointTraceActiveThisFrame && pointTraceLitFrames < 32u)
+        ++pointTraceLitFrames;
 }
 
 bool presentation_active()
@@ -15381,7 +17131,11 @@ bool presentation_active()
     const bool sceneMode =
         g_pendingViewMode == 7 || g_pendingViewMode == 8 ||
         g_pendingViewMode == 10 || g_pendingViewMode == 9 ||
-        g_pendingViewMode == 11;
+        g_pendingViewMode == 11 || g_pendingViewMode == 12 ||
+        g_pendingViewMode == 18 || g_pendingViewMode == 19 ||
+        g_pendingViewMode == 20 || g_pendingViewMode == 21 ||
+        g_pendingViewMode == 22 || g_pendingViewMode == 23 ||
+        g_pendingViewMode == 24;
     const bool nativeSceneReady =
         g_sceneGameMode != 0u && (g_nativeSceneViewValid || g_townCameraReady);
     const bool legacyRoomReady =
@@ -15484,7 +17238,10 @@ void presentation_publish_frame()
             g_pendingNativeSceneViewMatrix,
             sizeof(g_nativeSceneViewMatrix));
     }
-    g_viewMode = g_pendingViewMode;
+    const bool fieldComparison = g_sceneGameMode == 3u &&
+        (g_pendingViewMode == 18 || g_pendingViewMode == 19);
+    g_viewMode = !fieldComparison && g_pendingViewMode >= 13 && g_pendingViewMode <= 24
+        ? 7 : g_pendingViewMode;
     g_profileTasksUs = g_pendingProfileTasksUs;
     g_profileGameWaitUs = g_pendingProfileGameWaitUs;
     std::memcpy(g_sceneColorOffset, g_pendingSceneColorOffset, sizeof(g_sceneColorOffset));
@@ -15574,6 +17331,13 @@ void presentation_set_scene_mode(unsigned int gameMode)
     g_pendingNativeSceneViewValid = false;
     g_pendingScenePlayerPresent = false;
     g_pendingTownPresentationValid = true;
+}
+
+void presentation_set_field_scene_key(unsigned int key)
+{
+    // Kept as a bridge entry point; renderer lighting no longer samples or
+    // carries sky ambient across field scenes.
+    (void)key;
 }
 
 void presentation_set_clip_planes(float nearPlane, float farPlane)
@@ -15769,10 +17533,11 @@ void presentation_set_sprite_color_state(const lagi::Vdp2SpriteColorState& state
     static unsigned budget=32;
     static lagi::Vdp2SpriteColorState previous{};
     if (budget && (state.ccctl!=previous.ccctl || state.spctl!=previous.spctl ||
-        state.ratio[0]!=previous.ratio[0] || state.priority[0]!=previous.priority[0])) {
+        state.ratio[0]!=previous.ratio[0] || state.priority[0]!=previous.priority[0] ||
+        state.rbgRatio!=previous.rbgRatio || state.prir!=previous.prir)) {
         --budget;
-        logging::writef("[VDP2SpriteColor] CCCTL=%04X SPCTL=%04X PRISA=%04X CCRSA=%04X CCRSB=%04X window=%02X selectors=captured\n",
-            state.ccctl,state.spctl,state.priority[0],state.ratio[0],state.ratio[1],state.colorWindow);
+        logging::writef("[VDP2SpriteColor] CCCTL=%04X SPCTL=%04X PRISA=%04X CCRSA=%04X CCRSB=%04X window=%02X CCRR=%04X PRIR=%04X selectors=captured\n",
+            state.ccctl,state.spctl,state.priority[0],state.ratio[0],state.ratio[1],state.colorWindow,state.rbgRatio,state.prir);
         previous=state;
     }
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 
@@ -13,30 +14,29 @@ struct NativePointLightResult {
     bool outside = false;
     bool divisionOverflow = false;
 };
-inline NativePointLightResult native_point_light(
-    const std::int32_t matrix[12], const std::int32_t params[5])
+// Estimate on the Vita FPU, then correct with integer comparisons. The
+// correction makes this the exact floor square root for every u32 input,
+// including rounded-up float estimates at perfect-square boundaries.
+inline std::uint32_t native_point_integer_sqrt(std::uint32_t value)
+{
+    std::uint32_t root=static_cast<std::uint32_t>(
+        std::sqrt(static_cast<float>(value)));
+    while(std::uint64_t(root)*root>value) --root;
+    while(std::uint64_t(root+1u)*(root+1u)<=value) ++root;
+    return root;
+}
+inline NativePointLightResult native_point_light_from_delta(
+    const std::int32_t matrix[12], const std::int32_t params[5],
+    const std::int32_t inputDelta[3], std::uint64_t squared)
 {
     NativePointLightResult result;
-    std::int32_t delta[3];
-    std::uint64_t squared = 0;
-    for (unsigned axis=0; axis<3; ++axis) {
-        delta[axis]=static_cast<std::int32_t>(std::uint32_t(params[axis])-
-            std::uint32_t(matrix[axis*4+3]));
-        squared+=static_cast<std::uint64_t>(std::int64_t(delta[axis])*delta[axis]);
-    }
+    std::int32_t delta[3]{inputDelta[0],inputDelta[1],inputDelta[2]};
     // SH-2 XTRCT retains the middle 32 bits, including wraparound.
     result.distance=static_cast<std::uint32_t>(squared>>16);
     std::uint32_t numerator;
     if (result.distance < std::uint32_t(params[4])) {
-        // Native 16-iteration restoring square root, 0601FD86..9E.
-        std::uint32_t remainder=result.distance, root=0, bit=0x40000000;
-        for (unsigned i=0;i<16;++i) {
-            const auto trial=root+bit;
-            root>>=1;
-            if (trial<=remainder) { remainder-=trial; root+=bit; }
-            bit>>=2;
-        }
-        result.divisor=root;
+        // Exactly the native restoring root, with fewer serial steps.
+        result.divisor=native_point_integer_sqrt(result.distance);
         numerator=0x00100000;
     } else {
         numerator=std::uint32_t(params[3]);
@@ -63,5 +63,18 @@ inline NativePointLightResult native_point_light(
         result.vector[axis]=static_cast<std::int16_t>(mac>>16);
     }
     return result;
+}
+
+inline NativePointLightResult native_point_light(
+    const std::int32_t matrix[12], const std::int32_t params[5])
+{
+    std::int32_t delta[3];
+    std::uint64_t squared = 0;
+    for (unsigned axis=0; axis<3; ++axis) {
+        delta[axis]=static_cast<std::int32_t>(std::uint32_t(params[axis])-
+            std::uint32_t(matrix[axis*4+3]));
+        squared+=static_cast<std::uint64_t>(std::int64_t(delta[axis])*delta[axis]);
+    }
+    return native_point_light_from_delta(matrix,params,delta,squared);
 }
 }

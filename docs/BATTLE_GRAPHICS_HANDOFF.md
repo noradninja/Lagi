@@ -1,5 +1,7 @@
 # Native battle graphics handoff evidence
 
+**Current context (20 November 2026):** The original battle graphics backup/restore research here still matters, but the opening statement that battle is disabled by default describes an earlier checkpoint. Native A3 execution is enabled in the current configuration and has reached Valley/Garil device testing. Hardware acceptance remains narrower than source and fixture coverage; see [status](STATUS.md).
+
 This is an implementation map and partial restoration, not a runtime pass.
 Battle execution is disabled by default; the separate A3 execution option is
 experimental and not hardware-validated. Original disc bytes are inspected read-only;

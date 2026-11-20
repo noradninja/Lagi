@@ -1,4 +1,5 @@
 #include "lagi/disc_image.h"
+#include "lagi/cdda_cue.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -12,6 +13,7 @@ namespace lagi::disc {
 
 static constexpr std::uint32_t kLogicalSectorSize = 2048;
 static std::string g_imagePath;
+static std::string g_cuePath;
 static std::uint32_t g_rootExtent = 0;
 static std::uint32_t g_rootSize = 0;
 static std::uint32_t g_physicalSectorSize = 2048;
@@ -79,6 +81,7 @@ static bool parse_cue(int discNumber)
     std::string cuePath = std::string(dirPath) + "/" + cueName;
     FILE* cue = std::fopen(cuePath.c_str(), "rb");
     if (!cue) return false;
+    g_cuePath=cuePath;
 
     char line[512];
     std::string currentFile;
@@ -208,6 +211,7 @@ bool mount_disc(int discNumber)
     g_mounted = false;
     g_selectedDisc = 0;
     g_imagePath.clear();
+    g_cuePath.clear();
     g_rootExtent = 0;
     g_rootSize = 0;
     g_physicalSectorSize = 2048;
@@ -249,6 +253,7 @@ bool disc_available(int discNumber)
 {
     if (discNumber < 1 || discNumber > 4) return false;
     const std::string oldPath = g_imagePath;
+    const std::string oldCue = g_cuePath;
     const auto oldRootExtent = g_rootExtent;
     const auto oldRootSize = g_rootSize;
     const auto oldPhysicalSectorSize = g_physicalSectorSize;
@@ -260,6 +265,7 @@ bool disc_available(int discNumber)
     const bool available = mount_disc(discNumber);
 
     g_imagePath = oldPath;
+    g_cuePath = oldCue;
     g_rootExtent = oldRootExtent;
     g_rootSize = oldRootSize;
     g_physicalSectorSize = oldPhysicalSectorSize;
@@ -278,12 +284,14 @@ bool read_file_from_disc(int discNumber,const char* name,
     if(discNumber<1 || discNumber>4 || !name || !*name || !maximumBytes)return false;
     struct RestoreMount {
         std::string path=g_imagePath;
+        std::string cue=g_cuePath;
         std::uint32_t root=g_rootExtent,size=g_rootSize,sector=g_physicalSectorSize;
         std::uint32_t offset=g_userDataOffset,track=g_trackStartLba;
         bool mounted=g_mounted;
         int selected=g_selectedDisc;
         ~RestoreMount() {
             g_imagePath.swap(path);g_rootExtent=root;g_rootSize=size;
+            g_cuePath.swap(cue);
             g_physicalSectorSize=sector;g_userDataOffset=offset;g_trackStartLba=track;
             g_mounted=mounted;g_selectedDisc=selected;
         }
@@ -300,6 +308,31 @@ bool read_file_from_disc(int discNumber,const char* name,
 bool init() { return mount_disc(1); }
 
 bool mounted() { return g_mounted; }
+bool audio_track(unsigned track,CddaTrack& out)
+{
+    if(!g_mounted||g_cuePath.empty())return false;
+    FILE* cue=std::fopen(g_cuePath.c_str(),"rb");if(!cue)return false;
+    std::string text;char buffer[1024];std::size_t count;
+    while((count=std::fread(buffer,1,sizeof(buffer),cue))!=0&&text.size()<65536)
+        text.append(buffer,count);
+    const bool valid=!std::ferror(cue)&&text.size()<65536;
+    std::fclose(cue);
+    CddaTrack range;
+    if(!valid||!cdda_track_from_cue(text,track,range))return false;
+    // Audio files must remain relative to the mounted CUE directory.
+    if(range.file.find(':')!=std::string::npos||range.file.front()=='/'||range.file.front()=='\\'||
+       range.file.find("..")!=std::string::npos)return false;
+    std::replace(range.file.begin(),range.file.end(),'\\','/');
+    range.file=g_cuePath.substr(0,g_cuePath.find_last_of('/')+1)+range.file;
+    FILE* audio=std::fopen(range.file.c_str(),"rb");if(!audio)return false;
+    const bool sought=std::fseek(audio,0,SEEK_END)==0;const long length=std::ftell(audio);
+    std::fclose(audio);
+    if(!sought||length<=0)return false;
+    if(!range.endByte)range.endByte=static_cast<std::uint64_t>(length);
+    if(range.firstByte>=range.endByte||range.endByte>static_cast<std::uint64_t>(length)||
+       (range.endByte-range.firstByte)%2352!=0)return false;
+    out=range;return true;
+}
 const char* image_path() { return g_imagePath.c_str(); }
 
 bool has_file(const char* name)

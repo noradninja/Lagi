@@ -1,11 +1,15 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 #include <vector>
 #include <memory>
 #include "lagi/lagi_additive_light.h"
+#include "lagi/lagi_transient_laser_lights.h"
+#include "lagi/native_color_animation.h"
 
 struct sProcessed3dModel;
+void addObjectToDrawListWithColorAnimation(sProcessed3dModel*,const std::uint8_t*);
 
 namespace lagi::azel_bridge {
 
@@ -33,6 +37,7 @@ std::uint64_t native_texture_write_epoch();
 std::uint64_t published_resource_revision();
 
 struct SubmissionState {
+    std::uint32_t animatedColorStart=0,animatedColorCount=0;
     // VDP1 local origin at the draw boundary, not the restored end-frame state.
     std::int16_t localCoordinatesX = 176;
     std::int16_t localCoordinatesY = 112;
@@ -43,6 +48,15 @@ struct SubmissionState {
     std::int16_t nativeModelLight[3]{};
     bool hasNativeModelLight = false;
     AdditionalModelLight additionalLight{};
+    // Native point source retained for the optional per-corner evaluator.
+    std::int32_t additionalPointParams[5]{};
+    std::int32_t additionalPointView[12]{};
+    bool additionalPointPerCorner = false;
+    bool nativePrimaryPointPerCorner = false;
+    std::array<AdditionalModelLight, lagi::kMaxTransientLaserLights> transientLaserLights{};
+    std::uint8_t transientLaserLightCount = 0;
+    // Raw Azel world-space shot positions for optional per-corner evaluation.
+    std::array<lagi::TransientLaserLight, lagi::kMaxTransientLaserLights> transientLaserSources{};
     std::uint16_t lightColor[3]{};
     std::uint32_t lightFalloff[3]{};
 
@@ -85,6 +99,8 @@ struct Vdp1UiCommand {
     std::uint16_t nativeSortKey = 0;
     bool hasNativeSortKey = false;
     bool fieldRadar = false;
+    bool leftEdgeAnchored = false;
+    std::int16_t leftEdgeOrigin = 0;
     std::int16_t xa = 0, ya = 0;
     std::int16_t xb = 0, yb = 0;
     std::int16_t xc = 0, yc = 0;
@@ -113,6 +129,14 @@ void retire_native_model(sProcessed3dModel* model);
 // Called after native point setup/color/falloff, before its normal cleanup.
 // Frame-owned: begin_frame clears it, leaving menus/towns and later frames alone.
 void capture_field_environment_point_light();
+// Producer thread only: Azel owns shot position, color and lifetime.
+// The shared transient-light frame is cleared at begin_frame().
+void record_transient_field_laser_light(std::uint64_t source,
+    std::int32_t x,std::int32_t y,std::int32_t z,std::uint32_t packedColor);
+// Native battle homing-laser and gunshot source handoff; shares the four-slot
+// pool and a single per-corner accumulator with field shots.
+void record_transient_battle_attack_light(std::uint64_t source,
+    std::int32_t x,std::int32_t y,std::int32_t z,std::uint32_t packedColor);
 // Native setupLight inputs for the ordinary actor directional light. Preserve
 // its direction and packed RGB while the point selector is temporarily active.
 void capture_field_actor_base_light(std::int32_t x,std::int32_t y,
@@ -144,11 +168,12 @@ const LiveVdp1Model* adapted_model(std::uint32_t index);
 // Publish the completed task frame for renderer consumption. The published
 // vectors are not modified by the next begin_frame()/task pass, which gives
 // the renderer a stable frame boundary for the later threaded handoff.
-void publish_frame();
+void publish_frame(bool retainPreviousScene=false);
 void record_vdp1_ui_command(const Vdp1UiCommand& command);
 const std::vector<Vdp1UiCommand>& published_vdp1_ui_commands();
 
 const std::vector<RenderSubmission>& published_submissions();
+const std::vector<lagi::NativeAnimatedPolygonColor>& published_animated_colors();
 const LiveVdp1Model* published_adapted_model(std::uint32_t index);
 std::uint64_t published_frame_number();
 

@@ -6,13 +6,15 @@
 #include <vector>
 #include <array>
 #include "../include/lagi/rbg_window_spans.h"
+#include "../include/lagi/rbg_format.h"
+#include "../include/lagi/rbg_bank_access.h"
 namespace azel {struct DebugTextureVertex {float x,y,z,u,v;};}
-namespace lagi {static bool rbgTile16EightBit(unsigned,unsigned){return false;}}
 namespace logging {template<class... T>static void writef(const char*,T...){} }
 struct RbgGpuState {
     float parameterFormat[2]{},planesA[16]{},planesB[16]{},ctrl[16]{};
     float plsz=0,format[4]{},transformA[8]{},transformB[8]{};
     float coefficientA[4]{},coefficientB[4]{};
+    std::uint16_t ramctl=0;
 };
 struct ViewerMat4 {float m[16]{};};
 static ViewerMat4 viewerIdentity(){return {};}
@@ -23,6 +25,7 @@ static bool g_rbgRowsBound=false,g_rbgCoefficientRowsReady=false;
 static int g_rbgCoefficientRowsTexture=0;
 static float g_rbgDecodedPlanesA[16]{},g_rbgDecodedPlanesB[16]{};
 static int g_sceneVdp2ByteTexture=0,g_rbgDecodedAtlasTexture=0;
+static int g_rbgPaletteLutTexture=0;
 static void* g_probeContext=nullptr;
 static int g_textureVertexProgram=0,g_textureWvpParam=0;
 static int g_vdp2Rbg0PlaneParam[4]{},g_vdp2Rbg0BParam[9]{};
@@ -31,11 +34,14 @@ static int g_vdp2Rbg0CoefficientParam=0,g_vdp2Rbg0InfoParam=0;
 static int g_vdp2Rbg0FormatParam=0,g_vdp2Rbg0LayerWindowParam=0;
 static int g_vdp2Rbg0LayerWindowInfoParam=0,g_vdp2Rbg0SwitchCoefficientParam=0;
 static int g_vdp2Rbg0SwitchInfoParam=0;
+static int g_vdp2Rbg0PatternBanksParam=0,g_vdp2Rbg0CharacterBanksParam=0;
 static azel::DebugTextureVertex coverage[lagi::RbgWindowMaxSpans*2*4];
 static std::uint16_t coverageIndices[lagi::RbgWindowMaxSpans*2*6];
 static azel::DebugTextureVertex* g_vdp2WindowVertices=coverage;
 static std::uint16_t* g_vdp2WindowIndices=coverageIndices;
 static void selectRbgTileProgram(bool,bool,bool){}
+static bool prepareRbgPaletteLut(const void*){return true;}
+static bool frontendHasSharedColorOffset(){return false;}
 static void sceGxmSetFragmentTexture(void*,int,const int*){}
 static int sceGxmReserveFragmentDefaultUniformBuffer(void*,void** p){*p=coverage;return 0;}
 static int sceGxmReserveVertexDefaultUniformBuffer(void*,void** p){*p=coverage;return 0;}

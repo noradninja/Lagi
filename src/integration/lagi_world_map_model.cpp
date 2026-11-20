@@ -50,7 +50,7 @@ void draw_map_model(MapModel& state)
     if (!(state.flags & 0x20)) return;
     pushCurrentMatrix();
     translateCurrentMatrix(state.position);
-    rotateCurrentMatrixY(state.yaw);
+    rotateCurrentMatrixShiftedY(state.yaw);
     scaleCurrentMatrixRow0(state.scale.asS32());
     scaleCurrentMatrixRow1(state.scale.asS32());
     scaleCurrentMatrixRow2(state.scale.asS32());

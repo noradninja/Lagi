@@ -4,14 +4,14 @@
 void PDS_Log(const char*,...) {}
 struct Channel {int m0_color=42,m20_stopped=1;};
 struct {Channel m0_fade0,m24_fade1;int m_4D=5,m_4C=0;} g_fadeControls;
-struct {int m8_nextGameStatus=0,m0_gameMode=3,m2=0;} gGameStatus;
+struct {int m8_nextGameStatus=0,m0_gameMode=3,m2=0,m4_gameStatus=0;} gGameStatus;
 struct s_moduleManager {void* m8=reinterpret_cast<void*>(1);};
 struct Common {int getSaturnPtr(int n){return n;}} common,*gCommonFile=&common;
-static int destination=1,calls=0;
+static int destination=1,calls=0,expectedSteps=30;
 int readSaturnS8(int at){assert(at==0x212EAC+gGameStatus.m8_nextGameStatus*2);return destination;}
 int convertColorToU32ForFade(int color){return color;}
 int fadePalette(Channel* channel,int from,int to,int steps){
- assert(from==42 && to==0 && steps==30);++calls;channel->m20_stopped=0;return 1;
+ assert(from==42 && to==0 && steps==expectedSteps);++calls;channel->m20_stopped=0;return 1;
 }
 #include "../src/integration/lagi_module_exit_fade.inc"
 int main(){
@@ -27,6 +27,15 @@ int main(){
   assert(!lagiWaitForModuleExitFade(&manager));assert(calls==2);
  }
  gGameStatus={0,3,0};lagiWaitForModuleExitFade(&manager);calls=0;
+ // Reference-confirmed camera exit: no additional 30-update interpolation.
+ destination=1;expectedSteps=1;gGameStatus={6,3,0,0x50};
+ assert(lagiWaitForModuleExitFade(&manager)&&calls==2);
+ assert(lagiWaitForModuleExitFade(&manager)&&calls==2);
+ g_fadeControls.m0_fade0.m20_stopped=1;
+ assert(lagiWaitForModuleExitFade(&manager));
+ g_fadeControls.m24_fade1.m20_stopped=1;
+ assert(!lagiWaitForModuleExitFade(&manager));
+ gGameStatus={0,3,0};lagiWaitForModuleExitFade(&manager);calls=0;expectedSteps=30;
  gGameStatus.m8_nextGameStatus=8;g_fadeControls.m_4C=6;
  assert(lagiWaitForModuleExitFade(&manager)&&calls==0);
  g_fadeControls.m_4C=0;assert(lagiWaitForModuleExitFade(&manager)&&calls==2);

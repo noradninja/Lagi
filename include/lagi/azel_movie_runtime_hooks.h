@@ -9,3 +9,5 @@
 void lagiAzelMovieStreamOpen(const char* cpkFileName);
 void lagiAzelMovieStreamClose();
 std::uint32_t lagiAzelMovieLastUpdate();
+// Active native EPK/field cinematic tasks call this without changing cadence.
+void lagiAzelCinematicKeepAwake();

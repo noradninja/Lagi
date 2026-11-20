@@ -5,6 +5,7 @@
 #include "lagi/platform.h"
 #include "lagi/lagi_point_light.h"
 #include "lagi/lagi_scene_bridge.h"
+#include "lagi/native_sprite_order.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -79,6 +80,7 @@ static std::unordered_map<std::int8_t, std::uint64_t> g_bundleTextureEpochs;
 static std::uint64_t g_publishedResourceRevision = 0;
 static std::vector<NativeModelCache::Handle> g_adaptedModels;
 static std::vector<RenderSubmission> g_submissions;
+static std::vector<lagi::NativeAnimatedPolygonColor> g_animatedColors,g_publishedAnimatedColors;
 static std::vector<NativeModelCache::Handle> g_publishedAdaptedModels;
 static std::vector<RenderSubmission> g_publishedSubmissions;
 static std::vector<Vdp1UiCommand> g_vdp1UiCommands;
@@ -105,6 +107,10 @@ struct FieldActorBaseLight {
     bool active=false;
 };
 static FieldActorBaseLight g_fieldActorBaseLight{};
+static lagi::TransientLaserLightFrame g_fieldLaserLights{};
+// Azel field geometry is submitted before laser task updates. Retain one
+// completed frame so those shot positions can illuminate the next submission.
+static lagi::TransientLaserLightFrame g_completedFieldLaserLights{};
 
 // Bounded FLD_A3 diagnostic: compare the static-grid state synthesized by the
 // generated hook with Azel's actual pCurrentMatrix/currentLightVector_M at the
@@ -174,6 +180,8 @@ void begin_frame(bool forceDynamicSubmissions)
 {
     g_fieldEnvironmentPointLight={};
     g_fieldActorBaseLight={};
+    g_completedFieldLaserLights=g_fieldLaserLights;
+    g_fieldLaserLights.clear();
     g_forceDynamicSubmissions = forceDynamicSubmissions;
     g_nativeSceneViewValid = false;
     g_viewRelativeScope = false;
@@ -186,6 +194,7 @@ void begin_frame(bool forceDynamicSubmissions)
     g_lastState = {};
     g_adaptedModels.clear();
     g_submissions.clear();
+    g_animatedColors.clear();
     g_vdp1UiCommands.clear();
     g_pendingTownSubmission = {};
     g_hasPendingTownSubmission = false;
@@ -241,7 +250,7 @@ const LiveVdp1Model* adapted_model(std::uint32_t index)
         : nullptr;
 }
 
-void publish_frame()
+void publish_frame(bool retainPreviousScene)
 {
     // This is the game-side publication boundary. Refresh immutable texture
     // bytes once per write epoch, not per model. No renderer container is
@@ -281,9 +290,13 @@ void publish_frame()
     }
     // Retain immutable geometry even if the producer retires a native model
     // before the renderer consumes this frame.
-    g_publishedSubmissions = g_submissions;
-    g_publishedVdp1UiCommands = g_vdp1UiCommands;
-    g_publishedAdaptedModels = g_adaptedModels;
+    if (!retainPreviousScene) {
+        g_publishedSubmissions = g_submissions;
+        g_publishedAnimatedColors = g_animatedColors;
+        g_publishedVdp1UiCommands = g_vdp1UiCommands;
+        lagi::orderNativeSprites(g_publishedVdp1UiCommands);
+        g_publishedAdaptedModels = g_adaptedModels;
+    }
     g_publishedModelCacheMisses = g_modelCacheMisses;
     g_publishedExplicitStaticContextsSet = g_explicitStaticContextsSet;
     g_publishedExplicitStaticContextsConsumed =
@@ -328,11 +341,18 @@ void register_native_model_resource(std::int8_t bundleIndex,
         modelOffset;
     if (g_registeredResources.find(key) != g_registeredResources.end())
         return;
-    auto adapted = std::make_shared<LiveVdp1Model>();
-    if (!adapt_processed_model(model, *adapted))
+    LiveVdp1Model adapted;
+    if (!adapt_processed_model(model, adapted))
         return;
+    // Registration has fresh native resource authority. Replace any old
+    // address identity, then let inventory and first draw share this immutable
+    // adaptation. Aliasing ownership retains the entire snapshot for published
+    // inventory even after native retirement/address reuse.
+    g_modelCache.retire(model);
+    auto snapshot=g_modelCache.insert(model,std::move(adapted));
+    std::shared_ptr<const LiveVdp1Model> sharedModel(snapshot,&snapshot->value);
     g_registeredResources.emplace(key, RegisteredModelResource{
-        generation->second, bundleIndex, modelOffset, std::move(adapted), memory->second,
+        generation->second, bundleIndex, modelOffset, std::move(sharedModel), memory->second,
         g_bundleTextureEpochs.at(bundleIndex)});
     g_resourceInventoryDirty = true;
 }
@@ -407,8 +427,35 @@ static void capture_native_point_light(SubmissionState& state)
     std::int32_t nativeMatrix[12];
     copyMatrixRaw(*pCurrentMatrix, nativeMatrix);
     const auto light = lagi::native_point_light(nativeMatrix, pointLightParams);
+    // Sampling is limited to the first 48 point-lit model submissions
+    // selected every 13th eligible submission; preserve the native evaluator.
+    static unsigned pointFalloffEligible = 0;
+    static unsigned pointFalloffReports = 0;
+    if (pointFalloffReports < 48u && (pointFalloffEligible++ % 13u) == 0u) {
+        lagi::platform::logging::writef(
+            "[PointFalloffTrace] sample=%u environment=%u distance=%08X divisor=%08X "
+            "zone=%s outside=%u overflow=%u source=%08X,%08X,%08X "
+            "modelOrigin=%08X,%08X,%08X radius2=%08X maxDistance2=%08X "
+            "vector=%d,%d,%d\n",
+            pointFalloffReports, unsigned(state.fieldEnvironment),
+            light.distance, light.divisor,
+            light.distance < std::uint32_t(pointLightParams[4]) ? "near" : "outer",
+            unsigned(light.outside), unsigned(light.divisionOverflow),
+            unsigned(pointLightParams[0]), unsigned(pointLightParams[1]),
+            unsigned(pointLightParams[2]),
+            unsigned(nativeMatrix[3]), unsigned(nativeMatrix[7]), unsigned(nativeMatrix[11]),
+            unsigned(pointLightParams[4]), unsigned(pointLightParams[3]),
+            int(light.vector[0]), int(light.vector[1]), int(light.vector[2]));
+        ++pointFalloffReports;
+    }
     const auto* pointColor=&currentLightVector_M ? currentLightVector_M.color : state.lightColor;
     if(g_fieldActorBaseLight.active && !state.fieldEnvironment) {
+        if(g_nativeSceneViewValid) {
+            std::copy(pointLightParams,pointLightParams+5,state.additionalPointParams);
+            std::copy(g_nativeSceneViewMatrix,g_nativeSceneViewMatrix+12,
+                state.additionalPointView);
+            state.additionalPointPerCorner=true;
+        }
         state.additionalLight={};
         if(!light.outside) {
             std::copy(light.vector.begin(),light.vector.end(),state.additionalLight.vector);
@@ -417,9 +464,25 @@ static void capture_native_point_light(SubmissionState& state)
             std::copy(pointColor,pointColor+3,state.additionalLight.color);
             state.additionalLight.active=true;
         }
+        if(state.additionalPointPerCorner) {
+            std::copy(pointColor,pointColor+3,state.additionalLight.color);
+            state.additionalLight.active=true;
+        }
     } else {
         std::copy(light.vector.begin(), light.vector.end(), state.nativeModelLight);
         state.hasNativeModelLight = true;
+        // This native primary point already occupies the normal light slot.
+        // Transfer it into the shared corner evaluator and suppress the
+        // origin-vector diffuse path to avoid doubling the contribution.
+        if(g_nativeSceneViewValid) {
+            state.nativePrimaryPointPerCorner=true;
+            state.additionalPointPerCorner=true;
+            state.additionalLight.active=true;
+            std::copy(pointLightParams,pointLightParams+5,state.additionalPointParams);
+            std::copy(g_nativeSceneViewMatrix,g_nativeSceneViewMatrix+12,
+                state.additionalPointView);
+            std::copy(pointColor,pointColor+3,state.additionalLight.color);
+        }
     }
     static unsigned reports = 0;
     if (reports < 8) {
@@ -446,6 +509,129 @@ void capture_field_environment_point_light()
     g_fieldEnvironmentPointLight.active=true;
 }
 
+static void record_transient_laser_light(std::uint64_t source,
+    std::int32_t x,std::int32_t y,std::int32_t z,
+    std::uint32_t packedColor,std::uint32_t range)
+{
+    lagi::TransientLaserLight light{};
+    light.source=source;
+    light.worldPosition[0]=x;
+    light.worldPosition[1]=y;
+    light.worldPosition[2]=z;
+    // Native setupLight's packed RGB is converted to the reversed color
+    // array consumed by ComputeColorFromNormal (B,G,R).
+    light.color[0]=packedColor&0xFFu;
+    light.color[1]=(packedColor>>8)&0xFFu;
+    light.color[2]=(packedColor>>16)&0xFFu;
+    light.range=range;
+    const bool accepted=g_fieldLaserLights.upsert(light);
+    static unsigned emitted=0;
+    if (emitted<28u) {
+        lagi::platform::logging::writef(
+            "[FieldLaserEmit] src=%08X accepted=%u count=%u pos=%08X,%08X,%08X rgb=%u,%u,%u\n",
+            unsigned(source),unsigned(accepted),unsigned(g_fieldLaserLights.count),
+            unsigned(x),unsigned(y),unsigned(z),
+            unsigned(light.color[2]),unsigned(light.color[1]),unsigned(light.color[0]));
+        ++emitted;
+    }
+}
+
+void record_transient_field_laser_light(std::uint64_t source,
+    std::int32_t x,std::int32_t y,std::int32_t z,std::uint32_t packedColor)
+{
+    // Field special-light parameter from Azel A11D.
+    record_transient_laser_light(source,x,y,z,packedColor,0x14000u);
+}
+
+void record_transient_battle_attack_light(std::uint64_t source,
+    std::int32_t x,std::int32_t y,std::int32_t z,std::uint32_t packedColor)
+{
+    // Same four sources and one-frame latch as field effects. The battle
+    // task's own active Draw callback supplies native lifecycle semantics.
+    // Native projectile sprites retain their authored color; only the added
+    // illumination is quarter strength to avoid RGB555 saturation.
+    const std::uint32_t appliedColor=lagi::quarter_rgb888(packedColor);
+    // Combat's smaller local pool retains the native point evaluator but
+    // narrows the source parameter to avoid lighting distant surfaces.
+    constexpr std::uint32_t kBattleRange=0x5000u;
+    record_transient_laser_light(source,x,y,z,appliedColor,kBattleRange);
+    static unsigned battleReports=0;
+    if(battleReports++<32u)
+        lagi::platform::logging::writef(
+            "[BattleLightEmit] task=%08X pos=%08X,%08X,%08X nativeRgb=%06X appliedRgb=%06X range=%05X pool=%u\n",
+            unsigned(source),unsigned(x),unsigned(y),unsigned(z),
+            unsigned(packedColor&0xFFFFFFu),unsigned(appliedColor),
+            unsigned(kBattleRange),
+            unsigned(g_fieldLaserLights.count));
+}
+
+static void apply_transient_field_laser_lights(SubmissionState& state)
+{
+    static unsigned rejectedFrames=0;
+    if (!g_completedFieldLaserLights.count) return;
+    if (state.billboard || !state.hasModelMatrix) {
+        if (rejectedFrames++<12u)
+            lagi::platform::logging::writef("[FieldLaserSkip] billboard=%u matrix=%u viewValid=%u candidates=%u\n",
+                unsigned(state.billboard),unsigned(state.hasModelMatrix),
+                unsigned(g_nativeSceneViewValid),unsigned(g_completedFieldLaserLights.count));
+        return;
+    }
+    std::int32_t nativeMatrix[12]{};
+    if(g_nativeSceneViewValid && &pCurrentMatrix && pCurrentMatrix)
+        copyMatrixRaw(*pCurrentMatrix,nativeMatrix);
+    else
+        std::copy(state.modelMatrix,state.modelMatrix+12,nativeMatrix);
+    for (std::size_t i=0;i<g_completedFieldLaserLights.count;++i) {
+        const auto& source=g_completedFieldLaserLights.lights[i];
+        std::int32_t params[5]{};
+        // Use Azel's current camera view to convert the world-space beam
+        // head to the same view-space basis as the native model matrix.
+        for (unsigned axis=0;axis<3;++axis) {
+            if(!g_nativeSceneViewValid) {
+                params[axis]=source.worldPosition[axis];
+                continue;
+            }
+            std::int64_t value=std::int64_t(g_nativeSceneViewMatrix[axis*4+3])<<16;
+            for (unsigned column=0;column<3;++column)
+                value+=std::int64_t(g_nativeSceneViewMatrix[axis*4+column])*
+                    source.worldPosition[column];
+            params[axis]=static_cast<std::int32_t>(value>>16);
+        }
+        params[3]=static_cast<std::int32_t>(source.range<<12);
+        const std::int32_t hi=static_cast<std::int16_t>(source.range>>8);
+        params[4]=hi*hi;
+        const auto result=lagi::native_point_light(nativeMatrix,params);
+        static unsigned evaluations=0;
+        if (evaluations++<28u)
+            lagi::platform::logging::writef(
+                "[FieldLaserEval] source=%08X,%08X,%08X model=%08X,%08X,%08X distance=%08X outside=%u overflow=%u vector=%d,%d,%d\n",
+                unsigned(params[0]),unsigned(params[1]),unsigned(params[2]),
+                unsigned(nativeMatrix[3]),unsigned(nativeMatrix[7]),unsigned(nativeMatrix[11]),
+                unsigned(result.distance),unsigned(result.outside),unsigned(result.divisionOverflow),
+                int(result.vector[0]),int(result.vector[1]),int(result.vector[2]));
+        // A model origin may be outside the native range while individual
+        // polygon corners remain inside it. Keep the source for per-corner
+        // evaluation; the renderer will reject each actual corner by range.
+        const unsigned slot=state.transientLaserLightCount++;
+        state.transientLaserSources[slot]=source;
+        auto& target=state.transientLaserLights[slot];
+        std::copy(result.vector.begin(),result.vector.end(),target.vector);
+        std::copy(source.color,source.color+3,target.color);
+        target.active=true;
+        if (state.transientLaserLightCount==lagi::kMaxTransientLaserLights)
+            break;
+    }
+    static unsigned reports=0;
+    if (reports<12 && state.transientLaserLightCount) {
+        lagi::platform::logging::writef(
+            "[FieldLaserLight] selected=%u candidates=%u modelOrigin=%08X,%08X,%08X\n",
+            unsigned(state.transientLaserLightCount),
+            unsigned(g_completedFieldLaserLights.count),
+            unsigned(nativeMatrix[3]),unsigned(nativeMatrix[7]),unsigned(nativeMatrix[11]));
+        ++reports;
+    }
+}
+
 static void apply_field_environment_point_light(SubmissionState& state)
 {
     if(!state.fieldEnvironment || state.billboard || state.hasNativeModelLight ||
@@ -456,11 +642,26 @@ static void apply_field_environment_point_light(SubmissionState& state)
     const auto light=lagi::native_point_light(nativeMatrix,g_fieldEnvironmentPointLight.params);
     // Keep ordinary directional/ambient/material lighting. The additional
     // point contributes only positive diffuse light, before final quantization.
+    // Per-corner shading still uses the same native point parameters. The
+    // model-origin evaluation remains available as a compatibility fallback.
+    if(g_nativeSceneViewValid) {
+        std::copy(g_fieldEnvironmentPointLight.params,
+            g_fieldEnvironmentPointLight.params+5,state.additionalPointParams);
+        std::copy(g_nativeSceneViewMatrix,g_nativeSceneViewMatrix+12,
+            state.additionalPointView);
+        state.additionalPointPerCorner=true;
+    }
     if(!light.outside) {
         std::copy(light.vector.begin(),light.vector.end(),state.additionalLight.vector);
         for(unsigned axis=0;axis<3;++axis) {
             state.additionalLight.color[axis]=g_fieldEnvironmentPointLight.color[axis];
         }
+        state.additionalLight.active=true;
+    }
+    // A source outside a model origin can still light its nearest corners.
+    if(state.additionalPointPerCorner) {
+        std::copy(g_fieldEnvironmentPointLight.color,
+            g_fieldEnvironmentPointLight.color+3,state.additionalLight.color);
         state.additionalLight.active=true;
     }
     static unsigned reports=0;
@@ -629,9 +830,16 @@ static void capture_runtime_state(bool billboard)
     }
 
     capture_current_light(g_lastState);
+    apply_transient_field_laser_lights(g_lastState);
 }
 
-static void record_submission(sProcessed3dModel* model, bool billboard)
+const std::vector<lagi::NativeAnimatedPolygonColor>& published_animated_colors()
+{
+    return g_publishedAnimatedColors;
+}
+
+static void record_submission(sProcessed3dModel* model, bool billboard,
+    const std::uint8_t* animatedColors=nullptr)
 {
     if (!model)
         return;
@@ -757,6 +965,7 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
         // point evaluator needs the live original native matrix at this draw.
         capture_native_point_light(g_lastState);
         apply_field_environment_point_light(g_lastState);
+        apply_transient_field_laser_lights(g_lastState);
     } else {
         capture_runtime_state(billboard);
     }
@@ -800,12 +1009,148 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
     } else {
         g_lastAdaptedModel = nullptr;
     }
+    // Camp floor-effect source audit. Identify the two authored six-quad
+    // models by their VDP1 material pattern, not by frame-local polygon IDs.
+    // Capture Azel's actual 16.16 submission matrix BEFORE camera removal
+    // is evaluated again, alongside the view and resulting world matrix.
+    // Read-only, bounded, and shared across the whole run (not per frame).
+    static unsigned campCircleMatrixAuditBudget=8u;
+    if(campCircleMatrixAuditBudget && cached &&
+       cached->value.polygons.size()==6u && !billboard) {
+        const auto& quads=cached->value.polygons;
+        unsigned matching=0u, flat=0u;
+        for(const auto& q:quads)
+            if(q.cmdColr==0x2100u &&
+               (q.cmdPmod==0x0480u || q.cmdPmod==0x0440u))
+                ++matching;
+        for(const auto& vertex:cached->value.vertices)
+            if(vertex.y==0.0f)++flat;
+        if(matching==6u && flat==cached->value.vertices.size()) {
+            --campCircleMatrixAuditBudget;
+            std::int32_t current[12]{};
+            const bool hasCurrent=(&pCurrentMatrix && pCurrentMatrix);
+            if(hasCurrent)copyMatrixRaw(*pCurrentMatrix,current);
+            const bool hasView=g_viewRelativeScope || g_nativeSceneViewValid;
+            const std::int32_t* view=g_viewRelativeScope ?
+                g_viewScopeMatrix : g_nativeSceneViewMatrix;
+            std::int32_t reconstructed[12]{};
+            if(hasCurrent && hasView)
+                removeViewTransform(view,*pCurrentMatrix,reconstructed);
+            lagi::platform::logging::writef(
+                "[CampCircleMatrix] model=%p submission=%u explicit=%u "
+                "viewScope=%u hasView=%u hasCurrent=%u "
+                "sourceY=%.8f currentY=%d viewY=%d recomputedY=%d "
+                "publishedY=%d deltaPublished=%d "
+                "currentYBasis=(%d,%d,%d) "
+                "viewYBasis=(%d,%d,%d) "
+                "worldYBasis=(%d,%d,%d) "
+                "worldT=(%d,%d,%d) local=(%d,%d)\n",
+                static_cast<void*>(model),g_submissionCount,
+                unsigned(g_hasPendingTownSubmission),
+                unsigned(g_viewRelativeScope),unsigned(hasView),
+                unsigned(hasCurrent),double(cached->value.vertices[0].y),
+                current[7],hasView?view[7]:0,
+                hasCurrent&&hasView?reconstructed[7]:0,
+                g_lastState.modelMatrix[7],
+                hasCurrent&&hasView ?
+                    g_lastState.modelMatrix[7]-reconstructed[7]:0,
+                current[4],current[5],current[6],
+                hasView?view[4]:0,hasView?view[5]:0,hasView?view[6]:0,
+                g_lastState.modelMatrix[4],g_lastState.modelMatrix[5],
+                g_lastState.modelMatrix[6],
+                g_lastState.modelMatrix[3],g_lastState.modelMatrix[7],
+                g_lastState.modelMatrix[11],
+                int(g_lastState.localCoordinatesX),int(g_lastState.localCoordinatesY));
+            // Diagnostic only: forward-project the published world matrix
+            // through the SAME captured Azel view and compare it against the
+            // original pCurrentMatrix. A nonzero residual distinguishes an
+            // invalid inverse/scope from a later compositor problem.
+            if (hasCurrent && hasView) {
+                std::int32_t roundTrip[12]{};
+                std::int32_t basisMaxError=0;
+                for(unsigned row=0;row<3;++row) {
+                    for(unsigned col=0;col<4;++col) {
+                        std::int64_t sum=col==3 ?
+                            (std::int64_t(view[row*4+3])*65536) : 0;
+                        for(unsigned k=0;k<3;++k)
+                            sum+=std::int64_t(view[row*4+k]) *
+                                 g_lastState.modelMatrix[k*4+col];
+                        roundTrip[row*4+col]=std::int32_t(sum>>16);
+                        if(col<3) {
+                            const auto difference=std::int64_t(
+                                roundTrip[row*4+col])-current[row*4+col];
+                            const auto absolute=difference<0?-difference:difference;
+                            if(absolute>basisMaxError)
+                                basisMaxError=std::int32_t(absolute);
+                        }
+                    }
+                }
+                const auto& vertex=cached->value.vertices[0];
+                const double source[3]={double(vertex.x),double(vertex.y),
+                    double(vertex.z)};
+                double original[3]{},reprojected[3]{};
+                for(unsigned row=0;row<3;++row) {
+                    original[row]=double(current[row*4+3])/65536.0;
+                    reprojected[row]=double(roundTrip[row*4+3])/65536.0;
+                    for(unsigned col=0;col<3;++col) {
+                        original[row]+=source[col]*
+                            (double(current[row*4+col])/65536.0);
+                        reprojected[row]+=source[col]*
+                            (double(roundTrip[row*4+col])/65536.0);
+                    }
+                }
+                lagi::platform::logging::writef(
+                    "[CampCircleRoundTrip] model=%p submission=%u "
+                    "scope=%u viewValid=%u explicit=%u "
+                    "viewT=(%d,%d,%d) currentT=(%d,%d,%d) "
+                    "worldT=(%d,%d,%d) returnT=(%d,%d,%d) "
+                    "translationError=(%lld,%lld,%lld) basisMaxError=%d "
+                    "source=(%.8f,%.8f,%.8f) "
+                    "azelView=(%.8f,%.8f,%.8f) "
+                    "neptuneView=(%.8f,%.8f,%.8f) "
+                    "delta=(%.8f,%.8f,%.8f)\n",
+                    static_cast<void*>(model),g_submissionCount,
+                    unsigned(g_viewRelativeScope),unsigned(g_nativeSceneViewValid),
+                    unsigned(g_hasPendingTownSubmission),
+                    view[3],view[7],view[11],current[3],current[7],current[11],
+                    g_lastState.modelMatrix[3],g_lastState.modelMatrix[7],
+                    g_lastState.modelMatrix[11],roundTrip[3],roundTrip[7],
+                    roundTrip[11],
+                    static_cast<long long>(std::int64_t(roundTrip[3])-current[3]),
+                    static_cast<long long>(std::int64_t(roundTrip[7])-current[7]),
+                    static_cast<long long>(std::int64_t(roundTrip[11])-current[11]),
+                    basisMaxError,source[0],source[1],source[2],
+                    original[0],original[1],original[2],
+                    reprojected[0],reprojected[1],reprojected[2],
+                    reprojected[0]-original[0],
+                    reprojected[1]-original[1],
+                    reprojected[2]-original[2]);
+            }
+        }
+    }
     RenderSubmission submission = g_hasPendingTownSubmission
         ? g_pendingTownSubmission : RenderSubmission{};
     submission.model = model;
     submission.modelGeneration = cached ? cached->generation : 0;
     submission.adaptedModelIndex = adaptedIndex;
     submission.state = g_lastState;
+    if(animatedColors && cached) {
+        const auto start=g_animatedColors.size();
+        const bool valid=lagi::nativeColorRecords(animatedColors,cached->value.polygons.size(),
+            [](const lagi::NativeAnimatedPolygonColor& c){g_animatedColors.push_back(c);});
+        if(!valid)g_animatedColors.resize(start);
+        submission.state.animatedColorStart=static_cast<std::uint32_t>(start);
+        submission.state.animatedColorCount=static_cast<std::uint32_t>(g_animatedColors.size()-start);
+        submission.state.dynamic=true;
+        static unsigned colorReports=0;
+        if(colorReports<8 && (!valid || submission.state.animatedColorCount)) {
+            ++colorReports;
+            lagi::platform::logging::writef(
+                "[NativeColorAnimation] valid=%u polygons=%u updates=%u extraPasses=0\n",
+                valid?1u:0u,static_cast<unsigned>(cached->value.polygons.size()),
+                submission.state.animatedColorCount);
+        }
+    }
     g_submissions.push_back(submission);
     g_pendingTownSubmission = {};
     g_hasPendingTownSubmission = false;
@@ -836,6 +1181,11 @@ static void record_submission(sProcessed3dModel* model, bool billboard)
 void addObjectToDrawList(sProcessed3dModel* model)
 {
     lagi::azel_bridge::record_submission(model, false);
+}
+
+void addObjectToDrawListWithColorAnimation(sProcessed3dModel* model,const std::uint8_t* colors)
+{
+    lagi::azel_bridge::record_submission(model,false,colors);
 }
 
 void addBillBoardToDrawList(sProcessed3dModel* model)

@@ -29,14 +29,14 @@ namespace {
 lagi::MotionCadence<12,3> g_fieldMotion;
 #endif
 
-void sync_battle_presentation_state()
+void sync_native_camera_presentation_state(unsigned mode)
 {
-    // No field-task/dragon pointer is required for module mode 4. Azel's grid
+    // Battle and WORLD have no field-task/dragon pointer. Their task graph
     // owns the view; the neutral fallback camera supplies no extra transform.
     static const float origin[3]={0.0f,0.0f,0.0f};
     static const float target[3]={0.0f,0.0f,1.0f};
     static const float up[3]={0.0f,1.0f,0.0f};
-    lagi::platform::renderer::presentation_set_scene_mode(4u);
+    lagi::platform::renderer::presentation_set_scene_mode(mode);
     const float nearPlane=static_cast<float>(static_cast<s32>(graphicEngineStatus.m405C.m10_nearClipDistance))/65536.0f;
     const float farPlane=static_cast<float>(static_cast<s32>(graphicEngineStatus.m405C.m14_farClipDistance))/65536.0f;
     lagi::platform::renderer::presentation_set_clip_planes(nearPlane,farPlane);
@@ -65,6 +65,9 @@ void sync_field_presentation_state()
     static const float cameraUp[3] = {0.0f, 1.0f, 0.0f};
 
     lagi::platform::renderer::presentation_set_scene_mode(3u);
+    lagi::platform::renderer::presentation_set_field_scene_key(
+        (unsigned(fieldTaskPtr->m2C_currentFieldIndex) << 16) |
+        unsigned(fieldTaskPtr->m2E_currentSubFieldIndex));
     const float nearPlane =
         static_cast<float>(
             static_cast<s32>(graphicEngineStatus.m405C.m10_nearClipDistance)) /
@@ -239,6 +242,7 @@ void sync_presentation_state()
             auto& p=nbg.gpu;
             p[0][0]=regs->m30_PNCN0&255;p[0][1]=regs->mE4_CRAOFA&7;
             p[0][2]=(regs->m20_BGON>>8)&1;
+            p[0][3]=(regs->m28_CHCTLA>>4)&7;
             const unsigned maps[4]={unsigned(regs->m40_MPABN0)&63u,(unsigned(regs->m40_MPABN0)>>8)&63u,
                 unsigned(regs->m42_MPCDN0)&63u,(unsigned(regs->m42_MPCDN0)>>8)&63u};
             for(unsigned i=0;i<4;++i)p[1][i]=lagi::sceneNbg0MapBase(regs->m3C_MPOFN,maps[i],regs->m3A_PLSZ);
@@ -259,9 +263,19 @@ void sync_presentation_state()
             p[7][0]=(regs->m3A_PLSZ&1)?1024:512;
             p[7][1]=(regs->m3A_PLSZ&2)?1024:512;
             p[7][2]=regs->mF8_PRINA&7;
-            // This overlay pass lies above primary world sprites and below
-            // NBG1. Other priority bands need their own compositor stage.
-            nbg.enabled=nbg.enabled && lagi::sceneNbg0OverlayBand(regs->m20_BGON,regs->mF8_PRINA,regs->mF0_PRISA);
+            // Normal fields also author an NBG0 layer below both RBG0
+            // and VDP1, e.g. Garil Desert A5: BGON=001B,
+            // PRINA=0602, PRIR=0003, PRISA=0405. Previously this
+            // layer was discarded because only WORLD mode could use the
+            // behind-world band. Preserve Saturn's priority ordering
+            // instead of drawing it as a foreground overlay.
+            nbg.behindWorld =
+                (gGameStatus.m0_gameMode == 3 ||
+                 gGameStatus.m0_gameMode == 6) && !nbg.additive &&
+                lagi::sceneNbg0BehindWorldBand(regs->m20_BGON,
+                    regs->mF8_PRINA,regs->mF0_PRISA,regs->mFC_PRIR);
+            nbg.enabled = nbg.enabled && (nbg.behindWorld ||
+                lagi::sceneNbg0OverlayBand(regs->m20_BGON,regs->mF8_PRINA,regs->mF0_PRISA));
             lagi::platform::renderer::presentation_set_scene_nbg0(nbg);
             static unsigned nbgReports=0;
             static unsigned nbgPrevious=~0u;
@@ -274,7 +288,15 @@ void sync_presentation_state()
             }
             lagi::Vdp2SpriteColorState sprite;
             sprite.ccctl=regs->mEC_CCCTL;
+            sprite.rbgRatio=regs->m10C_CCRR;
+            sprite.specialPriority=regs->mEA_SFPRMD;
+            sprite.specialColor=regs->mEE_SFCCMD;
+            sprite.sfsel=regs->m24_SFSEL;
+            sprite.sfcode=regs->m26_SFCODE;
+            sprite.pncn1=regs->m32_PNCN1;
+            sprite.nbg1Ratio=(regs->m108_CCRNA>>8)&31u;
             sprite.bgon=regs->m20_BGON; sprite.prir=regs->mFC_PRIR;
+            sprite.prina=regs->mF8_PRINA; sprite.prinb=regs->mFA_PRINB;
             sprite.spctl=regs->mE0_SPCTL;
             sprite.craofb=regs->mE6_CRAOFB;
             sprite.priority[0]=regs->mF0_PRISA; sprite.priority[1]=regs->mF2_PRISB;
@@ -330,7 +352,11 @@ void sync_presentation_state()
         sync_field_presentation_state();
         break;
     case 4:
-        sync_battle_presentation_state();
+        sync_native_camera_presentation_state(4u);
+        break;
+    case 6:
+        if (lagi::native_scene_mode(6))
+            sync_native_camera_presentation_state(6u);
         break;
     default:
         break;

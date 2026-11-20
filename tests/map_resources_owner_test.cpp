@@ -75,6 +75,22 @@ int main()
         // Simulate forced teardown that bypasses the parent's explicit restore.
     }
     assert(vram==baseline);
+    // Opening a subsequent map must not retain the first map's active flag,
+    // buffers or rollback spans. Exercise both SCB destination classes.
+    reset(0x4000,0x800);
+    {
+        LagiAzelMapResources owner;
+        for(unsigned visit=0;visit<4;++visit) {
+            graphics.assign(visit%2?0x8000:0x4000,static_cast<std::uint8_t>(0x31+visit));
+            patterns.assign(visit%2?0x1000:0x800,static_cast<std::uint8_t>(0x61+visit));
+            assert(owner.load(descriptor) && owner.ready());
+            assert(vram[owner.graphicsVramOffset()]==0x31+visit);
+            assert(owner.patterns()[0]==0x61+visit);
+            std::memset(vram.data()+0x70000,0xE0+visit,0x1000);
+            owner.restore();
+            assert(!owner.ready() && vram==baseline);
+        }
+    }
     for(auto sizes : {std::array<unsigned,2>{0,0x800},{0x17001,0x800},{0x4000,0},{0x4000,0x1001}}) {
         reset(sizes[0],sizes[1]);LagiAzelMapResources owner;
         assert(!owner.load(descriptor) && !owner.ready() && loadCalls==0 && vram==baseline);

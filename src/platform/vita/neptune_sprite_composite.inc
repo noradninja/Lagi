@@ -1,5 +1,5 @@
-// The first supported native route is type-3 sprite selection over RBG0/BACK.
-// Unsupported additional VDP2 layers/windows stay on the established route.
+// Completed-VDP1 composition: accepted type3 RBG0/BACK route, or the
+// register-gated type0 RBG0-ratio/NBG0/BACK route. Never per primitive.
 static void* g_spriteLayerPixels=nullptr;
 static SceUID g_spriteLayerUid=-1;
 static SceGxmColorSurface g_spriteLayerSurface{};
@@ -11,7 +11,175 @@ static void* g_spriteLookupPixels=nullptr;
 static SceUID g_spriteLookupUid=-1;
 static SceGxmTexture g_spriteLookupTexture{};
 static const SceGxmProgramParameter *g_spriteGeometry=nullptr,*g_spriteBackColor=nullptr;
+static SceGxmFragmentProgram* g_rbgRatioCompositeProgram=nullptr;
+static SceGxmShaderPatcherId g_rbgRatioCompositeId{};
+static bool g_rbgRatioCompositeRegistered=false,g_rbgRatioCompositeFrame=false;
+static SceGxmFragmentProgram* g_rbgDiagnosticProgram=nullptr;
+static SceGxmShaderPatcherId g_rbgDiagnosticId{};
+static bool g_rbgDiagnosticRegistered=false;
+static const SceGxmProgramParameter *g_diagGeometry=nullptr,*g_diagBack=nullptr,*g_diagState=nullptr,*g_diagInfo=nullptr;
+static const SceGxmProgramParameter *g_rbgRatioGeometry=nullptr,*g_rbgRatioBack=nullptr,*g_rbgRatioState=nullptr;
+static SceGxmFragmentProgram* g_spriteUiPriorityProgram=nullptr;
+static SceGxmShaderPatcherId g_spriteUiPriorityId{};
+static bool g_spriteUiPriorityRegistered=false,g_spriteUiPriorityFrame=false;
+static const SceGxmProgramParameter *g_spriteUiPriorityGeometry=nullptr,*g_spriteUiTextureSize=nullptr;
+static SceGxmShaderPatcherId g_nbg1NormalId{},g_nbg1SpecialId{};
+static bool g_nbg1NormalRegistered=false,g_nbg1SpecialRegistered=false;
+static SceGxmFragmentProgram* g_nbg1NormalProgram=nullptr;
+static SceGxmFragmentProgram* g_nbg1SpecialAddProgram=nullptr;
+static SceGxmFragmentProgram* g_nbg1SpecialRatioProgram=nullptr;
+static const SceGxmProgramParameter* g_nbg1NormalGeometry=nullptr;
+static const SceGxmProgramParameter* g_nbg1NormalSize=nullptr;
+static const SceGxmProgramParameter* g_nbg1SpecialGeometry=nullptr;
+static const SceGxmProgramParameter* g_nbg1SpecialSize=nullptr;
+static const SceGxmProgramParameter* g_nbg1SpecialBlendParams=nullptr;
+static bool prepareNbg1DotPrograms() {
+    if(g_nbg1NormalProgram && g_nbg1SpecialAddProgram &&
+        g_nbg1SpecialRatioProgram)return true;
+    const auto* vp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_texture_v_gxp_start);
+    const auto* normal=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_vdp2_nbg1_dot_0_f_gxp_start);
+    const auto* special=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_vdp2_nbg1_dot_1_f_gxp_start);
+    if(sceGxmProgramCheck(normal)<0 || sceGxmProgramCheck(special)<0)return false;
+    if(!g_nbg1NormalRegistered) {
+        if(sceGxmShaderPatcherRegisterProgram(g_probeShaderPatcher,normal,&g_nbg1NormalId)<0)return false;
+        g_nbg1NormalRegistered=true;
+    }
+    if(!g_nbg1SpecialRegistered) {
+        if(sceGxmShaderPatcherRegisterProgram(g_probeShaderPatcher,special,&g_nbg1SpecialId)<0)return false;
+        g_nbg1SpecialRegistered=true;
+    }
+    g_nbg1NormalGeometry=sceGxmProgramFindParameterByName(normal,"priorityGeometry");
+    g_nbg1NormalSize=sceGxmProgramFindParameterByName(normal,"textureSize");
+    g_nbg1SpecialGeometry=sceGxmProgramFindParameterByName(special,"priorityGeometry");
+    g_nbg1SpecialSize=sceGxmProgramFindParameterByName(special,"textureSize");
+    g_nbg1SpecialBlendParams=sceGxmProgramFindParameterByName(special,"nbg1BlendParams");
+    if(!g_nbg1NormalGeometry || !g_nbg1SpecialGeometry ||
+        !g_nbg1SpecialBlendParams || (kStochastic && (!g_nbg1NormalSize || !g_nbg1SpecialSize)))return false;
+    if(!g_nbg1NormalProgram && sceGxmShaderPatcherCreateFragmentProgram(
+        g_probeShaderPatcher,g_nbg1NormalId,SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+        SCE_GXM_MULTISAMPLE_NONE,nullptr,vp,&g_nbg1NormalProgram)<0)return false;
+    SceGxmBlendInfo blend{};
+    blend.colorFunc=SCE_GXM_BLEND_FUNC_ADD;
+    blend.alphaFunc=SCE_GXM_BLEND_FUNC_ADD;
+    blend.colorSrc=SCE_GXM_BLEND_FACTOR_ONE;
+    blend.colorDst=SCE_GXM_BLEND_FACTOR_ONE;
+    blend.alphaSrc=SCE_GXM_BLEND_FACTOR_ONE;
+    blend.alphaDst=SCE_GXM_BLEND_FACTOR_ONE;
+    blend.colorMask=SCE_GXM_COLOR_MASK_ALL;
+    if(!g_nbg1SpecialAddProgram && sceGxmShaderPatcherCreateFragmentProgram(
+        g_probeShaderPatcher,g_nbg1SpecialId,SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+        SCE_GXM_MULTISAMPLE_NONE,&blend,vp,&g_nbg1SpecialAddProgram)<0)return false;
+    blend.colorSrc=SCE_GXM_BLEND_FACTOR_SRC_ALPHA;
+    blend.colorDst=SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    if(!g_nbg1SpecialRatioProgram && sceGxmShaderPatcherCreateFragmentProgram(
+        g_probeShaderPatcher,g_nbg1SpecialId,SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+        SCE_GXM_MULTISAMPLE_NONE,&blend,vp,&g_nbg1SpecialRatioProgram)<0)return false;
+    logging::writef("[VDP2NBG1Special] opaque/add/ratio programs ready\n");
+    return true;
+}
+static bool nbg1SpecialCompositeActive() {
+    return g_spriteUiPriorityActive && (g_spriteColor.bgon&2u) &&
+        (g_spriteColor.ccctl&2u) && g_nbg1NormalProgram &&
+        g_nbg1SpecialAddProgram && g_nbg1SpecialRatioProgram;
+}
+static bool setNbg1DotPass(unsigned pass,unsigned width,unsigned height) {
+    if(!nbg1SpecialCompositeActive() || pass>1u)return false;
+    const bool add=(g_spriteColor.ccctl&0x100u)!=0u;
+    sceGxmSetFragmentProgram(g_probeContext,pass?
+        (add?g_nbg1SpecialAddProgram:g_nbg1SpecialRatioProgram):g_nbg1NormalProgram);
+    void* ub=nullptr;
+    if(sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext,&ub)<0 || !ub)return false;
+    const float geometry[4]={1.f/kGxmPitch,1.f/kHeight,
+        float((g_spriteColor.prina>>8)&7u),0.f};
+    sceGxmSetUniformDataF(ub,pass?g_nbg1SpecialGeometry:g_nbg1NormalGeometry,0,4,geometry);
+    if(kStochastic) {
+        const float size[4]={float(width),float(height),1.f/width,1.f/height};
+        sceGxmSetUniformDataF(ub,pass?g_nbg1SpecialSize:g_nbg1NormalSize,0,4,size);
+#if LAGI_DITHER_LOOKUP
+        sceGxmSetFragmentTexture(g_probeContext,1,&g_ditherOffsetsTexture);
+#endif
+    }
+    if(pass) {
+        const float params[4]={add?1.f:
+            float(31u-(g_spriteColor.nbg1Ratio&31u))/32.f,0,0,0};
+        sceGxmSetUniformDataF(ub,g_nbg1SpecialBlendParams,0,4,params);
+    }
+    sceGxmSetFragmentTexture(g_probeContext,2,&g_spriteLayerTexture);
+    sceGxmSetFragmentTexture(g_probeContext,3,&g_spriteLookupTexture);
+    return true;
+}
+static bool prepareSpriteUiPriority() {
+    if(!lagi::spriteUiPrioritySupported(g_spriteColor) || !g_vdp2TextValid ||
+        readVdp2Be32(g_vdp2LineScroll,0)==0x01010000u)return false;
+    if(g_spriteUiPriorityProgram)return true;
+    const auto* fp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_vdp2_ui_priority_f_gxp_start);
+    const auto* vp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_texture_v_gxp_start);
+    if(sceGxmProgramCheck(fp)<0)return false;
+    if(!g_spriteUiPriorityRegistered) {
+        if(sceGxmShaderPatcherRegisterProgram(g_probeShaderPatcher,fp,&g_spriteUiPriorityId)<0)return false;
+        g_spriteUiPriorityRegistered=true;
+    }
+    g_spriteUiPriorityGeometry=sceGxmProgramFindParameterByName(fp,"priorityGeometry");
+    g_spriteUiTextureSize=sceGxmProgramFindParameterByName(fp,"textureSize");
+    if(!g_spriteUiPriorityGeometry || (kStochastic && !g_spriteUiTextureSize))return false;
+    // This atlas contains menu/window backing, not the Camp ground glow.
+    // Preserve its established opaque/alpha-tested presentation even when
+    // CCCTL enables NBG1 calculation; that register needs a per-pixel
+    // VDP2 resolver, not a blanket GXM ONE+ONE UI blending state.
+    return sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_spriteUiPriorityId,
+        SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,nullptr,vp,
+        &g_spriteUiPriorityProgram)>=0;
+}
+static bool setVdp2UiPriority(unsigned w,unsigned h,unsigned priority) {
+    if(!g_spriteUiPriorityActive)return true;
+    // Priority zero disables the native VDP2 layer.
+    if(!priority || !g_spriteUiPriorityProgram)return false;
+    sceGxmSetFragmentProgram(g_probeContext,g_spriteUiPriorityProgram);
+    void* ub=nullptr;
+    if(sceGxmReserveFragmentDefaultUniformBuffer(g_probeContext,&ub)<0 || !ub)return false;
+    const float geometry[4]={1.f/kGxmPitch,1.f/kHeight,float(priority),0};
+    sceGxmSetUniformDataF(ub,g_spriteUiPriorityGeometry,0,4,geometry);
+    if(kStochastic) {
+        const float size[4]={float(w),float(h),1.f/w,1.f/h};
+        sceGxmSetUniformDataF(ub,g_spriteUiTextureSize,0,4,size);
+#if LAGI_DITHER_LOOKUP
+        sceGxmSetFragmentTexture(g_probeContext,1,&g_ditherOffsetsTexture);
+#endif
+    }
+    sceGxmSetFragmentTexture(g_probeContext,2,&g_spriteLayerTexture);
+    sceGxmSetFragmentTexture(g_probeContext,3,&g_spriteLookupTexture);
+    return true;
+}
 static void releaseSpriteComposite() {
+    if(g_probeShaderPatcher) {
+        if(g_nbg1NormalProgram)sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_nbg1NormalProgram);
+        if(g_nbg1SpecialAddProgram)sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_nbg1SpecialAddProgram);
+        if(g_nbg1SpecialRatioProgram)sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_nbg1SpecialRatioProgram);
+        if(g_nbg1NormalRegistered)sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_nbg1NormalId);
+        if(g_nbg1SpecialRegistered)sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_nbg1SpecialId);
+    }
+    g_nbg1NormalProgram=g_nbg1SpecialAddProgram=g_nbg1SpecialRatioProgram=nullptr;
+    g_nbg1NormalRegistered=g_nbg1SpecialRegistered=false;
+    g_spriteUiPriorityActive=g_spriteUiPriorityFrame=false;
+    g_rbgRatioCompositeFrame=false;
+    if(g_probeShaderPatcher && g_rbgDiagnosticProgram)
+        sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_rbgDiagnosticProgram);
+    g_rbgDiagnosticProgram=nullptr;
+    if(g_probeShaderPatcher && g_rbgDiagnosticRegistered)
+        sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_rbgDiagnosticId);
+    g_rbgDiagnosticRegistered=false;
+    if(g_probeShaderPatcher && g_rbgRatioCompositeProgram)
+        sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_rbgRatioCompositeProgram);
+    g_rbgRatioCompositeProgram=nullptr;
+    if(g_probeShaderPatcher && g_rbgRatioCompositeRegistered)
+        sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_rbgRatioCompositeId);
+    g_rbgRatioCompositeRegistered=false;
+    if(g_probeShaderPatcher && g_spriteUiPriorityProgram)
+        sceGxmShaderPatcherReleaseFragmentProgram(g_probeShaderPatcher,g_spriteUiPriorityProgram);
+    g_spriteUiPriorityProgram=nullptr;
+    if(g_probeShaderPatcher && g_spriteUiPriorityRegistered)
+        sceGxmShaderPatcherUnregisterProgram(g_probeShaderPatcher,g_spriteUiPriorityId);
+    g_spriteUiPriorityRegistered=false;
     freeMovieMappedBlock(g_spriteLayerUid,g_spriteLayerPixels);
     freeMovieMappedBlock(g_spriteLookupUid,g_spriteLookupPixels);
     if(g_probeShaderPatcher && g_spriteCompositeProgram)
@@ -22,10 +190,16 @@ static void releaseSpriteComposite() {
     g_spriteCompositeRegistered=false;
 }
 static bool prepareSpriteComposite(bool native,bool menu) {
-    const bool supported=LAGI_VDP2_SPRITE_COMPOSITE && native && !menu && !g_halfResolution &&
+    g_spriteUiPriorityActive=g_spriteUiPriorityFrame=false;
+    g_rbgRatioCompositeFrame=false;
+    const bool rbgRatio=lagi::rbgLayerCompositeSupported(g_spriteColor) &&
+        (!(g_spriteColor.bgon&1) || (g_sceneNbg0.enabled && g_sceneNbg0Pixels));
+    const bool type3=
         (g_spriteColor.ccctl&0x40) && (g_spriteColor.spctl&15)==3 &&
         !g_spriteColor.colorWindow && !(g_spriteColor.ccctl&0x610) &&
-        !(g_spriteColor.bgon&0x5) && (g_spriteColor.spctl&0x20) &&
+        !(g_spriteColor.bgon&0x5) && (g_spriteColor.spctl&0x20);
+    const bool supported=LAGI_VDP2_SPRITE_COMPOSITE && native && !menu && !g_halfResolution &&
+        (type3 || rbgRatio) &&
         g_sceneVdp2Vertices && g_sceneVdp2Indices;
     static std::uint64_t last=~std::uint64_t(0);
     static unsigned budget=32;
@@ -34,13 +208,81 @@ static bool prepareSpriteComposite(bool native,bool menu) {
         (std::uint64_t(g_spriteColor.bgon)<<32) | (std::uint64_t(supported)<<63);
     if(LAGI_VDP2_SPRITE_COMPOSITE && budget && key!=last) {
         --budget;last=key;
-        logging::writef("[VDP2SpriteComposite] active=%u CCCTL=%04X SPCTL=%04X BGON=%04X colorWindow=%02X menu=%u nativeFull=%u\n",
+        logging::writef("[VDP2SpriteComposite] active=%u CCCTL=%04X SPCTL=%04X BGON=%04X colorWindow=%02X menu=%u nativeFull=%u rbgRatio=%u SFPRMD=%04X SFCCMD=%04X CCRR=%04X\n",
             supported?1u:0u,g_spriteColor.ccctl,g_spriteColor.spctl,g_spriteColor.bgon,
-            g_spriteColor.colorWindow,menu?1u:0u,native?1u:0u);
+            g_spriteColor.colorWindow,menu?1u:0u,native?1u:0u,unsigned(rbgRatio),
+            g_spriteColor.specialPriority,g_spriteColor.specialColor,g_spriteColor.rbgRatio);
+    }
+    // SFCCMD=0008 configures per-dot NBG1 color calculation, not RBG0.
+    // Record each background's actual mode without changing the RBG0
+    // second-source path based on an unrelated layer's control bits.
+    static std::uint64_t lastSpecialState=~std::uint64_t(0);
+    const std::uint64_t specialState=
+        std::uint64_t(g_spriteColor.specialColor) |
+        (std::uint64_t(g_spriteColor.sfsel)<<16) |
+        (std::uint64_t(g_spriteColor.sfcode)<<32) |
+        (std::uint64_t(g_spriteColor.pncn1&0x100u)<<40);
+    if(native && !menu && specialState!=lastSpecialState) {
+        lastSpecialState=specialState;
+        logging::writef("[VDP2SpecialColorModes] SFCCMD=%04X NBG0=%u NBG1=%u NBG2=%u NBG3=%u RBG0=%u CCCTL=%04X SFSEL=%04X SFCODE=%04X NBG1Mask=%02X PNCN1=%04X NBG1SCC=%u\n",
+            g_spriteColor.specialColor,
+            lagi::specialColorMode(g_spriteColor,0),
+            lagi::specialColorMode(g_spriteColor,1),
+            lagi::specialColorMode(g_spriteColor,2),
+            lagi::specialColorMode(g_spriteColor,3),
+            lagi::specialColorMode(g_spriteColor,4),
+            g_spriteColor.ccctl,g_spriteColor.sfsel,g_spriteColor.sfcode,
+            unsigned((g_spriteColor.sfsel&2u)
+                ? ((g_spriteColor.sfcode>>8)&0xffu)
+                : (g_spriteColor.sfcode&0xffu)),
+            g_spriteColor.pncn1,unsigned(lagi::nbg1AuxiliarySpecialColor(g_spriteColor)));
     }
     if(!supported)return false;
-    // Destination-alpha mode and extra world layers need a multi-layer
-    // top/second-source resolver; they must not silently use this route.
+    if(rbgRatio && !g_rbgRatioCompositeProgram) {
+        const auto* fp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_rbg_ratio_composite_f_gxp_start);
+        const auto* vp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_texture_v_gxp_start);
+        if(sceGxmProgramCheck(fp)<0)return false;
+        if(!g_rbgRatioCompositeRegistered) {
+            if(sceGxmShaderPatcherRegisterProgram(g_probeShaderPatcher,fp,&g_rbgRatioCompositeId)<0)return false;
+            g_rbgRatioCompositeRegistered=true;
+        }
+        g_rbgRatioGeometry=sceGxmProgramFindParameterByName(fp,"geometry");
+        g_rbgRatioBack=sceGxmProgramFindParameterByName(fp,"backColor");
+        g_rbgRatioState=sceGxmProgramFindParameterByName(fp,"rbgState");
+        if(!g_rbgRatioGeometry || !g_rbgRatioBack || !g_rbgRatioState)return false;
+        if(sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_rbgRatioCompositeId,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,nullptr,vp,
+            &g_rbgRatioCompositeProgram)<0)return false;
+    }
+    // Diagnostic shader stays separate from the production composition path.
+    if(rbgRatio && (g_viewMode==13 || g_viewMode==14 || g_viewMode==15 || g_viewMode==16 || g_viewMode==17) && !g_rbgDiagnosticProgram) {
+        const auto* fp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_rbg_diagnostic_f_gxp_start);
+        const auto* vp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_texture_v_gxp_start);
+        if(sceGxmProgramCheck(fp)>=0) {
+            if(!g_rbgDiagnosticRegistered &&
+               sceGxmShaderPatcherRegisterProgram(g_probeShaderPatcher,fp,&g_rbgDiagnosticId)>=0)
+                g_rbgDiagnosticRegistered=true;
+            if(g_rbgDiagnosticRegistered) {
+                g_diagGeometry=sceGxmProgramFindParameterByName(fp,"geometry");
+                g_diagBack=sceGxmProgramFindParameterByName(fp,"backColor");
+                g_diagState=sceGxmProgramFindParameterByName(fp,"rbgState");
+                g_diagInfo=sceGxmProgramFindParameterByName(fp,"debugInfo");
+                if(g_diagGeometry && g_diagBack && g_diagState && g_diagInfo)
+                    sceGxmShaderPatcherCreateFragmentProgram(g_probeShaderPatcher,g_rbgDiagnosticId,
+                        SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,SCE_GXM_MULTISAMPLE_NONE,nullptr,vp,
+                        &g_rbgDiagnosticProgram);
+            }
+        }
+        if(!g_rbgDiagnosticProgram) {
+            static unsigned failureBudget=2;
+            if(failureBudget) {
+                --failureBudget;
+                logging::writef("[VDP1Diagnostic] shader unavailable; FULL compositor retained\n");
+            }
+        }
+    }
+    // Keep the flight shader separate: no extra WORLD branches/samplers in
+    // the accepted type3 fragment path.
     if(!g_spriteCompositeProgram) {
         const auto* fp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_sprite_composite_f_gxp_start);
         const auto* vp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_texture_v_gxp_start);
@@ -100,11 +342,177 @@ static bool prepareSpriteComposite(bool native,bool menu) {
     // is mutated. This table contains only published register decisions.
     auto* lookup=static_cast<std::uint32_t*>(g_spriteLookupPixels);
     for(unsigned i=0;i<256;++i)lookup[i]=lagi::spriteCompositeLookup(g_spriteColor,i);
-    return clearNativeSceneColorBuffer(static_cast<std::uint32_t*>(g_spriteLayerPixels),kWidth,kHeight,kGxmPitch);
+    g_spriteUiPriorityFrame=prepareSpriteUiPriority();
+    if(g_spriteUiPriorityFrame && (g_spriteColor.bgon&2u) &&
+        (g_spriteColor.ccctl&2u) && !prepareNbg1DotPrograms()) {
+        static unsigned errorBudget=4;
+        if(errorBudget) {--errorBudget;logging::writef(
+            "[VDP2NBG1Special] shader unavailable; using original NBG1 path\n");}
+    }
+    if(rbgRatio && (g_spriteColor.bgon&0xAu) && !g_spriteUiPriorityFrame) {
+        // Preserve NBG1/3 versus completed VDP1 sprite priorities,
+        // including Camp's NBG1 additive calculation.
+        static unsigned uiFailures=0;
+        if(uiFailures++<4)logging::writef("[VDP2SpriteComposite] RBG ratio resolve unavailable: native NBG3 priority mask not ready\n");
+        return false;
+    }
+    static int previousPriorityUi=-1;
+    if(previousPriorityUi!=int(g_spriteUiPriorityFrame)) {
+        previousPriorityUi=int(g_spriteUiPriorityFrame);
+        logging::writef("[VDP2UiPriority] active=%u PRINA=%04X PRINB=%04X PRISA=%04X PRISB=%04X\n",
+            unsigned(g_spriteUiPriorityFrame),g_spriteColor.prina,g_spriteColor.prinb,
+            g_spriteColor.priority[0],g_spriteColor.priority[1]);
+    }
+    if(!clearNativeSceneColorBuffer(static_cast<std::uint32_t*>(g_spriteLayerPixels),kWidth,kHeight,kGxmPitch))return false;
+    g_rbgRatioCompositeFrame=rbgRatio;
+    return true;
 }
 static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface* destination,
     SceGxmSyncObject* sync) {
     sceGxmEndScene(g_probeContext,nullptr,nullptr);
+    // Camp circle depth A/B: the ONLY state changed between two adjacent
+    // frames is the depth policy of polygons 626..637. Compare the completed
+    // VDP1 world surface, before RBG0 composition, within their projected
+    // screen-space rectangle. This is a diagnostic *difference mask*, not
+    // proof that any individual pixel belongs exclusively to the circle.
+    // Results can be contaminated by scene/camera motion between frames.
+    // No additional render target, shader, or persistent output modification.
+    if(g_viewMode==24 && g_circleDepthCompareActive &&
+       g_circleDepthCompareScene==g_sceneGameMode &&
+       g_circleDepthCompareFrame<=8u && g_spriteLayerPixels) {
+        static std::vector<std::uint32_t> baseline;
+        static int baselineX=0,baselineY=0,baselineW=0,baselineH=0;
+        static unsigned baselineFrame=0;
+        const int left=std::max(0,int(std::floor(g_circleDepthCompareRect[0])));
+        const int top=std::max(0,int(std::floor(g_circleDepthCompareRect[1])));
+        const int right=std::min(kWidth,int(std::ceil(g_circleDepthCompareRect[2])));
+        const int bottom=std::min(kHeight,int(std::ceil(g_circleDepthCompareRect[3])));
+        const int width=std::max(0,right-left),height=std::max(0,bottom-top);
+        if(width && height) {
+            const auto start=sceKernelGetProcessTimeWide();
+            sceGxmFinish(g_probeContext);
+            const auto* pixels=static_cast<const std::uint32_t*>(g_spriteLayerPixels);
+            if(g_circleDepthComparePhase==0u) {
+                baseline.resize(std::size_t(width)*height);
+                for(int y=0;y<height;++y)
+                    std::memcpy(baseline.data()+std::size_t(y)*width,
+                        pixels+std::size_t(top+y)*kGxmPitch+left,
+                        std::size_t(width)*sizeof(std::uint32_t));
+                baselineX=left;baselineY=top;
+                baselineW=width;baselineH=height;
+                baselineFrame=g_circleDepthCompareFrame;
+                logging::writef("[CampCircleDepthCoverage] phase=A frame=%u rect=(%d,%d)-(%d,%d) pixels=%u gpuReadUs=%u\n",
+                    baselineFrame,left,top,right,bottom,unsigned(baseline.size()),
+                    unsigned(sceKernelGetProcessTimeWide()-start));
+            } else {
+                const bool paired=baselineFrame+1u==g_circleDepthCompareFrame &&
+                    left==baselineX && top==baselineY &&
+                    width==baselineW && height==baselineH &&
+                    baseline.size()==std::size_t(width)*height;
+                if(!paired) {
+                    logging::writef("[CampCircleDepthCoverage] phase=B frame=%u comparable=0 reason=region-or-frame-changed A=%u (%d,%d %dx%d) B=(%d,%d %dx%d)\n",
+                        g_circleDepthCompareFrame,baselineFrame,baselineX,baselineY,
+                        baselineW,baselineH,left,top,width,height);
+                } else {
+                    unsigned changed=0,appeared=0,disappeared=0,
+                        replaced=0,aPresent=0,bPresent=0;
+                    int minX=right,minY=bottom,maxX=left,maxY=top;
+                    for(int y=0;y<height;++y) {
+                        const auto* row=pixels+std::size_t(top+y)*kGxmPitch+left;
+                        for(int x=0;x<width;++x) {
+                            const auto a=baseline[std::size_t(y)*width+x];
+                            const auto b=row[x];
+                            const bool aVisible=(a>>24u)>=128u;
+                            const bool bVisible=(b>>24u)>=128u;
+                            aPresent+=unsigned(aVisible);
+                            bPresent+=unsigned(bVisible);
+                            if(a==b)continue;
+                            ++changed;
+                            appeared+=unsigned(!aVisible && bVisible);
+                            disappeared+=unsigned(aVisible && !bVisible);
+                            replaced+=unsigned(aVisible && bVisible);
+                            minX=std::min(minX,left+x);
+                            minY=std::min(minY,top+y);
+                            maxX=std::max(maxX,left+x);
+                            maxY=std::max(maxY,top+y);
+                        }
+                    }
+                    logging::writef("[CampCircleDepthCoverage] phase=B frame=%u comparable=1 rect=(%d,%d)-(%d,%d) testedPixels=%u Avisible=%u Bvisible=%u rawChanged=%u appeared=%u disappeared=%u replaced=%u diffBbox=(%d,%d)-(%d,%d) gpuReadUs=%u caution=adjacent-frame-motion\n",
+                        g_circleDepthCompareFrame,left,top,right,bottom,
+                        unsigned(std::size_t(width)*height),aPresent,bPresent,
+                        changed,appeared,disappeared,replaced,
+                        changed?minX:-1,changed?minY:-1,
+                        changed?maxX:-1,changed?maxY:-1,
+                        unsigned(sceKernelGetProcessTimeWide()-start));
+                }
+                baselineFrame=0u;
+            }
+        }
+    }
+    // Diagnostic-only sparse readback. The GPU must finish the world pass
+    // before the CPU inspects the native selector bytes. Sample twice, well
+    // after Camp has settled, then never force this stall again.
+    if(g_rbgRatioCompositeFrame && g_spriteLayerPixels) {
+        // The first eligible frames may precede late native object
+        // submissions. A fixed 60/180-frame audit can therefore sample a
+        // partial VDP1 image and incorrectly report that no lower-priority
+        // sprite pixels exist. Wait until the published polygon set has
+        // remained unchanged for 60 eligible frames, then sample that set.
+        // Reset the finite budget if a later scene/visible-set growth occurs.
+        static unsigned lastPolygonCount=0u,stableFrames=0u,readbacks=0u;
+        const unsigned polygonCount=static_cast<unsigned>(
+            g_liveTownCpuMesh.polygonRecords.size());
+        if(polygonCount!=lastPolygonCount) {
+            lastPolygonCount=polygonCount;
+            stableFrames=0u;
+            readbacks=0u;
+        } else if(stableFrames<240u) {
+            ++stableFrames;
+        }
+        if(polygonCount && readbacks<2 &&
+            (stableFrames==60u || stableFrames==180u)) {
+            const auto start=sceKernelGetProcessTimeWide();
+            sceGxmFinish(g_probeContext);
+            const auto a=lagi::auditVdp1SurfacePriorities(
+                static_cast<const std::uint32_t*>(g_spriteLayerPixels),
+                kWidth,kHeight,kGxmPitch,16u,g_spriteColor);
+            logging::writef("[VDP1SurfacePriority] sample=%u frames=%u pixels=%u empty=%u half=%u indexed=%u direct=%u unknown=%u belowRbg=%u equalRbg=%u aboveRbg=%u noPriority=%u PRIR=%04X PRISA=%04X PRISB=%04X waitAndScanUs=%u\n",
+                ++readbacks,stableFrames,a.samples,a.empty,a.half,a.indexed,
+                a.direct,a.unknown,a.below,a.equal,a.above,
+                a.nonzeroWithoutPriority,g_spriteColor.prir,g_spriteColor.priority[0],
+                g_spriteColor.priority[1],
+                unsigned(sceKernelGetProcessTimeWide()-start));
+            logging::writef("[VDP1SurfaceAuditContext] polygons=%u stableFrames=%u decodedIndexed=%u direct=%u belowRbg=%u\n",
+                polygonCount,stableFrames,a.indexed,a.direct,a.below);
+            // Reuse this existing finite GPU wait: no extra readbacks,
+            // render passes, or per-frame CPU/GPU synchronization.
+            if(g_vdp1CircleAuditCount &&
+                g_vdp1CircleAuditScene==g_sceneGameMode) {
+                const auto* pixels=static_cast<const std::uint32_t*>(g_spriteLayerPixels);
+                logging::writef("[VDP1CirclePixelAudit] sample=%u count=%u scene=%u PRIR=%04X SPCTL=%04X\n",
+                    readbacks,g_vdp1CircleAuditCount,g_sceneGameMode,
+                    g_spriteColor.prir,g_spriteColor.spctl);
+                for(unsigned probe=0;probe<g_vdp1CircleAuditCount;++probe) {
+                    const auto& at=g_vdp1CircleAuditPoints[probe];
+                    if(at.x<0||at.y<0||at.x>=kWidth||at.y>=kHeight)continue;
+                    const auto pixel=pixels[std::size_t(at.y)*kGxmPitch+unsigned(at.x)];
+                    const unsigned code=pixel>>24u;
+                    const unsigned decision=lagi::spriteCompositeLookup(g_spriteColor,code);
+                    logging::writef("[VDP1CirclePixel] probe=%u at=%d,%d circle=%u overlap=%u raw=%08X code=%u priority=%u operation=%u belowRbg=%u\n",
+                        probe,at.x,at.y,at.circle,at.other,pixel,code,
+                        (decision>>24u)&255u,(decision>>8u)&255u,
+                        unsigned(((decision>>24u)&255u)<(g_spriteColor.prir&7u)));
+                }
+            }
+            logging::writef("[VDP1SurfaceRegions] below=%u,%u,%u/%u,%u,%u/%u,%u,%u above=%u,%u,%u/%u,%u,%u/%u,%u,%u\n",
+                a.regionsBelow[0],a.regionsBelow[1],a.regionsBelow[2],
+                a.regionsBelow[3],a.regionsBelow[4],a.regionsBelow[5],
+                a.regionsBelow[6],a.regionsBelow[7],a.regionsBelow[8],
+                a.regionsAbove[0],a.regionsAbove[1],a.regionsAbove[2],
+                a.regionsAbove[3],a.regionsAbove[4],a.regionsAbove[5],
+                a.regionsAbove[6],a.regionsAbove[7],a.regionsAbove[8]);
+        }
+    }
     if(g_gpuPassSample) {
         const auto start=sceKernelGetProcessTimeWide();
         sceGxmFinish(g_probeContext);
@@ -113,7 +521,10 @@ static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface*
     }
     if(sceGxmBeginScene(g_probeContext,0,target,nullptr,nullptr,sync,destination,nullptr)<0)return false;
     sceGxmSetVertexProgram(g_probeContext,g_textureVertexProgram);
-    sceGxmSetFragmentProgram(g_probeContext,g_spriteCompositeProgram);
+    const bool diagnostic=g_rbgRatioCompositeFrame &&
+        (g_viewMode==13 || g_viewMode==14 || g_viewMode==15 || g_viewMode==16 || g_viewMode==17) && g_rbgDiagnosticProgram;
+    sceGxmSetFragmentProgram(g_probeContext,diagnostic?g_rbgDiagnosticProgram:
+        (g_rbgRatioCompositeFrame?g_rbgRatioCompositeProgram:g_spriteCompositeProgram));
     sceGxmSetCullMode(g_probeContext,SCE_GXM_CULL_NONE);
     sceGxmSetFrontDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetBackDepthFunc(g_probeContext,SCE_GXM_DEPTH_FUNC_ALWAYS);
@@ -128,9 +539,22 @@ static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface*
     const auto identity=viewerIdentity();
     sceGxmSetUniformDataF(v,g_textureWvpParam,0,16,identity.m);
     const float geometry[4]={float(kWidth)/kGxmPitch,1,g_sceneRbg0Enabled?1.f:0.f,float(g_spriteColor.prir&7)};
-    const float back[4]={0,0,0,1}; // Matches clearNativeSceneColorBuffer.
-    sceGxmSetUniformDataF(f,g_spriteGeometry,0,4,geometry);
-    sceGxmSetUniformDataF(f,g_spriteBackColor,0,4,back);
+    const unsigned nativeBack=g_sceneRbg0.backColor;
+    const float back[4]={float(nativeBack&31)/31,float((nativeBack>>5)&31)/31,float((nativeBack>>10)&31)/31,1};
+    const float black[4]={0,0,0,1}; // Preserve accepted type3 back-screen behavior.
+    sceGxmSetUniformDataF(f,diagnostic?g_diagGeometry:(g_rbgRatioCompositeFrame?g_rbgRatioGeometry:g_spriteGeometry),0,4,geometry);
+    sceGxmSetUniformDataF(f,diagnostic?g_diagBack:(g_rbgRatioCompositeFrame?g_rbgRatioBack:g_spriteBackColor),0,4,
+        g_rbgRatioCompositeFrame?back:black);
+    if(g_rbgRatioCompositeFrame) {
+        const float state[4]={float((g_spriteColor.bgon&1)?g_spriteColor.prina&7:0),
+            float(lagi::rbgColorRatio(g_spriteColor)),(g_spriteColor.ccctl&0x100)?1.f:0.f,0};
+        sceGxmSetUniformDataF(f,diagnostic?g_diagState:g_rbgRatioState,0,4,state);
+        if(diagnostic) {
+            const float info[4]={g_viewMode==17?4.f:(g_viewMode==16?3.f:(g_viewMode==15?2.f:(g_viewMode==14?1.f:0.f))),0.f,0.f,0.f};
+            sceGxmSetUniformDataF(f,g_diagInfo,0,4,info);
+        }
+        sceGxmSetFragmentTexture(g_probeContext,3,(g_spriteColor.bgon&1)?&g_sceneNbg0Texture:&g_spriteLayerTexture);
+    }
     sceGxmSetFragmentTexture(g_probeContext,0,&g_spriteLayerTexture);
     sceGxmSetFragmentTexture(g_probeContext,1,g_sceneRbg0Enabled?&g_sceneRbg0ResolvedTexture:&g_spriteLayerTexture);
     sceGxmSetFragmentTexture(g_probeContext,2,&g_spriteLookupTexture);

@@ -4,6 +4,7 @@ namespace lagi {
 struct SceneNbg0State {
     bool enabled=false;
     bool additive=false;
+    bool behindWorld=false;
     // Native normal-background packet; no camera/effect-specific positions.
     float gpu[8][4]{};
 };
@@ -19,10 +20,11 @@ inline Nbg0ResolveClip sceneNbg0ResolveClip(const SceneNbg0State& s) {
         unsigned(r)|31u,unsigned(b)|31u,false};
 }
 constexpr bool sceneNbg0Supported(unsigned chctla,unsigned pncn,unsigned ccctl,unsigned plsz) {
-    // Tile16, 4bpp, one-word names with native flip bits. Additive and opaque
+    // Tile16, 4bpp or 8bpp, one-word names with native flip bits. Additive and opaque
     // composition use the existing SGX sampling route. Ratio mode is not
     // silently replaced by additive blending.
-    return (chctla&0x7f)==1 && (pncn&0xc000)==0x8000 && (plsz&3)!=2 &&
+    const unsigned format = chctla & 0x7f;
+    return (format == 1 || format == 0x11) && (pncn&0xc000)==0x8000 && (plsz&3)!=2 &&
         (!(ccctl&1) || (ccctl&0x100));
 }
 constexpr unsigned sceneNbg0MapBase(unsigned mpofn,unsigned page,unsigned plsz) {
@@ -32,5 +34,15 @@ constexpr unsigned sceneNbg0MapBase(unsigned mpofn,unsigned page,unsigned plsz) 
 constexpr bool sceneNbg0OverlayBand(unsigned bgon,unsigned prina,unsigned prisa) {
     const unsigned p=prina&7;
     return p>(prisa&7) && (!(bgon&2) || p<((prina>>8)&7));
+}
+// NBG0's lower-priority band is part of the original Saturn scene, not
+// an overlay. It belongs underneath both the primary VDP1 sprites and
+// RBG0 (when enabled); opaque foregrounds can then cover it normally.
+// Do not reinterpret a disabled or zero-priority NBG0 layer as a backdrop.
+constexpr bool sceneNbg0BehindWorldBand(unsigned bgon,unsigned prina,
+                                        unsigned prisa,unsigned prir) {
+    const unsigned p=prina&7u;
+    return (bgon&1u) && p && p<(prisa&7u) &&
+        (!(bgon&0x10u) || (p<(prir&7u)));
 }
 }

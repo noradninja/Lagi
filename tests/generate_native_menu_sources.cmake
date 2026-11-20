@@ -21,6 +21,10 @@ function(set_source_files_properties)
 endfunction()
 include("${REPO_ROOT}/cmake/LagiLifeMeterFlags.cmake")
 cmake_language(EVAL CODE "${adapter}")
+# The production function resolves checked-in adapter includes relative to its
+# source tree, not this fixture's temporary working directory. Keep generated
+# outputs in the scratch directory below.
+set(CMAKE_CURRENT_SOURCE_DIR "${REPO_ROOT}")
 set(LAGI_AZEL_GENERATED_ROOT "${CMAKE_CURRENT_BINARY_DIR}/azel_upstream")
 file(MAKE_DIRECTORY "${LAGI_AZEL_GENERATED_ROOT}")
 foreach(source IN ITEMS "field/field_a3/o_fld_a3.cpp" "field/fieldRadar.cpp" "LCS.cpp" "kernel/dialogTask.cpp" "VDP2.cpp" "3dEngine.cpp" "field/fieldDragon.cpp" "field/fieldItemBox_type0.cpp" "field/fieldItemBox_type1.cpp" "field/fieldItemBox_type2.cpp" "mainMenuDebugTasks.cpp")

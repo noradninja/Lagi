@@ -7,6 +7,7 @@
 #include <cstring>
 #include <vector>
 #include <cstdio>
+#include <string>
 #define LAGI_RBG_DECODED_PAGES 1
 using SceUID=int;
 struct SceGxmTexture {void* data=nullptr;};
@@ -20,11 +21,14 @@ static int sceGxmTextureInitLinear(SceGxmTexture* t,void* p,int,unsigned,unsigne
 static void sceGxmTextureSetMinFilter(SceGxmTexture*,int){}
 static void sceGxmTextureSetMagFilter(SceGxmTexture*,int){}
 static unsigned long long sceKernelGetProcessTimeWide(){static unsigned long long time=0;return ++time;}
-namespace logging {template<class... T>void writef(const char*,T...){};}
+static std::string lastPageLog;
+namespace logging {template<class... T>void writef(const char* format,T... args){
+    char text[512];std::snprintf(text,sizeof(text),format,args...);lastPageLog=text;
+};}
 static bool g_rbgDecodedPagesReady=false;
 static SceGxmTexture g_rbgDecodedAtlasTexture{};
 static float g_rbgDecodedPlanesA[16]{},g_rbgDecodedPlanesB[16]{};
-static struct {float format[4]{},planesA[16]{},planesB[16]{},ctrl[16]{},parameterFormat[2]{};} g_sceneRbg0;
+static struct {float format[4]{},planesA[16]{},planesB[16]{},ctrl[16]{},parameterFormat[2]{};std::uint16_t ramctl=0x2B3;} g_sceneRbg0;
 static std::array<std::uint8_t,0x81000> image{};
 static const std::uint8_t* g_sceneVdp2Raw=image.data();
 static std::uint32_t g_sceneVdp2BlockGenerations[129]{};
@@ -39,6 +43,8 @@ int main() {
     planes(g_sceneRbg0.planesA,0x70000);planes(g_sceneRbg0.planesB,0x70800);
     g_sceneRbg0.ctrl[0]=2;
     assert(prepareRbgDecodedPages());assert(slot(0x70000)!=slot(0x70800));
+    // Mock clock advances once per read: two decoded and copied pages.
+    assert(lastPageLog.find("decodeUs=2 atlasCopyUs=2")!=std::string::npos);
     assert(unsigned(g_rbgDecodedPlanesA[0])==slot(0x70000));
     assert(unsigned(g_rbgDecodedPlanesB[0])==slot(0x70800));
     const auto original=slot(0x70000);
@@ -63,20 +69,26 @@ int main() {
     planes(g_sceneRbg0.planesA,0x71000);g_sceneRbg0.planesA[1]=float(0x70000);
     g_sceneRbg0.ctrl[0]=0;
     assert(prepareRbgDecodedPages());assert(slot(0x70000)==original);
-    // Four pages fit; a fifth must reject the entire cache route.
-    for(unsigned i=0;i<4;++i)g_sceneRbg0.planesA[i]=float(0x70000+i*2048);
+    // Eight pages fit; a ninth must reject the entire cache route.
+    for(unsigned i=0;i<8;++i)g_sceneRbg0.planesA[i]=float(0x70000+i*2048);
     assert(prepareRbgDecodedPages());
-    g_sceneRbg0.planesA[4]=float(0x72000);
+    g_sceneRbg0.planesA[8]=float(0x74000);
     assert(!prepareRbgDecodedPages());
     planes(g_sceneRbg0.planesA,0x70000);
     g_sceneRbg0.format[1]=0x801f;assert(!prepareRbgDecodedPages());
     g_sceneRbg0.format[1]=0x8000;assert(prepareRbgDecodedPages());
-    g_sceneRbg0.parameterFormat[0]=4;assert(!prepareRbgDecodedPages());
+    const auto allocationCount=allocations;
+    g_sceneRbg0.parameterFormat[0]=4;assert(prepareRbgDecodedPages());
+    assert(allocations==allocationCount); // OVPNR needs no additional pages.
+    g_sceneRbg0.ctrl[0]=2;g_sceneRbg0.parameterFormat[1]=4;
+    assert(prepareRbgDecodedPages());
+    assert(allocations==allocationCount);
+    g_sceneRbg0.parameterFormat[1]=0;g_sceneRbg0.ctrl[0]=0;
     g_sceneRbg0.parameterFormat[0]=0;assert(prepareRbgDecodedPages());
     g_sceneRbg0.parameterFormat[0]=3; // Four 512x512 pages per plane.
     assert(prepareRbgDecodedPages());
     for(unsigned page=0;page<4;++page)
-        assert(((unsigned(g_rbgDecodedPlanesA[0])>>(page*2))&3)==slot(0x70000+page*2048));
+        assert(((unsigned(g_rbgDecodedPlanesA[0])>>(page*3))&7)==slot(0x70000+page*2048));
     g_sceneRbg0.parameterFormat[0]=0;
     // Captured D5 state: both RPMD3 parameters share the 0x60000 page,
     // SCN=8 selects characters at 0x40000. Coefficients are independent.
@@ -92,6 +104,25 @@ int main() {
     ++g_sceneVdp2BlockGenerations[0x40000/4096];
     assert(prepareRbgDecodedPagesFor(g_sceneRbg0,image.data(),g_sceneVdp2BlockGenerations,true));
     assert(atlas[0]!=0x12345678);
+    // Format-only changes must rebuild metadata, even with unchanged VRAM
+    // generations and the same page base. Then palette/coefficients stay live.
+    g_sceneRbg0.format[0]=0x0100;
+    assert(prepareRbgDecodedPagesFor(g_sceneRbg0,image.data(),g_sceneVdp2BlockGenerations,true));
+    assert(g_rbgPages[slot(0x60000)].key().fourBit);
+    atlas[0]=0x12345678;
+    ++g_sceneVdp2BlockGenerations[128];
+    ++g_sceneVdp2BlockGenerations[32];
+    assert(prepareRbgDecodedPagesFor(g_sceneRbg0,image.data(),g_sceneVdp2BlockGenerations,true));
+    assert(atlas[0]==0x12345678);
+    g_sceneRbg0.format[0]=0x1100;
+    assert(prepareRbgDecodedPagesFor(g_sceneRbg0,image.data(),g_sceneVdp2BlockGenerations,true));
+    assert(!g_rbgPages[slot(0x60000)].key().fourBit && atlas[0]!=0x12345678);
+    // WORLD's authored plane list (060593D0): eight distinct four-bit pages.
+    constexpr unsigned worldPages[16]={0,1,4,5,2,3,6,7,4,5,0,1,6,7,2,3};
+    g_sceneRbg0.ctrl[0]=0;g_sceneRbg0.format[0]=0x0100;g_sceneRbg0.ramctl=0x13B4;
+    for(unsigned i=0;i<16;++i)g_sceneRbg0.planesA[i]=float(0x60000+worldPages[i]*2048);
+    assert(prepareRbgDecodedPages());
+    for(unsigned i=0;i<16;++i)assert(unsigned(g_rbgDecodedPlanesA[i])==slot(0x60000+worldPages[i]*2048));
     releaseRbgDecodedPages();
     assert(!g_rbgAtlasPixels && !g_rbgPageScratch && !g_rbgDecodedPagesReady);
     allocationFails=true;assert(!prepareRbgDecodedPages());

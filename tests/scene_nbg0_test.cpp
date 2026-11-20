@@ -38,7 +38,7 @@ namespace row_shader {
 void word(unsigned a,unsigned v){memory[a]=v>>8;memory[a+1]=v;}
 void longword(unsigned a,unsigned v){word(a,v>>16);word(a+2,v);}
 int main(){
-    for(unsigned i=0;i<memory.size();++i)memory[i]=unsigned char(i*73u+11u);
+    for(unsigned i=0;i<memory.size();++i)memory[i]=static_cast<unsigned char>(i*73u+11u);
     for(unsigned i=0;i<memory.size();++i)
         assert(nbgReadByte(memory.data(),float(i))==float(memory[i]));
     memory.fill(0);
@@ -84,12 +84,21 @@ int main(){
     assert(lagi::sceneNbg0Supported(1,0x8000,0x101,0));
     assert(lagi::sceneNbg0Supported(1,0x8000,0,0));
     assert(!lagi::sceneNbg0Supported(1,0x8000,1,0)); // Not a fake ratio-to-add substitute.
-    assert(!lagi::sceneNbg0Supported(0x11,0x8000,0x101,0));
+    assert(lagi::sceneNbg0Supported(0x11,0x8000,0x101,0));
     assert(!lagi::sceneNbg0Supported(1,0xc000,0x101,0));
     assert(lagi::sceneNbg0MapBase(0,63,3)==0x1e000);
     assert(lagi::sceneNbg0OverlayBand(0x1b,0x605,0x404)); // Native E011 priorities.
     assert(!lagi::sceneNbg0OverlayBand(0x1b,0x603,0x404));
     assert(!lagi::sceneNbg0OverlayBand(0x1b,0x607,0x404));
+    // Garil Desert A5: normal-background priority 2 lies beneath both
+    // RBG0 priority 3 and the main VDP1 priority 5.
+    assert(lagi::sceneNbg0Supported(0x0111,0x8000,0x0052,0));
+    assert(lagi::sceneNbg0BehindWorldBand(0x001b,0x0602,0x0405,0x0003));
+    assert(!lagi::sceneNbg0OverlayBand(0x001b,0x0602,0x0405));
+    assert(!lagi::sceneNbg0BehindWorldBand(0x001a,0x0602,0x0405,0x0003)); // NBG0 off
+    assert(!lagi::sceneNbg0BehindWorldBand(0x001b,0x0600,0x0405,0x0003)); // zero priority
+    assert(!lagi::sceneNbg0BehindWorldBand(0x001b,0x0603,0x0405,0x0003)); // at RBG0 priority
+    assert(!lagi::sceneNbg0BehindWorldBand(0x001b,0x0605,0x0405,0x0006)); // at VDP1 priority
     float4 s[8];s[1]={0x1f000,0x1f000,0x1f000,0x1f000};
     s[2]={0,0,1,1};s[3]={0x24000,14,1,0};s[7]={512,512,5,0};
     for(unsigned i=0;i<1024;++i)word(0x1f000+i*2,0x400); // Horizontal flip.
@@ -140,5 +149,14 @@ int main(){
             assert(rows[y][0]==x && rows[y][1]==py && rows[256+y][0]==z);
         }
     }
+    memory.fill(0);
+    s[0]={0,1,0,1}; // CRAM offset 1, transparent zero, 8-bit dots.
+    s[3]={0,0,1,0};
+    word(0x1f000,0x2C08); // Palette 2, both flips, character 8.
+    const unsigned characterBase=8*4*32;
+    memory[characterBase+3*64+7*8+7]=0xA5;
+    word(0x80000+(3*256+0xA5)*2,19);
+    assert(sample(0,0).x==19);
+    assert(sample(1,0).w==0);
     puts("PASS production NBG0 shader scalar addressing, flips, signed line scroll, windows and transparent zero; not GPU execution");
 }

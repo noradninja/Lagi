@@ -1,0 +1,32 @@
+// Register-gated RBG0/VDP1 calculation over the next raw native source.
+// Do not blend the second source recursively: this is NOT ordinary layered
+// alpha-over. Equal priority: VDP1 > RBG0 > NBG0 > back screen.
+float4 main(float2 uv:TEXCOORD0,uniform sampler2D layer:TEXUNIT0,
+    uniform sampler2D background:TEXUNIT1,uniform sampler2D decisions:TEXUNIT2,
+    uniform sampler2D nbg0:TEXUNIT3,uniform float4 geometry,
+    uniform float4 backColor,uniform float4 rbgState) {
+    float4 src=tex2D(layer,uv*geometry.xy);
+    float4 rbg=tex2D(background,uv);
+    float4 nbg=tex2D(nbg0,uv);
+    float code=floor(src.a*255+0.5f);
+    float4 decision=float4(0,0,0,0);
+    if(code>=128)decision=floor(tex2D(decisions,float2((code+0.5f)/256,0.5f))*255+0.5f);
+    float sp=decision.a;
+    float np=nbg.a>=0.5f?rbgState.x:0;
+    float rp=(geometry.z>=0.5f && rbg.a>=0.5f)?geometry.w:0;
+    float3 second=backColor.rgb;
+    if(np>0)second=nbg.rgb;
+    if(sp>0 && sp>=np)second=src.rgb;
+    if(rp<=sp || rp<np || rp<0.5f) {
+        if(sp<=0 || sp<np || decision.g<1.5f)return float4(second,1);
+        float3 underneath=backColor.rgb;
+        if(np>0)underneath=nbg.rgb;
+        if(rp>0 && rp>=np)underneath=rbg.rgb;
+        float3 a=floor(src.rgb*31+0.5f),b=floor(underneath*31+0.5f);
+        float r=decision.b;
+        return float4((decision.g>2.5f?min(a+b,31):floor((a*(31-r)+b*(r+1))/32))/31,1);
+    }
+    float3 a=floor(rbg.rgb*31+0.5f),b=floor(second*31+0.5f);
+    float r=rbgState.y;
+    return float4((rbgState.z>=0.5f?min(a+b,31):floor((a*(31-r)+b*(r+1))/32))/31,1);
+}

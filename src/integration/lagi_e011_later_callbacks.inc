@@ -16,7 +16,7 @@ struct sE011PaletteSequence : s_workAreaTemplate<sE011PaletteSequence>
     s32 previous{},delay{},index{};
     static void Update(sE011PaletteSequence* task) {
         s32 ticks=1;
-        if(!e006_scriptFunction_605861eSub0()) {
+        if(!townIsCutsceneDone()) {
             ticks=task->previous-lagiE011Remaining();
             task->previous=lagiE011Remaining();
         }
@@ -38,7 +38,7 @@ struct sE011PaletteSequence : s_workAreaTemplate<sE011PaletteSequence>
 };
 static s32 lagiE011StartPaletteSequence(s32 argument)
 {
-    if(e006_scriptFunction_605861eSub0())return 0;
+    if(townIsCutsceneDone())return 0;
     static const sE011PaletteSequence::TypedTaskDefinition definition={nullptr,sE011PaletteSequence::Update,nullptr,nullptr};
     auto* task=createSubTask<sE011PaletteSequence>(currentResTask,&definition);
     if(task) {
@@ -84,7 +84,7 @@ static void lagiE011ScreenCommon(unsigned mode,u32 graphics)
 // 060557E0: descriptor is five wave parameters and a duration.
 static s32 lagiE011SetScreenWave(s32 argument)
 {
-    if(e006_scriptFunction_605861eSub0())return 0;
+    if(townIsCutsceneDone())return 0;
     const auto descriptor=gTWN_E011->getSaturnPtr(argument);
     lagiE011ScreenCommon(1,0x060607D8);
     auto* task=gE011BackgroundTask;
@@ -101,7 +101,7 @@ static s32 lagiE011SetScreenWave(s32 argument)
 // 06055872: descriptor holds a world point, screen offsets and duration.
 static s32 lagiE011SetScreenTracking(s32 argument)
 {
-    if(e006_scriptFunction_605861eSub0())return 0;
+    if(townIsCutsceneDone())return 0;
     const auto descriptor=gTWN_E011->getSaturnPtr(argument);
     lagiE011ScreenCommon(2,0x06060926);
     auto* task=gE011BackgroundTask;

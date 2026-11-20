@@ -18,7 +18,7 @@ struct Stats{
  s16 mB8_maxHP=400,mBA_maxBP=100,m12_classMaxHP=0,m16_classMaxBP=0,m10_currentHP=400,m14_currentBP=100;
 };
 struct {Stats gameStats;}mainGameState;
-struct sBattleResultScreen{u8 m73_oldLevel=0;s8 m74=0;std::array<u16,6>m6_gains{};};
+struct sBattleResultScreen{u8 m73_oldLevel=0;s8 m74=0;std::array<u16,6>m6_gains{};std::array<u8,5>m75_oldGrowthLevels{};};
 int statUpdates=0;void updateDragonStatsFromLevel(){++statUpdates;}
 #include "../src/integration/lagi_battle_growth.inc"
 int main(){
@@ -30,8 +30,10 @@ int main(){
  assert(s.mC_laserPower==12&&s.mE_gunPower==16);
  s.mB8_maxHP=9989;s.mBA_maxBP=998;lagiApplyBattleGrowth(&r);
  assert(r.m6_gains[0]==10&&r.m6_gains[1]==1&&s.m10_currentHP==410&&s.m14_currentBP==101&&statUpdates==1);
- for(unsigned i=1;i<5;++i)assert(!s.m24_growth[i]&&s.m4_growthLevels[i]==2&&s.m80_growthXP[i]==200);
+ for(unsigned i=1;i<5;++i)assert(!s.m24_growth[i]&&s.m4_growthLevels[i]==2&&s.m80_growthXP[i]==200&&r.m75_oldGrowthLevels[i]==0);
  battleResultScreen_checkLevelUp(&r);assert((!r.m74&&r.m6_gains==std::array<u16,6>{}));
+ lagiApplyBattleGrowth(&r);
+ for(unsigned i=1;i<5;++i)assert(r.m75_oldGrowthLevels[i]==2&&s.m4_growthLevels[i]==2);
  s.m0_level=98;s.m20_XP=99999999;battleResultScreen_checkLevelUp(&r);assert(!r.m74&&s.m0_level==98);
  s=Stats{};s.m1C_dragonCursorY=2048;s.m1A_dragonCursorX=-2048;
  battleResultScreen_updateSub5(100);

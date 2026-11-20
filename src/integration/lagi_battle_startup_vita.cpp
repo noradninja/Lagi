@@ -1,11 +1,16 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/battle_startup.h"
+#include "lagi/battle_loading_cover.h"
 #include "lagi/platform.h"
 #include "lagi/disc_image.h"
 #include "battle/battleManager.h"
 #include "battle/battleGenericData.h"
 #include "battle/BTL_A3/BTL_A3.h"
 #include "battle/BTL_A3_2/BTL_A3_2.h"
+#include "battle/BTL_A5/BTL_A5.h"
+#include "battle/BTL_A5/BTL_A5_2.h"
+#include "battle/BTL_A5/BTL_A5_3.h"
+#include "battle/BTL_T0/BTL_T0.h"
 #include "commonOverlay.h"
 
 namespace {
@@ -23,15 +28,41 @@ bool reject(const std::string& error)
 
 bool lagiPrepareNativeA3Battle()
 {
+    const auto& fade=g_fadeControls.m0_fade0;
+    const bool startingCoveredLoad=lagi::battleLoadingCover.active && !lagi::battleLoadingCover.loading;
+    if(!lagi::battleLoadingCover.allowLoad(fade.m20_stopped,
+        fade.m0_color[0].getInteger(),fade.m0_color[1].getInteger(),fade.m0_color[2].getInteger()))
+        return false; // Keep publishing the outgoing scene while Azel fades it.
+    if(startingCoveredLoad)
+        lagi::platform::logging::writef("[BattleLoadingCover] loadUnderWhite=1\n");
     if(!gBattleManager || !gCommonFile)return reject("native manager/COMMON unavailable");
     const int overlay=gBattleManager->m2_currentBattleOverlayId;
     const int sub=gBattleManager->m6_subBattleId;
+    // Capture the authored secondary rider selection before A5 initializes.
+    // Type 2 is Gash/Gush; zero means the save does not request a passenger.
+    static int lastRiderOverlay=-1, lastRiderSub=-1;
+    if(overlay!=lastRiderOverlay || sub!=lastRiderSub) {
+        lastRiderOverlay=overlay;
+        lastRiderSub=sub;
+        lagi::platform::logging::writef(
+            "[GarilBattleRiders] overlay=%d sub=%d rider1=%u rider2=%u\n",
+            overlay,sub,unsigned(mainGameState.gameStats.m2_rider1),
+            unsigned(mainGameState.gameStats.m3_rider2));
+    }
     if(overlay<0 || static_cast<std::size_t>(overlay)>=gCommonFile->battleOverlaySetup.size())
         return reject("overlay index outside COMMON table");
     const auto& entry=gCommonFile->battleOverlaySetup[overlay];
-    if(entry.m4_prg!="BTL_A3.PRG" && entry.m4_prg!="BTL_A3_2.PRG")return reject("overlay not integrated: "+entry.m4_prg);
+    const bool desertOverlay = entry.m4_prg=="BTL_A5.PRG" ||
+        entry.m4_prg=="BTL_A5_2.PRG" || entry.m4_prg=="BTL_A5_3.PRG";
+    if(entry.m4_prg!="BTL_A3.PRG" && entry.m4_prg!="BTL_A3_2.PRG" &&
+       entry.m4_prg!="BTL_T0.PRG" && !desertOverlay)
+        return reject("overlay not integrated: "+entry.m4_prg);
+    if(desertOverlay && getFileSize(entry.m4_prg.c_str())==0u)
+        return reject("desert battle overlay missing: "+entry.m4_prg);
     if(sub<0 || static_cast<unsigned>(sub)>=entry.mC_numSubBattles)
         return reject("subbattle index outside authored overlay");
+    if(entry.m4_prg=="BTL_T0.PRG" && getFileSize("BTL_T0.PRG")<392928u)
+        return reject("BTL_T0.PRG missing/truncated");
     const int disc=lagi::disc::selected_disc();
     if(g_BTL_GenericData && genericDisc>=0 && disc!=genericDisc)
         return reject("disc changed; generic-data cache lifecycle needs restoration");
@@ -55,9 +86,16 @@ bool lagiEnterNativeA3Battle(s_workArea* parent)
     // Native entry owns overlay data, current-overlay selection and creation
     // of the music/wait/engine task. No substitute scene or debug stats.
     const auto& name=gCommonFile->battleOverlaySetup[gBattleManager->m2_currentBattleOverlayId].m4_prg;
-    auto* task=name=="BTL_A3_2.PRG"?overlayStart_BTL_A3_2(parent):overlayStart_BTL_A3(parent);
+    s_workArea* task=nullptr;
+    if(name=="BTL_A3.PRG") task=overlayStart_BTL_A3(parent);
+    else if(name=="BTL_A3_2.PRG") task=overlayStart_BTL_A3_2(parent);
+    else if(name=="BTL_T0.PRG") task=overlayStart_BTL_T0(parent);
+    else if(name=="BTL_A5.PRG") task=overlayStart_BTL_A5(parent);
+    else if(name=="BTL_A5_2.PRG") task=overlayStart_BTL_A5_2(parent);
+    else if(name=="BTL_A5_3.PRG") task=overlayStart_BTL_A5_3(parent);
+    else return reject("overlay entry not integrated: "+name);
     if(!task)
-        return reject("native A3 main-task allocation failed");
+        return reject("native battle main-task allocation failed: "+name);
     lagi::platform::logging::writef("[BattleStartup] enter %s overlay=%d sub=%d parent=%p\n",name.c_str(),
         int(gBattleManager->m2_currentBattleOverlayId),int(gBattleManager->m6_subBattleId),static_cast<void*>(parent));
     startupError.clear();

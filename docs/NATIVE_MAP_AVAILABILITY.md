@@ -44,6 +44,12 @@ port safety checks, not additional authored progression rules.
 
 ## Unresolved live binding
 
+Superseded for the field gate by Goal6: MAIN06012434 maps to the existing
+setFieldSubTaskVar0/fieldSubTaskVar0, with matching subfield Init call at
+06011BB2. The resolver now reads that original byte. See
+`GOAL6_FIELD_MAPS.md` for evidence, tests and remaining backend limitations.
+The historical investigation below records why no value was guessed earlier.
+
 The meaning and live owner of0024B89C are **not established**. The route
 adapter still requires its value explicitly. Live source resolution only
 bypasses that unknown when both gate values yield the same native result.

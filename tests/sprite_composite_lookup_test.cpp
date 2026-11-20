@@ -24,7 +24,7 @@ int main() {
     for(unsigned threshold=0;threshold<8;++threshold)
     for(unsigned condition=0;condition<4;++condition)
     for(unsigned bg=0;bg<8;++bg)for(unsigned add=0;add<2;++add) {
-        s.ccctl=0x40|(add<<8);s.spctl=(condition<<12)|(threshold<<8);s.prir=bg;
+        s.ccctl=0x40|(add<<8);s.spctl=(condition<<12)|(threshold<<8)|3;s.prir=bg;
         s.priority[0]=p|(((p+1)&7)<<8);s.priority[1]=((p+2)&7)|(((p+3)&7)<<8);
         s.ratio[0]=r|(((r+7)&31)<<8);s.ratio[1]=((r+13)&31)|(((r+23)&31)<<8);
         for(unsigned code=0;code<256;++code) {

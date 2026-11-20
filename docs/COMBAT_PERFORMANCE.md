@@ -1,5 +1,7 @@
 # Combat performance investigation
 
+**Historical combat measurements:** The frame-time results below are from October configurations. Current full-resolution A3/A5 battle defaults and effect coverage are different. Compare only matched scenes and settings, and use [status](STATUS.md) for the current device-testing boundary.
+
 Keep the fullres screen-space dither renderer and native Azel behavior intact.
 This checkpoint adds measurements, not a claimed FPS improvement. The original
 22 ms target / 33 ms deadline still requires matched hardware evidence.

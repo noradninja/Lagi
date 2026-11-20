@@ -1,4 +1,5 @@
 #include "lagi/battle_startup.h"
+#include "lagi/battle_loading_cover.h"
 #include <cassert>
 #include <cstdio>
 #include <string>
@@ -12,8 +13,11 @@ struct Common{std::vector<Entry> battleOverlaySetup;}common;
 Common* gCommonFile=nullptr;
 int selectedDisc=1,initializations=0,entries=0,reports=0;
 bool loadSucceeds=true,allocationSucceeds=true;
+struct FadeValue{int value=255;int getInteger()const{return value;}};
+struct {struct {bool m20_stopped=true;FadeValue m0_color[3];}m0_fade0;}g_fadeControls;
 unsigned resourceBytes=lagi::battle_generic_minimum_bytes;
-unsigned getFileSize(const char* name){assert(std::string(name)=="BTL_A3.PRG");return resourceBytes;}
+unsigned tutorialBytes=392928;
+unsigned getFileSize(const char* name){if(std::string(name)=="BTL_T0.PRG")return tutorialBytes;assert(std::string(name)=="BTL_A3.PRG");return resourceBytes;}
 struct BTL_GenericData{u8* m_data=nullptr;unsigned m_dataSize=0;static void staticInit();};
 BTL_GenericData* g_BTL_GenericData=nullptr;
 void BTL_GenericData::staticInit(){
@@ -25,6 +29,8 @@ namespace lagi::platform::logging {template<class... T>void writef(const char*,T
 s_workArea* expectedParent=nullptr;
 s_workArea* overlayStart_BTL_A3(s_workArea* parent){assert(parent==expectedParent);++entries;return allocationSucceeds?parent:nullptr;}
 int bossEntries=0;
+int tutorialEntries=0;
+s_workArea* overlayStart_BTL_T0(s_workArea* parent){assert(parent==expectedParent);++tutorialEntries;return allocationSucceeds?parent:nullptr;}
 s_workArea* overlayStart_BTL_A3_2(s_workArea* parent){assert(parent==expectedParent);++bossEntries;return allocationSucceeds?parent:nullptr;}
 #include "service.inc"
 struct sBattleOverlayTask:s_workArea {int m0=1,m2_numLoadedFnt=0;};
@@ -37,7 +43,7 @@ int main(){
     const int firstError=reports;assert(!lagiPrepareNativeA3Battle() && reports==firstError);
     gBattleManager=&manager;gCommonFile=&common;
     assert(!lagiPrepareNativeA3Battle());
-    common.battleOverlaySetup={{"BTL_A3.PRG",10},{"BTL_A3_2.PRG",2},{"BTL_A5.PRG",1}};
+    common.battleOverlaySetup={{"BTL_A3.PRG",10},{"BTL_A3_2.PRG",2},{"BTL_A5.PRG",1},{"BTL_T0.PRG",6}};
     manager.m2_currentBattleOverlayId=-1;assert(!lagiPrepareNativeA3Battle());
     manager.m2_currentBattleOverlayId=2;assert(!lagiPrepareNativeA3Battle() && initializations==0);
     manager.m2_currentBattleOverlayId=0;manager.m6_subBattleId=10;assert(!lagiPrepareNativeA3Battle());
@@ -55,13 +61,34 @@ int main(){
     ++selectedDisc;assert(!lagiPrepareNativeA3Battle() && initializations==2);
     --selectedDisc;
     sBattleOverlayTask task;expectedParent=&task;allocationSucceeds=false;
+    lagi::battleLoadingCover.begin();g_fadeControls.m0_fade0.m20_stopped=false;
+    const int entriesBeforeCover=entries;
+    for(int i=0;i<60;++i){
+        battleOverlayTask_Draw(&task);
+        assert(task.m0==1 && fontLoads==0 && entries==entriesBeforeCover);
+        assert(lagi::battleLoadingCover.retainPreviousScene(12)); // Old outgoing geometry cannot release cover.
+    }
+    g_fadeControls.m0_fade0.m20_stopped=true;
+    g_fadeControls.m0_fade0.m0_color[1].value=254;
+    battleOverlayTask_Draw(&task);assert(fontLoads==0);
+    g_fadeControls.m0_fade0.m0_color[1].value=255;
     battleOverlayTask_Draw(&task);assert(task.m0==1 && fontLoads==2);
+    assert(lagi::battleLoadingCover.retainPreviousScene(0));
     battleOverlayTask_Draw(&task);assert(task.m0==1 && fontLoads==2);
     allocationSucceeds=true;battleOverlayTask_Draw(&task);
     assert(task.m0==2 && fontLoads==2);const int started=entries;
+    assert(!lagi::battleLoadingCover.retainPreviousScene(1));
     battleOverlayTask_Draw(&task);assert(entries==started && task.m0==2);
     manager.m2_currentBattleOverlayId=1;manager.m6_subBattleId=0;expectedParent=&parent;
     assert(lagiEnterNativeA3Battle(&parent) && bossEntries==1 && entries==started);
+    manager.m2_currentBattleOverlayId=3;
+    for(int lesson=0;lesson<6;++lesson){manager.m6_subBattleId=lesson;assert(lagiPrepareNativeA3Battle());assert(lagiEnterNativeA3Battle(&parent));}
+    assert(tutorialEntries==6 && entries==started && bossEntries==1);
+    manager.m6_subBattleId=6;assert(!lagiPrepareNativeA3Battle());
+    manager.m6_subBattleId=-1;assert(!lagiPrepareNativeA3Battle());
+    manager.m6_subBattleId=0;tutorialBytes=392927;assert(!lagiPrepareNativeA3Battle());tutorialBytes=392928;
+    allocationSucceeds=false;assert(!lagiEnterNativeA3Battle(&parent));allocationSucceeds=true;
+    manager.m2_currentBattleOverlayId=2;assert(!lagiEnterNativeA3Battle(&parent) && tutorialEntries==7 && entries==started);
     delete[] g_BTL_GenericData->m_data;delete g_BTL_GenericData;g_BTL_GenericData=nullptr;
-    puts("PASS: production A3 preflight and generated native overlay Draw: generic-data retry/once-init, authored IDs, unsupported overlay/disc rejection, factory retry without duplicate fonts, running-state handoff; mocked engine/data parser");
+    puts("PASS: production A3/T0 preflight and generated native overlay Draw: six tutorial indices, truncated tutorial resource, explicit factory/no fallback, generic-data retry/once-init, authored IDs, unsupported overlay/disc rejection, factory retry without duplicate fonts, running-state handoff; mocked engine/data parser");
 }

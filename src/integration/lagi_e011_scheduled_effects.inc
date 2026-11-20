@@ -1,9 +1,9 @@
 // Original E011 06058884..06058BBA. These tasks borrow their native file
 // owner's bundle/VRAM; no runtime resource is owned by the script dispatcher.
-static s32 lagiE011Remaining() { return e006_scriptFunction_6057438(); }
+static s32 lagiE011Remaining() { return townGetCutsceneHalfPosition(); }
 static s32 lagiE011EffectTicks(s16& previous)
 {
-    if (e006_scriptFunction_605861eSub0()) return 1;
+    if (townIsCutsceneDone()) return 1;
     const s32 remaining = lagiE011Remaining();
     const s32 delta = previous - remaining;
     // Original tasks sample again when recording the next previous time.

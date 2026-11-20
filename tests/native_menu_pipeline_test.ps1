@@ -17,7 +17,7 @@ try {
   if ($LASTEXITCODE -ne 0) {throw "Generated Vita syntax failed: $name"}
  }
  foreach($source in @('lagi_azel_field_navigator.cpp','lagi_azel_field_radar.cpp','lagi_runtime.cpp','lagi_heap_vita.cpp','lagi_vdp1_animated_quad_vita.cpp')) {
-  & $VitaCompiler -std=c++20 -fsyntax-only -DSHIPPING_BUILD=1 -DLAGI_PLATFORM_VITA=1 "-I$root/include" "-I$AzelSourceRoot" (Join-Path $root "src/integration/$source")
+  & $VitaCompiler -std=c++20 -fsyntax-only -DSHIPPING_BUILD=1 -DLAGI_PLATFORM_VITA=1 -DLAGI_BATTLE_BUILD_NATIVE=1 -DLAGI_BATTLE_BUILD_EXECUTE_A3=1 -DLAGI_BATTLE_BUILD_LINK_AUDIT=0 "-I$root/include" "-I$AzelSourceRoot" (Join-Path $root "src/integration/$source")
   if ($LASTEXITCODE -ne 0) {throw "Native service Vita syntax failed: $source"}
  }
  $dispatcher=Get-Content -Raw (Join-Path $generated 'field_field_a3_o_fld_a3.cpp')
@@ -31,6 +31,26 @@ try {
  if (!$dragon.Contains('transformAndAddVecByCurrentMatrix(&varC, &lightLocation); // LAGI_NATIVE_POINT_POSITION') -or
      !$dragon.Contains('transformVecByCurrentMatrix(varC, lightLocation);')) {throw 'Point position translation or directional vector transform missing'}
  if ($lcs.Contains('pDragon->m_EC = rotation;') -or !$lcs.Contains('LAGI_SPARKLE_FLAGS_PRESERVED')) {throw 'Sparkle orbit corrupts dragon lighting flags'}
+ if (!$dragon.Contains('transformAndAddVecByCurrentMatrix(') -or
+     !$dragon.Contains('&pTypedWorkArea->mD8_sparklePosition, &lightLocation); // LAGI_COLLECTION_ANIMATED_LIGHT') -or
+     !$dragon.Contains('[CollectionLight] world=') -or
+     $dragon.Contains('lightLocation = pTypedWorkArea->mD8_sparklePosition;') -or
+     $dragon.Contains('mE4_sparkleScale.m_value == 0x10000')) {throw 'Collection light must use native view-space point coordinates without scale gating'}
+ foreach($token in @('LAGI_TRAIL_LIGHT_START','LAGI_TRAIL_LIGHT_FOLLOW','LAGI_SAVE_POINT_TRAIL_LIGHT',
+                    'lagiCollectionTrailHasLight(pThis)','trail->m1C->m4_callback == &LCSItemBox_CallbackSavePoint',
+                    'lagiStartCollectionTrailLight(s32 colorIndex)',
+                    's_LCSLaser_DeleteTrailSub0Data0[colorIndex]','LAGI_NATIVE_TRAIL_LAST_WRITTEN',
+                    'trail->m24_receivedItemId >= 0')) {
+  if (!$dispatcher.Contains($token)) {throw "Collection light missing native trail ownership: $token"}
+ }
+ if ([regex]::Matches($dispatcher, 'LAGI_NATIVE_TRAIL_LAST_WRITTEN').Count -ne 2 -or
+     !$dispatcher.Contains('const s32 index = (pThis->m154 - 1) & 0xF;') -or
+     $dispatcher.Contains('trailIndex = pThis->m154;')) {
+  throw 'LCS primary sprite, secondary particles and moving light do not use the last-written trail position'
+ }
+ if (!$lcs.Contains('LAGI_TRAIL_LIGHT_CLEANUP') -or
+     !$lcs.Contains('mD8_sparklePosition') -or
+     !$lcs.Contains('mE4_sparkleScale = 0;')) {throw 'Collection light sparkle handoff/cleanup missing'}
  if (!$lcs.Contains('lagiDrawFieldRadarObjectMarkers(r4);')) {throw 'Object-marker traversal hook missing'}
  if (!$lcs.Contains('pThis->m2C_localOffset[2] = pThis->m34_randomizedLifetime;') -or
      !$lcs.Contains('displayRaySegment_2Width(radial, widths, base + 0x6B0, 0x031E, base + 0x1780, &colors, 8);')) {throw 'Native radial collection burst hooks missing'}

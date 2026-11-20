@@ -1,0 +1,6 @@
+#include "vdp1_mesh_coverage.cginc"
+float4 main(float4 vColor : COLOR,float4 fragCoord : WPOS)
+{
+    if(lagiVdp1MeshDiscard(fragCoord.x,fragCoord.y))discard;
+    return vColor;
+}

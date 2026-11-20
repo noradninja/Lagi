@@ -1,5 +1,7 @@
 # First-section cleanup goals
 
+**Historical first-section plan (October 2026):** These numbered goals record the work sequence that led into Valley and Garil. They are not today's task list. Current progress is in [status](STATUS.md), and the original Disc 1 Berserk tables are now documented in [BERSERKS_DISC1.md](BERSERKS_DISC1.md).
+
 ## 2026-10-23 handoff note
 
 The separate ISO loader work is complete and accepted on Vita, including its
@@ -15,22 +17,69 @@ One numbered goal is active at a time. Replace it with the next only after
 the required evidence is accepted; do not call source/build tests Vita proof.
 Independent corrections remain atomic commits.
 
-1. **Active: shared combat performance and encounter logic.** Target ideal
+1. **Accepted baseline: shared combat performance and encounter logic.** Target ideal
    25 ms/frame, maximum 33 ms/frame; investigate the first slow Gelata encounter
    without enemy-specific shortcuts. Audit RNG/seeding, accumulation, story
    gates, selection and cadence without arbitrary rate increases.
-2. Combat bonus rewards and earned Berserk progression: eligibility, native
+2. **Accepted with deferred menu check: combat bonus rewards and earned Berserk progression:** eligibility, native
    calculation, inventory/unlock state, display and save persistence.
-3. Saved-game fade/black hold; Valley-to-Excavation fade; keep-awake ticking
+3. **Accepted:** Saved-game fade/black hold; Valley-to-Excavation cut; keep-awake ticking
    during in-engine cinematics as well as Cinepak, without changing simulation.
-4. All tunnel enter/leave audio, immediate switch sound fade, native switch
-   color/gloss behavior.
-5. Excavation cinematic/town floor corruption: shared source/native black
+4. **Accepted: native switch color/gloss behavior through shared model color
+   animation.** Tunnel enter/leave audio and switch audio are user-confirmed
+   fixed; do not reopen them. Restore the shared pipeline efficiently with GXM.
+5. **Accepted:** Excavation cinematic/town floor corruption: shared source/native black
    behavior, not a scene-specific mask.
-6. Second field-map acquisition/entry failure, visited-area marking, selection,
+6. **Accepted:** Second field-map acquisition/entry failure, visited-area marking, selection,
    exit and save/reload correctness.
-7. Native battle tutorials and first-section item/Berserk coverage, including
+7. **Active, tutorials first:** Native battle tutorials and first-section item/Berserk coverage, including
    Blast Chip and Energy Prism trails, lighting, camera, timing and cleanup.
+
+## Goal 3 hardware acceptance
+
+2026-10-24: user confirms the Valley-to-Excavation transition is correct after
+ee74725, then explicitly confirms both remaining checks: saved-load black hold
+and in-engine cinematic keep-awake. Goal 3 is complete on that hardware
+acceptance, together with the recorded host checks and Vita build. No later
+goal is implied complete. Goal 4 (tunnel audio and native switch color/gloss)
+is next in the agreed sequence.
+
+## Goal 4 hardware acceptance
+
+2026-10-24: user confirms 3010904 with a fresh lagi.log after the requested
+running/off/restart test. NativeColorAnimation reports valid sparse updates
+on the 11-polygon model. Eight subsequent tunnel presentation windows each
+contain 120 intervals at 29.970 FPS with zero intervals over two VBlanks.
+Renderer means are 10.602-12.220 ms, maximum 23.239 ms. These are tunnel
+measurements, not a matched whole-game A/B or a global frame-time guarantee.
+Goal 4 is accepted; Goal 5 (Excavation cinematic/town floor corruption) is next.
+
+## Goal 2 activation after user acceptance
+
+2026-10-24: user accepts Goal 2 as practically complete: item/Berserk awards,
+leveling, palettes, corrected level page and save/load work on hardware. Earned
+Berserk ownership after reload remains deferred to Goal 7 because the unfinished
+menu crashes before inspection. That limitation is not a verified pass.
+Goal 3 is now active; preserve Goal 1's accepted performance baseline.
+
+The user accepted a2bdf46's corrected loading sequence and agreed to move
+forward with present combat performance as the baseline. This is an explicit
+acceptance change, not a claim that the ideal 25 ms / absolute 33 ms target
+was achieved. Occasional visible-frame misses remain documented in
+BATTLE_ENTRY_TIMING.md. Goal 2 now replaces Goal 1; do not keep tuning combat
+or generalize every transition while implementing rewards.
+
+Initial inspection: native rank calculation is already supplied by
+lagi_battle_rating.inc, and XP/level services by lagi_battle_growth.inc via
+guarded generated-source replacements. The upstream result-screen item
+announcement/award function remains a stub; existing native stubs are not
+proof that XP is also absent from the generated build. First audit the
+original enemy-result bookkeeping at 0606EBC8..0606EC8C and item-selection/
+award routine at 0606ECA2, trace the producer of the engine's reward records,
+and restore that shared path before implementing earned-Berserk announcement
+and persistence. Use original disc tables/flags and actual inventory/save
+consumers. Keep independent corrections atomic, extern/Azel unchanged, and
+require host boundary tests plus hardware rewards/save-reload evidence.
 
 ## Goal 1 baseline (complete-run H:/data/lagi/lagi.log)
 
@@ -52,6 +101,17 @@ quanta report backend 0. Do not infer the selected execution path from one
 label or change DSP/audio semantics without inspecting its dispatch boundary.
 
 ## Encounter audit so far
+
+**2026-10-24 native story-selector correction:** the older field-2 selector
+example below describes the previously selected reconstruction branch, not
+the correct native choice for a clear story bit. Original MAIN's
+TST/MOVT/XOR/SHLL2/SHLL sequence selects offset zero for clear and eight for
+set. The generated adapter now removes the reconstruction's extra XOR on
+getBit. Clear story bit 87 selects 0020873C/root 00207624 (reset 120,
+initial 90, failure limit 10); set selects 00208744/root 002076A0 (150,
+120, 20). No encounter chance/weight/countdown constants are tuned. The
+disc-backed production selector test covers both branches and all 5040
+game-state bit positions; hardware branch/encounter acceptance is pending.
 
 The generated runtime compiles Azel dummy.cpp's RNG and titleScreen.cpp's
 seeding path, not a platform rand() replacement. Title initialization seeds

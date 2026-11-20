@@ -4,9 +4,30 @@
 #include "VDP1.h"
 #include "VDP2.h"
 #include "common.h"
+#include "lagi/native_task_disposal.h"
+#include <unordered_map>
 
 s_task* taskListHead = nullptr;
 int numActiveTask = 0;
+
+namespace lagi::tasks {
+static std::unordered_map<void*,WorkAreaDisposer> workAreaDisposers;
+void register_work_area_disposer(void* area,WorkAreaDisposer disposer)
+{
+    assert(area && disposer);
+    const auto inserted=workAreaDisposers.emplace(area,disposer).second;
+    assert(inserted);
+    (void)inserted;
+}
+static void dispose_registered_work_area(void* area)
+{
+    const auto found=workAreaDisposers.find(area);
+    if(found==workAreaDisposers.end())return;
+    const auto disposer=found->second;
+    workAreaDisposers.erase(found); // callback may create/retire other owners
+    disposer(area);
+}
+}
 
 // Owned by upstream PDS.cpp; the Vita task host only consumes the pause state.
 extern std::array<u8, 3> pauseEngine;
@@ -53,6 +74,10 @@ void processTasks(s_task** ppTask)
                     freeHeapForTask(task->getWorkArea(), task->m_heapNode->getUserData());
 #endif
                 *ppTask = task->m0_pNextTask;
+                // Children and Delete callbacks have finished and native heaps
+                // are drained. Only explicitly registered concrete owners are
+                // destroyed; legacy work areas retain their existing contract.
+                lagi::tasks::dispose_registered_work_area(task->getWorkArea());
                 delete task;
                 task = *ppTask;
                 if (!task) return;

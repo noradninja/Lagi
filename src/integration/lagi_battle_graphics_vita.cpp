@@ -1,5 +1,6 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/battle_graphics.h"
+#include "lagi/battle_loading_cover.h"
 #include "lagi/resident_video.h"
 #include "lightSetup.h"
 #include <new>
@@ -76,6 +77,7 @@ void* lagiCaptureBattleGraphics(bool includeFade)
     }
     saved->backColor=getVdp2VramU16((vdp2Controls.m4_pendingVdp2Regs->mAC_BKTA&0x7FFFF)*2);
     saved->lineColor=getVdp2VramU16((vdp2Controls.m4_pendingVdp2Regs->mA8_LCTA&0x7FFFF)*2);
+    lagi::battleLoadingCover.begin();
     return saved;
 }
 
@@ -124,6 +126,7 @@ bool lagiRestoreBattleGraphics(void*& backup)
 
 void lagiDiscardBattleGraphics(void*& backup)
 {
+    if(backup)lagi::battleLoadingCover={};
     delete static_cast<BattleGraphics*>(backup);
     backup=nullptr;
 }

@@ -7,6 +7,9 @@ if($LASTEXITCODE -ne 0){throw 'VDP2 sprite fixture compile failed'}
 if($LASTEXITCODE -ne 0){throw 'VDP2 sprite fixture failed'}
 $repo=Split-Path $PSScriptRoot -Parent
 $renderer=Get-Content -Raw "$repo/src/platform/vita/neptune_renderer.cpp"
+$bridge=Get-Content -Raw "$repo/src/integration/lagi_scene_bridge.cpp"
+if(!$bridge.Contains('sprite.rbgRatio=regs->m10C_CCRR;')){throw 'Native RBG0 blend ratio not captured with sprite state'}
+if(!$renderer.Contains('g_spriteColor = g_pendingSpriteColor;')){throw 'Frame-matched composition state publication lost'}
 $begin=$renderer.IndexOf('Vdp1UiPass::WorldEffects, &vdp1UiSpriteSlot);', $renderer.IndexOf('const std::uint64_t composeStartUs'))
 $finish=$renderer.IndexOf('finishSpriteComposite(renderTarget,colorSurface,syncObject)',$begin)
 $text=$renderer.IndexOf('drawAzelVdp2TextLayerGpu();',$begin)

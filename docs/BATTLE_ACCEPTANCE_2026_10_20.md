@@ -1,5 +1,7 @@
 # Latest battle acceptance and follow-up
 
+**Historical battle acceptance (October 2026):** The source anchors, performance captures and visual tests below document their original checkpoints. The current combat baseline and Garil checks are in [STATUS.md](STATUS.md).
+
 ## 2026-10-21 cloud-line transport prerequisite
 
 ### Accelerated NBG0 cloud composition (hardware acceptance pending)

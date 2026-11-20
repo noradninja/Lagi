@@ -7,3 +7,4 @@ int lagiSubmitCutscenePCM(const void* owner,const std::uint8_t* data,std::size_t
     const std::uint8_t* wrapped=nullptr,std::size_t contiguous=~std::size_t(0));
 void lagiStopCutscenePCM(const void* owner);
 void lagiPauseCutscenePCM(const void* owner,bool paused);
+unsigned lagiCutscenePCMQueued(const void* owner);

@@ -1,6 +1,6 @@
 // Bounded resource cache, never a scene-specific water shortcut. Layouts
 // exceeding capacity retain the complete raw decoder rather than dropping pages.
-static constexpr unsigned kRbgPageSlots=4,kRbgAtlasWidth=1024;
+static constexpr unsigned kRbgPageSlots=8,kRbgAtlasWidth=1024,kRbgAtlasHeight=2048;
 static void* g_rbgAtlasPixels=nullptr;
 static std::array<unsigned,256> g_rbgPageLookup{};
 static SceUID g_rbgAtlasUid=-1;
@@ -27,19 +27,21 @@ template<class State> static bool prepareRbgDecodedPagesFor(const State& rbg,
         g_rbgPageFrontend=frontend;
     }
     const auto start=sceKernelGetProcessTimeWide();
+    unsigned decodeUs=0,atlasCopyUs=0;
     static unsigned frame=0,lastReason=~0u,logBudget=32;
     ++frame;
     auto status=[&](unsigned reason,unsigned pages,unsigned rebuilt,unsigned hits) {
         if((reason!=lastReason && logBudget) || (frame%120==0) || (rebuilt && logBudget)) {
             if(logBudget)--logBudget;
-            logging::writef("[RBG0PageCache] active=%u reason=%u pages=%u rebuilt=%u hits=%u prepUs=%u uploadBytes=%u frontend=%u\n",
+            logging::writef("[RBG0PageCache] active=%u reason=%u pages=%u rebuilt=%u hits=%u prepUs=%u uploadBytes=%u frontend=%u decodeUs=%u atlasCopyUs=%u\n",
                 reason==0?1u:0u,reason,pages,rebuilt,hits,
-                static_cast<unsigned>(sceKernelGetProcessTimeWide()-start),rebuilt*512u*512u*4u,frontend?1u:0u);
+                static_cast<unsigned>(sceKernelGetProcessTimeWide()-start),rebuilt*512u*512u*4u,frontend?1u:0u,
+                decodeUs,atlasCopyUs);
         }
         lastReason=reason;
         return reason==0;
     };
-    if(!lagi::rbgTile16EightBit(static_cast<unsigned>(rbg.format[0]),
+    if(!lagi::rbgTile16Indexed(static_cast<unsigned>(rbg.format[0]),
         static_cast<unsigned>(rbg.format[1])))return status(1,0,0,0);
     std::array<unsigned,kRbgPageSlots> required{};
     unsigned count=0;
@@ -55,19 +57,18 @@ template<class State> static bool prepareRbgDecodedPagesFor(const State& rbg,
         return true;
     };
     const unsigned mode=static_cast<unsigned>(rbg.ctrl[0])&3;
-    const auto overMode=[](float format){return (static_cast<unsigned>(format)>>2)&3;};
-    if((mode!=1 && overMode(rbg.parameterFormat[0])==1) ||
-       (mode!=0 && overMode(rbg.parameterFormat[1])==1))return status(5,0,0,0);
+    // OVPNR mode 1 uses a direct single-character GPU sample outside the
+    // map. Its register/character state needs no decoded-page cache slot.
     if((mode!=1 && !collect(rbg.planesA,static_cast<unsigned>(rbg.parameterFormat[0])&3)) ||
        (mode!=0 && !collect(rbg.planesB,static_cast<unsigned>(rbg.parameterFormat[1])&3)))
         return status(2,count,0,0);
     if(!g_rbgPageAllocationAttempted) {
         g_rbgPageAllocationAttempted=true;
-        g_rbgAtlasPixels=probeCdramAlloc(kRbgAtlasWidth*kRbgAtlasWidth*4,
+        g_rbgAtlasPixels=probeCdramAlloc(kRbgAtlasWidth*kRbgAtlasHeight*4,
             SCE_GXM_MEMORY_ATTRIB_READ,&g_rbgAtlasUid);
         if(!g_rbgAtlasPixels ||
             sceGxmTextureInitLinear(&g_rbgDecodedAtlasTexture,g_rbgAtlasPixels,
-                SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,kRbgAtlasWidth,kRbgAtlasWidth,0)<0) {
+                SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,kRbgAtlasWidth,kRbgAtlasHeight,0)<0) {
             releaseRbgDecodedPages();g_rbgPageAllocationAttempted=true;
             return status(3,count,0,0);
         }
@@ -101,16 +102,21 @@ template<class State> static bool prepareRbgDecodedPagesFor(const State& rbg,
     for(unsigned i=0;i<count;++i) {
         const unsigned slot=slots[i];
         const lagi::RbgPageKey key{required[i],static_cast<std::uint16_t>(rbg.format[1]),
-            0,(static_cast<unsigned>(rbg.parameterFormat[0])&16)!=0,true}; // CAOS remains live on GPU.
+            0,(static_cast<unsigned>(rbg.parameterFormat[0])&16)!=0,true,rbg.ramctl,true,
+            (static_cast<unsigned>(rbg.format[0])&0x7000u)==0}; // CAOS remains live on GPU.
+        const auto decodeStart=sceKernelGetProcessTimeWide();
         const auto result=g_rbgPages[slot].update(raw,generations,key,
             g_rbgPageScratch,lagi::RbgDecodedPage::Pixels);
+        decodeUs+=static_cast<unsigned>(sceKernelGetProcessTimeWide()-decodeStart);
         if(result==lagi::RbgPageResult::Unsupported)return status(4,count,rebuilt,hits);
         if(result==lagi::RbgPageResult::Rebuilt) {
             ++rebuilt;
+            const auto copyStart=sceKernelGetProcessTimeWide();
             auto* atlas=static_cast<std::uint32_t*>(g_rbgAtlasPixels);
             const unsigned origin=(slot/2)*512*kRbgAtlasWidth+(slot%2)*512;
             for(unsigned y=0;y<512;++y)std::memcpy(atlas+origin+y*kRbgAtlasWidth,
                 g_rbgPageScratch+y*512,512*4);
+            atlasCopyUs+=static_cast<unsigned>(sceKernelGetProcessTimeWide()-copyStart);
         } else ++hits;
         g_rbgPageLookup[required[i]/2048]=slot;
     }
@@ -119,7 +125,7 @@ template<class State> static bool prepareRbgDecodedPagesFor(const State& rbg,
         for(unsigned plane=0;plane<16;++plane) {
             unsigned code=0;
             for(unsigned page=0;page<width*height;++page)
-                code|=g_rbgPageLookup[static_cast<unsigned>(planes[plane])/2048+page]<<(page*2);
+                code|=g_rbgPageLookup[static_cast<unsigned>(planes[plane])/2048+page]<<(page*3);
             output[plane]=static_cast<float>(code);
         }
     };

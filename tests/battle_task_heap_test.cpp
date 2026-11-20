@@ -6,6 +6,8 @@
 #include <cstring>
 #include <new>
 #include <vector>
+#include <unordered_map>
+#include "lagi/native_task_disposal.h"
 using u8=std::uint8_t;using u32=std::uint32_t;
 static int liveArrays=0;
 void* operator new[](std::size_t n){auto* p=std::malloc(n);if(!p)throw std::bad_alloc();++liveArrays;return p;}
@@ -65,5 +67,28 @@ int main(){
         assert(!taskListHead && numActiveTask==0 && liveArrays==0);
         assert(parent.deletes==1 && child.deletes==1 && survivor.deletes==1);
     }
+    // WORLD-style opt-in: concrete destruction must happen after BOTH native
+    // callback passes and the final heap drain, exactly once, child first.
+    struct OwnedArea : s_workArea {
+        int* destroyed;
+        std::vector<int> storage=std::vector<int>(1024,7);
+        explicit OwnedArea(int& count):destroyed(&count){}
+        ~OwnedArea(){assert(!task->m_heapNode&&deletes==1);++*destroyed;deletionOrder.push_back(id+10);}
+    };
+    for(int visit=0;visit<256;++visit){
+        int destroyed=0;
+        auto* parent=new OwnedArea(destroyed);auto* child=new OwnedArea(destroyed);
+        taskListHead=attach(*parent,1);parent->task->m4_pSubTask=attach(*child,2);parent->child=child;
+        auto dispose=[](void* p){delete static_cast<OwnedArea*>(p);};
+        lagi::tasks::register_work_area_disposer(parent,dispose);
+        lagi::tasks::register_work_area_disposer(child,dispose);
+        taskListHead->markFinished();deletionOrder.clear();
+        runTasks();assert(destroyed==0&&numActiveTask==0&&liveArrays==6);
+        assert((deletionOrder==std::vector<int>{2,1}));
+        runTasks();assert(destroyed==2&&!taskListHead&&!liveArrays);
+        assert((deletionOrder==std::vector<int>{2,1,12,11}));
+        assert(lagi::tasks::workAreaDisposers.empty());
+    }
+    puts("PASS 256 registered concrete-owner lifecycles: vectors destroyed after callbacks/heaps, child first, no retained disposal entries; legacy owners unchanged");
     puts("PASS: production scheduler/heap bodies reclaim owned allocations over 256 nested encounter lifecycles; child-first callbacks, delayed disposal, explicit frees/reallocations and paused survivor ownership retained. Mocked task records, not Vita combat.");
 }

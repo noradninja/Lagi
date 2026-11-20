@@ -89,6 +89,8 @@ bool adapt_processed_model(
     out.lightingVertices.reserve(polygonCount * 6u);
     out.polygons.reserve(polygonCount);
     out.gouraud555.resize(polygonCount);
+    out.positionSources.reserve(polygonCount*6u);
+    std::vector<std::uint16_t> firstPosition(model->vertices.size(),0xffffu);
 
     static constexpr unsigned int triCorners[6] = {
         0, 1, 2, 0, 2, 3
@@ -175,6 +177,9 @@ bool adapt_processed_model(
             v.b = debugB;
             v.a = 255;
 
+            auto& first=firstPosition[q.indices[corner]];
+            if(first==0xffffu)first=static_cast<std::uint16_t>(out.vertices.size());
+            out.positionSources.push_back(first);
             out.vertices.push_back(v);
             out.lightingVertices.push_back(v);
         }

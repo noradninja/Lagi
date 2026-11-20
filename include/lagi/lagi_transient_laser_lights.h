@@ -1,0 +1,120 @@
+#pragma once
+#include <array>
+#include <cstddef>
+#include <cstdint>
+
+namespace lagi {
+
+// Hard cap shared by transient field and battle laser lighting. This is a
+// producer-side payload only: consumers may choose fewer, never more.
+inline constexpr std::size_t kMaxTransientLaserLights = 4;
+inline constexpr std::uint32_t kBattleTransientLightDivisor = 4u;
+
+inline constexpr std::uint32_t quarter_rgb888(std::uint32_t packedColor) {
+    const auto quarter = [](std::uint32_t channel) {
+        return channel / kBattleTransientLightDivisor;
+    };
+    return (quarter((packedColor >> 16) & 0xFFu) << 16) |
+        (quarter((packedColor >> 8) & 0xFFu) << 8) |
+        quarter(packedColor & 0xFFu);
+}
+
+// Keep the brightest native channel unchanged while expanding the hue's
+// chroma. A neutral input remains neutral. Used for effect lights only; the
+// authored sprite/glyph pixels and the point-light falloff are untouched.
+inline constexpr std::uint32_t saturate_rgb888_peak(std::uint32_t color) {
+    const std::uint32_t r = (color >> 16) & 0xFFu;
+    const std::uint32_t g = (color >> 8) & 0xFFu;
+    const std::uint32_t b = color & 0xFFu;
+    const std::uint32_t low = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    const std::uint32_t high = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    if (low == high) return color & 0xFFFFFFu;
+    const auto spread = [=](std::uint32_t channel) {
+        return (channel - low) * high / (high - low);
+    };
+    return (spread(r) << 16) | (spread(g) << 8) | spread(b);
+}
+
+// VDP1 Gouraud entries are offsets, not a finished texture colour. Their
+// channel ordering still identifies the visible beam's chromatic direction.
+// Map that direction to the existing light peak, avoiding a texture-dependent
+// brightness jump while following the active native gradient.
+inline constexpr std::uint32_t rgb_hue_at_peak(
+    std::uint32_t r, std::uint32_t g, std::uint32_t b,
+    std::uint32_t peak) {
+    const std::uint32_t low = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    const std::uint32_t high = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    if (low == high) return (peak << 16) | (peak << 8) | peak;
+    const auto channel = [=](std::uint32_t value) {
+        return (value - low) * peak / (high - low);
+    };
+    return (channel(r) << 16) | (channel(g) << 8) | channel(b);
+}
+
+inline constexpr std::uint32_t gouraud555_hue_at_peak(
+    std::uint16_t gouraud, std::uint32_t peak) {
+    // The VDP1 word is 1BBBBBGGGGGRRRRR, while the rendered effect-light
+    // convention used here is packed 0xRRGGBB. Follow the visible gradient:
+    // its high five bits feed red and its low five bits feed blue.
+    const std::uint32_t r = (gouraud >> 10) & 31u;
+    const std::uint32_t g = (gouraud >> 5) & 31u;
+    const std::uint32_t b = gouraud & 31u;
+    return rgb_hue_at_peak(r, g, b, peak);
+}
+
+inline constexpr std::uint32_t battle_gouraud555_hue_at_peak(
+    std::uint16_t gouraud, std::uint32_t peak) {
+    // Battle's homing trail light historically follows the native VDP1
+    // low-bit red channel. Keep that producer's channel contract separate
+    // from the field beam's visible-gradient interpretation.
+    return rgb_hue_at_peak(gouraud & 31u, (gouraud >> 5) & 31u,
+        (gouraud >> 10) & 31u, peak);
+}
+
+template <typename Gradient>
+inline constexpr std::uint32_t gouraud555_gradient_hue_at_peak(
+    const Gradient& gradient, std::uint32_t peak) {
+    std::uint32_t r = 0, g = 0, b = 0;
+    for (const auto& row : gradient) {
+        for (const std::uint16_t gouraud : row) {
+            r += (gouraud >> 10) & 31u;
+            g += (gouraud >> 5) & 31u;
+            b += gouraud & 31u;
+        }
+    }
+    // Scaling every sum by the common vertex count cannot change hue.
+    // Saturating the sums preserves the exact full-gradient average without
+    // an early integer division losing chroma.
+    return rgb_hue_at_peak(r, g, b, peak);
+}
+
+struct TransientLaserLight {
+    std::uint64_t source = 0;       // Native task identity for same-frame updates
+    std::int32_t worldPosition[3]{}; // Signed 16.16, original Azel world space
+    std::uint16_t color[3]{};       // Saturn packed channel order: B,G,R
+    std::uint32_t range = 0;        // Original native point-light range value
+};
+
+struct TransientLaserLightFrame {
+    std::array<TransientLaserLight, kMaxTransientLaserLights> lights{};
+    std::size_t count = 0;
+
+    void clear() { count = 0; }
+
+    // Existing sources update their own light. Once four sources are present,
+    // later sources are ignored deterministically; no heap or replacement
+    // policy can alter the active beam set mid-frame.
+    bool upsert(const TransientLaserLight& light) {
+        if (!light.source || !light.range) return false;
+        for (std::size_t i = 0; i < count; ++i) {
+            if (lights[i].source == light.source) {
+                lights[i] = light;
+                return true;
+            }
+        }
+        if (count == kMaxTransientLaserLights) return false;
+        lights[count++] = light;
+        return true;
+    }
+};
+} // namespace lagi

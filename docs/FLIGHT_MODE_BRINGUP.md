@@ -1,5 +1,7 @@
 ## Cinepak 640x368 scanout and exact 2x scaling (2026-10-11)
 
+**Historical field-flight work:** The original flight integration has since expanded through Valley, world-map, camp and Garil work. This file keeps the source traces and tests from those checkpoints; [status](STATUS.md) is the current route and acceptance reference.
+
 Supersedes the earlier width-fit movie presentation. SGX and software-decoded Cinepak now render directly into a dedicated single-sample 640x368 target/color surface with pitch 640, and submit those same dimensions to `sceDisplaySetFrameBuf`. No 960x544 intermediate or renderer upscale is used. Video geometry is centered at exactly twice the source dimensions: 320x176 becomes 640x352, and 304x160 becomes 608x320. Larger sources clip at the viewport instead of stretching. Gameplay returns to its selected 480x272/960x544 mode on its next presentation; title retains 720x408.
 
 The accepted lookup-dither shader and POINT source sampling remain active with the existing filter switches; this includes software-decoded Cinepak. Raw source reconstruction, cinematic matte/subtitle/fade ordering, and FMV keep-awake ticks are preserved. Subtitle aspect uses the active output dimensions. `[MoviePresentation] scanout=640x368 pitch=640 scale=2x ...` and `[MovieScanout] requested=640x368 ... set=0x00000000 get=0x00000000 actual=640x368 pitch=640` identify the mode and queried display state.

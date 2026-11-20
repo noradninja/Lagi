@@ -28,7 +28,7 @@ bool init3DModelRawData(s_workAreaCopy* owner,s_3dModel* model,int flags,s_fileB
 void stepAnimation(s_3dModel*){++steps;}
 void pushCurrentMatrix(){calls.push_back(1);}void popMatrix(){calls.push_back(8);}
 void translateCurrentMatrix(sVec3_FP p){assert(p.v[0]==10);calls.push_back(2);}
-void rotateCurrentMatrixY(fixedPoint p){assert(p.v==20);calls.push_back(3);}
+void rotateCurrentMatrixShiftedY(fixedPoint p){assert(p.v==0x1234567);calls.push_back(3);}
 void scaleCurrentMatrixRow0(s32 p){assert(p==30);calls.push_back(4);}
 void scaleCurrentMatrixRow1(s32 p){assert(p==30);calls.push_back(5);}
 void scaleCurrentMatrixRow2(s32 p){assert(p==30);calls.push_back(6);}
@@ -46,7 +46,7 @@ int main(){
  assert(state.lightAngle==s32(0xFF1C71C8u));
  for(unsigned i=0;i<4;++i){unsigned b=1+i*3;assert(state.lightColors[i]==(b|((b+1)<<8)|((b+2)<<16)));}
  draw_map_model(state);assert(calls.empty());
- state.position.v[0]=10;state.yaw=20;state.scale=30;state.poseControl=-3;state.flags=0x20;
+ state.position.v[0]=10;state.yaw=0x1234567;state.scale=30;state.poseControl=-3;state.flags=0x20;
  draw_map_model(state);assert(calls==std::vector<int>({1,2,3,4,5,6,7,8}));
  puts("PASS production WORLD model resources, RGB byte order, visibility, matrix order and pose control; live world map remains unported");
 }

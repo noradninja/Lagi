@@ -9,8 +9,10 @@
 #include <cstdio>
 namespace azel=lagi::azel;
 namespace azel_bridge=lagi::azel_bridge;
+using Vdp1ModelSource=lagi::platform::renderer::Vdp1ModelSource;
 #include "append_types.inc"
 static azel::BasicWingDebugMesh g_liveTownCpuMesh;
+static azel::BasicWingDebugMesh g_staticRoomCpuMesh;
 static bool g_profileAppendSample=false;
 static std::uint64_t g_profileAppendSetupUs=0,g_profileAppendStorageUs=0;
 static std::uint64_t g_profileAppendTransformUs=0,g_profileAppendLightUs=0,g_profileAppendBindingUs=0;
@@ -27,12 +29,19 @@ void azelProjectionScales(float,unsigned,float& x,float& y){x=1.2f;y=1.4f;}
 std::uint16_t liveTownTextureIndex(const azel::SaturnPolygonRecord& r){return (r.cmdSrca+r.cmdColr)&0xffff;}
 namespace logging {void writef(const char*,...) {}}
 #include "append_body.inc"
+#include "live_source.inc"
 struct Output {
  azel::BasicWingDebugMesh mesh;std::vector<LivePolygonLightState> lights;
  std::vector<LiveTownMeshRange> ranges;
 };
 void reset(){g_liveTownCpuMesh={};g_liveTownPolygonLights.clear();g_liveTownMeshRanges.clear();}
-Output capture(){return {g_liveTownCpuMesh,g_liveTownPolygonLights,g_liveTownMeshRanges};}
+Output capture(bool reference=false){
+ Output result{g_liveTownCpuMesh,g_liveTownPolygonLights,g_liveTownMeshRanges};
+ const auto source=reference?liveTownVdp1SourceReference():liveTownVdp1Source();
+ if(!reference){assert(g_liveTownCpuMesh.lightingVertices.empty());assert(source.lightingVertices==source.vertices);}
+ if(source.vertexCount)result.mesh.lightingVertices.assign(source.lightingVertices,source.lightingVertices+source.vertexCount);
+ return result;
+}
 void same(const Output& a,const Output& b){
  assert(a.mesh.vertices.size()==b.mesh.vertices.size());
  assert(a.mesh.lightingVertices.size()==b.mesh.lightingVertices.size());
@@ -67,10 +76,12 @@ int main(){
  const unsigned modes[]={0,0x100,0x100,3,0,0x100,7};
  for(unsigned p=0;p<7;++p){auto& r=model.polygons[p];r.cmdPmod=modes[p];r.cmdSrca=p*17;r.cmdColr=p*3;r.cmdSize=0x210;r.lightingControl=0x200;r.lightingCount=4;
   for(unsigned c=0;c<4;++c){r.indices[c]=c;r.lighting[c].normal[0]=p*9+c;r.lighting[c].color[1]=p*11+c;r.lighting[c].hasColor=true;}
-  for(unsigned c=0;c<6;++c)model.vertices[p*6+c]={float(p+c),float(p)-c,float(p*c),17,29,41,255};
+  for(unsigned c=0;c<6;++c)model.vertices[p*6+c]={float(c),-float(c),float(c*2),std::uint8_t(17+p),std::uint8_t(29+p),41,255};
  }
  std::uint16_t resolved[7]={7,6,5,4,3,2,1};
  for(unsigned variant=0;variant<32;++variant){
+  model.positionSources.clear();
+  if(variant&1)for(unsigned p=0;p<7;++p)for(unsigned c=0;c<6;++c)model.positionSources.push_back(c);
   g_profileAppendSample=(variant&16)!=0;
   azel_bridge::SubmissionState state{};state.hasModelMatrix=variant!=0;state.hasLight=variant&1;state.billboard=variant&2;state.hasNativeModelLight=variant&4;
   state.localCoordinatesX=variant&8?190:176;state.localCoordinatesY=variant&8?99:112;
@@ -80,10 +91,11 @@ int main(){
   state.lightColor[0]=20;state.lightColor[1]=30;state.lightColor[2]=40;state.lightFalloff[0]=12;state.lightFalloff[1]=23;state.lightFalloff[2]=34;
   state.nativeViewDepthRaw=0x12345;state.hasNativeViewDepth=true;state.additionalLight.active=true;state.additionalLight.vector[1]=4;state.additionalLight.color[2]=19;
   for(bool generic: {false,true}){
+   const auto last=model.vertices.back();
    if(generic)model.vertices.pop_back();
-   reset();appendLiveTownModelReference(model,state,resolved,variant&16?3:7);for(unsigned repeat=0;repeat<64;++repeat)appendLiveTownModelReference(model,state);auto expected=capture();
+   reset();appendLiveTownModelReference(model,state,resolved,variant&16?3:7);for(unsigned repeat=0;repeat<64;++repeat)appendLiveTownModelReference(model,state);auto expected=capture(true);
    reset();appendLiveTownModel(model,state,resolved,variant&16?3:7);for(unsigned repeat=0;repeat<64;++repeat)appendLiveTownModel(model,state);same(expected,capture());
-   if(generic)model.vertices.push_back({});
+   if(generic)model.vertices.push_back(last);
   }
  }
  puts("PASS production model append versus accepted baseline: geometry, materials, lighting, blend/mesh order, repeated appends and fallback layout; not Vita timing");

@@ -1,4 +1,5 @@
 #include <array>
+#include "lagi/battle_loading_cover.h"
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -54,6 +55,7 @@ int main(){
         cram.fill(0xAC);vram.fill(0xBD);
         setVdp2VramU16(0x240,0x1234);setVdp2VramU16(0x280,0x5678);
         void* saved=lagiCaptureBattleGraphics(optional!=0);assert(saved);
+        assert(lagi::battleLoadingCover.active && !lagi::battleLoadingCover.loading);
         lagi::resident_video::resourceReady=false;
         assert(!lagiPrepareBattleGraphicsRestore(saved));
         assert(!lagiRestoreBattleGraphics(saved) && saved);
@@ -66,6 +68,7 @@ int main(){
         vdp2Controls={};vdpVar1={};vdpVar2=nullptr;vdpVar3=nullptr;
         lightSetup={};g_fadeControls.value=77;cram.fill(0);vram.fill(0);
         assert(lagiRestoreBattleGraphics(saved));assert(!saved);
+        assert(!lagi::battleLoadingCover.active);
         assert(graphicEngineStatus.m405C.value==42);
         assert(graphicEngineStatus.m405C.setLocalCoordinatesEA==&newLocal);
         assert(graphicEngineStatus.m405C.setClippingCoordinatesEA==&newClip);

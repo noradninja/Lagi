@@ -33,7 +33,8 @@ void move_marker(MapDisplay& s,sSaturnPtr entry,bool arrivalBusy)
     }else if(s.marker.flags&1){
         spring_vector(s.marker.position,goal,s.markerVelocity);
         const bool close=vecDistance(s.marker.position,goal)<s.marker.transitionRate;
-        if(close&&(readSaturnS8(entry+5)==0||readSaturnS8(entry+5)==1))
+        const auto destination = read_map_destination(entry);
+        if(close&&(destination.type==0||destination.type==1))
             s.poseCounter=std::min(s.poseCounter+1,12);
         else s.poseCounter=std::max(s.poseCounter-1,0);
         bool arrived=true;
@@ -71,7 +72,8 @@ void orbit_camera(MapDisplay& s,const MapDisplayInput& in,sSaturnPtr entry)
         offset=readSaturnVec3(entry+0x14)-readSaturnVec3(entry+8);
         translateMatrix(readSaturnVec3(entry+8),&matrix);
     }
-    rotateMatrixY(s.orbitAngle,&matrix);
+    // Native 06035E68 consumes a 16.16 angle (SHLR16 before table lookup).
+    rotateMatrixShiftedY(s.orbitAngle,&matrix);
     sVec3_FP cameraGoal;transformAndAddVec(offset,cameraGoal,matrix);
     spring_vector(s.desiredCamera,cameraGoal,s.cameraVelocity);
 }
@@ -79,8 +81,11 @@ void update_camera_rotation(MapDisplay& s)
 {
     // 06054AAA: preserve native fixed-point horizontal length and angle order.
     const auto d=s.target-s.camera;
-    const fixedPoint length=MTH_Mul(d[0],d[0])+MTH_Mul(d[2],d[2]);
-    const s32 horizontal=sqrt_F(static_cast<s32>(static_cast<u32>(length.asS32())<<4))>>4;
+    // MAIN 0603564E combines MACH<<20 with MACL>>12, not the ordinary
+    // 06035644 >>16 multiply. Preserve low-word wrapping before SHLL4.
+    const u32 xSquared=u32((std::int64_t(d[0].asS32())*d[0].asS32())>>12);
+    const u32 zSquared=u32((std::int64_t(d[2].asS32())*d[2].asS32())>>12);
+    const s32 horizontal=sqrt_F(static_cast<s32>((xSquared+zSquared)<<4))>>4;
     s.rotation[0]=0x4000000-atan2_FP(horizontal,d[1]);
     s.rotation[1]=static_cast<s32>(0xFC000000u)-atan2_FP(d[2],d[0]);
     s.rotation[2]=0;
@@ -101,6 +106,107 @@ void update_colors(MapDisplay& s,const MapDisplayInput& in)
 }
 }
 
+bool initialize_map_arrival(MapDisplayInput& input, s32 selected)
+{
+    if (input.targetTable.isNull() || selected < 0 || selected >= input.targetCount)
+        return false;
+    input.arrivalPosition = readSaturnVec3(input.targetTable + selected * 0x24 + 8);
+    input.arrivalPosition[1] += 0xA000;
+    input.arrivalRotation.zeroize();
+    input.arrivalRotation[1] = 0x238E38E;
+    input.arrivalBusy = false;
+    input.arrivalReady = true;
+    return true;
+}
+bool toggle_map_destinations(MapDisplayInput& input, MapDisplay& display)
+{
+    // WORLD 06057CE0: bit 1A:02 enables the ordinary/fleet table switch.
+    // Packed DE retains the ordinary selection, independently of route 87.
+    if (input.program.isNull() || !(mainGameState.bitField[0x1A] & 2))
+        return false;
+    if (mainGameState.bitField[0x1B] & 8) {
+        const auto selected = mainGameState.readPackedBits(0xDE, 6);
+        if (selected >= 33) return false;
+        mainGameState.bitField[0x1B] &= ~8;
+        display.marker.flags &= ~0x40;
+        input.targetTable = input.program + 0x5688;
+        input.targetCount = 33;
+        display.selectedTarget = selected;
+        mainGameState.setPackedBits(0x87, 6, selected);
+    } else {
+        if (display.selectedTarget < 0 || display.selectedTarget >= 33)
+            return false;
+        mainGameState.bitField[0x1B] |= 8;
+        display.marker.flags |= 0x40;
+        input.targetTable = input.program + 0x5B2C;
+        input.targetCount = 4;
+        mainGameState.setPackedBits(0xDE, 6, display.selectedTarget);
+        display.selectedTarget = 0;
+    }
+    return true;
+}
+// WORLD 060553F8 resolves the current selection and updates the arrival heading.
+bool retarget_map_arrival(MapDisplayInput& input, s32 selected, fixedPoint& yaw,
+                          s32& distance, s32& targetHeight)
+{
+    if (!input.arrivalReady || input.targetTable.isNull() ||
+        selected < 0 || selected >= input.targetCount)
+        return false;
+
+    const auto target = readSaturnVec3(input.targetTable + selected * 0x24 + 8);
+    const auto& position = input.arrivalPosition;
+    targetHeight = s32(u32(target[1].asS32()) + (input.arrivalBusy ? 0u : 0xA000u));
+    // WORLD 06055464..66 overwrites the local source Y with target Y
+    // before vecDistance: the arrival thresholds are horizontal distances.
+    auto horizontalPosition=position;
+    horizontalPosition[1]=target[1];
+    distance = vecDistance(horizontalPosition, target);
+    const auto dx = u32(target[0].asS32()) - u32(position[0].asS32());
+    const auto dz = u32(target[2].asS32()) - u32(position[2].asS32());
+    yaw = atan2_FP(s32(dx << 2), s32(dz << 2));
+    return true;
+}
+void update_map_arrival_heading(MapDisplayInput& input, fixedPoint desiredYaw, s32 distance)
+{
+    if (!input.arrivalReady) return;
+    // WORLD 060555D0 holds the current heading inside child +34 (1000).
+    // 060555E2 then invokes the native 28-bit angular interpolation service.
+    const auto current = input.arrivalRotation[1];
+    input.arrivalRotation[1] = interpolateRotation(current,
+        distance >= 0x1000 ? desiredYaw : current, 0x1999, 0x38E38E, 0x12345);
+}
+// WORLD 060554A8 rotates (0, 0, step) by the child's live yaw, then adds X/Z.
+static void move_map_arrival_horizontal(sVec3_FP& position, fixedPoint yaw, s32 step)
+{
+    sMatrix4x3 matrix;
+    initMatrixToIdentity(&matrix);
+    rotateMatrixShiftedY(yaw, &matrix);
+    sVec3_FP direction;
+    direction.zeroize();
+    direction[2] = step;
+    sVec3_FP displacement;
+    transformAndAddVec(direction, displacement, matrix);
+    position[0] = s32(u32(position[0].asS32())+u32(displacement[0].asS32()));
+    position[2] = s32(u32(position[2].asS32())+u32(displacement[2].asS32()));
+}
+void update_map_arrival_motion(MapDisplayInput& input, fixedPoint yaw,s32 distance,
+                               s32 targetHeight, s32& forwardStep, s32& verticalStep)
+{
+    if (!input.arrivalReady)
+        return;
+    update_map_arrival_step(u32(distance), forwardStep, input.arrivalBusy);
+    move_map_arrival_horizontal(input.arrivalPosition, yaw, forwardStep);
+    s32 height = input.arrivalPosition[1].asS32();
+    update_map_arrival_height(targetHeight, height, verticalStep);
+    input.arrivalPosition[1] = height;
+}
+void apply_map_orbit_buttons(MapDisplay& s, u16 newButtons)
+{
+    // Native MOV.B stores wrap to a signed byte. orbit_camera subsequently
+    // clamps the control to -3..3 in the states that use it; release holds it.
+    if(newButtons&0x8000) s.orbitControl=s8(u8(s.orbitControl)+1u);
+    if(newButtons&0x0800) s.orbitControl=s8(u8(s.orbitControl)-1u);
+}
 bool update_map_display(MapDisplay& s,const MapDisplayInput& in)
 {
     if(in.program.isNull()||in.targetTable.isNull()||in.targetCount<=0)return false;
@@ -159,6 +265,42 @@ bool update_map_display(MapDisplay& s,const MapDisplayInput& in)
     return true;
 }
 
+// WORLD 0605799C. Directions are up, left, down, right in native order.
+s32 find_map_destination(const MapDisplayInput& input, s32 current, unsigned direction)
+{
+    if (input.targetTable.isNull() || current < 0 || current >= input.targetCount ||
+        direction >= 4)
+        return current;
+
+    constexpr s32 centers[] = {0x8000000, 0x4000000, 0, 0xC000000};
+    const auto origin = readSaturnVec3(input.targetTable + current * 0x24 + 8);
+    s32 best = current;
+    s32 bestScore = 0x270F000;
+    for (s32 index = 0; index < input.targetCount; ++index) {
+        if (index == current)
+            continue;
+        const auto entry = input.targetTable + index * 0x24;
+        const s16 condition = readSaturnS16(entry);
+        if (condition > 0 &&
+            (unsigned(condition) / 8 >= sizeof(mainGameState.bitField) ||
+             !(mainGameState.bitField[condition / 8] & bitMasks[condition & 7])))
+            continue;
+
+        const auto target = readSaturnVec3(entry + 8);
+        const s32 angle = atan2_FP(target[0] - origin[0], target[2] - origin[2]);
+        const s32 delta = ((angle - centers[direction] + 0x8000000) & 0xFFFFFFF) - 0x8000000;
+        const s32 deviation = delta < 0 ? -delta : delta;
+        if (deviation > 0x3DDDDDD)
+            continue;
+        const s32 penalty = FP_Div(deviation, 0xEEEEEE);
+        const s32 score = MTH_Mul(vecDistance(origin, target), penalty + 0x10000);
+        if (score < 0x113000 && score <= bestScore) {
+            best = index;
+            bestScore = score;
+        }
+    }
+    return best;
+}
 void apply_map_camera_and_light(const MapDisplay& s)
 {
     sVec3_S16 rotation;
@@ -187,7 +329,7 @@ bool draw_map_trail(const MapDisplay& s,s_workAreaCopy* owner)
     for(int count=0;count<s.trailCount;++count){
         pushCurrentMatrix();
         translateCurrentMatrix(s.trail[index].position);
-        rotateCurrentMatrixY(s.trail[index].yaw);
+        rotateCurrentMatrixShiftedY(s.trail[index].yaw);
         addObjectToDrawList(model);
         popMatrix();
         index=(index+15)&15;

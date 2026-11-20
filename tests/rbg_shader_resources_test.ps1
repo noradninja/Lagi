@@ -5,9 +5,9 @@ $repo=Split-Path $PSScriptRoot -Parent
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('lagi-rbg-resources-'+[guid]::NewGuid())
 New-Item -ItemType Directory $scratch | Out-Null
 $bindings=Get-Content -Raw "$repo/src/platform/vita/neptune_rbg_tile_program.inc"
-$block=[regex]::Match($bindings,'const char\* names\[22\]=\{([\s\S]*?)\};').Groups[1].Value
+$block=[regex]::Match($bindings,'const char\* names\[24\]=\{([\s\S]*?)\};').Groups[1].Value
 $names=@([regex]::Matches($block,'"(rbg0\w+)"') | ForEach-Object {$_.Groups[1].Value})
-if($names.Count -ne 22){throw 'Runtime reflection list must contain 22 bindings'}
+if($names.Count -ne 24){throw 'Runtime reflection list must contain 24 bindings'}
 foreach($variant in @('vdp2_rbg0_f','vdp2_rbg0_tile16_8bit_f','vdp2_rbg0_pages_f','vdp2_rbg0_rows_f')) {
     $xmlPath=Join-Path $scratch "$variant.xml"
     & $Compiler -profile sce_fp_psp2 "$repo/shaders/$variant.cg" -Wperf -fastprecision -O3 -xmlsdb $xmlPath -o (Join-Path $scratch "$variant.gxp")
@@ -16,7 +16,8 @@ foreach($variant in @('vdp2_rbg0_f','vdp2_rbg0_tile16_8bit_f','vdp2_rbg0_pages_f
     $resources=$metadata.sdb.resourceInfo
     foreach($name in $names) {
         $uniform=@($resources.uniform | Where-Object {$_.symbolName -eq $name})
-        if($variant -eq 'vdp2_rbg0_rows_f' -and $name -in @('rbg0SwitchCoefficient','rbg0Coefficient','rbg0BCoefficient')){
+        if(($variant -eq 'vdp2_rbg0_rows_f' -and $name -eq 'rbg0SwitchCoefficient') -or
+           ($variant -in @('vdp2_rbg0_pages_f','vdp2_rbg0_rows_f') -and $name -eq 'rbg0PatternBanks')){
             if($uniform.Count -ne 0){throw 'Rows shader unexpectedly retained raw selector addressing'}
             continue
         }
@@ -35,6 +36,10 @@ foreach($variant in @('vdp2_rbg0_f','vdp2_rbg0_tile16_8bit_f','vdp2_rbg0_pages_f
     if($variant -in @('vdp2_rbg0_pages_f','vdp2_rbg0_rows_f')) {
         if($decoded.Count -ne 1 -or $decoded[0].textureUnit -ne '1' -or $lookup.Count -ne 0){throw 'Decoded-page texture slots changed'}
     } elseif($decoded.Count -ne 0 -or $lookup.Count -ne 0){throw 'Non-cache shader requires page resources'}
+    $palette=@($resources.sampler | Where-Object {$_.symbolName -eq 'paletteLut'})
+    if($variant -in @('vdp2_rbg0_pages_f','vdp2_rbg0_rows_f')) {
+        if($palette.Count -ne 1 -or $palette[0].textureUnit -ne '3'){throw 'Live palette LUT must be on texture unit 3'}
+    } elseif($palette.Count -ne 0){throw 'Fallback shader unexpectedly requires palette LUT'}
     $rows=@($resources.sampler | Where-Object {$_.symbolName -eq 'coefficientRows'})
     if($variant -eq 'vdp2_rbg0_rows_f'){
         if($rows.Count -ne 1 -or $rows[0].textureUnit -ne '2'){throw 'Rows sampler slot changed'}
