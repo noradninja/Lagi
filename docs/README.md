@@ -15,6 +15,7 @@ Lagi has moved through several major renderer, runtime and battle milestones. Th
 | [Battle effects recovery](BATTLE_EFFECTS_RECOVERY.md) | Missing effect producers and shared services |
 | [Garil shared parity](GARIL_SHARED_PARITY.md) | Original A5, Scatter, escape and WEAK reticule work |
 | [SCSP DSP translator](SCSP_DSP_TRANSLATOR.md) | Native DSP implementation and fallback modes |
+| [DSP fallback / underrun investigation](AUDIO_DSP_FALLBACK_2026_11_20.md) | November 20 Vita evidence, native-backend loss and acceptance gates |
 | [Disc selection](DISC_SELECTION_FRONTEND.md) | Four-disc selector and mounted game resources |
 
 ## Engineering history

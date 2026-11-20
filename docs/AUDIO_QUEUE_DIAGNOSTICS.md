@@ -31,3 +31,8 @@ Compare `zeroFillFrames` and `underrunBlocks` with `renderMaxUs`, then look at t
 The Windows fixture `tests/audio_output_telemetry_test.ps1` covers full, partial and empty blocks, interval counters and reset. A passing host test is not a hardware performance result.
 
 The first commit on this branch adds output-starvation counters and the host fixture. The second adds reporting, render quantum timing and staged sound-command latency. Both commits leave playback behavior unchanged.
+
+
+## November 20 hardware results
+
+[The DSP fallback and sustained underrun investigation](AUDIO_DSP_FALLBACK_2026_11_20.md) records the full Vita capture, confirmed throughput deficit, 52-step ARM/reference comparison, source-level hypotheses and next hardware validation gates. The audio queue instrumentation described above is unchanged.

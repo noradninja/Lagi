@@ -1,6 +1,6 @@
 # General SCSP DSP translator
 
-**Current context (20 November 2026):** The runtime ARM SCSP DSP backend remains our default. The translator and fallback notes below remain useful; current environment and build flags are in [BUILDING.md](BUILDING.md).
+**Current context (20 November 2026):** The runtime ARM SCSP DSP backend remains our default. A later Vita capture shows persistent reference fallback for a recurring 52-step program; see [DSP fallback / underrun investigation](AUDIO_DSP_FALLBACK_2026_11_20.md). The earlier successful native-program tests remain valid for their recorded checkpoints. The translator and fallback notes below remain useful; current environment and build flags are in [BUILDING.md](BUILDING.md).
 
 Azel decides. Lagi services. Neptune renders.
 
