@@ -12,6 +12,7 @@
 #include "lagi/streamed_pcm.h"
 #include "lagi/cutscene_audio.h"
 #include "lagi/audio_output_owner.h"
+#include "lagi/audio_output_telemetry.h"
 #include "lagi/cdda_stream.h"
 #include "lagi/title_cdda.h"
 #ifndef LAGI_BATTLE_AUDIO_STACK
@@ -163,6 +164,7 @@ struct PendingSound {
     s32 bankIndex = 0;
     s32 volume = 0x7f;
     s32 arg = 0;
+    std::uint64_t requestedUs = 0;
 };
 
 struct ActiveSound {
@@ -187,6 +189,7 @@ struct AudioEvent {
     s32 b = 0;
     s32 c = 0;
     s32 d = 0;
+    std::uint64_t requestedUs = 0;
 };
 
 constexpr unsigned kAudioEventCapacity = 256;
@@ -237,6 +240,26 @@ unsigned long long g_audioRenderChunks = 0;
 unsigned long long g_audioQueueEmptyChunks = 0;
 unsigned long long g_audioShortWrites = 0;
 unsigned g_lastDspMixSerial = 0;
+
+// Aggregate worker-side measurements. These never control playback.
+struct AudioTimingWindow {
+    std::uint64_t quanta=0, totalUs=0, maxUs=0;
+    unsigned minQueue=~0u, maxQueue=0;
+    std::uint64_t events=0, eventSum=0, eventMax=0;
+    std::uint64_t dispatches=0, dispatchSum=0, dispatchMax=0;
+    std::uint64_t acks=0, ackSum=0, ackMax=0;
+};
+AudioTimingWindow g_audioTiming;
+std::uint64_t g_mailboxSentUs=0, g_audioReportUs=0;
+unsigned g_audioReportPoll=0;
+void observe_quantum(std::uint64_t elapsed, unsigned queued)
+{
+    ++g_audioTiming.quanta;
+    g_audioTiming.totalUs += elapsed;
+    g_audioTiming.maxUs = std::max(g_audioTiming.maxUs,elapsed);
+    g_audioTiming.minQueue = std::min(g_audioTiming.minQueue,queued);
+    g_audioTiming.maxQueue = std::max(g_audioTiming.maxQueue,queued);
+}
 
 unsigned long long next_audio_trace()
 {
@@ -603,6 +626,13 @@ void service_driver_commands()
     ++g_driverServiceCalls;
 
     const u8 timing = static_cast<u8>(m68k_read_memory_8(0x4E0));
+    if ((timing & 0x80u) == 0u && g_mailboxSentUs) {
+        const std::uint64_t age = sceKernelGetSystemTimeWide() - g_mailboxSentUs;
+        ++g_audioTiming.acks;
+        g_audioTiming.ackSum += age;
+        g_audioTiming.ackMax = std::max(g_audioTiming.ackMax,age);
+        g_mailboxSentUs = 0;
+    }
     if (g_audioDiagBudget != 0 &&
         (g_driverServiceCalls <= 12 || g_loadingState >= 0)) {
         --g_audioDiagBudget;
@@ -641,8 +671,10 @@ void service_driver_commands()
     if (count != 0u)
         g_commands.erase(g_commands.begin(), g_commands.begin() + count);
 
-    if (loaderWroteCommand || count != 0u)
+    if (loaderWroteCommand || count != 0u) {
+        g_mailboxSentUs = sceKernelGetSystemTimeWide();
         m68k_write_memory_8(0x4E0, timing | 0x80u);
+    }
 }
 
 sSaturnPtr sound_config_for(s16 soundIndex)
@@ -754,8 +786,15 @@ void service_pending_sounds()
     if (g_loadingState >= 0 || !g_sequence)
         return;
 
-    for (const PendingSound& request : g_pendingSounds)
+    for (const PendingSound& request : g_pendingSounds) {
+        if (request.requestedUs) {
+            const std::uint64_t age = sceKernelGetSystemTimeWide() - request.requestedUs;
+            ++g_audioTiming.dispatches;
+            g_audioTiming.dispatchSum += age;
+            g_audioTiming.dispatchMax = std::max(g_audioTiming.dispatchMax,age);
+        }
         submit_sound_request(request);
+    }
     g_pendingSounds.clear();
 }
 
@@ -821,6 +860,9 @@ void render_scsp_audio()
         if (queuedBefore == 0)
             ++g_audioQueueEmptyChunks;
 
+        // Only two additional clock reads per quantum; no additional
+        // instrumentation in the M68K, SCSP or DSP sample loops.
+        const std::uint64_t quantumStart = sceKernelGetSystemTimeWide();
         int peak = 0;
         for (unsigned i = 0; i < kRenderChunkFrames; ++i) {
             const bool profileSample =
@@ -946,6 +988,7 @@ void render_scsp_audio()
         const std::size_t written =
             lagi::platform::audio::write_pcm_frames(
                 g_mixBuffer.data(), kRenderChunkFrames);
+        observe_quantum(sceKernelGetSystemTimeWide() - quantumStart, queuedBefore);
         if (written != kRenderChunkFrames) {
             ++g_audioShortWrites;
             lagi::platform::logging::writef(
@@ -1097,10 +1140,16 @@ void process_audio_events()
             worker_load_banks(-1, event.b);
             break;
         case AudioEventType::Sound:
+            if (event.requestedUs) {
+                const std::uint64_t age = sceKernelGetSystemTimeWide() - event.requestedUs;
+                ++g_audioTiming.events;
+                g_audioTiming.eventSum += age;
+                g_audioTiming.eventMax = std::max(g_audioTiming.eventMax,age);
+            }
             if (g_pendingSounds.size() >= 32)
                 g_pendingSounds.erase(g_pendingSounds.begin());
             g_pendingSounds.push_back(
-                PendingSound{event.a, event.b, event.c, event.d});
+                PendingSound{event.a, event.b, event.c, event.d, event.requestedUs});
             break;
         case AudioEventType::FadeAll:
             worker_fade_all();
@@ -1117,6 +1166,55 @@ void process_audio_events()
                 g_pendingSequenceEvents.fetch_sub(1,std::memory_order_release);
         }
     }
+}
+
+// Roughly once a second, from the worker control-loop boundary. Never log
+// from the output callback or the 44.1 kHz synthesis loop.
+void report_audio_queue_if_due()
+{
+    if ((++g_audioReportPoll & 63u) != 0u) return;
+    const std::uint64_t now = sceKernelGetSystemTimeWide();
+    if (!g_audioReportUs) { g_audioReportUs=now; return; }
+    if (now - g_audioReportUs < 1000000ull) return;
+    const std::uint64_t duration = now - g_audioReportUs;
+    g_audioReportUs = now;
+    const auto output = lagi::audio::outputQueueTelemetry.take_interval();
+    const auto data = g_audioTiming;
+    g_audioTiming = AudioTimingWindow{};
+    if (!data.quanta && !output.blocks && !data.events &&
+        !data.dispatches && !data.acks) return;
+    const std::uint64_t pendingMs =
+        g_mailboxSentUs ? (now - g_mailboxSentUs)/1000ull : 0;
+    lagi::platform::logging::writef(
+        "[AzelAudioQueue] seq=%d periodUs=%llu quanta=%llu "
+        "renderAvgUs=%llu renderMaxUs=%llu budgetUs=5804 "
+        "producerMin=%u producerMax=%u "
+        "outputBlocks=%llu outputMin=%u outputMax=%u "
+        "underrunBlocks=%llu emptyBlocks=%llu zeroFillFrames=%llu maxMissing=%u "
+        "events=%llu eventAvgUs=%llu eventMaxUs=%llu "
+        "dispatches=%llu dispatchAvgUs=%llu dispatchMaxUs=%llu "
+        "acks=%llu ackAvgUs=%llu ackMaxUs=%llu mailboxPendingMs=%llu\n",
+        static_cast<int>(g_sequenceNumber),
+        static_cast<unsigned long long>(duration),
+        static_cast<unsigned long long>(data.quanta),
+        static_cast<unsigned long long>(data.quanta ? data.totalUs/data.quanta : 0),
+        static_cast<unsigned long long>(data.maxUs),
+        data.minQueue==~0u ? 0u : data.minQueue, data.maxQueue,
+        static_cast<unsigned long long>(output.blocks),
+        output.minQueued, output.maxQueued,
+        static_cast<unsigned long long>(output.shortBlocks),
+        static_cast<unsigned long long>(output.emptyBlocks),
+        static_cast<unsigned long long>(output.zeroFrames),output.maxMissing,
+        static_cast<unsigned long long>(data.events),
+        static_cast<unsigned long long>(data.events ? data.eventSum/data.events : 0),
+        static_cast<unsigned long long>(data.eventMax),
+        static_cast<unsigned long long>(data.dispatches),
+        static_cast<unsigned long long>(data.dispatches ? data.dispatchSum/data.dispatches : 0),
+        static_cast<unsigned long long>(data.dispatchMax),
+        static_cast<unsigned long long>(data.acks),
+        static_cast<unsigned long long>(data.acks ? data.ackSum/data.acks : 0),
+        static_cast<unsigned long long>(data.ackMax),
+        static_cast<unsigned long long>(pendingMs));
 }
 
 int audio_worker_thread(SceSize, void*)
@@ -1168,6 +1266,7 @@ int audio_worker_thread(SceSize, void*)
         } else {
             sceKernelDelayThread(1000);
         }
+        report_audio_queue_if_due();
     }
 
     g_cdda.stop();
@@ -1400,6 +1499,7 @@ void enqueuePlaySoundEffect(
     event.b = bankIndex;
     event.c = volume;
     event.d = arg;
+    event.requestedUs = sceKernelGetSystemTimeWide();
     push_audio_event(event);
 }
 
