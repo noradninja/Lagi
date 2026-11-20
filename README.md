@@ -2,33 +2,23 @@
 
 **Panzer Dragoon Saga / Azel — native PlayStation Vita runtime**
 
-Lagi runs reconstructed *Panzer Dragoon Saga* game logic directly on the Vita's ARM CPU, translating Sega Saturn graphics and platform behavior to native Vita services and SceGxm through the **Neptune** renderer. It is **not a Sega Saturn emulator** and does **not use VitaGL**.
+Lagi runs reconstructed Panzer Dragoon Saga game logic directly on the Vita's ARM CPU. It translates the original game's Saturn display and platform behavior into Vita services, with **Neptune** handling native SceGxm rendering. This is not a Saturn emulator and does not use VitaGL.
 
-> **Development status (October 2026):** Gameplay has progressed through the first boss fight on real Vita hardware. The current development branch is ahead of the latest public release, **v0.3.0alpha**; the game is not yet fully playable.
+**Development status — 20 November 2026:** We have progressed from the opening sequence and Ruins through native flight, Excavation, Valley combat, world-map/camp transitions and the first Garil Desert encounters. The current working combat tree was restored at `977809e` after a WEAK-reticule experiment caused a Valley regression. Garil Scatter, escape movement, WEAK markers and later story sequences still need further hardware verification. **The game is not yet fully playable.**
 
-## Current progress
+## Current capabilities
 
-The native game path includes opening movies, title and name entry, playable Ruins, elevator cinematics, FLD_A3 flight, the E006 in-engine cinematic, Excavation, random encounters, and the opening boss fight.
+- **Game flow:** Original movies, title, name entry, Ruins, native cinematics, flight, Excavation, Valley and active Garil integration. Azel remains responsible for scripts, tasks, timing and transitions.
+- **Combat:** Native battle engine, gun and laser attacks, targeting, enemy lifecycles, results and progression. Coverage varies by formation and effect; missing Berserk visual producers are still being restored.
+- **Neptune:** Native VDP1 models and sprites, textured/distorted quads, Gouraud lighting, mesh effects, VDP2 backgrounds and rotation, windows, palettes, color operations and fades.
+- **Audio and movies:** Native game audio, runtime ARM SCSP DSP translation and Sega FILM/Cinepak playback.
+- **Discs and saves:** Four-disc CUE/BIN selection, ISO9660 resource access and Vita storage through native save/load flows. Mounting four discs does not mean all four discs are fully playable.
 
-Major working systems:
+We target the original **30 Hz** presentation. The current CMake profile enables full-resolution gameplay by default; visual coverage and performance still depend on the scene and the original effects workload.
 
-- **Gameplay and combat:** Azel-owned tasks, scripts, camera, movement, collision, LCS, enemy encounters, battle logic, and scene transitions. Encounter RNG and formation selection have been checked against original disc-backed routines.
-- **Neptune graphics:** Native GXM translation of VDP1 geometry, sprites, polylines, Gouraud lighting, mesh transparency, UI and effects; VDP2 normal/rotation backgrounds (including RBG0), tile maps, scrolling, line-scroll, palettes, priority composition, color offsets and fades. Most VDP2 behavior needed by the supported first-section scenes is implemented, but full hardware coverage is not claimed.
-- **Audio and movies:** Native BGM and effects, runtime ARM translation of Saturn SCSP DSP programs, Sega FILM/Cinepak playback, and GPU-assisted presentation.
-- **Display:** 480×272 default gameplay rendering, optional **native 960×544** geometry rendering with `LAGI_FULLRES=ON`, high-resolution title presentation, and screen-space lookup dithering.
-- **Disc access:** CUE/BIN mounting, ISO9660 reads, and a hardware-accepted four-disc selection frontend.
+## Disc setup
 
-Performance targets the original **30 Hz** presentation rate. Supported town and field sections can reach it; complex battles still experience frame-time spikes.
-
-Current priorities include combat rewards and Berserk progression, field-map completion, VDP2 composition corrections in Excavation, transition accuracy, and battle/audio performance. See [first-section cleanup](docs/FIRST_SECTION_CLEANUP.md) and [development status](docs/STATUS.md) for detailed progress and validation notes.
-
-## Disc selection
-
-The 960×544 frontend detects available game discs, provides D-pad/left-stick selection, and mounts the chosen CUE/BIN before native Azel startup. It uses Saga-inspired artwork, the original PDS font and character art, music, and menu sounds derived from original game data. The selector, audio, mounting and fade handoff have been accepted on Vita hardware.
-
-![Accepted 960x544 disc loader on Vita](docs/images/iso-loader-accepted-960x544.png)
-
-Place your own disc images in matching folders:
+Supply your own legally obtained disc images in the appropriate folders:
 
 ```text
 ux0:data/lagi/
@@ -40,48 +30,38 @@ ux0:data/lagi/
   Disc 4/
 ```
 
-Only present discs are selectable. Four-disc selection does **not** imply full four-disc gameplay or in-game disc switching. See the [frontend guide](docs/DISC_SELECTION_FRONTEND.md) and [hardware acceptance notes](docs/ISO_LOADER_ACCEPTANCE_2026_10_23.md).
+Only present discs appear in the selector. No copyrighted game files are included in the repository. The selector is documented in [disc selection](docs/DISC_SELECTION_FRONTEND.md).
 
-## Architecture
+![Disc selection on Vita](docs/images/iso-loader-accepted-960x544.png)
+
+## How Lagi is organized
 
 ```text
 Original PDS disc data
-         |
-  Azel reconstructed logic (ARM)
-         |
-  Lagi platform and presentation bridge
-         |
-  Neptune VDP1/VDP2 -> SceGxm
-         |
-      PS Vita
+       |
+Azel — game logic, tasks and script state
+       |
+Lagi — native Vita services and presentation bridge
+       |
+Neptune — SceGxm rendering
+       |
+     PS Vita
 ```
 
 **Azel decides. Lagi services. Neptune renders.**
 
-Azel owns gameplay state, tasks, scripts, timing, and scene decisions. Lagi supplies Vita input, disc access, memory, audio, synchronization, and other platform services. Neptune renders Azel's presentation state through the Vita GPU, without duplicating game logic in the renderer.
+We work from the original game's code and data rather than simulating individual scenes or attacks with custom Vita substitutes. `extern/Azel` stays pinned to upstream; Vita adaptations live in Lagi.
 
-More implementation detail: [flight/rendering handoff](docs/FLIGHT_MODE_BRINGUP.md) · [dither performance](docs/DITHER_PERFORMANCE.md).
+## Documentation and builds
 
-## Building and controls
+Start with [current status](docs/STATUS.md), [build instructions](docs/BUILDING.md) and the [documentation guide](docs/README.md). The technical details for Berserk support are in [Disc 1 Berserks](docs/BERSERKS_DISC1.md) and [battle effects recovery](docs/BATTLE_EFFECTS_RECOVERY.md). Dated engineering notes remain available for tracing original source addresses and earlier tests.
 
-A working VitaSDK installation and Sony `psp2cgc` are required. See [building instructions](docs/BUILDING.md).
+## AI-assisted development
 
-Controls are mapped from Vita input to the Saturn input state expected by Azel; available actions depend on the game mode. The public alpha's Ruins/movie controls are documented in [development status](docs/STATUS.md). Neptune retains Full, Texture, Lighting, Quads, and Wires diagnostic views.
+Lagi uses AI-assisted development for research, implementation, debugging and documentation. I direct the architecture and priorities, and the results are checked against Azel, original disc data and real Vita behavior. A successful build or host test is not a substitute for hardware acceptance.
 
-## AI-Assisted Development
+## Credits and legal
 
-Lagi uses AI-assisted development for code analysis, implementation, debugging, optimization, and documentation.
+Lagi builds on **Azel**, **ATOLM**, **pds-tools**, **Yabause / Vita Yabause** and the wider Sega Saturn reverse-engineering community.
 
-This includes translating Sega Saturn VDP1/VDP2 rendering behavior into native SceGxm operations, analyzing reconstructed Azel game logic, and developing platform-specific implementations.
-
-The project's architecture, technical direction, and implementation requirements remain developer-directed. AI-assisted code is not assumed to be correct simply because it compiles. Changes are evaluated for architectural consistency, compatibility with the original game logic, and fidelity to Sega Saturn hardware behavior.
-
-Automated tests and builds support development, but correctness is ultimately validated on real PlayStation Vita hardware.
-
-## Source lineage and acknowledgements
-
-Lagi builds on work from **Azel** (reconstructed game logic), **ATOLM** (decompilation and accuracy reference), **pds-tools** (formats and tooling), **Yabause / Vita Yabause** (hardware references), and the wider Sega Saturn reverse-engineering community. The Azel source reference is pinned under `extern/Azel`; Vita-specific adaptations live in Lagi.
-
-## Legal
-
-Lagi is an independent community project. Sega and the respective rights holders retain ownership of *Panzer Dragoon Saga* and its assets. **No copyrighted game data is distributed here.** Users must supply game files they are legally entitled to use.
+Panzer Dragoon Saga and its assets belong to Sega and their respective rights holders. Lagi is an independent community project; users must supply game files they are entitled to use.
