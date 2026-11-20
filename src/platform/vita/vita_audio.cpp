@@ -1,4 +1,5 @@
 #include "lagi/platform.h"
+#include "lagi/audio_output_telemetry.h"
 
 #include <psp2/audioout.h>
 #include <psp2/kernel/threadmgr.h>
@@ -8,6 +9,8 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+
+namespace lagi::audio { OutputQueueTelemetry outputQueueTelemetry; }
 
 namespace lagi::platform::audio {
 namespace {
@@ -66,6 +69,12 @@ int audio_thread(SceSize, void*)
 
         if (sceAudioOutOutput(g_port, g_output.data()) < 0)
             break;
+        // Only count blocks submitted during normal playback. The initial
+        // prebuffer wait and end-of-stream padding are not underruns.
+        if (!finished)
+            lagi::audio::outputQueueTelemetry.record(
+                static_cast<unsigned>(available / g_channels),
+                static_cast<unsigned>(kOutputFrames));
         const std::uint64_t submitted =
             g_submittedFrames.fetch_add(
                 kOutputFrames, std::memory_order_acq_rel) + kOutputFrames;
@@ -114,6 +123,7 @@ bool start_pcm_stream(unsigned int sampleRate, unsigned int channels)
         return false;
 
     g_channels = channels;
+    lagi::audio::outputQueueTelemetry.clear();
     g_writePosition.store(0, std::memory_order_relaxed);
     g_readPosition.store(0, std::memory_order_relaxed);
     g_playedFrames.store(0, std::memory_order_relaxed);
