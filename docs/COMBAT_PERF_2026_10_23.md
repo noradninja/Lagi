@@ -1,5 +1,7 @@
 # Full-run combat performance follow-up
 
+**Historical performance sample (23 October 2026):** These measurements apply to the recorded encounters and build. They do not describe current full-resolution A3/A5 performance; see [STATUS.md](STATUS.md).
+
 User accepted the divide crash and repeated-tunnel audio fixes on hardware.
 The next log contains two Patergo (sub 7) encounters with sampled renderer
 medians 33.49/30.54 ms and complete presentation windows 19.98–23.90 / 22.55–29.97

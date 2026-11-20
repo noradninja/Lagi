@@ -1,5 +1,7 @@
 # Native WORLD map bring-up
 
+**Current context (20 November 2026):** This is our detailed world-map implementation history. The active development route now reaches Garil encounters, although not every story and field-return sequence is accepted. The current boundary is summarized in [status](STATUS.md).
+
 ## Active completion goal — 2026-11-03
 
 Finish native WORLD entry, navigation, confirmation, travel and exit/re-entry so

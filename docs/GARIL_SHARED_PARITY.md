@@ -1,5 +1,7 @@
 # Garil shared runtime parity
 
+**Current position (20 November 2026):** The working combat tree is `60d7b61`, restored by rollback `977809e`. Experimental WEAK-marker depth and tracing changes after that checkpoint regressed Valley combat and were reverted. The native Scatter command, A5 escape/actor signaling and quadrant-eligibility changes described below remain in the restored tree; WEAK marker depth is still unresolved. This is a dated investigation record, with the latest acceptance boundaries in [STATUS.md](STATUS.md).
+
 Active goal, 2026-11-17: reuse the working Valley battle, result, story,
 cutscene and field-transition services in Garil and later areas. Restore
 area-specific authored actors and callbacks through Lagi adapters. Do not

@@ -1,5 +1,7 @@
 # First-section cleanup goals
 
+**Historical first-section plan (October 2026):** These numbered goals record the work sequence that led into Valley and Garil. They are not today's task list. Current progress is in [status](STATUS.md), and the original Disc 1 Berserk tables are now documented in [BERSERKS_DISC1.md](BERSERKS_DISC1.md).
+
 ## 2026-10-23 handoff note
 
 The separate ISO loader work is complete and accepted on Vita, including its

@@ -1,5 +1,7 @@
 # General SCSP DSP translator
 
+**Current context (20 November 2026):** The runtime ARM SCSP DSP backend remains our default. The translator and fallback notes below remain useful; current environment and build flags are in [BUILDING.md](BUILDING.md).
+
 Azel decides. Lagi services. Neptune renders.
 
 Translation is keyed by complete DSP instruction contents and length, never scene names. The existing SCSPDSP interface, reference interpreter, guarded predecoded path, 256-frame quantum and worker yields remain. No extern/Azel or rendering sources are edited. CMake instruments MPRO writes in a generated Lagi-owned SCSP service copy.

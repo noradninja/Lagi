@@ -1,5 +1,7 @@
 # WORLD/Garil work-machine build — 2026-11-05
 
+**Historical work-machine checkpoints:** The branch names, SHA references and build profiles below reproduce particular November 5–15 tests. Work has continued through the Garil Scatter recovery and November 19 rollback. The current build profile is maintained in [BUILDING.md](BUILDING.md).
+
 ## Garil horizon and widescreen coverage — 2026-11-15
 
 - `b3b4b60` restores the original Garil horizon task recovered from the Saturn

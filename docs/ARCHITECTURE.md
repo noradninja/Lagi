@@ -1,5 +1,7 @@
 # Lagi Runtime Architecture
 
+**Current context (20 November 2026):** This is still our architecture for the native Valley and Garil work. [Development status](STATUS.md) tracks the working combat baseline. Older validation dates below describe what had been tested at the time, not a limit on today's runtime.
+
 Lagi is a native PlayStation Vita host for the reconstructed *Panzer Dragoon Saga* runtime in `extern/Azel`.
 
 ## Overview

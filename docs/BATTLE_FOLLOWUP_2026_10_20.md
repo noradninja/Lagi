@@ -1,5 +1,7 @@
 # Battle follow-up, 2026-10-20
 
+**Historical battle follow-up:** The original-address research below is still relevant, but Valley and Garil development has since advanced. See [STATUS.md](STATUS.md) and [BATTLE_EFFECTS_RECOVERY.md](BATTLE_EFFECTS_RECOVERY.md) for current coverage.
+
 Hardware report: Devour now works. Saturn reference shots show hanging
 stippled textured strands, wall-impact debris/smoke and cinematic clouds.
 Rock-break/monster cinematic SFX remain absent. Victory must not visibly dim

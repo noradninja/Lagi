@@ -1,5 +1,7 @@
 # Native battle-mode bring-up
 
+**Current context (20 November 2026):** This document records how native battle execution was first connected. Statements below about A3 execution being disabled by default or limited to link tests belong to that earlier stage. Today's CMake defaults enable `LAGI_BATTLE_NATIVE_BUILD` and `LAGI_BATTLE_EXECUTE_A3`. Valley/Garil testing and open work are covered in [status](STATUS.md), [building](BUILDING.md), and [battle effects recovery](BATTLE_EFFECTS_RECOVERY.md).
+
 Branch: `feature/battle-mode-bringup`, based on accepted menu milestone
 `c2cef69`. Goal: working native battle entry, combat and exit—not a substitute
 battle scene or compile-only completion. Azel decides. Lagi services. Neptune

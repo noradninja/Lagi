@@ -1,5 +1,7 @@
 # Neptune — native Vita rendering architecture and feature map
 
+**Current context (20 November 2026):** Neptune's common rendering design remains in use for native A3/A5 battles and Garil's VDP1 horizon sprites. The detailed October measurements and scene coverage below are historical. [Status](STATUS.md) covers current acceptance; [battle effects recovery](BATTLE_EFFECTS_RECOVERY.md) covers unfinished original visual producers.
+
 This reference describes Neptune's rendering architecture and feature coverage as of October 12, 2026, on `feature/menu-save-load-restoration`. It distinguishes implemented functionality from hardware-validated results. Neptune provides native rendering services for Azel rather than emulating the Saturn or replacing Azel's task graph.
 
 ## Responsibility and frame flow
