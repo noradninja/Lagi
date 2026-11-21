@@ -4473,6 +4473,21 @@ static void lagiPatchModelAddresses(sProcessed3dModel* model, u32 offset)
   set(source_text "#include \"lagi/azel_movie_runtime_hooks.h\"\n${source_text}")
   string(REPLACE "${field_cinematic_tick}" "    lagiAzelCinematicKeepAwake();\n${field_cinematic_tick}" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldCutsceneTask2.cpp")
+  # Original A5 06071D1A..D4C: add the LIVE tracked actor position to
+  # the interpolated relative target. The upstream moving-target arm asserts.
+  set(camera_tracking_old [=[        if (pThis->m24)
+        {
+            //0606A12C
+            assert(0);
+        }]=])
+  string(FIND "${source_text}" "${camera_tracking_old}" camera_tracking_found)
+  if(camera_tracking_found LESS 0)
+   message(FATAL_ERROR "Shared cutscene moving-target boundary changed")
+  endif()
+  string(REPLACE "${camera_tracking_old}" [=[        if (pThis->m24)
+        {
+            pThis->m14 = pThis->m28 + *pThis->m24;
+        }]=] source_text "${source_text}")
   set(source_text "#include \"lagi/platform.h\"\n${source_text}")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_excavation_camera_cut.inc" excavation_camera_cut)
   set(camera_cut_anchor "        endCutsceneTask(pThis);")

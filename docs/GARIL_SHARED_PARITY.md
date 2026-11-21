@@ -397,3 +397,40 @@ Open: native enemy attack selection/effect producers and shadow behavior in this
 archetype still contain stubs. Whole-battle entry, player attacks, death/result,
 field return and another encounter require matching device verification. The
 red-worm cinematic and passage transition remain a separate investigation.
+
+## Red-worm event trace and shared camera support — 21 November 2026
+
+The day proximity trigger at 06067FDC already starts field script 2/5B7, but
+its actor factory, tracker and camera calls are stubs. This explains why the
+story dialogue can run without a visible red-worm scene. No story bit or trigger
+condition was forced or changed during this trace.
+
+Original 060666E8 selects task descriptor 0609D7BC: init 06066028, update
+060662BC, draw 06066584. The adjacent descriptor 0609D7CC starts at 060666F8
+and is a DIFFERENT actor. Do not implement the first factory using that adjacent
+initializer merely because it follows the factory in address order.
+
+The first event data is 0609E790 (type 0, eight parts, original position and
+rotation). Tracker 06067EE2 uses name table 0609DBC6, Y threshold -0x1DE000
+and bit 0x74B. Callback 06067F12 recreates that same authored actor/tracker
+for the camera continuation. Camera 0606F9E4 passes flags zero to shared
+060720C6, equivalent to cutsceneTaskInitSub2 after deserializing its script.
+Actor creation/update/draw, tracker completion and typed callback dispatch must
+be implemented together before the event is wired. The camera's flags-zero
+path is distinct from its optional moving-subject tracking path.
+
+One missing COMMON camera capability was also identified: s_cutsceneTask2's
+moving-subject arm asserts instead of adding the live subject to its current
+relative target. Original A5 06071D1A..D4C performs that three-axis addition
+every update. The guarded shared adapter restores it, preserving the fixed-target
+arm, camera trajectory, segment timing and existing completion behavior. This
+supports authored tracking scenes across areas; it does not by itself restore
+the flags-zero worm event or claim that its actor now appears.
+
+Validation: field_camera_tracking_test.py compiles the actual generated Update
+and checks a moving subject across ten frames, fixed-target behavior, segment
+advance, held completion and initial camera tracking. Original FLD_A5.PRG
+factory/descriptor/tracker/camera anchors pass garil_worm_contract_test.py.
+Vita package compilation/linking passes. A full worm scene and the passage
+opening remain unimplemented/unverified; no hardware test is requested for this
+support-only checkpoint.
