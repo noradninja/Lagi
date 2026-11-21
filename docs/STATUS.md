@@ -34,6 +34,8 @@ Remaining work: the camera animation/angle on passage entry is wrong; enemies ne
 
 The wind-table correction and shared passage services are part of this tested tree. The user has not explicitly confirmed that every earlier rendering glitch is gone. A local, uncommitted subdivision shade-cache optimization remains under verification; it is not included in the hardware-tested checkpoint.
 
+The passage-entry camera now has its missing shared no-script tracking arm restored from the original instructions: it holds the authored camera position and tracks the approaching dragon. The production fixture/native contracts pass; corrected animation/angle still await Vita acceptance.
+
 The implementation uses shared field targets, story-bit accessors, camera services, particle pools, combat targeting/damage, rewards and destination handoffs. Unique Garil actor/formation logic must bind to those services rather than duplicate them.
 
 A source implementation, a host fixture and a hardware-verified scene are different things. We record that difference because these paths have repeatedly compiled and still shown issues on Vita.

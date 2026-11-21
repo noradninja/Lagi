@@ -739,3 +739,28 @@ Next source traces remain separate: native passage camera setup versus shared
 follow-mode behavior; generic enemy-turn/attack dispatch versus formation-owned
 attack producers; and the original field Lathum actor/encounter handoff. Keep
 using original Saturn instruction/data traces and shared Valley runtime services.
+
+## Shared fixed-position camera tracking - 21 November 2026
+
+Passage entry's original 06056D64..7C stores the camera position from record
++0x2C and selects follow mode 0. Its update table at 0609E8E8 resolves to
+0606A4F4. When the dragon has no camera-script task, native 0606A658..69A
+computes dragon-position minus the fixed camera position, calls the shared
+look-at calculation, writes pitch/yaw and updates distance. It keeps camera
+position and roll unchanged while the dragon approaches the passage.
+
+Upstream cameraFollowMode_scriptTarget retained the scripted/clamped branch
+but left this no-script arm as assert(0). The generated fieldCamera adapter
+restores that arm using the existing computeLookAt and vecDistance services.
+It introduces no camera offsets, durations, alternate path or Garil-only camera
+simulation. Other authored users of the same shared mode receive the same fix.
+
+Validation: field_fixed_camera_test.py executes the production mode with its
+actual adapter across 360 moving-dragon frames and init/blend/active states. It
+checks fixed position, unchanged roll, exact camera-to-dragon delta, pitch/yaw
+and distance service arguments, and retained near/clamped scripted behavior.
+Original PRG checks verify passage mode 0, table target, no-script branch and
+the native position/angle/distance operands. The user's report at 5e252ba
+establishes that this camera was wrong before this repair; the corrected camera
+still needs Vita confirmation. This camera change is committed independently
+from enemy attacks, Lathum and renderer optimization.

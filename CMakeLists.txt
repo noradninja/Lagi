@@ -2473,6 +2473,36 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${point_restore_old}" "${point_restore_new}" source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/fieldCamera.cpp")
+  # Original A5 0606A658..69A: with no camera script, mode 0 holds
+  # its authored position and tracks the live dragon. Upstream leaves a stub.
+  set(fixed_camera_begin "static void cameraFollowMode_scriptTarget(sFieldCameraStatus* r4)\n{")
+  set(fixed_camera_end "// 06062ac0")
+  string(FIND "${source_text}" "${fixed_camera_begin}" fixed_camera_start)
+  string(FIND "${source_text}" "${fixed_camera_end}" fixed_camera_stop)
+  if(fixed_camera_start LESS 0 OR fixed_camera_stop LESS fixed_camera_start)
+   message(FATAL_ERROR "Shared script-target camera boundaries changed")
+  endif()
+  math(EXPR fixed_camera_length "${fixed_camera_stop}-${fixed_camera_start}")
+  string(SUBSTRING "${source_text}" ${fixed_camera_start} ${fixed_camera_length} fixed_camera_old_body)
+  set(fixed_camera_stub [=[        else
+        {
+            assert(0);
+        }]=])
+  set(fixed_camera_tracking [=[        else
+        {
+            const sVec3_FP delta=pDragonTask->m8_pos-r4->m0_position;
+            sVec2_FP lookAt;
+            computeLookAt(delta,lookAt);
+            r4->mC_rotation[0]=lookAt[0];
+            r4->mC_rotation[1]=lookAt[1];
+            r4->m24_distanceToDestination=vecDistance(r4->m0_position,pDragonTask->m8_pos);
+        }]=])
+  string(FIND "${fixed_camera_old_body}" "${fixed_camera_stub}" fixed_camera_stub_found)
+  if(fixed_camera_stub_found LESS 0)
+   message(FATAL_ERROR "Shared script-target camera fallback changed")
+  endif()
+  string(REPLACE "${fixed_camera_stub}" "${fixed_camera_tracking}" fixed_camera_new_body "${fixed_camera_old_body}")
+  string(REPLACE "${fixed_camera_old_body}" "${fixed_camera_new_body}" source_text "${source_text}")
   if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
    string(FIND "${source_text}" "static void cameraFollowMode_posFromDragon(sFieldCameraStatus* r11, s_dragonTaskWorkArea* stack_4)" garil_camera_found)
    if(garil_camera_found LESS 0)
