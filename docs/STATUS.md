@@ -1,7 +1,7 @@
 # Lagi development status
 
 **Updated 21 November 2026**
-**Working combat baseline:** `diagnostics/garil-cliff-current` at `977809e`, with documentation changes following that baseline.
+**Current hardware-tested checkpoint:** `diagnostics/garil-cliff-current` at `5e252ba`.
 
 This is the current project overview. The older, dated engineering reports remain useful for source addresses and test evidence, but they are not competing reports on the present build.
 
@@ -28,15 +28,13 @@ These features have different validation histories. A linked task or successful 
 
 The restored combat baseline is commit `977809e`. It brings back the exact tracked tree of `60d7b61` after experimental WEAK marker depth and tracing changes regressed Valley combat. Those reverted experiments remain in Git history, but are not part of the active tree.
 
-Recent Garil development includes the original horizon sprites, native Nanyd targeting, enemy life-meter retirement, queen-loss Scatter handoff, the original Scatter text path, escape offsets/movement and authored quadrant eligibility for WEAK cursors. The user confirms Scatter and the repaired second battle work (21 November, second battle at a70d109). Its missing Gash horn warning is now bound to the shared battle-dialogue service, and the story-worm actor/controller/camera wiring has been restored. The user confirms the red-worm cinematic triggers in d21bb02; the horn warning's full voice/scene timing remains pending. The user confirms the main exit is gated by the unimplemented Lathum fight; its current pre-Lathum unavailability is expected. Bounded script/LCS observations remain for the eventual post-Lathum test. Garil still misses 30 Hz deadlines, and both submitted videos show full-screen colored sprite corruption. The d21bb02 capture predates wind correction 8471dd2, which the user is testing next. Remaining checks include those scenes, post-Lathum main-exit selection, full results/field return, repeated encounters and visual/performance parity. Camp/Gash story continuity is another original-script validation boundary.
+At `5e252ba`, the user confirms on Vita that the red-worm cinematic plays, its passage opens, entry into the Secret Worm Passage and return to the field work, and combat entry/exit, player attacks, enemy death, experience and dyne awards work. Earlier Scatter and death-lifecycle acceptance remain in force. These confirmations establish those gameplay paths, not complete cinematic or combat parity.
 
-The story and environmental worms now share the native segment sand and X/Z-following particle producers, including safe anchor lifetime through actor/pool teardown; their appearance still awaits hardware confirmation. The shared field-particle pool now releases finished particles' task-owned payloads as Saturn does. This fixes retention until scene teardown and growing allocation-list traversal; its effect on Garil frame pacing is not yet measured.
+Remaining work: the camera animation/angle on passage entry is wrong; enemies never attack; the field Lathum interaction that starts its encounter is absent. Source inspection also finds the Lathum formation's Init/Update/Draw still stubbed. The main exit retains its authored post-Lathum gate. Renderer performance remains below target, and worm sand effects, the full Gash horn-warning timing and remaining visual parity still need specific acceptance.
 
-The shared type-1 field camera now calculates roll from authored keyframe endpoints and writes it to the roll axis, matching the original instructions. Host/native-data checks and the Vita package pass; cinematic visuals still need hardware confirmation.
+The wind-table correction and shared passage services are part of this tested tree. The user has not explicitly confirmed that every earlier rendering glitch is gone. A local, uncommitted subdivision shade-cache optimization remains under verification; it is not included in the hardware-tested checkpoint.
 
-The full-screen colored rectangles in the latest video correlate with a source-proven wind sprite table error: the table address was decoded as sprite data. Wind emitters now dereference the authored pointer tables, preserve their slot texture base/animation phase and restore native sand gravity. Host/native-data tests and the Vita package pass; visual confirmation remains pending.
-
-Worm passage targets now use decoded stable position/normal storage, the original selection/visit callback and shared story-bit checks. The original approach and shared destination handoff pass the seven-record host fixture; live opening, selection and arrival remain pending. The latest hardware video used d21bb02, so its remaining rectangles do not test the wind correction in 8471dd2.
+The implementation uses shared field targets, story-bit accessors, camera services, particle pools, combat targeting/damage, rewards and destination handoffs. Unique Garil actor/formation logic must bind to those services rather than duplicate them.
 
 A source implementation, a host fixture and a hardware-verified scene are different things. We record that difference because these paths have repeatedly compiled and still shown issues on Vita.
 

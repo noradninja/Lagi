@@ -717,3 +717,25 @@ do not add the two times together. The wind-corruption samples reach about
 3.24 million sprite bounding-box pixels, but frame pacing also remains slow
 without that overdraw. Performance remains an open, separately measured task.
 The user is testing the preserved 8471dd2 package next.
+
+## Hardware acceptance at 5e252ba - 21 November 2026
+
+User-confirmed on Vita:
+
+- Red-worm cinematic triggers and plays.
+- The worm passage opens.
+- Secret Worm Passage entry and return to the field work.
+- Combat entry/exit, player attacks, enemy death, experience and dyne work.
+
+These supersede earlier pending checks for those paths. They do not establish
+correct passage-entry camera animation/angle: the user reports that is wrong.
+Enemies never attack. The field Lathum interaction is absent; source inspection
+also finds BTL_A5_3's formation Init/Update/Draw unimplemented. The main exit
+remains authored-gated by Lathum and must not be forced available. Renderer
+performance problems persist. The user has not explicitly accepted every earlier
+visual glitch, ground-crossing sand emission or full horn-warning scene timing.
+
+Next source traces remain separate: native passage camera setup versus shared
+follow-mode behavior; generic enemy-turn/attack dispatch versus formation-owned
+attack producers; and the original field Lathum actor/encounter handoff. Keep
+using original Saturn instruction/data traces and shared Valley runtime services.
