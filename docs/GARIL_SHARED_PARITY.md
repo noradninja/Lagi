@@ -434,3 +434,57 @@ factory/descriptor/tracker/camera anchors pass garil_worm_contract_test.py.
 Vita package compilation/linking passes. A full worm scene and the passage
 opening remain unimplemented/unverified; no hardware test is requested for this
 support-only checkpoint.
+
+## Story-worm actor and event wiring checkpoint — 21 November 2026
+
+Implemented the actual 0609D7BC actor via Lagi-owned typed fields and the shared
+monsterBody, animation, resource, collision-draw and particle services. It loads
+memory area 1 (FLD_A5.MCB, not FLD_A5_0.MCB), preserves the authored head/body/tail
+templates and model/pose/animation tables, and draws only above-ground segments.
+Its native pitch/roll damping, triple-product velocity, body spring updates,
+ground-level camera anchor and head breach sound/particles are restored.
+
+The command tracker consumes one original signed word per frame, adjusts the
+six angular directions and speed, and retires the actor on the negative sentinel.
+Crucial correction to earlier upstream comments/notes: actor +0x10 is POSITION Z,
+not Y. Native 06067E1E compares Z with -0x1DE000 for the first passage flag.
+The original bit is set once at that threshold and again idempotently on stream
+completion; field-control bit 0x8000 is released at completion. There is no
+forced early discovery, replacement path or fixed delay to unlock the passage.
+
+Proximity day/night calls now use that factory and tracker and the existing
+cutsceneTaskInitSub2 camera service with original scripts/callback EAs and
+flags zero. Actor initialization failure leaves the trigger eligible to retry
+instead of publishing a false discovery bit. Camera script vectors have stable
+per-script storage. Native skip callbacks are recorded by the shared camera
+service; typed invocation of those callbacks still needs a separate skip-path
+parity check, so normal playback is the current validation path.
+
+Validation: the production tracker passes all 4,096 low-12-bit command masks,
+Z-not-Y threshold timing, once-only threshold publication, negative sentinel
+cleanup, unrelated field-flag preservation, speed floor and original sound
+frames 0/30/45. Original PRG contracts and all three types' model/pose/animation
+bindings pass against FLD_A5.MCB. Vita compilation/link/package passes.
+
+Still open: native per-segment sand/debris producers 0605F86C/0605F804 remain
+unimplemented in the upstream worm system; no guessed effects replace them.
+Full scene visibility, camera timing, passage opening/entry and return need
+matching Vita video/log confirmation. This checkpoint is not full visual or
+story acceptance.
+
+## Latest hardware steering and expanded checks
+
+The user confirms the second battle works using a70d109. Its authored Gash
+warning ('Watch out for the ones with horns.') is absent: native 0605B2B2 calls
+shared battle dialogue with subtitle index 9 and B_A5_03.PCM at 060AF9F4. This
+must use the existing subtitle/PCM lifecycle, just as the first battle does.
+The main area exit cannot be selected and needs an LCS/transition trace.
+
+The supplied 1,640,057-byte lagi.log (21 November, 16:35 file timestamp) contains
+57 presentation windows. Of 53 windows without a >100 ms outlier, average rates
+range 20.609..29.970 fps. The slowest has 109/120 frames at three VBlanks,
+mean 48,520 us, preRender 3,619 us, publish 2,491 us, present 13,916 us. This
+establishes repeated missed deadlines, not a rendering/CPU root cause. The user
+will supply video after the next run for graphical glitches; do not change
+culling or offsets speculatively. Exit, warning, performance and visual checks
+remain within the active parity work, alongside full field return/re-entry.

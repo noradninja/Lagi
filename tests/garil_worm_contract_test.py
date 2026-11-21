@@ -23,3 +23,27 @@ for ea,expected,n in [
 ]:
  assert value(ea,n)==expected,f'Original worm/camera contract differs at {ea:08X}'
 print('PASS original worm factory, actor identity, tracker threshold/flag, shared camera dispatch and live target addition')
+
+# Memory area 1 is FLD_A5.MCB, not the subfield-only FLD_A5_0.MCB.
+import struct
+bundle=Path(sys.argv[1]).with_name('FLD_A5.MCB').read_bytes()
+def ptr(o):
+ assert 0<=o<=len(bundle)-4
+ return int.from_bytes(bundle[o:o+4],'big')
+def bones(o,seen):
+ if not o:return 0
+ assert o not in seen and 0<=o<=len(bundle)-12
+ seen.add(o)
+ return 1+bones(ptr(o+4),seen)+bones(ptr(o+8),seen)
+for kind in range(3):
+ for m,q,a in [(0x609D744,0x609D75C,0x609D774),(0x609D750,0x609D768,0x609D780)]:
+  model,pose,animation=[value(ea+kind*4) for ea in (m,q,a)]
+  count=bones(ptr(model),set());offset=ptr(animation)
+  flags,animated,frames=struct.unpack_from('>HHH',bundle,offset)
+  assert flags and frames and animated>=count
+  assert ptr(pose)+animated*36<=len(bundle)
+for ea,expected,n in [(0x6067E1E,0x5134,2),(0x6067DF0,0x7202,2),
+ (0x6067E30,0x800,2),(0x6067E32,0x400,2),(0x6067E34,0x111,2),
+ (0x6067E40,0x888888,4),(0x6067E54,0x9075,2)]:
+ assert value(ea,n)==expected,f'Native tracker contract differs at {ea:08X}'
+print('PASS shared-field bundle bindings for all worm types and native Z/control stepping contracts')
