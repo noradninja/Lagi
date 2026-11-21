@@ -351,7 +351,7 @@ the WEAK sprite must appear only in authored eligible quadrants and remain
 targetable when visible. Gather video/log for comparison. No change to
 the previously accepted queen defeat rewards is intended.
 
-## Subsequent-encounter constructor and shared damage repair ï¿½ 21 November 2026
+## Subsequent-encounter constructor and shared damage repair — 21 November 2026
 
 Baseline: remote 8284343, following the accepted 977809e combat rollback.
 The old staged Scatter experiment files were preserved and are not part of
@@ -398,7 +398,7 @@ archetype still contain stubs. Whole-battle entry, player attacks, death/result,
 field return and another encounter require matching device verification. The
 red-worm cinematic and passage transition remain a separate investigation.
 
-## Red-worm event trace and shared camera support ï¿½ 21 November 2026
+## Red-worm event trace and shared camera support — 21 November 2026
 
 The day proximity trigger at 06067FDC already starts field script 2/5B7, but
 its actor factory, tracker and camera calls are stubs. This explains why the
@@ -435,7 +435,7 @@ Vita package compilation/linking passes. A full worm scene and the passage
 opening remain unimplemented/unverified; no hardware test is requested for this
 support-only checkpoint.
 
-## Story-worm actor and event wiring checkpoint ï¿½ 21 November 2026
+## Story-worm actor and event wiring checkpoint — 21 November 2026
 
 Implemented the actual 0609D7BC actor via Lagi-owned typed fields and the shared
 monsterBody, animation, resource, collision-draw and particle services. It loads
@@ -490,7 +490,7 @@ will supply video after the next run for graphical glitches; do not change
 culling or offsets speculatively. Exit, warning, performance and visual checks
 remain within the active parity work, alongside full field return/re-entry.
 
-## Second-battle Gash warning ï¿½ 21 November 2026
+## Second-battle Gash warning — 21 November 2026
 
 Original 0605B2B2..B2C4 passes subtitle index 9, PCM name B_A5_03.PCM
 (060AF9F4), and the shared battle-dialogue function 06070E0E. The actual
