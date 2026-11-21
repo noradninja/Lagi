@@ -23,4 +23,14 @@ int main()
     assert(lagiSignalFormationActors(group, 8, signal) == 2);
     assert(lagiSignalFormationActors(group, 0x20, signal) == 2);
     assert(a.workAreaFlags == 0x28 && d.workAreaFlags == 0x28);
+    a.workAreaFlags=0x0C000000u;d.workAreaFlags=0x10;
+    live.flags=0x04000000u;another.flags=0x04000000u;
+    auto flags=[](Actor* actor)->std::uint32_t& {return actor->workAreaFlags;};
+    assert(lagiTransitionFormationActors(group,0x04000000u,0x04000000u,0x02000000u,flags)==1);
+    assert(a.workAreaFlags==0x0A000000u&&d.workAreaFlags==0x10);
+    assert(live.flags==0x04000000u&&another.flags==0x04000000u);
+    assert(lagiTransitionFormationActors(group,0x04000000u,0x04000000u,0x02000000u,flags)==0);
+    assert(!lagiVisitFormationActor(group,-1,[](Actor*){}));
+    assert(!lagiVisitFormationActor(group,5,[](Actor*){}));
+
 }

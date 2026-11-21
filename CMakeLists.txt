@@ -4063,6 +4063,31 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    "lagiBattleEnemyType(pParent->mE0_entityGroup, iVar6)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_single.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # Generate a typed single-formation extension from the upstream definition.
+  # Other A5 formations keep their own upstream type and state unchanged.
+  set(single_header "${LAGI_AZEL_SOURCE_ROOT}/battle/BTL_A5/BTL_A5_formation.h")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${single_header}"
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_control.inc"
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_attack_phases.inc")
+  file(READ "${single_header}" single_type)
+  string(REPLACE "#pragma once" "" single_type "${single_type}")
+  string(REPLACE "sBTL_A5_FormationTask" "sLagiGarilSingleFormation" single_type "${single_type}")
+  string(FIND "${single_type}" "    // size 0x1D8" single_fields_found)
+  if(single_fields_found LESS 0)
+   message(FATAL_ERROR "A5 single formation type extension boundary changed")
+  endif()
+  string(REPLACE "    // size 0x1D8" [=[    std::array<std::array<sVec3_FP,6>,3> m_lagiLayouts{};
+    unsigned m_lagiLayout=0;
+    u8 m_lagiMoveCounter=0;
+    bool m_lagiAttackLead=false;
+    // size 0x1D8]=] single_type "${single_type}")
+  string(REPLACE "sBTL_A5_FormationTask" "sLagiGarilSingleFormation" source_text "${source_text}")
+  string(REPLACE "struct sBTL_A5_SingleEnemy" "${single_type}\nstruct sBTL_A5_SingleEnemy" source_text "${source_text}")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_control.inc" single_control)
+  string(REPLACE "// 0605ae48" "${single_control}\n// 0605ae48" source_text "${source_text}")
+  set(source_text "#include \"lagi_formation_actor_signal.h\"\n${source_text}")
+  string(REPLACE "#include \"battle/battleEngine.h\"" "#include \"battle/battleEngine.h\"\n#include \"battle/battleDragon.h\"" source_text "${source_text}")
+
   set(a5_single_type "readSaturnS16(pParent->mE0_entityGroup.m8_dataTable + 0xC) + isLead")
   string(FIND "${source_text}" "${a5_single_type}" a5_single_type_found)
   if(a5_single_type_found LESS 0)
@@ -4084,6 +4109,23 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(SUBSTRING "${source_text}" ${single_model_stop} -1 single_model_suffix)
   set(source_text "${single_model_prefix}    if (!lagiInitGarilSingleModels(pEntity,pBundle,isLead)) return nullptr;\n\n${single_model_suffix}")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_init.inc" single_model_init)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_attack.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_attack.inc" single_attack_impl)
+  set(single_model_init "${single_model_init}\n${single_attack_impl}")
+  set(single_charge_stub [=[            // 0605c51c: create attack particle based on lead status
+            Unimplemented();]=])
+  set(single_shot_stub [=[            // 06054080: create attack effect based on lead status
+            Unimplemented();]=])
+  foreach(single_attack_stub IN ITEMS single_charge_stub single_shot_stub)
+   string(FIND "${source_text}" "${${single_attack_stub}}" single_attack_found)
+   if(single_attack_found LESS 0)
+    message(FATAL_ERROR "A5 single charge/shot boundary changed: ${single_attack_stub}")
+   endif()
+  endforeach()
+  string(REPLACE "${single_charge_stub}" "            lagiGarilSingleBeginCharge(pThis);" source_text "${source_text}")
+  string(REPLACE "${single_shot_stub}" "            lagiGarilSingleFire(pThis);" source_text "${source_text}")
+  set(source_text "#include \"lagi/native_battle_projectiles.h\"\n${source_text}")
   string(REPLACE "// 060a3bc0 - shared main model draw" "${single_model_init}\n// 060a3bc0 - shared main model draw" source_text "${source_text}")
   string(FIND "${source_text}" "// 0605c2bc" single_update_begin)
   string(FIND "${source_text}" "// 0605c34c" single_update_end)
@@ -4093,7 +4135,32 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(SUBSTRING "${source_text}" 0 ${single_update_begin} single_update_prefix)
   string(SUBSTRING "${source_text}" ${single_update_end} -1 single_update_suffix)
   set(source_text "${single_update_prefix}static void BTL_A5_singleEnemy_updatePositionFromFormation(sBTL_A5_SingleEnemy* pThis)\n{\n    lagiUpdateGarilSinglePosition(pThis);\n    BTL_A5_singleEnemy_updateShadow(pThis);\n}\n\n${single_update_suffix}")
-  string(REPLACE "    pEngine->m3B2_numBattleFormationRunning++;" "    pEngine->m3B2_numBattleFormationRunning++;\n    formationUpdatePosition(&pThis->m2C_posBlock,&pEngine->mC_battleCenter);" source_text "${source_text}")
+  set(single_switch [=[    switch (pThis->m28_state)
+    {
+    case 0:
+        if (battleEngine_isBattleIntroFinished())]=])
+  string(FIND "${source_text}" "${single_switch}" single_switch_found)
+  if(single_switch_found LESS 0)
+   message(FATAL_ERROR "A5 single formation update boundary changed")
+  endif()
+  string(REPLACE "${single_switch}" "    lagiUpdateGarilSingleSpacing(pThis);\n    formationUpdatePosition(&pThis->m2C_posBlock,&pEngine->mC_battleCenter);\n${single_switch}" source_text "${source_text}")
+  set(single_selector [=[    case 3:
+        if (battleEngine_isPlayerTurnActive()) return;
+        break;]=])
+  string(FIND "${source_text}" "${single_selector}" single_selector_found)
+  if(single_selector_found LESS 0)
+   message(FATAL_ERROR "A5 single attack selection boundary changed")
+  endif()
+  string(REPLACE "${single_selector}" [=[    case 3:
+        if (battleEngine_isPlayerTurnActive()) return;
+        if(pEngine->m3CC->m8==1 && !pThis->mF1_pad5[2])lagiSelectGarilSingleAttack(pThis);
+        break;]=] source_text "${source_text}")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_attack_phases.inc" single_attack_phases)
+  string(FIND "${source_text}" "    case 0xB:" single_cleanup_state_found)
+  if(single_cleanup_state_found LESS 0)
+   message(FATAL_ERROR "A5 single cleanup state boundary changed")
+  endif()
+  string(REPLACE "    case 0xB:" "${single_attack_phases}    case 0xB:" source_text "${source_text}")
   string(REPLACE "        pModel->m18_drawFunction(pModel);" [=[        pModel->m18_drawFunction(pModel);
         if (pModel->m58_targetablePositions) {
             int target=0;
@@ -4144,14 +4211,18 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    message(FATAL_ERROR "A5 single position table boundary changed")
   endif()
   string(REPLACE "${single_position_old}" "sSaturnPtr posTable = pParent->mE0_entityGroup.m8_dataTable;" source_text "${source_text}")
+  string(FIND "${source_text}" "pEntity->m90_initialPosition = readSaturnVec3(posTable + entityIndex * 0xC);" single_spawn_position_found)
+  if(single_spawn_position_found LESS 0)
+   message(FATAL_ERROR "A5 single mutable spawn position boundary changed")
+  endif()
+  string(REPLACE "pEntity->m90_initialPosition = readSaturnVec3(posTable + entityIndex * 0xC);"
+   "pEntity->m90_initialPosition = pParent->m_lagiLayouts[pParent->m_lagiLayout][entityIndex];" source_text "${source_text}")
   set(single_formation_anchor "    pThis->mE0_entityGroup.mE_numEntities = 6;")
   string(FIND "${source_text}" "${single_formation_anchor}" single_formation_found)
   if(single_formation_found LESS 0)
    message(FATAL_ERROR "A5 single formation initializer boundary changed")
   endif()
-  string(REPLACE "${single_formation_anchor}" [=[    const unsigned selector = randomNumber() & 3u;
-    pThis->mF1_pad5[0] = selector + 1;
-    pThis->mE0_entityGroup.m8_dataTable = g_BTL_A5->getSaturnPtr(lagi::garilSinglePositionTable(selector));
+  string(REPLACE "${single_formation_anchor}" [=[    lagiInitGarilSingleLayouts(pThis);
     pThis->mE0_entityGroup.m4_positionBlock = &pThis->m2C_posBlock;
     pThis->mE0_entityGroup.mE_numEntities = 6;]=] source_text "${source_text}")
   set(source_text "#include \"lagi_battle_enemy_lifecycle.h\"\n#include \"lagi/native_battle_models.h\"\n#include \"lagi/garil_single_formation.h\"\n#include \"lagi/native_formation_motion.h\"\n${source_text}")

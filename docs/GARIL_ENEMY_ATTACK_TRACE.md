@@ -1,6 +1,8 @@
 # Garil enemy attack trace - 21 November 2026
 
-Status: original-code investigation; enemy attacks are not restored yet. This
+Status: the single/horned formation attack path is now restored in source and
+passes host/native-contract checks and a Vita package build; hardware acceptance
+is pending. Other formation attack paths remain incomplete. This
 checkpoint concerns attacks only. It does not change Lathum, passage cameras,
 renderer behavior, authored story flags or the accepted player/death/reward flow.
 
@@ -26,9 +28,9 @@ inspection, set `GARIL_DISASM_BASE=06000000` and run
 Keep instruction operands distinct from decimal annotations: immediate `0x4B`
 is 75 frames, `0x2D` is 45 and `0x3C` is 60.
 
-## Confirmed missing handoffs in the single formation
+## Missing handoffs at the traced baseline
 
-The current generated single-formation update still reaches state 3 without
+The baseline generated single-formation update reached state 3 without
 selecting an attack. Upstream only checks `battleEngine_isPlayerTurnActive` and
 breaks. States 5 through 8 are also absent. Simply adding selection would send
 these states into the existing default cleanup arm.
@@ -143,3 +145,57 @@ activating any selector, restore its full selection/bookkeeping, engine handoff,
 wind-up, release, damage and completion path. Source/build checks will not prove
 Vita attack timing, visuals or battle progression; matching hardware acceptance
 remains open.
+
+## Single-formation implementation checkpoint
+
+Lagi now restores the complete single/horned formation attack path through
+its generated adapter: native turn gates and quadrant/status/death-dependent
+selection, movement-only turns, shared attack camera 1 and attack-quadrant flag,
+name display, readied-to-release actor flags, homing shot creation/damage,
+completion signal and shared camera restoration. The established all-dead,
+reward and field-return path is retained. Other A5 formations are unchanged.
+
+The generated single-formation type extends a renamed copy of the upstream
+formation definition with typed writable layouts. Three decoded original
+position tables persist through layout switches for this encounter, including
+ordered spacing updates and their RNG ordering. The overlay assets remain
+unchanged. Native layout cycling also restores the original quadrant speed and
+altitude values. Original records at +F4 remain typed-copied 32-bit death records;
+work-area layout offsets are never applied to polymorphic host objects.
+
+Charge and homing services are shared Lagi runtime functions. Charge frames
+are task-private copies of cached authored quad descriptors, grow by 0x333 to
+0x4000 and follow the world-space targetable position while the actor stays
+in its charging state. Parent-child task retirement keeps borrowed state and
+hotpoint storage alive; the targetable arrays remain in the parent task heap.
+Native targetable +8 is m8, pointing at its world-space m10_position. This is
+distinct from the model's view-space hotpoint array. Leaders use record 2 and
+other actors use record 0. The existing m1BC_isLead2 member holds the role
+passed by the constructor; it is used semantically, not as a native byte offset.
+
+The shared homing service preserves original delay, arithmetic shifts, scroll,
+75-frame lifetime with old-counter expiry, collision radii/contact position,
+33/24 damage, damage kind 2, zero impact vector and flags 8/0. Its immutable
+quad cache, projected-particle rendering and applyDamageToDragon service are
+shared with established combat infrastructure. Valley ballistic shots retain
+their original path. The native attack-name function itself uses a fixed
+45-frame display duration; the recovered call's extra 0x23,0 arguments are not
+used by that native function, so the shared implementation is retained.
+
+Validation executes the generated actor stages, generated formation selection
+and phases, shared charge/projectile runtime and typed actor traversal. Cases
+cover all 64 death masks with both status policies; quadrant movement and
+player-turn/busy gates; exact old-counter charge/recovery boundaries; null and
+finished actors; separation of task-header and actor flags; layout persistence,
+spacing order/thresholds/RNG/clamps; live world-space source selection; private
+animated charge frames; signed motion, delay/expiry and one-hit contact damage.
+Original BTL_A5.PRG anchors verify native role/record indices, quad pointers,
+selector callees, timing, damage, flag masks and layout bounds. Existing model
+initialization and Valley projectile regression cases pass. Full Vita compile,
+link and VPK packaging pass. These are source/build checks, not device proof.
+
+Next device check for this checkpoint: allow the single/horned formation to
+take a turn, confirm charge/projectile/contact damage and return to player
+control, defeat it and enter another encounter. Existing first-Nanyd, dual,
+variant and Lathum producers/selection still need their own traces; do not
+interpret this checkpoint as all Garil enemies attacking or full Garil parity.

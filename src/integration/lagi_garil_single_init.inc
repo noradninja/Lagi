@@ -35,7 +35,7 @@ static bool lagiInitGarilSingleModels(sBTL_A5_SingleEnemy* actor,
 static void lagiUpdateGarilSinglePosition(sBTL_A5_SingleEnemy* actor)
 {
     const auto& group=actor->m158_formation->mE0_entityGroup;
-    actor->m60_targetPosition=readSaturnVec3(group.m8_dataTable+actor->m1C_entityIndex*12);
+    actor->m60_targetPosition=actor->m158_formation->m_lagiLayouts[actor->m158_formation->m_lagiLayout][actor->m1C_entityIndex];
     for (int axis=0;axis<3;++axis) {
         lagi::NativeFormationSpringAxis p{actor->m60_targetPosition[axis].asS32(),
             actor->m90_initialPosition[axis].asS32(),actor->m48_scaledAutoScroll[axis].asS32(),0,

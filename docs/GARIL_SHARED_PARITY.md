@@ -820,3 +820,17 @@ samples, so their median must not be presented as the entire run's frame rate.
 Build time is nested inside CPU preparation; do not add it again. Remaining
 slowdown is supported by both the user's observation and the display outliers.
 No fresh performance code change or another capture is requested at this point.
+
+## Single/horned enemy attack implementation checkpoint
+
+The previously missing single-formation selector and attack phases now run
+through the existing battle-engine camera/turn services, shared typed actor
+flags and new reusable native charge/homing projectile services. Native
+writable position layouts, spacing and layout cycling are restored alongside
+the actor's original world-space firing records. See
+[GARIL_ENEMY_ATTACK_TRACE.md](GARIL_ENEMY_ATTACK_TRACE.md) for contracts, scope
+and validation. Host/generated-stage/native-PRG tests and full Vita packaging
+pass; device attack/continuation acceptance is pending. First-Nanyd, dual,
+variant and Lathum attack paths remain open. The user's accepted camera and
+observed overall performance improvement remain in force; this attack commit
+adds no renderer or Lathum change.
