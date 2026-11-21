@@ -5386,11 +5386,17 @@ static void drawPublishedVdp1Ui(
         // Only native radar-owned commands use this right-anchored, square
         // integer pixel grid. Keep animation offsets and all authored geometry.
         const float radarScale = std::max(1, viewerRenderHeight() / 224);
+        // The frame already meets the right edge. Its authored top is inset
+        // 16 Saturn pixels, so lift the entire radar assembly as one group.
+        // At 960x544 this is 32 output pixels; at 480x272 it is 16.
+        // All radar-owned sprites, markers, direction lines and altitude
+        // polygons use these same transforms.
+        constexpr float kRadarTopShiftNative = 16.0f;
         const auto radarX = [&](float x) {
             return 1.0f + 2.0f * (x - 176.0f) * radarScale / viewerRenderWidth();
         };
         const auto radarY = [&](float y) {
-            return 1.0f - 2.0f * (y + 112.0f) * radarScale / viewerRenderHeight();
+            return 1.0f - 2.0f * (y + 112.0f + kRadarTopShiftNative) * radarScale / viewerRenderHeight();
         };
 
         // Native solid polygons (4) include battle HP/BP/power/enemy gauges,

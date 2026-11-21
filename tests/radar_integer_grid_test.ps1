@@ -10,11 +10,23 @@ foreach ($token in @('sceGxmSetVertexProgram(g_probeContext, g_textureVertexProg
 foreach ($token in @('command.fieldRadar && commandType == 0u', 'commandType == 4u || commandType == 6u', 'viewerRenderHeight() / 224', 'fieldRadarMap ? 0.0f', 'fieldRadarMap ? 1.0f')) {
     if (!$source.Contains($token)) { throw "Missing radar guard: $token" }
 }
+$topShift = [regex]::Match($source, 'kRadarTopShiftNative = ([0-9.]+)f')
+if (!$topShift.Success -or [double]$topShift.Groups[1].Value -ne 16.0) {
+    throw 'Radar top alignment correction missing'
+}
+if ($source -notmatch 'y \+ 112\.0f \+ kRadarTopShiftNative') {
+    throw 'Radar group Y transform must share the top alignment offset'
+}
 foreach ($case in @(@(480,272), @(960,544))) {
     $scale = [math]::Max(1, [math]::Floor($case[1] / 224))
     $frameLeft = $case[0] + (96 - 176) * $scale
     $orbLeft = $case[0] + (102 - 176) * $scale
     if ($frameLeft + 80 * $scale -ne $case[0] -or $orbLeft - $frameLeft -ne 6 * $scale) { throw 'Alignment wrong' }
+    # The frame is authored 16 pixels beneath the top of the Saturn canvas.
+    # Shifting by that same native amount places the assembly at y=0,
+    # without changing relative offsets of the orb, markers, line or fill.
+    $frameTop = (16 - $topShift.Groups[1].Value) * $scale
+    if ($frameTop -ne 0) { throw 'Radar frame does not meet top edge' }
     for ($pixel = 0; $pixel -lt 48 * $scale; ++$pixel) {
         $sample = [math]::Floor((($pixel + 0.5) / (48 * $scale)) * 48)
         if ($sample -ne [math]::Floor($pixel / $scale)) { throw 'Uneven checker repeats' }
