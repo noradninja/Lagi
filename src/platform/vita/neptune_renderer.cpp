@@ -5774,16 +5774,17 @@ static void drawPublishedVdp1Ui(
             g_gouraudSubdivVertexProgram && g_texturedGouraudSubdivFragmentProgram;
         const bool blended = lagi::vdp1_half_transparent(command.cmdPmod);
         const bool mesh = (command.cmdPmod & 0x100u)!=0;
-        // Reconstruct UI textures stochastically, but leave the scene's
-        // VDP1 sprites/particles at their native point-sampled texels.
-        // Use command provenance and pass classification, not texture IDs.
-        // Mesh sprites intentionally retain their existing shader path.
+        // Reconstruct presentation/UI sprites stochastically only when
+        // they are neither scene effects nor VDP1 mesh sprites. Both scene
+        // sprites and mesh sprites retain native point-sampled texels,
+        // while mesh shaders and half-transparency behavior remain intact.
+        // Classify scene effects by command provenance and pass, not IDs.
         const bool sceneSprite = !nativeCanvas &&
             (background || command.hasWorldDepth ||
              pass == Vdp1UiPass::Background ||
              pass == Vdp1UiPass::WorldEffects);
-        const bool stochasticSprite = kStochastic && (!sceneSprite || mesh);
-        const bool pointSampleSceneSprite = sceneSprite && !mesh;
+        const bool stochasticSprite = kStochastic && !sceneSprite && !mesh;
+        const bool pointSampleSprite = sceneSprite || mesh;
         if (g_sceneGameMode==4u && worldDepth) {
             static std::uint64_t seen[64]{};
             static unsigned count=0;
@@ -5850,7 +5851,7 @@ static void drawPublishedVdp1Ui(
             sceGxmTextureSetMinFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
         }
-        if (fieldRadarMap || pointSampleSceneSprite) {
+        if (fieldRadarMap || pointSampleSprite) {
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(
@@ -5887,7 +5888,7 @@ static void drawPublishedVdp1Ui(
             if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &textureUniforms) >= 0 && textureUniforms)
                 sceGxmSetUniformDataF(textureUniforms, g_textureWvpParam, 0, 16, identity);
         }
-        if (fieldRadarMap || pointSampleSceneSprite) {
+        if (fieldRadarMap || pointSampleSprite) {
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
             sceGxmTextureSetMagFilter(
