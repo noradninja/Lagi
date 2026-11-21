@@ -456,8 +456,8 @@ Proximity day/night calls now use that factory and tracker and the existing
 cutsceneTaskInitSub2 camera service with original scripts/callback EAs and
 flags zero. Actor initialization failure leaves the trigger eligible to retry
 instead of publishing a false discovery bit. Camera script vectors have stable
-per-script storage. Native skip callbacks are recorded by the shared camera
-service; typed invocation of those callbacks still needs a separate skip-path
+per-script storage. Native callback EAs are retained by the shared camera
+service; their dispatch purpose and typed invocation still need a separate
 parity check, so normal playback is the current validation path.
 
 Validation: the production tracker passes all 4,096 low-12-bit command masks,
@@ -588,3 +588,30 @@ These are source/host/build checks. Worm appearance, timing, effects, passage
 opening/entry, the Gash horn warning, main exit and performance remain pending
 the next hardware video/log. The previous exit observations are retained; no
 exit story gate, lock-on bounds or culling behavior was bypassed.
+
+## Shared type-1 camera roll repair - 21 November 2026
+
+The original camera step initializer 06071BF6..C2C loads roll endpoints from
+the current record's +0x34/+0x38, subtracts start from end, normalizes the signed
+28-bit angle and divides by duration. Upstream fieldCutsceneTask2.cpp instead
+subtracted the task's mode/index fields. Its frame update also wrote roll into
+rotation[1] (yaw), whereas native 06071D10 writes camera-status +0x14, which is
+rotation[2] (roll). Generated adapters now repair both shared calculations.
+All authored camera records, durations, live target additions and the existing
+script-completion barrier remain in control. This applies to every field using
+the shared type-1 camera, not only the worm event.
+
+Validation: field_camera_interpolation_test.py executes the production
+initializer/update with the actual fixedPoint type. It checks 245 angle/duration
+cases including positive/negative wrap, preserves yaw and pitch, tests live
+target movement and the m5C script-completion barrier, and verifies the original
+roll-load/subtract/step-store/camera-axis instructions against FLD_A5.PRG. Vita
+compilation/link/package passes. These corrections have not been hardware
+validated and are not established as the cause of the reported exit or glitches.
+
+Additional callback trace: 06067F12/7F7C/7FAC recreate their respective worm and
+tracker and re-enter the shared camera wrapper with a null camera-data argument.
+They must not be described as proven ordinary script-completion or skip
+callbacks on the evidence currently available. The shared camera stores their
+EAs in m7C/m80; its normal end path does not invoke them. Their original dispatch
+context remains unverified. No raw Saturn callback address is executed by Lagi.

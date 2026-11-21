@@ -32,6 +32,8 @@ Recent Garil development includes the original horizon sprites, native Nanyd tar
 
 The story and environmental worms now share the native segment sand and X/Z-following particle producers, including safe anchor lifetime through actor/pool teardown; their appearance still awaits hardware confirmation. The shared field-particle pool now releases finished particles' task-owned payloads as Saturn does. This fixes retention until scene teardown and growing allocation-list traversal; its effect on Garil frame pacing is not yet measured.
 
+The shared type-1 field camera now calculates roll from authored keyframe endpoints and writes it to the roll axis, matching the original instructions. Host/native-data checks and the Vita package pass; cinematic visuals still need hardware confirmation.
+
 A source implementation, a host fixture and a hardware-verified scene are different things. We record that difference because these paths have repeatedly compiled and still shown issues on Vita.
 
 [Garil shared parity](GARIL_SHARED_PARITY.md) keeps the original addresses, tests and historical commits. [Battle effects recovery](BATTLE_EFFECTS_RECOVERY.md) describes missing native effect producers.

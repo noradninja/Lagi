@@ -4582,6 +4582,19 @@ static void lagiPatchModelAddresses(sProcessed3dModel* model, u32 offset)
   string(REPLACE "        Unimplemented();\n        //a5_startProximityCamera_0606f9e4" "        a5_startProximityCamera_0606f9e4" source_text "${source_text}")
   string(REPLACE "    Unimplemented();\n    //a5_startProximityCamera_0606f9e4" "    a5_startProximityCamera_0606f9e4" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldCutsceneTask2.cpp")
+  # Original A5 06071BF6..C2C uses authored roll endpoints, not task
+  # state/index; 06071D10 writes camera+0x14 (rotation Z), never yaw.
+  set(camera_roll_step_old [=[    m5C = intDivide(m40, fixedPoint(m38 - m34).normalized());]=])
+  set(camera_roll_step_new [=[    m5C = intDivide(m40, fixedPoint(m3C->m38 - m3C->m34).normalized());]=])
+  set(camera_roll_axis_old [=[        getFieldCameraStatus()->mC_rotation[1] = pThis->m20;]=])
+  set(camera_roll_axis_new [=[        getFieldCameraStatus()->mC_rotation[2] = pThis->m20;]=])
+  foreach(camera_roll_boundary IN ITEMS camera_roll_step camera_roll_axis)
+   string(FIND "${source_text}" "${${camera_roll_boundary}_old}" camera_roll_found)
+   if(camera_roll_found LESS 0)
+    message(FATAL_ERROR "Shared cutscene roll boundary changed: ${camera_roll_boundary}")
+   endif()
+   string(REPLACE "${${camera_roll_boundary}_old}" "${${camera_roll_boundary}_new}" source_text "${source_text}")
+  endforeach()
   # Original A5 06071D1A..D4C: add the LIVE tracked actor position to
   # the interpolated relative target. The upstream moving-target arm asserts.
   set(camera_tracking_old [=[        if (pThis->m24)
