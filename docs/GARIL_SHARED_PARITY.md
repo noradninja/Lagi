@@ -508,3 +508,21 @@ cleanup host fixture. Original captured BTL_A5 instruction and string checks
 pass garil_battle_dialogue_evidence_test.py. Vita package builds. The user's
 hardware confirmation covers combat before this warning was added; voice/text
 and scene timing for the warning still require the next matching run.
+
+## Main-exit observations for the next combined capture
+
+The exit's mode 5 waits for isScriptActive()==0 before changing its target flags
+to 3 and entering selectable mode 6. Selection advances it to 7 and starts the
+original exit cutscene. An unfinished worm dialogue/script could keep that wait
+active, but the current log does not prove this cause. Do not bypass that wait,
+force the discovery bit or enlarge selection bounds.
+
+The next build logs [GarilMainExit] on mode/script-state changes and periodically
+while the exit is visible, capped at 64 reports per actor. It records script EA,
+discovery state, visibility/disable flags, registration in the current LCS list,
+selection, LCS state/count, previous projected view/screen coordinates and native
+selection range. These are observations only; authored exit behavior is unchanged.
+The records distinguish script waiting from missing registration or rejected
+selection. One capture of the warning, worm sequence and attempted main-exit
+selection can cover the outstanding questions, together with the promised video
+for visual glitches and frame pacing.

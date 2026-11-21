@@ -3077,6 +3077,18 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   string(REPLACE "${a5_horizon_callbacks}" "{ &a5EncounterConfigInit, &lagiA5HorizonUpdate, &lagiA5HorizonDraw, nullptr }"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "field/field_a5/a5_exitTriggerEntity.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_exit_trace.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_exit_trace.inc" garil_exit_trace)
+  string(REPLACE "    // Saturn size 0x6C" "    int lagiTraceLastMode=-1, lagiTraceLastScript=-1;\n    unsigned lagiTraceTicks=0, lagiTraceReports=0;\n    // Saturn size 0x6C" source_text "${source_text}")
+  string(REPLACE "// 0605661C - update" "${garil_exit_trace}\n// 0605661C - update" source_text "${source_text}")
+  set(garil_exit_tick "    updateFieldModelRenderContext(&pThis->m34_modelCtx);")
+  string(FIND "${source_text}" "${garil_exit_tick}" garil_exit_tick_found)
+  if(garil_exit_tick_found LESS 0)
+   message(FATAL_ERROR "Garil main exit observation boundary changed")
+  endif()
+  string(REPLACE "${garil_exit_tick}" "${garil_exit_tick}\n    lagiTraceGarilMainExit(pThis);" source_text "${source_text}")
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
   # A5 06056714/0605672E write child+10 (stored intensity), NOT current
   # intensity at native+C. Saturn offsets cannot index a C++ work area.
   set(garil_vibration_old "*(s32*)((u8*)pThis->m2C_childTask + 0x10)")
