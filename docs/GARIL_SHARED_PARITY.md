@@ -666,3 +666,54 @@ indices and full-pool rejection. Original instruction/literal checks cover the
 indexed pointer load and all three pointer-only rebinds. Vita package passes.
 The user's run being prepared at d21bb02 predates this wind correction and
 remains useful for the horn warning, worm crossing sand and camera checks.
+
+## Worm passage unlock/selection/entry restoration - 21 November 2026
+
+Native Init (06056BCC/56BEC through literal 06056C78) assigns LCS callback
+060569E8. It sets the actor's approach state to 2 and records the visit bit from
+record +0x2A using the adjusted story-bit index. Upstream passed a null callback
+in both normal-vector branches, so selecting a passage could not start entry.
+The adapter restores this typed callback through the existing LCS context.
+
+The original position at record +0 and normal at 06098AE4 are now decoded into
+stable host vectors. Upstream cast the big-endian disc bytes to sVec3_FP, giving
+LCS byte-swapped coordinates/normals on Vita. Init and activation checks also
+remapped the byte index for bits >=1000 but kept the unadjusted bit mask. They
+now use mainGameState.getBit566, matching the original adjusted byte/mask. The
+draw-time check already remapped both parts correctly; it uses the same shared
+accessor now. No unlock or progression bit is forced.
+
+The debris producer now passes decoded world position and rotation to the shared
+scatter effect, as 06056A5C..64 does (position record+0, rotation record+0xC).
+Upstream used the rotation bytes as position and omitted rotation entirely.
+The original 90-frame approach, dragon motion, visit bits, destination records
+and shared triggerSubfieldChange/WORLD handoff remain in control. This is the
+worm passage, not the separate Lathum-gated main exit.
+
+Validation: a5_worm_passage_test.py executes production Init, unlock draw,
+selection callback and Update with all seven original passage records. It
+checks stable decoded coordinates/normals, locked gates and neighboring-bit
+rejection, one-time unlock/debris, correct open model on reload, LCS registration,
+only the authored visit-bit change, the 90-frame barrier and one-time destination
+handoff. It uses the actual shared bit-accessor implementations and validates
+the native callback/bit-write/debris-transform instructions. Vita package passes.
+Live passage opening, selection, flight-in and arrival remain unverified.
+
+## Acceptance from d21bb02 capture - 21 November 2026
+
+The user confirms the red-worm cinematic now triggers. The supplied 12-28-58
+video (85.611 seconds) still shows colored full-screen rectangles, and the user
+confirms this run used d21bb02. It therefore does not test wind correction
+8471dd2; keep that correction pending hardware acceptance. The log also records
+shared first-encounter dialogue and second-encounter text 9/B_A5_03.PCM starting.
+A start record alone does not prove complete voice/scene timing.
+
+Ordinary deadline-outlier samples (not serialized GPU-pass samples) have median
+render=30,863 us, CPU preparation=16,182 us, scene build=7,066 us, final GXM
+finish wait=10,898 us, and presentation interval=50,050 us across 2,595 reported
+outliers. These are selected slow frames, not a whole-run average. CPU
+preparation includes scene build (render-start to pre-wait minus submission);
+do not add the two times together. The wind-corruption samples reach about
+3.24 million sprite bounding-box pixels, but frame pacing also remains slow
+without that overdraw. Performance remains an open, separately measured task.
+The user is testing the preserved 8471dd2 package next.

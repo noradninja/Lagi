@@ -4525,6 +4525,59 @@ static void lagiPatchModelAddresses(sProcessed3dModel* model, u32 offset)
   endif()
   set(source_text "#include \"lagi/azel_movie_runtime_hooks.h\"\n${source_text}")
   string(REPLACE "${field_cinematic_tick}" "    lagiAzelCinematicKeepAwake();\n${field_cinematic_tick}" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/a5_wormPassageEntrance.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(a5_passage_fields_old [=[    // Saturn size 0xAC]=])
+  set(a5_passage_fields_new [=[    sVec3_FP lagiPosition,lagiRotation; // decoded, stable host storage
+    // Saturn size 0xAC]=])
+  set(a5_passage_decode_old [=[    pThis->m8_dataPtr = arg;]=])
+  set(a5_passage_decode_new [=[    pThis->m8_dataPtr = arg;
+    pThis->lagiPosition=readSaturnVec3(arg);
+    pThis->lagiRotation=readSaturnVec3(arg+0xC);]=])
+  set(a5_passage_callback_old [=[static void a5WormPassageEntrance_Init(sA5WormPassageEntrance* pThis, sSaturnPtr arg)]=])
+  set(a5_passage_callback_new [=[#include "lagi_a5_worm_passage_selected.inc"
+
+static void a5WormPassageEntrance_Init(sA5WormPassageEntrance* pThis, sSaturnPtr arg)]=])
+  set(a5_passage_target_old [=[initFieldModelRenderContext(&pThis->mC_modelCtx, pThis, nullptr,
+            (sVec3_FP*)getSaturnPtr(arg),]=])
+  set(a5_passage_target_new [=[initFieldModelRenderContext(&pThis->mC_modelCtx, pThis, (void*)&lagiA5WormPassageSelected,
+            &pThis->lagiPosition,]=])
+  set(a5_passage_normal_old [=[transformVec(*(sVec3_FP*)getSaturnPtr(gFLD_A5->getSaturnPtr(0x06098AE4)), pThis->m90_normal, rotMatrix);]=])
+  set(a5_passage_normal_new [=[transformVec(readSaturnVec3(gFLD_A5->getSaturnPtr(0x06098AE4)), pThis->m90_normal, rotMatrix);]=])
+  set(a5_passage_debris_old [=[    // Position from Saturn data at +0xC (the entity's world position)
+    sVec3_FP pos = readSaturnVec3(data + 0xC);
+    params.m10_pPosition = &pos;
+    params.m14_pRotation = nullptr;]=])
+  set(a5_passage_debris_new [=[    // Native 06056A5C..64: position at data+0, rotation at data+0xC.
+    params.m10_pPosition = &pThis->lagiPosition;
+    params.m14_pRotation = &pThis->lagiRotation;]=])
+  set(a5_passage_draw_bit_old [=[        u32 bitIdx = (u32)readSaturnS16(data + 0x5E);
+        u32 adjIdx = bitIdx;
+        if ((s32)bitIdx > 999)
+        {
+            adjIdx = bitIdx - 0x236;
+            bitIdx = bitIdx - 0x236;
+        }
+        if ((mainGameState.bitField[adjIdx >> 3] & bitMasks[bitIdx & 7]) != 0)]=])
+  set(a5_passage_draw_bit_new [=[        const u32 bitIdx = (u32)readSaturnS16(data + 0x5E);
+        if (mainGameState.getBit566(bitIdx))]=])
+  set(a5_passage_init_bit_old [=[        u32 bitIdx = (u32)readSaturnS16(arg + 0x5E);
+        u32 adjIdx = (bitIdx < 1000) ? bitIdx : (bitIdx - 0x236);
+        if ((mainGameState.bitField[adjIdx >> 3] & bitMasks[bitIdx & 7]) == 0)]=])
+  set(a5_passage_init_bit_new [=[        const u32 bitIdx = (u32)readSaturnS16(arg + 0x5E);
+        if (!mainGameState.getBit566(bitIdx))]=])
+  set(a5_passage_gate1_old [=[                u32 adj1 = (bit1 < 1000) ? (u32)bit1 : (u32)(bit1 - 0x236);
+                if ((mainGameState.bitField[adj1 >> 3] & bitMasks[bit1 & 7]) == 0)]=])
+  set(a5_passage_gate1_new [=[                if (!mainGameState.getBit566(bit1))]=])
+  set(a5_passage_gate2_old [=[                    u32 adj2 = (bit2 < 1000) ? (u32)bit2 : (u32)(bit2 - 0x236);
+                    if ((mainGameState.bitField[adj2 >> 3] & bitMasks[bit2 & 7]) == 0)]=])
+  set(a5_passage_gate2_new [=[                    if (!mainGameState.getBit566(bit2))]=])
+  foreach(a5_passage_boundary IN ITEMS a5_passage_fields a5_passage_decode a5_passage_callback a5_passage_target a5_passage_normal a5_passage_debris a5_passage_draw_bit a5_passage_init_bit a5_passage_gate1 a5_passage_gate2)
+   string(FIND "${source_text}" "${${a5_passage_boundary}_old}" a5_passage_found)
+   if(a5_passage_found LESS 0)
+    message(FATAL_ERROR "Native A5 passage boundary changed: ${a5_passage_boundary}")
+   endif()
+   string(REPLACE "${${a5_passage_boundary}_old}" "${${a5_passage_boundary}_new}" source_text "${source_text}")
+  endforeach()
  elseif(relative_path STREQUAL "field/field_a5/a5_exitEntity.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set(a5_wind_table_old [=[static const u32 s_windQuadListAddrs[] = { 0x06099804, 0x06099820, 0x0609983C, 0x06099858 };]=])
   set(a5_wind_table_new [=[#include "lagi_a5_wind_quad_table.inc"]=])
