@@ -5774,6 +5774,16 @@ static void drawPublishedVdp1Ui(
             g_gouraudSubdivVertexProgram && g_texturedGouraudSubdivFragmentProgram;
         const bool blended = lagi::vdp1_half_transparent(command.cmdPmod);
         const bool mesh = (command.cmdPmod & 0x100u)!=0;
+        // Reconstruct UI textures stochastically, but leave the scene's
+        // VDP1 sprites/particles at their native point-sampled texels.
+        // Use command provenance and pass classification, not texture IDs.
+        // Mesh sprites intentionally retain their existing shader path.
+        const bool sceneSprite = !nativeCanvas &&
+            (background || command.hasWorldDepth ||
+             pass == Vdp1UiPass::Background ||
+             pass == Vdp1UiPass::WorldEffects);
+        const bool stochasticSprite = kStochastic && (!sceneSprite || mesh);
+        const bool pointSampleSceneSprite = sceneSprite && !mesh;
         if (g_sceneGameMode==4u && worldDepth) {
             static std::uint64_t seen[64]{};
             static unsigned count=0;
@@ -5828,19 +5838,19 @@ static void drawPublishedVdp1Ui(
                 sceGxmSetUniformDataF(shadeUniforms, g_gouraudSubdivWvpParam, 0, 16, identity);
             sceGxmSetVertexStream(g_probeContext, 0, gouraudVertices);
         }
-        if (shaded && !fieldRadarMap && kStochastic) {
+        if (shaded && !fieldRadarMap && stochasticSprite) {
             setStochasticGouraud(texture->width, texture->height, blended, mesh);
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
         }
-        if (!shaded && !fieldRadarMap && kStochastic && !mesh) {
+        if (!shaded && !fieldRadarMap && stochasticSprite && !mesh) {
             setStochastic(texture->width, texture->height, blended);
             sceGxmTextureSetMinFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
         }
-        if (fieldRadarMap) {
+        if (fieldRadarMap || pointSampleSceneSprite) {
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(
@@ -5859,13 +5869,13 @@ static void drawPublishedVdp1Ui(
             SCE_GXM_INDEX_FORMAT_U16,
             g_vdp1UiIndices,
             6);
-        if (!shaded && !fieldRadarMap && kStochastic) {
+        if (!shaded && !fieldRadarMap && stochasticSprite) {
             sceGxmTextureSetMinFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_LINEAR);
             sceGxmTextureSetMagFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_LINEAR);
             sceGxmSetFragmentProgram(g_probeContext,g_textureFragmentProgram);
         }
         if (shaded) {
-            if (kStochastic) {
+            if (stochasticSprite) {
                 sceGxmTextureSetMinFilter(
                     &texture->texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
                 sceGxmTextureSetMagFilter(
@@ -5877,7 +5887,7 @@ static void drawPublishedVdp1Ui(
             if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &textureUniforms) >= 0 && textureUniforms)
                 sceGxmSetUniformDataF(textureUniforms, g_textureWvpParam, 0, 16, identity);
         }
-        if (fieldRadarMap) {
+        if (fieldRadarMap || pointSampleSceneSprite) {
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
             sceGxmTextureSetMagFilter(
