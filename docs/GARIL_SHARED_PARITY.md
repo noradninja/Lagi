@@ -764,3 +764,25 @@ the native position/angle/distance operands. The user's report at 5e252ba
 establishes that this camera was wrong before this repair; the corrected camera
 still needs Vita confirmation. This camera change is committed independently
 from enemy attacks, Lathum and renderer optimization.
+
+## Exact shade-cache storage reuse (separate performance item)
+
+The existing shade cache compares all 12 source corner-color float bit patterns
+before producing nine midpoint shade triples. Static visibility rebuilds and
+prepare_vdp1_model previously cleared those keys even when the same mapped
+subdivision storage survived. The performance change retains keys for reused
+storage; changed bits still rewrite, and freed/replaced storage still clears.
+Position invalidation is unchanged. Polygon identity, geometry, UVs, camera and
+material identity do not enter shade interpolation, so they need not invalidate
+a physical slot whose complete corner-bit key matches. All subdivision-stream
+writers were inspected: reused preparation writes UVs without overwriting shade;
+new storage zeroes shade and invalidates its keys.
+
+Validation: subdiv_shade_storage_test.py executes the production cache key,
+midpoint and shade-write blocks and compares every shade output byte with
+unconditional interpolation across 512 geometry/material rebinds, changed
+colors, visibility/probe changes, signed zero, buffer replacement and slot
+shrink/growth. It observes over 58,000 exact reuses. Vita compilation/link/package
+passes. This establishes output equivalence for those cases, not a measured
+Vita speedup or stable 30 Hz. Existing subdivShadeReused/subdivShadeWritten
+counters remain available for the next matching performance capture.

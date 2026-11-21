@@ -32,7 +32,7 @@ At `5e252ba`, the user confirms on Vita that the red-worm cinematic plays, its p
 
 Remaining work: the camera animation/angle on passage entry is wrong; enemies never attack; the field Lathum interaction that starts its encounter is absent. Source inspection also finds the Lathum formation's Init/Update/Draw still stubbed. The main exit retains its authored post-Lathum gate. Renderer performance remains below target, and worm sand effects, the full Gash horn-warning timing and remaining visual parity still need specific acceptance.
 
-The wind-table correction and shared passage services are part of this tested tree. The user has not explicitly confirmed that every earlier rendering glitch is gone. A local, uncommitted subdivision shade-cache optimization remains under verification; it is not included in the hardware-tested checkpoint.
+The wind-table correction and shared passage services are part of this tested tree. The user has not explicitly confirmed that every earlier rendering glitch is gone. A separate subdivision shade-cache optimization now retains exact corner-bit keys when mapped storage survives. Production byte-comparison tests and the Vita build pass; its performance impact has not been measured on hardware. It is not part of the user-confirmed 5e252ba source checkpoint.
 
 The passage-entry camera now has its missing shared no-script tracking arm restored from the original instructions: it holds the authored camera position and tracks the approaching dragon. The production fixture/native contracts pass; corrected animation/angle still await Vita acceptance.
 

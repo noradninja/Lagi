@@ -472,6 +472,15 @@ struct SubdivShadeState {
     bool valid = false;
 };
 static std::vector<SubdivShadeState> g_sceneSubdivShadeStates;
+// Shade reuse belongs to a physical mapped slot, not to a polygon identity.
+// Its exact key contains every corner-color bit used by midpoint interpolation.
+// Rebinding geometry/UVs cannot invalidate these fields; replacing storage can.
+static void prepareSubdivShadeStorage(bool reuseGeometry)
+{
+    if (!reuseGeometry)
+        g_sceneSubdivShadeStates.clear();
+}
+
 
 // Render-thread-only, bounded field diagnostics. Hash explicit fields, never
 // structure padding. Samples retain exact submission/local/global identity.
@@ -6508,7 +6517,7 @@ bool prepare_vdp1_model(
             // Prepare can reuse storage with a different polygon association.
             // Invalidate independently of the CPU static-prefix rebuild flag.
             g_sceneSubdivPositionValid.clear();
-            g_sceneSubdivShadeStates.clear();
+            prepareSubdivShadeStorage(reuseGeometry);
             if (reuseGeometry) {
                 // Positions, UVs, and topology are rewritten below into the
                 // already-mapped capacity. No allocation is required.
@@ -8441,7 +8450,8 @@ static bool buildLiveTownFrame()
         staticSignature != g_liveTownStaticSignature;
     if (g_liveTownStaticRebuilt) {
         g_sceneSubdivPositionValid.clear();
-        g_sceneSubdivShadeStates.clear();
+        // Corner-bit comparison validates shades even when a new polygon
+        // occupies an existing mapped slot. Storage replacement resets it.
         g_liveTownCpuMesh.vertices.clear();
         g_liveTownCpuMesh.polygonRecords.clear();
         g_liveTownCpuMesh.gouraud555.clear();
