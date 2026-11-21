@@ -26,11 +26,13 @@ These features have different validation histories. A linked task or successful 
 
 ## Current Garil/Valley work
 
+**New source checkpoints, awaiting device acceptance:** single/horned enemy turns and homing attacks, plus Nanyd rush/coordinated attacks, now use shared battle services. Host/native-contract regressions and full Vita packaging pass. Dual/variant attacks and Lathum remain incomplete. See [GARIL_ENEMY_ATTACK_TRACE.md](GARIL_ENEMY_ATTACK_TRACE.md).
+
 The restored combat baseline is commit `977809e`. It brings back the exact tracked tree of `60d7b61` after experimental WEAK marker depth and tracing changes regressed Valley combat. Those reverted experiments remain in Git history, but are not part of the active tree.
 
 At `5e252ba`, the user confirms on Vita that the red-worm cinematic plays, its passage opens, entry into the Secret Worm Passage and return to the field work, and combat entry/exit, player attacks, enemy death, experience and dyne awards work. Earlier Scatter and death-lifecycle acceptance remain in force. These confirmations establish those gameplay paths, not complete cinematic or combat parity.
 
-The user now confirms corrected passage-entry camera behavior and better overall performance, with some slowdown remaining. Remaining work: enemies never attack; the field Lathum interaction that starts its encounter is absent. Source inspection also finds the Lathum formation's Init/Update/Draw still stubbed. The main exit retains its authored post-Lathum gate. Renderer performance remains below target, and worm sand effects, the full Gash horn-warning timing and remaining visual parity still need specific acceptance.
+The user now confirms corrected passage-entry camera behavior and better overall performance, with some slowdown remaining. Restored enemy attacks still need device acceptance. Remaining work: the field Lathum interaction that starts its encounter is absent. Source inspection also finds the Lathum formation's Init/Update/Draw still stubbed. The main exit retains its authored post-Lathum gate. Renderer performance remains below target, and worm sand effects, the full Gash horn-warning timing and remaining visual parity still need specific acceptance.
 
 The wind-table correction and shared passage services are part of this tested tree. The user has not explicitly confirmed that every earlier rendering glitch is gone. A separate subdivision shade-cache optimization now retains exact corner-bit keys when mapped storage survives. Production byte-comparison tests and the Vita build pass. The subsequent hardware run confirms an overall improvement, but not stable 30 Hz or an isolated speedup attributable only to this optimization. See the latest hardware log summary in GARIL_SHARED_PARITY.md.
 

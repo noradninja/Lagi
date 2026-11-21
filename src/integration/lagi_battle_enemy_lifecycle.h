@@ -19,3 +19,11 @@ inline int lagiBattleEnemyType(const EntityGroup& group, int variant)
 {
     return group.mC_formationNameIndex + variant;
 }
+
+// Leaving combat without defeat must detach dragon-owned meters before the
+// actor storage retires. Do not set defeated/reward bits for fleeing actors.
+template<class LifeMeter>
+inline void lagiRetireBattleEnemyMeter(LifeMeter*& meter)
+{
+    if(meter){meter->getTask()->markFinished();meter=nullptr;}
+}

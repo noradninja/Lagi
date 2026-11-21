@@ -20,6 +20,11 @@ static void testNativeHomingProjectiles()
     b.position[0]=0x3010; // outside after native fixed-point square quantization
     assert(!lagiBattleSphereImpact(a,b,impact));
     cameraProperties2={};
+    sVec3_FP rushSource{},rushTarget{};
+    rushTarget[0]=0x4000;
+    assert(!lagiBattleContactPoint(rushSource,0x2000,rushTarget,0x1000,impact));
+    assert(lagiBattleContactPoint(rushSource,0x2000,rushTarget,0x3000,impact));
+    assert(raw(impact,0)==0x2000);
 
     sVec3_FP position{},velocity{},acceleration{},target{};
     position[0]=-129;position[1]=129;position[2]=-300;

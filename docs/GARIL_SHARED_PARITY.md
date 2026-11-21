@@ -834,3 +834,16 @@ pass; device attack/continuation acceptance is pending. First-Nanyd, dual,
 variant and Lathum attack paths remain open. The user's accepted camera and
 observed overall performance improvement remain in force; this attack commit
 adds no renderer or Lathum change.
+
+## Nanyd enemy turns and coordinated attack checkpoint
+
+The Nanyd selector, native 18-point formation history and shared spring motion,
+actor rushes and coordinated attack are connected through Lagi adapters and
+existing battle-engine/damage services. Coordinated dragon evasion reuses the
+working Valley helper. Shared typed actor flags, contact geometry and safe
+meter retirement serve both area-specific and common paths. See
+[GARIL_ENEMY_ATTACK_TRACE.md](GARIL_ENEMY_ATTACK_TRACE.md) for exact original
+contracts and validation. Nanyd, single/horned, Valley projectile, reward-meter
+and Scatter regressions pass, as does full Vita packaging. Hardware acceptance
+of restored enemy attacks is still pending. Dual/variant attacks and Lathum
+remain separate unfinished items; no renderer or story-flag change is included.

@@ -199,3 +199,134 @@ take a turn, confirm charge/projectile/contact damage and return to player
 control, defeat it and enter another encounter. Existing first-Nanyd, dual,
 variant and Lathum producers/selection still need their own traces; do not
 interpret this checkpoint as all Garil enemies attacking or full Garil parity.
+
+## First-Nanyd original-code trace
+
+Native 0605CD10 update still calls selection at 0605D1F4 from its state 3
+only after the shared player-turn gate is false and engine m3CC->m8 is 1.
+Front quadrant 0 chooses an authored random left/right dragon movement. Side
+quadrants 1/3 select ordinary actor rushes on two turns, then a movement turn.
+Rear quadrant 2 starts a coordinated formation attack and switches the native
+position table according to the formation variant. States 5/6 release actor
+flags and signal completion after old counter >15; states 7/8 handle the
+coordinated route and old counter >60. Recover their actor behavior before
+activating these states. Accepted queen-loss Scatter remains state 9.
+
+The actor's native +158 pointer is the formation's entity group (+E0), not
+the formation root or a static data-table address. This is confirmed by the
+original factory caller passing formation+E0 in r5 and constructor 0605E266
+storing that argument. Thus native group+EC is formation+1CC (mapping table),
+and native group+14 is formation+F4 (an 18-position formation history). These are
+semantic bindings to named host fields, never host pointer arithmetic.
+
+Actor rush preparation 0605EC0C stores the targetable pointer at +164, reads
+its world-position pointer at targetable+8, computes target minus actor
+position and calls the original shared look-at calculation. It seeds velocity
+from yaw cosine/sine with coefficient -0x4A12, and pitch sine with +0x4A12,
+then resets the actor counter. It is actor motion, not a shot factory.
+
+Rush update 0605ECF0 recomputes the directional velocity, consumes independent
+random perturbations in X,Z,Y order (random&255 minus128), advances the actor's
++90 offset and resolves world position from the mapping-selected writable
+formation-history position plus that offset. Native collision uses actor radius 0x2000
+and target radius 0x3000. A successful contact plays sound 0x67, applies damage
+from actor+17C with attack kind 1, dragon world position, zero impact vector and
+flags 0x0800, then returns completion. It does not substitute the collision
+midpoint for that authored damage-position argument. A failed contact uses an
+old-counter >0x45 timeout; if the queen-loss byte at group+10 is set, it retires
+the actor and increments group dead count without a kill reward. This matters
+when the queen dies while a survivor is already charging.
+
+The existing 309bed0 contact geometry is now exposed as a shared world-space
+sphere service for both shots and actor rushes. Homing shots retain radii
+0x2000/0x1000 and their existing damage protocol; Nanyd callers will retain
+their different radii and damage arguments. Host Valley/homing/charge regression
+checks and production Vita object compilation pass for that refactor. The following implementation checkpoint connects these services to the Nanyd
+formation and actor states. Device acceptance remains pending.
+
+### Nanyd motion foundation
+
+0605D1B2 writes the current formation position to history slot 0, then copies
+slots 16 down to 0 into slots 17 down to 1. Thus slots 0/1 both contain the
+current head, and slot 17 has a 16-update delay. This is not a conventional
+FIFO push. The original 20-actor map at 060B0F04 is
+0,3,3,3,3,6,6,6,6,6,9,9,9,9,12,12,12,12,12,15.
+
+The native position routine 0605EAA4 adds the actor's authored formation-table
+offset, orbit displacement and Scatter offset, then calls shared positional
+spring 060A2450 around the history point selected by that map. It also calls
+shared angular spring 060A262A around the formation rotation. Both use spring
+0xFF and damping 0xFFF, signed-28-bit differences and cleared acceleration;
+angular current wraps to 28 bits. These match the existing shared
+stepNativeFormationSpring/stepNativeFormationAngularSpring services. The port's
+quarter-step interpolation and per-actor auto-scroll addition are replaced by
+these shared recurrences in the current uncommitted Nanyd work.
+
+The adapter uses named position/rotation/velocity state and copies the declared
+history/rotation data buffers through typed vectors. Live Y velocity and X/Y
+angular velocity stay synchronized with the fields subsequently used by death
+motion. Scatter signals, retirement, death notification and rewards are not
+reimplemented. This motion foundation is required before wiring actor rushes
+and the coordinated formation-table switch.
+
+nanyd_motion_test.py executes the production motion/trail functions over
+12,000 actor frames using the original 20- and 10-actor tables and map. It checks
+history against an independent time-index oracle, native spring field binding,
+rotation, offsets and live death-field synchronization. PRG anchors verify trail
+count/order and spring constants. Existing independent scalar-SH spring tests
+pass 897,775 position-spring, 859,375 angular-spring and 50,625 interpolation
+cases. Production Nanyd actor and formation Vita objects compile. Full Nanyd
+attack-state integration, packaging and device verification remain outstanding.
+
+## Connected Nanyd attack implementation checkpoint
+
+Nanyd formation state 3 now dispatches the original quadrant-dependent policy:
+front movement left/right, two side rush turns followed by movement, or the
+rear coordinated route. Shared typed formation traversal readies the first
+three live actors for rushes or all live actors for coordination. Task-header
+validity and actor work-area flags remain distinct. Readied 0x04000000 flags
+transition to release 0x02000000 through the same helper used by single enemies.
+The normal/coordinated tag 0x08000000 selects the native actor state family.
+
+Native coordinated setup 0606196C matches the existing generated Valley
+arachnoth_startDragonEvade function: direction 3, mode A, both interpolator
+rates 60, m38E cleared. Nanyd calls that existing helper. The 20-actor route
+switches to table 060B0E14 and the 10-actor route to 060B0F90. Both restore
+060B0D24 at completion, exactly as the native update does. There is no guessed
+table offset, replacement battle engine or forced progression flag.
+
+Actor states 1/2 wait for release while advancing the model twice per update;
+state 1 also uses native facing. State 3 advances the original local rush
+offset, checks the shared contact service and applies native damage kind 1
+(7 ordinary / 23 lead, flags 0x0800). It returns to idle on contact or a
+non-queen-loss timeout. After queen loss, its timeout retires the meter and
+actor without reward bits and updates formation dead count. State 4 follows
+the coordinated formation with a one-hit latch, damage kind 2 (authored 2/4
+ordinary or 14 lead, flags 0x0800), and old-counter >90 completion. It clears
+the coordinated tag and latch when done. Damage checks continue in all alive
+actor states. Existing death fall, Scatter signals, ordinary rewards and field
+return are retained. Meter retirement without defeat is now one shared helper,
+used by both accepted Scatter entry and the restored rush-timeout path.
+
+Formation states 5/6 release rush actors and signal completion on old counter
+>15; states 7/8 release the coordinated group and signal on old counter >60.
+They then use the existing movement/turn handoff. The accepted queen-loss
+barrier remains in front of state dispatch: it cannot replace an active
+intro/attack before readied actors have received their release signal.
+
+Validation executes the actual generated selection gate/phases and the
+existing Valley evade function, plus production Nanyd actor/motion helpers.
+Cases cover 20/10 actors, all quadrants, first-live selection, finished/null
+actors, counter cycles, release gates, exact old-counter boundaries, variant
+table changes, world targetable binding, RNG order, native damage arguments,
+coordinated one-hit behavior, queen-loss timeout/meter retirement and the
+queen-loss barrier across an active attack. Original PRG literals verify helper
+EAs, tables, coefficients, masks, radii, damage flags and thresholds. The
+12,000-frame motion/map check, single/horned attack checks, Valley projectile
+checks, meter reward lifecycle and accepted Scatter sequence regressions pass.
+Full Vita compile/link/VPK packaging passes. This is source/build verification;
+Nanyd attack visuals, contact damage and continued play still need device proof.
+
+Dual/variant formation attacks, Lathum's field interaction/formation and remaining
+performance/visual acceptance remain open. The accepted passage camera is not
+reopened by this change. No hardware result is inferred from these tests.

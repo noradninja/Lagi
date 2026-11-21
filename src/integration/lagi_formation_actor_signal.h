@@ -49,3 +49,27 @@ inline int lagiTransitionFormationActors(EntityGroup& group,
         });
     return transitioned;
 }
+
+// Native A5 060A28FE/060A29E8: selection counts live actors, while an
+// optional flag clear applies to every live actor, including unselected ones.
+template<class EntityGroup,class ActorFlags>
+inline int lagiReadyFormationActors(EntityGroup& group,int count,
+    std::uint32_t clearAll,std::uint32_t setSelected,ActorFlags&& actorFlags)
+{
+    int ordinal=0,selected=0;
+    for(int i=0;i<group.mE_numEntities;++i)
+        lagiVisitFormationActor(group,i,[&](auto* actor){
+            auto& flags=actorFlags(actor);flags&=~clearAll;
+            if(ordinal++<count){flags|=setSelected;++selected;}
+        });
+    return selected;
+}
+template<class EntityGroup,class ActorFlags>
+inline bool lagiAnyFormationActorFlags(EntityGroup& group,std::uint32_t mask,
+                                       ActorFlags&& actorFlags)
+{
+    bool any=false;
+    for(int i=0;i<group.mE_numEntities;++i)
+        lagiVisitFormationActor(group,i,[&](auto* actor){if(actorFlags(actor)&mask)any=true;});
+    return any;
+}

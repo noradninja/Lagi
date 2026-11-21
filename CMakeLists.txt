@@ -3956,6 +3956,28 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "${a5_target_metadata}" [=[(*pModel->m40)[i].m0[j].m10,
                     (*pModel->m40)[i].m0[j].m0]=] source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_enemy.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_motion.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_motion.inc" nanyd_motion)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_attacks.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_attacks.inc" nanyd_attacks)
+  set(nanyd_motion "${nanyd_motion}\n${nanyd_attacks}")
+
+  string(REPLACE "// 060a3bc0" "${nanyd_motion}\n// 060a3bc0" source_text "${source_text}")
+  string(REPLACE "    // size 0x1A8" [=[    sVec3_FP m_lagiPositionVelocity{};
+    sVec3_FP m_lagiPositionAcceleration{};
+    sVec3_FP m_lagiAngularVelocity{};
+    sVec3_FP m_lagiAngularAcceleration{};
+    sVec2_FP m_lagiRushHeading{};
+    sBattleTargetable* m_lagiRushTarget=nullptr;
+    bool m_lagiCoordinatedHit=false;
+    // size 0x1A8]=] source_text "${source_text}")
+  set(source_text "#include \"lagi/native_formation_motion.h\"\n${source_text}")
+  set(source_text "#include \"lagi/native_battle_projectiles.h\"\n${source_text}")
+  string(REPLACE "#include \"battle/battleEngine.h\"" "#include \"battle/battleEngine.h\"\n#include \"battle/battleDragon.h\"" source_text "${source_text}")
+
+
   # Original A5 0605EFEC seeds entity+0x170/0x174/0x178 escape direction;
   # 0605EAA4 adds it to the position/orbit target each movement frame.
   set(escape_offset_struct "    u8 m170_pad4[0x17C - 0x170];")
@@ -3998,11 +4020,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
         // Survivors flee without a kill reward. Their life meters are
         // separate dragon-owned tasks that still point at this actor's
         // position/health; retire them before destroying the actor.
-        if (pThis->mAC_lifeMeter)
-        {
-            pThis->mAC_lifeMeter->getTask()->markFinished();
-            pThis->mAC_lifeMeter = nullptr;
-        }
+        lagiRetireBattleEnemyMeter(pThis->mAC_lifeMeter);
         lagiA5BeginScatterFlight(pThis, pEngine);
         pThis->m24_counter = 0;
         pThis->m28_state = 6;
@@ -4062,6 +4080,27 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    "readSaturnS16(pParent->mE0_entityGroup.m8_dataTable + 0xC) + iVar6"
    "lagiBattleEnemyType(pParent->mE0_entityGroup, iVar6)"
    source_text "${source_text}")
+  set(nanyd_position_begin "    // position = initial formation position + orbit velocity + battle center")
+  string(FIND "${source_text}" "${nanyd_position_begin}" nanyd_position_start)
+  string(FIND "${source_text}" "// 0605e220" nanyd_position_end)
+  if(nanyd_position_start LESS 0 OR nanyd_position_end LESS nanyd_position_start)
+   message(FATAL_ERROR "Nanyd native movement replacement boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${nanyd_position_start} nanyd_position_prefix)
+  string(SUBSTRING "${source_text}" ${nanyd_position_end} -1 nanyd_position_suffix)
+  set(source_text "${nanyd_position_prefix}    lagiUpdateNanydPosition(pThis);\n    lagiNanydEnterPendingAttack(pThis);\n}\n\n${nanyd_position_suffix}")
+  set(nanyd_step [=[    stepAnimation(&pThis->m2C_models[0]);
+
+    pThis->m84_displayRotation.m0_X = 0;]=])
+  string(FIND "${source_text}" "${nanyd_step}" nanyd_step_found)
+  if(nanyd_step_found LESS 0)
+   message(FATAL_ERROR "Nanyd attack dispatch boundary changed")
+  endif()
+  string(REPLACE "${nanyd_step}" [=[    if(lagiUpdateNanydAttackState(pThis))return;
+    stepAnimation(&pThis->m2C_models[0]);
+
+    pThis->m84_displayRotation.m0_X = 0;]=] source_text "${source_text}")
+  string(REPLACE "if (pThis->m28_state == 0)\n    {\n        bool wasDamaged" "if (pThis->m28_state < 7)\n    {\n        bool wasDamaged" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_single.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # Generate a typed single-formation extension from the upstream definition.
   # Other A5 formations keep their own upstream type and state unchanged.
@@ -4227,6 +4266,13 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
     pThis->mE0_entityGroup.mE_numEntities = 6;]=] source_text "${source_text}")
   set(source_text "#include \"lagi_battle_enemy_lifecycle.h\"\n#include \"lagi/native_battle_models.h\"\n#include \"lagi/garil_single_formation.h\"\n#include \"lagi/native_formation_motion.h\"\n${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_formation.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  string(REPLACE "#include \"battle/battleEngine.h\"" "#include \"battle/battleEngine.h\"\n#include \"audio/systemSounds.h\"" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_formation_trail.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_formation_trail.inc" nanyd_trail)
+  string(REPLACE "// 0605cd10" "${nanyd_trail}\n// 0605cd10" source_text "${source_text}")
+  set(source_text "#include \"lagi/native_formation_motion.h\"\n${source_text}")
+
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_intro.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_intro.inc" nanyd_intro)
@@ -4243,6 +4289,30 @@ ${nanyd_anchor}" source_text "${source_text}")
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_a5_scatter_formation.inc"
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_formation_actor_signal.h")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_a5_scatter_formation.inc" a5_scatter_formation)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_control.inc"
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_attack_phases.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_control.inc" nanyd_control)
+  set(a5_scatter_formation "${a5_scatter_formation}\n${nanyd_control}")
+  set(nanyd_selector [=[    case 3:
+        if (battleEngine_isPlayerTurnActive())
+            return;
+        break;]=])
+  string(FIND "${source_text}" "${nanyd_selector}" nanyd_selector_found)
+  if(nanyd_selector_found LESS 0)
+   message(FATAL_ERROR "Nanyd native selector boundary changed")
+  endif()
+  string(REPLACE "${nanyd_selector}" [=[    case 3:
+        if (battleEngine_isPlayerTurnActive())return;
+        if(pEngine->m3CC->m8==1)lagiSelectNanydAttack(pThis,pEngine);
+        break;]=] source_text "${source_text}")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_attack_phases.inc" nanyd_phases)
+  string(FIND "${source_text}" "    case 0xB:" nanyd_cleanup_state_found)
+  if(nanyd_cleanup_state_found LESS 0)
+   message(FATAL_ERROR "Nanyd attack phase insertion boundary changed")
+  endif()
+  string(REPLACE "    case 0xB:" "${nanyd_phases}    case 0xB:" source_text "${source_text}")
+
   string(REPLACE "${nanyd_anchor}" "${a5_scatter_formation}\n${nanyd_anchor}" source_text "${source_text}")
   set(a5_scatter_pre_switch "    // state machine\n    switch (pThis->m28_state)")
   string(FIND "${source_text}" "${a5_scatter_pre_switch}" a5_scatter_switch_found)
@@ -4250,6 +4320,7 @@ ${nanyd_anchor}" source_text "${source_text}")
    message(FATAL_ERROR "A5 queen-loss state machine boundary changed")
   endif()
   string(REPLACE "${a5_scatter_pre_switch}" [=[
+    lagiUpdateNanydFormationTrail(pThis,pEngine);
     lagiA5BeginQueenScatter(pThis, pEngine);
     // state machine
     switch (pThis->m28_state)]=] source_text "${source_text}")

@@ -72,7 +72,7 @@ bool init3DModelRawData(p_workArea,s_3dModel* m,int,Bundle*,u16,Anim*,Pose*,void
 void stepAnimation(s_3dModel*){++modelSteps;}
 void pushCurrentMatrix(){}void popMatrix(){}
 void translateCurrentMatrix(sVec3_FP*){}void rotateCurrentMatrixYXZ(sVec3_FP*){}
-void transformAndAddVecByCurrentMatrix(sVec3_FP* a,sVec3_FP* b){*b=*a;}
+void transformAndAddVecByCurrentMatrix(const sVec3_FP* a,sVec3_FP* b){*b=*a;}
 struct CameraMatrix{sVec3_FP translation{};};
 struct CameraProperties{CameraMatrix m28[2];}cameraProperties2;
 unsigned inverseTransforms=0;

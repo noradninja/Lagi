@@ -34,6 +34,18 @@ static const std::vector<sVdp1Quad>* lagiProjectileQuad(sSaturnPtr ptr)
     return &cache.emplace(std::move(key),std::move(quads)).first->second;
 }
 
+// Shared 06064400 boundary used by native shots and actor rush attacks.
+// Keep the geometry service independent of each caller's damage protocol.
+bool lagiBattleContactPoint(const sVec3_FP& source,std::int32_t sourceRadius,
+    const sVec3_FP& target,std::int32_t targetRadius,sVec3_FP& worldContact)
+{
+    sLagiBattleSphere sourceView{},targetView{};
+    transformAndAddVecByCurrentMatrix(&source,&sourceView.position);
+    transformAndAddVecByCurrentMatrix(&target,&targetView.position);
+    sourceView.radius=sourceRadius;targetView.radius=targetRadius;
+    return lagiBattleSphereImpact(sourceView,targetView,worldContact);
+}
+
 struct sLagiBattleProjectile: s_workAreaTemplateWithCopy<sLagiBattleProjectile>
 {
     sVec3_FP position{},velocity{},acceleration{};
@@ -167,13 +179,8 @@ static void lagiHomingBattleProjectileUpdate(sLagiHomingBattleProjectile* task)
     auto* dragon=overlay->m18_dragon;
     lagiBattleHomingProjectileMotion(dragon->m8_position,task->position,
         task->velocity,task->acceleration);
-    sLagiBattleSphere projectileView{},dragonView{};
-    transformAndAddVecByCurrentMatrix(&task->position,&projectileView.position);
-    transformAndAddVecByCurrentMatrix(&dragon->m8_position,&dragonView.position);
-    projectileView.radius=0x2000;
-    dragonView.radius=0x1000;
     sVec3_FP impact;
-    if(lagiBattleSphereImpact(projectileView,dragonView,impact)){
+    if(lagiBattleContactPoint(task->position,0x2000,dragon->m8_position,0x1000,impact)){
         const sVec3_FP zero{};
         applyDamageToDragon(dragon->m8C,task->damage,impact,2,zero,task->damageType);
         task->impacted=true;
