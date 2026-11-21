@@ -4055,6 +4055,23 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "char* formationByte = (char*)((u8*)pThis->m158_formation + 0x12);" "u8* formationByte = &pThis->m158_formation->mF1_pad5[1];" source_text "${source_text}")
   string(REPLACE "*(s32*)((u8*)pThis->m158_formation + pThis->m1C_entityIndex * 4 + 0x14) = 1;" "const s32 dead = 1;\n        std::memcpy(pThis->m158_formation->mF4_entityPositions + pThis->m1C_entityIndex*sizeof(dead), &dead, sizeof(dead));" source_text "${source_text}")
   string(REPLACE "s32* formationCenter = *(s32**)(((u8*)pThis->m158_formation) + 4);" "const sVec3_FP& formationCenter = pThis->m158_formation->mE0_entityGroup.m4_positionBlock->m0_position;" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_intro.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_intro.inc" single_dialogue)
+  string(REPLACE "// 0605ae48" "${single_dialogue}\n// 0605ae48" source_text "${source_text}")
+  set(single_dialogue_gate [=[        if (pEngine->m188_flags.m2000)
+            pThis->m28_state = 2;]=])
+  string(FIND "${source_text}" "${single_dialogue_gate}" single_dialogue_found)
+  if(single_dialogue_found LESS 0)
+   message(FATAL_ERROR "A5 horn-warning dialogue gate changed")
+  endif()
+  string(REPLACE "${single_dialogue_gate}" [=[        if (pEngine->m188_flags.m2000)
+        {
+            lagiStartBattleDialogue(pThis,pEngine,9,"B_A5_03.PCM");
+            battleEngine_restoreCameraDefault();
+            pThis->m28_state = 2;
+        }]=] source_text "${source_text}")
+  string(REPLACE "if (c > 0x54)" "if (c > 0x4B)" source_text "${source_text}")
   set(single_position_old "sSaturnPtr posTable = readSaturnEA(pParent->mE0_entityGroup.m8_dataTable + 8);")
   string(FIND "${source_text}" "${single_position_old}" single_position_found)
   if(single_position_found LESS 0)

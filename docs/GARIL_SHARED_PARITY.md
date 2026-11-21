@@ -488,3 +488,23 @@ establishes repeated missed deadlines, not a rendering/CPU root cause. The user
 will supply video after the next run for graphical glitches; do not change
 culling or offsets speculatively. Exit, warning, performance and visual checks
 remain within the active parity work, alongside full field return/re-entry.
+
+## Second-battle Gash warning — 21 November 2026
+
+Original 0605B2B2..B2C4 passes subtitle index 9, PCM name B_A5_03.PCM
+(060AF9F4), and the shared battle-dialogue function 06070E0E. The actual
+subtitle is "Watch out for the ones with horns." State 2 compares its old
+counter with 0x4B (75), not the first encounter's 0x54.
+
+The existing battle opening subtitle/PCM task now accepts an authored subtitle
+index and PCM name. The first Nanyd opening keeps its existing 4/B_A5_00.PCM
+binding. The second formation invokes the same lifecycle at its original
+0x2000 gate, restores the existing camera and retains the native 75-frame
+handoff. Other formations can bind their own original index/file through that
+same service; no second playback or subtitle implementation was added.
+
+Validation: both production openings pass the shared lookup/submit-retry/drain/
+cleanup host fixture. Original captured BTL_A5 instruction and string checks
+pass garil_battle_dialogue_evidence_test.py. Vita package builds. The user's
+hardware confirmation covers combat before this warning was added; voice/text
+and scene timing for the warning still require the next matching run.
