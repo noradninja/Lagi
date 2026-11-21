@@ -1,6 +1,6 @@
 # Lagi development status
 
-**Updated 20 November 2026**  
+**Updated 21 November 2026**
 **Working combat baseline:** `diagnostics/garil-cliff-current` at `977809e`, with documentation changes following that baseline.
 
 This is the current project overview. The older, dated engineering reports remain useful for source addresses and test evidence, but they are not competing reports on the present build.
@@ -28,7 +28,7 @@ These features have different validation histories. A linked task or successful 
 
 The restored combat baseline is commit `977809e`. It brings back the exact tracked tree of `60d7b61` after experimental WEAK marker depth and tracing changes regressed Valley combat. Those reverted experiments remain in Git history, but are not part of the active tree.
 
-Recent Garil development includes the original horizon sprites, native Nanyd targeting, enemy life-meter retirement, queen-loss Scatter handoff, the original Scatter text path, escape offsets/movement and authored quadrant eligibility for WEAK cursors. The remaining checks are the appearance and depth of WEAK markers, Scatter text and survivors' flight, results/field return, repeated encounters, and later worm/story sequences. Camp/Gash story continuity is another original-script validation boundary.
+Recent Garil development includes the original horizon sprites, native Nanyd targeting, enemy life-meter retirement, queen-loss Scatter handoff, the original Scatter text path, escape offsets/movement and authored quadrant eligibility for WEAK cursors. The user confirms Scatter works as expected on the current branch (21 November). Other encounters still crash. A subsequent-encounter constructor and shared-damage repair is now source/build-verified, awaiting Vita confirmation. Remaining checks include WEAK-marker appearance/depth, results/field return, repeated encounters and later worm/story sequences. Camp/Gash story continuity is another original-script validation boundary.
 
 A source implementation, a host fixture and a hardware-verified scene are different things. We record that difference because these paths have repeatedly compiled and still shown issues on Vita.
 

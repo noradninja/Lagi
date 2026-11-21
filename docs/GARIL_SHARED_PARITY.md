@@ -1,5 +1,7 @@
 # Garil shared runtime parity
 
+**Hardware update, 21 November 2026:** The user confirms Scatter works as expected on `diagnostics/garil-cliff-current`. Other combat still crashes. Death lifecycle remains accepted. The constructor/damage repair below is a new source checkpoint awaiting device confirmation.
+
 **Current position (20 November 2026):** The working combat tree is `60d7b61`, restored by rollback `977809e`. Experimental WEAK-marker depth and tracing changes after that checkpoint regressed Valley combat and were reverted. The native Scatter command, A5 escape/actor signaling and quadrant-eligibility changes described below remain in the restored tree; WEAK marker depth is still unresolved. This is a dated investigation record, with the latest acceptance boundaries in [STATUS.md](STATUS.md).
 
 Active goal, 2026-11-17: reuse the working Valley battle, result, story,
@@ -348,3 +350,50 @@ Also orbit an enemy with a rear-only weak point through all four quadrants;
 the WEAK sprite must appear only in authored eligible quadrants and remain
 targetable when visible. Gather video/log for comparison. No change to
 the previously accepted queen defeat rewards is intended.
+
+## Subsequent-encounter constructor and shared damage repair — 21 November 2026
+
+Baseline: remote 8284343, following the accepted 977809e combat rollback.
+The old staged Scatter experiment files were preserved and are not part of
+this change. No accepted Scatter or WEAK-marker behavior was changed.
+
+Original BTL_A5 subbattle 4 uses constructor 0605BBD0 and formation setup
+0605AE48/0605AF6C. The port selected the enemy record correctly after 816c5aa,
+but still left the formation position table null, dereferenced it as a
+second descriptor, used model index 4/8 as an animation index, and accessed
+formation +4/+8 as host pointers in the first enemy update. Those are definite
+invalid paths even without attributing the latest crash to an unmatched dump.
+
+The guarded generated adapter now:
+
+- Selects the original three formation position tables from the native
+  random selector: 060AF954, 060AF99C or 060AF90C; preserves its postincrement.
+- Uses shared lagiCreateBattleEnemyModels for model descriptors 060B0028/30,
+  animation bundle slot 70, and collision model C with pose 6C and its own
+  bone count. Model, pose and animation indices are distinct.
+- Registers model targets through lagiInitBattleEnemyModelTargets, with the
+  actor owner, entity index, original hotpoint metadata and A5 hit callbacks.
+- Uses the typed group position and the shared native positional interpolation
+  on the first and subsequent updates, instead of dereferencing host offsets.
+- Runs the existing shared model damage service (hit callback order, damage
+  accumulation/display, HP and meter notifications) and shared once-only
+  target retirement. Teardown retires the same registered model targets.
+- Maps hit/death counters to named group fields. The existing named byte buffer
+  stores the native per-entity death words via memcpy, without alignment or
+  polymorphic-task offset assumptions.
+
+Existing shared result/progression and field-return services remain the owners
+of victory, XP/Dyne, growth and return. No new area-specific reward system.
+
+Validation: garil_single_init_test.py executes the production model initializer
+for both variants, all initialization failure stages and each original formation
+choice; original captured Saturn instruction anchors pass. Shared model/target
+fixture passes 8,192 cases; shared damage fixture passes 29,040 cases plus live
+callback, override and death/retirement ordering cases. Vita VPK compilation and
+linking pass. These host services are mocked; this is not a Saturn playthrough
+or hardware acceptance of the repaired encounter.
+
+Open: native enemy attack selection/effect producers and shadow behavior in this
+archetype still contain stubs. Whole-battle entry, player attacks, death/result,
+field return and another encounter require matching device verification. The
+red-worm cinematic and passage transition remain a separate investigation.
