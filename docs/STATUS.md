@@ -1,7 +1,7 @@
 # Lagi development status
 
 **Updated 21 November 2026**
-**Current hardware-tested checkpoint:** `diagnostics/garil-cliff-current` at `5e252ba`.
+**Current hardware acceptance:** `5e252ba` gameplay paths, plus the subsequent passage-camera correction and overall performance improvement confirmed on 21 November 2026.
 
 This is the current project overview. The older, dated engineering reports remain useful for source addresses and test evidence, but they are not competing reports on the present build.
 
@@ -30,9 +30,9 @@ The restored combat baseline is commit `977809e`. It brings back the exact track
 
 At `5e252ba`, the user confirms on Vita that the red-worm cinematic plays, its passage opens, entry into the Secret Worm Passage and return to the field work, and combat entry/exit, player attacks, enemy death, experience and dyne awards work. Earlier Scatter and death-lifecycle acceptance remain in force. These confirmations establish those gameplay paths, not complete cinematic or combat parity.
 
-Remaining work: the camera animation/angle on passage entry is wrong; enemies never attack; the field Lathum interaction that starts its encounter is absent. Source inspection also finds the Lathum formation's Init/Update/Draw still stubbed. The main exit retains its authored post-Lathum gate. Renderer performance remains below target, and worm sand effects, the full Gash horn-warning timing and remaining visual parity still need specific acceptance.
+The user now confirms corrected passage-entry camera behavior and better overall performance, with some slowdown remaining. Remaining work: enemies never attack; the field Lathum interaction that starts its encounter is absent. Source inspection also finds the Lathum formation's Init/Update/Draw still stubbed. The main exit retains its authored post-Lathum gate. Renderer performance remains below target, and worm sand effects, the full Gash horn-warning timing and remaining visual parity still need specific acceptance.
 
-The wind-table correction and shared passage services are part of this tested tree. The user has not explicitly confirmed that every earlier rendering glitch is gone. A separate subdivision shade-cache optimization now retains exact corner-bit keys when mapped storage survives. Production byte-comparison tests and the Vita build pass; its performance impact has not been measured on hardware. It is not part of the user-confirmed 5e252ba source checkpoint.
+The wind-table correction and shared passage services are part of this tested tree. The user has not explicitly confirmed that every earlier rendering glitch is gone. A separate subdivision shade-cache optimization now retains exact corner-bit keys when mapped storage survives. Production byte-comparison tests and the Vita build pass. The subsequent hardware run confirms an overall improvement, but not stable 30 Hz or an isolated speedup attributable only to this optimization. See the latest hardware log summary in GARIL_SHARED_PARITY.md.
 
 The passage-entry camera now has its missing shared no-script tracking arm restored from the original instructions: it holds the authored camera position and tracks the approaching dragon. The production fixture/native contracts pass; corrected animation/angle still await Vita acceptance.
 

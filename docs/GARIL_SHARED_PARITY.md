@@ -795,3 +795,28 @@ Captured Saturn attack ranges match the original BTL_A5.PRG byte for byte.
 The live single update omits attack selection and states 5-8, and its wind-up
 and projectile call sites remain stubs. This checkpoint establishes the native
 implementation contract; it does not restore or hardware-verify enemy attacks.
+
+## Hardware camera acceptance and remaining slowdown - 21 November 2026
+
+The user confirms the corrected passage-entry camera and better overall
+performance, with some slowdown remaining. This accepts the camera repair;
+do not reopen it without new contrary evidence. Enemy attacks and Lathum remain
+incomplete. The main exit remains authored-gated by Lathum.
+
+New log: D:/Users/Noradninja/Downloads/lagi.log, 1,504,674 bytes,
+SHA256 0244FE65C228778EC60FC5EA91D6BA54FE9DA11645D6528B518C4C4C17432A35.
+The log does not identify an exact Git commit, so retain the user's confirmation
+without inventing build provenance. No serialized GPU samples were found:
+gpuSerialized=1 occurs zero times. Shade reuse is active: the final ScenePerf
+sample records subdivShadeReused=741 and subdivShadeWritten=0.
+
+There are 84 mode-7 renderer timing windows covering 10,080 frames. Their mean
+renderer times range from 11,612 to 30,754 us (median window mean 21,210 us);
+50 sampled renderer frames exceed 33,333 us. These are renderer-only counters,
+not complete gameplay-frame or display-interval measurements. The 542 unfaded
+mode-7 presentation outliers have median interval 50,049 us, renderer 30,504 us,
+CPU preparation 16,885.5 us and GXM finish 9,381.5 us. They are selected slow
+samples, so their median must not be presented as the entire run's frame rate.
+Build time is nested inside CPU preparation; do not add it again. Remaining
+slowdown is supported by both the user's observation and the display outliers.
+No fresh performance code change or another capture is requested at this point.
