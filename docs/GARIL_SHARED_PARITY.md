@@ -615,3 +615,54 @@ They must not be described as proven ordinary script-completion or skip
 callbacks on the evidence currently available. The shared camera stores their
 EAs in m7C/m80; its normal end path does not invoke them. Their original dispatch
 context remains unverified. No raw Saturn callback address is executed by Lagi.
+
+## Hardware video review and Lathum gate correction - 21 November 2026
+
+Reviewed the supplied 357.624-second 1280x720 recording in the 12-05-42 capture
+folder and its 2,284,256-byte log. Extracted review sheets are retained in the
+work-session outputs/2026-11-21-1205-review folder. The early Wires view
+(approximately 37..49 seconds) shows through geometry. This diagnostic explicitly
+uses CULL_NONE and submits source-quad perimeter lines; it has no filled surface
+prepass to hide other edges. The normal textured path uses CW/CCW culling, with
+existing ordered two-sided and known-cliff exceptions. Wires alone does not
+establish that normal world/dynamic draws lack face culling. No global culling
+change was made.
+
+Around 340..354 seconds the video shows large, changing colored rectangles
+covering sky/ground/cliffs while the dragon and radar remain recognizable.
+That is distinct from geometry disappearing at a screen edge.
+
+The user corrected the exit expectation: it becomes available only after
+fighting Lathum, which is not implemented yet. The pre-Lathum exit is therefore
+not accepted as a selection defect. Preserve its authored progression gate. The
+bounded exit observations remain available for the future post-Lathum test;
+there is no reason to force the exit available now.
+
+## Wind sprite table/slot restoration - 21 November 2026
+
+Native 06058800..06 masks the random index, scales it by four, and loads a
+pointer from table 06099804. Its first four values are 060992B4, 06099394,
+06099394 and 06099474. Upstream mode 0 instead passed 06099804/20/3C/58 directly
+to initVdp1Quad as sprite records. The first bad record has isLast=6, PMOD=0609,
+SIZE=0609 and width=06099474 (about 1,545.58 world units), whereas the intended
+first record has width 0000C000 (0.75). This is a proven malformed wind sprite
+producer consistent with the full-screen corruption. Hardware confirmation of
+the corrected output is still required.
+
+All wind modes now resolve the original pointer tables through a common helper.
+Modes 0/3 use 06099804 and mode-1 secondary particles use 06099814. Three native
+slot producers only replace their quad-list pointer (06058C76/58D1A/58DF6);
+upstream particleInitSub(...,0,...) also reset the pool's character-memory base
+and animation phase. The adapter restores pointer-only rebinding. Native
+06058D06..0C writes 0x51 to worm-particle gravity at +0x24; the upstream source
+wrote it to lifetime before immediately replacing lifetime. This is corrected
+too, while retaining each mode's original producer/physics and pool.
+
+Validation: a5_wind_particle_test.py runs the production quad decoder, pointer
+resolver and wind emitters against original FLD_A5.PRG. It checks all four
+mode-0/3 selections, both secondary lists, valid eight-frame data/dimensions,
+preserved texture base and animation phase, native gravity, non-identity free
+indices and full-pool rejection. Original instruction/literal checks cover the
+indexed pointer load and all three pointer-only rebinds. Vita package passes.
+The user's run being prepared at d21bb02 predates this wind correction and
+remains useful for the horn warning, worm crossing sand and camera checks.
