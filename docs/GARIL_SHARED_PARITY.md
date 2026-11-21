@@ -466,9 +466,10 @@ cleanup, unrelated field-flag preservation, speed floor and original sound
 frames 0/30/45. Original PRG contracts and all three types' model/pose/animation
 bindings pass against FLD_A5.MCB. Vita compilation/link/package passes.
 
-Still open: native per-segment sand/debris producers 0605F86C/0605F804 remain
-unimplemented in the upstream worm system; no guessed effects replace them.
-Full scene visibility, camera timing, passage opening/entry and return need
+At this checkpoint the native per-segment sand/debris producers 0605F86C/
+0605F804 were still unimplemented; the later segment-effects checkpoint below
+restores them through the shared pool. Full scene visibility, camera timing,
+passage opening/entry and return need
 matching Vita video/log confirmation. This checkpoint is not full visual or
 story acceptance.
 
@@ -548,3 +549,42 @@ retirements/reuses, live and payload-free slots, full-pool rejection and
 allocation failure. It also verifies the original cleanup instructions and
 free-function literal against FLD_A5.PRG. Vita compilation/link/package passes.
 Performance and visual acceptance still need the next matching hardware run.
+
+## Native worm segment effects through the shared pool - 21 November 2026
+
+Original 0605F86C emits four stationary projected particles, using the quad list
+at 0608C6E4 and independent centeredRandom(0xFFFF) offsets on X and Z. Original
+0605F804 uses quad list 0608C5E8, zero offsets and a two-cycle payload. Its
+060805C8 update reads the live segment X/Z, keeps particle Y at the supplied
+vertical offset, and decrements the cycle count only when the animated quad
+reports bit 2. Both producers now call the existing shared field-particle pool.
+
+The story actor checks every segment after its body update (060664E4..655A): a
+ground crossing emits sand and resets its buried-effect latch; an odd buried
+segment emits its attached effect once. The actor's native m110 threshold input
+is zero-initialized and not written by its initializer/controller, so its
+half-negative threshold is zero. The environmental worm uses its authored
+radius threshold and exits the segment loop after the first emission
+(06059EA0/06059ECA); that different policy is preserved.
+
+The X/Z-following update is a shared service with an owning alias to the
+segment's body storage. Actor retirement releases its ownership; any still-live
+particles retain the position until their two cycles finish. Shared pool
+retirement destroys that payload before freeing it. Pool teardown also releases
+remaining aliases, independently of actor/pool deletion order. Both concrete
+worm owners use the existing typed work-area disposal service; upstream Azel
+files remain unchanged.
+
+Validation: production producer/loop fixtures check quad bindings, random-call
+order, four zero-velocity sand sprites, two-cycle binding, all-segment story
+crossings and once-only buried latches. Original PRG checks verify both quad
+pointers, the live-X/Z updater, cycle decrement, and the different environmental
+versus story loop branches. The shared pool fixture additionally exercises live
+movement, event-bit gating, two-cycle retirement, failed allocation, producer
+retirement and pool teardown. Tracker fixtures still pass all 4,096 control
+masks; all original worm/camera/model contracts pass. Vita package builds.
+
+These are source/host/build checks. Worm appearance, timing, effects, passage
+opening/entry, the Gash horn warning, main exit and performance remain pending
+the next hardware video/log. The previous exit observations are retained; no
+exit story gate, lock-on bounds or culling behavior was bypassed.

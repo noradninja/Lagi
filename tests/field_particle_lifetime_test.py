@@ -18,6 +18,7 @@ def function(name):
   depth+=(source[end]=='{')-(source[end]=='}');end+=1
  return source[start:end]
 fixture=(root/'tests/field_particle_lifetime_test.cpp').read_text()
+fixture=fixture.replace('// PRODUCTION_FOLLOW',(root/'src/integration/lagi_field_particle_follow.inc').read_text())
 fixture=fixture.replace('// PRODUCTION_POOL_UPDATE',function('static void particlePoolUpdate'))
 fixture=fixture.replace('// PRODUCTION_POOL_SPAWN',function('s32 spawnParticleInPool'))
 with tempfile.TemporaryDirectory(prefix='lagi-field-pool-') as directory:

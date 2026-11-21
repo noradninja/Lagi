@@ -1,5 +1,6 @@
 #include "lagi/lagi_azel_upstream_prelude.h"
 #include "lagi/garil_story_worm.h"
+#include "lagi/native_task_disposal.h"
 #include "field/field_a5/o_fld_a5.h"
 #include "field/field_a5/a5_gridDeferredDraw.h"
 #include "field/fieldCutsceneTask.h"
@@ -15,7 +16,7 @@ struct sLagiA5StoryWorm:s_workAreaTemplateWithArg<sLagiA5StoryWorm,sSaturnPtr> {
     s_memoryAreaOutput memory;
     sVec3_FP position,cameraAnchor,rotation,initialPosition,initialRotation;
     sVec3_FP velocity;
-    sMonsterBody* body=nullptr;
+    std::shared_ptr<sMonsterBody> body;
     s_3dModel head,tail;
     std::vector<s32> oldPartY;
     std::vector<u8> partEffects;
@@ -28,8 +29,8 @@ struct sLagiA5StoryWorm:s_workAreaTemplateWithArg<sLagiA5StoryWorm,sSaturnPtr> {
         self->position=self->initialPosition=readSaturnVec3(data+4);
         self->rotation=self->initialRotation=readSaturnVec3(data+16);
         self->oldPartY.resize(self->partCount);self->partEffects.resize(self->partCount);
-        self->body=monsterBody_create(self,self->partCount);
-        monsterBody_loadPartData(self->body,0,sSaturnPtr());
+        self->body.reset(monsterBody_create(self,self->partCount));
+        monsterBody_loadPartData(self->body.get(),0,sSaturnPtr());
         auto table=[&](u32 ea){return readSaturnU32(gFLD_A5->getSaturnPtr(ea+self->type*4));};
         for(int i=0;i<self->partCount;++i) {
             auto& part=self->body->m30_parts[i];
@@ -38,7 +39,7 @@ struct sLagiA5StoryWorm:s_workAreaTemplateWithArg<sLagiA5StoryWorm,sSaturnPtr> {
             part.m44_springStiffness={self->stiffness,self->stiffness,self->stiffness};
             part.m50_damping=self->damping;
         }
-        monsterBody_initPose(self->body,&self->position,&self->rotation);
+        monsterBody_initPose(self->body.get(),&self->position,&self->rotation);
         self->cameraAnchor={self->position.m0_X,0,self->position.m8_Z};
         auto* bundle=self->memory.m0_mainMemoryBundle;
         auto model=[&](s_3dModel& out,u32 modelTable,u32 poseTable,u32 animationTable) {
@@ -72,8 +73,17 @@ struct sLagiA5StoryWorm:s_workAreaTemplateWithArg<sLagiA5StoryWorm,sSaturnPtr> {
         self->cameraAnchor={self->position.m0_X,0,self->position.m8_Z};
         b.m0_translation=self->position;b.mC_rotation=self->rotation;b.m18_rotationTarget=self->rotation;
         b.m24_update(&b.m30_parts[0],&b.m0_translation,&b.mC_rotation,&b.m18_rotationTarget);
-        // Segment sand/debris producers 0605F86C/0605F804 are still absent
-        // in the upstream shared worm system; do not substitute invented effects.
+        // Native m110 is zero-initialized and is not written by this actor:
+        // its half-negative radius threshold is therefore zero.
+        for(int i=0;i<self->partCount;++i) {
+            auto& p=b.m30_parts[i].m4_worldPosition;
+            if(MTH_Mul(p.m4_Y,fixedPoint(self->oldPartY[i]))<=0) {
+                lagiSpawnA5WormSegmentSand(&p);self->partEffects[i]=0;
+            }
+            if((i&1)&&p.m4_Y<0&&self->partEffects[i]==0) {
+                lagiSpawnA5WormSegmentDebris(self->body,i);self->partEffects[i]=1;
+            }
+        }
     }
     static void Draw(sLagiA5StoryWorm* self) {
         auto* bundle=self->memory.m0_mainMemoryBundle;auto& parts=self->body->m30_parts;
@@ -95,11 +105,12 @@ struct sLagiA5StoryWorm:s_workAreaTemplateWithArg<sLagiA5StoryWorm,sSaturnPtr> {
             addObjectToDrawList(bundle->get3DModel(0xB0));popMatrix();
         }
     }
-    static void Delete(sLagiA5StoryWorm* self){delete self->body;self->body=nullptr;}
+    static void Delete(sLagiA5StoryWorm* self){self->body.reset();}
 };
 s_workArea* lagiCreateA5StoryWorm(s_workArea* parent,sSaturnPtr data) {
     static const sLagiA5StoryWorm::TypedTaskDefinition def={sLagiA5StoryWorm::Init,sLagiA5StoryWorm::Update,sLagiA5StoryWorm::Draw,sLagiA5StoryWorm::Delete};
     auto* actor=createSubTaskWithArg<sLagiA5StoryWorm>(parent,data,&def);
+    if(actor)lagi::tasks::register_work_area_disposer(actor,[](void* p){delete static_cast<sLagiA5StoryWorm*>(p);});
     return actor&&!actor->getTask()->isFinished()?actor:nullptr;
 }
 sVec3_FP* lagiA5StoryWormCameraAnchor(s_workArea* actor) {

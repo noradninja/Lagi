@@ -47,3 +47,16 @@ for ea,expected,n in [(0x6067E1E,0x5134,2),(0x6067DF0,0x7202,2),
  (0x6067E40,0x888888,4),(0x6067E54,0x9075,2)]:
  assert value(ea,n)==expected,f'Native tracker contract differs at {ea:08X}'
 print('PASS shared-field bundle bindings for all worm types and native Z/control stepping contracts')
+
+# Both worm classes call the same producers, but their loop exits differ.
+for ea,expected,n in [
+ (0x605F934,0x608C5E8,4),(0x605F938,0x60805C8,4),
+ (0x605F93C,0x608C6E4,4),(0x605F944,0xFFFF,4),
+ (0x605F81E,0xE202,2),(0x605F87E,0xEA04,2),
+ (0x60805D8,0x6132,2),(0x60805E2,0x6132,2),(0x60805EA,0x1E31,2),
+ (0x60805F4,0xC802,2),(0x60805FA,0x70FF,2),
+ (0x6059EA0,0xA02B,2),(0x6059ECA,0xA016,2),
+ (0x6066552,0x7D01,2),(0x6066576,0x110,2),
+ (0x606657C,0x605F86C,4),(0x6066580,0x605F804,4)]:
+ assert value(ea,n)==expected,f'Native segment effect contract differs at {ea:08X}'
+print('PASS worm particle quad bindings, four-particle producer, live X/Z and two-cycle updater, environmental early exits and full story loop')
