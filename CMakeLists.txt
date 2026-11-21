@@ -3374,6 +3374,17 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
    "            pSubEntry->m2C_deathMode = readSaturnU8(subEntry + 0x2C);\n            pSubEntry->m2D_hitSound = readSaturnU8(subEntry + 0x2D);\n            pSubEntry->m2E_deathSound = readSaturnU8(subEntry + 0x2E);\n            pSubEntry->m30_hitTranslation = readSaturnFP(subEntry + 0x30);\n            pSubEntry->m34_hitRotation = readSaturnFP(subEntry + 0x34);\n${enemy_parse_anchor}"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldParticlePool.cpp")
+  # Original A5 0608045E..6A frees each completed particle's task-owned
+  # payload. Dropping only the pointer leaks until field teardown and makes
+  # allocateHeapForTask traverse an ever-growing owner list.
+  set(pool_payload_old [=[                    pEntry->m20_heapData = nullptr;]=])
+  set(pool_payload_new [=[                    freeHeapForTask(pThis, pEntry->m20_heapData);
+                    pEntry->m20_heapData = nullptr;]=])
+  string(FIND "${source_text}" "${pool_payload_old}" pool_payload_found)
+  if(pool_payload_found LESS 0)
+   message(FATAL_ERROR "Native field particle payload retirement boundary changed")
+  endif()
+  string(REPLACE "${pool_payload_old}" "${pool_payload_new}" source_text "${source_text}")
   set(pool_billboard_old [=[static void particleDrawBillboard(sParticleSlot* pEntry)
 {
     drawProjectedParticle(&pEntry->m2C_animQuad, &pEntry->m0_position);

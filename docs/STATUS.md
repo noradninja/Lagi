@@ -30,6 +30,8 @@ The restored combat baseline is commit `977809e`. It brings back the exact track
 
 Recent Garil development includes the original horizon sprites, native Nanyd targeting, enemy life-meter retirement, queen-loss Scatter handoff, the original Scatter text path, escape offsets/movement and authored quadrant eligibility for WEAK cursors. The user confirms Scatter and the repaired second battle work (21 November, second battle at a70d109). Its missing Gash horn warning is now bound to the shared battle-dialogue service, and the story-worm actor/controller/camera wiring has been restored; both await the next Vita run. The main exit remains unselectable and now has bounded script/LCS observations. Garil shows repeated missed 30 Hz deadlines (about 20.6 fps in the slowest steady log window), and graphical glitches await video. Remaining checks include those scenes, main-exit selection, full results/field return, repeated encounters and visual/performance parity. Camp/Gash story continuity is another original-script validation boundary.
 
+The shared field-particle pool now releases finished particles' task-owned payloads as Saturn does. This fixes retention until scene teardown and growing allocation-list traversal; its effect on Garil frame pacing is not yet measured.
+
 A source implementation, a host fixture and a hardware-verified scene are different things. We record that difference because these paths have repeatedly compiled and still shown issues on Vita.
 
 [Garil shared parity](GARIL_SHARED_PARITY.md) keeps the original addresses, tests and historical commits. [Battle effects recovery](BATTLE_EFFECTS_RECOVERY.md) describes missing native effect producers.

@@ -526,3 +526,25 @@ The records distinguish script waiting from missing registration or rejected
 selection. One capture of the warning, worm sequence and attempted main-exit
 selection can cover the outstanding questions, together with the promised video
 for visual glitches and frame pacing.
+
+## Shared field-particle payload retirement - 21 November 2026
+
+The original A5 pool update at 0608045E..6A checks the completed slot's
+payload, calls freeHeapForTask(pool,payload) through literal 060804CC
+(060151FE), then clears the payload and draw pointers. Upstream's shared
+fieldParticlePool.cpp only cleared the payload pointer. Each payload stayed
+on the pool task's heap list until scene teardown; Lagi's allocator walks
+that list when allocating the next payload. This is a proven lifetime and
+allocation-cost defect, not proof of the reported Garil frame-rate cause.
+
+The generated adapter now restores the native free before clearing the pointer
+for every field using this shared pool. It retains live payloads, active-count
+accounting, full-pool behavior and allocation-failure behavior. No area-specific
+particle engine or guessed culling/performance changes were introduced.
+
+Validation: field_particle_lifetime_test.py executes the production shared
+spawn/update functions with the actual CMake replacement, checks 30,000 payload
+retirements/reuses, live and payload-free slots, full-pool rejection and
+allocation failure. It also verifies the original cleanup instructions and
+free-function literal against FLD_A5.PRG. Vita compilation/link/package passes.
+Performance and visual acceptance still need the next matching hardware run.
