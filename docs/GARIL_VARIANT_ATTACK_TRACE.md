@@ -348,3 +348,33 @@ both use model target arrays. All five variant host checks pass; full Vita
 compile/link/VPK packaging passes. Quadrant value refresh and shared damage
 processing remain pending; this checkpoint alone does not make scaling live.
 Authored intro behavior and complete hardware acceptance remain open.
+
+## Implemented shared damage processing checkpoint
+
+The variant now calls the same lagiUpdateBattleEnemyModelDamage service used
+by earlier model enemies. Original actor update refreshes four values before
+damage: all 5, except 45 in quadrant (actorQuadrant+2)&3. The typed adapter
+writes those live values; the shared pipeline copies the selected dragon
+quadrant's value to targetable m60 while refreshing transformed target positions.
+This restores the target damage-scaling input, not an extra multiplication of
+m58 after a shot has already computed damage.
+
+The simplified variant hit loop is removed. Shared callbacks handle authored
+impact effects, light/hit feedback, signed health subtraction, pending damage,
+engine-window/death damage displays and meter hit flags. The actor retains its
+native outer death/reaction state transitions. Callback identities and effect
+routing match the already established single-enemy adapter. HP/rewards are not
+awarded by a replacement variant system; meter/result services remain shared.
+
+`tests/garil_variant_damage_test.py BTL_A5.PRG` executes the actual variant
+adapter with the actual shared pipeline, checking all actor/dragon quadrant
+pairs, display windows, two live target hits, callback/impact routing, health,
+accumulation, displays, meter flags, target position refresh and retired gates.
+The shared model/damage suite passes 29,040 damage boundary/order cases plus
+8,192 metadata/identity/retirement cases. All six variant host checks pass;
+full Vita compile/link/VPK packaging passes. Original value literals and
+generated position/membership/value/damage ordering are checked.
+
+Authored intro camera/speech, remaining constructor/task-lifetime auditing and
+complete variant hardware acceptance remain open. No hardware result is
+inferred from these source, host and build checks.

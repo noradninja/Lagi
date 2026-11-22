@@ -9,7 +9,7 @@ with tempfile.TemporaryDirectory(prefix='lagi-variant-init-') as d:
 s=(r/'build-vita/azel_upstream/battle_BTL_A5_BTL_A5_variant.cpp').read_text()
 assert 'if(!lagiInitGarilVariantModels(pEntity,pBundle))return nullptr;' in s
 assert 's16 enemyTypeId = pParent->mE0_entityGroup.mC_formationNameIndex;' in s
-assert s.count('std::span<sBattleTargetable>(pThis->m2C_models[0].m54_targetables,pThis->m2C_models[0].m52_targetableCount)')==2
+assert s.count('std::span<sBattleTargetable>(pThis->m2C_models[0].m54_targetables,pThis->m2C_models[0].m52_targetableCount)')==1
 assert 'for (auto& t : pThis->mC0_targetables)' not in s
 assert 'getAnimation(modelOffset)' not in s
 data=Path(sys.argv[1]).read_bytes();base=0x6054000
