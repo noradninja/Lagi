@@ -1,0 +1,99 @@
+# Garil Lathum field placement and battle handoff
+
+## Original data and missing integration
+
+Disc 1 `FLD_A5.PRG` SHA256:
+`3743201c4b369da9bd88377c315711be5fd18246ba6ac3d1d656048c026efeb4`.
+The native instructions were read with the existing Saturn disassembler, using
+base `06054000`. This is a source/data trace, not a new emulator playthrough or
+Vita acceptance.
+
+Original `060543B6..060543C0` passes all three setup operands:
+
+| Operand | Original value |
+| --- | --- |
+| Environment table | `0608E24C` |
+| Cell-object table | `0608E34C` |
+| Start-tasks callback | `0605A6C8` |
+| Setup service | `06078D26` |
+
+`06078D26` first sets up the environment and start tasks, then traverses the
+cell-object table. Lagi previously called only `setupField2`, dropping the
+second operand and every placed actor. The existing Valley
+`setupFieldWithCellObjects` already implements that traversal and lifetime.
+
+The original object table has area 2, a 2x2 grid and five records in cell 1.
+Every record calls factory `06055E1E`. Their static hierarchy keys are
+`1EC, 1EC, 1E8, 1E8, 1F0`. The last variant alone enables interaction; the
+other four mounds are decorative. Placement positions, signed 16-bit rotations,
+resource pairs and cell parenting are read from these original records.
+Subfield 7's native setup explicitly passes no object table; it must not be
+populated by copying the subfield-0 list.
+
+## Actor, target and sand burst
+
+Task descriptor `0608D72C` selects Init `06055AE0`, Update `06055D34` and Draw
+`06055D9C`. The translated host actor uses named members rather than Saturn byte
+offsets. It registers the existing shared field model/LCS context at placement
+Y + `10000`; only hierarchy `1F0` clears the disabled-target flag.
+
+The random initial delay is modulo 300. On expiry, the original screen test
+uses maximum depth `100000`; a rejected attempt retries after 240 + modulo 600.
+An accepted attempt runs three 39-frame animation cycles. Each cycle emits its
+sand task when the old frame counter is 28. Animation tables `0608D474` select
+39 original hierarchy/pose pairs per variant. Collision keys/poses are
+`1F4/728`, `1F8/72C` and `1FC/730`; they use the working shared hierarchy collision
+producer, not an extra visible model submission.
+
+The sand child descriptor `0608D73C` selects Init `06055F6C`, Update `06056080`
+and Draw `060560DA`. It owns 32 particles and seven replacement attempts. The
+original reset/step order, random masks, lifetime, gravity `-2C`, scale factor
+`111EB`, frame tables `0608D480`/`0608D5D0` and signed sorting bias `-6000` are
+retained. It reuses the existing quad animation, scaled/sorted particle draw
+service and A5 wind integrator. The origin is copied at spawn, as in the original.
+
+## Authored battle request
+
+Target callback `06055D50` requests field script 0 with flag `5B5`. If that
+script cannot start, it calls `06054DCC` immediately. Script 0 also reaches
+`06054DCC` after its authored dialogue. That action passes encounter `10` and
+completion bit `90` to `060703E4`, the same service contract implemented by the
+working Valley `startBaldorQueenBattle` service. There is no forced victory bit,
+replacement encounter or shortened dialogue. Original `06055BF6` retires the
+mounds when `bitField[12] & 80` is set, the authored completion bit.
+
+The existing battle-manager remap sends A5 encounter `10` to COMMON overlay
+index `12`, subbattle 0. Original `COMMON.DAT` names that index `BTL_A5_3.PRG`.
+The battle loader already recognizes this overlay; its Lathum formation
+Init/Update/Draw remain upstream stubs and are the next implementation task.
+**This field checkpoint does not make the Lathum battle playable.** Do not use
+interacting with the mound as a successful combat acceptance test yet.
+
+## Shared service boundary
+
+Lagi's native cell factory registry keys a binding by both the source overlay
+object and native function address. This avoids collisions between overlays
+that reuse load addresses. The shared cell traversal tries a registered factory
+first, then retains its existing overlay dispatcher. Field re-entry replaces
+the same registration. Garil supplies only its unique mound factory and its
+original table operand; it does not duplicate Valley's grid or battle loader.
+Generated-source adapters are guarded at their expected boundaries. No file in
+`extern/Azel` is edited.
+
+## Validation and remaining gates
+
+`tests/garil_mound_test.py <FLD_A5.PRG>` verifies native setup/descriptor/action
+operands, original five placements, COMMON's overlay identity, the generated
+integration boundaries, static/transient model selection, one interactive
+variant, script-start fallback, three burst cycles, particle retirement,
+overlay-owner isolation and field re-entry. It compiles and runs the production
+mound/registry source with host service mocks and also runs the existing Garil
+native-action regression fixture. It does not execute a full Saturn battle.
+
+Host/native-data checks and full Vita compilation/link/VELF/SELF/VPK packaging
+pass. The older raw-disc audit was not rerun because its previous local CUE/BIN
+path is unavailable; the extracted original PRG and COMMON data were used for
+this checkpoint. Device visual/interaction acceptance and the entire Lathum
+formation/fight/victory/exit sequence remain pending. Earlier hardware-confirmed
+passage, camera, rewards and combat entry/return acceptance remains in force.
+Remaining slowdown and unaccepted dual/variant enemy attacks remain separate.

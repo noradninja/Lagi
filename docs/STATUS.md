@@ -1,6 +1,6 @@
 # Lagi development status
 
-**Updated 21 November 2026**
+**Updated 22 November 2026**
 **Current hardware acceptance:** `5e252ba` gameplay paths, plus the subsequent passage-camera correction and overall performance improvement confirmed on 21 November 2026.
 
 This is the current project overview. The older, dated engineering reports remain useful for source addresses and test evidence, but they are not competing reports on the present build.
@@ -27,6 +27,8 @@ These features have different validation histories. A linked task or successful 
 ## Current Garil/Valley work
 
 **New source checkpoints, awaiting device acceptance:** single/horned enemy turns and homing attacks, plus Nanyd rush/coordinated attacks, now use shared battle services. Host/native-contract regressions and full Vita packaging pass. Dual/variant attacks and Lathum remain incomplete. See [GARIL_ENEMY_ATTACK_TRACE.md](GARIL_ENEMY_ATTACK_TRACE.md).
+
+**Lathum field checkpoint:** the omitted original five-mound cell-object table, unique interactive target, animation/sand burst and authored encounter handoff are restored through shared services. Host/native-data checks and Vita packaging pass. The BTL_A5_3 formation remains unfinished, so this does not yet make the fight playable. See [GARIL_LATHUM_TRACE.md](GARIL_LATHUM_TRACE.md).
 
 The restored combat baseline is commit `977809e`. It brings back the exact tracked tree of `60d7b61` after experimental WEAK marker depth and tracing changes regressed Valley combat. Those reverted experiments remain in Git history, but are not part of the active tree.
 

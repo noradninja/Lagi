@@ -3045,6 +3045,16 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   # Native ray calls terminate in Lagi's shared VDP1 effect service.
 
  elseif(relative_path STREQUAL "field.cpp")
+  if(LAGI_BATTLE_NATIVE_BUILD)
+   set(source_text "#include \"lagi/native_field_cells.h\"\n${source_text}")
+   set(cell_dispatch_old "        gCurrentFieldOverlay->dispatchCellObjectCreation(r4, r5[i], r6);")
+   string(FIND "${source_text}" "${cell_dispatch_old}" cell_dispatch_found)
+   if(cell_dispatch_found LESS 0)
+    message(FATAL_ERROR "Shared field cell factory dispatch boundary changed")
+   endif()
+   string(REPLACE "${cell_dispatch_old}"
+    "        if (!lagiDispatchNativeFieldCellFactory(r4, r5[i], r6))\n${cell_dispatch_old}" source_text "${source_text}")
+  endif()
   # MAIN06011EEC..06011F26 converts native statuses56/63/6D to WORLD
   # indices by ADD #-50 before the six-bit write. Upstream omitted this.
   foreach(field_route_status 86 99 109)
@@ -3090,6 +3100,14 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   endif()
   string(REPLACE "getBit(0xA * 8 + 1)" "getBit(0xA * 8 + 6)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/o_fld_a5_0.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(source_text "#include \"lagi/garil_mound.h\"\n${source_text}")
+  set(mound_setup_old "    setupField2(pDT3, fieldA5_0_startTasks);")
+  string(FIND "${source_text}" "${mound_setup_old}" mound_setup_found)
+  if(mound_setup_found LESS 0)
+   message(FATAL_ERROR "Original Garil cell object setup boundary changed")
+  endif()
+  string(REPLACE "${mound_setup_old}" "    lagiSetupGarilMoundField(pDT3, fieldA5_0_startTasks);" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/field_a5/o_fld_a5.cpp")
   set(a5_horizon_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_a5_horizon.inc")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${a5_horizon_path}")
@@ -4822,6 +4840,13 @@ static void a5WormPassageEntrance_Init(sA5WormPassageEntrance* pThis, sSaturnPtr
   string(REPLACE "${worm_debris_stub}" "lagiSpawnA5WormSegmentDebris(pThis->lagiBodyOwner,i);" source_text "${source_text}")
   string(REPLACE "static void a5_sandWorm_spawnBreachSand(sA5SandWorm* /*pThis*/, sVec3_FP* pPos)" "void lagiSpawnA5WormBreachSand(sVec3_FP* pPos)" source_text "${source_text}")
   string(REPLACE "a5_sandWorm_spawnBreachSand(pThis, &pThis->m40_renderPosition);" "lagiSpawnA5WormBreachSand(&pThis->m40_renderPosition);" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/a5_sandParticlePool.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(wind_export_anchor "// 06058f48")
+  string(FIND "${source_text}" "${wind_export_anchor}" wind_export_found)
+  if(wind_export_found LESS 0)
+   message(FATAL_ERROR "Original A5 particle wind service boundary changed")
+  endif()
+  string(REPLACE "${wind_export_anchor}" "void lagiApplyA5WindToParticle(sVec3_FP* p) { a5SandParticle_ClampPosition(p); }\n\n${wind_export_anchor}" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/field_a5/a5_proximityAlertTask.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set(source_text "#include \"lagi/garil_story_worm.h\"\n${source_text}")
   string(REPLACE "    Unimplemented();\n    (void)pParent; (void)dataAddr;\n    return nullptr;" "    return lagiCreateA5StoryWorm(pParent,gFLD_A5->getSaturnPtr(dataAddr));" source_text "${source_text}")
@@ -7390,6 +7415,7 @@ target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_s
 if(LAGI_BATTLE_NATIVE_BUILD)
  target_sources(lagi PRIVATE src/integration/lagi_battle_projectile_vita.cpp)
  target_sources(lagi PRIVATE src/integration/lagi_garil_story_worm.cpp)
+ target_sources(lagi PRIVATE src/integration/lagi_native_field_cells.cpp src/integration/lagi_garil_mound.cpp)
  target_sources(lagi PRIVATE src/integration/lagi_battle_models_vita.cpp src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_world_ray_vita.cpp src/integration/lagi_world_polygon_vita.cpp src/integration/lagi_battle_graphics_vita.cpp src/integration/lagi_resident_video_vita.cpp src/integration/lagi_allocator_tables_vita.cpp src/integration/lagi_battle_damage_digits_vita.cpp)
  set_property(SOURCE src/integration/lagi_task_vita.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_NATIVE_TASK_HEAP_CLEANUP=1)
  set_property(SOURCE src/integration/lagi_disc_file_vita.cpp src/integration/lagi_map_resources_vita.cpp src/integration/lagi_azel_books_menu.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_TRACK_RESIDENT_VIDEO=1)

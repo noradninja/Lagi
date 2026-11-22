@@ -28,9 +28,14 @@ void endCutsceneCameraWithRestore(){++restores;}
 void endCutsceneCameraNoRestore(){++cuts;}
 bool placementReady=false;
 bool lagiAzelTryGarilPlacement(sSaturnPtr target){return placementReady&&target.m_file==gFLD_A5&&target.m_offset==0x0605C020;} // separately tested producer
+int battleRequests=0,lastEncounter=-1,lastCompletion=-1;
+void startBaldorQueenBattle(int encounter,int completion) { ++battleRequests;lastEncounter=encounter;lastCompletion=completion; }
 #include "production.inc"
 int main(){
  s32 result=99;
+ assert(!lagiAzelTryGarilScriptAction({0x06054DCC,&a3},result)&&result==99&&!battleRequests);
+ assert(lagiAzelTryGarilScriptAction({0x06054DCC,&a5},result)&&result==0&&battleRequests==1&&lastEncounter==0x10&&lastCompletion==0x90);
+ result=99;
  placementReady=true;
  assert(lagiAzelTryGarilScriptAction({0x0605C020,&a5},result)&&result==0);
  placementReady=false;result=99;

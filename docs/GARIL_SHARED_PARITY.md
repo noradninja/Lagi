@@ -847,3 +847,19 @@ contracts and validation. Nanyd, single/horned, Valley projectile, reward-meter
 and Scatter regressions pass, as does full Vita packaging. Hardware acceptance
 of restored enemy attacks is still pending. Dual/variant attacks and Lathum
 remain separate unfinished items; no renderer or story-flag change is included.
+
+## Lathum field cell-object restoration - 22 November 2026
+
+Original A5 subfield-0 setup passes both environment 0608E24C and object
+table 0608E34C to 06078D26. The port dropped the object table. Its five
+mound actors now use the existing Valley cell traversal, an overlay-keyed
+factory binding and original model/LCS/animation/sand contracts. Native
+action 06054DCC requests encounter 10 with completion bit 90 through the
+existing shared battle service. The authored script and victory gate remain
+intact. See [GARIL_LATHUM_TRACE.md](GARIL_LATHUM_TRACE.md).
+
+Host/native-data checks and Vita packaging pass. This is a field actor and
+handoff checkpoint, not a playable Lathum fight: BTL_A5_3 formation callbacks
+remain unfinished. No new device confirmation is claimed or capture requested.
+The previously accepted camera correction and performance improvement remain
+accepted; remaining slowdown stays open.
