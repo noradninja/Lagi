@@ -291,3 +291,33 @@ table and generated ordering. Position, membership, reaction, formation and
 burst regressions all pass. Full Vita packaging passes. Target weighting,
 release-state consumption and authored intro behavior still require work;
 complete variant gameplay and visuals remain unverified on hardware.
+
+## Verified actor release protocol (no additional gate required)
+
+The pending release-consumption audit is now resolved for actor states 3-8.
+Original 06055256-060553A4 is animation-driven: state 3 waits until previous
+animation frame >>1 is zero, then starts the attack animation; state 4 launches
+at returned frame 46; state 5 restores idle at the final animation frame.
+There is no separate actor wait on release flag 0x02000000 in these states.
+The formation's shared ready-to-release transition clears ready 0x04000000,
+which prevents idle from starting the same attack again. Adding an extra wait
+would change the native state machine. States 6-8 retain reaction frame 43,
+quadrant update and completion latch handling.
+
+`tests/garil_variant_actor_phases_test.py BTL_A5.PRG` compiles the actual
+generated actor cases 3-8. It exercises previous-frame gates with ready,
+released, both and neither flag; every attack/reaction frame; one frame-46
+launch with sound; final-frame idle/reaction transitions; all dragon quadrants;
+and the attack-to-idle chain. Native frame operands are independently checked.
+These host checks pass; no runtime change or fresh device test is needed for
+this test-only checkpoint.
+
+The remaining four values at actor+144..14A are damage scaling inputs, not
+merely targeting priority. Original helper 060A3488 initializes them to 10;
+actor update 060555D0-06055632 writes three values 5 and one 45 according to
+its current quadrant. Existing shared lagiUpdateBattleEnemyModelDamage already
+consumes LagiBattleModelTargetState::hitboxValues by the live dragon quadrant.
+The current variant bypasses that shared path with a simplified damage loop;
+connecting the model/target initialization and shared damage view is the next
+required work. Merely copying values into an unused array would not fix it.
+Authored intro behavior and full variant hardware acceptance also remain open.
