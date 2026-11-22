@@ -428,3 +428,27 @@ Controller and shared single-speech regressions pass. Vita packaging passes.
 This closes the identified intro source omission; complete variant gameplay,
 visuals, audio and rewards still require device acceptance and an integrated
 encounter audit. Broader dual-enemy coverage/performance work remains open.
+
+## Integrated actor/formation audit checkpoint
+
+`tests/garil_variant_encounter_test.py` now compiles both complete generated
+Update functions together with the production membership, reaction, selector
+and occupancy helpers. The sequence checks live membership -> selected attack
+-> shared ready/release transition -> actor animation -> one projectile launch
+-> idle/formation turn return; nonlethal reaction blocks formation selection
+until completion; three lethal hits retire all targets, request meter rewards,
+produce debris, mark all slots retired and complete the formation after its
+native delay, clearing turn ownership and releasing resource 0xE once.
+
+The fixture uses explicit service probes for motion, damage, animation, speech,
+render effects and task scheduling. Their production implementations are checked
+separately by the existing fixtures. This is stronger cross-state source evidence,
+not an emulated complete playthrough or device acceptance. Work-area allocation
+was also inspected: Azel's operator new clears the work area, while fixedPoint
+constructs to zero; newly named pending/altitude fields retain native zero init.
+
+Current variant source coverage includes constructor, original animation and
+collision resources, model targets, motion, membership/radar, selection/release,
+attack particles/damage timing, shared incoming damage, reaction/death, intro
+speech/camera and host cleanup. Full device visuals/audio/combat/rewards/return
+remain unverified. Existing Lathum acceptance request remains independent.
