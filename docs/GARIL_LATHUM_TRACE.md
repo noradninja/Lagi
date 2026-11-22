@@ -449,3 +449,60 @@ no automatic encounter or substitute trigger is added.
 Overall Update remains undispatched while attack modes 2/3, death and main
 animation/effect ordering are unfinished. This checkpoint does not make the
 Lathum encounter playable and does not request another boss hardware run.
+
+
+## Second attack, seeking rings and landing damage - 22 November 2026
+
+Mode 2 (060547B6..06054D0A) and the child factory 06056E2E / Update 06056A60
+are translated. The child samples the reacting group's core anchor through the
+previous inverse camera and copies it to the live camera target. Initial
+velocity uses reciprocal-then-multiply over 30 frames with separate X/Z jitter
+(RNG&FFFF)-7FFF. Its lifetime is (RNG&2F)+30, preserving the original masked
+holes rather than substituting a uniform range. Resource identity is taken
+from the authored descriptor. Creation consumes three RNG calls.
+
+Each tick damps horizontal velocity by CCC, adds CCC times the current
+horizontal dragon-minus-child delta, then integrates all axes. Vertical
+velocity is unchanged. Angle increases by 71C71C. Four successive quadrant
+candidates each consume one RNG bit; selected candidates emit the original
+quad 060A3AD8 at radius A000 using COMMON sine for X and cosine for Z, scale
+30000, lifetime 15 and zero velocity. COMMON.DAT confirms table 20216E80 is
+sine and 20217E80 cosine. The shared particle service and owned descriptor
+cache are reused. After particle emission the signed lifetime decrements;
+expiry explicitly clears dragon status word 1C0 and retires the child, matching
+06056E0E. This child applies no damage; the controller owns that behavior.
+
+The five controller substates retain original readiness and camera ordering.
+State 0 waits for engine flag 2000, binds actor eye/target pointers, sets target
+to battle center and eye to center with dragon Y, then resets interpolation.
+State 1 emits one ring for each reacting quadrant-facing group, tracks only
+the last child, counts emitted parts and starts a 30-frame wait. State 2
+follows that live child while waiting for the signed timer to become negative.
+It then sets vertical displacement to count*3000, computes camera height with
+the native raw (speed*speed)/2C0+5000 calculation and applies the authored
+quadrant offset. Native 06035686 performs raw product/division; the upstream
+fixed-point MTH_Mul_5_6 implementation is not equivalent and is not used here.
+
+State 3 adds the displacement vector to shared engine.m164, tracks the dragon
+with the camera, subtracts 160 from vertical displacement, and waits until
+engine.m164.Y reaches the ground. It clamps Y to zero and calls the existing
+applyDamageToDragon with 92*count damage, kind 3, current dragon position and
+the post-decrement displacement vector as knockback. State 4 signals engine
+flag 100, restores the default camera and returns to mode/substate 0. It does
+not apply damage from particles or introduce a collision gate.
+
+The production suite checks every ring anchor, all 64 lifetime-mask inputs,
+first-step damping/steering and unchanged vertical velocity, actual COMMON
+trigonometry, all four ring positions, per-tick RNG counts, zero-through-
+negative expiry, status cleanup and allocation failure. Controller checks
+cover 78,732 part-state/quadrant combinations, last-child tracking, readiness,
+30-to-negative timing, every quadrant camera offset, zero-to-three-part
+camera heights, integrated displacement, landing damage/knockback and final
+camera/engine completion. Original PRG operands anchor both helper/controller
+calls, masks, trig tables, raw division, gravity and damage. Earlier Lathum
+regressions and full Vita compilation/link/packaging pass.
+
+Overall Update remains undispatched. Attack mode 3, death and the main
+animation/effect ordering still need restoration before a playable boss test.
+The user's required field mesh target -> short cutscene -> battle sequence
+and all later authored victory/field-return gates remain acceptance requirements.

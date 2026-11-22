@@ -22,6 +22,19 @@ assert 'lagiUpdateLathumDamage(' in generated
 assert 'lagiUpdateLathumEmergence(' in generated
 assert 'lagiUpdateLathumReaction(' in generated
 assert 'lagiSelectLathumTurn(' in generated
+assert 'lagiCreateLathumRing(' in generated and 'lagiUpdateLathumAttackTwo(' in generated
+for ea,value,n in [(0x06056F68,0x06056A60,4),(0x06056F64,0x120,2),
+ (0x06056F80,0x06035664,4),(0x06056F84,0x1E0000,4),
+ (0x06056F66,0x8001,2),(0x06056F32,0xC92F,2),
+ (0x06056BEA,0xCCC,2),(0x06056BF8,0x71C71C,4),
+ (0x06056C04,0x20216E80,4),(0x06056C08,0x20217E80,4),
+ (0x06056C18,0x4000000,4),(0x06056E00,0x10000000,4),
+ (0x06056F62,0x1C0,2),(0x06056E0E,0x03E6,2),
+ (0x06054AA0,0x06056E2E,4),(0x06054BBE,0x2C0,2),
+ (0x06054BD0,0x06035686,4),(0x06054D22,0xFEA0,2),
+ (0x06054CAA,0xE55C,2),(0x06054D2C,0x0605C050,4)]:
+ assert u(ea,n)==value,f'Original ring/attack2 differs at {ea:08X}'
+
 assert 'lagiCreateLathumProjectile(' in generated and 'lagiUpdateLathumAttackOne(' in generated
 for ea,value,n in [(0x060A401C,0x06056610,4),(0x060A4020,0x060567F0,4),
  (0x060569B6,0xBC,2),(0x060569B8,0xB8,2),(0x06056866,0xC91F,2),
@@ -111,8 +124,10 @@ with tempfile.TemporaryDirectory(prefix='lagi-lathum-rig-') as tmp:
  subprocess.run([str(d/'turn.exe'),str(p)],check=True)
 
  (d/'projectile.inc').write_text((r/'src/integration/lagi_lathum_projectile.inc').read_text())
+ (d/'ring.inc').write_text((r/'src/integration/lagi_lathum_ring.inc').read_text())
  (d/'attack_one.inc').write_text((r/'src/integration/lagi_lathum_attack_one.inc').read_text())
+ (d/'attack_two.inc').write_text((r/'src/integration/lagi_lathum_attack_two.inc').read_text())
  subprocess.run(['cl','/nologo','/std:c++20','/O2','/EHsc','/I'+str(d),str(r/'tests/lathum_projectile_test.cpp'),'/Fe:'+str(d/'projectile.exe'),'/Fo:'+str(d/'projectile.obj')],check=True)
- subprocess.run([str(d/'projectile.exe'),str(p)],check=True)
+ subprocess.run([str(d/'projectile.exe'),str(p),str(p.with_name('COMMON.DAT'))],check=True)
 
 print('PASS original descriptors/target groups/init operands and generated integration; BTL_A5_3 SHA256',hashlib.sha256(b).hexdigest())

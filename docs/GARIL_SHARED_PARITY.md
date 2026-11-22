@@ -966,3 +966,15 @@ regressions. Final-tree Vita packaging passes. User clarified field entry must
 be lock-on targeting of the field mesh, short cutscene, then battle; the
 restored source route and reported invisible mesh still need device acceptance.
 Overall Update, remaining attacks/death/victory are unfinished.
+
+
+## Lathum second attack source checkpoint - 22 November 2026
+
+The seeking-ring child and all five substates of attack mode 2 are translated,
+reusing shared trigonometry, particles, camera, dragon displacement and damage.
+Native masked lifetime/RNG ordering and status cleanup are retained; the
+controller applies original landing damage of 92 per reacting part. Tests
+cover ring initialization/motion/expiry, all 78,732 part-state/quadrant cases,
+camera height/offsets, displacement and landing/completion gates. Prior Lathum
+regressions and full Vita packaging pass. Mode 3, death and overall Update
+integration remain unfinished, with no new hardware acceptance claimed.

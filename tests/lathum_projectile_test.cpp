@@ -11,10 +11,10 @@ int sGunShotTask_UpdateSub4(sAnimatedQuad* q){++q->frame;++animationSteps;return
 int vdp1DrawQuadScaled(sAnimatedQuad*,sVec3_FP*,fixedPoint scale){assert(scale.asS32()==0x30000);++draws;return 0;}
 const std::vector<sVdp1Quad>* lagiNativeBattleParticleQuad(sSaturnPtr ea){assert(ea.m_offset==0x060A3AD8);return &quads;}
 struct Vram{u16 m4_vdp1Memory=0x4321;}vram;
-struct Resource{Vram* m4_vd1Allocation=&vram;}resource;
+struct Resource:npcFileDeleter{Vram* m4_vd1Allocation=&vram;}resource;
 struct ResourceSlot{Resource* mC_fileBundle=&resource;};ResourceSlot dramAllocatorEnd[32];
-struct s_battleEngine{struct{bool m2000=false,m100_attackAnimationFinished=false;}m188_flags;sVec3_FP mC_battleCenter,m1A0_battleAutoScrollDelta;int m22C_dragonCurrentQuadrant=0;};
-struct Dragon{sVec3_FP m8_position;sBattleTargetable m8C;}dragon;
+struct s_battleEngine{struct{bool m2000=false,m100_attackAnimationFinished=false;}m188_flags;sVec3_FP mC_battleCenter,m1A0_battleAutoScrollDelta,m164;int m22C_dragonCurrentQuadrant=0;};
+struct Dragon{sVec3_FP m8_position;sBattleTargetable m8C;u32 m1C0_statusModifiers=0;}dragon;
 struct Overlay{Dragon* m18_dragon=&dragon;}overlay;
 struct Manager{Overlay* m10_battleOverlay=&overlay;}manager;Manager* gBattleManager=&manager;
 struct {int m28[2]={11,22};}cameraProperties2;
@@ -22,14 +22,22 @@ void transformAndAddVec(const sVec3_FP& in,sVec3_FP& out,int matrix){assert(matr
 int divisionCalls=0;
 fixedPoint FP_Div(s32 value,fixedPoint divisor){++divisionCalls;assert(divisor.asS32());return s32((int64_t(value)*65536)/divisor.asS32());}
 fixedPoint MTH_Mul(fixedPoint a,fixedPoint b){return lagi::formationMultiply(a.asS32(),b.asS32());}
-int hits=0;sVec3_FP hitPosition,hitKnockback;
-void applyDamageToDragon(sBattleTargetable& target,s32 damage,sVec3_FP& position,s32 kind,const sVec3_FP& knockback,s32 flags){assert(&target==&dragon.m8C&&damage==28&&kind==3&&!flags);++hits;hitPosition=position;hitKnockback=knockback;}
+int hits=0,expectedDamage=28;sVec3_FP hitPosition,hitKnockback;
+void applyDamageToDragon(sBattleTargetable& target,s32 damage,sVec3_FP& position,s32 kind,const sVec3_FP& knockback,s32 flags){assert(&target==&dragon.m8C&&damage==expectedDamage&&kind==3&&!flags);++hits;hitPosition=position;hitKnockback=knockback;}
 unsigned projectileRngCalls=0,firstWord=0,rngTail=0;
 u32 projectileRandom(){return projectileRngCalls++==0?firstWord:rngTail;}
 #include "damage_word.inc"
 #define randomNumber projectileRandom
 #include "projectile.inc"
 #undef randomNumber
+fixedPoint getSin(u32 phase){const auto a=0x16E80+(phase&0xFFF)*4;return s32((u32(common[a])<<24)|(u32(common[a+1])<<16)|(u32(common[a+2])<<8)|common[a+3]);}
+fixedPoint getCos(u32 phase){return getSin(phase+1024);}
+std::vector<sVec3_FP> ringParticles;
+void createParticleEffect(npcFileDeleter* file,const std::vector<sVdp1Quad>* quad,const sVec3_FP* pos,sVec3_FP* velocity,sVec3_FP* acceleration,s32 scale,const void* colors,s16 life){assert(file==static_cast<npcFileDeleter*>(&resource)&&quad==&quads&&!acceleration&&!colors&&scale==0x30000&&life==15);for(unsigned axis=0;axis<3;++axis)assert(!(*velocity)[axis].asS32());ringParticles.push_back(*pos);}
+#define randomNumber projectileRandom
+#include "ring.inc"
+#undef randomNumber
+
 std::vector<unsigned> firedGroups;sVec3_FP* eye=nullptr; sVec3_FP* target=nullptr;int enabled=0,sounds=0;
 void battleEngine_setCurrentCameraPositionPointer(sVec3_FP* p){eye=p;}
 void battleEngine_setDesiredCameraPositionPointer(sVec3_FP* p){target=p;}
@@ -39,9 +47,17 @@ void captureCreate(p_workArea,LagiLathumRig&,u8 group,s_battleEngine&,const sVec
 #define lagiCreateLathumProjectile captureCreate
 #include "attack_one.inc"
 #undef lagiCreateLathumProjectile
+std::array<LagiLathumRing,9> capturedRings;int restores=0,interpolations=0;
+void battleEngine_restoreCameraDefault(){++restores;}
+void battleEngine_resetCameraInterpolation(){++interpolations;}
+p_workArea captureRing(p_workArea,LagiLathumRig& rig,u8 group,const sVec3_FP&){firedGroups.push_back(group);capturedRings[group].position={int(group*10),int(group*20),int(group*30)};rig.cameraTarget=capturedRings[group].position;return &capturedRings[group];}
+#define lagiCreateLathumRing captureRing
+#include "attack_two.inc"
+#undef lagiCreateLathumRing
+
 void check(const sVec3_FP& v,int x,int y,int z){assert(v[0].asS32()==x&&v[1].asS32()==y&&v[2].asS32()==z);}
 int main(int argc,char**argv){
- assert(argc==2);original.bytes=load(argv[1]);s_workAreaCopy owner;LagiLathumRig rig;rig.descriptor=original.getSaturnPtr(0x060A3EB4);rig.corePositions.resize(11);
+ assert(argc==3);original.bytes=load(argv[1]);common=load(argv[2]);s_workAreaCopy owner;LagiLathumRig rig;rig.descriptor=original.getSaturnPtr(0x060A3EB4);rig.corePositions.resize(11);
  for(int i=0;i<11;++i)rig.corePositions[i]={i*100,i*200,i*300};s_battleEngine engine;engine.m1A0_battleAutoScrollDelta={10,-20,30};dragon.m8_position={100000,200000,300000};
  const int anchors[9]={8,3,9,10,6,0,4,5,7};
  for(unsigned group=0;group<9;++group)for(unsigned seed=0;seed<32;++seed)for(unsigned tail:{0u,8191u}){
@@ -63,10 +79,39 @@ int main(int argc,char**argv){
   delete shot;dragon.m8_position={100000,200000,300000};
  }
  failAllocation=true;projectileRngCalls=0;lagiCreateLathumProjectile(&owner,rig,0,engine,dragon.m8_position);assert(!projectileRngCalls);failAllocation=false;
+
+ for(unsigned group=0;group<9;++group)for(unsigned bits=0;bits<64;++bits){
+  firstWord=0xFFFF;rngTail=bits;projectileRngCalls=0;divisionCalls=0;hits=0;dragon.m8_position={100000,200000,300000};dragon.m1C0_statusModifiers=0xABCD;
+  auto* ring=static_cast<LagiLathumRing*>(lagiCreateLathumRing(&owner,rig,u8(group),dragon.m8_position));const int life=(bits&0x2F)+30;
+  assert(ring->remaining==life&&projectileRngCalls==3&&divisionCalls==3&&!ring->getTypedTaskDefinition()->draw);
+  check(ring->position,anchors[group]*100+100,anchors[group]*200+200,anchors[group]*300+300);
+  auto start=ring->position,oldVelocity=ring->velocity;ringParticles.clear();ring->Update(ring);
+  assert(projectileRngCalls==7&&ring->angle==0x71C71C&&ringParticles.size()==(bits&1?4:0)&&!ring->task.finished);
+  for(unsigned axis=0;axis<3;++axis){int expected=oldVelocity[axis].asS32();if(axis!=1)expected=int((int64_t(0xCCC)*expected)>>16)+int((int64_t(0xCCC)*(dragon.m8_position[axis].asS32()-start[axis].asS32()))>>16);assert(ring->velocity[axis].asS32()==expected&&ring->position[axis].asS32()==start[axis].asS32()+expected);}
+  for(unsigned q=0;q<ringParticles.size();++q){const auto phase=(ring->angle+q*0x4000000u)>>16;check(ringParticles[q],ring->position[0].asS32()+int((int64_t(0xA000)*getSin(phase).asS32())>>16),ring->position[1].asS32(),ring->position[2].asS32()+int((int64_t(0xA000)*getCos(phase).asS32())>>16));}
+  for(int tick=1;tick<life;++tick){ringParticles.clear();ring->Update(ring);}assert(ring->remaining==0&&!ring->task.finished&&dragon.m1C0_statusModifiers==0xABCD&&!hits);
+  ring->Update(ring);assert(ring->remaining==-1&&ring->task.finished&&!dragon.m1C0_statusModifiers&&!hits&&projectileRngCalls==3+4*(life+1));delete ring;
+ }
+ failAllocation=true;projectileRngCalls=0;assert(!lagiCreateLathumRing(&owner,rig,0,dragon.m8_position)&&!projectileRngCalls);failAllocation=false;
  // Every intact quadrant-facing group fires once, in original group order.
  const unsigned begin[4]={0,3,5,7},end[4]={3,5,7,9};
  for(unsigned state=0;state<19683;++state){unsigned bits=state;for(auto& g:rig.groups){g.state=bits%3;bits/=3;}for(unsigned q=0;q<4;++q){rig.mode=1;rig.substate=1;engine.m22C_dragonCurrentQuadrant=q;firedGroups.clear();lagiUpdateLathumAttackOne(&owner,rig,engine,dragon.m8_position);unsigned n=0;for(unsigned g=begin[q];g<end[q];++g)if(!rig.groups[g].state){assert(firedGroups.at(n++)==g);}assert(n==firedGroups.size()&&rig.substate==2&&rig.controllerTimer==90);}}
  rig.mode=1;rig.substate=0;engine.m188_flags={};lagiUpdateLathumAttackOne(&owner,rig,engine,dragon.m8_position);assert(!rig.substate);engine.m188_flags.m2000=true;lagiUpdateLathumAttackOne(&owner,rig,engine,dragon.m8_position);assert(rig.substate==1&&eye==&dragon.m8_position&&target==&rig.cameraTarget&&enabled==1);
  rig.substate=2;rig.controllerTimer=90;for(int i=0;i<90;++i)lagiUpdateLathumAttackOne(&owner,rig,engine,dragon.m8_position);assert(rig.controllerTimer==0&&rig.mode==1&&!engine.m188_flags.m100_attackAnimationFinished);lagiUpdateLathumAttackOne(&owner,rig,engine,dragon.m8_position);assert(rig.mode==0&&!rig.substate&&engine.m188_flags.m100_attackAnimationFinished);
- puts("PASS Lathum timed projectile/attack1: nine anchors, all 32 lifetimes and spring extremes, five visual springs, 28-damage expiry and 78732 group/quadrant states");
+
+ for(unsigned state=0;state<19683;++state){unsigned bits=state;for(auto& g:rig.groups){g.state=bits%3;bits/=3;}for(unsigned q=0;q<4;++q){rig.mode=2;rig.substate=1;rig.ring=nullptr;rig.activeRingCount=9;engine.m22C_dragonCurrentQuadrant=q;firedGroups.clear();lagiUpdateLathumAttackTwo(&owner,rig,engine,dragon.m8_position);unsigned n=0;unsigned last=0;for(unsigned g=begin[q];g<end[q];++g)if(rig.groups[g].state){assert(firedGroups.at(n++)==g);last=g;}assert(n==firedGroups.size()&&rig.activeRingCount==n&&rig.substate==2&&rig.controllerTimer==30);assert(rig.ring==(n?static_cast<p_workArea>(&capturedRings[last]):nullptr));}}
+ rig.mode=2;rig.substate=0;engine.m188_flags={};engine.mC_battleCenter={100,200,300};const int oldEnabled=enabled;
+ lagiUpdateLathumAttackTwo(&owner,rig,engine,dragon.m8_position);assert(!rig.substate&&enabled==oldEnabled);
+ engine.m188_flags.m2000=true;lagiUpdateLathumAttackTwo(&owner,rig,engine,dragon.m8_position);assert(rig.substate==1&&eye==&rig.cameraEye&&target==&rig.cameraTarget&&enabled==oldEnabled+1);check(rig.cameraTarget,100,200,300);check(rig.cameraEye,100,dragon.m8_position[1].asS32(),300);
+ for(unsigned q=0;q<4;++q)for(unsigned count=0;count<=3;++count){
+  rig.mode=2;rig.substate=2;rig.activeRingCount=u8(count);rig.controllerTimer=1;capturedRings[0].task.finished=false;capturedRings[0].position={111,222,333};rig.ring=&capturedRings[0];engine.m164={};engine.m188_flags={};engine.m22C_dragonCurrentQuadrant=q;hits=0;expectedDamage=count*92;
+  lagiUpdateLathumAttackTwo(&owner,rig,engine,dragon.m8_position);assert(rig.substate==2&&rig.controllerTimer==0);check(rig.cameraTarget,111,222,333);
+  capturedRings[0].task.finished=true;lagiUpdateLathumAttackTwo(&owner,rig,engine,dragon.m8_position);assert(rig.substate==3&&!rig.ring);
+  const int v=count*0x3000,height=int((int64_t(v)*v)/0x2C0)+0x5000;
+  check(rig.cameraEye,dragon.m8_position[0].asS32()+(q==1?0x3000:q==3?-0x3000:0),dragon.m8_position[1].asS32()+height,dragon.m8_position[2].asS32()+(q==0?0x3000:q==2?-0x3000:0));check(rig.dragonDisplacement,0,v,0);
+  int referenceY=0,referenceVelocity=v,ticks=0;
+  while(rig.substate==3){referenceY+=referenceVelocity;referenceVelocity-=0x160;lagiUpdateLathumAttackTwo(&owner,rig,engine,dragon.m8_position);++ticks;assert(ticks<400);assert(engine.m164[1].asS32()==(referenceY>0?referenceY:0));assert(hits==(referenceY>0?0:1));}
+  assert(rig.substate==4&&hits==1&&hitKnockback[1].asS32()==referenceVelocity&&hitPosition[0].asS32()==dragon.m8_position[0].asS32());const int oldRestores=restores;lagiUpdateLathumAttackTwo(&owner,rig,engine,dragon.m8_position);assert(!rig.mode&&!rig.substate&&engine.m188_flags.m100_attackAnimationFinished&&restores==oldRestores+1);
+ }
+ puts("PASS Lathum ring/timed projectile/attacks1-2: nine anchors, all 32 lifetimes and spring extremes, five visual springs, 28-damage expiry and 78732 group/quadrant states");
 }

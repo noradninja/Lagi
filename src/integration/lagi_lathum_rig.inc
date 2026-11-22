@@ -29,6 +29,9 @@ struct LagiLathumRig {
     sVec3_FP cameraEye, cameraTarget; // Native 114/120.
     p_workArea cameraTransition = nullptr; // Native 130.
     p_workArea dialogue = nullptr; // Native 12C.
+    p_workArea ring = nullptr; // Native 134.
+    u8 activeRingCount = 0; // Native 189.
+    sVec3_FP dragonDisplacement; // Native 104/108/10C.
     std::array<Group,9> groups;
     u8 selectedGroup = 0;
     s8 groupCounter = -1;
