@@ -4379,6 +4379,20 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    message(FATAL_ERROR "A5 variant initial quadrant boundary changed")
   endif()
   string(REPLACE "${variant_slot_old}" "${variant_slot_old}\n    pParent->mF4_entityPositions[entityIndex]=dir;" source_text "${source_text}")
+  foreach(variant_reaction_boundary IN ITEMS
+   "    // state machine"
+   "                    pThis->m14_flags |= 4;"
+   "            pThis->m14_flags &= ~4;"
+   "        pThis->m158_formation->mF4_entityPositions[pThis->m1C_entityIndex] = 4;")
+   string(FIND "${source_text}" "${variant_reaction_boundary}" variant_reaction_found)
+   if(variant_reaction_found LESS 0)
+    message(FATAL_ERROR "A5 variant reaction boundary changed: ${variant_reaction_boundary}")
+   endif()
+  endforeach()
+  string(REPLACE "    // state machine" "    lagiConsumeGarilVariantDamage(pThis);\n    // state machine" source_text "${source_text}")
+  string(REPLACE "                    pThis->m14_flags |= 4;" "                    lagiSetGarilVariantReaction(pThis,true);\n                    pThis->m14_flags |= 4;" source_text "${source_text}")
+  string(REPLACE "            pThis->m14_flags &= ~4;" "            lagiSetGarilVariantReaction(pThis,false);\n            pThis->m14_flags &= ~4;" source_text "${source_text}")
+  string(REPLACE "        pThis->m158_formation->mF4_entityPositions[pThis->m1C_entityIndex] = 4;" "        lagiSetGarilVariantReaction(pThis,false);\n        pThis->m158_formation->mF4_entityPositions[pThis->m1C_entityIndex] = 4;" source_text "${source_text}")
   set(variant_fire_old [=[        if (frame == 0x2E)
         {
             playSystemSoundEffect(0x6D);]=])

@@ -26,3 +26,9 @@ assert s.index('lagiUpdateGarilVariantMembership(pThis);')<s.index('    // damag
 assert 'pParent->mF4_entityPositions[entityIndex]=dir;' in s
 assert int.from_bytes(data[0x6054E7A-base:0x6054E7C-base],'big')==0x2210
 print('PASS 786432 membership cases, native initial quadrant store and generated actor update order')
+assert s.index('lagiConsumeGarilVariantDamage(pThis);')<s.index('    // state machine')
+assert s.count('lagiSetGarilVariantReaction(pThis,true);')==1
+assert s.count('lagiSetGarilVariantReaction(pThis,false);')==2
+for ea,value in [(0x6055100,0xDFFFFFFF),(0x6055104,0xBFFFFFFF)]:
+ assert int.from_bytes(data[ea-base:ea-base+4],'big')==value
+print('PASS reaction ownership, all damage-byte values and native flag-clear literals')

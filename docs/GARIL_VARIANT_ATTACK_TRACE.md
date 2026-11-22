@@ -217,3 +217,26 @@ Remaining actor work includes native positional interpolation, rotation,
 altitude, per-quadrant target weights and release consumption. Intro speech
 and transitions also remain pending. This partial checkpoint is not device
 acceptance of the complete variant encounter.
+
+## Implemented reaction ownership checkpoint
+
+Original 06055146-0605515C sets bit entityIndex in formation byte +F2 when
+starting a damage reaction; 06055380-06055398 clears it on reaction completion,
+and 0605540C-06055422 clears it during actor retirement. The generated actor
+now performs these typed writes at the corresponding entry/completion/death
+boundaries. Other actors' bits and the independent +F3 membership mask remain
+unchanged. The restored formation gate can therefore observe the same latch.
+
+Original helper 06055030 runs after damage handling and before actor state
+dispatch. Nonzero damage byte +1D5 is consumed/reset; value exactly 1 also
+clears actor flags 0x20000000 and 0x40000000 (literal masks DFFFFFFF/BFFFFFFF).
+These are distinct from ready/release flags 0x04000000/0x02000000. The new
+helper preserves that distinction and does not cancel attacks speculatively.
+
+Production fixtures cover every old damage-byte value, representative actor
+flags and every old reaction mask for each actor on both entry and exit.
+Native mask literals and generated call counts/order are checked. Existing
+variant selection, membership, occupancy, timing and burst regressions pass.
+Full Vita compile/link/VPK packaging passes; hardware acceptance remains open.
+Actor positional/rotation updates, target weighting, full release consumption
+and authored intro behavior remain pending.

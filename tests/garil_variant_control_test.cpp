@@ -8,7 +8,7 @@
 using s8=int8_t;using u8=uint8_t;using s16=int16_t;using u16=uint16_t;using s32=int32_t;using u32=uint32_t;
 struct s_workAreaCopy{struct Task{bool finished=false;bool isFinished(){return finished;}void markFinished(){finished=true;}}task;Task* getTask(){return &task;}};using p_workArea=s_workAreaCopy*;
 struct sBTL_A5_FormationTask;
-struct sBTL_A5_VariantEnemy:s_workAreaCopy{u32 m14_flags=0;sBTL_A5_FormationTask* m158_formation=nullptr;int m1C_entityIndex=0;};
+struct sBTL_A5_VariantEnemy:s_workAreaCopy{u32 m14_flags=0;sBTL_A5_FormationTask* m158_formation=nullptr;int m1C_entityIndex=0;u8 m1D5_wasDamaged=0;};
 struct Group{p_workArea* m0_entityArray=nullptr;int mE_numEntities=3;};
 struct sBTL_A5_FormationTask:s_workAreaCopy{Group mE0_entityGroup;std::array<u8,3> mF1_pad5{};std::array<u8,8> mF4_entityPositions{};u8 m28_state=3;s16 m24_counter1=0,m26_counter2=0;};
 struct Turn{int m8=1,m0=77;}turn;
@@ -41,6 +41,13 @@ int main(){
  for(unsigned index=0;index<3;++index)for(unsigned quadrant=0;quadrant<4;++quadrant)for(unsigned slot=0;slot<256;++slot)for(unsigned mask=0;mask<256;++mask){
   sBTL_A5_FormationTask f;sBTL_A5_VariantEnemy actor;actor.m158_formation=&f;actor.m1C_entityIndex=index;f.mF4_entityPositions[index]=slot;f.mF1_pad5[2]=mask;engine.m22C_dragonCurrentQuadrant=quadrant;
   lagiUpdateGarilVariantMembership(&actor);assert(f.mF1_pad5[2]==(slot==quadrant?(mask|(1u<<index)):(mask&~(1u<<index))));
+ }
+ for(unsigned index=0;index<3;++index)for(unsigned mask=0;mask<256;++mask)for(bool active:{false,true}){
+  sBTL_A5_FormationTask f;sBTL_A5_VariantEnemy actor;actor.m158_formation=&f;actor.m1C_entityIndex=index;f.mF1_pad5[1]=mask;f.mF1_pad5[2]=0xA5;
+  lagiSetGarilVariantReaction(&actor,active);assert(f.mF1_pad5[1]==(active?(mask|(1u<<index)):(mask&~(1u<<index))));assert(f.mF1_pad5[2]==0xA5);
+ }
+ for(unsigned byte=0;byte<256;++byte)for(u32 flags:{0u,0xFFFFFFFFu,0x60000000u,0x06000004u}){
+  sBTL_A5_VariantEnemy actor;actor.m1D5_wasDamaged=byte;actor.m14_flags=flags;lagiConsumeGarilVariantDamage(&actor);assert(!actor.m1D5_wasDamaged);assert(actor.m14_flags==(byte==1?flags&~0x60000000u:flags));
  }
  unsigned cases=0;
  for(unsigned slots=0;slots<27;++slots)for(unsigned mask=0;mask<8;++mask)for(unsigned old:{0u,1u,255u})for(unsigned q=0;q<4;++q){
