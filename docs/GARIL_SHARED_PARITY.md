@@ -942,3 +942,14 @@ reaction is translated with original readiness/camera/speech gates and engine
 completion. Native contracts, compiled shared speech and nine-group reaction
 fixtures, existing Lathum regressions and full Vita packaging pass. Overall
 Update, attacks/death/victory remain incomplete; no device acceptance is claimed.
+
+
+## Lathum authored turn selection - 22 November 2026
+
+The native turn-ready/player-turn gates, signed reaction countdown, quadrant
+selection and attack-name dispatch are translated. The 3/11 variant is now
+mapped to original controller port 2 held bit 4 using the source-mapped A3 item
+menu input literal and native 6C stride, without a substitute progression flag.
+The production fixture covers 944,784 combinations plus readiness guards;
+existing Lathum regressions and Vita packaging pass. Overall Update and actual
+attack/death/victory modes remain unfinished and hardware-unverified.

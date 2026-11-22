@@ -359,3 +359,38 @@ turn-selection inspection also found a native word at 06050224+6 selecting
 attack-name 3 versus 11 when the group counter expires; its host mapping is
 not established, so no constant or invented progression flag is substituted.
 No new hardware acceptance or boss test is claimed at this checkpoint.
+
+
+## Native turn selection and resolved port 2 selector - 22 November 2026
+
+Mode 0 060543F4..060544E4 is translated as lagiSelectLathumTurn. It waits for
+engine 3CC.m8 and for battleEngine_isPlayerTurnActive to be false, clears the
+native ready word/counter, then requests mode 7. A positive signed groupCounter
+is decremented; if it reaches zero, attack-name 3/11 is displayed for 30 frames
+and mode 3 is selected. Otherwise the first reacting group in the current
+dragon quadrant selects attack-name 2/mode 2; if none is reacting there,
+attack-name 1/mode 1 is selected. Each selected mode resets substate 0. Waiting
+ticks leave the ready state, counter and substate unchanged.
+
+The previously unresolved selector at 06050224+6 is the held-button word of
+controller port 2, mask 4. The original A3 item-menu routine 060742A8 loads
+060501B8 at literal 06074318 and reads +8 for the source-mapped primary-port
+new-button word. One native input-device record is 6C bytes; the second port
+is 060501B8+6C=06050224. The generated controller therefore reads the named
+port 2 current held-button field, preserving attack-name 11 when bit 4 is held
+and 3 otherwise. Primary-port input is not substituted and no story flags are
+read or written for this branch.
+
+The production turn fixture checks all 19,683 combinations of three states for
+nine groups, all four quadrants, six signed counter classes and both selector
+values: 944,784 cases. It also checks readiness/player-turn guards, exact
+ready-state clearing, mode-before-name ordering and opposite primary-port
+button values to prove they do not control the variant. Native A5 operands
+and the independent A3 input literal anchor the mapping. Existing Lathum
+init/draw/damage/emergence/reaction checks and Vita packaging pass.
+
+Overall Update is still not dispatched; attacks/death and authored victory/
+field return remain unfinished. The next original attack mode 1 calls native
+producer 06056840 for intact groups facing the dragon. That producer has no
+upstream translation and must be recovered before the controller can run.
+No boss hardware run or new device acceptance is claimed at this checkpoint.

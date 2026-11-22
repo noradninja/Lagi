@@ -21,6 +21,19 @@ assert list(b[0x060A3ED4-base:0x060A3ED4-base+9])==[8,3,9,10,6,0,4,5,7]
 assert 'lagiUpdateLathumDamage(' in generated
 assert 'lagiUpdateLathumEmergence(' in generated
 assert 'lagiUpdateLathumReaction(' in generated
+assert 'lagiSelectLathumTurn(' in generated
+for ea,value,n in [(0x060544E6,0x3CC,2),(0x060544F0,0x060598D0,4),
+ (0x060544F8,0x060687D6,4),(0x060544FC,0x06050224,4),
+ (0x0605445C,0x8503,2),(0x0605445E,0xC804,2),
+ (0x06054468,0xE403,2),(0x0605446E,0xE40B,2),
+ (0x060544B0,0xE402,2),(0x060544CA,0xE401,2)]:
+ assert u(ea,n)==value,f'Original turn selection differs at {ea:08X}'
+# Source-mapped A3 item-menu read independently anchors primary input port;
+# native port2 follows one complete6C-byte input-device record later.
+a3=p.with_name('BTL_A3.PRG').read_bytes()
+assert int.from_bytes(a3[0x06074318-base:0x06074318-base+4],'big')==0x060501B8
+assert 0x060501B8+0x6C==u(0x060544FC,4)
+
 for ea,value,n in [(0x06055614,0x060598F2,4),(0x06055618,0x06059724,4),
  (0x06055556,0xE402,2),(0x06055576,0x7658,2),
  (0x0605560A,0x2000,2),(0x060555B6,0xE50A,2),
@@ -78,5 +91,9 @@ with tempfile.TemporaryDirectory(prefix='lagi-lathum-rig-') as tmp:
  (d/'reaction.inc').write_text((r/'src/integration/lagi_lathum_reaction.inc').read_text())
  subprocess.run(['cl','/nologo','/std:c++20','/EHsc','/I'+str(d),str(r/'tests/lathum_emergence_test.cpp'),'/Fe:'+str(d/'emergence.exe'),'/Fo:'+str(d/'emergence.obj')],check=True)
  subprocess.run([str(d/'emergence.exe'),str(p),str(p.with_name('ZUSU.MCB')),str(p.with_name('COMMON.DAT'))],check=True)
+
+ (d/'turn.inc').write_text((r/'src/integration/lagi_lathum_turn.inc').read_text())
+ subprocess.run(['cl','/nologo','/std:c++20','/O2','/EHsc','/I'+str(d),str(r/'tests/lathum_turn_test.cpp'),'/Fe:'+str(d/'turn.exe'),'/Fo:'+str(d/'turn.obj')],check=True)
+ subprocess.run([str(d/'turn.exe'),str(p)],check=True)
 
 print('PASS original descriptors/target groups/init operands and generated integration; BTL_A5_3 SHA256',hashlib.sha256(b).hexdigest())
