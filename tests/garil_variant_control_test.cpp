@@ -7,7 +7,8 @@
 #include "lagi_formation_actor_signal.h"
 using s8=int8_t;using u8=uint8_t;using s16=int16_t;using u16=uint16_t;using s32=int32_t;using u32=uint32_t;
 struct s_workAreaCopy{struct Task{bool finished=false;bool isFinished(){return finished;}void markFinished(){finished=true;}}task;Task* getTask(){return &task;}};using p_workArea=s_workAreaCopy*;
-struct sBTL_A5_VariantEnemy:s_workAreaCopy{u32 m14_flags=0;};
+struct sBTL_A5_FormationTask;
+struct sBTL_A5_VariantEnemy:s_workAreaCopy{u32 m14_flags=0;sBTL_A5_FormationTask* m158_formation=nullptr;int m1C_entityIndex=0;};
 struct Group{p_workArea* m0_entityArray=nullptr;int mE_numEntities=3;};
 struct sBTL_A5_FormationTask:s_workAreaCopy{Group mE0_entityGroup;std::array<u8,3> mF1_pad5{};std::array<u8,8> mF4_entityPositions{};u8 m28_state=3;s16 m24_counter1=0,m26_counter2=0;};
 struct Turn{int m8=1,m0=77;}turn;
@@ -25,6 +26,7 @@ void battleEngine_FlagQuadrantBitForDanger(u16 mask){radarCalls.push_back(0x1000
 struct File{u32 getSaturnPtr(u32 a){return a;}}file;auto* g_BTL_A5=&file;
 u32 readSaturnU32(u32 a){assert(a>=0x60AD194&&a<=0x60AD1A0);return (a-0x60AD194)/4;}
 #include "quadrants.inc"
+#include "membership.inc"
 #include "control.inc"
 void phases(sBTL_A5_FormationTask* pThis){auto* pEngine=&engine;switch(pThis->m28_state){
 #include "phases.inc"
@@ -35,6 +37,10 @@ int main(){
   lagiUpdateGarilVariantQuadrants(&f);unsigned safe=0,danger=0;
   for(unsigned q=0;q<4;++q){const unsigned count=(a==q)+(b==q)+(c==q);if(!count)danger|=1u<<q;else if(count>1)safe|=1u<<q;}
   assert(radar==(0xA500|safe|(danger<<4)));assert(radarCalls==std::vector<unsigned>({0,0x10000,safe,0x10000|danger}));
+ }
+ for(unsigned index=0;index<3;++index)for(unsigned quadrant=0;quadrant<4;++quadrant)for(unsigned slot=0;slot<256;++slot)for(unsigned mask=0;mask<256;++mask){
+  sBTL_A5_FormationTask f;sBTL_A5_VariantEnemy actor;actor.m158_formation=&f;actor.m1C_entityIndex=index;f.mF4_entityPositions[index]=slot;f.mF1_pad5[2]=mask;engine.m22C_dragonCurrentQuadrant=quadrant;
+  lagiUpdateGarilVariantMembership(&actor);assert(f.mF1_pad5[2]==(slot==quadrant?(mask|(1u<<index)):(mask&~(1u<<index))));
  }
  unsigned cases=0;
  for(unsigned slots=0;slots<27;++slots)for(unsigned mask=0;mask<8;++mask)for(unsigned old:{0u,1u,255u})for(unsigned q=0;q<4;++q){

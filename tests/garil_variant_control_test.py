@@ -10,7 +10,7 @@ assert 'pThis->m28_state = 5;' in intro
 phases=u[u.index('    case 3:'):u.index('\n    }\n}\n\n// 060547da')]
 assert phases.strip()==(r/'src/integration/lagi_garil_variant_phases.inc').read_text().strip()
 with tempfile.TemporaryDirectory(prefix='lagi-variant-control-') as d:
- p=Path(d);(p/'quadrants.inc').write_text((r/'src/integration/lagi_garil_variant_quadrants.inc').read_text());(p/'control.inc').write_text((r/'src/integration/lagi_garil_variant_control.inc').read_text());(p/'phases.inc').write_text(phases)
+ p=Path(d);(p/'membership.inc').write_text((r/'src/integration/lagi_garil_variant_membership.inc').read_text());(p/'quadrants.inc').write_text((r/'src/integration/lagi_garil_variant_quadrants.inc').read_text());(p/'control.inc').write_text((r/'src/integration/lagi_garil_variant_control.inc').read_text());(p/'phases.inc').write_text(phases)
  subprocess.run(['cl','/nologo','/EHsc','/std:c++20','/I'+str(p),'/I'+str(r/'src/integration'),str(r/'tests/garil_variant_control_test.cpp'),'/Fe:'+str(p/'test.exe'),'/Fo:'+str(p/'test.obj')],check=True)
  subprocess.run([str(p/'test.exe')],check=True)
 data=Path(sys.argv[1]).read_bytes();base=0x6054000
@@ -22,3 +22,7 @@ for i in range(4):
  ea=0x60AD194+i*4
  assert int.from_bytes(data[ea-base:ea-base+4],'big')==i
 print('PASS 6400 quadrant classifications, native shift table and generated interpolation order')
+assert s.index('lagiUpdateGarilVariantMembership(pThis);')<s.index('    // damage check')
+assert 'pParent->mF4_entityPositions[entityIndex]=dir;' in s
+assert int.from_bytes(data[0x6054E7A-base:0x6054E7C-base],'big')==0x2210
+print('PASS 786432 membership cases, native initial quadrant store and generated actor update order')

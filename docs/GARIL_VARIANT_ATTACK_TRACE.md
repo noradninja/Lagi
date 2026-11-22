@@ -193,3 +193,27 @@ Actor update 0605553C is a separate missing producer: it updates formation
 membership byte +F3, actor orientation, altitude and targetable weights. Its
 restoration remains pending, along with release consumption and intro work.
 Occupancy classification alone is not evidence of a playable variant battle.
+
+## Implemented authored quadrant and membership checkpoint
+
+Original factory 06054E56-06054E7A reads the direction table 060AD5B8 using
+formation descriptor byte +0x11 and entity index, then stores that byte into
+formation+F4+index. The port read the direction for rotation but omitted the
+formation store. The generated adapter now retains the same authored byte.
+
+Original actor update 0605557E-060555CE compares its current formation quadrant
+with the dragon quadrant, setting or clearing only its own bit in formation
+byte +F3. This producer now runs before damage and state dispatch, matching
+the native Update order. It preserves every other actor's membership bit and
+handles retired/out-of-range slot values without creating membership.
+
+The production controller fixture now checks 786,432 combinations of actor
+index, dragon quadrant, every slot byte and every prior membership mask.
+Generated initialization/update boundaries and the native store instruction
+are checked, alongside existing selection, occupancy, timing and burst tests.
+All pass, as does Vita compile/link/VPK packaging. This is source/host evidence.
+
+Remaining actor work includes native positional interpolation, rotation,
+altitude, per-quadrant target weights and release consumption. Intro speech
+and transitions also remain pending. This partial checkpoint is not device
+acceptance of the complete variant encounter.
