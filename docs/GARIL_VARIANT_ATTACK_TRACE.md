@@ -240,3 +240,29 @@ variant selection, membership, occupancy, timing and burst regressions pass.
 Full Vita compile/link/VPK packaging passes; hardware acceptance remains open.
 Actor positional/rotation updates, target weighting, full release consumption
 and authored intro behavior remain pending.
+
+## Implemented positional interpolation checkpoint
+
+Original 06055540-06055558 invokes shared 060A23C0 on actor+0x30 relative
+to its formation position block, then overrides world Y from actor+0x1C8.
+The host names are misleading: m60_targetPosition is the local target,
+m90_initialPosition is the live local interpolated position, m48 is positional
+velocity, and mA8_soundEffectId is actually the interpolation rate 0x1999.
+The adapter now maps those fields through existing
+stepNativeFormationInterpolation, preserving subtract/multiply/add rounding
+and 32-bit wrap. A named adapter altitude field represents native +0x1C8
+without reinterpreting padding or Saturn task layout. Its native factory value
+is zero (06055020-06055022). Rotation remains a separate unimplemented producer.
+
+The former port-only per-actor scroll additions are removed: native actor
+position is recomposed from formation world position each update. Interpolation
+runs before membership and damage, in the original order. The actor's local Y
+interpolator still advances even though its world Y is then overridden.
+
+`tests/garil_variant_motion_test.py BTL_A5.PRG` compiles the production helper
+and checks 12,000 frames against an independent scalar fixed-point recurrence,
+including changing target/center, signed extremes, rate 0/1/0x1999, overflow
+and independent altitude. Original operands and generated ordering are checked.
+All motion, controller and burst tests pass; full Vita packaging passes.
+Hardware acceptance, rotation, target weighting, release consumption and intro
+behavior remain open. No complete-encounter claim follows from this checkpoint.
