@@ -910,3 +910,13 @@ Full rig/draw/damage host checks and Vita packaging pass. The unfinished
 Update controller does not call the helper yet; emergence, combat/death modes
 and authored victory/return still need implementation and device acceptance.
 See GARIL_LATHUM_TRACE.md. No boss hardware run is requested at this checkpoint.
+
+
+## Shared authored vector-transition service - 22 November 2026
+
+Lathum emergence's original fixed-velocity child task is restored as a shared
+Lagi service, preserving reciprocal-then-multiply rounding, parent-owned live
+vectors, signed timer completion and native wrap. Original instruction contracts,
+a production-task host fixture and Vita packaging pass. Lathum Update still
+needs its camera/effect/mode dispatch connected; this is a source foundation,
+not a playable boss checkpoint or a request for another hardware capture.

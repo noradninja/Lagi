@@ -232,3 +232,38 @@ hits, dead-entry early return, debug mode-4 guard and live display flush.
 Original PRG operands independently anchor service calls, flags, effect scale,
 previous-camera selection and death mode. Initialization/drawing regressions,
 Vita compilation, full linking and packaging pass. Hardware remains untested.
+
+
+## Emergence vector-task service - 22 November 2026
+
+The original 060540E2 factory and 06054078 child Update are restored as the
+shared lagiCreateNativeVectorTransition service. It samples an endpoint at
+creation, computes FP_Div(10000, signed-duration << 16) separately per axis,
+then MTH_Mul with that axis's wrapped endpoint-minus-live delta. Each child
+update adds its fixed velocity to the parent-owned live vector, decrements
+the signed 16-bit duration and retires when it is nonpositive. It never snaps
+to the endpoint. This is deliberately distinct from the existing spring and
+ordinary positional interpolation services.
+
+Emergence substate 1 requests 180 frames; substate 2 requests 270. A 180-frame
+move from 1000 to 100000 produces reciprocal 364, velocity 549 and final 99820,
+not 100000. Negative displacement uses the native signed-product low bits.
+The shared service preserves these rounding/remainder and word-wrap effects,
+with typed child-task storage and a parent-owned live vector. Allocation
+failure returns null before touching either vector.
+
+The original emergence state 0 waits for the engine's intro task, retires it,
+resets camera state and supplies live eye/target pointers. Its initial eye is
+battleCenter+(1E000,11000,FFF55ED2), target is
+battleCenter+(FFF94000,FFFAE000,7C000); these are traced operands, not proposed
+replacement camera offsets. It starts a 90-frame wait before the first vector
+transition. The camera helpers, particles and remaining state transitions must
+still be connected before Update can replace the stub.
+
+native_vector_transition_test.py checks original creation/update/duration
+instructions and compiles the production task. Golden cases cover authored
+180/270-frame motions, reciprocal remainder, sampled endpoint/live ownership,
+independent concurrent children, completion timing, signed word duration and
+32-bit coordinate wrap, and allocation failure. Vita compilation, linking and
+packaging pass. This service is not yet called by Lathum Update; emergence and
+the battle remain unfinished, with no new device acceptance claimed.
