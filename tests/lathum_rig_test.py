@@ -24,6 +24,21 @@ assert 'lagiUpdateLathumReaction(' in generated
 assert 'lagiSelectLathumTurn(' in generated
 assert 'lagiCreateLathumRing(' in generated and 'lagiUpdateLathumAttackTwo(' in generated
 assert 'lagiUpdateLathumAttackThree(' in generated
+assert 'lagiUpdateLathumRig(pThis,pThis->rig,*overlay->m4_battleEngine,*overlay->m8_gridTask,*overlay->m18_dragon)' in generated
+assert 'static void Update(sBTL_A5_3_LathumFormation* pThis) { Unimplemented(); }' not in generated
+for ea,value,n in [(0x06055A50,0x926A,2),(0x06055B28,0x2000,2),
+ (0x06055B44,0x64000,4),(0x06055AB2,0x8821,2),
+ (0x06055B48,0x06021798,4),(0x06055B4C,0x06021882,4),
+ (0x06055B74,0x012C,2),(0x06055B86,0x7B14,2),
+ (0x06055C74,0x0605B1DC,4),(0x06055C6A,240,2),
+ (0x06055C0A,0xE30F,2),(0x06055C20,0x4215,2),
+ (0x06055FF0,0x3B2,2),(0x060560C4,0x30000,4),
+ (0x060561BC,0x80000,4),(0x0605607A,0xE369,2),
+ (0x0605611E,0xE369,2),(0x060561E6,0x8801,2)]:
+ assert u(ea,n)==value,f'Original death/main Update differs at {ea:08X}'
+assert [u(0x060A3FB0+i*4,4) for i in range(3)]==[0,0x1000,0]
+assert [u(0x060A3FBC+i*4,4) for i in range(3)]==[0,0x1000,0x1000]
+
 for ea,value,n in [(0x06055744,0x5B05B,4),(0x0605574C,0xFA000,4),
  (0x0605575C,0x96000,4),(0x06055874,0x32000,4),
  (0x0605584A,0xE515,2),(0x060558EA,0xE210,2),
@@ -145,5 +160,11 @@ with tempfile.TemporaryDirectory(prefix='lagi-lathum-rig-') as tmp:
  (d/'attack_three.inc').write_text((r/'src/integration/lagi_lathum_attack_three.inc').read_text())
  subprocess.run(['cl','/nologo','/std:c++20','/O2','/EHsc','/I'+str(d),str(r/'tests/lathum_projectile_test.cpp'),'/Fe:'+str(d/'projectile.exe'),'/Fo:'+str(d/'projectile.obj')],check=True)
  subprocess.run([str(d/'projectile.exe'),str(p),str(p.with_name('COMMON.DAT'))],check=True)
+
+ (d/'damage.inc').write_text((r/'src/integration/lagi_lathum_damage.inc').read_text())
+ (d/'death.inc').write_text((r/'src/integration/lagi_lathum_death.inc').read_text())
+ (d/'update.inc').write_text((r/'src/integration/lagi_lathum_update.inc').read_text())
+ subprocess.run(['cl','/nologo','/std:c++20','/O2','/EHsc','/I'+str(d),str(r/'tests/lathum_update_test.cpp'),'/Fe:'+str(d/'update.exe'),'/Fo:'+str(d/'update.obj')],check=True)
+ subprocess.run([str(d/'update.exe'),str(p),str(p.with_name('ZUSU.MCB')),str(p.with_name('COMMON.DAT'))],check=True)
 
 print('PASS original descriptors/target groups/init operands and generated integration; BTL_A5_3 SHA256',hashlib.sha256(b).hexdigest())

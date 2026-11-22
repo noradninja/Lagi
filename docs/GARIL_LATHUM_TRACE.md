@@ -440,7 +440,7 @@ regressions and final-tree Vita packaging pass.
 
 Field-entry clarification from the user: the required route is to target the
 Lathum field mesh with lock-on, play the short authored cutscene, then enter
-battle. The current Mound target callback starts script 5B5; native action 54DCC
+battle. The current Mound target callback starts script 0 (flag 5B5); native action 54DCC
 hands off to encounter 10/completion 90. The interactive 1F0 mesh and this route
 are restored in source but visibility/targetability/cutscene behavior still
 need device acceptance. The user reports the trigger mesh was not visible;
@@ -556,3 +556,47 @@ Overall Update remains undispatched. All three attack controllers are now
 translated, but death and the main animation/effect ordering still need
 restoration before testing the authored field-target/cutscene/battle route
 and complete combat/victory/field return on Vita.
+
+
+## Death and runtime Update connected - 22 November 2026
+
+The generated formation's Update stub is replaced. Each tick composes world
+position from local position plus battle center. Phase 0 increments the native
+formation-running byte and steps emergence animation. Phase 1 increments the
+byte, steps the normal model and may emit an ambient particle. Phase 2 emits
+the death particle without either increment or ordinary animation step. The
+byte retains native signed-eight-bit wrap. Ambient anchor selection uses the
+current inverse camera: phase 1 velocity (0,1000,0), scale 30000; phase 2
+velocity (0,1000,1000), scale 80000. Both use descriptor 060A3B9C and lifetime
+69 hex (105 frames), not a sound call. Gate/selection/shared-phase RNG order
+is retained. Mode dispatch follows, then damage only if the resulting phase
+is 1. Unknown phase/mode arms remain native no-ops.
+
+Death 06055A4C..06055C3A advances local Z by 2000 after world position was
+composed, sets eye to dragon position and target to world position plus 64000 Z.
+It steps animation only while previous frame is not 33. State 0 selects phase 2,
+sets animation frame 0, signals life-meter bits 1/8, plays sound 6E and removes
+all 13 grouped targets in original order. Core hotpoint storage is retained.
+Shared life-meter logic owns one-time COMMON XP/dyne rewards. States 1/2 wait
+for intro completion/engine 2000 and bind camera pointers. State 3 waits 240
+signed frames through zero. State 10 restores camera, sets engine 100 and
+waits 15 frames in state 11 before hiding the body. The actor is not forcibly
+finished and no story bits/results transition are written here.
+
+The production main/death fixture executes actual Update, damage and death
+code together. Other mode callbacks are spies here to isolate ordering; their
+production logic is covered by separate controller fixtures. It checks all
+dispatch boundaries, phase changes before damage, ambient payloads/shared RNG,
+byte wrap, hit-to-death transition, 13 target removals, frame 33 hold, reward
+signals, camera gates and 240/15-frame timing. The shared life-meter fixture
+executes unchanged production reward logic and confirms one-time XP/dyne.
+Original PRG contracts anchor phase/mode/damage order, animation, cleanup,
+timers, ambient tables and lifetime. All production/native checks, field
+handoff regressions and full Vita compilation/link/packaging pass.
+
+The existing Lathum environment reuses desert VDP2/grid services; its callback
+source contains no unimplemented environment arm. This connected source build
+is ready for one hardware run, not device acceptance or proof of the full
+encounter. See GARIL_LATHUM_HARDWARE_CHECK.md for mesh lock-on -> short cutscene
+-> battle -> victory/rewards -> field return -> authored exit acceptance.
+The broader parity/performance goal remains open.

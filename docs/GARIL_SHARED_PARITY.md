@@ -991,3 +991,16 @@ calls. Earlier producer-only counts were incomplete descriptions of the full
 call stream; runtime already used the correct shared factory. Original-data
 contracts, existing Lathum regressions and Vita packaging pass. Death and
 overall Update integration remain unfinished; no device acceptance is claimed.
+
+
+## Lathum runtime Update/death connected - 22 November 2026
+
+The generated formation now runs native position -> phase animation/effects
+-> controller -> damage ordering. Death uses shared one-time rewards, grouped
+target removal, frame 33 hold, camera gates and 240/15-frame timers, without
+forcing story bits or results. Actual main/damage/death fixtures, independent
+mode fixtures, native-data contracts, shared rewards and Vita packaging pass.
+One targeted hardware run is now requested: field mesh lock-on -> short
+cutscene -> battle/combat -> victory/rewards -> field return -> authored exit
+unlock. See GARIL_LATHUM_HARDWARE_CHECK.md. Other enemy variant coverage,
+remaining performance/visual parity and device acceptance stay open.

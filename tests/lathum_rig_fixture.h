@@ -50,7 +50,7 @@ struct s_fileBundle{
  sAnimationData* getAnimation(u16 key){auto off=word(key);animations[key]={half(off),half(off+2),half(off+4),key};return &animations[key];}
 } bundle;
 struct sPoseData { sVec3_FP mC_rotation; };
-struct s_3dModel{void(*m18_drawFunction)(s_3dModel*)=nullptr;std::vector<sPoseData> m2C_poseData;unsigned m12_numBones=0;std::vector<sHotpointBundle> m_hotpointBundles;std::vector<s_hotpointDefinition>* m40=nullptr;std::vector<std::vector<sVec3_FP>> m44_hotpointData;sAnimationData* animation=nullptr;sStaticPoseData* pose=nullptr;unsigned key=0;};
+struct s_3dModel{u16 m16_previousAnimationFrame=0;void(*m18_drawFunction)(s_3dModel*)=nullptr;std::vector<sPoseData> m2C_poseData;unsigned m12_numBones=0;std::vector<sHotpointBundle> m_hotpointBundles;std::vector<s_hotpointDefinition>* m40=nullptr;std::vector<std::vector<sVec3_FP>> m44_hotpointData;sAnimationData* animation=nullptr;sStaticPoseData* pose=nullptr;unsigned key=0;};
 int stepCalls=0,modelInitCalls=0;unsigned failModel=~0u;
 int init3DModelRawData(s_workAreaCopy*,s_3dModel* out,int flags,s_fileBundle* b,u16 key,sAnimationData* animation,sStaticPoseData* pose,void*,sHotpointBundle* hotpoints){
  assert(!flags&&b==&bundle);++modelInitCalls;if(failModel==key)return 0;
