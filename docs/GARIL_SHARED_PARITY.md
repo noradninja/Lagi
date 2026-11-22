@@ -953,3 +953,16 @@ menu input literal and native 6C stride, without a substitute progression flag.
 The production fixture covers 944,784 combinations plus readiness guards;
 existing Lathum regressions and Vita packaging pass. Overall Update and actual
 attack/death/victory modes remain unfinished and hardware-unverified.
+
+
+## Lathum first attack source checkpoint - 22 November 2026
+
+The first attack controller and original timed five-sprite producer are
+translated using shared fixed-point, quad and dragon-damage services. This
+producer deals 28 damage at timer expiry; native code has no contact check.
+Tests cover every authored anchor/lifetime, spring extremes, RNG and animation
+ordering, expiry damage, 78,732 controller state/quadrant cases and prior Lathum
+regressions. Final-tree Vita packaging passes. User clarified field entry must
+be lock-on targeting of the field mesh, short cutscene, then battle; the
+restored source route and reported invisible mesh still need device acceptance.
+Overall Update, remaining attacks/death/victory are unfinished.

@@ -394,3 +394,58 @@ field return remain unfinished. The next original attack mode 1 calls native
 producer 06056840 for intact groups facing the dragon. That producer has no
 upstream translation and must be recovered before the controller can run.
 No boss hardware run or new device acceptance is claimed at this checkpoint.
+
+
+## First attack and timed five-sprite producer - 22 November 2026
+
+The native mode 1 controller 06054504..060547B4 and its missing producer
+06056840 are translated. Every controller tick applies auto-scroll to both
+camera vectors. Substate 0 waits for engine flag 2000, binds the live dragon
+position as camera eye and actor target as camera target, enables attack
+camera and sets that target to battle center. Substate 1 plays sound 6D, then
+fires once from each intact (state 0) group facing the dragon's quadrant, in
+original group order. Substate 2 waits for a signed 90-frame counter to become
+negative before setting engine flag 100 and returning to mode/substate 0.
+
+Producer 06056840 creates the original typed child, with Update 06056610 and
+Draw 060567F0. One RNG call selects duration 75..106. It transforms the group's
+core anchor through the previous inverse camera, adds A000 to Y and copies
+the result into the parent's live camera target. Core velocity uses the same
+reciprocal-then-multiply calculation as the vector-transition service, then
+adds battle auto-scroll. It initializes five quads from 060A3AD8 in resource
+slot 13's VDP1 allocation, advances each by its index 0..4 and adds three RNG
+velocity components (mask 1FFF, offset -FFF). Creation consumes 16 RNG calls.
+
+Update integrates the core first. Each visual then computes three spring
+accelerations from the pre-integration visual position using fresh per-axis
+gain (RNG&FFF)+28F, adds them to its velocity, integrates that visual and
+advances its quad. This consumes 15 RNG calls per tick. Only after all visuals
+advance does the signed timer decrement. When it becomes negative, native
+code directly invokes shared applyDamageToDragon for 28 damage, kind 3, impact
+at the core, knockback from current dragon position minus core and final flag 0,
+then retires the task. There is NO sphere/contact check in this producer;
+routing it through the homing projectile's contact policy would change the
+authored attack. Draw uses shared scaled-quad submissions at scale 30000.
+
+The production fixture covers nine anchors, all 32 duration seeds, low/high
+initial visual jitter and spring gains, exact reciprocal/core movement,
+per-visual initial animation offsets, shared resource/descriptor identity,
+RNG counts, no damage through timer 0, expiry damage/knockback/retirement,
+all five draw submissions and allocation failure. The controller fixture
+checks all 78,732 part-state/quadrant combinations, exact intact-group order,
+readiness and 90-to-negative completion. Native operands independently anchor
+the factory/Update/Draw, timer/masks, previous camera, animation descriptor,
+damage 28/kind 3 and scale 30000. Existing rig/draw/damage/emergence/reaction/turn
+regressions and final-tree Vita packaging pass.
+
+Field-entry clarification from the user: the required route is to target the
+Lathum field mesh with lock-on, play the short authored cutscene, then enter
+battle. The current Mound target callback starts script 5B5; native action 54DCC
+hands off to encounter 10/completion 90. The interactive 1F0 mesh and this route
+are restored in source but visibility/targetability/cutscene behavior still
+need device acceptance. The user reports the trigger mesh was not visible;
+no automatic encounter or substitute trigger is added.
+
+Overall Update remains undispatched while attack modes 2/3, death and main
+animation/effect ordering are unfinished. This checkpoint does not make the
+Lathum encounter playable and does not request another boss hardware run.
