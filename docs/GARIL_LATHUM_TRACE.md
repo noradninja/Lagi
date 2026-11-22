@@ -65,7 +65,7 @@ mounds when `bitField[12] & 80` is set, the authored completion bit.
 The existing battle-manager remap sends A5 encounter `10` to COMMON overlay
 index `12`, subbattle 0. Original `COMMON.DAT` names that index `BTL_A5_3.PRG`.
 The battle loader already recognizes this overlay; its Lathum formation
-Init/Update/Draw remain upstream stubs and are the next implementation task.
+Initialization is now restored as described below; Update/Draw remain unfinished.
 **This field checkpoint does not make the Lathum battle playable.** Do not use
 interacting with the mound as a successful combat acceptance test yet.
 
@@ -97,3 +97,46 @@ this checkpoint. Device visual/interaction acceptance and the entire Lathum
 formation/fight/victory/exit sequence remain pending. Earlier hardware-confirmed
 passage, camera, rewards and combat entry/return acceptance remains in force.
 Remaining slowdown and unaccepted dual/variant enemy attacks remain separate.
+
+## Typed battle-rig initialization checkpoint
+
+Original BTL_A5_3.PRG SHA256:
+`cd4b77b2fea5d10cc1cd1eb81351f3e14b53ae213f1edc1b044598b1347035dc`.
+Factory `060565DA` selects task descriptor `060A4008` and original work-area
+size `18C`. Init `060542B0` and helper `060541AC` now use typed host storage,
+with a concrete disposer for their owned vectors. The Saturn size is not used
+as a C++ allocation size. The existing model, target and life-meter services
+handle their usual work; no separate damage engine is introduced.
+
+| Native binding | Restored value |
+| --- | --- |
+| NPC slot / bundle | 8, ZUSU.MCB/CGB |
+| Actor descriptor / local position | 060A3EB4 / (0,0,-64000) at 060A3EC8 |
+| Combat hierarchy / pose / animation | 4 / 144 / 150 |
+| Emergence hierarchy / pose / animation | C / 14C / 158 |
+| Bones / animation frames | Both hierarchies 21; both animations 149 |
+| Core targets | 11 hotpoints, flags F0000001, radius 1000 |
+| Group sizes at 060A3EFB | 1,2,1,2,1,2,1,1,2 (13 additional targets) |
+| Group target flags / radius | F0004000 first, F0004002 additional / A000 |
+| Life meter | Stable world-position/health addresses; COMMON enemy type 22 |
+| Initial selection / counter | One RNG value modulo 9 / signed -1 |
+| Initial mode / model phase | 4 / 0 |
+| Formation-name operands | (0,1,13) |
+
+Descriptor byte 16 is enemy type 22, not a bone count. Group positions remain
+independent and stable; the original null-owner target contract is retained.
+The future Lathum controller consumes their damage explicitly. Groups are not
+flattened into regular-enemy targets.
+
+`tests/lathum_rig_test.py <BTL_A5_3.PRG>` compiles the production initializer,
+shared model creator and Valley core-target producer against the real PRG,
+ZUSU.MCB and COMMON.DAT data. It checks 18 selector inputs, every resource and
+target binding above, the initial state, failed resource/model creation and
+the generated integration. Native instruction/table assertions and host checks
+pass, as do Vita compilation and full link/packaging. This fixture does not
+simulate a battle or prove rendering/device behavior.
+
+Update `06055EF8`, mode-specific controllers, damage helper `06055C3C`, Draw
+`06056530` and grouped-part draw helper `06056202` are still unfinished. The
+upstream Update/Draw stubs remain explicit. No idle fallback, replacement boss
+or forced completion bit is installed. No new Vita boss test is requested yet.

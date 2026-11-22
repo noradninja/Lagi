@@ -863,3 +863,16 @@ handoff checkpoint, not a playable Lathum fight: BTL_A5_3 formation callbacks
 remain unfinished. No new device confirmation is claimed or capture requested.
 The previously accepted camera correction and performance improvement remain
 accepted; remaining slowdown stays open.
+
+## Lathum battle initialization - 22 November 2026
+
+Lathum's native Init 060542B0/helper 060541AC now acquire slot-8 resources
+and build both 21-bone rigs, 11 core targets and 13 targets across nine groups
+through existing model/target/life-meter services. Health comes from COMMON
+type 22; initial mode/group selection and formation-name operands are retained.
+Typed host storage replaces the raw Saturn-size placeholder. Native-data/host
+checks and Vita link/packaging pass. See [GARIL_LATHUM_TRACE.md](GARIL_LATHUM_TRACE.md).
+
+Update/Draw and Lathum-specific damage/turn/part behavior remain unfinished.
+This initialization checkpoint does not make the fight playable and adds no
+hardware acceptance or bypass of authored completion/exit conditions.
