@@ -1,4 +1,5 @@
 #include <array>
+#include <vector>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -18,11 +19,23 @@ void battleEngine_FlagQuadrantBitForAttack(u16 mask){attackMask=mask;}
 bool battleEngine_isPlayerTurnActive(){return player;}
 void battleEngine_displayAttackName(int name,int duration,int flags){assert(name==15&&duration==30&&!flags);++names;}
 void decreaseNPCRefCount(int slot){assert(slot==14);++releases;}
+u16 radar=0xA500;std::vector<unsigned> radarCalls;
+void battleEngine_FlagQuadrantBitForSafety(u16 mask){radarCalls.push_back(mask);if(mask)radar|=mask&15;else radar&=~15;}
+void battleEngine_FlagQuadrantBitForDanger(u16 mask){radarCalls.push_back(0x10000u|mask);if(mask)radar|=(mask&15)<<4;else radar&=~0xF0;}
+struct File{u32 getSaturnPtr(u32 a){return a;}}file;auto* g_BTL_A5=&file;
+u32 readSaturnU32(u32 a){assert(a>=0x60AD194&&a<=0x60AD1A0);return (a-0x60AD194)/4;}
+#include "quadrants.inc"
 #include "control.inc"
 void phases(sBTL_A5_FormationTask* pThis){auto* pEngine=&engine;switch(pThis->m28_state){
 #include "phases.inc"
 }}
 int main(){
+ for(unsigned a=0;a<256;++a)for(unsigned b=0;b<5;++b)for(unsigned c=0;c<5;++c){
+  sBTL_A5_FormationTask f;f.mF4_entityPositions[0]=a;f.mF4_entityPositions[1]=b;f.mF4_entityPositions[2]=c;radar=0xA5FF;radarCalls.clear();
+  lagiUpdateGarilVariantQuadrants(&f);unsigned safe=0,danger=0;
+  for(unsigned q=0;q<4;++q){const unsigned count=(a==q)+(b==q)+(c==q);if(!count)danger|=1u<<q;else if(count>1)safe|=1u<<q;}
+  assert(radar==(0xA500|safe|(danger<<4)));assert(radarCalls==std::vector<unsigned>({0,0x10000,safe,0x10000|danger}));
+ }
  unsigned cases=0;
  for(unsigned slots=0;slots<27;++slots)for(unsigned mask=0;mask<8;++mask)for(unsigned old:{0u,1u,255u})for(unsigned q=0;q<4;++q){
   std::array<sBTL_A5_VariantEnemy,3> actors;std::array<p_workArea,3> pointers;unsigned tmp=slots;bool selected=false;

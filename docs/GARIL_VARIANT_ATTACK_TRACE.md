@@ -171,3 +171,25 @@ This remains a partial encounter checkpoint. Original 06054872 formation
 membership/position updates, actor movement and consumption of release flags,
 and intro transition/speech must still be audited before device acceptance.
 No new hardware result is inferred from these source and host checks.
+
+## Implemented formation occupancy checkpoint
+
+Original 06054872 counts the three bytes at formation+F4..F6 across four
+quadrants; retired byte 4 and other out-of-range values match none. It clears
+both radar classifications, then classifies count 0 as danger, count 1 as
+neutral and counts 2/3 as safety, using shift table 060AD194 = {0,1,2,3}.
+The generated adapter now restores this exact sequence via shared safety and
+danger services. Attack and other radar bits remain intact. The native
+formation Update calls this helper before shared formationUpdatePosition;
+that previously omitted interpolation call is restored in the same order.
+
+The existing production-controller fixture now exercises 6,400 occupancy
+combinations, including all 256 first-slot values, retired entries and mixed
+occupancy, plus radar clear/set order and preservation of unrelated bits.
+Original PRG table values and generated call ordering are checked. Selection,
+phase and counter regressions pass; full Vita packaging passes.
+
+Actor update 0605553C is a separate missing producer: it updates formation
+membership byte +F3, actor orientation, altitude and targetable weights. Its
+restoration remains pending, along with release consumption and intro work.
+Occupancy classification alone is not evidence of a playable variant battle.
