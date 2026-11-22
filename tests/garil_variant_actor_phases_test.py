@@ -14,7 +14,7 @@ fixture=r'''
 using u8=uint8_t;using u16=uint16_t;using u32=uint32_t;using s16=int16_t;using s32=int32_t;
 struct Animation{u16 a=0,b=0,frames=60;}animation;
 struct Model{u16 m16_previousAnimationFrame=0;Animation* m30_pCurrentAnimation=&animation;};
-struct File{Animation* getAnimation(u16 id){assert(id==0x100||id==0x108);return &animation;}u32 getSaturnPtr(u32 a){return a;}}file;auto* g_BTL_A5=&file;
+struct File{Animation* getAnimation(u16 id){assert(id==0x48||id==0x50);return &animation;}u32 getSaturnPtr(u32 a){return a;}}file;auto* g_BTL_A5=&file;
 u16 readSaturnU16(u32 a){assert(a==0x60AD5C0||a==0x60AD5C8);return a==0x60AD5C0?0x100:0x108;}
 struct Formation{std::array<u8,3> mF4_entityPositions{};u8 reactions=0;}formation;
 struct Actor{std::vector<Model> m2C_models=std::vector<Model>(1);File* m0_fileBundle=&file;u8 m28_state=0;u32 m14_flags=0;Formation* m158_formation=&formation;int m1C_entityIndex=0;};

@@ -321,3 +321,30 @@ The current variant bypasses that shared path with a simplified damage loop;
 connecting the model/target initialization and shared damage view is the next
 required work. Merely copying values into an unused array would not fix it.
 Authored intro behavior and full variant hardware acceptance also remain open.
+
+## Implemented shared model/target initialization checkpoint
+
+The variant now uses lagiCreateBattleEnemyModels with original descriptor
+060AD5C0 = {hierarchy 4, static pose 40, hotpoints 060AD278}. The constructor
+selects animation 48, randomizes its frame using the original RNG/modulo order,
+and builds collision hierarchy 8 with pose 44. The previous port interpreted
+model indices as animation indices and derived the collision pose from the
+wrong table word. Actor state resources are corrected too: idle 48, reaction
+4C, attack 50, as the native bundle loads explicitly show.
+
+Shared lagiInitBattleEnemyModelTargets initializes callbacks and stable
+model-owned target arrays. The current actor damage and retirement loops now
+visit these same live arrays through typed spans; they no longer inspect an
+independent host vector. Launch targetable 5 therefore refers to the same
+registered set. Enemy COMMON record ID comes from group+0xC directly, matching
+06054E42, rather than reading a word from the positional table at group+8.
+Initial native quadrant values {45,5,5,5} are retained in the target state.
+
+The production constructor fixture checks descriptor/animation/collision slots,
+shared target binding, callback table, initial values and all allocation/init
+failure paths. Native descriptor bytes, constructor operands and all three
+animation slot operands are checked. Generated damage/retirement loops must
+both use model target arrays. All five variant host checks pass; full Vita
+compile/link/VPK packaging passes. Quadrant value refresh and shared damage
+processing remain pending; this checkpoint alone does not make scaling live.
+Authored intro behavior and complete hardware acceptance remain open.
