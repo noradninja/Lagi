@@ -10,7 +10,7 @@
 #include <vector>
 using s8=int8_t;using u8=uint8_t;using s16=int16_t;using u16=uint16_t;using s32=int32_t;using u32=uint32_t;
 struct fixedPoint{int32_t value=0;fixedPoint(int32_t v=0):value(v){}int32_t asS32()const{return value;}fixedPoint& operator-=(int v){value-=v;return *this;}};
-struct sVec3_FP{fixedPoint x,y,z;fixedPoint& operator[](unsigned i){return i==0?x:i==1?y:z;}};
+struct sVec3_FP{fixedPoint x,y,z;fixedPoint& operator[](unsigned i){return i==0?x:i==1?y:z;}const fixedPoint& operator[](unsigned i)const{return i==0?x:i==1?y:z;}void zeroize(){x=y=z=0;}};
 struct File;
 struct sSaturnPtr{u32 m_offset=0;File* m_file=nullptr;sSaturnPtr operator+(unsigned v)const{return {m_offset+v,m_file};}bool isNull()const{return !m_offset;}};
 struct File{std::vector<u8> bytes;sSaturnPtr getSaturnPtr(u32 v){return {v,this};}} original;
@@ -19,8 +19,9 @@ u16 readSaturnU16(sSaturnPtr p){const auto i=p.m_offset-0x6054000;return (p.m_fi
 u8 readSaturnU8(sSaturnPtr p){return p.m_file->bytes.at(p.m_offset-0x6054000);}
 sSaturnPtr readSaturnEA(sSaturnPtr p){return {(u32(readSaturnU16(p))<<16)|readSaturnU16(p+2),p.m_file};}
 sVec3_FP readSaturnVec3(sSaturnPtr p){return {s32(readSaturnEA(p).m_offset),s32(readSaturnEA(p+4).m_offset),s32(readSaturnEA(p+8).m_offset)};}
-struct s_workAreaCopy{struct Task{bool finished=false;void markFinished(){finished=true;}}task;Task* getTask(){return &task;}struct s_fileBundle* m0_fileBundle=nullptr;void* m4_vd1Allocation=nullptr;};
+struct s_workAreaCopy{struct Task{bool finished=false;void markFinished(){finished=true;}bool isFinished(){return finished;}}task;bool deleteCleared=false;void clearDeleteMethod(){deleteCleared=true;}Task* getTask(){return &task;}struct s_fileBundle* m0_fileBundle=nullptr;void* m4_vd1Allocation=nullptr;};
 using p_workArea=s_workAreaCopy*;
+using s_workArea=s_workAreaCopy;
 struct s_hotpoinEntry{int m0=0,m10=0;};
 struct s_hotpointDefinition{unsigned m4_count=0;std::vector<s_hotpoinEntry> m0;};
 struct sHotpointBundle{

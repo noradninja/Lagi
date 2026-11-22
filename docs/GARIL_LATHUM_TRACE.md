@@ -267,3 +267,53 @@ independent concurrent children, completion timing, signed word duration and
 32-bit coordinate wrap, and allocation failure. Vita compilation, linking and
 packaging pass. This service is not yet called by Lathum Update; emergence and
 the battle remain unfinished, with no new device acceptance claimed.
+
+
+## Seven-substate emergence controller - 22 November 2026
+
+Native mode 4 06054D34..060554CC is translated as lagiUpdateLathumEmergence.
+The rig adds typed live eye/target vectors, a signed controller timer and
+camera/dialogue child pointers. Every call first adds battle auto-scroll to
+both camera vectors and retires completed child references. The native debug
+shortcut sets normal model phase/substate 6 but still waits for dialogue.
+
+State0 waits for engine intro task 3D0, clears its delete callback and retires
+it. It uses shared camera restore/preset, snapshots desired eye/target into
+reference vectors, zeros their deltas, requests battle mode 7, enables attack
+camera, snapshots/zeros again and binds the live camera pointers. The traced
+initial offsets and 90-frame wait are retained. State1 waits until its signed
+counter reaches zero, then starts the 180-frame target transition. State2 waits
+for that child, sets the second eye position, resets interpolation and starts
+a 270-frame eye transition. It plays sound 6D and emits 100 particles using
+original descriptor 060A3C60 and the authored resource slot 13, with 700 RNG calls
+in native axis/position/lifetime order. It then selects normal model phase 1
+and starts a 30-frame timer. State3 waits until the timer becomes negative
+(the zero frame still waits), then starts dialogue table 060A3F04, entries 4/5.
+
+State4 waits for BOTH camera and dialogue, starts independent 270-frame eye
+and target transitions and the shared dialogue table 060A3F28, entries 6/7/8/9.
+State5 waits for the tracked eye child before setting eye to dragon position
+and target to battle center. State6 waits for dialogue, sets engine flag 100
+(attack-animation finished), restores the default camera and selects mode 0.
+The untracked target child and asymmetric state 5/6 waits match native code.
+No timing, offsets, story flags or substitute lines were invented.
+
+The shared content-keyed particle descriptor cache now has a public accessor;
+particle children keep owned descriptor storage rather than pointers into the
+boss rig. Dialogue uses the existing sFormationIntroEffectTask typed factory
+with its original zero flag and the supplied native table, avoiding a second
+speech implementation. Common camera/vector/particle/audio services are reused.
+
+The production emergence fixture executes all seven states and verifies live
+camera pointers, reference snapshots/delta clearing, exact offsets, 90/180/270
+frame contracts, 30-to-negative timing, both completion gates, phase/engine
+flags, auto-scroll ordering, all 100 particle payloads and 700 RNG calls, and
+the debug dialogue guard. Native PRG contracts independently anchor helper
+calls, effect descriptor/scale/count and dialogue table identities. Rig/init,
+19,683 drawing states, damage and shared projectile regressions pass. Full
+Vita compilation/link/packaging passes.
+
+Overall Update is still explicit Unimplemented: emergence is compiled and
+tested but not dispatched until the remaining mode controllers and shared
+animation/effect update order are ready. Combat/death/victory/return and device
+acceptance remain open. No new boss hardware run is requested yet.

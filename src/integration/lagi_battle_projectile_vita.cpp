@@ -34,6 +34,10 @@ static const std::vector<sVdp1Quad>* lagiProjectileQuad(sSaturnPtr ptr)
     return &cache.emplace(std::move(key),std::move(quads)).first->second;
 }
 
+const std::vector<sVdp1Quad>* lagiNativeBattleParticleQuad(sSaturnPtr descriptor) {
+    return lagiProjectileQuad(descriptor);
+}
+
 // Shared 06064400 boundary used by native shots and actor rush attacks.
 // Keep the geometry service independent of each caller's damage protocol.
 bool lagiBattleContactPoint(const sVec3_FP& source,std::int32_t sourceRadius,

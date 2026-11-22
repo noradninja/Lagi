@@ -22,3 +22,8 @@ s_workArea* lagiCreateNativeBattleChargeQuad(s_workAreaCopy* parent,
 // Callers retain their authored radii and damage-position/attack-kind policy.
 bool lagiBattleContactPoint(const sVec3_FP& source,std::int32_t sourceRadius,
     const sVec3_FP& target,std::int32_t targetRadius,sVec3_FP& worldContact);
+
+#include <vector>
+struct sVdp1Quad;
+// Owned content-keyed descriptors remain valid after the requesting actor ends.
+const std::vector<sVdp1Quad>* lagiNativeBattleParticleQuad(sSaturnPtr descriptor);

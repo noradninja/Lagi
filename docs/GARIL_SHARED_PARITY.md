@@ -920,3 +920,14 @@ vectors, signed timer completion and native wrap. Original instruction contracts
 a production-task host fixture and Vita packaging pass. Lathum Update still
 needs its camera/effect/mode dispatch connected; this is a source foundation,
 not a playable boss checkpoint or a request for another hardware capture.
+
+
+## Lathum emergence source checkpoint - 22 November 2026
+
+All seven native emergence substates are translated, reusing shared camera,
+vector task, dialogue/voice, particle and audio services. Tests cover original
+camera operands/waits, both child-completion gates, model-phase handoff and the
+100-particle burst's 700 RNG calls. Existing rig/draw/damage and projectile
+regressions plus full Vita packaging pass. Update still does not dispatch the
+controller: combat/death modes and main update order remain unfinished. This
+is not a playable boss checkpoint or new hardware acceptance.

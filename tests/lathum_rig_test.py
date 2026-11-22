@@ -19,6 +19,20 @@ assert 'lagiInitializeLathumRig(pThis,pThis->rig)' in generated and 'LagiLathumR
 assert 'lagiDrawLathumRig(pThis,pThis->rig)' in generated
 assert list(b[0x060A3ED4-base:0x060A3ED4-base+9])==[8,3,9,10,6,0,4,5,7]
 assert 'lagiUpdateLathumDamage(' in generated
+assert 'lagiUpdateLathumEmergence(' in generated
+assert [u(0x060A3F04+i*12,2) for i in range(3)]==[4,5,0xFFFF]
+assert [u(0x060A3F28+i*12,2) for i in range(5)]==[6,7,8,9,0xFFFF]
+for ea,value,n in [(0x06054FF8,0x0607950C,4),(0x06054FFC,0x060794AA,4),
+ (0x06055000,0x06059724,4),(0x06055004,0x06079416,4),
+ (0x06055008,0x0607974A,4),(0x0605500C,0x06079778,4),
+ (0x06055018,0xFFF55ED2,4),(0x0605501C,0xFFF94000,4),
+ (0x060550D8,0xFFFAE000,4),(0x060550DC,0x7C000,4),
+ (0x060550E0,0x06079A00,4),(0x060551AA,0xE264,2),
+ (0x060552B0,0x50000,4),(0x06055410,0x060A3C60,4),(0x06055418,0x0606FBD0,4),
+ (0x0605541C,0x060A3F04,4),(0x06055420,0x06068B62,4),
+ (0x06055438,0x060A3F28,4),(0x06055538,0x100,2)]:
+ assert u(ea,n)==value,f'Original emergence contract differs at {ea:08X}'
+
 assert list(b[0x060A3EDD-base:0x060A3EDD-base+9])==[0,0,0,1,1,2,2,3,3]
 # Native damage-service operands and previous-camera selection; these are
 # independent original-data checks rather than a second helper implementation.
@@ -50,5 +64,10 @@ with tempfile.TemporaryDirectory(prefix='lagi-lathum-rig-') as tmp:
  (d/'damage.inc').write_text((r/'src/integration/lagi_lathum_damage.inc').read_text())
  subprocess.run(['cl','/nologo','/std:c++20','/EHsc','/I'+str(d),str(r/'tests/lathum_damage_test.cpp'),'/Fe:'+str(d/'damage.exe'),'/Fo:'+str(d/'damage.obj')],check=True)
  subprocess.run([str(d/'damage.exe'),str(p),str(p.with_name('ZUSU.MCB')),str(p.with_name('COMMON.DAT'))],check=True)
+
+ (d/'damage_word.inc').write_text((r/'src/integration/lagi_lathum_damage.inc').read_text().split('static void lagiUpdateLathumDamage')[0])
+ (d/'emergence.inc').write_text((r/'src/integration/lagi_lathum_emergence.inc').read_text())
+ subprocess.run(['cl','/nologo','/std:c++20','/EHsc','/I'+str(d),str(r/'tests/lathum_emergence_test.cpp'),'/Fe:'+str(d/'emergence.exe'),'/Fo:'+str(d/'emergence.obj')],check=True)
+ subprocess.run([str(d/'emergence.exe'),str(p),str(p.with_name('ZUSU.MCB')),str(p.with_name('COMMON.DAT'))],check=True)
 
 print('PASS original descriptors/target groups/init operands and generated integration; BTL_A5_3 SHA256',hashlib.sha256(b).hexdigest())

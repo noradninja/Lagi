@@ -25,6 +25,10 @@ struct LagiLathumRig {
     u8 damagePending = 0; // Native 12.
     u8 selectedHitCount = 0; // Native 188.
     u8 substate = 0; // Native 09.
+    s16 controllerTimer = 0; // Native FC.
+    sVec3_FP cameraEye, cameraTarget; // Native 114/120.
+    p_workArea cameraTransition = nullptr; // Native 130.
+    p_workArea dialogue = nullptr; // Native 12C.
     std::array<Group,9> groups;
     u8 selectedGroup = 0;
     s8 groupCounter = -1;
