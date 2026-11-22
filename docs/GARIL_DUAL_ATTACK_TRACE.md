@@ -51,3 +51,23 @@ parent task/resource ownership. Then restore the dual-specific layout/turn
 controller from 0605F3A4. Current state 0 only checks player-turn status and
 never selects an enemy attack; native phases remain to be traced. This source
 audit does not justify a new gameplay acceptance request or a dual build claim.
+
+## Explicit single-actor group binding checkpoint
+
+Single actors now carry LagiGarilSingleGroupBinding: a typed group pointer,
+separate active/reaction flag addresses, dead-word storage and a live target
+position callback/context. Position interpolation, return-distance checks,
+reaction bookkeeping and death count/entry writes use that binding instead of
+dereferencing the parent as a specific single-formation work area. The current
+single formation supplies its existing fields and writable layout callback,
+so its behavior and ownership remain unchanged. This is preparation for the
+native separate parent/group factory contract, not a completed dual factory.
+
+The binding references live layout state; it does not snapshot a table that
+would stop following authored formation switches. The production motion check
+runs two independent groups/centers/layouts for 24,000 actor ticks and verifies
+separate flags, dead storage and counters. Existing single constructor,
+selection/controller and charge/fire regressions pass against original PRG
+contracts. Vita compile/link/VPK packaging passes. The dual encounter still
+uses its old incorrect factories until explicit-context factory export and
+native dual layout/turn initialization are connected in subsequent work.

@@ -4354,6 +4354,24 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "${single_formation_anchor}" [=[    lagiInitGarilSingleLayouts(pThis);
     pThis->mE0_entityGroup.m4_positionBlock = &pThis->m2C_posBlock;
     pThis->mE0_entityGroup.mE_numEntities = 6;]=] source_text "${source_text}")
+  # Bind actors to a named native group, independent of the parent task type.
+  string(REPLACE "    LagiBattleModelTargetState m_lagiTargets;" "    LagiGarilSingleGroupBinding m_lagiGroup;\n    LagiBattleModelTargetState m_lagiTargets;" source_text "${source_text}")
+  set(single_group_bind [=[    pEntity->m_lagiGroup={&pParent->mE0_entityGroup,
+        &pParent->mF0_flag,&pParent->mF1_pad5[1],pParent->mF4_entityPositions,pParent,
+        [](void* context,int index)->sVec3_FP {
+            auto* formation=static_cast<sLagiGarilSingleFormation*>(context);
+            return formation->m_lagiLayouts[formation->m_lagiLayout][index];
+        }};]=])
+  string(FIND "${source_text}" "    pEntity->m158_formation = pParent;" single_group_bind_found)
+  if(single_group_bind_found LESS 0)
+   message(FATAL_ERROR "Garil single actor group binding boundary changed")
+  endif()
+  string(REPLACE "    pEntity->m158_formation = pParent;" "    pEntity->m158_formation = pParent;\n${single_group_bind}" source_text "${source_text}")
+  string(REPLACE "pThis->m158_formation->mE0_entityGroup" "(*pThis->m_lagiGroup.group)" source_text "${source_text}")
+  string(REPLACE "pThis->m158_formation->mF0_flag" "(*pThis->m_lagiGroup.activeMask)" source_text "${source_text}")
+  string(REPLACE "&pThis->m158_formation->mF1_pad5[1]" "pThis->m_lagiGroup.reactionMask" source_text "${source_text}")
+  string(REPLACE "pThis->m158_formation->mF4_entityPositions" "pThis->m_lagiGroup.deadWords" source_text "${source_text}")
+  set(source_text "#include \"lagi/garil_actor_group.h\"\n${source_text}")
   set(source_text "#include \"lagi_battle_enemy_lifecycle.h\"\n#include \"lagi/native_battle_models.h\"\n#include \"lagi/garil_single_formation.h\"\n#include \"lagi/native_formation_motion.h\"\n${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_variant.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS

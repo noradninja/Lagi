@@ -11,11 +11,12 @@ struct File{sSaturnPtr getSaturnPtr(u32 x){return {x};}}file;
 auto* g_BTL_A5=&file;
 struct Target{sVec3_FP* m8;};
 struct Model{Target* m54_targetables;unsigned m52_targetableCount;};
-struct Formation{u8 mF1_pad5[3]{};};
+struct Formation{u8 mF0_flag=0;u8 mF1_pad5[3]{};};
 struct sBTL_A5_SingleEnemy:s_workAreaCopy{
     std::vector<Model> m2C_models;
     int m1BC_isLead2{};u8 m28_state{};u32 m14_flags{};
     Formation* m158_formation;
+    struct{uint8_t* activeMask=nullptr;uint8_t* reactionMask=nullptr;}m_lagiGroup;
 };
 struct Engine{sVec3_FP m1A0_battleAutoScrollDelta;};
 struct Overlay{Engine* m4_battleEngine;};struct Manager{Overlay* m10_battleOverlay;};
@@ -53,6 +54,7 @@ int main()
         Target target[3]{{&world[0]},{&world[1]},{&world[2]}};
         actor.m2C_models.push_back({target,3});actor.m1BC_isLead2=lead;
         actor.m158_formation=&formation;
+        actor.m_lagiGroup.activeMask=&formation.mF0_flag;actor.m_lagiGroup.reactionMask=&formation.mF1_pad5[1];
         const unsigned idx=lead?2:0;const u32 quad=lead?0x060AFE44:0x060AFAFC;
         calls.clear();sounds.clear();randomCalls=0;animationSteps=0;positionUpdates=0;
         updateAttackStages(&actor);
