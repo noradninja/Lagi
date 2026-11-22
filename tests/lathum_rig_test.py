@@ -16,6 +16,10 @@ for ea,value,n in [(0x060565F2,0x18C,2),(0x06056608,0x060A4008,4),
 assert b[0x060A3EFB-base:0x060A3EFB-base+9]==bytes([1,2,1,2,1,2,1,1,2])
 generated=(r/'build-vita/azel_upstream/battle_BTL_A5_BTL_A5_3_data.cpp').read_text()
 assert 'lagiInitializeLathumRig(pThis,pThis->rig)' in generated and 'LagiLathumRig rig;' in generated
+assert 'lagiDrawLathumRig(pThis,pThis->rig)' in generated
+assert list(b[0x060A3ED4-base:0x060A3ED4-base+9])==[8,3,9,10,6,0,4,5,7]
+assert list(b[0x060A3FFE-base:0x060A3FFE-base+9])==[15,4,16,19,9,2,5,8,12]
+assert [u(0x060A3FC8+i*2,2) for i in range(27)]==[0xB0,0xB4,0xB8,0x98,0x9C,0xA0,0x7C,0x80,0x84,0x70,0x74,0x78,0x64,0x68,0x6C,0x88,0x8C,0x90,0xCC,0xD0,0xD4,0xA4,0xA8,0xAC,0xC0,0xC4,0xC8]
 creation=(r/'src/integration/lagi_battle_models.inc').read_text().split('bool lagiInitBattleEnemyModelTargets')[0]
 core=(r/'extern/Azel/AzelLib/battle/BTL_A3/baldor.cpp').read_text()
 core=core[core.index('void initBattleTargetables('):core.index('void Baldor_initSub0(')]
@@ -24,4 +28,11 @@ with tempfile.TemporaryDirectory(prefix='lagi-lathum-rig-') as tmp:
  for name,text in [('rig.inc',(r/'src/integration/lagi_lathum_rig.inc').read_text()),('model_creation.inc',creation),('core_targets.inc',core)]: (d/name).write_text(text)
  subprocess.run(['cl','/nologo','/std:c++20','/EHsc','/I'+str(d),str(r/'tests/lathum_rig_test.cpp'),'/Fe:'+str(d/'test.exe'),'/Fo:'+str(d/'test.obj')],check=True)
  subprocess.run([str(d/'test.exe'),str(p),str(p.with_name('ZUSU.MCB')),str(p.with_name('COMMON.DAT'))],check=True)
+ flatten=(r/'extern/Azel/AzelLib/battle/BTL_A3/urchin.cpp').read_text()
+ flatten=flatten[flatten.index('void urchinUpdateSub3('):flatten.index('void urchinUpdateSub4(')]
+ (d/'flatten.inc').write_text(flatten)
+ (d/'draw.inc').write_text((r/'src/integration/lagi_lathum_draw.inc').read_text())
+ subprocess.run(['cl','/nologo','/std:c++20','/EHsc','/I'+str(d),str(r/'tests/lathum_draw_test.cpp'),'/Fe:'+str(d/'draw.exe'),'/Fo:'+str(d/'draw.obj')],check=True)
+ subprocess.run([str(d/'draw.exe'),str(p),str(p.with_name('ZUSU.MCB')),str(p.with_name('COMMON.DAT'))],check=True)
+
 print('PASS original descriptors/target groups/init operands and generated integration; BTL_A5_3 SHA256',hashlib.sha256(b).hexdigest())

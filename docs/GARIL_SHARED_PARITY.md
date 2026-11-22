@@ -876,3 +876,14 @@ checks and Vita link/packaging pass. See [GARIL_LATHUM_TRACE.md](GARIL_LATHUM_TR
 Update/Draw and Lathum-specific damage/turn/part behavior remain unfinished.
 This initialization checkpoint does not make the fight playable and adds no
 hardware acceptance or bypass of authored completion/exit conditions.
+
+## Lathum native drawing - 22 November 2026
+
+The emergence/combat model draw switch, nine state-selected parts, two fixed
+attachments and original live hotpoint/pose/camera bindings are restored.
+They reuse Valley's hotpoint flattening and the existing renderer. Original
+PRG contracts, initialization regressions and all 19,683 grouped-part state
+combinations pass host checks; full Vita packaging passes. See
+[GARIL_LATHUM_TRACE.md](GARIL_LATHUM_TRACE.md). No final-pixel or gameplay
+acceptance is claimed. Lathum's Update controller and complete fight/return
+remain unfinished; no new hardware capture is requested at this checkpoint.

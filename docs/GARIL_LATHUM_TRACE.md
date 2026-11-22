@@ -65,7 +65,7 @@ mounds when `bitField[12] & 80` is set, the authored completion bit.
 The existing battle-manager remap sends A5 encounter `10` to COMMON overlay
 index `12`, subbattle 0. Original `COMMON.DAT` names that index `BTL_A5_3.PRG`.
 The battle loader already recognizes this overlay; its Lathum formation
-Initialization is now restored as described below; Update/Draw remain unfinished.
+Initialization and drawing are restored below; the Update controller is unfinished.
 **This field checkpoint does not make the Lathum battle playable.** Do not use
 interacting with the mound as a successful combat acceptance test yet.
 
@@ -136,7 +136,34 @@ the generated integration. Native instruction/table assertions and host checks
 pass, as do Vita compilation and full link/packaging. This fixture does not
 simulate a battle or prove rendering/device behavior.
 
-Update `06055EF8`, mode-specific controllers, damage helper `06055C3C`, Draw
-`06056530` and grouped-part draw helper `06056202` are still unfinished. The
-upstream Update/Draw stubs remain explicit. No idle fallback, replacement boss
-or forced completion bit is installed. No new Vita boss test is requested yet.
+Update `06055EF8`, mode-specific controllers and damage helper `06055C3C` remain
+unfinished. The Update stub remains explicit; drawing is restored below. No
+idle fallback, replacement boss or forced completion bit is installed. No new
+Vita boss test is requested yet.
+
+## Native draw and live-hotpoint submissions
+
+Draw `06056530` and grouped-part helper `06056202` are now connected. Phase 0
+draws the emergence model at the live world position with Y rotation 8000000;
+it does not consult the normal-body hide byte. Other phases honor native byte
+18A, draw the combat model, and use the existing Valley `urchinUpdateSub3`
+service to flatten its live view-space hotpoints. This is the original
+bone/point order, not a generated list of approximate attachment locations.
+
+The nine groups use core anchors `8,3,9,10,6,0,4,5,7` (060A3ED4), pose bones
+`15,4,16,19,9,2,5,8,12` (060A3FFE), and the three-state mesh rows at 060A3FC8.
+The two fixed attachments use core anchors 1/2, pose bone 3 and meshes 94/BC.
+Each view-space anchor is transformed through the current camera's inverse
+matrix, followed by the native Y rotation and the live bone's ZYX rotation.
+The native shared rotation helper 06035D4C reads Z/Y/X in that order. Group
+world target positions are owned by the controller and are not overwritten by
+Draw. All mesh submissions use the existing bundle/model rendering service.
+
+The host drawing fixture checks all 19,683 combinations of the nine three-state
+parts, live pose/anchor selection, camera-transform identity, phase/hide guards,
+body translation and balanced matrix-stack submissions. It compiles the actual
+draw producer and Valley hotpoint-flattening function. The shared rig fixture
+also continues to pass against original PRG/ZUSU/COMMON data. Full Vita
+compilation/link/packaging passes. These checks do not establish final pixels,
+performance or a working Lathum battle: its Update controller, emergence camera,
+attack/damage/death behavior and authored victory/field return are still open.

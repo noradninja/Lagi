@@ -26,6 +26,7 @@ struct LagiLathumRig {
     s8 groupCounter = -1;
     u8 mode = 4;
     u8 modelPhase = 0;
+    u8 hideBody = 0; // Native 18A; consumed by Draw outside phase 0.
     sSaturnPtr descriptor;
 };
 
