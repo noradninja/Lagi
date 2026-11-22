@@ -931,3 +931,14 @@ camera operands/waits, both child-completion gates, model-phase handoff and the
 regressions plus full Vita packaging pass. Update still does not dispatch the
 controller: combat/death modes and main update order remain unfinished. This
 is not a playable boss checkpoint or new hardware acceptance.
+
+
+## Shared single-line speech and Lathum hit reaction - 22 November 2026
+
+The native negative-flag speech factory now reuses the shared voice/text body
+while finishing at state 2, avoiding a next-entry read from a temporary table.
+Normal chained speech remains unchanged. Lathum's four-state selected-part
+reaction is translated with original readiness/camera/speech gates and engine
+completion. Native contracts, compiled shared speech and nine-group reaction
+fixtures, existing Lathum regressions and full Vita packaging pass. Overall
+Update, attacks/death/victory remain incomplete; no device acceptance is claimed.

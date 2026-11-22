@@ -317,3 +317,45 @@ Overall Update is still explicit Unimplemented: emergence is compiled and
 tested but not dispatched until the remaining mode controllers and shared
 animation/effect update order are ready. Combat/death/victory/return and device
 acceptance remain open. No new boss hardware run is requested yet.
+
+
+## Selected-group hit reaction and shared single speech - 22 November 2026
+
+Mode 5 (060554CE..06055604) is translated as lagiUpdateLathumReaction.
+It adds auto-scroll to the target vector on every tick. Substate 0 waits for
+battleEngine_isBattleIntroFinished, requests battle mode 2, binds the live
+dragon position as camera eye, binds the actor target vector, enables attack
+camera and transforms the selected group's core anchor through the previous
+inverse camera. Substate 1 waits for engine flag 2000, then requests string
+10, duration 0, filename 060A3F64 through the original single-line speech
+factory. Substate 2 waits for the dialogue child; substate 3 sets engine flag
+100 and returns to mode/substate 0. It does not install a guessed camera
+restore or skip the separate dialogue-finished tick.
+
+This exposed an omitted shared native facility. Factory 06068B66 builds one
+12-byte entry with continuation -1 and calls 06068AF8 with flag -1. Negative
+flag selects Update 06068B84, which shares voice/text states 0/1 with chained
+speech but finishes directly at state 2. The existing shared C++ factory
+ignored its flag; using its normal chain Update on a temporary entry could
+read nonexistent next-table data. The Lagi-owned generated adapter now offers
+lagiCreateNativeBattleSpeech with copied named parameters and a single-line
+Update wrapper. It reuses the existing voice/text body, setup, skip handling
+and delete callback; no borrowed temporary table or duplicated voice system
+is introduced. The ordinary chained Update retains its original behavior.
+
+battle_single_speech_test.py compiles the actual generated shared Update body
+and production factory/wrappers. It verifies voice completion, signed timer
+post-decrement, skip completion, no next-table access, parameter ownership,
+allocation failure and retained chaining. Native PRG contracts anchor the
+negative-flag branch, selected Update, single-entry continuation and Lathum
+factory operands. The Lathum suite also executes all nine selected-group
+reaction anchors, camera pointer/matrix selection, auto-scroll, readiness and
+speech-completion gates, and the final engine completion flag. Existing
+init/draw/damage/emergence checks and full Vita packaging pass.
+
+These helpers are not yet dispatched by overall Update. Turn selection,
+attacks, death and authored victory/field return remain unfinished. Initial
+turn-selection inspection also found a native word at 06050224+6 selecting
+attack-name 3 versus 11 when the group counter expires; its host mapping is
+not established, so no constant or invented progression flag is substituted.
+No new hardware acceptance or boss test is claimed at this checkpoint.

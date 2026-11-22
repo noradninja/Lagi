@@ -1,7 +1,7 @@
 #include "lathum_rig_fixture.h"
 #include "../include/lagi/native_formation_motion.h"
 #include <string>
-struct s_battleEngine{struct{bool m100_attackAnimationFinished=false;}m188_flags;sVec3_FP mC_battleCenter,m1A0_battleAutoScrollDelta;p_workArea m3D0=nullptr;};
+struct s_battleEngine{struct{bool m100_attackAnimationFinished=false,m2000=false;}m188_flags;sVec3_FP mC_battleCenter,m1A0_battleAutoScrollDelta;p_workArea m3D0=nullptr;};
 struct s_battleGrid{sVec3_FP mE4_currentCameraReferenceCenter,mF0_currentCameraReferenceForward,m134_desiredCameraPosition,m140_desiredCameraTarget,m108_deltaCameraPosition,m114_deltaCameraTarget;};
 struct sFormationIntroEffectTask:s_workAreaCopy{};
 std::array<s_workAreaCopy,8> children;unsigned childCount=0;std::vector<unsigned> dialogueEAs;
@@ -11,7 +11,7 @@ p_workArea lagiCreateNativeVectorTransition(p_workArea,sVec3_FP* live,const sVec
 std::vector<std::string> events;sVec3_FP* eyePointer=nullptr; sVec3_FP* targetPointer=nullptr;
 void battleEngine_restoreCameraDefault(){events.push_back("restore");}
 void battleEngine_resetBattleCameraPreset(){events.push_back("preset");}
-enum {m7=7};void battleEngine_SetBattleMode(int mode){assert(mode==7);events.push_back("mode7");}
+enum {m2=2,m7=7};void battleEngine_SetBattleMode(int mode){assert(mode==7||mode==2);events.push_back(mode==7?"mode7":"mode2");}
 void battleEngine_enableAttackCamera(){events.push_back("enable");}
 void battleEngine_setCurrentCameraPositionPointer(sVec3_FP* pos){eyePointer=pos;}
 void battleEngine_setDesiredCameraPositionPointer(sVec3_FP* pos){targetPointer=pos;}
@@ -36,6 +36,12 @@ void createParticleEffect(npcFileDeleter* file,const std::vector<sVdp1Quad>* qua
 #define randomNumber emergenceRandom
 #include "emergence.inc"
 #undef randomNumber
+struct {int m28[2]={111,222};}cameraProperties2;
+void transformAndAddVec(const sVec3_FP& in,sVec3_FP& out,int matrix){assert(matrix==222);out=in;out[0]=in[0].asS32()+100;out[1]=in[1].asS32()+200;out[2]=in[2].asS32()+300;}
+bool introFinished=false;bool battleEngine_isBattleIntroFinished(){return introFinished;}
+p_workArea lagiCreateNativeBattleSpeech(p_workArea,s16 text,s16 duration,sSaturnPtr filename){assert(text==10&&!duration&&filename.m_offset==0x060A3F64);return &children.at(childCount++);}
+#include "reaction.inc"
+
 int main(int argc,char**argv){
  assert(argc==4);original.bytes=load(argv[1]);bundle.bytes=load(argv[2]);common=load(argv[3]);
  s_workAreaCopy owner,intro;LagiLathumRig rig;assert(lagiInitializeLathumRig(&owner,rig));
@@ -72,5 +78,19 @@ int main(int argc,char**argv){
   s_battleEngine debugEngine;debugKill=true;lagiUpdateLathumEmergence(&owner,debugRig,debugEngine,grid,dragon);
   assert(debugRig.modelPhase==1&&debugRig.substate==6&&debugRig.mode==4&&!debugEngine.m188_flags.m100_attackAnimationFinished);
   children[0].task.finished=true;lagiUpdateLathumEmergence(&owner,debugRig,debugEngine,grid,dragon);assert(debugRig.mode==0&&debugEngine.m188_flags.m100_attackAnimationFinished);debugKill=false;}
- puts("PASS native Lathum emergence: seven substates, authored waits/offsets, child gates, shared services and 700 RNG calls");
+
+ for(unsigned selected=0;selected<9;++selected){
+  children={};childCount=0;events.clear();introFinished=false;
+  LagiLathumRig reaction;reaction.mode=5;reaction.selectedGroup=u8(selected);reaction.corePositions.resize(11);
+  for(int i=0;i<11;++i)reaction.corePositions[i]={i*10,i*20,i*30};
+  s_battleEngine e;e.m1A0_battleAutoScrollDelta={1,2,3};sVec3_FP dragonLive{70,80,90};
+  auto tick=[&]{lagiUpdateLathumReaction(&owner,reaction,e,dragonLive);};tick();assert(reaction.substate==0&&events.empty());check(reaction.cameraTarget,1,2,3);
+  introFinished=true;tick();const int anchor[9]={8,3,9,10,6,0,4,5,7};
+  check(reaction.cameraTarget,anchor[selected]*10+100,anchor[selected]*20+200,anchor[selected]*30+300);
+  assert(reaction.substate==1&&eyePointer==&dragonLive&&targetPointer==&reaction.cameraTarget&&events[0]=="mode2");
+  tick();assert(reaction.substate==1&&!reaction.dialogue);e.m188_flags.m2000=true;tick();assert(reaction.substate==2&&reaction.dialogue);
+  tick();assert(reaction.substate==2&&!e.m188_flags.m100_attackAnimationFinished);reaction.dialogue->getTask()->markFinished();tick();assert(reaction.substate==3&&reaction.mode==5&&!e.m188_flags.m100_attackAnimationFinished);
+  tick();assert(reaction.mode==0&&reaction.substate==0&&e.m188_flags.m100_attackAnimationFinished);
+ }
+ puts("PASS native Lathum emergence/reaction: authored gates, nine selected groups, shared speech/camera and 700 RNG calls");
 }

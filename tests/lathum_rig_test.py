@@ -20,6 +20,14 @@ assert 'lagiDrawLathumRig(pThis,pThis->rig)' in generated
 assert list(b[0x060A3ED4-base:0x060A3ED4-base+9])==[8,3,9,10,6,0,4,5,7]
 assert 'lagiUpdateLathumDamage(' in generated
 assert 'lagiUpdateLathumEmergence(' in generated
+assert 'lagiUpdateLathumReaction(' in generated
+for ea,value,n in [(0x06055614,0x060598F2,4),(0x06055618,0x06059724,4),
+ (0x06055556,0xE402,2),(0x06055576,0x7658,2),
+ (0x0605560A,0x2000,2),(0x060555B6,0xE50A,2),
+ (0x06055634,0x060A3F64,4),(0x06055638,0x06068B66,4),
+ (0x06055610,0x100,2)]:
+ assert u(ea,n)==value,f'Original reaction contract differs at {ea:08X}'
+
 assert [u(0x060A3F04+i*12,2) for i in range(3)]==[4,5,0xFFFF]
 assert [u(0x060A3F28+i*12,2) for i in range(5)]==[6,7,8,9,0xFFFF]
 for ea,value,n in [(0x06054FF8,0x0607950C,4),(0x06054FFC,0x060794AA,4),
@@ -67,6 +75,7 @@ with tempfile.TemporaryDirectory(prefix='lagi-lathum-rig-') as tmp:
 
  (d/'damage_word.inc').write_text((r/'src/integration/lagi_lathum_damage.inc').read_text().split('static void lagiUpdateLathumDamage')[0])
  (d/'emergence.inc').write_text((r/'src/integration/lagi_lathum_emergence.inc').read_text())
+ (d/'reaction.inc').write_text((r/'src/integration/lagi_lathum_reaction.inc').read_text())
  subprocess.run(['cl','/nologo','/std:c++20','/EHsc','/I'+str(d),str(r/'tests/lathum_emergence_test.cpp'),'/Fe:'+str(d/'emergence.exe'),'/Fo:'+str(d/'emergence.obj')],check=True)
  subprocess.run([str(d/'emergence.exe'),str(p),str(p.with_name('ZUSU.MCB')),str(p.with_name('COMMON.DAT'))],check=True)
 
