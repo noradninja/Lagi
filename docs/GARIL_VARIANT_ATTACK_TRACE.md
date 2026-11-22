@@ -266,3 +266,28 @@ and independent altitude. Original operands and generated ordering are checked.
 All motion, controller and burst tests pass; full Vita packaging passes.
 Hardware acceptance, rotation, target weighting, release consumption and intro
 behavior remain open. No complete-encounter claim follows from this checkpoint.
+
+## Implemented quadrant rotation checkpoint
+
+Original 0605555A-0605557C writes desired rotation Y from 060AD5A4 indexed
+by the actor's current formation quadrant, then invokes shared 060A2580 with
+parent rotation at formation position block+0xC. The table contains exactly
+{0,0x04000000,0x08000000,0x0C000000}. The generated adapter now performs
+that lookup and maps desired m84_displayRotation, current m9C_targetRotation,
+world m3C_rotation and a named angular velocity through the existing ordinary
+interpolation service with rate mA8 (0x1999).
+
+This helper does not normalize angle deltas or wrap the current angle: native
+060A2580 uses ordinary subtraction/multiply/add. A shortest-route angular
+spring would change authored behavior at the quadrant boundary. Parent rotation
+is copied as authored block data using the existing Nanyd adapter convention;
+no Saturn work-area offset is applied to a host actor pointer. Execution order
+is position, rotation, membership, damage, damage-byte consume, actor dispatch.
+
+The production motion fixture adds 12,000 rotation frames across all quadrants
+with nonzero parent XYZ rotation, checking native long-route interpolation
+against an independent scalar recurrence. It checks the original PRG angle
+table and generated ordering. Position, membership, reaction, formation and
+burst regressions all pass. Full Vita packaging passes. Target weighting,
+release-state consumption and authored intro behavior still require work;
+complete variant gameplay and visuals remain unverified on hardware.
