@@ -378,3 +378,27 @@ generated position/membership/value/damage ordering are checked.
 Authored intro camera/speech, remaining constructor/task-lifetime auditing and
 complete variant hardware acceptance remain open. No hardware result is
 inferred from these source, host and build checks.
+
+## Implemented host task-lifetime checkpoint
+
+The variant actor now registers its concrete C++ disposer, as existing Camp,
+worm and Lathum adapters do. This releases actor/model vector storage through
+the known concrete type after ordinary task deletion, rather than relying on
+a base work-area destructor. The generated actor delete callback retires live
+model targets through the shared retirement service before their task-owned
+arrays disappear, then clears its formation reaction bit.
+
+Cancellation of a live actor retires its meter without defeated/reward flags.
+A normal native death has already retired targets and requested meter rewards;
+cleanup leaves that meter request intact. The once-only target retirement gate
+prevents double deletion. Empty/failed initialization and null meters are safe.
+The existing generated code already rewrote upstream meter offset writes to
+typed m31 accesses; this checkpoint consolidates the same bits through shared
+lagiBattleEnemyDefeated rather than claiming an unfixed raw-pointer write.
+
+`tests/garil_variant_cleanup_test.py` compiles the production cleanup, reaction
+and shared retirement helpers. It checks live cancellation, completed-death
+reward preservation, repeated cleanup and empty initialization; generated
+callback/disposer/reward-service bindings are checked too. Cleanup, constructor
+and combined variant/shared damage tests pass. Full Vita packaging passes.
+Authored intro camera/speech and full encounter/device acceptance remain open.
