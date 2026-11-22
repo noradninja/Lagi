@@ -899,3 +899,14 @@ full Vita packaging passes. This is a shared presentation correction, not
 Lathum controller completion or new hardware acceptance. The status overview
 also removes stale claims that the accepted passage camera is unverified and
 that the already restored Lathum field/init/draw paths remain absent.
+
+
+## Lathum grouped damage source checkpoint - 22 November 2026
+
+The original grouped damage helper is translated and tested against real
+BTL_A5_3 data, reusing shared hit display, effect, sound, life-meter and radar
+quadrant services. Native camera/word-wrap/reaction/flush ordering is retained.
+Full rig/draw/damage host checks and Vita packaging pass. The unfinished
+Update controller does not call the helper yet; emergence, combat/death modes
+and authored victory/return still need implementation and device acceptance.
+See GARIL_LATHUM_TRACE.md. No boss hardware run is requested at this checkpoint.

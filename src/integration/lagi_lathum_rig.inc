@@ -21,6 +21,10 @@ struct LagiLathumRig {
     sVec3_FP localPosition;
     sEnemyLifeMeterTask* lifeMeter = nullptr;
     s16 health = 0;
+    s16 pendingDamage = 0; // Native 0E.
+    u8 damagePending = 0; // Native 12.
+    u8 selectedHitCount = 0; // Native 188.
+    u8 substate = 0; // Native 09.
     std::array<Group,9> groups;
     u8 selectedGroup = 0;
     s8 groupCounter = -1;

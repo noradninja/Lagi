@@ -198,3 +198,37 @@ Lathum's controller and damage-consumption loop remain unfinished. That loop
 must preserve previous-inverse-camera target refresh, 16-bit accumulation,
 per-group reactions and original display/death flush ordering. The generic
 model-damage loop has different ordering and cannot replace it wholesale.
+
+
+## Native grouped damage helper - 22 November 2026
+
+06055C3C..06055EDE is now translated as lagiUpdateLathumDamage in the
+Lagi-owned generated adapter. Typed rig storage adds the native pending-damage
+word, pending byte, selected-group hit counter and controller substate.
+The helper reuses the existing hit display, overlay damage sprite, audio,
+quadrant safety and aggregate display services identified above.
+
+It refreshes all nine target positions from prior view-space core hotpoints,
+using the previous inverse camera before the current view transform. Previously
+reacting groups lower the world anchor by A000. Hit processing preserves the
+native order: display, signed-word damage/health accumulation, life-meter flag,
+sprite, sound, target-flag clearing, group reaction and safety quadrant. The
+first selected-group hit requests mode 5; repeated hits preserve the counter's
+byte wrap. State 0/1/2 sets target strength 1/3/20. Processing continues across
+all groups even if an earlier hit exhausts health. The final death branch
+requests mode B/substate 0 and retains accumulation; the live engine-1000
+flush clears both pending fields. Healing and zero damage retain native gates.
+
+The helper is compiled and fixture-tested but is deliberately not called by
+Update yet: the native phase dispatch and emergence/combat/death controllers
+are still unfinished. No partial replacement Update or idle fallback is
+installed. This checkpoint does not make the Lathum battle playable.
+
+The real-PRG rig suite now compiles the production damage helper and checks all
+nine selected groups and anchors/quadrants, previous/current camera identity,
+repeat-hit transitions and byte wrapping, preserved unrelated target flags,
+16-bit health/accumulator wrapping, healing/zero hits, death after multiple
+hits, dead-entry early return, debug mode-4 guard and live display flush.
+Original PRG operands independently anchor service calls, flags, effect scale,
+previous-camera selection and death mode. Initialization/drawing regressions,
+Vita compilation, full linking and packaging pass. Hardware remains untested.

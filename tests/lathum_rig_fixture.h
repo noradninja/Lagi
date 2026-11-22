@@ -9,8 +9,8 @@
 #include <map>
 #include <vector>
 using s8=int8_t;using u8=uint8_t;using s16=int16_t;using u16=uint16_t;using s32=int32_t;using u32=uint32_t;
-struct fixedPoint{int32_t value=0;fixedPoint(int32_t v=0):value(v){}int32_t asS32()const{return value;}};
-struct sVec3_FP{fixedPoint x,y,z;};
+struct fixedPoint{int32_t value=0;fixedPoint(int32_t v=0):value(v){}int32_t asS32()const{return value;}fixedPoint& operator-=(int v){value-=v;return *this;}};
+struct sVec3_FP{fixedPoint x,y,z;fixedPoint& operator[](unsigned i){return i==0?x:i==1?y:z;}};
 struct File;
 struct sSaturnPtr{u32 m_offset=0;File* m_file=nullptr;sSaturnPtr operator+(unsigned v)const{return {m_offset+v,m_file};}bool isNull()const{return !m_offset;}};
 struct File{std::vector<u8> bytes;sSaturnPtr getSaturnPtr(u32 v){return {v,this};}} original;
@@ -32,7 +32,7 @@ struct sHotpointBundle{
    definitions.push_back(d);}return &definitions;
  }
 };
-struct sBattleTargetable{s_workAreaCopy* m0=nullptr;sVec3_FP* m4_pPosition=nullptr;u32 flags=0;int radius=0;};
+struct sBattleTargetable{s_workAreaCopy* m0=nullptr;sVec3_FP* m4_pPosition=nullptr;u32 flags=0;int radius=0;u32 m50_flags=0;s16 m58=0;s8 m60=0;};
 struct sAnimationData{u16 flags,bones,frames;u16 key;};
 struct sStaticPoseData{u16 key;unsigned bones;};
 struct sModelHierarchy{unsigned bones;unsigned countNumberOfBones(){return bones;}};
@@ -66,7 +66,7 @@ void initTargetable(sBattleTargetable* t,s_workAreaCopy* owner,sVec3_FP* pos,s32
 struct npcFileDeleter{s_fileBundle* m0_fileBundle=&bundle;void* m4_vd1Allocation=reinterpret_cast<void*>(0x1234);} npc;
 bool missingFile=false;int npcCalls=0;
 npcFileDeleter* allocateNPC(s_workAreaCopy*,int slot){assert(slot==8);++npcCalls;return missingFile?nullptr:&npc;}
-struct sEnemyLifeMeterTask{sVec3_FP* position;s16* health;int type;} meter;
+struct sEnemyLifeMeterTask{sVec3_FP* position;s16* health;int type;u8 m31=0;} meter;
 std::vector<u8> common;int meters=0;
 sEnemyLifeMeterTask* createEnemyLifeMeterTask(sVec3_FP* pos,int arg,s16* health,int type){assert(!arg&&type==22);auto i=0x179C+type*8;*health=s16((common.at(i)<<8)|common.at(i+1));meter={pos,health,type};++meters;return &meter;}
 void initAnimation(s_3dModel* model,sAnimationData* anim){assert(model->key==4&&anim->key==0x150);model->animation=anim;}
