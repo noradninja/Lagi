@@ -167,3 +167,34 @@ also continues to pass against original PRG/ZUSU/COMMON data. Full Vita
 compilation/link/packaging passes. These checks do not establish final pixels,
 performance or a working Lathum battle: its Update controller, emergence camera,
 attack/damage/death behavior and authored victory/field return are still open.
+
+
+## Damage-service trace and shared zero-value correction - 22 November 2026
+
+Native damage helper 06055C3C uses shared services rather than a separate boss
+combat implementation: 0605A61E is createHitSparkEffect, 0605A5B4 is
+createDamageDisplayTask, 0605B896 returns the targetable hit position, and
+0607068C is CreateDamageSpriteForCurrentBattleOverlay. The reaction helper
+0606960A maps the authored group quadrant to a bit and calls 06059984,
+which sets the low safety nibble (battleEngine_FlagQuadrantBitForSafety).
+These identities are traced in BTL_A5_3.PRG itself; addresses in a RAM capture
+from another overlay are not interchangeable.
+
+A shared translation error was found before connecting Lathum damage: the
+upstream createHitSparkEffect zero branch sets both color and damage to 3.
+Original A5_3 0605A658..666 and Valley A3 0605BB10..1E retain damage zero and
+write only color 3. The generated shared adapter now removes the damage-value
+assignment, preserving upstream files and the existing formatter/rendering.
+This corrects zero-hit display input across all users of the shared service;
+it does not change health subtraction or manufacture a damaging hit.
+
+battle_hit_display_test.py checks both original instruction sequences and
+compiles the generated producer. It verifies damage values -32767..32767,
+all four impact types and hitbox strengths 0/10/11/255, live position, formatter
+mode, and allocation failure. Signed-minimum negation is outside this fixture's
+coverage. Full Vita packaging passes. Device appearance is not yet verified.
+
+Lathum's controller and damage-consumption loop remain unfinished. That loop
+must preserve previous-inverse-camera target refresh, 16-bit accumulation,
+per-group reactions and original display/death flush ordering. The generic
+model-damage loop has different ordering and cannot replace it wholesale.

@@ -887,3 +887,15 @@ combinations pass host checks; full Vita packaging passes. See
 [GARIL_LATHUM_TRACE.md](GARIL_LATHUM_TRACE.md). No final-pixel or gameplay
 acceptance is claimed. Lathum's Update controller and complete fight/return
 remain unfinished; no new hardware capture is requested at this checkpoint.
+
+
+## Shared hit-display correction - 22 November 2026
+
+Lathum tracing identified a shared zero-damage translation error also present
+in the Valley service: color 3 was incorrectly copied into the damage value.
+The generated adapter now preserves zero, matching original A3 and A5_3
+instructions. Native contracts and the compiled production producer pass;
+full Vita packaging passes. This is a shared presentation correction, not
+Lathum controller completion or new hardware acceptance. The status overview
+also removes stale claims that the accepted passage camera is unverified and
+that the already restored Lathum field/init/draw paths remain absent.

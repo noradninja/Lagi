@@ -4536,6 +4536,14 @@ ${nanyd_anchor}" source_text "${source_text}")
   set(source_text "${charge_prefix}${charge_draw}${charge_suffix}")
   string(REPLACE "#include \"kernel/vdp1AnimatedQuad.h\"" "#include \"kernel/vdp1AnimatedQuad.h\"\n#include \"kernel/rayDisplay.h\"\n#include \"battle/battleGenericData.h\"" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleDamageDisplay.cpp")
+  # Original A3 0605BB18/1A and A5_3 0605A660/62 set color 3,
+  # not damage 3. Preserve zero for the shared digit formatter.
+  set(hit_zero_old "        pThis->m42_colorType = 3;\n        pThis->m22_damageValue = 3;")
+  string(FIND "${source_text}" "${hit_zero_old}" hit_zero_found)
+  if(hit_zero_found LESS 0)
+   message(FATAL_ERROR "Native shared zero-damage display boundary changed")
+  endif()
+  string(REPLACE "${hit_zero_old}" "        pThis->m42_colorType = 3;" source_text "${source_text}")
   set(damage_draw_old [=[static void damageDisplay_draw(sDamageDisplayTask* pThis)
 {
     // Renders digits using font tables at 060b1f7c (mode 0) / 060b1f04 (mode 1)
