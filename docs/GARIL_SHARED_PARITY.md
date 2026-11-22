@@ -978,3 +978,16 @@ cover ring initialization/motion/expiry, all 78,732 part-state/quadrant cases,
 camera height/offsets, displacement and landing/completion gates. Prior Lathum
 regressions and full Vita packaging pass. Mode 3, death and overall Update
 integration remain unfinished, with no new hardware acceptance claimed.
+
+
+## Lathum third attack and stronger particle RNG checks - 22 November 2026
+
+The original orbit-camera/part-repair controller is translated. Tests execute
+all 512 damaged-part subsets, ordered repair bursts and timers, final safety/
+selection/camera reset and retained one-time hit state. Shared particle RNG
+coverage now includes the actual production animation-phase block: nonzero
+lifetimes consume one additional factory RNG call, interleaved with producer
+calls. Earlier producer-only counts were incomplete descriptions of the full
+call stream; runtime already used the correct shared factory. Original-data
+contracts, existing Lathum regressions and Vita packaging pass. Death and
+overall Update integration remain unfinished; no device acceptance is claimed.

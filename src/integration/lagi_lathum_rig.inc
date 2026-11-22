@@ -31,6 +31,8 @@ struct LagiLathumRig {
     p_workArea dialogue = nullptr; // Native 12C.
     p_workArea ring = nullptr; // Native 134.
     u8 activeRingCount = 0; // Native 189.
+    u32 orbitAngle = 0; // Native 100.
+    u8 repairingGroup = 0; // Native FA.
     sVec3_FP dragonDisplacement; // Native 104/108/10C.
     std::array<Group,9> groups;
     u8 selectedGroup = 0;

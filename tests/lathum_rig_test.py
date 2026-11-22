@@ -23,6 +23,17 @@ assert 'lagiUpdateLathumEmergence(' in generated
 assert 'lagiUpdateLathumReaction(' in generated
 assert 'lagiSelectLathumTurn(' in generated
 assert 'lagiCreateLathumRing(' in generated and 'lagiUpdateLathumAttackTwo(' in generated
+assert 'lagiUpdateLathumAttackThree(' in generated
+for ea,value,n in [(0x06055744,0x5B05B,4),(0x0605574C,0xFA000,4),
+ (0x0605575C,0x96000,4),(0x06055874,0x32000,4),
+ (0x0605584A,0xE515,2),(0x060558EA,0xE210,2),
+ (0x060559EC,0x060A3F70,4),(0x060559F0,0x060A3B9C,4),
+ (0x060559AA,0x4211,2),(0x06055A06,0xE009,2),
+ (0x0606FC5A,0x890C,2),(0x0606FCF4,0x060361F4,4),
+ (0x0606FC62,0xEC1F,2)]:
+ assert u(ea,n)==value,f'Original repair/shared particle phase differs at {ea:08X}'
+assert [u(0x060A3F70+i*4,4) for i in range(3)]==[0,0xFFFFFFA8,0]
+
 for ea,value,n in [(0x06056F68,0x06056A60,4),(0x06056F64,0x120,2),
  (0x06056F80,0x06035664,4),(0x06056F84,0x1E0000,4),
  (0x06056F66,0x8001,2),(0x06056F32,0xC92F,2),
@@ -113,6 +124,10 @@ with tempfile.TemporaryDirectory(prefix='lagi-lathum-rig-') as tmp:
  subprocess.run(['cl','/nologo','/std:c++20','/EHsc','/I'+str(d),str(r/'tests/lathum_damage_test.cpp'),'/Fe:'+str(d/'damage.exe'),'/Fo:'+str(d/'damage.obj')],check=True)
  subprocess.run([str(d/'damage.exe'),str(p),str(p.with_name('ZUSU.MCB')),str(p.with_name('COMMON.DAT'))],check=True)
 
+ particle_source=(r/'extern/Azel/AzelLib/battle/particleEffect.cpp').read_text()
+ phase_start=particle_source.index('    if (lifetime) {')
+ phase_end=particle_source.index('    if (gouraudColors == nullptr)',phase_start)
+ (d/'particle_phase.inc').write_text('static void lagiTestParticlePhase(sParticleTask* pNewParticleEffect, int lifetime) {\n'+particle_source[phase_start:phase_end]+'}\n')
  (d/'damage_word.inc').write_text((r/'src/integration/lagi_lathum_damage.inc').read_text().split('static void lagiUpdateLathumDamage')[0])
  (d/'emergence.inc').write_text((r/'src/integration/lagi_lathum_emergence.inc').read_text())
  (d/'reaction.inc').write_text((r/'src/integration/lagi_lathum_reaction.inc').read_text())
@@ -127,6 +142,7 @@ with tempfile.TemporaryDirectory(prefix='lagi-lathum-rig-') as tmp:
  (d/'ring.inc').write_text((r/'src/integration/lagi_lathum_ring.inc').read_text())
  (d/'attack_one.inc').write_text((r/'src/integration/lagi_lathum_attack_one.inc').read_text())
  (d/'attack_two.inc').write_text((r/'src/integration/lagi_lathum_attack_two.inc').read_text())
+ (d/'attack_three.inc').write_text((r/'src/integration/lagi_lathum_attack_three.inc').read_text())
  subprocess.run(['cl','/nologo','/std:c++20','/O2','/EHsc','/I'+str(d),str(r/'tests/lathum_projectile_test.cpp'),'/Fe:'+str(d/'projectile.exe'),'/Fo:'+str(d/'projectile.obj')],check=True)
  subprocess.run([str(d/'projectile.exe'),str(p),str(p.with_name('COMMON.DAT'))],check=True)
 

@@ -3,13 +3,13 @@
 template<class T>struct s_workAreaTemplate:s_workAreaCopy {struct TypedTaskDefinition{void(*init)(T*);void(*update)(T*);void(*draw)(T*);void(*destroy)(T*);};};
 static p_workArea created=nullptr;static bool failAllocation=false;
 template<class T>T* createSubTask(p_workArea){if(failAllocation)return nullptr;auto* result=new T;created=result;return result;}
-struct sVdp1Quad{};std::vector<sVdp1Quad> quads(1);
+struct sVdp1Quad{};std::vector<sVdp1Quad> quads(1),repairQuads(1);
 struct sAnimatedQuad{u16 vram=0;unsigned frame=0;};
 int animationSteps=0,quadInitializations=0,draws=0;
 void particleInitSub(sAnimatedQuad* q,u16 vram,const std::vector<sVdp1Quad>* data){assert(vram==0x4321&&data==&quads);q->vram=vram;q->frame=0;++quadInitializations;}
 int sGunShotTask_UpdateSub4(sAnimatedQuad* q){++q->frame;++animationSteps;return 0;}
 int vdp1DrawQuadScaled(sAnimatedQuad*,sVec3_FP*,fixedPoint scale){assert(scale.asS32()==0x30000);++draws;return 0;}
-const std::vector<sVdp1Quad>* lagiNativeBattleParticleQuad(sSaturnPtr ea){assert(ea.m_offset==0x060A3AD8);return &quads;}
+const std::vector<sVdp1Quad>* lagiNativeBattleParticleQuad(sSaturnPtr ea){if(ea.m_offset==0x060A3B9C)return &repairQuads;assert(ea.m_offset==0x060A3AD8);return &quads;}
 struct Vram{u16 m4_vdp1Memory=0x4321;}vram;
 struct Resource:npcFileDeleter{Vram* m4_vd1Allocation=&vram;}resource;
 struct ResourceSlot{Resource* mC_fileBundle=&resource;};ResourceSlot dramAllocatorEnd[32];
@@ -33,7 +33,18 @@ u32 projectileRandom(){return projectileRngCalls++==0?firstWord:rngTail;}
 fixedPoint getSin(u32 phase){const auto a=0x16E80+(phase&0xFFF)*4;return s32((u32(common[a])<<24)|(u32(common[a+1])<<16)|(u32(common[a+2])<<8)|common[a+3]);}
 fixedPoint getCos(u32 phase){return getSin(phase+1024);}
 std::vector<sVec3_FP> ringParticles;
-void createParticleEffect(npcFileDeleter* file,const std::vector<sVdp1Quad>* quad,const sVec3_FP* pos,sVec3_FP* velocity,sVec3_FP* acceleration,s32 scale,const void* colors,s16 life){assert(file==static_cast<npcFileDeleter*>(&resource)&&quad==&quads&&!acceleration&&!colors&&scale==0x30000&&life==15);for(unsigned axis=0;axis<3;++axis)assert(!(*velocity)[axis].asS32());ringParticles.push_back(*pos);}
+struct RepairParticle{sVec3_FP position,velocity,acceleration;int life;};std::vector<RepairParticle> repairParticles;
+struct sParticleTask{sAnimatedQuad m8_quad;};
+#define randomNumber projectileRandom
+#include "particle_phase.inc"
+#undef randomNumber
+
+void createParticleEffect(npcFileDeleter* file,const std::vector<sVdp1Quad>* quad,const sVec3_FP* pos,sVec3_FP* velocity,sVec3_FP* acceleration,s32 scale,const void* colors,s16 life){
+ assert(file==static_cast<npcFileDeleter*>(&resource)&&!colors&&scale==0x30000);
+ if(quad==&repairQuads){assert(acceleration&&life>=15&&life<=30);repairParticles.push_back({*pos,*velocity,*acceleration,life});}
+ else{assert(quad==&quads&&!acceleration&&life==15);for(unsigned axis=0;axis<3;++axis)assert(!(*velocity)[axis].asS32());ringParticles.push_back(*pos);}
+ sParticleTask phase;lagiTestParticlePhase(&phase,life);
+}
 #define randomNumber projectileRandom
 #include "ring.inc"
 #undef randomNumber
@@ -54,6 +65,11 @@ p_workArea captureRing(p_workArea,LagiLathumRig& rig,u8 group,const sVec3_FP&){f
 #define lagiCreateLathumRing captureRing
 #include "attack_two.inc"
 #undef lagiCreateLathumRing
+int safetyClears=0;void battleEngine_FlagQuadrantBitForSafety(u16 mask){assert(!mask);++safetyClears;}
+#define randomNumber projectileRandom
+#include "attack_three.inc"
+#undef randomNumber
+
 
 void check(const sVec3_FP& v,int x,int y,int z){assert(v[0].asS32()==x&&v[1].asS32()==y&&v[2].asS32()==z);}
 int main(int argc,char**argv){
@@ -86,11 +102,11 @@ int main(int argc,char**argv){
   assert(ring->remaining==life&&projectileRngCalls==3&&divisionCalls==3&&!ring->getTypedTaskDefinition()->draw);
   check(ring->position,anchors[group]*100+100,anchors[group]*200+200,anchors[group]*300+300);
   auto start=ring->position,oldVelocity=ring->velocity;ringParticles.clear();ring->Update(ring);
-  assert(projectileRngCalls==7&&ring->angle==0x71C71C&&ringParticles.size()==(bits&1?4:0)&&!ring->task.finished);
+  assert(projectileRngCalls==7+(bits&1?4:0)&&ring->angle==0x71C71C&&ringParticles.size()==(bits&1?4:0)&&!ring->task.finished);
   for(unsigned axis=0;axis<3;++axis){int expected=oldVelocity[axis].asS32();if(axis!=1)expected=int((int64_t(0xCCC)*expected)>>16)+int((int64_t(0xCCC)*(dragon.m8_position[axis].asS32()-start[axis].asS32()))>>16);assert(ring->velocity[axis].asS32()==expected&&ring->position[axis].asS32()==start[axis].asS32()+expected);}
   for(unsigned q=0;q<ringParticles.size();++q){const auto phase=(ring->angle+q*0x4000000u)>>16;check(ringParticles[q],ring->position[0].asS32()+int((int64_t(0xA000)*getSin(phase).asS32())>>16),ring->position[1].asS32(),ring->position[2].asS32()+int((int64_t(0xA000)*getCos(phase).asS32())>>16));}
   for(int tick=1;tick<life;++tick){ringParticles.clear();ring->Update(ring);}assert(ring->remaining==0&&!ring->task.finished&&dragon.m1C0_statusModifiers==0xABCD&&!hits);
-  ring->Update(ring);assert(ring->remaining==-1&&ring->task.finished&&!dragon.m1C0_statusModifiers&&!hits&&projectileRngCalls==3+4*(life+1));delete ring;
+  ring->Update(ring);assert(ring->remaining==-1&&ring->task.finished&&!dragon.m1C0_statusModifiers&&!hits&&projectileRngCalls==3+(4+(bits&1?4:0))*(life+1));delete ring;
  }
  failAllocation=true;projectileRngCalls=0;assert(!lagiCreateLathumRing(&owner,rig,0,dragon.m8_position)&&!projectileRngCalls);failAllocation=false;
  // Every intact quadrant-facing group fires once, in original group order.
@@ -113,5 +129,23 @@ int main(int argc,char**argv){
   while(rig.substate==3){referenceY+=referenceVelocity;referenceVelocity-=0x160;lagiUpdateLathumAttackTwo(&owner,rig,engine,dragon.m8_position);++ticks;assert(ticks<400);assert(engine.m164[1].asS32()==(referenceY>0?referenceY:0));assert(hits==(referenceY>0?0:1));}
   assert(rig.substate==4&&hits==1&&hitKnockback[1].asS32()==referenceVelocity&&hitPosition[0].asS32()==dragon.m8_position[0].asS32());const int oldRestores=restores;lagiUpdateLathumAttackTwo(&owner,rig,engine,dragon.m8_position);assert(!rig.mode&&!rig.substate&&engine.m188_flags.m100_attackAnimationFinished&&restores==oldRestores+1);
  }
- puts("PASS Lathum ring/timed projectile/attacks1-2: nine anchors, all 32 lifetimes and spring extremes, five visual springs, 28-damage expiry and 78732 group/quadrant states");
+
+ // Full repair cycles: every subset is repaired in ascending group order.
+ for(unsigned mask=0;mask<512;++mask){
+  rig.mode=3;rig.substate=1;rig.selectedHitCount=17;rig.groupCounter=0;engine.m188_flags={};repairParticles.clear();firstWord=rngTail=0;projectileRngCalls=0;
+  for(unsigned g=0;g<9;++g)rig.groups[g].state=(mask&(1u<<g))?(g%2?1:2):0;
+  unsigned repaired=0;
+  for(unsigned g=0;g<9;++g)if(mask&(1u<<g)){
+   const auto before=projectileRngCalls;lagiUpdateLathumAttackThree(&owner,rig,engine,dragon.m8_position);assert(rig.substate==2&&rig.repairingGroup==g&&rig.controllerTimer==21&&projectileRngCalls==before+128);
+   assert(repairParticles.size()==(++repaired)*16);
+   const int anchor=anchors[g];for(unsigned particle=(repaired-1)*16;particle<repaired*16;++particle){auto& p=repairParticles[particle];check(p.position,anchor*100+100-32767,anchor*200+200-32767,anchor*300+300-32767);check(p.velocity,-2047,0,engine.m1A0_battleAutoScrollDelta[2].asS32()-2047);check(p.acceleration,0,-88,0);assert(p.life==15);}
+   for(int tick=0;tick<21;++tick)lagiUpdateLathumAttackThree(&owner,rig,engine,dragon.m8_position);assert(rig.substate==2&&rig.groups[g].state);lagiUpdateLathumAttackThree(&owner,rig,engine,dragon.m8_position);assert(rig.substate==1&&!rig.groups[g].state);
+  }
+  lagiUpdateLathumAttackThree(&owner,rig,engine,dragon.m8_position);assert(rig.substate==10);const int oldSafety=safetyClears;lagiUpdateLathumAttackThree(&owner,rig,engine,dragon.m8_position);assert(!rig.mode&&!rig.substate&&rig.groupCounter==-1&&rig.selectedGroup==0&&rig.selectedHitCount==17&&engine.m188_flags.m100_attackAnimationFinished&&safetyClears==oldSafety+1);
+ }
+ rig.mode=3;rig.substate=0;rig.orbitAngle=0;engine.m188_flags={};projectileRngCalls=0;firstWord=0x4000000;rngTail=0;const auto beforeAngle=rig.orbitAngle;lagiUpdateLathumAttackThree(&owner,rig,engine,dragon.m8_position);assert(!rig.substate&&rig.orbitAngle==beforeAngle+0x5B05B&&!projectileRngCalls);
+ engine.m188_flags.m2000=true;lagiUpdateLathumAttackThree(&owner,rig,engine,dragon.m8_position);assert(rig.substate==1&&rig.orbitAngle==0x4000000&&projectileRngCalls==1&&eye==&rig.cameraEye&&target==&rig.cameraTarget);check(rig.cameraEye,engine.mC_battleCenter[0].asS32()+0xFA000,dragon.m8_position[1].asS32()+0x32000,engine.mC_battleCenter[2].asS32());
+
+ for(unsigned value=0;value<18;++value){rig.mode=3;rig.substate=10;firstWord=value;projectileRngCalls=0;lagiUpdateLathumAttackThree(&owner,rig,engine,dragon.m8_position);assert(rig.selectedGroup==value%9&&projectileRngCalls==1);}
+ puts("PASS Lathum attacks1-3 and effects: nine anchors, all 32 lifetimes and spring extremes, five visual springs, 28-damage expiry and 78732 group/quadrant states");
 }

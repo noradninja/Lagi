@@ -307,7 +307,7 @@ speech implementation. Common camera/vector/particle/audio services are reused.
 The production emergence fixture executes all seven states and verifies live
 camera pointers, reference snapshots/delta clearing, exact offsets, 90/180/270
 frame contracts, 30-to-negative timing, both completion gates, phase/engine
-flags, auto-scroll ordering, all 100 particle payloads and 700 RNG calls, and
+flags, auto-scroll ordering, all 100 particle payloads and 700 producer-owned RNG calls, and
 the debug dialogue guard. Native PRG contracts independently anchor helper
 calls, effect descriptor/scale/count and dialogue table identities. Rig/init,
 19,683 drawing states, damage and shared projectile regressions pass. Full
@@ -506,3 +506,53 @@ Overall Update remains undispatched. Attack mode 3, death and the main
 animation/effect ordering still need restoration before a playable boss test.
 The user's required field mesh target -> short cutscene -> battle sequence
 and all later authored victory/field-return gates remain acceptance requirements.
+
+
+## Third attack: sequential part repair - 22 November 2026
+
+Mode 3 (0605563C..06055A4A) is translated. Every tick advances the orbit angle
+by 5B05B, places the eye around battle center with radius FA000 (sine X,
+cosine Z), adds height 96000 and scrolls the live target. State 0 waits for
+engine flag 2000, binds the actor camera pointers, enables attack camera,
+samples a new random angle, uses dragon Y+32000 for the initial eye height,
+sets target to battle center and resets interpolation.
+
+State 1 finds the first reacting group in ascending order, records it, starts
+a 21-frame signed timer, plays sound 6D and transforms its core anchor through
+the previous inverse camera. It sets the live camera target to that anchor
+and emits 16 particles from descriptor 060A3B9C. Each uses the original X/Z
+jitter, auto-scroll Z, nonnegative Y velocity, per-axis position jitter,
+scale 30000 and lifetime 15..30. Acceleration is copied from 060A3F70:
+(0,-88,0). State 2 waits through timer zero before resetting that group's
+state to 0 and returning to state 1. Once no group reacts, state 10 chooses
+a new selected group modulo 9, sets groupCounter=-1, clears the safety nibble,
+signals engine flag 100, restores camera and returns to mode/substate 0.
+The once-per-battle selected-hit counter is deliberately retained, as native
+code does; no extra dialogue reset is invented.
+
+The fixture executes full repair cycles for all 512 reacting-group subsets,
+checks every burst's position/velocity/acceleration/lifetime/resource identity,
+repair order and 21-to-negative gate, initial camera orbit/readiness and
+modulo selection inputs. Original PRG operands independently anchor orbit
+constants, timer/count, particle/acceleration tables and completion. Earlier
+Lathum regressions and full Vita packaging pass.
+
+### Shared particle RNG evidence correction
+
+Earlier fixture descriptions counted producer-owned RNG calls while mocking
+the particle factory. Native 0606FC5A..74 additionally calls RNG and advances
+the initial animation by RNG&1F whenever lifetime is nonzero. The shared
+createParticleEffect already implements this behavior; no runtime correction
+was needed. The fixtures now compile that actual production animation-phase
+block inside the particle-service stub. Emergence therefore consumes its
+700 producer calls PLUS one factory call per nonzero-lifetime particle;
+ring ticks consume four producer calls PLUS one per emitted particle;
+each repair burst consumes 112 producer calls PLUS 16 factory calls. Cases
+with lifetime 0 skip the factory RNG call. The earlier count-only statements
+must be read with this distinction; the strengthened checks now include both
+layers and preserve their interleaving.
+
+Overall Update remains undispatched. All three attack controllers are now
+translated, but death and the main animation/effect ordering still need
+restoration before testing the authored field-target/cutscene/battle route
+and complete combat/victory/field return on Vita.

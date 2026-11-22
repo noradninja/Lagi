@@ -24,13 +24,20 @@ struct {npcFileDeleter* mC_fileBundle=&npc;}dramAllocatorEnd[32];
 unsigned burstRng=0,particles=0;u32 particleWord(unsigned i){return (i*7919u+12345u)&0x7fffffff;}
 u32 emergenceRandom(){return particleWord(burstRng++);}
 sVec3_FP burstCenter,burstScroll;
+unsigned expectedRngIndex=0,particlePhaseCalls=0;
+struct sParticleTask{int m8_quad=0;};
+int sGunShotTask_UpdateSub4(int* frame){return ++*frame;}
+#define randomNumber emergenceRandom
+#include "particle_phase.inc"
+#undef randomNumber
+
 void check(const sVec3_FP& v,int x,int y,int z){assert(v[0].asS32()==x&&v[1].asS32()==y&&v[2].asS32()==z);}
 void createParticleEffect(npcFileDeleter* file,const std::vector<sVdp1Quad>* quad,const sVec3_FP* pos,sVec3_FP* velocity,sVec3_FP* acceleration,s32 scale,const void* colors,s16 lifetime){
  assert(file==&npc&&quad==&quads&&!acceleration&&!colors&&scale==0x50000);
- const auto i=particles*7;assert(burstRng==i+7);
+ const auto i=expectedRngIndex;assert(burstRng==i+7);
  check(*velocity,int(particleWord(i)&0xFFF)-0x7FF,particleWord(i+2)&0xFFF,int(particleWord(i+1)&0xFFF)+burstScroll[2].asS32()-0x7FF);
  check(*pos,burstCenter[0].asS32()+int(particleWord(i+3)&0xFFFFF)-0x7FFFF,burstCenter[1].asS32()+int(particleWord(i+5)&0x3FFFF),burstCenter[2].asS32()+int(particleWord(i+4)&0xFFFFF)-0x7FFFF);
- assert(lifetime==particleWord(i+6)%60);++particles;
+ assert(lifetime==particleWord(i+6)%60);expectedRngIndex+=7+(lifetime?1:0);particlePhaseCalls+=lifetime?1:0;sParticleTask phase;lagiTestParticlePhase(&phase,lifetime);assert(burstRng==expectedRngIndex);++particles;
 }
 #include "damage_word.inc"
 #define randomNumber emergenceRandom
@@ -60,7 +67,7 @@ int main(int argc,char**argv){
  assert(rig.substate==2&&transitions.size()==1&&transitions[0].frames==180&&transitions[0].live==&rig.cameraTarget);
  check(transitions[0].endpoint,1000+0x4000,2000+0xD0000,3000+0x74000);step();assert(!particles&&rig.substate==2);
  engine.m1A0_battleAutoScrollDelta={5,-7,9};burstCenter=engine.mC_battleCenter;burstScroll=engine.m1A0_battleAutoScrollDelta;
- rig.cameraTransition->getTask()->markFinished();step();assert(particles==100&&burstRng==700&&rig.substate==3&&rig.modelPhase==1&&rig.controllerTimer==30);
+ rig.cameraTransition->getTask()->markFinished();step();assert(particles==100&&burstRng==700+particlePhaseCalls&&rig.substate==3&&rig.modelPhase==1&&rig.controllerTimer==30);
  check(rig.cameraEye,1000,2000+0x117000,3000+0xD5ED2);
  assert(transitions.size()==2&&transitions[1].frames==270);check(transitions[1].endpoint,1000+0x22000,2000+0x198000,3000+0x119E00);
  for(int i=0;i<30;++i)step();assert(rig.substate==3&&dialogueEAs.empty());step();assert(rig.substate==4&&dialogueEAs[0]==0x060A3F04);
@@ -92,5 +99,5 @@ int main(int argc,char**argv){
   tick();assert(reaction.substate==2&&!e.m188_flags.m100_attackAnimationFinished);reaction.dialogue->getTask()->markFinished();tick();assert(reaction.substate==3&&reaction.mode==5&&!e.m188_flags.m100_attackAnimationFinished);
   tick();assert(reaction.mode==0&&reaction.substate==0&&e.m188_flags.m100_attackAnimationFinished);
  }
- puts("PASS native Lathum emergence/reaction: authored gates, nine selected groups, shared speech/camera and 700 RNG calls");
+ puts("PASS native Lathum emergence/reaction: authored gates, nine selected groups, shared speech/camera and shared particle-phase RNG");
 }
