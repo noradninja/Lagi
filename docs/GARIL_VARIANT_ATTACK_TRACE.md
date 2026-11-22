@@ -140,3 +140,34 @@ linking and VPK packaging pass. This does not establish device acceptance.
 Formation selection/release gates and actor position updates remain pending;
 this checkpoint restores the effect implementation, not the whole encounter.
 The earlier Lathum checkpoint remains the appropriate independent Vita test.
+
+## Implemented formation selection and release checkpoint
+
+The generated variant adapter now restores the native turn-ready/reaction
+latches, selector 06054C2E and states 3-8. It uses existing typed
+lagiVisitFormationActor / lagiAnyFormationActorFlags /
+lagiSignalFormationActors / lagiTransitionFormationActors services. Finished
+actor pointers retire through the ordinary task API, never Saturn task offsets.
+
+The selector ORs ready flag 0x04000000 only into live members of byte +F3.
+Its native helper 060A28A4 is an any-ready-actor predicate, not a random choice.
+The successful attack branch sets battle mode 7 and marks the dragon quadrant
+using battleEngine_FlagQuadrantBitForAttack; it does not launch a guessed
+camera. State 6 releases ready actors to 0x02000000 through the same shared
+transition used by single and Nanyd formations. Movement-only turns alternate
+flags 1/2 using native byte +F8. Intro state 2 now joins state 5, and all-dead
+retirement uses native state 8. Counter increments preserve 16-bit wrap and
+compare the old signed value at the native >15 / >105 / >75 boundaries.
+
+`tests/garil_variant_control_test.py BTL_A5.PRG` executes the actual generated
+phase block and production selector. It covers 2,592 combinations of member
+masks, all quadrants, null/live/finished actors and movement counter choices;
+player/reaction/turn-ready gates; shared release preserving unrelated flags;
+turn ownership return; and every signed 16-bit counter value for states 4, 7
+and 8. Original PRG words check the field offsets, ready/release bits, attack
+name/duration and timers. The burst regression and full Vita packaging pass.
+
+This remains a partial encounter checkpoint. Original 06054872 formation
+membership/position updates, actor movement and consumption of release flags,
+and intro transition/speech must still be audited before device acceptance.
+No new hardware result is inferred from these source and host checks.
