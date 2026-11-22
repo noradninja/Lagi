@@ -40,9 +40,9 @@ sphere-contact test in this launch/timing path.
 
 After the active flag switches, counter 0x12 uses another old-value negative
 check. Expiry writes 0x1000 to dragon+0xD8 and finishes the child. Every update
-also visits all 31 visual records through 06054680; deletion visits all 31
-through 060546AA before releasing the quad. Those visual callbacks and the
-math helpers remain to be traced. Do not replace this task with a homing
+also visits all 31 visual records through 06054680. The draw callback
+060545A4 visits all 31 through 060546AA, then advances the shared quad via
+0602CF38. There is no native delete callback in this task definition. Do not replace this task with a homing
 projectile or contact-triggered damage merely because those services exist.
 
 ## Reproduction and remaining work
@@ -57,3 +57,56 @@ math helpers from common code; restore task through a generated-source
 adapter and shared dragon-damage/quad services. Audit the formation selection
 and release gates separately: current formation state 3 also lacks its native
 turn selection. Prove both gates before presenting this enemy as functional.
+
+## Callback and particle trace correction
+
+The callback table at 060AD104 is exactly {0, 060544DC, 060545A4, 0}.
+060546AA is a per-particle DRAW helper, not deletion. It copies the live XYZ
+at record+4/+8/+C and calls quad draw 0602CF7C with owner-task+8. The wrapper
+060545A4 draws 31 records then advances the owner's single shared quad once.
+Do not create 31 independently advancing animations or release the quad from
+this draw callback.
+
+Each record initialized by 060545EC stores owner at +0, source XYZ at +4,
+velocity XYZ at +0x10, random word at +0x1C and active=1 at +0x20. Velocity
+starts at MTH_Mul(0x28000, launchVelocity) per axis (literal 060546E8).
+Four RNG calls per record, in order:
+
+1. X velocity += (rng & 0x1FFF) - 0xFFF.
+2. Y velocity += (rng & 0x1FFF) - 0xFFF.
+3. Z velocity += (rng & 0x07FF) - 0x3FF, then add engine auto-scroll Z.
+4. Store rng & 0x7F as the word at +0x1C.
+
+The fourth value is not used by the traced update/draw helpers; retaining its
+RNG consumption is necessary. Across 31 records, initialization consumes 124
+RNG calls, followed by the factory's one timing RNG call (125 total).
+
+06054680 skips inactive records. Otherwise velocity Y += -0xB0, then position
+XYZ += the resulting velocity. There is no per-record expiry, fresh RNG,
+contact test or quad-step call. The native 32-bit additions must wrap.
+
+## Formation gate omissions
+
+Original formation Update 0605493C has states 0 through 8. The port has only
+0 through 4 plus a relabeled death state 0xB. Original death state is 8.
+The missing states are consequential, rather than harmless unused cases:
+
+- State 3 checks player turn, formation byte +0xF2 and engine turn-ready
+  m3CC->m8 == 1 before calling selector 06054C2E.
+- State 4 uses the signed old counter >15, sets attack-finished, enters 5.
+- State 5 waits for engine flag 0x400000 to clear, returns to 3 and clears
+  m3CC->m8 and m3CC->m0.
+- State 6 waits for engine 0x2000, displays attack name 15 for 30 frames,
+  invokes group helper 060A2AB0 and enters 7.
+- State 7 uses signed old counter >105, sets attack-finished, enters 5.
+- State 8 uses signed old counter >75 then releases resource 0xE and finishes.
+
+Original intro state 2 enters 5 after its signed old counter >84; it does not
+enter the port's state 4. Selector 06054C2E marks each live actor selected by
+formation byte +0xF3 with flag 0x04000000. If any selected actor exists it calls
+060A28A4; success sets battle mode 7, plays quadrant camera and enters state 6.
+Failure returns to state 3 and releases turn ownership. If no selected actor
+exists, byte +0xF8 postincrement alternates live actor movement flags 1/2,
+sets mode 7 and enters state 4. Full helper identities and actor/formation
+position updates must be connected before this encounter is advertised as
+restored. Avoid merely adding the frame-46 launch to an unreachable attack.
