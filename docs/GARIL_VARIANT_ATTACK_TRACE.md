@@ -9,8 +9,8 @@ In `BTL_A5_variant.cpp`, enemy Update state 4 advances animation and, at frame
 0x2E (46), only plays sound 0x6D and enters state 5. Original BTL_A5.PRG
 Update 06055086 instead performs the following at 06055286-060552D8:
 
-- Reads the model hotpoint vector through model+0x54, entry offset 0x1F4,
-  pointer at entry+8; copies XYZ to actor offsets 0x1D8/0x1DC/0x1E0.
+- Reads targetable 5 through model+0x54 (0x1F4 = 5 * 0x64),
+  taking its live world-position pointer at targetable+8; copies XYZ to actor offsets 0x1D8/0x1DC/0x1E0.
 - Calls factory 06054384 with actor, copied source vector and dragon+0xF0.
 - Plays sound 0x6D and enters state 5.
 
@@ -34,8 +34,8 @@ this yields odd values 13 through 27, not an unrestricted random range.
 Update 060544DC decrements counter 0x10 and compares its old signed value
 against zero to change flags to 0/1. Damage is checked against the NEW counter
 matching byte 0x24. At that moment 06054532-06054550 calls shared dragon
-service 060642F8 with damage 44, kind 2, impact dragon+0x8C, knockback
-pointer dragon+8 and stack flag 0x0800 (plus a zero vector). There is no
+service 060642F8 with targetable dragon+0x8C, damage 44, kind 2, impact
+position dragon+8, zero knockback vector and stack flag 0x0800. There is no
 sphere-contact test in this launch/timing path.
 
 After the active flag switches, counter 0x12 uses another old-value negative
@@ -110,3 +110,33 @@ exists, byte +0xF8 postincrement alternates live actor movement flags 1/2,
 sets mode 7 and enters state 4. Full helper identities and actor/formation
 position updates must be connected before this encounter is advertised as
 restored. Avoid merely adding the frame-46 launch to an unreachable attack.
+
+## Implemented timed burst checkpoint
+
+The generated variant adapter now launches `lagi_garil_variant_burst.inc` at
+frame 46 from model targetable 5's live world-position pointer. This follows
+the same typed targetable mapping used by the existing single-enemy adapter;
+it does not reinterpret host model or task memory using Saturn offsets.
+Factory normalization uses the shared dot-product, square-root, division and
+multiply services. Common RAM disassembly confirms 0603570E is the three-axis
+MAC product shifted by 16; upstream sqrt_F is explicitly identified 060359AE.
+
+The child retains all 31 visual records, 125 factory RNG calls, per-frame
+ballistics and one shared Draw animation step. Damage uses the existing
+applyDamageToDragon service; expiry writes the named dragon targetable m4C.
+No contact gate, new battle engine, replacement resources or story flag is
+introduced. The native hit-timer value 27 is preserved even though the first
+update decrements 27 to 26 and therefore never matches that choice. Do not
+silently turn this native outcome into guaranteed damage.
+
+`tests/garil_variant_burst_test.py BTL_A5.PRG` compiles and executes the actual
+production task/factory/launch code. It verifies every timing choice, exact
+125-call RNG order and per-particle initial velocities, all 159 update ticks
+to expiry, damage arguments/count, integer wrap, shared Draw stepping,
+allocation failure and targetable 5 selection. It also checks native callback,
+RNG, motion, damage and timer literals from the original PRG. Vita compilation,
+linking and VPK packaging pass. This does not establish device acceptance.
+
+Formation selection/release gates and actor position updates remain pending;
+this checkpoint restores the effect implementation, not the whole encounter.
+The earlier Lathum checkpoint remains the appropriate independent Vita test.

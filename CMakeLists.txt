@@ -4355,6 +4355,27 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
     pThis->mE0_entityGroup.m4_positionBlock = &pThis->m2C_posBlock;
     pThis->mE0_entityGroup.mE_numEntities = 6;]=] source_text "${source_text}")
   set(source_text "#include \"lagi_battle_enemy_lifecycle.h\"\n#include \"lagi/native_battle_models.h\"\n#include \"lagi/garil_single_formation.h\"\n#include \"lagi/native_formation_motion.h\"\n${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_variant.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_burst.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_burst.inc" variant_burst)
+  string(FIND "${source_text}" "// 06055086" variant_update_found)
+  if(variant_update_found LESS 0)
+   message(FATAL_ERROR "A5 variant burst insertion boundary changed")
+  endif()
+  string(REPLACE "// 06055086" "${variant_burst}\n// 06055086" source_text "${source_text}")
+  set(variant_fire_old [=[        if (frame == 0x2E)
+        {
+            playSystemSoundEffect(0x6D);]=])
+  string(FIND "${source_text}" "${variant_fire_old}" variant_fire_found)
+  if(variant_fire_found LESS 0)
+   message(FATAL_ERROR "A5 variant burst launch boundary changed")
+  endif()
+  string(REPLACE "${variant_fire_old}" [=[        if (frame == 0x2E)
+        {
+            lagiFireGarilVariantBurst(pThis);
+            playSystemSoundEffect(0x6D);]=] source_text "${source_text}")
+  set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"kernel/vdp1Allocator.h\"\n#include \"lagi/native_battle_projectiles.h\"\n#include \"lagi/native_formation_motion.h\"\n#include \"battle/battleDragon.h\"\n${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_formation.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   string(REPLACE "#include \"battle/battleEngine.h\"" "#include \"battle/battleEngine.h\"\n#include \"audio/systemSounds.h\"" source_text "${source_text}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
