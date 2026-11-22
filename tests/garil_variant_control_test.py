@@ -6,7 +6,7 @@ u=s[s.index('static void BTL_A5_formationVariant_Update'):]
 assert u.index('lagiUpdateGarilVariantQuadrants(pThis);')<u.index('formationUpdatePosition(')<u.index('    switch (pThis->m28_state)')
 assert 'pThis->m28_state = 8;' in u and 'pThis->m28_state = 0xB;' not in u
 intro=u[u.index('    case 2:'):u.index('    case 3:')]
-assert 'pThis->m28_state = 5;' in intro
+assert 'pThis->m28_state=5;' in intro
 phases=u[u.index('    case 3:'):u.index('\n    }\n}\n\n// 060547da')]
 assert phases.strip()==(r/'src/integration/lagi_garil_variant_phases.inc').read_text().strip()
 with tempfile.TemporaryDirectory(prefix='lagi-variant-control-') as d:

@@ -1004,3 +1004,15 @@ One targeted hardware run is now requested: field mesh lock-on -> short
 cutscene -> battle/combat -> victory/rewards -> field return -> authored exit
 unlock. See GARIL_LATHUM_HARDWARE_CHECK.md. Other enemy variant coverage,
 remaining performance/visual parity and device acceptance stay open.
+
+## Garil variant shared-runtime source checkpoint - 22 November 2026
+
+Variant formation selection/release, quadrant occupancy/membership, actor
+position/rotation, original model/animation resources, ballistic attack, shared
+damage and task cleanup are now connected through generated adapters. The
+special sub-battle 9 intro now uses the original camera parameters and shared
+single-speech service for text 17 / B_A5_07.PCM. Production host fixtures and
+Vita packaging pass. Full variant hardware acceptance and integrated encounter
+auditing remain open; no earlier hardware acceptance is extended to this work.
+See GARIL_VARIANT_ATTACK_TRACE.md for native evidence and checkpoint limits.
+Dual-enemy coverage and remaining performance/visual acceptance remain open.

@@ -402,3 +402,29 @@ reward preservation, repeated cleanup and empty initialization; generated
 callback/disposer/reward-service bindings are checked too. Cleanup, constructor
 and combined variant/shared damage tests pass. Full Vita packaging passes.
 Authored intro camera/speech and full encounter/device acceptance remain open.
+
+## Implemented authored intro checkpoint
+
+The special sub-battle 9 entry now restores native formation states 0-2.
+After battle intro completion it sets mode 7 and calls the existing
+battleEngine_setupAttackCamera with the live formation position, distance
+0x50000, mode 0 and duration 0 (native 06061F88). On engine flag 0x2000 it
+creates single speech text 17/duration 15 with filename pointer 060AD1A4,
+then calls battleEngine_restoreCameraAfterEnemyAttack (native 060818D0).
+The filename is B_A5_07.PCM. Ordinary entries still begin directly at state 3.
+
+Native factory 06070E0E creates the same negative-flag, copied single-entry
+record as Lathum's 06068B66 factory: continuation -1, flag -1, no borrowed table
+or next-entry read. The adapter reuses lagiCreateNativeBattleSpeech and the
+existing PCM/text lifecycle. The frame-counted native state-2 handoff remains:
+old signed counter >84 sets attack-finished and joins state 5. It does not
+replace this timer with a fabricated voice-completion gate.
+
+`tests/garil_variant_intro_test.py BTL_A5.PRG` executes the actual generated
+intro cases, verifies both readiness gates and exact camera/speech arguments,
+and checks every signed 16-bit timer value. Original factory EAs, filename,
+text/duration literals, counter threshold and sub-battle gate are checked.
+Controller and shared single-speech regressions pass. Vita packaging passes.
+This closes the identified intro source omission; complete variant gameplay,
+visuals, audio and rewards still require device acceptance and an integrated
+encounter audit. Broader dual-enemy coverage/performance work remains open.
