@@ -137,3 +137,23 @@ Original seed/shift loop operands and generated order are checked. Dual group
 regressions and full Vita packaging pass. The special native RNG decision is
 unchanged. Dual turn selection/attack phases, mixed-actor coordination and full
 encounter/device acceptance remain open; this is a source prerequisite.
+
+## Dual swarm release/completion phases checkpoint
+
+Original controller states 2-5 are now generated through shared actor signaling.
+State 2 waits for engine 2000, displays attack name 1 for 30 frames, transitions
+only readied primary-group actors from 04000000 to 02000000 and enters 3.
+State 3 compares old signed counter >15, sets attack-finished and joins 1.
+State 4 similarly displays name 2 for 35 frames, releases primary actors and
+enters 5. State 5 compares old counter >60, restores the variant's native swarm
+layout B11C8 + uint8(variant*78), sets attack-finished and joins 1. All other
+actor flags remain intact; null/finished actors use the shared task filter.
+
+The production phase fixture checks readiness, names/durations, all combinations
+of selected/unselected flags and null/live/finished actors, and every signed
+16-bit timer value for both completion phases and both table choices. Native
+release-helper EA, timing/name operands and table base are checked. Dual trail
+and group regressions and Vita packaging pass. These phases are not yet reached
+from native state-0 selection: selector FC2A, secondary attack phases and their
+camera/mixed-group coordination remain to be restored. No dual gameplay or
+hardware acceptance follows from this partial controller checkpoint.
