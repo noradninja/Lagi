@@ -330,3 +330,22 @@ Nanyd attack visuals, contact damage and continued play still need device proof.
 Dual/variant formation attacks, Lathum's field interaction/formation and remaining
 performance/visual acceptance remain open. The accepted passage camera is not
 reopened by this change. No hardware result is inferred from these tests.
+
+## Horn-warning intro uses shared native speech and camera
+
+Original 0605B274..0605B2FC sets mode 7 and calls camera setup 06061F88
+with the formation head, distance 50000 and zero final arguments. At the
+2000 gate it calls speech 06070E0E with text 9, duration 15 and AF9F4
+(B_A5_03.PCM), then restores via 060818D0. The older adapter omitted the
+camera setup, used a custom PCM/text task, and restored the default camera
+through a different helper. The generated single formation now uses the
+existing shared native speech service and exact camera setup/restore calls.
+It no longer injects its own copy of the Nanyd dialogue implementation.
+The original old-counter >75 completion rule remains unchanged.
+
+Generated intro gates, exact service arguments, all 65,536 signed timer
+values and original factory/PCM/operand contracts pass. Single controller
+and attack regressions and full Vita packaging pass. Actual Gash voice,
+subtitle/camera timing and subsequent player control remain device checks;
+no new acceptance is claimed. This supersedes the older custom single intro
+implementation, while the separate accepted Nanyd dialogue path is unchanged.

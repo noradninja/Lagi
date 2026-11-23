@@ -4317,10 +4317,13 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "char* formationByte = (char*)((u8*)pThis->m158_formation + 0x12);" "u8* formationByte = &pThis->m158_formation->mF1_pad5[1];" source_text "${source_text}")
   string(REPLACE "*(s32*)((u8*)pThis->m158_formation + pThis->m1C_entityIndex * 4 + 0x14) = 1;" "const s32 dead = 1;\n        std::memcpy(pThis->m158_formation->mF4_entityPositions + pThis->m1C_entityIndex*sizeof(dead), &dead, sizeof(dead));" source_text "${source_text}")
   string(REPLACE "s32* formationCenter = *(s32**)(((u8*)pThis->m158_formation) + 4);" "const sVec3_FP& formationCenter = pThis->m158_formation->mE0_entityGroup.m4_positionBlock->m0_position;" source_text "${source_text}")
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_intro.inc")
-  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_intro.inc" single_dialogue)
-  string(REPLACE "// 0605ae48" "${single_dialogue}\n// 0605ae48" source_text "${source_text}")
+  set(source_text "#include \"lagi/native_battle_speech.h\"\n${source_text}")
+  set(single_intro_mode "            battleEngine_SetBattleMode(eBattleModes::m7);")
+  string(FIND "${source_text}" "${single_intro_mode}" single_intro_mode_found)
+  if(single_intro_mode_found LESS 0)
+   message(FATAL_ERROR "Garil single intro camera boundary changed")
+  endif()
+  string(REPLACE "${single_intro_mode}" "${single_intro_mode}\n            battleEngine_setupAttackCamera(&pThis->m2C_posBlock.m0_position,0x50000,0,0);" source_text "${source_text}")
   set(single_dialogue_gate [=[        if (pEngine->m188_flags.m2000)
             pThis->m28_state = 2;]=])
   string(FIND "${source_text}" "${single_dialogue_gate}" single_dialogue_found)
@@ -4329,8 +4332,8 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   endif()
   string(REPLACE "${single_dialogue_gate}" [=[        if (pEngine->m188_flags.m2000)
         {
-            lagiStartBattleDialogue(pThis,pEngine,9,"B_A5_03.PCM");
-            battleEngine_restoreCameraDefault();
+            lagiCreateNativeBattleSpeech(pThis,9,15,g_BTL_A5->getSaturnPtr(0x060AF9F4));
+            battleEngine_restoreCameraAfterEnemyAttack();
             pThis->m28_state = 2;
         }]=] source_text "${source_text}")
   string(REPLACE "if (c > 0x54)" "if (c > 0x4B)" source_text "${source_text}")
