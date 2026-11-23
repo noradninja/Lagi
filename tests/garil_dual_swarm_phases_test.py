@@ -2,7 +2,7 @@ from pathlib import Path
 import subprocess,tempfile,sys
 r=Path(__file__).resolve().parents[1]
 s=(r/'build-vita/azel_upstream/battle_BTL_A5_BTL_A5_dual.cpp').read_text()
-phases=s[s.index('    case 2:'):s.index('    case 10:')]
+phases=s[s.index('    case 2:'):s.index('    case 6:')]
 assert phases.strip()==(r/'src/integration/lagi_garil_dual_swarm_phases.inc').read_text().strip()
 fixture=r'''
 #include <array>

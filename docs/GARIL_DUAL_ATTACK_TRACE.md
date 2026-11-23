@@ -157,3 +157,28 @@ and group regressions and Vita packaging pass. These phases are not yet reached
 from native state-0 selection: selector FC2A, secondary attack phases and their
 camera/mixed-group coordination remain to be restored. No dual gameplay or
 hardware acceptance follows from this partial controller checkpoint.
+
+## Dual secondary attack phases checkpoint
+
+Native states 6-9 are now connected to the existing single-actor flag accessor,
+shared release and camera services. State 6 waits for engine 2000 and displays
+name 8/duration 35. State 7 tests old signed counter >45, copies dragon mF0
+to the formation camera target, snapshots the primary head as eye plus
+{A000,-1000,-14000}, sets phase 1, enables attack camera, binds desired/current
+pointers, resets interpolation and releases readied SECONDARY-group actors.
+The Y operand is native signed word F000 (-1000), not positive F000.
+
+State 8 tests old counter >27, sets attack-finished and restores the default
+camera without interpolation reset. State 9 waits until player turn is inactive,
+clears turn-ready/ownership and phase, then calls the interpolating after-attack
+camera restoration. Native helper A289E forwards to 818D0; it is not a no-op.
+The typed single flag accessor is exported, so the dual controller does not
+cast an opaque actor to a guessed work-area layout.
+
+Production generated phase fixtures check camera call order/identity, exact
+snapshot values including integer wrap and the signed Y offset, release masks,
+every signed timer value and player-turn handoff. Original helper EAs, offsets,
+name/duration and timer operands are checked. Swarm-phase and baseline single
+controller regressions pass; full Vita packaging passes. Native state-0
+selection and per-frame camera follow/layout coordination remain pending;
+these phases alone do not establish a complete dual encounter on hardware.

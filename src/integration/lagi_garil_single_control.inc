@@ -11,7 +11,7 @@ static bool lagiGarilSingleLive(sLagiGarilSingleFormation* formation,int index)
 {
     return lagiVisitFormationActor(formation->mE0_entityGroup,index,[](p_workArea){});
 }
-static u32& lagiGarilSingleActorFlags(p_workArea actor)
+u32& lagiGarilSingleActorFlags(p_workArea actor)
 {
     return static_cast<sBTL_A5_SingleEnemy*>(actor)->m14_flags;
 }

@@ -19,3 +19,5 @@ struct s_workAreaCopy;
 // formation identity and live motion/lifecycle state.
 s_workArea* lagiCreateGarilSingleActor(s_workAreaCopy* parent,
     const LagiGarilSingleGroupBinding& binding,int entityIndex,int isLead);
+// Typed actor work-area flags, distinct from task scheduler flags.
+std::uint32_t& lagiGarilSingleActorFlags(s_workArea* actor);
