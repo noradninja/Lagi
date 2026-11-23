@@ -4047,6 +4047,17 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
                     (*pModel->m40)[i].m0[j].m0]=] source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_enemy.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_damage.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_damage.inc" nanyd_damage)
+  string(FIND "${source_text}" "static bool BTL_A5_enemy_checkDamage(" nanyd_damage_begin)
+  string(FIND "${source_text}" "// 0605e54a" nanyd_damage_end)
+  if(nanyd_damage_begin LESS 0 OR nanyd_damage_end LESS nanyd_damage_begin)
+   message(FATAL_ERROR "Nanyd shared damage boundaries changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${nanyd_damage_begin} nanyd_damage_prefix)
+  string(SUBSTRING "${source_text}" ${nanyd_damage_end} -1 nanyd_damage_suffix)
+  set(source_text "#include \"lagi/native_battle_models.h\"\n${nanyd_damage_prefix}${nanyd_damage}\n${nanyd_damage_suffix}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_motion.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_motion.inc" nanyd_motion)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS

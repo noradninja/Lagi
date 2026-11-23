@@ -391,3 +391,22 @@ speech voice/timer/skip/chaining regressions and full Vita packaging pass.
 This verifies the service boundary, not audible output, disc reading in a live
 run, cancellation timing or device performance. Gash/Lathum/field speech and
 town raw PCM need listening/timing acceptance on hardware.
+
+## Nanyd swarm damage now reuses the shared model pipeline
+
+The swarm still used a simplified health-subtraction loop despite native
+060A36D6..060A3A4A using the shared model-damage path. Its generated adapter
+now calls lagiUpdateBattleEnemyModelDamage with existing named native fields:
+health B2, floor B4, pending damage B6, callbacks B8/BC/C0/C4, quadrant values
+144..14A and light color 14C. Constructor auxiliary count/pointer are zero;
+no auxiliary table is invented. Shared callbacks, live target updates, hit
+flash, damage accumulation/display and meter notification now apply here too.
+The outer accepted death/Scatter state machines and rewards are retained.
+
+Production adapter/shared-pipeline fixture passes field binding, all quadrants,
+callbacks, hit flash, pending/display gates, health, meter flags and retirement.
+Native PRG field/callback/display-window operands are checked. Shared 29,040
+damage boundary cases and 8,192 model metadata/retirement cases, Nanyd attack
+regressions, Scatter sequence fixture and full Vita packaging pass. Host
+services are mocked; new hit effects/display timing and playable swarm/mixed
+combat still require device acceptance. No extern/Azel file was edited.
