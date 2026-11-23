@@ -275,3 +275,18 @@ Resource audit: allocateNPC tracks each slot independently; model initialization
 stores the explicitly supplied bundle in m4_pModelFile and model draw retrieves
 its hierarchy from that bundle. No speculative parent allocation rewrite was
 made. This source audit does not establish texture or visual acceptance.
+
+## Final retirement and resource-release regression
+
+Original 0605F84A..0605F87A compares the old signed timer against 75, resets
+it, releases NPC slot 2 then C through 06032166, and marks the task finished.
+The generated state-10 body already matches; no additional runtime change is
+needed. The completion fixture now executes that generated case together with
+the production completion adapter and actual shared cleanup/count functions.
+All 65,536 signed timer values pass. A sequential case keeps all thirteen
+actors alive, completes the groups separately, and confirms no early release
+followed by ordered slot release on the 77th completion update. Original timer
+and release instructions are checked against BTL_A5.PRG. This establishes the
+formation-to-resource handoff only; scheduler destruction, actual actor attack
+execution, rewards/field return and hardware acceptance still need integrated
+runtime evidence. The previous Vita package remains current: tests/docs only.
