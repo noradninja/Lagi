@@ -42,3 +42,12 @@ The source changes live in `CMakeLists.txt` and `src/integration/lagi_oasis_sand
 4. If a Nay­nid swarm appears, check that gun shots damage both the Queen and regular Nay­nids and that the Queen still deflects homing lasers. Confirm the fight reaches results.
 
 Pludger battles 11 and 13 have their authored scenery callbacks, but the constructor at `060585E8` is still a stub. Neither is a Hopper route. Keep the next `lagi.log`, and if there is a crash, capture the latest dump and fatal log with the matching VELF. Record the exact trigger and whether the effect was absent, clipped, or drawn incorrectly.
+
+## Activation audit follow-up
+
+[The activation audit](GREEN_OASIS_ACTIVATION_AUDIT.md) found that discovery
+and the rendering fix do not restore the monolith activation callback/state
+machine. Normal activation and saved post-activation monolith setup remain
+missing. The later proximity/story-worm services are connected by generated
+adapters despite stubs visible in raw upstream source. Do not infer complete
+Oasis activation from the earlier package/build checkpoint.
