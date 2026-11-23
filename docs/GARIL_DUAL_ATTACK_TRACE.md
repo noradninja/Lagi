@@ -290,3 +290,22 @@ and release instructions are checked against BTL_A5.PRG. This establishes the
 formation-to-resource handoff only; scheduler destruction, actual actor attack
 execution, rewards/field return and hardware acceptance still need integrated
 runtime evidence. The previous Vita package remains current: tests/docs only.
+
+## Dual-to-shared result selection checked
+
+A combined host fixture now runs the production dual completion adapter, actual
+shared cleanup/count helpers, generated state-10 body and generated shared
+battleEngine_checkBattleCompletion. Its frame loop registers the formation
+until task completion, then checks the following update reaches the shared
+result-screen or chained-formation factory. Both group defeat orders and
+simultaneous defeat are checked across all 256 formation IDs and both m10000
+values: 1,536 scenarios. No result opens early; the exact completion frame,
+slot release order, turn release, status/camera reset fields, result/chain
+choice and intro gate pass. This adds no duplicate Garil reward logic.
+
+The fixture probes the result and transition factories; it does not execute
+their task trees, reward arithmetic, field graphics/resource restoration or
+real scheduler teardown. Those broader runtime claims remain unverified for
+the dual encounter. No production change or new Vita build was needed for
+this check. Actual mixed actor attack execution also remains an integration
+gap, distinct from this verified formation-to-engine boundary.
