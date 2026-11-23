@@ -4642,16 +4642,18 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "// 0605cd10" "${nanyd_trail}\n// 0605cd10" source_text "${source_text}")
   set(source_text "#include \"lagi/native_formation_motion.h\"\n${source_text}")
 
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_intro.inc")
-  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_intro.inc" nanyd_intro)
-  set(nanyd_anchor [=[static void BTL_A5_formationTask_Update]=])
+  set(source_text "#include \"lagi/native_battle_speech.h\"\n${source_text}")
+  set(nanyd_anchor "static void BTL_A5_formationTask_Update")
   string(FIND "${source_text}" "${nanyd_anchor}" nanyd_found)
   if(nanyd_found LESS 0)
    message(FATAL_ERROR "Nanyd formation update boundary changed")
   endif()
-  string(REPLACE "${nanyd_anchor}" "${nanyd_intro}
-${nanyd_anchor}" source_text "${source_text}")
+  set(nanyd_intro_mode "            battleEngine_SetBattleMode(eBattleModes::m7);")
+  string(FIND "${source_text}" "${nanyd_intro_mode}" nanyd_intro_mode_found)
+  if(nanyd_intro_mode_found LESS 0)
+   message(FATAL_ERROR "Nanyd authored intro camera boundary changed")
+  endif()
+  string(REPLACE "${nanyd_intro_mode}" "${nanyd_intro_mode}\n            battleEngine_setupAttackCamera(&pThis->m2C_posBlock.m0_position,0x50000,0,0);" source_text "${source_text}")
   # Restore native A5 queen-loss: special branch 0605CDF4..CE4E and
   # state 9 0605D0A0..D124. Shared battle engine remains the owner.
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -4713,8 +4715,8 @@ ${nanyd_anchor}" source_text "${source_text}")
   endif()
   string(REPLACE "${nanyd_start}" [=[        if (pEngine->m188_flags.m2000)
         {
-            lagiStartNanydDialogue(pThis, pEngine);
-            battleEngine_restoreCameraDefault();
+            lagiCreateNativeBattleSpeech(pThis,4,15,g_BTL_A5->getSaturnPtr(0x060B1018));
+            battleEngine_restoreCameraAfterEnemyAttack();
             pThis->m28_state = 2;]=] source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleIntro.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # Bounded A5 intro lifecycle diagnostics; preserve every upstream decision.

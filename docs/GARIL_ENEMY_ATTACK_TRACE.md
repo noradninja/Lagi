@@ -349,3 +349,21 @@ and attack regressions and full Vita packaging pass. Actual Gash voice,
 subtitle/camera timing and subsequent player control remain device checks;
 no new acceptance is claimed. This supersedes the older custom single intro
 implementation, while the separate accepted Nanyd dialogue path is unchanged.
+
+## First Nanyd introduction shares native speech/camera services
+
+Original 0605CEC0..0605CF44 uses the same camera setup and negative-flag
+speech factory as the horn warning. CFE4/CFE8 contain distance 50000 and
+setup helper 06061F88; CFEC names B1018 (B_A5_00.PCM); CFF0/CFF4 name
+speech 06070E0E and camera restore 060818D0. Text 4, duration 15 and old
+counter >84 are preserved. The generated formation now calls the existing
+shared speech service and authored camera helpers instead of injecting the
+custom NanydDialogue PCM/text task. Scatter and attack controllers remain
+connected through their guarded update anchor.
+
+Generated intro gates/service arguments, all signed word timers and original
+PRG factories/filename/constants pass. Nanyd controller and attack regressions
+and full Vita packaging pass. The earlier accepted first-swarm line remains
+historical acceptance of its earlier build; this service consolidation still
+needs device voice/subtitle/camera and player-control acceptance. No story
+flags or battle-entry conditions were forced.
