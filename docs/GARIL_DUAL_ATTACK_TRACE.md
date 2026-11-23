@@ -208,3 +208,22 @@ and completion fallbacks, exact RNG consumption and mode 9. Original field,
 selection count, table, mode and helper operands are checked. Swarm/secondary
 phase regressions and full Vita packaging pass. Per-frame camera/layout
 coordination, mixed-actor integration and hardware acceptance remain open.
+
+## Native per-frame dual camera update checkpoint
+
+The incomplete eye-only scroll substitution is replaced by original F48E-F590.
+After both formation position updates and the shared trail copy, every tick
+scrolls camera eye A8 by the battle auto-scroll vector. With phase 280 equal to
+zero, target C0 is refreshed from the live primary head and target Z subtracts
+12000. With ANY nonzero phase, the saved target is instead scrolled by the
+same delta; it does not snap back to the current dragon or formation head.
+Native 32-bit arithmetic wraps independently per axis. State-7 snapshot setup
+and state-9 phase reset therefore feed the same per-frame rule as the original.
+
+Production camera tests compare 60,000 updates against independent unsigned
+arithmetic, changing head/scroll values and phase values 0/1/-1/2/INT_MAX.
+Original phase/vector operands and generated trail-camera-state order are
+checked. Selector and secondary phase regressions and full Vita packaging pass.
+Remaining native layout helper F922 and mixed actor/formation integration,
+results/return and hardware acceptance still require work. No visual parity
+or whole-encounter acceptance is inferred from this camera recurrence test.
