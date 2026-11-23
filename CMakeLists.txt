@@ -4046,6 +4046,29 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "${a5_target_metadata}" [=[(*pModel->m40)[i].m0[j].m10,
                     (*pModel->m40)[i].m0[j].m0]=] source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_enemy.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(nanyd_model_create "createBattleEnemyModels(pEntity, pEntity->m0_fileBundle, pEntity->m29_modelCount, pEntity->m2C_models,")
+  string(FIND "${source_text}" "${nanyd_model_create}" nanyd_model_found)
+  if(nanyd_model_found LESS 0)
+   message(FATAL_ERROR "Nanyd shared model creation boundary changed")
+  endif()
+  string(REPLACE "${nanyd_model_create}" "lagiCreateBattleEnemyModels(pEntity, pEntity->m0_fileBundle, pEntity->m29_modelCount, pEntity->m2C_models," source_text "${source_text}")
+  set(nanyd_model_failure "    if (result == 0)\n        return nullptr;")
+  string(FIND "${source_text}" "${nanyd_model_failure}" nanyd_model_failure_found)
+  if(nanyd_model_failure_found LESS 0)
+   message(FATAL_ERROR "Nanyd failed-model meter retirement boundary changed")
+  endif()
+  string(REPLACE "${nanyd_model_failure}" "    if (result == 0) {\n        lagiRetireBattleEnemyMeter(pEntity->mAC_lifeMeter);\n        return nullptr;\n    }" source_text "${source_text}")
+  set(nanyd_targets_old "    initBattleEnemyTargetables(pEntity, pEntity->m29_modelCount, pEntity->m2C_models);")
+  string(FIND "${source_text}" "${nanyd_targets_old}" nanyd_targets_found)
+  if(nanyd_targets_found LESS 0)
+   message(FATAL_ERROR "Nanyd stable indexed target initialization boundary changed")
+  endif()
+  string(REPLACE "${nanyd_targets_old}" [=[    LagiBattleModelTargetState nativeTargets;
+    if(!lagiInitBattleEnemyModelTargets(pEntity,pEntity->m1C_entityIndex,pEntity->m2C_models,
+        nativeTargets,{0x060A3A4C,0x060A3A50,0x060A3A74,0x060A3A98})) {
+        lagiRetireBattleEnemyMeter(pEntity->mAC_lifeMeter);
+        return nullptr;
+    }]=] source_text "${source_text}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_damage.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_damage.inc" nanyd_damage)

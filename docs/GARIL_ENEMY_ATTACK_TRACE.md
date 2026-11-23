@@ -410,3 +410,24 @@ damage boundary cases and 8,192 model metadata/retirement cases, Nanyd attack
 regressions, Scatter sequence fixture and full Vita packaging pass. Host
 services are mocked; new hit effects/display timing and playable swarm/mixed
 combat still require device acceptance. No extern/Azel file was edited.
+
+## Swarm model and indexed target initialization use shared services
+
+The old swarm path called reconstructed createBattleEnemyModels and
+initBattleEnemyTargetables. The former constructed one hotpoint bundle per
+bone instead of the shared complete table; the latter registered every target
+with enemy index zero. The generated swarm factory now uses the existing
+lagiCreateBattleEnemyModels and lagiInitBattleEnemyModelTargets services,
+passing its named m1C_entityIndex and original callback addresses. Existing
+descriptors B1130/B1138, bundle, animation selection and RNG order are retained.
+Shared target creation validates metadata before registration and keeps stable
+task-owned target/position storage. Model/target failure retires the separate
+life meter before the failed actor returns, avoiding dangling meter references.
+
+Generated model/target call blocks pass all twenty actor indices, both model
+descriptors, exact field/callback binding and both failure cases. Shared 8,192
+metadata/identity/retirement and 29,040 damage boundary cases, production Nanyd
+damage adapter checks and Vita packaging pass. Target picking/appearance and
+whole swarm/mixed battles remain device checks. This checkpoint replaces the
+older resource/target helpers only for the swarm actor, leaving unrelated
+callers and accepted Scatter/death state machines intact.
