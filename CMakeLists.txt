@@ -5575,9 +5575,7 @@ static void lagiUpdateRawTownPCM(sStreamingFile* stream)
         if (result == 0)
         {
             executeCutsceneCommandsSub0Sub0(stream, bytes);
-            stream->m28.m84_frameIndex = static_cast<u32>(
-                (static_cast<u64>(stream->m28.m28 / 2u) * 60u) /
-                stream->m28.m60);
+
         }
         else if (result == -2)
         {
@@ -5587,6 +5585,12 @@ static void lagiUpdateRawTownPCM(sStreamingFile* stream)
             stream->m28.m0 = -1;
         }
     }
+
+    // Playback progress excludes frames still owned by the audio queue.
+    const u32 submitted=stream->m28.m28/2u;
+    const u32 queued=std::min(submitted,lagiCutscenePCMQueued(stream));
+    stream->m28.m84_frameIndex=static_cast<u32>(
+        (static_cast<u64>(submitted-queued)*60u)/stream->m28.m60);
 
     if (stream->m28.m28 >= stream->m198.m18_fileSize &&
         lagiCutscenePCMQueued(stream) == 0)
@@ -5609,6 +5613,17 @@ void sCutsceneTask::cutsceneDrawSub0(sCutsceneTask* pThis, s32 r5)]=]
      NOT source_text MATCHES "lagiUpdateRawTownPCM")
    message(FATAL_ERROR "Town raw PCM bridge did not apply")
   endif()
+
+  # Battle/field sPCMVoiceTask uses the same raw mono BE16 queue as town PCM.
+  set(raw_pcm_desktop_anchor "        // SoLoud playback (replaces Saturn SCSP streaming via PcmS/FUN_0600dedc/FUN_0600df52)")
+  string(FIND "${source_text}" "${raw_pcm_desktop_anchor}" raw_pcm_desktop_begin)
+  string(FIND "${source_text}" "// 06036224" raw_pcm_desktop_end)
+  if(raw_pcm_desktop_begin LESS 0 OR raw_pcm_desktop_end LESS raw_pcm_desktop_begin)
+   message(FATAL_ERROR "Shared raw PCM voice bridge boundaries changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${raw_pcm_desktop_begin} raw_pcm_prefix)
+  string(SUBSTRING "${source_text}" ${raw_pcm_desktop_end} -1 raw_pcm_suffix)
+  set(source_text "${raw_pcm_prefix}    }\n    return psVar1;\n}\n\nstatic void lagiUpdateRawTownPCM(sStreamingFile*);\nvoid drawPCMDebugDisplay(sStreamingFile* stream)\n{\n    lagiUpdateRawTownPCM(stream);\n}\n\n${raw_pcm_suffix}")
 
   # Azel owns stream completion. Stop the Vita PCM service before its teardown.
   set(town_stream_cleanup "    executeCutsceneCommandsSub2(pStreamingFile);")

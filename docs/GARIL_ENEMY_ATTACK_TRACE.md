@@ -367,3 +367,27 @@ and full Vita packaging pass. The earlier accepted first-swarm line remains
 historical acceptance of its earlier build; this service consolidation still
 needs device voice/subtitle/camera and player-control acceptance. No story
 flags or battle-entry conditions were forced.
+
+## Shared native voice tasks now reach Vita raw PCM playback
+
+The speech service audit exposed a lower-level integration gap: native
+sPCMVoiceTask calls openPCMFileForStreaming/drawPCMDebugDisplay, which still
+used desktop fopen/SoLoud and elapsed desktop time. Vita raw PCM was connected
+only through sCutsceneTask. The generated adapter now removes desktop raw-file
+playback and routes native voice Draw through the existing raw PCM ring updater.
+Disc-backed openFileForStreaming, native metadata, stream state and voice task
+ownership remain intact. Battle and field voice tasks reuse the town PCM queue,
+backpressure, wrap handling, drain and termination rather than another player.
+
+Raw PCM frame progress now subtracts queued sample frames from submitted sample
+frames. This prevents the speech state from observing end-of-audio merely
+because all bytes were queued. Final state/frame are published after drain.
+The change also applies to the existing town raw PCM user of this shared helper.
+
+Generated voice Draw/shared updater tests cover both native sample rates, ring
+wrap, packet sizes, busy retry without consumption, partial playback progress,
+queue drain, voice-task finish and invalid payload rejection. Shared single
+speech voice/timer/skip/chaining regressions and full Vita packaging pass.
+This verifies the service boundary, not audible output, disc reading in a live
+run, cancellation timing or device performance. Gash/Lathum/field speech and
+town raw PCM need listening/timing acceptance on hardware.
