@@ -79,3 +79,28 @@ settled Update0605B1FC handles culling and one-shot countdown sound command
 to gameplay input. Production fixture and original operands pass; Vita packaging
 passes. The live activation callback/controller/effect chain is still being
 restored; this checkpoint alone does not enable activation.
+
+## Live destruction sequence checkpoint
+
+The generated sky/monolith target now registers the original0605B694 behavior,
+separate from sandfall discovery. The callback requests script5/5BA and camera
+608C8AC with the original B58A callback EA/live position anchor. The native
+120-update rotation/effect schedule, byte96 bit20 start latch, byte95 bit02
+completion, PCM70/system73 and settled240-count handoff are connected. The
+entrance record at6098C10 (same500000/0/-600000 position as the monolith) keeps
+its original bit6E4 gate and subfield3 destination; no forced unlock is added.
+Discovery alone does not run the destruction controller.
+
+Original burst and small/radial/final arc producers use the shared particle
+pool and animated-line task. Its two previously empty Draw methods now generate
+the native segment geometry/jitter/window and submit through the shared VDP1
+world-line renderer. Native final-angle range produces eight arcs, not sixteen.
+Production controller checks cover1024 seeds, flags/timers/effect schedule,
+script/camera operands and settled handoff; producer checks cover descriptors,
+RNG counts/targets/lifetimes; shared line checks cover segment counts/continuity.
+Vita packaging passes. Collision, exact line clipping/composition, the camera
+skip callback, destruction of the field objects in a real run and passage entry
+still require integrated/device verification. Do not replace the user's normal
+activate -> destroy objects -> explosion -> hole sequence with a direct event
+launch. Shared debris initialization is being audited before this is a final
+hardware checkpoint.
