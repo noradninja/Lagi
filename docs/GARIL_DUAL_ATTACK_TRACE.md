@@ -118,3 +118,22 @@ regressions and full Vita packaging pass. This remains partial dual coverage:
 swarm layout/trail initialization and bindings, dual-specific turns/attacks,
 completion and full encounter/hardware acceptance remain open. Do not treat
 this constructor checkpoint as a playable dual battle.
+
+## Dual swarm layout/trail checkpoint
+
+The dual constructor now selects swarm position table B11C8 + uint8(variant*78)
+and mapping B13A8 before creating actors. Native initialization F18E-F1D8 seeds
+trail slots 0 through 16 with the formation head; slot 17 is not written by
+that loop. The generated adapter preserves this distinction. Native update
+FBF4 writes head slot 0, then reverse-copies slots 16..0 into 17..1, leaving
+slots 0 and 1 equal to the new head. It now reuses stepNativeFormationTrail
+after the two shared formation position updates. No alternate motion engine
+or guessed positional offset is introduced.
+
+The production fixture checks both table choices, the exact ten-actor mapping
+{0,0,3,3,6,6,9,9,12,12}, untouched initial slot 17, and 24,000 trail updates
+against an independent expected history with a storage-boundary sentinel.
+Original seed/shift loop operands and generated order are checked. Dual group
+regressions and full Vita packaging pass. The special native RNG decision is
+unchanged. Dual turn selection/attack phases, mixed-actor coordination and full
+encounter/device acceptance remain open; this is a source prerequisite.
