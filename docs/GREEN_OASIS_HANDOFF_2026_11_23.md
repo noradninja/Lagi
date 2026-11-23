@@ -51,3 +51,29 @@ machine. Normal activation and saved post-activation monolith setup remain
 missing. The later proximity/story-worm services are connected by generated
 adapters despite stubs visible in raw upstream source. Do not infer complete
 Oasis activation from the earlier package/build checkpoint.
+
+## Oasis activation implementation checkpoint - 780f312
+
+Three focused runtime checkpoints are pushed:9d46a4b (settled/save re-entry),
+e36ca1b (native destruction cutscene/controller/effect producers and shared line
+drawing),780f312 (shared debris descriptor pose). Production host/native-data
+checks and Vita packaging pass. No new hardware acceptance is claimed.
+
+The user's recalled order is the acceptance path: activate the monolith, destroy
+the authored field objects, watch the monolith explode, then enter the hole
+underneath. Discovery script4 remains separate from the target destruction
+callback/script5. The completion bit is published only at the native120-update
+boundary; the hole record retains bit6E4 and destination subfield3. No direct
+entry, premature unlock, invented object counter or forced flag is used.
+
+Install the latest build and follow that normal sequence. Check cutscene/control
+return, burst/arc/debris appearance, stopped sandfall/weather, hole targeting
+and entry, then leave/re-enter to check the saved settled state. Preserve the
+matching log/video and, if needed, dump/fatal log. Exact Saturn/Vita views are
+unnecessary. Normal cutscene paths are source-connected; native camera skip/
+reset callback behavior and full shared debris impact/visual parity remain
+separate unverified coverage, not claimed by the host fixtures.
+
+The preserved local outputs/oasis-780f312 package contains Lagi.vpk, matching
+lagi/lagi.velf, cache and hashes. Earlier Garil packages exclude Oasis activation.
+See [activation trace and limits](GREEN_OASIS_ACTIVATION_AUDIT.md).
