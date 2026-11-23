@@ -4932,11 +4932,31 @@ ${source_text}")
   string(REPLACE "${a5_intro_end}"
    "${a5_intro_end}\n        lagi::platform::logging::writef(\"[GarilBattleIntro] finish frame=%d\\n\",int(pThis->m0_frameIndex));"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleMainTask.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  foreach(entry_call IN ITEMS "reset3dEngine();" "resetCameraProperties2(&cameraProperties2);" "initTownGrid();" "pThis->mC(pThis->m4_parent);")
+   string(FIND "${source_text}" "${entry_call}" entry_call_found)
+   if(entry_call_found LESS 0)
+    message(FATAL_ERROR "Shared battle entry checkpoint changed: ${entry_call}")
+   endif()
+   string(REPLACE "${entry_call}"
+    "lagi::platform::logging::writef(\"[BattleEntryPhase] begin ${entry_call}\\n\");\n        ${entry_call}\n        lagi::platform::logging::writef(\"[BattleEntryPhase] end ${entry_call}\\n\");"
+    source_text "${source_text}")
+  endforeach()
  elseif(relative_path STREQUAL "battle/battleEngine.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # Report transition edges only, not each battle frame.
   # The generated Azel source has already rewritten PDS.h to the Vita
   # prelude, so the original include is no longer a reliable anchor.
   set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  foreach(entry_call IN ITEMS "battleEngine_InitSub2(pThis);" "battleEngine_InitSub3(pThis);" "battleEngine_createDragonTask(pThis);" "battleEngine_InitSub5(pThis);" "executeFuncPtr(readSaturnEA(overlayBattleData + pThis->m3B0_subBattleId * 0x20 + 8), pThis);")
+   string(FIND "${source_text}" "${entry_call}" entry_call_found)
+   if(entry_call_found LESS 0)
+    message(FATAL_ERROR "Shared battle engine checkpoint changed: ${entry_call}")
+   endif()
+   string(REPLACE "${entry_call}"
+    "lagi::platform::logging::writef(\"[BattleEntryPhase] begin ${entry_call} sub=%d\\n\", int(pThis->m3B0_subBattleId));\n    ${entry_call}\n    lagi::platform::logging::writef(\"[BattleEntryPhase] end ${entry_call} sub=%d\\n\", int(pThis->m3B0_subBattleId));"
+    source_text "${source_text}")
+  endforeach()
   set(a5_mode_anchor "void updateBattleIntro(s_battleEngine* pThis)\n{")
   string(FIND "${source_text}" "${a5_mode_anchor}" a5_mode_found)
   if(a5_mode_found LESS 0)
