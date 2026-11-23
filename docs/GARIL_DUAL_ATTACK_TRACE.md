@@ -252,3 +252,26 @@ and selector checks pass. Native constants and call order are checked; full
 Vita packaging passes. Mixed actor/formation integration, battle completion,
 return and hardware acceptance remain open. This checkpoint shares common
 behavior rather than adding a dual-only spacing implementation.
+
+## Native defeat-count completion restored
+
+BTL_A5 Update 0605F3C8..0605F460 calls shared cleanup 060A2C64
+and shared defeat predicate 060A2C50 independently for both groups. The
+predicate is signed-byte deadCount >= entityCount; it does not inspect actor
+pointers. The translated dual controller incorrectly added an all-null actor
+requirement. The generated adapter now uses formationCleanupEntityArray and
+formationAreAllEntitiesDead directly, preserving quadrant call order and the
+state-10/turn-field release when both defeat flags equal one. Death animation
+retirement therefore cannot add a completion gate absent from the original.
+
+The production adapter and actual shared helper bodies pass 32,768 combinations
+of thirteen actor retirement bits and two independent defeat counts. Tests
+check pointer cleanup, quadrant call ordering, completion and all four turn
+fields; original predicate bytes and generated update order are checked.
+Selector, both attack-phase regressions and full Vita packaging pass. Full
+encounter integration, rewards/return and device acceptance remain open.
+
+Resource audit: allocateNPC tracks each slot independently; model initialization
+stores the explicitly supplied bundle in m4_pModelFile and model draw retrieves
+its hierarchy from that bundle. No speculative parent allocation rewrite was
+made. This source audit does not establish texture or visual acceptance.
