@@ -71,3 +71,24 @@ selection/controller and charge/fire regressions pass against original PRG
 contracts. Vita compile/link/VPK packaging passes. The dual encounter still
 uses its old incorrect factories until explicit-context factory export and
 native dual layout/turn initialization are connected in subsequent work.
+
+## Shared single-actor factory export checkpoint
+
+The native single factory is now exported as lagiCreateGarilSingleActor(parent,
+binding,index,isLead). Its task parent is independent of the bound group: it
+loads COMMON identity from binding.group and initializes its live position via
+the binding callback. No formation-specific parent dereference or cast remains
+inside the shared factory. Existing BTL_A5_createEnemySingle is a wrapper that
+supplies the original single formation's group, flags, dead entries and live
+layout callback. Model initialization, attacks, damage and lifecycle remain
+the same production implementations rather than a second dual-only copy.
+
+`tests/garil_single_factory_test.py` compiles the actual generated public factory
+and wrapper. It verifies unrelated parent ownership, independent group IDs and
+flag/dead bindings, ordinary/lead variants, positions, baseline wrapper and
+live layout switches, plus task allocation failure. The two-group motion test
+and existing single initialization, controller and charge/fire regressions pass.
+Full Vita compile/link/VPK packaging passes. The dual caller still requires
+its native second motion block, flags/dead storage, correct constructor tables
+and swarm binding before this export can be used there. No dual gameplay or
+hardware acceptance is claimed at this prerequisite checkpoint.

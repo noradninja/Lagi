@@ -12,3 +12,10 @@ struct LagiGarilSingleGroupBinding {
     void* positionContext=nullptr;
     sVec3_FP (*targetPosition)(void*,int)=nullptr;
 };
+
+struct s_workArea;
+struct s_workAreaCopy;
+// Shared native 0605BBD0 factory: parent owns the task; binding owns its
+// formation identity and live motion/lifecycle state.
+s_workArea* lagiCreateGarilSingleActor(s_workAreaCopy* parent,
+    const LagiGarilSingleGroupBinding& binding,int entityIndex,int isLead);

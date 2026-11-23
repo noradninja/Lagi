@@ -36,5 +36,6 @@ u=s[s.index('static bool BTL_A5_singleEnemy_applyAutoScrollAndCheckDistance'):s.
 assert 'm158_formation->' not in u
 for name in ['activeMask','reactionMask','deadWords','group']:
  assert 'm_lagiGroup.'+name in u
-assert 'pEntity->m_lagiGroup={&pParent->mE0_entityGroup' in s
+assert 'pEntity->m_lagiGroup=binding;' in s
+assert 'return lagiCreateGarilSingleActor(parent,binding,index,isLead);' in s
 print('PASS generated single actor movement/lifecycle uses explicit binding')

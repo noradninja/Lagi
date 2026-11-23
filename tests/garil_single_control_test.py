@@ -12,7 +12,7 @@ fixture=fixture.replace('// PRODUCTION_SELECTION_GATE',gate)
 phases=u[u.index('    case 5:'):u.index('    case 0xB:')]
 assert 'lagiTransitionFormationActors' in phases and 'battleEngine_restoreCameraAfterEnemyAttack' in phases
 assert u.index('lagiUpdateGarilSingleSpacing(pThis);')<u.index('formationUpdatePosition(')
-assert 'pParent->m_lagiLayouts[pParent->m_lagiLayout][entityIndex]' in s
+assert 'binding.targetPosition(binding.positionContext,entityIndex)' in s
 fixture=fixture.replace('// PRODUCTION_PHASES',phases)
 with tempfile.TemporaryDirectory(prefix='lagi-single-control-') as d:
  p=Path(d);(p/'test.cpp').write_text(fixture)
