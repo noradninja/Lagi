@@ -1,6 +1,6 @@
 # Garil combat checkpoint - 22 November 2026
 
-Runtime/package source checkpoint: 1246e94, diagnostics/garil-cliff-current.
+Runtime/package source checkpoint: 16013c7, diagnostics/garil-cliff-current.
 Later documentation-only commits do not require another build.
 
 The mixed encounter now has its distinct swarm/single groups, live position
@@ -29,7 +29,7 @@ remaining rendering/effect parity and full Gash dialogue timing remain open.
 
 ## Preserved package
 
-Local outputs/garil-1246e94 contains Lagi.vpk, matching lagi/lagi.velf,
+Local outputs/garil-16013c7 contains Lagi.vpk, matching lagi/lagi.velf,
 CMakeCache.txt, BUILD.json hashes and a patch recording pre-existing staged
 files. Those staged files were preserved and were not added to our commits.
 The package reflects the current worktree rather than a claimed pristine
@@ -52,3 +52,22 @@ one-interactive-variant, script/fallback, animation/burst and field-re-entry
 checks against FLD_A5.PRG. Host rendering services are mocked: this does not
 confirm that the target mesh is visible/selectable on Vita. Preserve the normal
 mesh selection -> cutscene -> battle check in the same gameplay capture.
+
+## Completion audit at 16013c7
+
+| Requirement | Evidence and remaining gate |
+| --- | --- |
+| Queen-death Scatter | User accepted earlier hardware behavior; production sequence regression passes. The later shared swarm model/damage changes still need a matching gameplay regression. |
+| Enemy death and rewards | Earlier Vita death/XP/dyne acceptance stands. Shared damage/model boundary fixtures pass; latest swarm callback/display/target changes are not hardware accepted. |
+| Subsequent combat entry and field return | Earlier ordinary battle entry/exit accepted. New attacks and mixed encounter are source-connected and host boundary checked; actual repeat-battle gameplay and return remain open for this build. |
+| Red-worm cinematic and passage opening/entry/return | User accepted at 5e252ba; corrected passage camera subsequently accepted. No new contrary evidence. |
+| Common services across areas | Shared models/targets/damage, speech/PCM, particles, camera, field cells and result handoff are wired through Lagi adapters. No extern/Azel edits or forced progression flags. |
+| Lathum and main exit | Source/controller/field contracts pass. Visible target mesh -> selection -> short cutscene -> fight -> rewards -> field -> authored exit unlock has no device acceptance yet. |
+| Documentation and atomic pushes | Each runtime item has its focused pushed commit and trace entry; latest package/executables/cache/hashes preserved. |
+
+The latest package adds swarm shared damage (6b3ece1) and shared model/indexed
+target initialization (16013c7) to the previous voice checkpoint. Older
+1246e94 packages exclude these changes. The audit cannot prove completion from
+source/host checks alone. The next decisive evidence is the planned Vita
+capture; avoid speculative combat or progression changes without a trace or
+new runtime failure. Performance/effect acceptance remains separately open.
