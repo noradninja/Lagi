@@ -67,3 +67,15 @@ transient effects, stopped sandfall/weather, restored player control, later
 Baldor/story-worm progression and persistence after leaving/re-entering.
 
 No implementation or hardware-success claim follows from this audit alone.
+
+## Saved-state checkpoint
+
+The generated monolith now restores original0605AEF4 debris configuration and
+primary-only Draw0605AD7A when byte96 bit20 is present on entry. It uses the
+existing shared debris service with model18/poseB50, live position/rotation,
+original spread, angular parameters, ground A000 and impact sound6F. Normal
+settled Update0605B1FC handles culling and one-shot countdown sound command
+(70,5,0,2), confirmed against common RAM0602C31A. Debug-only reset is not mapped
+to gameplay input. Production fixture and original operands pass; Vita packaging
+passes. The live activation callback/controller/effect chain is still being
+restored; this checkpoint alone does not enable activation.
