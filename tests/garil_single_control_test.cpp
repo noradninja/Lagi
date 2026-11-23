@@ -9,7 +9,7 @@
 #include "lagi_formation_actor_signal.h"
 using u8=std::uint8_t;using s8=std::int8_t;using s16=std::int16_t;
 using u32=std::uint32_t;using s32=std::int32_t;
-struct fixedPoint{s32 m_value{};fixedPoint(s32 n=0):m_value(n){}
+struct fixedPoint{s32 m_value{};fixedPoint(s32 n=0):m_value(n){} s32 asS32()const{return m_value;}
  fixedPoint& operator+=(fixedPoint b){m_value+=b.m_value;return *this;}};
 struct sVec3_FP:std::array<fixedPoint,3>{friend sVec3_FP operator-(const sVec3_FP& a,const sVec3_FP& b){sVec3_FP r;for(int i=0;i<3;++i)r[i]=a[i].m_value-b[i].m_value;return r;}};
 fixedPoint vecDistance(const sVec3_FP& a,const sVec3_FP& b){double sum=0;for(int i=0;i<3;++i){double d=double(a[i].m_value)-b[i].m_value;sum+=d*d;}return s32(std::sqrt(sum));}

@@ -13,7 +13,7 @@ static p_workArea lagiCreateGarilDualSingle(sBTL_A5_DualFormation* formation,int
         &formation->m1E0_pad5[0],&formation->m1E0_pad5[2],formation->m1E4_pad6,formation,
         [](void* context,int entity)->sVec3_FP {
             auto* dual=static_cast<sBTL_A5_DualFormation*>(context);
-            return readSaturnVec3(dual->m1D0_entityGroup2.m8_dataTable+entity*12);
+            return dual->m_lagiSinglePositions[entity];
         }};
     return lagiCreateGarilSingleActor(formation,binding,index,1);
 }
@@ -27,4 +27,9 @@ static void lagiFinishGarilDualMotion(sBTL_A5_DualFormation* formation) {
     formation->m_lagiSecondaryBlock.m0_position[1]=0;
     formation->m_lagiSecondaryBlock.m30_target[1]=0;
     formation->m_lagiSecondaryBlock.m60_currentInterp[1]=0;
+}
+
+static void lagiInitGarilDualSingleLayout(sBTL_A5_DualFormation* formation) {
+    for(unsigned i=0;i<3;++i)
+        formation->m_lagiSinglePositions[i]=readSaturnVec3(formation->m1D0_entityGroup2.m8_dataTable+i*12);
 }

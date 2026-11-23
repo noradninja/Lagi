@@ -4395,7 +4395,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_groups.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_groups.inc" dual_groups)
-  string(REPLACE "    // size 0x28C" "    sFormationPositionBlock m_lagiSecondaryBlock;\n    u8 m_lagiMoveCounter;\n    // size 0x28C" source_text "${source_text}")
+  string(REPLACE "    // size 0x28C" "    sFormationPositionBlock m_lagiSecondaryBlock;\n    u8 m_lagiMoveCounter;\n    std::array<sVec3_FP,3> m_lagiSinglePositions;\n    // size 0x28C" source_text "${source_text}")
   set(dual_old_create "BTL_A5_createEnemy(pThis, 0x060b13b4, i, 1)")
   foreach(dual_boundary IN ITEMS "// 0605f3a4" "    allocateNPC(pThis, 0xC);" "    BTL_A5_dualFormation_Init(pTask);" "${dual_old_create}")
    string(FIND "${source_text}" "${dual_boundary}" dual_found)
@@ -4414,7 +4414,16 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_camera.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_camera.inc" dual_camera)
-  string(REPLACE "// 0605f3a4" "${dual_groups}\n${dual_trail}\n${dual_control}\n${dual_camera}\n// 0605f3a4" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_spacing.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_spacing.inc" dual_spacing)
+  string(REPLACE "// 0605f3a4" "${dual_groups}\n${dual_trail}\n${dual_control}\n${dual_camera}\n${dual_spacing}\n// 0605f3a4" source_text "${source_text}")
+  set(dual_single_layout_old "    pThis->m1D0_entityGroup2.m8_dataTable = g_BTL_A5->getSaturnPtr(0x060b13b4 + (variant ? 0x24 : 0));")
+  string(FIND "${source_text}" "${dual_single_layout_old}" dual_single_layout_found)
+  if(dual_single_layout_found LESS 0)
+   message(FATAL_ERROR "Dual secondary writable layout boundary changed")
+  endif()
+  string(REPLACE "${dual_single_layout_old}" "${dual_single_layout_old}\n    lagiInitGarilDualSingleLayout(pThis);" source_text "${source_text}")
   set(dual_scroll_old [=[    // auto-scroll positions
     pThis->mA8_position.m0_X = pThis->mA8_position.m0_X + pEngine->m1A0_battleAutoScrollDelta.m0_X;
     pThis->mA8_position.m4_Y = pThis->mA8_position.m4_Y + pEngine->m1A0_battleAutoScrollDelta.m4_Y;
@@ -4453,7 +4462,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "    allocateNPC(pThis, 0xC);" "    allocateNPC(pThis, 0xC);\n    lagiInitGarilDualGroups(pThis);" source_text "${source_text}")
   string(REPLACE "${dual_old_create}" "lagiCreateGarilDualSingle(pThis,i)" source_text "${source_text}")
   string(REPLACE "    BTL_A5_dualFormation_Init(pTask);" "    BTL_A5_dualFormation_Init(pTask);\n    lagiFinishGarilDualMotion(pTask);" source_text "${source_text}")
-  string(REPLACE "    switch (pThis->m28_state)" "    formationUpdatePosition(&pThis->m2C_posBlock,&pEngine->mC_battleCenter);\n    formationUpdatePosition(&pThis->m_lagiSecondaryBlock,&pEngine->mC_battleCenter);\n    lagiUpdateGarilDualTrail(pThis);\n    lagiUpdateGarilDualCamera(pThis,pEngine);\n    switch (pThis->m28_state)" source_text "${source_text}")
+  string(REPLACE "    switch (pThis->m28_state)" "    lagiUpdateGarilDualSpacing(pThis);\n    formationUpdatePosition(&pThis->m2C_posBlock,&pEngine->mC_battleCenter);\n    formationUpdatePosition(&pThis->m_lagiSecondaryBlock,&pEngine->mC_battleCenter);\n    lagiUpdateGarilDualTrail(pThis);\n    lagiUpdateGarilDualCamera(pThis,pEngine);\n    switch (pThis->m28_state)" source_text "${source_text}")
   set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi_formation_actor_signal.h\"\n#include \"lagi/garil_actor_group.h\"\n#include \"battle/battleDragon.h\"\n#include \"battle/battleIntro.h\"\n#include \"lagi/native_formation_motion.h\"\n${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_variant.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS

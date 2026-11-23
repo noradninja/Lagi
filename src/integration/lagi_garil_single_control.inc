@@ -1,3 +1,4 @@
+#include "lagi/native_battle_spacing.h"
 void battleEngine_PlayAttackCamera(int);
 void battleEngine_displayAttackName(int,int,int);
 
@@ -54,34 +55,10 @@ static void lagiUpdateGarilSingleSpacing(sLagiGarilSingleFormation* formation)
     }
     auto& positions=formation->m_lagiLayouts[formation->m_lagiLayout];
     const int count=formation->mE0_entityGroup.mE_numEntities;
-    for(int i=0;i<count;++i){
-        if(lagiGarilSingleDead(formation,i) || !lagiGarilSingleLive(formation,i))continue;
-        for(int j=0;j<count;++j){
-            if(lagiGarilSingleDead(formation,j) || !lagiGarilSingleLive(formation,j))continue;
-            auto& other=positions[j];
-            if(i==j){
-                if(j<2){other[0]+=fixedPoint((randomNumber()&0x1FFF)-0x1000);
-                    other[2]+=fixedPoint((randomNumber()&0x1FFF)-0x1000);}
-            }else{
-                const auto delta=positions[i]-other;
-                const auto distance=vecDistance(positions[i],other);
-                if(distance.m_value<0xA000){
-                    other[0]+=fixedPoint(delta[0].m_value<0 ? 0x1000 : -0x1000);
-                    other[2]+=fixedPoint(delta[2].m_value<0 ? 0x1000 : -0x1000);
-                }else if(distance.m_value<0x32000){
-                    other[0]+=fixedPoint((randomNumber()&0x1FFF)-0x1000);
-                    other[2]+=fixedPoint((randomNumber()&0x1FFF)-0x1000);
-                }else{
-                    other[0]+=fixedPoint(delta[0].m_value<0 ? -0x2000 : 0x2000);
-                    other[2]+=fixedPoint(delta[2].m_value<0 ? -0x4000 : 0x4000);
-                }
-            }
-            if(other[0].m_value>=0x19000)other[0]=0x19000;
-            if(other[0].m_value<=-0x19000)other[0]=-0x19000;
-            if(other[2].m_value>=0x14000)other[2]=0x14000;
-            if(other[2].m_value<=-0x14000)other[2]=-0x14000;
-        }
-    }
+    lagi::stepNativeBattleSpacing(positions,count,
+        [&](int i){return !lagiGarilSingleDead(formation,i)&&lagiGarilSingleLive(formation,i);},
+        [](){return randomNumber();},
+        [](const sVec3_FP& a,const sVec3_FP& b){return vecDistance(a,b).asS32();});
 }
 
 // Original 0605B83C. Movement-only turns retain the native signed-byte

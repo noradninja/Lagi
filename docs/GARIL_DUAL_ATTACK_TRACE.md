@@ -227,3 +227,28 @@ checked. Selector and secondary phase regressions and full Vita packaging pass.
 Remaining native layout helper F922 and mixed actor/formation integration,
 results/return and hardware acceptance still require work. No visual parity
 or whole-encounter acceptance is inferred from this camera recurrence test.
+
+## Shared single/dual spacing service connected
+
+Native F922 is ordered-pair secondary layout spacing, not a height/turn helper.
+It matches the existing single formation's B558 algorithm. Both now call
+stepNativeBattleSpacing: filter dead/nonlive actors, mutate the OTHER position
+immediately per ordered pair, self-jitter only actors 0/1, separate close/random/
+far-distance branches, exact RNG order and X/Z clamps. Common RAM 06035A5C
+confirms the distance helper includes all three axes even though spacing only
+changes X/Z. Signed jitter and wrap additions are explicit.
+
+The dual secondary layout is copied from its authored table into task-owned
+three-position storage before actor creation. The shared actor binding reads
+that live mutable storage, so spacing affects movement without modifying
+original overlay asset bytes. Spacing runs before both formation interpolation
+calls, matching native Update. Table metadata remains authored; the constructor
+copies the selected table exactly once into its writable encounter state.
+
+The service fixture compares 24,000 three/six-actor cases with an independent
+ordered-pair implementation, exact RNG state/count and liveness/bounds. Existing
+single-controller spacing regression cases, dual group/layout ownership checks
+and selector checks pass. Native constants and call order are checked; full
+Vita packaging passes. Mixed actor/formation integration, battle completion,
+return and hardware acceptance remain open. This checkpoint shares common
+behavior rather than adding a dual-only spacing implementation.
