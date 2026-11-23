@@ -4395,7 +4395,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_groups.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_groups.inc" dual_groups)
-  string(REPLACE "    // size 0x28C" "    sFormationPositionBlock m_lagiSecondaryBlock;\n    // size 0x28C" source_text "${source_text}")
+  string(REPLACE "    // size 0x28C" "    sFormationPositionBlock m_lagiSecondaryBlock;\n    u8 m_lagiMoveCounter;\n    // size 0x28C" source_text "${source_text}")
   set(dual_old_create "BTL_A5_createEnemy(pThis, 0x060b13b4, i, 1)")
   foreach(dual_boundary IN ITEMS "// 0605f3a4" "    allocateNPC(pThis, 0xC);" "    BTL_A5_dualFormation_Init(pTask);" "${dual_old_create}")
    string(FIND "${source_text}" "${dual_boundary}" dual_found)
@@ -4419,6 +4419,18 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_single_phases.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_single_phases.inc" dual_single_phases)
+  set(dual_selector_old [=[    case 0:
+        if (battleEngine_isPlayerTurnActive())
+            return;
+        break;]=])
+  string(FIND "${source_text}" "${dual_selector_old}" dual_selector_found)
+  if(dual_selector_found LESS 0)
+   message(FATAL_ERROR "Garil dual selector gate boundary changed")
+  endif()
+  string(REPLACE "${dual_selector_old}" [=[    case 0:
+        if(battleEngine_isPlayerTurnActive())return;
+        if(pEngine->m3CC->m8==1 && !pThis->m1E3_flag2)lagiSelectGarilDualTurn(pThis);
+        break;]=] source_text "${source_text}")
   string(REPLACE "    case 10:" "${dual_swarm_phases}${dual_single_phases}    case 10:" source_text "${source_text}")
   set(dual_layout_old "    pThis->mE0_entityGroup.m8_dataTable = g_BTL_A5->getSaturnPtr(0x060b11c8);")
   string(FIND "${source_text}" "${dual_layout_old}" dual_layout_found)

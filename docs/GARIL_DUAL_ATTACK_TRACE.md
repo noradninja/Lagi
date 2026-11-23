@@ -182,3 +182,29 @@ name/duration and timer operands are checked. Swarm-phase and baseline single
 controller regressions pass; full Vita packaging passes. Native state-0
 selection and per-frame camera follow/layout coordination remain pending;
 these phases alone do not establish a complete dual encounter on hardware.
+
+## Native dual quadrant selector connected
+
+State 0 now requires no active player turn, engine turn-ready exactly 1 and
+secondary byte 1E3 clear, then calls the translated FC2A selector. Quadrant 0
+checks dragon status bit 1 and secondary completion; it scans secondary dead
+words and live/nonbusy actors, readies live nondead actors with 0C000000, sets
+native mode 9 (not 7), marks quadrant attack bit 1 and enters state 6. With no
+eligible secondary actor it releases turn ownership without inventing a move.
+Native status/completion fallback consumes one RNG bit for direction 1/2.
+
+Side quadrants increment native signed-byte counter +278. Old values >=2 reset
+it and move in quadrant-specific direction; other values select the first
+three live swarm actors, clearing coordinated tag 08000000 on every live actor
+and setting ready 04000000 on the selected three. Successful rush selection uses
+mode 7 and attack mask 2/8, entering state 2. Quadrant 2 readies all live swarm
+actors with 0C000000, selects B12B8 + uint8(variant*78), invokes the existing
+Valley evade service with duration 60, marks attack bit 4 and enters state 4.
+Missing groups/actors fall back to the original one-bit RNG move and release.
+
+Production selector fixtures exhaust swarm membership masks for side cycles
+and coordinated layouts, plus secondary live/dead/busy combinations, status
+and completion fallbacks, exact RNG consumption and mode 9. Original field,
+selection count, table, mode and helper operands are checked. Swarm/secondary
+phase regressions and full Vita packaging pass. Per-frame camera/layout
+coordination, mixed-actor integration and hardware acceptance remain open.

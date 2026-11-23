@@ -28,7 +28,7 @@ int main(){
  puts("PASS generated dual secondary phases: camera order/values/wrap, release flags, all signed timing values and turn/camera restoration");
 }
 '''
-f=f.replace('// CONTROL',(r/'src/integration/lagi_garil_dual_control.inc').read_text()).replace('// PHASES',phases)
+f=f.replace('// CONTROL',(r/'src/integration/lagi_garil_dual_control.inc').read_text().split('void battleEngine_PlayAttackCamera(int);')[0]).replace('// PHASES',phases)
 with tempfile.TemporaryDirectory(prefix='lagi-dual-secondary-') as d:
  p=Path(d);(p/'test.cpp').write_text(f)
  subprocess.run(['cl','/nologo','/EHsc','/std:c++20','/I'+str(r/'include'),'/I'+str(r/'src/integration'),str(p/'test.cpp'),'/Fe:'+str(p/'test.exe'),'/Fo:'+str(p/'test.obj')],check=True)
