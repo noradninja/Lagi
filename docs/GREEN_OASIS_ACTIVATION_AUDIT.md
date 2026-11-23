@@ -104,3 +104,17 @@ still require integrated/device verification. Do not replace the user's normal
 activate -> destroy objects -> explosion -> hole sequence with a direct event
 launch. Shared debris initialization is being audited before this is a final
 hardware checkpoint.
+
+## Shared debris pose correction
+
+The shared debris factory previously read the descriptor hierarchy but discarded
+its pose key and passed nullptr into recursive bone initialization. Its generated
+adapter now initializes/steps a temporary model from the descriptor's own static
+pose and supplies that pose to the existing hierarchy traversal. Bone positions
+are copied before the temporary model dies; bundle geometry remains bundle-owned.
+Failure finishes the debris task instead of using absent pose data. This corrects
+all existing descriptor users without reading a parent's presumed Saturn layout.
+The production initialization/traversal fixture checks root, child and sibling
+origins, exact hierarchy/pose keys, and failure retirement. Vita packaging passes.
+Native debris physics, impact callbacks and device appearance are not inferred
+from the pose test; no hardware acceptance is claimed.

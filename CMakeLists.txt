@@ -3234,6 +3234,30 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   string(REPLACE "${oasis_setup}" "    lagiSetupGreenOasisField(pDT3, fieldA5_2_startTasks);" source_text "${source_text}")
   string(REPLACE "// 0605a768" "${oasis_pits_source}\n// 0605a768" source_text "${source_text}")
   set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/native_field_cells.h\"\n#include \"field/fieldVisibilityGrid.h\"\n#include \"kernel/fileBundle.h\"\n#include \"kernel/vdp1AnimatedQuad.h\"\n#include \"field/fieldModelRender.h\"\n#include \"3dEngine.h\"\n${source_text}")
+ elseif(relative_path STREQUAL "field/fieldDebrisScatter.cpp")
+  set(debris_pose_old [=[    // Get pose data for initial bone positions
+    s_3dModel* pModel = nullptr;
+    // The parent task should have a s_3dModel - find it
+    // For the crashed ship, the model is at offset 0x40 in the parent struct
+    // We pass it through the params indirectly via position/rotation]=])
+  string(FIND "${source_text}" "${debris_pose_old}" debris_pose_found)
+  if(debris_pose_found LESS 0)
+   message(FATAL_ERROR "Shared debris static pose initialization boundary changed")
+  endif()
+  string(REPLACE "${debris_pose_old}" [=[    // The descriptor owns the hierarchy/pose keys; no parent-layout cast.
+    s_3dModel lagiPoseModel;
+    if(!init3DModelRawData(parent,&lagiPoseModel,0,pBundle,params->m34_modelOffset,
+        nullptr,pBundle->getStaticPose(params->m36_poseOffset,numBones),nullptr,nullptr)) {
+        pTask->getTask()->markFinished();return nullptr;
+    }
+    stepAnimation(&lagiPoseModel);]=] source_text "${source_text}")
+  set(debris_bones_old "initBonesFromHierarchy(pTask, pHierarchy, boneIdx, rootMatrix, nullptr);")
+  string(FIND "${source_text}" "${debris_bones_old}" debris_bones_found)
+  if(debris_bones_found LESS 0)
+   message(FATAL_ERROR "Shared debris posed hierarchy binding changed")
+  endif()
+  string(REPLACE "${debris_bones_old}" "initBonesFromHierarchy(pTask, pHierarchy, boneIdx, rootMatrix, &lagiPoseModel);" source_text "${source_text}")
+  set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"mainMenuDebugTasks.h\"\n${source_text}")
  elseif(relative_path STREQUAL "field/fieldAnimRingSubTask.cpp")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_field_anim_ring_draw.inc")
