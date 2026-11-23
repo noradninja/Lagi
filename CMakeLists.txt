@@ -3181,6 +3181,19 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   endif()
   string(REPLACE "${mound_setup_old}" "    lagiSetupGarilMoundField(pDT3, fieldA5_0_startTasks);" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/field_a5/o_fld_a5.cpp")
+  set(oasis_baldor_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_oasis_baldor.inc")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${oasis_baldor_path}")
+  file(READ "${oasis_baldor_path}" oasis_baldor_source)
+  set(oasis_baldor_old [=[void createA5_baldorWormBody(p_workArea parent)
+{
+    Unimplemented(); // createSubTaskFromFunction size 0x138, loads Baldor body with 3D models/animation
+}]=])
+  string(FIND "${source_text}" "${oasis_baldor_old}" oasis_baldor_found)
+  if(oasis_baldor_found LESS 0)
+   message(FATAL_ERROR "Green Oasis Baldor constructor boundary changed")
+  endif()
+  string(REPLACE "${oasis_baldor_old}" "${oasis_baldor_source}" source_text "${source_text}")
+  set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/garil_story_worm.h\"\n#include \"kernel/monsterPart.h\"\n#include \"3dEngine.h\"\n${source_text}")
   set(a5_horizon_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_a5_horizon.inc")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${a5_horizon_path}")
   file(READ "${a5_horizon_path}" a5_horizon_source)
@@ -3196,6 +3209,66 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   string(REPLACE "${a5_horizon_task}" "${a5_horizon_source}\n${a5_horizon_task}" source_text "${source_text}")
   string(REPLACE "${a5_horizon_callbacks}" "{ &a5EncounterConfigInit, &lagiA5HorizonUpdate, &lagiA5HorizonDraw, nullptr }"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/fieldItemBox_type0.cpp")
+  set(oasis_decor_old [=[    PDS_unimplemented("LCSItemBox_Callback0Sub0");]=])
+  string(FIND "${source_text}" "${oasis_decor_old}" oasis_decor_found)
+  if(oasis_decor_found LESS 0)
+   message(FATAL_ERROR "Green Oasis item-box impact boundary changed")
+  endif()
+  string(REPLACE "${oasis_decor_old}" [=[    const auto* field = getFieldTaskPtr();
+    if (field && field->m2C_currentFieldIndex == 3 && field->m2E_currentSubFieldIndex == 2) {
+        extern void lagiEmitOasisItemBoxDust(const sVec3_FP&);
+        lagiEmitOasisItemBoxDust(pThis->m3C_pos);
+        return;
+    }
+    PDS_unimplemented("LCSItemBox_Callback0Sub0");]=] source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/o_fld_a5_2.cpp")
+  set(oasis_pits_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_oasis_sand_pits.inc")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${oasis_pits_path}")
+  file(READ "${oasis_pits_path}" oasis_pits_source)
+  set(oasis_setup "    setupField2(pDT3, fieldA5_2_startTasks);")
+  string(FIND "${source_text}" "${oasis_setup}" oasis_setup_position)
+  if(oasis_setup_position LESS 0)
+   message(FATAL_ERROR "Green Oasis field placement boundary changed")
+  endif()
+  string(REPLACE "${oasis_setup}" "    lagiSetupGreenOasisField(pDT3, fieldA5_2_startTasks);" source_text "${source_text}")
+  string(REPLACE "// 0605a768" "${oasis_pits_source}\n// 0605a768" source_text "${source_text}")
+  set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/native_field_cells.h\"\n#include \"field/fieldVisibilityGrid.h\"\n#include \"kernel/fileBundle.h\"\n#include \"kernel/vdp1AnimatedQuad.h\"\n#include \"field/fieldModelRender.h\"\n#include \"3dEngine.h\"\n${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/a5_sandfallEntity.cpp")
+  # These MCB slots contain native per-polygon color records, not models.
+  foreach(lod IN ITEMS 0 1)
+   if(lod EQUAL 0)
+    set(sandfall_model "a5Sandfall_secondaryModelOffsets[p->m54]")
+   else()
+    set(sandfall_model "0xA14")
+   endif()
+   set(sandfall_draw_old "drawCurrentObjectInstanced(
+                    pBundle->get3DModel(${sandfall_model}),
+                    pBundle->get3DModel(a5Sandfall_instanceOffsets_lod${lod}[p->m64]));")
+   string(FIND "${source_text}" "${sandfall_draw_old}" sandfall_draw_found)
+   if(sandfall_draw_found LESS 0)
+    message(FATAL_ERROR "Green Oasis sandfall LOD ${lod} draw boundary changed")
+   endif()
+   string(REPLACE "${sandfall_draw_old}" "addObjectToDrawListWithColorAnimation(
+                    pBundle->get3DModel(${sandfall_model}),
+                    pBundle->getRawFileAtOffset(a5Sandfall_instanceOffsets_lod${lod}[p->m64]));"
+    source_text "${source_text}")
+  endforeach()
+  # The cutscene retains its target pointer for the lifetime of the task.
+  set(sandfall_camera_old "(sVec3_FP*)getSaturnPtr(gFLD_A5->getSaturnPtr(0x06099FD4))")
+  string(FIND "${source_text}" "${sandfall_camera_old}" sandfall_camera_found)
+  if(sandfall_camera_found LESS 0)
+   message(FATAL_ERROR "Green Oasis sandfall camera target boundary changed")
+  endif()
+  string(REPLACE "    sVec3_FP m48_renderPosition;" "    sVec3_FP m48_renderPosition;
+    sVec3_FP lagiDiscoveryCameraTarget;"
+   source_text "${source_text}")
+  string(REPLACE "    a5CutsceneCameraInit((p_workArea)pThis," "    pThis->lagiDiscoveryCameraTarget = readSaturnVec3(gFLD_A5->getSaturnPtr(0x06099FD4));
+    a5CutsceneCameraInit((p_workArea)pThis,"
+   source_text "${source_text}")
+  string(REPLACE "${sandfall_camera_old}" "&pThis->lagiDiscoveryCameraTarget" source_text "${source_text}")
+  set(source_text "#include \"lagi/lagi_render_bridge.h\"
+${source_text}")
  elseif(relative_path STREQUAL "field/field_a5/a5_exitTriggerEntity.cpp")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_exit_trace.inc")
@@ -4031,6 +4104,34 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "${laser_palette_old}"
    "u16 charColor = pTrail->m14_vdp1Param + readSaturnU16(config + 0x08);"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_env.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(a5_environment_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_battle_environment.inc")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${a5_environment_path}")
+  file(READ "${a5_environment_path}" a5_environment_source)
+  string(APPEND source_text "
+${a5_environment_source}")
+ elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_data.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(a5_environment_dispatch [=[    case 0x0605a71a:
+        Create_BTL_A5_env_grid(pParent);
+        break;]=])
+  string(FIND "${source_text}" "${a5_environment_dispatch}" a5_environment_found)
+  if(a5_environment_found LESS 0)
+   message(FATAL_ERROR "Garil battle environment dispatch boundary changed")
+  endif()
+  string(REPLACE "${a5_environment_dispatch}" [=[    case 0x0605a71a:
+        Create_BTL_A5_env_grid(pParent);
+        break;
+    case 0x0605a724:
+    case 0x0605a72e:
+    case 0x0605a742:
+    case 0x0605a74c:
+    case 0x0605a756:
+    case 0x0605a760:
+        lagiCreateGarilBattleEnvironment(pParent, Func.m_offset);
+        break;]=] source_text "${source_text}")
+  set(source_text "struct s_workArea;
+void lagiCreateGarilBattleEnvironment(s_workArea*, unsigned);
+${source_text}")
  elseif(relative_path STREQUAL "battle/battleEnemyModels.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # Saturn work-area offsets do not describe Vita C++ tasks. The owner
   # initializes its named fields before registering its model hotpoints.
@@ -4068,7 +4169,17 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
         nativeTargets,{0x060A3A4C,0x060A3A50,0x060A3A74,0x060A3A98})) {
         lagiRetireBattleEnemyMeter(pEntity->mAC_lifeMeter);
         return nullptr;
-    }]=] source_text "${source_text}")
+    }
+    // The damage adapter reads these named actor fields every update.
+    pEntity->mB4 = nativeTargets.healthFloor;
+    pEntity->mB8_damageCallback0 = nativeTargets.damageCallbackEA[0];
+    pEntity->mBC_damageCallback1 = nativeTargets.damageCallbackEA[1];
+    pEntity->mC0_damageCallback2 = nativeTargets.damageCallbackEA[2];
+    pEntity->mC4_damageCallback3 = nativeTargets.damageCallbackEA[3];
+    pEntity->m144_hitbox0 = nativeTargets.hitboxValues[0];
+    pEntity->m146_hitbox1 = nativeTargets.hitboxValues[1];
+    pEntity->m148_hitbox2 = nativeTargets.hitboxValues[2];
+    pEntity->m14A_hitbox3 = nativeTargets.hitboxValues[3];]=] source_text "${source_text}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_damage.inc")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_damage.inc" nanyd_damage)
@@ -4153,19 +4264,6 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
         return;
 
     // check for damage (only in alive state)]=] source_text "${source_text}")
-  set(a5_target_init "    initBattleEnemyTargetables(pEntity, pEntity->m29_modelCount, pEntity->m2C_models);")
-  string(REPLACE "${a5_target_init}" [=[    pEntity->mB4 = 0;
-    pEntity->mB8_damageCallback0 = 0x060a3a4c;
-    pEntity->mBC_damageCallback1 = 0x060a3a50;
-    pEntity->mC0_damageCallback2 = 0x060a3a74;
-    pEntity->mC4_damageCallback3 = 0x060a3a98;
-    pEntity->m144_hitbox0 = 10;
-    pEntity->m146_hitbox1 = 10;
-    pEntity->m148_hitbox2 = 10;
-    pEntity->m14A_hitbox3 = 10;
-    pEntity->m150 = 0;
-    pEntity->m154 = 0;
-    initBattleEnemyTargetables(pEntity, pEntity->m29_modelCount, pEntity->m2C_models);]=] source_text "${source_text}")
   set(a5_target_draw [=[        pModel->m18_drawFunction(pModel);
         popMatrix();]=])
   string(REPLACE "${a5_target_draw}" [=[        pModel->m18_drawFunction(pModel);

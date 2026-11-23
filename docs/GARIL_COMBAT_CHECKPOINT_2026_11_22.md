@@ -1,5 +1,7 @@
 # Garil combat checkpoint - 22 November 2026
 
+The 23 November Vita run cleared Lathum and reached Green Oasis. See the [Green Oasis handoff](GREEN_OASIS_HANDOFF_2026_11_23.md) for the current source changes and retest.
+
 Runtime/package source checkpoint: 16013c7, diagnostics/garil-cliff-current.
 Later documentation-only commits do not require another build.
 

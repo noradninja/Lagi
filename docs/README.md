@@ -13,6 +13,7 @@ Lagi has moved through several major renderer, runtime and battle milestones. Th
 | [Neptune renderer](NEPTUNE_RENDERER.md) | Shared rendering and presentation systems |
 | [Berserks: Disc 1](BERSERKS_DISC1.md) | Proficiency tables, item IDs, native effect dependencies |
 | [Battle effects recovery](BATTLE_EFFECTS_RECOVERY.md) | Missing effect producers and shared services |
+| [Green Oasis handoff](GREEN_OASIS_HANDOFF_2026_11_23.md) | Work-to-home baseline, fixes, Hopper routes and Vita retest |
 | [Garil shared parity](GARIL_SHARED_PARITY.md) | Original A5, Scatter, escape and WEAK reticule work |
 | [SCSP DSP translator](SCSP_DSP_TRANSLATOR.md) | Native DSP implementation and fallback modes |
 | [Disc selection](DISC_SELECTION_FRONTEND.md) | Four-disc selector and mounted game resources |
