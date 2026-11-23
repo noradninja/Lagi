@@ -92,3 +92,29 @@ Full Vita compile/link/VPK packaging passes. The dual caller still requires
 its native second motion block, flags/dead storage, correct constructor tables
 and swarm binding before this export can be used there. No dual gameplay or
 hardware acceptance is claimed at this prerequisite checkpoint.
+
+## Dual group/factory wiring checkpoint
+
+The generated dual constructor now initializes COMMON group records 15/17,
+binds the first group to the original position block and the second to a named
+secondary block, and creates the three second-group lead actors through the
+exported single-enemy factory. Their binding uses native secondary active byte
+1E0, reaction byte 1E2 and dead words at 1E4, plus a live callback to the
+secondary group's current position table. It does not create swarm actors in
+that group or reinterpret the dual work area as a single formation.
+
+Original 0605F280-0605F2B2 first initializes the secondary block Y to -13000;
+factory 0605F338-0605F35A then overrides all primary block Y values to +13000
+and secondary block Y values to zero, setting both rates to A3D. This later
+factory override was verified before implementing the host state. Both blocks
+now update through shared formationUpdatePosition, matching calls at F474/F486.
+The unusual native RNG decision is retained.
+
+The production group fixture checks identities, distinct parent blocks,
+constructor/factory overrides, exact single-factory bindings, all three indices,
+live table changes and creation failure. It checks final native motion literals
+and generated initialization/update order. Shared single factory/group isolation
+regressions and full Vita packaging pass. This remains partial dual coverage:
+swarm layout/trail initialization and bindings, dual-specific turns/attacks,
+completion and full encounter/hardware acceptance remain open. Do not treat
+this constructor checkpoint as a playable dual battle.
