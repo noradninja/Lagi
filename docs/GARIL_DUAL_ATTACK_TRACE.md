@@ -309,3 +309,19 @@ real scheduler teardown. Those broader runtime claims remain unverified for
 the dual encounter. No production change or new Vita build was needed for
 this check. Actual mixed actor attack execution also remains an integration
 gap, distinct from this verified formation-to-engine boundary.
+
+## Secondary formation-to-actor attack boundary checked
+
+The combined secondary fixture loads generated formation phases 6..9, generated
+single actor states 0/1, the production charge/projectile producers and shared
+formation signal transition. Across all seven nonempty secondary selection
+masks, actors charge once, wait until the native phase-7 camera/release tick,
+then fire once using the lead world target, damage 33, flags 8 and slot 6.
+Unselected actors remain idle. Camera/turn restoration and one RNG call per
+selected actor pass. Generated snippets are loaded on every test invocation.
+
+This closes a formation-signal/actor-state integration gap, but service calls
+are still probes: projectile task execution, actual dragon damage, model
+animation, the actor cooldown state and task scheduler are outside this
+fixture. Primary swarm actor integration and whole-encounter device acceptance
+remain open. Tests/docs only; the current Vita package is unchanged.
