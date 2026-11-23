@@ -325,3 +325,20 @@ are still probes: projectile task execution, actual dragon damage, model
 animation, the actor cooldown state and task scheduler are outside this
 fixture. Primary swarm actor integration and whole-encounter device acceptance
 remain open. Tests/docs only; the current Vita package is unchanged.
+
+## Primary swarm formation-to-actor attack boundary checked
+
+The combined primary fixture runs generated formation states 2..5, shared
+ready/release helpers, production Nanyd attack states and production position
+interpolation using the original dual mapping/layout tables. All 1,023 nonempty
+ten-actor membership masks are exercised for both rush (first three live) and
+coordinated (all live) attacks, with both contact and miss: 4,092 scenarios.
+Selected actors receive the release signal, contact cases call shared dragon
+damage once per selected actor, misses recover on the native timeout, every
+actor returns idle without retirement, and coordinated layout restoration and
+formation attack-complete state pass. Original BTL_A5.PRG supplies the data.
+
+Collision and dragon-damage calls, animation and scheduler remain test service
+probes. These combined boundary checks do not establish actual collision
+geometry, rendered effects, health changes or playable mixed encounter parity.
+No runtime change or new build was necessary; device acceptance remains open.
