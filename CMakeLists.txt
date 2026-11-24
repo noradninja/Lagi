@@ -6751,6 +6751,23 @@ sKernelScriptFunctions gKernelScriptFunctions =]=]
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townCamera.cpp")
+  # The position-light setup resets the native selector to directional
+  # (6103), although drawWithPosition supplies zero directional XYZ and
+  # updates the point parameters. Select A11D after the authored reset
+  # for this persistent Camp light. The ordinary setup resets it again.
+  set(camp_point_selector_old [=[    resetProjectVector();
+    cameraTaskPtr->m2 = 1;
+    cameraTaskPtr->m0_colorMode = 2;]=])
+  set(camp_point_selector_new [=[    resetProjectVector();
+    if (gCurrentTownOverlay && gCurrentTownOverlay->m_name == "TWN_CAMP.PRG")
+        dragonFieldTaskDrawSub1Sub0();
+    cameraTaskPtr->m2 = 1;
+    cameraTaskPtr->m0_colorMode = 2;]=])
+  string(FIND "${source_text}" "${camp_point_selector_old}" camp_point_selector_found)
+  if(camp_point_selector_found LESS 0)
+    message(FATAL_ERROR "Camp positioned light selector anchor changed")
+  endif()
+  string(REPLACE "${camp_point_selector_old}" "${camp_point_selector_new}" source_text "${source_text}")
   set(source_text "#include \"lagi/platform.h\"\n${source_text}")
   string(REPLACE "void townCamera_update(sCameraTask* pThis)" [=[static void lagiTraceTownLight(const char* source,sSaturnPtr data)
 {
