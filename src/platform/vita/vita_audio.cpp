@@ -28,6 +28,8 @@ std::atomic<bool> g_threadRunning{false};
 SceUID g_thread = -1;
 int g_port = -1;
 unsigned int g_channels = 0;
+unsigned int g_sampleRate = 0;
+std::uint64_t g_streamSerial = 0;
 
 std::size_t queued_samples()
 {
@@ -41,6 +43,21 @@ int audio_thread(SceSize, void*)
     g_threadRunning.store(true, std::memory_order_release);
     const std::size_t blockSamples = kOutputFrames * g_channels;
     bool outputStarted = false;
+    std::uint64_t steadyBlocks = 0, underrunBlocks = 0, emptyBlocks = 0, missingFrames = 0;
+    std::uint64_t intervalBlocks = 0;
+    std::size_t minQueuedFrames = kRingSamples / g_channels;
+    const auto report = [&](const char* phase) {
+        if (!intervalBlocks) return;
+        logging::writef("[LagiPCM] phase=%s stream=%llu tUs=%llu rate=%u channels=%u blockFrames=%u steadyBlocks=%llu intervalBlocks=%llu underrunBlocks=%llu emptyBlocks=%llu missingFrames=%llu minQueuedFrames=%u\n",
+            phase, static_cast<unsigned long long>(g_streamSerial),
+            static_cast<unsigned long long>(sceKernelGetSystemTimeWide()),
+            g_sampleRate, g_channels, static_cast<unsigned>(kOutputFrames),
+            static_cast<unsigned long long>(steadyBlocks), static_cast<unsigned long long>(intervalBlocks),
+            static_cast<unsigned long long>(underrunBlocks), static_cast<unsigned long long>(emptyBlocks),
+            static_cast<unsigned long long>(missingFrames), static_cast<unsigned>(minQueuedFrames));
+        intervalBlocks = 0;
+        minQueuedFrames = kRingSamples / g_channels;
+    };
 
     while (!g_stopRequested.load(std::memory_order_acquire)) {
         std::size_t available = queued_samples();
@@ -54,6 +71,7 @@ int audio_thread(SceSize, void*)
         if (finished && available == 0)
             break;
 
+        const bool steady = outputStarted && !finished;
         outputStarted = true;
         const std::size_t consume = std::min(available, blockSamples);
         std::uint64_t read = g_readPosition.load(std::memory_order_relaxed);
@@ -66,6 +84,17 @@ int audio_thread(SceSize, void*)
 
         if (sceAudioOutOutput(g_port, g_output.data()) < 0)
             break;
+        // Count only successfully submitted, non-final blocks after startup.
+        if (steady) {
+            ++steadyBlocks;
+            ++intervalBlocks;
+            minQueuedFrames = std::min(minQueuedFrames, available / g_channels);
+            if (consume < blockSamples) {
+                ++underrunBlocks;
+                if (!consume) ++emptyBlocks;
+                missingFrames += (blockSamples - consume) / g_channels;
+            }
+        }
         const std::uint64_t submitted =
             g_submittedFrames.fetch_add(
                 kOutputFrames, std::memory_order_acq_rel) + kOutputFrames;
@@ -74,7 +103,9 @@ int audio_thread(SceSize, void*)
             g_playedFrames.store(
                 submitted - static_cast<std::uint64_t>(remaining),
                 std::memory_order_release);
+        if (intervalBlocks >= 128u) report("periodic");
     }
+    report("end");
 
     g_threadRunning.store(false, std::memory_order_release);
     return 0;
@@ -114,6 +145,8 @@ bool start_pcm_stream(unsigned int sampleRate, unsigned int channels)
         return false;
 
     g_channels = channels;
+    g_sampleRate = sampleRate;
+    ++g_streamSerial;
     g_writePosition.store(0, std::memory_order_relaxed);
     g_readPosition.store(0, std::memory_order_relaxed);
     g_playedFrames.store(0, std::memory_order_relaxed);
