@@ -7683,11 +7683,9 @@ static void appendLiveTownModel(
                     break;
                 }
     }
-    // Keep a small additional separation below the character shadow
-    // plane. RBG0 is composed independently of the world depth buffer.
-    constexpr float kCampCircleShadowClearance=0.001f;
-    constexpr float kCampCircleFloorHeightCorrection=
-        -0.01514f-kCampCircleShadowClearance;
+    // Lower the Camp circles below character shadows. RBG0 is composed
+    // independently of the world depth buffer.
+    constexpr float kCampCircleFloorHeightCorrection=-0.03f;
 
     const auto transformVertex = [&](const azel::DebugColorVertex& source) {
         azel::DebugColorVertex v = source;
