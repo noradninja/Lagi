@@ -6237,7 +6237,7 @@ struct sCampFire : public]=])
   string(REPLACE "${camp_particle_trace_old}" "${camp_particle_trace_new}" source_text "${source_text}")
   # Log once per camp entry and per authored NPC creation, not per frame.
   # The generated Azel source no longer contains its original PDS.h include.
-  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  set(source_text "#include \"lagi/platform.h\"\n#include \"processModel.h\"\n${source_text}")
   string(REPLACE "    gTWN_CAMP->makeCurrent();"
    "    gTWN_CAMP->makeCurrent();\n    lagi::platform::logging::writef(\"[CampSetup] entry=%u setups=%u rider1=%u rider2=%u metGash=%u gashStory39=%u gashBlock40=%u expectedRegister=%u\\n\", unsigned(arg),unsigned(gTWN_CAMP->mTownSetups.size()), unsigned(mainGameState.gameStats.m2_rider1), unsigned(mainGameState.gameStats.m3_rider2), unsigned(mainGameState.getBit(4*8+5)), unsigned(mainGameState.getBit(39)), unsigned(mainGameState.getBit(40)), unsigned(mainGameState.getBit(39) && !mainGameState.getBit(40)));"
    source_text "${source_text}")
