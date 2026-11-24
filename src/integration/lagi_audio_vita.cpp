@@ -886,7 +886,7 @@ void render_scsp_audio()
                 --g_audioPerfBudget;
 
             lagi::platform::logging::writef(
-                "[AzelAudioPerf] seq=%d chunk=%llu frames=%u "
+                "[AzelAudioPerf] tUs=%llu seq=%d chunk=%llu frames=%u "
                 "queued=%u peak=%d total=%lluus budget=%lluus "
                 "m68k=%lluus scsp=%lluus slots=%lluus dsp=%lluus "
                 "dspSteps=%d dspHash=%08X dspBackend=%u dspBackendSamples=%u,%u,%u,%u "
@@ -894,6 +894,7 @@ void render_scsp_audio()
                 "pcm8=%u pcm16=%u nonPcm=%u plfo=%u alfo=%u mod=%u "
                 "ring=%u dspSend=%u direct=%u efReturn=%u "
                 "emptyChunks=%llu shortWrites=%llu\n",
+                static_cast<unsigned long long>(renderStartUs + renderUs),
                 static_cast<int>(g_sequenceNumber),
                 g_audioRenderChunks,
                 kRenderChunkFrames,
@@ -1173,7 +1174,8 @@ int audio_worker_thread(SceSize, void*)
             if (sample) {
                 const auto endUs = sceKernelGetSystemTimeWide();
                 lagi::platform::logging::writef(
-                    "[AzelAudioWorker] seq=%d rendered=%u queueBefore=%u queueAfter=%u gapUs=%llu eventsUs=%llu commandsUs=%llu serviceUs=%llu leaseUs=%llu renderAndReleaseUs=%llu totalUs=%llu\n",
+                    "[AzelAudioWorker] tUs=%llu seq=%d rendered=%u queueBefore=%u queueAfter=%u gapUs=%llu eventsUs=%llu commandsUs=%llu serviceUs=%llu leaseUs=%llu renderAndReleaseUs=%llu totalUs=%llu\n",
+                    static_cast<unsigned long long>(endUs),
                     g_sequenceNumber, static_cast<unsigned>(g_audioRenderChunks != chunksBefore),
                     static_cast<unsigned>(queueBefore), static_cast<unsigned>(lagi::platform::audio::queued_pcm_frames()),
                     static_cast<unsigned long long>(gapUs), static_cast<unsigned long long>(eventsUs-beginUs),
