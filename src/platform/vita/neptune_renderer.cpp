@@ -5015,21 +5015,6 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         if (lagi::vdp1_half_transparent(command.cmdPmod))
             for (auto& pixel : decoded.rgba)
                 pixel=lagi::vdp1_blend_texel(command.cmdPmod,pixel);
-        // Correlate world-tagged Camp particle descriptors with decoded
-        // pixels, independently of the first-UI-sprite-only trace.
-        if ((g_sceneGameMode==1u || g_sceneGameMode==2u) && command.hasWorldDepth) {
-            static unsigned particleDecodeBudget=96;
-            if (particleDecodeBudget) {
-                --particleDecodeBudget;
-                unsigned nonzero=0, visible=0;
-                for(unsigned i=0;i<texBytes;++i) nonzero+=src[i]!=0;
-                for(auto px:decoded.rgba) visible+=(px&0xff000000u)!=0;
-                logging::writef("[TownParticleDecode] CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X sourceNZ=%u/%u visible=%u/%u refresh=%u\n",
-                    unsigned(command.cmdCtrl),unsigned(command.cmdPmod),unsigned(command.cmdColr),
-                    unsigned(command.cmdSrca),unsigned(command.cmdSize),nonzero,texBytes,
-                    visible,unsigned(decoded.rgba.size()),unsigned(refreshEntry!=nullptr));
-            }
-        }
         const unsigned int stridePixels =
             (decoded.width + 7u) & ~7u;
         const unsigned int bytes =
@@ -7213,38 +7198,6 @@ static bool decodeLiveVdp1Texture(
     const bool endDisabled = (record.cmdPmod & 0x80u) != 0u;
     const bool endMode = (record.cmdPmod & 0x20u) == 0u;
 
-    // The Camp fire hierarchy's one-quad 8x8 LUT material decoded to
-    // zero visible pixels. Preserve its authored PMOD while auditing the
-    // actual character and LUT data, including potential end-code dots.
-    if ((g_sceneGameMode==1u || g_sceneGameMode==2u) &&
-        commandType==2u && record.cmdPmod==0x0408u &&
-        record.cmdSize==0x0108u && mode==1u) {
-        static unsigned auditBudget=16;
-        if(auditBudget) {
-            --auditBudget;
-            unsigned dots[16]{};
-            for(unsigned i=0;i<32u;++i) {
-                ++dots[src[i]>>4u]; ++dots[src[i]&15u];
-            }
-            const unsigned lutAddress=unsigned(record.cmdColr)<<3;
-            const auto* lut=lutAddress<=0x80000u-32u ?
-                (textureMemory ? textureMemory+lutAddress :
-                    getVdp1Pointer(0x25C00000u+lutAddress)) : nullptr;
-            logging::writef("[CampEmberRaw] PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X dots=%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u snapshot=%u\n",
-                unsigned(record.cmdPmod),unsigned(record.cmdColr),unsigned(record.cmdSrca),unsigned(record.cmdSize),
-                dots[0],dots[1],dots[2],dots[3],dots[4],dots[5],dots[6],dots[7],
-                dots[8],dots[9],dots[10],dots[11],dots[12],dots[13],dots[14],dots[15],unsigned(textureMemory!=nullptr));
-            if(lut) {
-                for(unsigned d=0;d<16u;++d) {
-                    const unsigned entry=(unsigned(lut[2u*d])<<8)|unsigned(lut[2u*d+1u]);
-                    if(dots[d]) logging::writef("[CampEmberLut] SRCA=%04X dot=%X count=%u lut=%04X cram=%04X\n",
-                        unsigned(record.cmdSrca),d,dots[d],entry,
-                        unsigned(readVdp2Be16(g_vdp2Cram,(entry*2u)&0xfffu)));
-                }
-            }
-        }
-    }
-
     auto trackCramRead = [&](unsigned byte) {
         const unsigned block = (byte & 0x0fffu) / 32u;
         out.nativeCramDependencies[block / 32u] |= 1u << (block % 32u);
@@ -7945,35 +7898,6 @@ static void appendLiveTownModel(
                 : liveTownTextureIndex(record);
         g_liveTownCpuMesh.polygonTextureIndices[polygonBase + p] =
             textureIndex;
-        // Small authored town hierarchy meshes include the fire/ember
-        // children. Audit each distinct descriptor only once, even when
-        // an animation changes the model transform on every update.
-        if ((g_sceneGameMode==1u || g_sceneGameMode==2u) &&
-            model.polygons.size()<=12u) {
-            static std::uint64_t seen[384]{};
-            static unsigned seenCount=0;
-            if(seenCount<384u) {
-                const auto key=lagi::ui_texture_key(record.cmdPmod,record.cmdColr,record.cmdSrca,record.cmdSize);
-                bool known=false;
-                for(unsigned i=0;i<seenCount;++i) if(seen[i]==key) {known=true;break;}
-                if(!known) {
-                    seen[seenCount++]=key;
-                    unsigned visible=0, total=0, bright=0;
-                    if(textureIndex<g_staticRoomCpuMesh.decodedTextureData.size()) {
-                        const auto& tex=g_staticRoomCpuMesh.decodedTextureData[textureIndex];
-                        total=unsigned(tex.rgba.size());
-                        for(auto px:tex.rgba) {
-                            visible+=(px&0xff000000u)!=0;
-                            bright+=((px&0xff000000u)!=0 && (px&0x00ffffffu)!=0);
-                        }
-                    }
-                    logging::writef("[TownSmallMeshMaterial] CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X light=%04X index=%u visible=%u/%u nonblack=%u quads=%u billboard=%u\n",
-                        unsigned(record.cmdCtrl),unsigned(record.cmdPmod),unsigned(record.cmdColr),
-                        unsigned(record.cmdSrca),unsigned(record.cmdSize),unsigned(record.lightingControl),
-                        unsigned(textureIndex),visible,total,bright,unsigned(model.polygons.size()),unsigned(state.billboard));
-                }
-            }
-        }
         // resize above already constructed fresh zero Gouraud payloads for
         // the appended range; cached static prefixes are reset separately.
     }
