@@ -3480,6 +3480,15 @@ ${source_text}")
   string(REPLACE "${return_fade_anchor}"
    "        fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), g_fadeControls.m_48, 0x1E);\n        fadePalette(&g_fadeControls.m24_fade1, convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color), g_fadeControls.m_4A, 0x1E);\n${return_fade_anchor}"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A3/BTL_A3_map6.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_grid_columns.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_grid_columns.inc" battle_columns)
+  set(battle_columns_old "void battleGrid_cellFunc1(s32, sWorldGrid*)\n{\n    Unimplemented();\n}\n\nvoid battleGrid_cellFunc2(s32, sWorldGrid*)\n{\n    Unimplemented();\n}")
+  string(FIND "${source_text}" "${battle_columns_old}" battle_columns_found)
+  if(battle_columns_found LESS 0)
+   message(FATAL_ERROR "Shared battle grid column boundaries changed")
+  endif()
+  string(REPLACE "${battle_columns_old}" "${battle_columns}" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleGrid.cpp")
   # Capture the native root immediately after camera generation, before
   # local model transforms. Field encounters keep module mode 3, so they

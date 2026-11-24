@@ -134,3 +134,22 @@ small cosmetic effect: native 0605E99C initializes models, per-model animation
 buffers and a controller, while upstream Init/Update/Draw remain stubs. Trace
 its relationships to the required ruin objects before implementing any targets
 or completion flags. No invented boulder count or story gate was added.
+
+## Battle scenery column-streaming restoration
+
+Native initGridForBattle 06014432 registers column creation 0601489E and column
+retirement 06014A1C alongside row callbacks. The shared reconstructed column
+callbacks were empty. They now stream five cells (-2..2), wrap the authored grid
+indices, apply signed repeated-world X/Z translations, populate the same 8x8
+ring and retire/clear outgoing cell tasks. They use the existing battle cell
+Init/Draw and object factory boundary; no area-specific mesh offsets or floor
+height changes were made. The separate dynamic-cell-object factory remains
+unimplemented and is not claimed restored here.
+
+Validation: production adapter exercised 722 column creations/retirements across
+negative and positive world coordinates, verifying resulting positions, ring
+slots, untouched neighboring slots and repeat retirement. Native instruction
+anchors from the original common RAM snapshot were checked. Vita compilation
+and packaging passed. This fixes a confirmed streaming omission, but does not
+establish that the reported apparent battle floor-height mismatch is resolved.
+The user's current test of 4ee81e8 predates this streaming change.
