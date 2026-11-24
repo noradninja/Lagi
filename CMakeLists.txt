@@ -5283,6 +5283,21 @@ ${source_text}")
     message(FATAL_ERROR "Camp Edge trace anchor changed")
   endif()
   string(REPLACE "${camp_edge_trace_anchor}" "${camp_edge_trace_new}" source_text "${source_text}")
+  # Work areas are intended to start zeroed. On Vita the first Camp Edge
+  # update after field return instead observed mF=FF and mE=65, with no
+  # scripted movement requested. Initialize the two scalar state fields
+  # explicitly before the authored initializer applies its mode/shadow bits.
+  set(edge_init_state_old [=[    pThis->mC = 0;
+    pThis->m10_InitPtr = arg;]=])
+  set(edge_init_state_new [=[    pThis->mC = 0;
+    pThis->mE_controlState = 0;
+    pThis->mF = 0;
+    pThis->m10_InitPtr = arg;]=])
+  string(FIND "${source_text}" "${edge_init_state_old}" edge_init_state_found)
+  if(edge_init_state_found LESS 0)
+    message(FATAL_ERROR "Edge NPC state initialization anchor changed")
+  endif()
+  string(REPLACE "${edge_init_state_old}" "${edge_init_state_new}" source_text "${source_text}")
   # Edge's native hierarchy draw path submits through addObjectToDrawList()
   # with pCurrentMatrix already containing the town camera. Mark the scope so
   # Lagi's render bridge strips only that view transform and publishes each
