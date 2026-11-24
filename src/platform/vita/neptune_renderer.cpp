@@ -12177,6 +12177,65 @@ bool submit_vdp1_model(
             return !liveVisibility || g_liveTownGouraudPrep[p].visible;
         };
 
+        // Diagnostic only, in Texture view: isolate the authored Camp
+        // spark material (CAMPOBJ.CGB + 0xB820, LUT + 0x1E200).
+        // Relative LUT/SRCA delta survives VDP1 allocation relocation.
+        // Do not alter Full, lighting, assets, cached textures or sampling.
+        const bool campSparkAudit = g_residentVdp1Model==ResidentVdp1Model::LiveTown &&
+            (g_sceneGameMode==1u || g_sceneGameMode==2u);
+        const auto isCampSpark=[&](unsigned pmod,unsigned colr,unsigned srca,unsigned size) {
+            return campSparkAudit && pmod==0x040Cu && size==0x0420u &&
+                ((colr-srca)&0xffffu)==0x253Cu;
+        };
+        const bool sparkOpaquePhase=(azel_bridge::published_frame_number()/60u)&1u;
+        unsigned sparkProbeTexture=bucketCount;
+        unsigned sparkActualTexture=bucketCount;
+        unsigned sparkPolygons=0, sparkVisible=0, sparkInvalid=0;
+        if(campSparkAudit) {
+            for(std::size_t p=0;p<model.polygonCount;++p) {
+                const auto& q=model.polygons[p];
+                if(!isCampSpark(q.cmdPmod,q.cmdColr,q.cmdSrca,q.cmdSize))continue;
+                ++sparkPolygons;
+                if(polygonVisible(unsigned(p)))++sparkVisible;
+                const unsigned t=model.polygonTextureIndices[p];
+                if(t>=bucketCount){++sparkInvalid;continue;}
+                sparkActualTexture=t;
+            }
+            if(sparkPolygons) {
+                // Borrow an already resident opaque texture. No allocation,
+                // upload, shader, geometry, culling or depth changes.
+                for(unsigned t=0;t<bucketCount;++t) {
+                    const auto& tex=g_vdp1GpuTextures[t];
+                    if(tex.data && tex.opaque && !tex.mesh &&
+                       !lagi::vdp1_half_transparent(tex.cmdPmod)) {
+                        sparkProbeTexture=t;
+                        if(tex.width==32u && tex.height==32u)break;
+                    }
+                }
+                static unsigned reportBudget=24;
+                static unsigned lastPhase=2u;
+                if(reportBudget && lastPhase!=unsigned(sparkOpaquePhase)) {
+                    --reportBudget;lastPhase=unsigned(sparkOpaquePhase);
+                    unsigned gpuVisible=0,gpuTotal=0,gpuMatches=0;
+                    if(sparkActualTexture<bucketCount) {
+                        const auto& tex=g_vdp1GpuTextures[sparkActualTexture];
+                        gpuMatches=unsigned(isCampSpark(tex.cmdPmod,tex.cmdColr,tex.cmdSrca,tex.cmdSize));
+                        if(tex.data) {
+                            const auto* pixels=static_cast<const std::uint32_t*>(tex.data);
+                            const unsigned stride=(tex.width+7u)&~7u;
+                            gpuTotal=tex.width*tex.height;
+                            for(unsigned y=0;y<tex.height;++y)
+                                for(unsigned x=0;x<tex.width;++x)
+                                    gpuVisible+=(pixels[y*stride+x]&0x80000000u)!=0u;
+                        }
+                    }
+                    logging::writef("[CampSparkTextureAB] phase=%s polygons=%u visible=%u invalid=%u actual=%u descriptorMatches=%u gpuAlphaPass=%u/%u probe=%u\n",
+                        sparkOpaquePhase?"OPAQUE":"NATIVE",sparkPolygons,sparkVisible,sparkInvalid,
+                        sparkActualTexture,gpuMatches,gpuVisible,gpuTotal,sparkProbeTexture);
+                }
+            }
+        }
+
         const auto submitRange = [&](std::size_t first,
                                      std::size_t count,
                                      bool orderedShadow) -> bool {
@@ -12278,8 +12337,22 @@ bool submit_vdp1_model(
                     g_probeContext,
                     blended ? g_nativeBlendPrograms[mesh ? BlendMesh : BlendTexture] :
                     (mesh ? g_meshTextureFragmentProgram : g_textureFragmentProgram));
+                const auto& nativeTexture=g_vdp1GpuTextures[t];
+                const bool sparkBatch=isCampSpark(nativeTexture.cmdPmod,nativeTexture.cmdColr,
+                    nativeTexture.cmdSrca,nativeTexture.cmdSize);
+                const unsigned boundTexture=sparkBatch && sparkOpaquePhase &&
+                    sparkProbeTexture<bucketCount ? sparkProbeTexture : t;
                 sceGxmSetFragmentTexture(
-                    g_probeContext, 0, &g_vdp1GpuTextures[t].texture);
+                    g_probeContext, 0, &g_vdp1GpuTextures[boundTexture].texture);
+                if(sparkBatch) {
+                    static unsigned drawBudget=16;
+                    static unsigned previousPhase=2;
+                    if(drawBudget && previousPhase!=unsigned(sparkOpaquePhase)) {
+                        --drawBudget;previousPhase=unsigned(sparkOpaquePhase);
+                        logging::writef("[CampSparkDraw] phase=%s texture=%u bound=%u indices=%u\n",
+                            sparkOpaquePhase?"OPAQUE":"NATIVE",t,boundTexture,batch.indexCount);
+                    }
+                }
                 if (blended) {
                     sceGxmSetFrontDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
                     sceGxmSetBackDepthWriteEnable(g_probeContext,SCE_GXM_DEPTH_WRITE_DISABLED);
