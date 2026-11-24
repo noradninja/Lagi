@@ -1142,22 +1142,44 @@ int audio_worker_thread(SceSize, void*)
         sceKernelGetCpuId(),
         kTargetQueuedFrames);
 
+    std::uint64_t iterations = 0, previousEndUs = 0;
     while (!g_audioWorkerStop.load(std::memory_order_acquire)) {
+        const bool sample = (++iterations & 127u) == 0u;
+        const auto beginUs = sceKernelGetSystemTimeWide();
+        const auto gapUs = previousEndUs ? beginUs - previousEndUs : 0;
         process_audio_events();
+        const auto eventsUs = sample ? sceKernelGetSystemTimeWide() : 0;
 
         service_driver_commands();
         service_pending_sounds();
         service_driver_commands();
 
+        const auto commandsUs = sample ? sceKernelGetSystemTimeWide() : 0;
         lagi_dsp_service_pending(&SCSP.DSP);
 
         g_cutscenePCM.service();
+        const auto serviceUs = sample ? sceKernelGetSystemTimeWide() : 0;
         if (!lagi::audio::movieOwnsOutput.load(std::memory_order_acquire) &&
             ((g_gameplayRenderEnabled && g_sequence) || g_cutscenePCM.active() || g_cdda.active())) {
+            const auto queueBefore = sample ? lagi::platform::audio::queued_pcm_frames() : 0;
+            const auto chunksBefore = g_audioRenderChunks;
+            std::uint64_t leaseUs = 0;
             {
                 lagi::audio::OutputLease lease;
+                if (sample) leaseUs = sceKernelGetSystemTimeWide();
                 if (!lagi::audio::movieOwnsOutput.load(std::memory_order_acquire))
                     render_scsp_audio();
+            }
+            if (sample) {
+                const auto endUs = sceKernelGetSystemTimeWide();
+                lagi::platform::logging::writef(
+                    "[AzelAudioWorker] seq=%d rendered=%u queueBefore=%u queueAfter=%u gapUs=%llu eventsUs=%llu commandsUs=%llu serviceUs=%llu leaseUs=%llu renderAndReleaseUs=%llu totalUs=%llu\n",
+                    g_sequenceNumber, static_cast<unsigned>(g_audioRenderChunks != chunksBefore),
+                    static_cast<unsigned>(queueBefore), static_cast<unsigned>(lagi::platform::audio::queued_pcm_frames()),
+                    static_cast<unsigned long long>(gapUs), static_cast<unsigned long long>(eventsUs-beginUs),
+                    static_cast<unsigned long long>(commandsUs-eventsUs), static_cast<unsigned long long>(serviceUs-commandsUs),
+                    static_cast<unsigned long long>(leaseUs-serviceUs), static_cast<unsigned long long>(endUs-leaseUs),
+                    static_cast<unsigned long long>(endUs-beginUs));
             }
             if (lagi::platform::audio::queued_pcm_frames() >=
                 kTargetQueuedFrames) {
@@ -1168,6 +1190,7 @@ int audio_worker_thread(SceSize, void*)
         } else {
             sceKernelDelayThread(1000);
         }
+        previousEndUs = sceKernelGetSystemTimeWide();
     }
 
     g_cdda.stop();
