@@ -6179,6 +6179,62 @@ void pauseCutscene]=]
    "const sVec3_FP& edgePos = static_cast<sEdgeTask*>(npcData0.m70_npcPointerArray[0].workArea)->mE8.m0_position;"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/camp/twn_camp.cpp")
+  # Bounded native fire material trace, including the animated hierarchy.
+  set(camp_fire_trace_old [=[struct sCampFire : public]=])
+  set(camp_fire_trace_new [=[static void lagiTraceCampFireHierarchy(sModelHierarchy* node, unsigned& budget)
+{
+    if (!node || !budget) return;
+    if (node->m0_3dModel) {
+        const auto* model=node->m0_3dModel;
+        unsigned i=0;
+        for (const auto& q:model->mC_Quads) {
+            if (!budget) break;
+            --budget;
+            lagi::platform::logging::writef(
+                "[CampFireMaterial] model=%p quad=%u CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X light=%04X\n",
+                static_cast<const void*>(model),i++,unsigned(q.mA_CMDCTRL),unsigned(q.mC_CMDPMOD),
+                unsigned(q.mE_CMDCOLR),unsigned(q.m10_CMDSRCA),unsigned(q.m12_onCollisionScriptIndex),unsigned(q.m8_lightingControl));
+        }
+    }
+    lagiTraceCampFireHierarchy(node->m4_subNode,budget);
+    lagiTraceCampFireHierarchy(node->m8_nextNode,budget);
+}
+
+struct sCampFire : public]=])
+  string(FIND "${source_text}" "${camp_fire_trace_old}" camp_fire_trace_found)
+  if(camp_fire_trace_found LESS 0)
+    message(FATAL_ERROR "Camp fire hierarchy trace boundary changed")
+  endif()
+  string(REPLACE "${camp_fire_trace_old}" "${camp_fire_trace_new}" source_text "${source_text}")
+  set(camp_fire_init_old [=[            sModelHierarchy* pHierarchy = pThis->m0_fileBundle->getModelHierarchy(4);]=])
+  set(camp_fire_init_new [=[            sModelHierarchy* pHierarchy = pThis->m0_fileBundle->getModelHierarchy(4);
+            static unsigned fireTraceBudget=192;
+            lagiTraceCampFireHierarchy(pHierarchy,fireTraceBudget);]=])
+  string(FIND "${source_text}" "${camp_fire_init_old}" camp_fire_init_found)
+  if(camp_fire_init_found LESS 0)
+    message(FATAL_ERROR "Camp fire initialization trace boundary changed")
+  endif()
+  string(REPLACE "${camp_fire_init_old}" "${camp_fire_init_new}" source_text "${source_text}")
+  set(camp_particle_trace_old [=[            particleInitSub(&pThis->m10_animQuad, pThis->m4_vd1Allocation->m4_vdp1Memory, &pThis->m_quadData);]=])
+  set(camp_particle_trace_new [=[            particleInitSub(&pThis->m10_animQuad, pThis->m4_vd1Allocation->m4_vdp1Memory, &pThis->m_quadData);
+            static unsigned particleTraceBudget=96;
+            unsigned frame=0;
+            const unsigned base=pThis->m4_vd1Allocation->m4_vdp1Memory;
+            for (const auto& q:pThis->m_quadData) {
+                if (!particleTraceBudget) break;
+                --particleTraceBudget;
+                const unsigned colr=(q.m4_CMDPMOD&0x38)==8 ?
+                    (base+q.mA_CMDCOLR)&0xffffu : q.mA_CMDCOLR;
+                lagi::platform::logging::writef(
+                    "[CampParticleMaterial] record=%08X frame=%u base=%04X CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X\n",
+                    unsigned(pThis->mC.m_offset),frame++,base,unsigned(q.m2_CMDCTRL),unsigned(q.m4_CMDPMOD),
+                    colr,(base+q.m6_CMDSRCA)&0xffffu,unsigned(q.m8_CMDSIZE));
+            }]=])
+  string(FIND "${source_text}" "${camp_particle_trace_old}" camp_particle_trace_found)
+  if(camp_particle_trace_found LESS 0)
+    message(FATAL_ERROR "Camp particle material trace boundary changed")
+  endif()
+  string(REPLACE "${camp_particle_trace_old}" "${camp_particle_trace_new}" source_text "${source_text}")
   # Log once per camp entry and per authored NPC creation, not per frame.
   # The generated Azel source no longer contains its original PDS.h include.
   set(source_text "#include \"lagi/platform.h\"\n${source_text}")
