@@ -1,0 +1,120 @@
+# Green Oasis activation audit - 23 November 2026
+
+Audited source: 6ee67a9 on diagnostics/garil-cliff-current. Original Disc 1
+FLD_A5.PRG base 06054000, SHA256
+3743201c4b369da9bd88377c315711be5fd18246ba6ac3d1d656048c026efeb4.
+This is original instruction/data and current source evidence, not hardware
+acceptance. The monolith rendering crash fix does not restore activation.
+
+## Discovery is distinct from activation
+
+The sandfall discovery callback 0605A236 disables its target, sets byte96 bit40,
+starts script 4 with flag 5B9, and starts camera data 0608CFB4. The current
+adapter also owns/decodes the camera target at 06099FD4 correctly. Script table
+0609D4A8 entry4 is 0606044D. It contains dialogue, hide/restore-dragon,
+fade and camera-retirement calls already handled by the shared script service.
+It does not perform the later monolith activation.
+
+## Missing central activation path
+
+Original sky/monolith Init 0605ABD4 registers callback 0605B694: the callback
+pointer literal is at 0605AD1C and is passed to field-target setup 06074A84.
+The current a5SkyEntity_Init passes nullptr instead. There is no CMake adapter
+for a5_skyEntity.cpp restoring that callback. The monolith can therefore be
+rendered and registered without its authored activation behavior.
+
+Native callback 0605B694 calls startFieldScript(5,5BA), sets byte96 bit20,
+sets native F4=333, counter114=0, adds 16C16C to104, integrates10C/108,
+changes Update to 0605AFAC, emits helper0605B900 and starts camera data0608C8AC
+with callback0605B58A and live monolith-position anchor E8. Script-table entry5
+is060604ED. Its short dialogue is only one part of the sequence.
+
+Activation Update0605AFAC advances rotation/offsets, has original effect calls
+0605B900/0605B9C8/0605BAE0/0605BB9C, and at counter>=120 retires the secondary
+model, calls0605AEF4(reverseMode=0), corrects accumulated rotation, sets byte95
+bit02, plays PCM70/system sound73, assigns F0 at114 and changes Update to
+0605B1FC. The current port contains none of these activation-state functions.
+Do not replace them by immediately setting the completion bit.
+
+Native0605AEF4 builds a shared debris-scatter descriptor for hierarchy18/poseB50
+and calls06085E46, then installs Draw0605AD7A. It is also called with mode1
+when Init sees byte96 bit20 already set; that reload branch is an explicit
+Unimplemented in current a5_skyEntity.cpp. Restoration must include both the
+live activation sequence and returning to an already activated Oasis.
+
+The settled Update0605B1FC retains the original sound countdown and debug-only
+reset conditions; it must not keep running the pre-activation secondary-model
+Draw on an uninitialized/retired model. Native callbacks/effect descriptors
+need named host data and shared services, not Saturn offsets into C++ tasks.
+
+## Connected downstream consumers
+
+| Consumer | Current source behavior |
+| --- | --- |
+| Sandfall/weather | Both read byte95 bit02: sandfall switches to static geometry; weather stops updating/drawing. Sandfall Init handles byte96 bit40/bit20 and sets its persistent stopped bit on reload. |
+| Trapped worm | Existing Oasis adapter rescue sets byte95 bit08; authored pit spawning checks that flag. |
+| Segmented Baldor | Existing adapter completes its authored lifecycle, sets byte95 bit01 and byteA3 bit80. |
+| Later story worm | Night proximity task checks byteA3 bit80 and byte96 bit80. Although upstream shows stubs, CMake replaces NPC creation/tracker/camera with shared story-worm services; do not mistake raw upstream stubs for missing generated behavior. |
+| Field scripts | Discovery script4 and activation script5 are loaded from the original script table; shared VM handles dialogue, camera retirement, fades and hide/restore. No invented event script is needed. |
+
+## Remaining work and acceptance
+
+Restore the monolith callback, activation/settled Update and Draw, shared debris
+binding, original effect producers and camera callback before calling activation
+implemented. Verify original state/order/timers and save/re-entry using production
+host fixtures. Then one Vita run must show normal target activation, dialogue,
+transient effects, stopped sandfall/weather, restored player control, later
+Baldor/story-worm progression and persistence after leaving/re-entering.
+
+No implementation or hardware-success claim follows from this audit alone.
+
+## Saved-state checkpoint
+
+The generated monolith now restores original0605AEF4 debris configuration and
+primary-only Draw0605AD7A when byte96 bit20 is present on entry. It uses the
+existing shared debris service with model18/poseB50, live position/rotation,
+original spread, angular parameters, ground A000 and impact sound6F. Normal
+settled Update0605B1FC handles culling and one-shot countdown sound command
+(70,5,0,2), confirmed against common RAM0602C31A. Debug-only reset is not mapped
+to gameplay input. Production fixture and original operands pass; Vita packaging
+passes. The live activation callback/controller/effect chain is still being
+restored; this checkpoint alone does not enable activation.
+
+## Live destruction sequence checkpoint
+
+The generated sky/monolith target now registers the original0605B694 behavior,
+separate from sandfall discovery. The callback requests script5/5BA and camera
+608C8AC with the original B58A callback EA/live position anchor. The native
+120-update rotation/effect schedule, byte96 bit20 start latch, byte95 bit02
+completion, PCM70/system73 and settled240-count handoff are connected. The
+entrance record at6098C10 (same500000/0/-600000 position as the monolith) keeps
+its original bit6E4 gate and subfield3 destination; no forced unlock is added.
+Discovery alone does not run the destruction controller.
+
+Original burst and small/radial/final arc producers use the shared particle
+pool and animated-line task. Its two previously empty Draw methods now generate
+the native segment geometry/jitter/window and submit through the shared VDP1
+world-line renderer. Native final-angle range produces eight arcs, not sixteen.
+Production controller checks cover1024 seeds, flags/timers/effect schedule,
+script/camera operands and settled handoff; producer checks cover descriptors,
+RNG counts/targets/lifetimes; shared line checks cover segment counts/continuity.
+Vita packaging passes. Collision, exact line clipping/composition, the camera
+skip callback, destruction of the field objects in a real run and passage entry
+still require integrated/device verification. Do not replace the user's normal
+activate -> destroy objects -> explosion -> hole sequence with a direct event
+launch. Shared debris initialization is being audited before this is a final
+hardware checkpoint.
+
+## Shared debris pose correction
+
+The shared debris factory previously read the descriptor hierarchy but discarded
+its pose key and passed nullptr into recursive bone initialization. Its generated
+adapter now initializes/steps a temporary model from the descriptor's own static
+pose and supplies that pose to the existing hierarchy traversal. Bone positions
+are copied before the temporary model dies; bundle geometry remains bundle-owned.
+Failure finishes the debris task instead of using absent pose data. This corrects
+all existing descriptor users without reading a parent's presumed Saturn layout.
+The production initialization/traversal fixture checks root, child and sibling
+origins, exact hierarchy/pose keys, and failure retirement. Vita packaging passes.
+Native debris physics, impact callbacks and device appearance are not inferred
+from the pose test; no hardware acceptance is claimed.

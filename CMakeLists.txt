@@ -2473,6 +2473,36 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
   string(REPLACE "${point_restore_old}" "${point_restore_new}" source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/fieldCamera.cpp")
+  # Original A5 0606A658..69A: with no camera script, mode 0 holds
+  # its authored position and tracks the live dragon. Upstream leaves a stub.
+  set(fixed_camera_begin "static void cameraFollowMode_scriptTarget(sFieldCameraStatus* r4)\n{")
+  set(fixed_camera_end "// 06062ac0")
+  string(FIND "${source_text}" "${fixed_camera_begin}" fixed_camera_start)
+  string(FIND "${source_text}" "${fixed_camera_end}" fixed_camera_stop)
+  if(fixed_camera_start LESS 0 OR fixed_camera_stop LESS fixed_camera_start)
+   message(FATAL_ERROR "Shared script-target camera boundaries changed")
+  endif()
+  math(EXPR fixed_camera_length "${fixed_camera_stop}-${fixed_camera_start}")
+  string(SUBSTRING "${source_text}" ${fixed_camera_start} ${fixed_camera_length} fixed_camera_old_body)
+  set(fixed_camera_stub [=[        else
+        {
+            assert(0);
+        }]=])
+  set(fixed_camera_tracking [=[        else
+        {
+            const sVec3_FP delta=pDragonTask->m8_pos-r4->m0_position;
+            sVec2_FP lookAt;
+            computeLookAt(delta,lookAt);
+            r4->mC_rotation[0]=lookAt[0];
+            r4->mC_rotation[1]=lookAt[1];
+            r4->m24_distanceToDestination=vecDistance(r4->m0_position,pDragonTask->m8_pos);
+        }]=])
+  string(FIND "${fixed_camera_old_body}" "${fixed_camera_stub}" fixed_camera_stub_found)
+  if(fixed_camera_stub_found LESS 0)
+   message(FATAL_ERROR "Shared script-target camera fallback changed")
+  endif()
+  string(REPLACE "${fixed_camera_stub}" "${fixed_camera_tracking}" fixed_camera_new_body "${fixed_camera_old_body}")
+  string(REPLACE "${fixed_camera_old_body}" "${fixed_camera_new_body}" source_text "${source_text}")
   if(LAGI_WORLD_MAP_BRINGUP AND LAGI_BATTLE_EXECUTE_A3)
    string(FIND "${source_text}" "static void cameraFollowMode_posFromDragon(sFieldCameraStatus* r11, s_dragonTaskWorkArea* stack_4)" garil_camera_found)
    if(garil_camera_found LESS 0)
@@ -2549,6 +2579,20 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
         if (!(pThis->m65 & 4))]=] source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_field_screen_scenery.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_field_screen_scenery.inc" screen_scenery)
+  set(screen_draw_anchor "void s_visdibilityCellTask::gridCellDraw_normal(s_visdibilityCellTask* pTypedWorkAread)")
+  set(screen_draw_old "    if (pTypedWorkAread->m10_pCell3)\n    {\n        assert(0);\n    }")
+  set(screen_load_old "    pNewData3->m8 = readGrid3(grid3, pNewData3->m10_gridSize[0], pNewData3->m10_gridSize[1]);")
+  foreach(screen_boundary IN ITEMS screen_draw_anchor screen_draw_old screen_load_old)
+   string(FIND "${source_text}" "${${screen_boundary}}" screen_found)
+   if(screen_found LESS 0)
+    message(FATAL_ERROR "Shared third scenery grid boundary changed: ${screen_boundary}")
+   endif()
+  endforeach()
+  string(REPLACE "${screen_draw_anchor}" "${screen_scenery}\n${screen_draw_anchor}" source_text "${source_text}")
+  string(REPLACE "${screen_draw_old}" "    lagiDrawFieldScreenScenery(pTypedWorkAread, r15);" source_text "${source_text}")
+  string(REPLACE "${screen_load_old}" "    pNewData3->m8 = nullptr;\n    lagiScreenSceneryLayout = pNewData3;\n    lagiScreenSceneryCells = readGrid2(grid3, pNewData3->m10_gridSize[0], pNewData3->m10_gridSize[1]);" source_text "${source_text}")
   # FLD_A5 0607C2D0 reloads the saved dragon and both riders when the
   # field task's +3E reload flag is 1. The shared initializer owns this
   # flag, along with the native HP/BP refill and completion state.
@@ -3015,6 +3059,16 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   # Native ray calls terminate in Lagi's shared VDP1 effect service.
 
  elseif(relative_path STREQUAL "field.cpp")
+  if(LAGI_BATTLE_NATIVE_BUILD)
+   set(source_text "#include \"lagi/native_field_cells.h\"\n${source_text}")
+   set(cell_dispatch_old "        gCurrentFieldOverlay->dispatchCellObjectCreation(r4, r5[i], r6);")
+   string(FIND "${source_text}" "${cell_dispatch_old}" cell_dispatch_found)
+   if(cell_dispatch_found LESS 0)
+    message(FATAL_ERROR "Shared field cell factory dispatch boundary changed")
+   endif()
+   string(REPLACE "${cell_dispatch_old}"
+    "        if (!lagiDispatchNativeFieldCellFactory(r4, r5[i], r6))\n${cell_dispatch_old}" source_text "${source_text}")
+  endif()
   # MAIN06011EEC..06011F26 converts native statuses56/63/6D to WORLD
   # indices by ADD #-50 before the six-bit write. Upstream omitted this.
   foreach(field_route_status 86 99 109)
@@ -3060,7 +3114,100 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   endif()
   string(REPLACE "getBit(0xA * 8 + 1)" "getBit(0xA * 8 + 6)"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_3_data.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_rig.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_rig.inc" lathum_rig)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_draw.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_draw.inc" lathum_draw)
+  string(APPEND lathum_rig "\n${lathum_draw}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_damage.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_damage.inc" lathum_damage)
+  string(APPEND lathum_rig "\n${lathum_damage}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_emergence.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_emergence.inc" lathum_emergence)
+  string(APPEND lathum_rig "\n${lathum_emergence}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_reaction.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_reaction.inc" lathum_reaction)
+  string(APPEND lathum_rig "\n${lathum_reaction}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_turn.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_turn.inc" lathum_turn)
+  string(APPEND lathum_rig "\n${lathum_turn}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_projectile.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_projectile.inc" lathum_projectile)
+  string(APPEND lathum_rig "\n${lathum_projectile}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_ring.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_ring.inc" lathum_ring)
+  string(APPEND lathum_rig "\n${lathum_ring}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_attack_one.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_attack_one.inc" lathum_attack_one)
+  string(APPEND lathum_rig "\n${lathum_attack_one}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_attack_two.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_attack_two.inc" lathum_attack_two)
+  string(APPEND lathum_rig "\n${lathum_attack_two}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_attack_three.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_attack_three.inc" lathum_attack_three)
+  string(APPEND lathum_rig "\n${lathum_attack_three}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_death.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_death.inc" lathum_death)
+  string(APPEND lathum_rig "\n${lathum_death}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_update.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_lathum_update.inc" lathum_update)
+  string(APPEND lathum_rig "\n${lathum_update}")
+  set(lathum_rig "#include \"audio/systemSounds.h\"\n#include \"lagi/native_vector_transition.h\"\n#include \"lagi/native_battle_speech.h\"\n#include \"lagi/native_formation_motion.h\"\n#include \"lagi/native_battle_projectiles.h\"\n#include \"battle/battleGrid.h\"\n#include \"battle/battleEngineSub0.h\"\n#include \"battle/battleManager.h\"\n#include \"battle/battleOverlay.h\"\n#include \"battle/battleDragon.h\"\n#include \"kernel/vdp1Allocator.h\"\n#include \"battle/battleIntro.h\"\n#include \"battle/battleFormationIntroEffect.h\"\n#include \"battle/particleEffect.h\"\n${lathum_rig}")
+  set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/native_battle_models.h\"\n#include \"lagi/native_task_disposal.h\"\n#include \"battle/battleTargetable.h\"\n#include \"battle/battleEnemyLifeMeter.h\"\n#include \"kernel/graphicalObject.h\"\n#include \"kernel/fileBundle.h\"\n#include \"kernel/animation.h\"\n#include \"mainMenuDebugTasks.h\"\n#include \"battle/battleTextDisplay.h\"\n#include \"battle/battleEngine.h\"\n#include \"battle/battleDamageDisplay.h\"\n#include <array>\n${source_text}")
+  set(lathum_init_old "static void Init(sBTL_A5_3_LathumFormation* pThis) { Unimplemented(); }")
+  string(FIND "${source_text}" "${lathum_init_old}" lathum_init_found)
+  if(lathum_init_found LESS 0)
+   message(FATAL_ERROR "Original Lathum initialization boundary changed")
+  endif()
+  string(REPLACE "struct sBTL_A5_3_LathumFormation : public s_workAreaTemplate<sBTL_A5_3_LathumFormation>" "${lathum_rig}\nstruct sBTL_A5_3_LathumFormation : public s_workAreaTemplateWithCopy<sBTL_A5_3_LathumFormation>" source_text "${source_text}")
+  string(REPLACE "${lathum_init_old}" "static void Init(sBTL_A5_3_LathumFormation* pThis) { if (!lagiInitializeLathumRig(pThis,pThis->rig)) pThis->getTask()->markFinished(); }" source_text "${source_text}")
+  set(lathum_update_old "static void Update(sBTL_A5_3_LathumFormation* pThis) { Unimplemented(); }")
+  string(FIND "${source_text}" "${lathum_update_old}" lathum_update_found)
+  if(lathum_update_found LESS 0)
+   message(FATAL_ERROR "Original Lathum update boundary changed")
+  endif()
+  string(REPLACE "${lathum_update_old}" "static void Update(sBTL_A5_3_LathumFormation* pThis) { auto* overlay=gBattleManager->m10_battleOverlay; lagiUpdateLathumRig(pThis,pThis->rig,*overlay->m4_battleEngine,*overlay->m8_gridTask,*overlay->m18_dragon); }" source_text "${source_text}")
+  set(lathum_draw_old "static void Draw(sBTL_A5_3_LathumFormation* pThis) { Unimplemented(); }")
+  string(FIND "${source_text}" "${lathum_draw_old}" lathum_draw_found)
+  if(lathum_draw_found LESS 0)
+   message(FATAL_ERROR "Original Lathum draw boundary changed")
+  endif()
+  string(REPLACE "${lathum_draw_old}" "static void Draw(sBTL_A5_3_LathumFormation* pThis) { lagiDrawLathumRig(pThis,pThis->rig); }" source_text "${source_text}")
+  set(lathum_storage_old "    u8 m_pad[0x18C - sizeof(s_workAreaTemplate<sBTL_A5_3_LathumFormation>)];")
+  string(FIND "${source_text}" "${lathum_storage_old}" lathum_storage_found)
+  if(lathum_storage_found LESS 0)
+   message(FATAL_ERROR "Original Lathum host storage boundary changed")
+  endif()
+  string(REPLACE "${lathum_storage_old}" "    LagiLathumRig rig;" source_text "${source_text}")
+  set(lathum_factory_old "        createSubTask<sBTL_A5_3_LathumFormation>((p_workArea)pParent);")
+  string(FIND "${source_text}" "${lathum_factory_old}" lathum_factory_found)
+  if(lathum_factory_found LESS 0)
+   message(FATAL_ERROR "Original Lathum typed factory boundary changed")
+  endif()
+  string(REPLACE "${lathum_factory_old}" "        {\n            auto* actor=createSubTaskWithCopy<sBTL_A5_3_LathumFormation>(pParent);\n            lagi::tasks::register_work_area_disposer(actor,[](void* p){delete static_cast<sBTL_A5_3_LathumFormation*>(p);});\n        }" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/o_fld_a5_0.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(source_text "#include \"lagi/garil_mound.h\"\n${source_text}")
+  set(mound_setup_old "    setupField2(pDT3, fieldA5_0_startTasks);")
+  string(FIND "${source_text}" "${mound_setup_old}" mound_setup_found)
+  if(mound_setup_found LESS 0)
+   message(FATAL_ERROR "Original Garil cell object setup boundary changed")
+  endif()
+  string(REPLACE "${mound_setup_old}" "    lagiSetupGarilMoundField(pDT3, fieldA5_0_startTasks);" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/field_a5/o_fld_a5.cpp")
+  set(oasis_baldor_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_oasis_baldor.inc")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${oasis_baldor_path}")
+  file(READ "${oasis_baldor_path}" oasis_baldor_source)
+  set(oasis_baldor_old [=[void createA5_baldorWormBody(p_workArea parent)
+{
+    Unimplemented(); // createSubTaskFromFunction size 0x138, loads Baldor body with 3D models/animation
+}]=])
+  string(FIND "${source_text}" "${oasis_baldor_old}" oasis_baldor_found)
+  if(oasis_baldor_found LESS 0)
+   message(FATAL_ERROR "Green Oasis Baldor constructor boundary changed")
+  endif()
+  string(REPLACE "${oasis_baldor_old}" "${oasis_baldor_source}" source_text "${source_text}")
+  set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/garil_story_worm.h\"\n#include \"kernel/monsterPart.h\"\n#include \"3dEngine.h\"\n${source_text}")
   set(a5_horizon_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_a5_horizon.inc")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${a5_horizon_path}")
   file(READ "${a5_horizon_path}" a5_horizon_source)
@@ -3076,7 +3223,152 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   string(REPLACE "${a5_horizon_task}" "${a5_horizon_source}\n${a5_horizon_task}" source_text "${source_text}")
   string(REPLACE "${a5_horizon_callbacks}" "{ &a5EncounterConfigInit, &lagiA5HorizonUpdate, &lagiA5HorizonDraw, nullptr }"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/fieldItemBox_type0.cpp")
+  set(oasis_decor_old [=[    PDS_unimplemented("LCSItemBox_Callback0Sub0");]=])
+  string(FIND "${source_text}" "${oasis_decor_old}" oasis_decor_found)
+  if(oasis_decor_found LESS 0)
+   message(FATAL_ERROR "Green Oasis item-box impact boundary changed")
+  endif()
+  string(REPLACE "${oasis_decor_old}" [=[    const auto* field = getFieldTaskPtr();
+    if (field && field->m2C_currentFieldIndex == 3 && field->m2E_currentSubFieldIndex == 2) {
+        extern void lagiEmitOasisItemBoxDust(const sVec3_FP&);
+        lagiEmitOasisItemBoxDust(pThis->m3C_pos);
+        return;
+    }
+    PDS_unimplemented("LCSItemBox_Callback0Sub0");]=] source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/o_fld_a5_2.cpp")
+  set(oasis_pits_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_oasis_sand_pits.inc")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${oasis_pits_path}")
+  file(READ "${oasis_pits_path}" oasis_pits_source)
+  set(oasis_setup "    setupField2(pDT3, fieldA5_2_startTasks);")
+  string(FIND "${source_text}" "${oasis_setup}" oasis_setup_position)
+  if(oasis_setup_position LESS 0)
+   message(FATAL_ERROR "Green Oasis field placement boundary changed")
+  endif()
+  string(REPLACE "${oasis_setup}" "    lagiSetupGreenOasisField(pDT3, fieldA5_2_startTasks);" source_text "${source_text}")
+  string(REPLACE "// 0605a768" "${oasis_pits_source}\n// 0605a768" source_text "${source_text}")
+  set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/native_field_cells.h\"\n#include \"field/fieldVisibilityGrid.h\"\n#include \"kernel/fileBundle.h\"\n#include \"kernel/vdp1AnimatedQuad.h\"\n#include \"field/fieldModelRender.h\"\n#include \"3dEngine.h\"\n${source_text}")
+ elseif(relative_path STREQUAL "field/fieldDebrisScatter.cpp")
+  set(debris_pose_old [=[    // Get pose data for initial bone positions
+    s_3dModel* pModel = nullptr;
+    // The parent task should have a s_3dModel - find it
+    // For the crashed ship, the model is at offset 0x40 in the parent struct
+    // We pass it through the params indirectly via position/rotation]=])
+  string(FIND "${source_text}" "${debris_pose_old}" debris_pose_found)
+  if(debris_pose_found LESS 0)
+   message(FATAL_ERROR "Shared debris static pose initialization boundary changed")
+  endif()
+  string(REPLACE "${debris_pose_old}" [=[    // The descriptor owns the hierarchy/pose keys; no parent-layout cast.
+    s_3dModel lagiPoseModel;
+    if(!init3DModelRawData(parent,&lagiPoseModel,0,pBundle,params->m34_modelOffset,
+        nullptr,pBundle->getStaticPose(params->m36_poseOffset,numBones),nullptr,nullptr)) {
+        pTask->getTask()->markFinished();return nullptr;
+    }
+    stepAnimation(&lagiPoseModel);]=] source_text "${source_text}")
+  set(debris_bones_old "initBonesFromHierarchy(pTask, pHierarchy, boneIdx, rootMatrix, nullptr);")
+  string(FIND "${source_text}" "${debris_bones_old}" debris_bones_found)
+  if(debris_bones_found LESS 0)
+   message(FATAL_ERROR "Shared debris posed hierarchy binding changed")
+  endif()
+  string(REPLACE "${debris_bones_old}" "initBonesFromHierarchy(pTask, pHierarchy, boneIdx, rootMatrix, &lagiPoseModel);" source_text "${source_text}")
+  set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"mainMenuDebugTasks.h\"\n${source_text}")
+ elseif(relative_path STREQUAL "field/fieldAnimRingSubTask.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_field_anim_ring_draw.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_field_anim_ring_draw.inc" ring_draw)
+  foreach(ring_function IN ITEMS animRingSubTask_DrawAlt animRingSubTask_Draw)
+   set(ring_stub "static void ${ring_function}(sAnimRingSubTask* /*pThis*/)\n{\n    Unimplemented();\n}")
+   string(FIND "${source_text}" "${ring_stub}" ring_stub_found)
+   if(ring_stub_found LESS 0)
+    message(FATAL_ERROR "Shared native ring draw boundary changed: ${ring_function}")
+   endif()
+   string(REPLACE "${ring_stub}" "" source_text "${source_text}")
+  endforeach()
+  string(REPLACE "// 0607fafc" "${ring_draw}\n// 0607fafc" source_text "${source_text}")
+  set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/native_formation_motion.h\"\n#include \"kernel/rayDisplay.h\"\n${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/a5_skyEntity.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_oasis_monolith_settled.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_oasis_monolith_settled.inc" oasis_settled)
+  set(oasis_sky_init "// 0605ABD4")
+  set(oasis_sky_reload "        Unimplemented(); // FUN_FLD_A5__0605aef4 alternate setup + change update method")
+  foreach(oasis_sky_boundary IN ITEMS "${oasis_sky_init}" "${oasis_sky_reload}" "    u8 m118_pad[4];")
+   string(FIND "${source_text}" "${oasis_sky_boundary}" oasis_sky_found)
+   if(oasis_sky_found LESS 0)
+    message(FATAL_ERROR "Oasis monolith settled boundary changed: ${oasis_sky_boundary}")
+   endif()
+  endforeach()
+  string(REPLACE "    u8 m118_pad[4];" "    p_workArea lagiDebris=nullptr;" source_text "${source_text}")
+  foreach(oasis_part IN ITEMS effects activation)
+   set(oasis_part_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_oasis_monolith_${oasis_part}.inc")
+   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${oasis_part_path}")
+   file(READ "${oasis_part_path}" oasis_part_source)
+   string(APPEND oasis_settled "\n${oasis_part_source}")
+  endforeach()
+  string(REPLACE "${oasis_sky_init}" "${oasis_settled}\n${oasis_sky_init}" source_text "${source_text}")
+  string(REPLACE "initFieldModelRenderContext(&p->m8_modelCtx, p, nullptr," "initFieldModelRenderContext(&p->m8_modelCtx, p, reinterpret_cast<void*>(&lagiOasisMonolithActivate)," source_text "${source_text}")
+  string(REPLACE "${oasis_sky_reload}" "        lagiOasisMonolithSetupDebris(p,true);\n        p->m_UpdateMethod=&lagiOasisMonolithSettledUpdate;" source_text "${source_text}")
+  set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"field/fieldDebrisScatter.h\"\n#include \"field/fieldAnimRingSubTask.h\"\n#include \"audio/systemSounds.h\"\n#include \"audio/soundDriver.h\"\n${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/a5_sandfallEntity.cpp")
+  # These MCB slots contain native per-polygon color records, not models.
+  foreach(lod IN ITEMS 0 1)
+   if(lod EQUAL 0)
+    set(sandfall_model "a5Sandfall_secondaryModelOffsets[p->m54]")
+   else()
+    set(sandfall_model "0xA14")
+   endif()
+   set(sandfall_draw_old "drawCurrentObjectInstanced(
+                    pBundle->get3DModel(${sandfall_model}),
+                    pBundle->get3DModel(a5Sandfall_instanceOffsets_lod${lod}[p->m64]));")
+   string(FIND "${source_text}" "${sandfall_draw_old}" sandfall_draw_found)
+   if(sandfall_draw_found LESS 0)
+    message(FATAL_ERROR "Green Oasis sandfall LOD ${lod} draw boundary changed")
+   endif()
+   string(REPLACE "${sandfall_draw_old}" "addObjectToDrawListWithColorAnimation(
+                    pBundle->get3DModel(${sandfall_model}),
+                    pBundle->getRawFileAtOffset(a5Sandfall_instanceOffsets_lod${lod}[p->m64]));"
+    source_text "${source_text}")
+  endforeach()
+  # The cutscene retains its target pointer for the lifetime of the task.
+  set(sandfall_camera_old "(sVec3_FP*)getSaturnPtr(gFLD_A5->getSaturnPtr(0x06099FD4))")
+  string(FIND "${source_text}" "${sandfall_camera_old}" sandfall_camera_found)
+  if(sandfall_camera_found LESS 0)
+   message(FATAL_ERROR "Green Oasis sandfall camera target boundary changed")
+  endif()
+  string(REPLACE "    sVec3_FP m48_renderPosition;" "    sVec3_FP m48_renderPosition;
+    sVec3_FP lagiDiscoveryCameraTarget;"
+   source_text "${source_text}")
+  string(REPLACE "    a5CutsceneCameraInit((p_workArea)pThis," "    pThis->lagiDiscoveryCameraTarget = readSaturnVec3(gFLD_A5->getSaturnPtr(0x06099FD4));
+    a5CutsceneCameraInit((p_workArea)pThis,"
+   source_text "${source_text}")
+  string(REPLACE "${sandfall_camera_old}" "&pThis->lagiDiscoveryCameraTarget" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_oasis_discovery_camera.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_oasis_discovery_camera.inc" oasis_orbit_camera)
+  string(REPLACE "    sVec3_FP lagiDiscoveryCameraTarget;" "    sVec3_FP lagiDiscoveryCameraTarget;\n    std::vector<s_scriptData2> lagiDiscoveryOrbitFrames;" source_text "${source_text}")
+  set(oasis_orbit_anchor "// 0605A236 - sandfall discovery callback:")
+  string(FIND "${source_text}" "${oasis_orbit_anchor}" oasis_orbit_found)
+  if(oasis_orbit_found LESS 0)
+   message(FATAL_ERROR "Oasis discovery orbit-camera boundary changed")
+  endif()
+  string(REPLACE "${oasis_orbit_anchor}" "${oasis_orbit_camera}\n${oasis_orbit_anchor}" source_text "${source_text}")
+  string(REPLACE "a5CutsceneCameraInit((p_workArea)pThis," "lagiStartOasisDiscoveryOrbitCamera(pThis," source_text "${source_text}")
+  string(REPLACE "#include \"field/fieldCutsceneTask2.h\"" "#include \"field/fieldCutsceneTask2.h\"\n#include \"field/fieldCutsceneTask3.h\"" source_text "${source_text}")
+
+  set(source_text "#include \"lagi/lagi_render_bridge.h\"
+${source_text}")
  elseif(relative_path STREQUAL "field/field_a5/a5_exitTriggerEntity.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_exit_trace.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_exit_trace.inc" garil_exit_trace)
+  string(REPLACE "    // Saturn size 0x6C" "    int lagiTraceLastMode=-1, lagiTraceLastScript=-1;\n    unsigned lagiTraceTicks=0, lagiTraceReports=0;\n    // Saturn size 0x6C" source_text "${source_text}")
+  string(REPLACE "// 0605661C - update" "${garil_exit_trace}\n// 0605661C - update" source_text "${source_text}")
+  set(garil_exit_tick "    updateFieldModelRenderContext(&pThis->m34_modelCtx);")
+  string(FIND "${source_text}" "${garil_exit_tick}" garil_exit_tick_found)
+  if(garil_exit_tick_found LESS 0)
+   message(FATAL_ERROR "Garil main exit observation boundary changed")
+  endif()
+  string(REPLACE "${garil_exit_tick}" "${garil_exit_tick}\n    lagiTraceGarilMainExit(pThis);" source_text "${source_text}")
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
   # A5 06056714/0605672E write child+10 (stored intensity), NOT current
   # intensity at native+C. Saturn offsets cannot index a C++ work area.
   set(garil_vibration_old "*(s32*)((u8*)pThis->m2C_childTask + 0x10)")
@@ -3188,6 +3480,15 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
   string(REPLACE "${return_fade_anchor}"
    "        fadePalette(&g_fadeControls.m0_fade0, convertColorToU32ForFade(g_fadeControls.m0_fade0.m0_color), g_fadeControls.m_48, 0x1E);\n        fadePalette(&g_fadeControls.m24_fade1, convertColorToU32ForFade(g_fadeControls.m24_fade1.m0_color), g_fadeControls.m_4A, 0x1E);\n${return_fade_anchor}"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A3/BTL_A3_map6.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_grid_columns.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_grid_columns.inc" battle_columns)
+  set(battle_columns_old "void battleGrid_cellFunc1(s32, sWorldGrid*)\n{\n    Unimplemented();\n}\n\nvoid battleGrid_cellFunc2(s32, sWorldGrid*)\n{\n    Unimplemented();\n}")
+  string(FIND "${source_text}" "${battle_columns_old}" battle_columns_found)
+  if(battle_columns_found LESS 0)
+   message(FATAL_ERROR "Shared battle grid column boundaries changed")
+  endif()
+  string(REPLACE "${battle_columns_old}" "${battle_columns}" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleGrid.cpp")
   # Capture the native root immediately after camera generation, before
   # local model transforms. Field encounters keep module mode 3, so they
@@ -3362,6 +3663,30 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
    "            pSubEntry->m2C_deathMode = readSaturnU8(subEntry + 0x2C);\n            pSubEntry->m2D_hitSound = readSaturnU8(subEntry + 0x2D);\n            pSubEntry->m2E_deathSound = readSaturnU8(subEntry + 0x2E);\n            pSubEntry->m30_hitTranslation = readSaturnFP(subEntry + 0x30);\n            pSubEntry->m34_hitRotation = readSaturnFP(subEntry + 0x34);\n${enemy_parse_anchor}"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldParticlePool.cpp")
+  set(pool_follow_anchor "#include \"fieldParticlePool.h\"")
+  string(FIND "${source_text}" "${pool_follow_anchor}" pool_follow_found)
+  if(pool_follow_found LESS 0)
+   message(FATAL_ERROR "Native field particle declarations boundary changed")
+  endif()
+  string(REPLACE "${pool_follow_anchor}" "${pool_follow_anchor}\n#include \"lagi/field_particle_follow.h\"\n#include <new>\n#include \"lagi_field_particle_follow.inc\"" source_text "${source_text}")
+  set(pool_delete_anchor "        pTask->m_UpdateMethod = &particlePoolUpdate;")
+  string(FIND "${source_text}" "${pool_delete_anchor}" pool_delete_found)
+  if(pool_delete_found LESS 0)
+   message(FATAL_ERROR "Native field particle task lifecycle boundary changed")
+  endif()
+  string(REPLACE "${pool_delete_anchor}" "${pool_delete_anchor}\n        pTask->m_DeleteMethod = &lagiDeleteFieldParticlePayloads;" source_text "${source_text}")
+  # Original A5 0608045E..6A frees each completed particle's task-owned
+  # payload. Dropping only the pointer leaks until field teardown and makes
+  # allocateHeapForTask traverse an ever-growing owner list.
+  set(pool_payload_old [=[                    pEntry->m20_heapData = nullptr;]=])
+  set(pool_payload_new [=[                    lagiReleaseFieldParticlePayload(pEntry);
+                    freeHeapForTask(pThis, pEntry->m20_heapData);
+                    pEntry->m20_heapData = nullptr;]=])
+  string(FIND "${source_text}" "${pool_payload_old}" pool_payload_found)
+  if(pool_payload_found LESS 0)
+   message(FATAL_ERROR "Native field particle payload retirement boundary changed")
+  endif()
+  string(REPLACE "${pool_payload_old}" "${pool_payload_new}" source_text "${source_text}")
   set(pool_billboard_old [=[static void particleDrawBillboard(sParticleSlot* pEntry)
 {
     drawProjectedParticle(&pEntry->m2C_animQuad, &pEntry->m0_position);
@@ -3875,6 +4200,34 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "${laser_palette_old}"
    "u16 charColor = pTrail->m14_vdp1Param + readSaturnU16(config + 0x08);"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_env.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(a5_environment_path "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_battle_environment.inc")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${a5_environment_path}")
+  file(READ "${a5_environment_path}" a5_environment_source)
+  string(APPEND source_text "
+${a5_environment_source}")
+ elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_data.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(a5_environment_dispatch [=[    case 0x0605a71a:
+        Create_BTL_A5_env_grid(pParent);
+        break;]=])
+  string(FIND "${source_text}" "${a5_environment_dispatch}" a5_environment_found)
+  if(a5_environment_found LESS 0)
+   message(FATAL_ERROR "Garil battle environment dispatch boundary changed")
+  endif()
+  string(REPLACE "${a5_environment_dispatch}" [=[    case 0x0605a71a:
+        Create_BTL_A5_env_grid(pParent);
+        break;
+    case 0x0605a724:
+    case 0x0605a72e:
+    case 0x0605a742:
+    case 0x0605a74c:
+    case 0x0605a756:
+    case 0x0605a760:
+        lagiCreateGarilBattleEnvironment(pParent, Func.m_offset);
+        break;]=] source_text "${source_text}")
+  set(source_text "struct s_workArea;
+void lagiCreateGarilBattleEnvironment(s_workArea*, unsigned);
+${source_text}")
  elseif(relative_path STREQUAL "battle/battleEnemyModels.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # Saturn work-area offsets do not describe Vita C++ tasks. The owner
   # initializes its named fields before registering its model hotpoints.
@@ -3890,6 +4243,72 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   string(REPLACE "${a5_target_metadata}" [=[(*pModel->m40)[i].m0[j].m10,
                     (*pModel->m40)[i].m0[j].m0]=] source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_enemy.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(nanyd_model_create "createBattleEnemyModels(pEntity, pEntity->m0_fileBundle, pEntity->m29_modelCount, pEntity->m2C_models,")
+  string(FIND "${source_text}" "${nanyd_model_create}" nanyd_model_found)
+  if(nanyd_model_found LESS 0)
+   message(FATAL_ERROR "Nanyd shared model creation boundary changed")
+  endif()
+  string(REPLACE "${nanyd_model_create}" "lagiCreateBattleEnemyModels(pEntity, pEntity->m0_fileBundle, pEntity->m29_modelCount, pEntity->m2C_models," source_text "${source_text}")
+  set(nanyd_model_failure "    if (result == 0)\n        return nullptr;")
+  string(FIND "${source_text}" "${nanyd_model_failure}" nanyd_model_failure_found)
+  if(nanyd_model_failure_found LESS 0)
+   message(FATAL_ERROR "Nanyd failed-model meter retirement boundary changed")
+  endif()
+  string(REPLACE "${nanyd_model_failure}" "    if (result == 0) {\n        lagiRetireBattleEnemyMeter(pEntity->mAC_lifeMeter);\n        return nullptr;\n    }" source_text "${source_text}")
+  set(nanyd_targets_old "    initBattleEnemyTargetables(pEntity, pEntity->m29_modelCount, pEntity->m2C_models);")
+  string(FIND "${source_text}" "${nanyd_targets_old}" nanyd_targets_found)
+  if(nanyd_targets_found LESS 0)
+   message(FATAL_ERROR "Nanyd stable indexed target initialization boundary changed")
+  endif()
+  string(REPLACE "${nanyd_targets_old}" [=[    LagiBattleModelTargetState nativeTargets;
+    if(!lagiInitBattleEnemyModelTargets(pEntity,pEntity->m1C_entityIndex,pEntity->m2C_models,
+        nativeTargets,{0x060A3A4C,0x060A3A50,0x060A3A74,0x060A3A98})) {
+        lagiRetireBattleEnemyMeter(pEntity->mAC_lifeMeter);
+        return nullptr;
+    }
+    // The damage adapter reads these named actor fields every update.
+    pEntity->mB4 = nativeTargets.healthFloor;
+    pEntity->mB8_damageCallback0 = nativeTargets.damageCallbackEA[0];
+    pEntity->mBC_damageCallback1 = nativeTargets.damageCallbackEA[1];
+    pEntity->mC0_damageCallback2 = nativeTargets.damageCallbackEA[2];
+    pEntity->mC4_damageCallback3 = nativeTargets.damageCallbackEA[3];
+    pEntity->m144_hitbox0 = nativeTargets.hitboxValues[0];
+    pEntity->m146_hitbox1 = nativeTargets.hitboxValues[1];
+    pEntity->m148_hitbox2 = nativeTargets.hitboxValues[2];
+    pEntity->m14A_hitbox3 = nativeTargets.hitboxValues[3];]=] source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_damage.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_damage.inc" nanyd_damage)
+  string(FIND "${source_text}" "static bool BTL_A5_enemy_checkDamage(" nanyd_damage_begin)
+  string(FIND "${source_text}" "// 0605e54a" nanyd_damage_end)
+  if(nanyd_damage_begin LESS 0 OR nanyd_damage_end LESS nanyd_damage_begin)
+   message(FATAL_ERROR "Nanyd shared damage boundaries changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${nanyd_damage_begin} nanyd_damage_prefix)
+  string(SUBSTRING "${source_text}" ${nanyd_damage_end} -1 nanyd_damage_suffix)
+  set(source_text "#include \"lagi/native_battle_models.h\"\n${nanyd_damage_prefix}${nanyd_damage}\n${nanyd_damage_suffix}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_motion.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_motion.inc" nanyd_motion)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_attacks.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_attacks.inc" nanyd_attacks)
+  set(nanyd_motion "${nanyd_motion}\n${nanyd_attacks}")
+
+  string(REPLACE "// 060a3bc0" "${nanyd_motion}\n// 060a3bc0" source_text "${source_text}")
+  string(REPLACE "    // size 0x1A8" [=[    sVec3_FP m_lagiPositionVelocity{};
+    sVec3_FP m_lagiPositionAcceleration{};
+    sVec3_FP m_lagiAngularVelocity{};
+    sVec3_FP m_lagiAngularAcceleration{};
+    sVec2_FP m_lagiRushHeading{};
+    sBattleTargetable* m_lagiRushTarget=nullptr;
+    bool m_lagiCoordinatedHit=false;
+    // size 0x1A8]=] source_text "${source_text}")
+  set(source_text "#include \"lagi/native_formation_motion.h\"\n${source_text}")
+  set(source_text "#include \"lagi/native_battle_projectiles.h\"\n${source_text}")
+  string(REPLACE "#include \"battle/battleEngine.h\"" "#include \"battle/battleEngine.h\"\n#include \"battle/battleDragon.h\"" source_text "${source_text}")
+
+
   # Original A5 0605EFEC seeds entity+0x170/0x174/0x178 escape direction;
   # 0605EAA4 adds it to the position/orbit target each movement frame.
   set(escape_offset_struct "    u8 m170_pad4[0x17C - 0x170];")
@@ -3932,11 +4351,7 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
         // Survivors flee without a kill reward. Their life meters are
         // separate dragon-owned tasks that still point at this actor's
         // position/health; retire them before destroying the actor.
-        if (pThis->mAC_lifeMeter)
-        {
-            pThis->mAC_lifeMeter->getTask()->markFinished();
-            pThis->mAC_lifeMeter = nullptr;
-        }
+        lagiRetireBattleEnemyMeter(pThis->mAC_lifeMeter);
         lagiA5BeginScatterFlight(pThis, pEngine);
         pThis->m24_counter = 0;
         pThis->m28_state = 6;
@@ -3945,19 +4360,6 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
         return;
 
     // check for damage (only in alive state)]=] source_text "${source_text}")
-  set(a5_target_init "    initBattleEnemyTargetables(pEntity, pEntity->m29_modelCount, pEntity->m2C_models);")
-  string(REPLACE "${a5_target_init}" [=[    pEntity->mB4 = 0;
-    pEntity->mB8_damageCallback0 = 0x060a3a4c;
-    pEntity->mBC_damageCallback1 = 0x060a3a50;
-    pEntity->mC0_damageCallback2 = 0x060a3a74;
-    pEntity->mC4_damageCallback3 = 0x060a3a98;
-    pEntity->m144_hitbox0 = 10;
-    pEntity->m146_hitbox1 = 10;
-    pEntity->m148_hitbox2 = 10;
-    pEntity->m14A_hitbox3 = 10;
-    pEntity->m150 = 0;
-    pEntity->m154 = 0;
-    initBattleEnemyTargetables(pEntity, pEntity->m29_modelCount, pEntity->m2C_models);]=] source_text "${source_text}")
   set(a5_target_draw [=[        pModel->m18_drawFunction(pModel);
         popMatrix();]=])
   string(REPLACE "${a5_target_draw}" [=[        pModel->m18_drawFunction(pModel);
@@ -3996,7 +4398,53 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
    "readSaturnS16(pParent->mE0_entityGroup.m8_dataTable + 0xC) + iVar6"
    "lagiBattleEnemyType(pParent->mE0_entityGroup, iVar6)"
    source_text "${source_text}")
+  set(nanyd_position_begin "    // position = initial formation position + orbit velocity + battle center")
+  string(FIND "${source_text}" "${nanyd_position_begin}" nanyd_position_start)
+  string(FIND "${source_text}" "// 0605e220" nanyd_position_end)
+  if(nanyd_position_start LESS 0 OR nanyd_position_end LESS nanyd_position_start)
+   message(FATAL_ERROR "Nanyd native movement replacement boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${nanyd_position_start} nanyd_position_prefix)
+  string(SUBSTRING "${source_text}" ${nanyd_position_end} -1 nanyd_position_suffix)
+  set(source_text "${nanyd_position_prefix}    lagiUpdateNanydPosition(pThis);\n    lagiNanydEnterPendingAttack(pThis);\n}\n\n${nanyd_position_suffix}")
+  set(nanyd_step [=[    stepAnimation(&pThis->m2C_models[0]);
+
+    pThis->m84_displayRotation.m0_X = 0;]=])
+  string(FIND "${source_text}" "${nanyd_step}" nanyd_step_found)
+  if(nanyd_step_found LESS 0)
+   message(FATAL_ERROR "Nanyd attack dispatch boundary changed")
+  endif()
+  string(REPLACE "${nanyd_step}" [=[    if(lagiUpdateNanydAttackState(pThis))return;
+    stepAnimation(&pThis->m2C_models[0]);
+
+    pThis->m84_displayRotation.m0_X = 0;]=] source_text "${source_text}")
+  string(REPLACE "if (pThis->m28_state == 0)\n    {\n        bool wasDamaged" "if (pThis->m28_state < 7)\n    {\n        bool wasDamaged" source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_single.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  # Generate a typed single-formation extension from the upstream definition.
+  # Other A5 formations keep their own upstream type and state unchanged.
+  set(single_header "${LAGI_AZEL_SOURCE_ROOT}/battle/BTL_A5/BTL_A5_formation.h")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${single_header}"
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_control.inc"
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_attack_phases.inc")
+  file(READ "${single_header}" single_type)
+  string(REPLACE "#pragma once" "" single_type "${single_type}")
+  string(REPLACE "sBTL_A5_FormationTask" "sLagiGarilSingleFormation" single_type "${single_type}")
+  string(FIND "${single_type}" "    // size 0x1D8" single_fields_found)
+  if(single_fields_found LESS 0)
+   message(FATAL_ERROR "A5 single formation type extension boundary changed")
+  endif()
+  string(REPLACE "    // size 0x1D8" [=[    std::array<std::array<sVec3_FP,6>,3> m_lagiLayouts{};
+    unsigned m_lagiLayout=0;
+    u8 m_lagiMoveCounter=0;
+    bool m_lagiAttackLead=false;
+    // size 0x1D8]=] single_type "${single_type}")
+  string(REPLACE "sBTL_A5_FormationTask" "sLagiGarilSingleFormation" source_text "${source_text}")
+  string(REPLACE "struct sBTL_A5_SingleEnemy" "${single_type}\nstruct sBTL_A5_SingleEnemy" source_text "${source_text}")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_control.inc" single_control)
+  string(REPLACE "// 0605ae48" "${single_control}\n// 0605ae48" source_text "${source_text}")
+  set(source_text "#include \"lagi_formation_actor_signal.h\"\n${source_text}")
+  string(REPLACE "#include \"battle/battleEngine.h\"" "#include \"battle/battleEngine.h\"\n#include \"battle/battleDragon.h\"" source_text "${source_text}")
+
   set(a5_single_type "readSaturnS16(pParent->mE0_entityGroup.m8_dataTable + 0xC) + isLead")
   string(FIND "${source_text}" "${a5_single_type}" a5_single_type_found)
   if(a5_single_type_found LESS 0)
@@ -4004,24 +4452,466 @@ static void particleDrawBillboard(sParticleSlot* pEntry)
   endif()
   string(REPLACE "${a5_single_type}"
    "lagiBattleEnemyType(pParent->mE0_entityGroup, isLead)" source_text "${source_text}")
-  set(source_text "#include \"lagi_battle_enemy_lifecycle.h\"\n${source_text}")
- elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_formation.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  string(REPLACE "    // size 0x1C0" "    LagiBattleModelTargetState m_lagiTargets;\n    s16 m_lagiPendingDamage;\n    // size 0x1C0" source_text "${source_text}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_intro.inc")
-  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_intro.inc" nanyd_intro)
-  set(nanyd_anchor [=[static void BTL_A5_formationTask_Update]=])
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_init.inc")
+  set(single_model_begin "    // create model")
+  set(single_model_end "    // rotation + position")
+  string(FIND "${source_text}" "${single_model_begin}" single_model_start)
+  string(FIND "${source_text}" "${single_model_end}" single_model_stop)
+  if(single_model_start LESS 0 OR single_model_stop LESS single_model_start)
+   message(FATAL_ERROR "A5 single model construction boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${single_model_start} single_model_prefix)
+  string(SUBSTRING "${source_text}" ${single_model_stop} -1 single_model_suffix)
+  set(source_text "${single_model_prefix}    if (!lagiInitGarilSingleModels(pEntity,pBundle,isLead)) return nullptr;\n\n${single_model_suffix}")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_init.inc" single_model_init)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_attack.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_attack.inc" single_attack_impl)
+  set(single_model_init "${single_model_init}\n${single_attack_impl}")
+  set(single_charge_stub [=[            // 0605c51c: create attack particle based on lead status
+            Unimplemented();]=])
+  set(single_shot_stub [=[            // 06054080: create attack effect based on lead status
+            Unimplemented();]=])
+  foreach(single_attack_stub IN ITEMS single_charge_stub single_shot_stub)
+   string(FIND "${source_text}" "${${single_attack_stub}}" single_attack_found)
+   if(single_attack_found LESS 0)
+    message(FATAL_ERROR "A5 single charge/shot boundary changed: ${single_attack_stub}")
+   endif()
+  endforeach()
+  string(REPLACE "${single_charge_stub}" "            lagiGarilSingleBeginCharge(pThis);" source_text "${source_text}")
+  string(REPLACE "${single_shot_stub}" "            lagiGarilSingleFire(pThis);" source_text "${source_text}")
+  set(source_text "#include \"lagi/native_battle_projectiles.h\"\n${source_text}")
+  string(REPLACE "// 060a3bc0 - shared main model draw" "${single_model_init}\n// 060a3bc0 - shared main model draw" source_text "${source_text}")
+  string(FIND "${source_text}" "// 0605c2bc" single_update_begin)
+  string(FIND "${source_text}" "// 0605c34c" single_update_end)
+  if(single_update_begin LESS 0 OR single_update_end LESS single_update_begin)
+   message(FATAL_ERROR "A5 single position update boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${single_update_begin} single_update_prefix)
+  string(SUBSTRING "${source_text}" ${single_update_end} -1 single_update_suffix)
+  set(source_text "${single_update_prefix}static void BTL_A5_singleEnemy_updatePositionFromFormation(sBTL_A5_SingleEnemy* pThis)\n{\n    lagiUpdateGarilSinglePosition(pThis);\n    BTL_A5_singleEnemy_updateShadow(pThis);\n}\n\n${single_update_suffix}")
+  set(single_switch [=[    switch (pThis->m28_state)
+    {
+    case 0:
+        if (battleEngine_isBattleIntroFinished())]=])
+  string(FIND "${source_text}" "${single_switch}" single_switch_found)
+  if(single_switch_found LESS 0)
+   message(FATAL_ERROR "A5 single formation update boundary changed")
+  endif()
+  string(REPLACE "${single_switch}" "    lagiUpdateGarilSingleSpacing(pThis);\n    formationUpdatePosition(&pThis->m2C_posBlock,&pEngine->mC_battleCenter);\n${single_switch}" source_text "${source_text}")
+  set(single_selector [=[    case 3:
+        if (battleEngine_isPlayerTurnActive()) return;
+        break;]=])
+  string(FIND "${source_text}" "${single_selector}" single_selector_found)
+  if(single_selector_found LESS 0)
+   message(FATAL_ERROR "A5 single attack selection boundary changed")
+  endif()
+  string(REPLACE "${single_selector}" [=[    case 3:
+        if (battleEngine_isPlayerTurnActive()) return;
+        if(pEngine->m3CC->m8==1 && !pThis->mF1_pad5[2])lagiSelectGarilSingleAttack(pThis);
+        break;]=] source_text "${source_text}")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_attack_phases.inc" single_attack_phases)
+  string(FIND "${source_text}" "    case 0xB:" single_cleanup_state_found)
+  if(single_cleanup_state_found LESS 0)
+   message(FATAL_ERROR "A5 single cleanup state boundary changed")
+  endif()
+  string(REPLACE "    case 0xB:" "${single_attack_phases}    case 0xB:" source_text "${source_text}")
+  string(REPLACE "        pModel->m18_drawFunction(pModel);" [=[        pModel->m18_drawFunction(pModel);
+        if (pModel->m58_targetablePositions) {
+            int target=0;
+            for (const auto& bone:pModel->m44_hotpointData)
+                for (const auto& position:bone)
+                    pModel->m58_targetablePositions[target++]=position;
+        }]=] source_text "${source_text}")
+  set(single_damage_stub "static s32 BTL_A5_enemy_damageCheck(sBTL_A5_SingleEnemy* pThis)\n{\n    Unimplemented();\n    return 0;\n}")
+  string(FIND "${source_text}" "${single_damage_stub}" single_damage_found)
+  if(single_damage_found LESS 0)
+   message(FATAL_ERROR "A5 single damage boundary changed")
+  endif()
+  string(REPLACE "${single_damage_stub}" "static s32 BTL_A5_enemy_damageCheck(sBTL_A5_SingleEnemy* pThis)\n{\n    return lagiUpdateGarilSingleDamage(pThis);\n}" source_text "${source_text}")
+  string(FIND "${source_text}" "// 060a3750" single_cleanup_begin)
+  string(FIND "${source_text}" "// 0605be3c" single_cleanup_end)
+  if(single_cleanup_begin LESS 0 OR single_cleanup_end LESS single_cleanup_begin)
+   message(FATAL_ERROR "A5 single cleanup boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${single_cleanup_begin} single_cleanup_prefix)
+  string(SUBSTRING "${source_text}" ${single_cleanup_end} -1 single_cleanup_suffix)
+  set(source_text "${single_cleanup_prefix}static void BTL_A5_enemy_cleanup(sBTL_A5_SingleEnemy* pThis, void (*callback)(sBTL_A5_SingleEnemy*))\n{\n    pThis->m14_flags |= 0x80000000u;\n    pThis->m14_flags &= ~0x40000000u;\n    if (callback) callback(pThis);\n    lagiRetireBattleEnemyModelTargets(pThis,pThis->m14_flags,pThis->m2C_models,nullptr);\n}\nstatic void BTL_A5_singleEnemy_Delete(sBTL_A5_SingleEnemy* pThis)\n{\n    BTL_A5_enemy_cleanup(pThis,nullptr);\n}\n\n${single_cleanup_suffix}")
+  string(REPLACE "        &BTL_A5_singleEnemy_Draw,\n        nullptr," "        &BTL_A5_singleEnemy_Draw,\n        &BTL_A5_singleEnemy_Delete," source_text "${source_text}")
+  string(REPLACE "((u8*)pThis->m158_formation)[0xF0]" "pThis->m158_formation->mF0_flag" source_text "${source_text}")
+  string(REPLACE "((u8*)pThis->m158_formation)[0xF]" "pThis->m158_formation->mE0_entityGroup.mF_deadCount" source_text "${source_text}")
+  string(REPLACE "char* formationByte = (char*)((u8*)pThis->m158_formation + 0x12);" "u8* formationByte = &pThis->m158_formation->mF1_pad5[1];" source_text "${source_text}")
+  string(REPLACE "*(s32*)((u8*)pThis->m158_formation + pThis->m1C_entityIndex * 4 + 0x14) = 1;" "const s32 dead = 1;\n        std::memcpy(pThis->m158_formation->mF4_entityPositions + pThis->m1C_entityIndex*sizeof(dead), &dead, sizeof(dead));" source_text "${source_text}")
+  string(REPLACE "s32* formationCenter = *(s32**)(((u8*)pThis->m158_formation) + 4);" "const sVec3_FP& formationCenter = pThis->m158_formation->mE0_entityGroup.m4_positionBlock->m0_position;" source_text "${source_text}")
+  set(source_text "#include \"lagi/native_battle_speech.h\"\n${source_text}")
+  set(single_intro_mode "            battleEngine_SetBattleMode(eBattleModes::m7);")
+  string(FIND "${source_text}" "${single_intro_mode}" single_intro_mode_found)
+  if(single_intro_mode_found LESS 0)
+   message(FATAL_ERROR "Garil single intro camera boundary changed")
+  endif()
+  string(REPLACE "${single_intro_mode}" "${single_intro_mode}\n            battleEngine_setupAttackCamera(&pThis->m2C_posBlock.m0_position,0x50000,0,0);" source_text "${source_text}")
+  set(single_dialogue_gate [=[        if (pEngine->m188_flags.m2000)
+            pThis->m28_state = 2;]=])
+  string(FIND "${source_text}" "${single_dialogue_gate}" single_dialogue_found)
+  if(single_dialogue_found LESS 0)
+   message(FATAL_ERROR "A5 horn-warning dialogue gate changed")
+  endif()
+  string(REPLACE "${single_dialogue_gate}" [=[        if (pEngine->m188_flags.m2000)
+        {
+            lagiCreateNativeBattleSpeech(pThis,9,15,g_BTL_A5->getSaturnPtr(0x060AF9F4));
+            battleEngine_restoreCameraAfterEnemyAttack();
+            pThis->m28_state = 2;
+        }]=] source_text "${source_text}")
+  string(REPLACE "if (c > 0x54)" "if (c > 0x4B)" source_text "${source_text}")
+  set(single_position_old "sSaturnPtr posTable = readSaturnEA(pParent->mE0_entityGroup.m8_dataTable + 8);")
+  string(FIND "${source_text}" "${single_position_old}" single_position_found)
+  if(single_position_found LESS 0)
+   message(FATAL_ERROR "A5 single position table boundary changed")
+  endif()
+  string(REPLACE "${single_position_old}" "sSaturnPtr posTable = pParent->mE0_entityGroup.m8_dataTable;" source_text "${source_text}")
+  string(FIND "${source_text}" "pEntity->m90_initialPosition = readSaturnVec3(posTable + entityIndex * 0xC);" single_spawn_position_found)
+  if(single_spawn_position_found LESS 0)
+   message(FATAL_ERROR "A5 single mutable spawn position boundary changed")
+  endif()
+  string(REPLACE "pEntity->m90_initialPosition = readSaturnVec3(posTable + entityIndex * 0xC);"
+   "pEntity->m90_initialPosition = pParent->m_lagiLayouts[pParent->m_lagiLayout][entityIndex];" source_text "${source_text}")
+  set(single_formation_anchor "    pThis->mE0_entityGroup.mE_numEntities = 6;")
+  string(FIND "${source_text}" "${single_formation_anchor}" single_formation_found)
+  if(single_formation_found LESS 0)
+   message(FATAL_ERROR "A5 single formation initializer boundary changed")
+  endif()
+  string(REPLACE "${single_formation_anchor}" [=[    lagiInitGarilSingleLayouts(pThis);
+    pThis->mE0_entityGroup.m4_positionBlock = &pThis->m2C_posBlock;
+    pThis->mE0_entityGroup.mE_numEntities = 6;]=] source_text "${source_text}")
+  # Bind actors to a named native group, independent of the parent task type.
+  string(REPLACE "    LagiBattleModelTargetState m_lagiTargets;" "    LagiGarilSingleGroupBinding m_lagiGroup;\n    LagiBattleModelTargetState m_lagiTargets;" source_text "${source_text}")
+  set(single_group_bind [=[    pEntity->m_lagiGroup={&pParent->mE0_entityGroup,
+        &pParent->mF0_flag,&pParent->mF1_pad5[1],pParent->mF4_entityPositions,pParent,
+        [](void* context,int index)->sVec3_FP {
+            auto* formation=static_cast<sLagiGarilSingleFormation*>(context);
+            return formation->m_lagiLayouts[formation->m_lagiLayout][index];
+        }};]=])
+  string(FIND "${source_text}" "    pEntity->m158_formation = pParent;" single_group_bind_found)
+  if(single_group_bind_found LESS 0)
+   message(FATAL_ERROR "Garil single actor group binding boundary changed")
+  endif()
+  string(REPLACE "    pEntity->m158_formation = pParent;" "    pEntity->m158_formation = pParent;\n${single_group_bind}" source_text "${source_text}")
+  string(REPLACE "pThis->m158_formation->mE0_entityGroup" "(*pThis->m_lagiGroup.group)" source_text "${source_text}")
+  string(REPLACE "pThis->m158_formation->mF0_flag" "(*pThis->m_lagiGroup.activeMask)" source_text "${source_text}")
+  string(REPLACE "&pThis->m158_formation->mF1_pad5[1]" "pThis->m_lagiGroup.reactionMask" source_text "${source_text}")
+  string(REPLACE "pThis->m158_formation->mF4_entityPositions" "pThis->m_lagiGroup.deadWords" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_factory_wrapper.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_single_factory_wrapper.inc" single_factory_wrapper)
+  set(single_factory_signature "static p_workArea BTL_A5_createEnemySingle(sLagiGarilSingleFormation* pParent, s32 entityIndex, s32 isLead)")
+  string(FIND "${source_text}" "${single_factory_signature}" single_factory_begin)
+  string(FIND "${source_text}" "void battleEngine_PlayAttackCamera(int);" single_factory_end)
+  if(single_factory_begin LESS 0 OR single_factory_end LESS single_factory_begin)
+   message(FATAL_ERROR "Garil single shared factory boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${single_factory_begin} single_factory_prefix)
+  math(EXPR single_factory_length "${single_factory_end}-${single_factory_begin}")
+  string(SUBSTRING "${source_text}" ${single_factory_begin} ${single_factory_length} single_factory_body)
+  string(SUBSTRING "${source_text}" ${single_factory_end} -1 single_factory_suffix)
+  string(REPLACE "${single_factory_signature}" "p_workArea lagiCreateGarilSingleActor(s_workAreaCopy* pParent,const LagiGarilSingleGroupBinding& binding,s32 entityIndex,s32 isLead)" single_factory_body "${single_factory_body}")
+  string(REPLACE "    pEntity->m158_formation = pParent;\n${single_group_bind}" "    pEntity->m_lagiGroup=binding;" single_factory_body "${single_factory_body}")
+  string(REPLACE "pParent->mE0_entityGroup" "(*binding.group)" single_factory_body "${single_factory_body}")
+  string(REPLACE "pParent->m_lagiLayouts[pParent->m_lagiLayout][entityIndex]" "binding.targetPosition(binding.positionContext,entityIndex)" single_factory_body "${single_factory_body}")
+  set(source_text "${single_factory_prefix}${single_factory_body}${single_factory_wrapper}\n${single_factory_suffix}")
+  set(source_text "#include \"lagi/garil_actor_group.h\"\n${source_text}")
+  set(source_text "#include \"lagi_battle_enemy_lifecycle.h\"\n#include \"lagi/native_battle_models.h\"\n#include \"lagi/garil_single_formation.h\"\n#include \"lagi/native_formation_motion.h\"\n${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_dual.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_groups.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_groups.inc" dual_groups)
+  string(REPLACE "    // size 0x28C" "    sFormationPositionBlock m_lagiSecondaryBlock;\n    u8 m_lagiMoveCounter;\n    std::array<sVec3_FP,3> m_lagiSinglePositions;\n    // size 0x28C" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_completion.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_completion.inc" dual_completion)
+  string(FIND "${source_text}" "    for (int i = 0; i < pThis->mE0_entityGroup.mE_numEntities; i++)" dual_cleanup_begin)
+  string(FIND "${source_text}" "    // auto-scroll positions" dual_cleanup_end)
+  if(dual_cleanup_begin LESS 0 OR dual_cleanup_end LESS dual_cleanup_begin)
+   message(FATAL_ERROR "Garil dual native completion boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${dual_cleanup_begin} dual_cleanup_prefix)
+  string(SUBSTRING "${source_text}" ${dual_cleanup_end} -1 dual_cleanup_suffix)
+  set(source_text "${dual_cleanup_prefix}    lagiUpdateGarilDualCompletion(pThis);\n\n${dual_cleanup_suffix}")
+  set(dual_old_create "BTL_A5_createEnemy(pThis, 0x060b13b4, i, 1)")
+  foreach(dual_boundary IN ITEMS "// 0605f3a4" "    allocateNPC(pThis, 0xC);" "    BTL_A5_dualFormation_Init(pTask);" "${dual_old_create}")
+   string(FIND "${source_text}" "${dual_boundary}" dual_found)
+   if(dual_found LESS 0)
+    message(FATAL_ERROR "Garil dual group boundary changed: ${dual_boundary}")
+   endif()
+  endforeach()
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_trail.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_trail.inc" dual_trail)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_control.inc"
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_swarm_phases.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_control.inc" dual_control)
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_swarm_phases.inc" dual_swarm_phases)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_camera.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_camera.inc" dual_camera)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_spacing.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_spacing.inc" dual_spacing)
+  string(REPLACE "// 0605f3a4" "${dual_groups}\n${dual_completion}\n${dual_trail}\n${dual_control}\n${dual_camera}\n${dual_spacing}\n// 0605f3a4" source_text "${source_text}")
+  set(dual_single_layout_old "    pThis->m1D0_entityGroup2.m8_dataTable = g_BTL_A5->getSaturnPtr(0x060b13b4 + (variant ? 0x24 : 0));")
+  string(FIND "${source_text}" "${dual_single_layout_old}" dual_single_layout_found)
+  if(dual_single_layout_found LESS 0)
+   message(FATAL_ERROR "Dual secondary writable layout boundary changed")
+  endif()
+  string(REPLACE "${dual_single_layout_old}" "${dual_single_layout_old}\n    lagiInitGarilDualSingleLayout(pThis);" source_text "${source_text}")
+  set(dual_scroll_old [=[    // auto-scroll positions
+    pThis->mA8_position.m0_X = pThis->mA8_position.m0_X + pEngine->m1A0_battleAutoScrollDelta.m0_X;
+    pThis->mA8_position.m4_Y = pThis->mA8_position.m4_Y + pEngine->m1A0_battleAutoScrollDelta.m4_Y;
+    pThis->mA8_position.m8_Z = pThis->mA8_position.m8_Z + pEngine->m1A0_battleAutoScrollDelta.m8_Z;]=])
+  string(FIND "${source_text}" "${dual_scroll_old}" dual_scroll_found)
+  if(dual_scroll_found LESS 0)
+   message(FATAL_ERROR "Garil dual per-frame camera boundary changed")
+  endif()
+  string(REPLACE "${dual_scroll_old}" "" source_text "${source_text}")
+  string(FIND "${source_text}" "    case 10:" dual_death_found)
+  if(dual_death_found LESS 0)
+   message(FATAL_ERROR "Garil dual swarm phase boundary changed")
+  endif()
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_single_phases.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_dual_single_phases.inc" dual_single_phases)
+  set(dual_selector_old [=[    case 0:
+        if (battleEngine_isPlayerTurnActive())
+            return;
+        break;]=])
+  string(FIND "${source_text}" "${dual_selector_old}" dual_selector_found)
+  if(dual_selector_found LESS 0)
+   message(FATAL_ERROR "Garil dual selector gate boundary changed")
+  endif()
+  string(REPLACE "${dual_selector_old}" [=[    case 0:
+        if(battleEngine_isPlayerTurnActive())return;
+        if(pEngine->m3CC->m8==1 && !pThis->m1E3_flag2)lagiSelectGarilDualTurn(pThis);
+        break;]=] source_text "${source_text}")
+  string(REPLACE "    case 10:" "${dual_swarm_phases}${dual_single_phases}    case 10:" source_text "${source_text}")
+  set(dual_layout_old "    pThis->mE0_entityGroup.m8_dataTable = g_BTL_A5->getSaturnPtr(0x060b11c8);")
+  string(FIND "${source_text}" "${dual_layout_old}" dual_layout_found)
+  if(dual_layout_found LESS 0)
+   message(FATAL_ERROR "Garil dual swarm layout boundary changed")
+  endif()
+  string(REPLACE "${dual_layout_old}" "    lagiInitGarilDualSwarmLayout(pThis);" source_text "${source_text}")
+  string(REPLACE "    allocateNPC(pThis, 0xC);" "    allocateNPC(pThis, 0xC);\n    lagiInitGarilDualGroups(pThis);" source_text "${source_text}")
+  string(REPLACE "${dual_old_create}" "lagiCreateGarilDualSingle(pThis,i)" source_text "${source_text}")
+  string(REPLACE "    BTL_A5_dualFormation_Init(pTask);" "    BTL_A5_dualFormation_Init(pTask);\n    lagiFinishGarilDualMotion(pTask);" source_text "${source_text}")
+  string(REPLACE "    switch (pThis->m28_state)" "    lagiUpdateGarilDualSpacing(pThis);\n    formationUpdatePosition(&pThis->m2C_posBlock,&pEngine->mC_battleCenter);\n    formationUpdatePosition(&pThis->m_lagiSecondaryBlock,&pEngine->mC_battleCenter);\n    lagiUpdateGarilDualTrail(pThis);\n    lagiUpdateGarilDualCamera(pThis,pEngine);\n    switch (pThis->m28_state)" source_text "${source_text}")
+  set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi_formation_actor_signal.h\"\n#include \"lagi/garil_actor_group.h\"\n#include \"battle/battleDragon.h\"\n#include \"battle/battleIntro.h\"\n#include \"lagi/native_formation_motion.h\"\n${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_variant.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_init.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_init.inc" variant_init)
+  string(FIND "${source_text}" "// 06055488" variant_draw_found)
+  string(FIND "${source_text}" "    // create 3D model" variant_model_start)
+  string(FIND "${source_text}" "    // rotation from direction table" variant_model_end)
+  if(variant_draw_found LESS 0 OR variant_model_start LESS 0 OR variant_model_end LESS variant_model_start)
+   message(FATAL_ERROR "A5 variant model initialization boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${variant_model_start} variant_init_prefix)
+  string(SUBSTRING "${source_text}" ${variant_model_end} -1 variant_init_suffix)
+  set(source_text "${variant_init_prefix}    if(!lagiInitGarilVariantModels(pEntity,pBundle))return nullptr;\n\n${variant_init_suffix}")
+  string(REPLACE "// 06055488" "${variant_init}\n// 06055488" source_text "${source_text}")
+  foreach(variant_animation_pair IN ITEMS "4;0x4C" "8;0x50")
+   list(GET variant_animation_pair 0 variant_animation_offset)
+   list(GET variant_animation_pair 1 variant_animation_slot)
+   string(REPLACE "readSaturnU16(g_BTL_A5->getSaturnPtr(0x060ad5c0) + ${variant_animation_offset})" "${variant_animation_slot}" source_text "${source_text}")
+  endforeach()
+  string(REPLACE "readSaturnU16(g_BTL_A5->getSaturnPtr(0x060ad5c0))" "0x48" source_text "${source_text}")
+  string(REPLACE "readSaturnS16(pParent->mE0_entityGroup.m8_dataTable + 0xC)" "pParent->mE0_entityGroup.mC_formationNameIndex" source_text "${source_text}")
+  string(REPLACE "pThis->mC0_targetables" "std::span<sBattleTargetable>(pThis->m2C_models[0].m54_targetables,pThis->m2C_models[0].m52_targetableCount)" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_burst.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_burst.inc" variant_burst)
+  string(FIND "${source_text}" "// 06055086" variant_update_found)
+  if(variant_update_found LESS 0)
+   message(FATAL_ERROR "A5 variant burst insertion boundary changed")
+  endif()
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_membership.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_membership.inc" variant_membership)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_motion.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_motion.inc" variant_motion)
+  string(REPLACE "    // size 0x1E4" "    LagiBattleModelTargetState m_lagiTargets;\n    s16 m_lagiPendingDamage;\n    fixedPoint m_lagiAltitude;\n    sVec3_FP m_lagiAngularVelocity;\n    // size 0x1E4" source_text "${source_text}")
+  string(REPLACE "// 06055086" "${variant_burst}\n${variant_motion}\n${variant_membership}\n// 06055086" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_damage.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_damage.inc" variant_damage)
+  string(REPLACE "// 06055086" "${variant_damage}\n// 06055086" source_text "${source_text}")
+  string(FIND "${source_text}" "        bool damaged = false;" variant_damage_begin)
+  string(FIND "${source_text}" "        if (damaged)" variant_damage_end)
+  if(variant_damage_begin LESS 0 OR variant_damage_end LESS variant_damage_begin)
+   message(FATAL_ERROR "A5 variant shared damage boundary changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${variant_damage_begin} variant_damage_prefix)
+  string(SUBSTRING "${source_text}" ${variant_damage_end} -1 variant_damage_suffix)
+  set(source_text "${variant_damage_prefix}        const bool damaged=lagiUpdateGarilVariantDamage(pThis);\n${variant_damage_suffix}")
+  set(variant_member_old "    // damage check\n    if (!(pThis->m14_flags & 0x10000000))")
+  string(FIND "${source_text}" "${variant_member_old}" variant_member_found)
+  if(variant_member_found LESS 0)
+   message(FATAL_ERROR "A5 variant membership update boundary changed")
+  endif()
+  string(REPLACE "${variant_member_old}" "    lagiUpdateGarilVariantPosition(pThis);\n    lagiUpdateGarilVariantRotation(pThis);\n    lagiUpdateGarilVariantMembership(pThis);\n    lagiUpdateGarilVariantDamageValues(pThis);\n${variant_member_old}" source_text "${source_text}")
+  set(variant_slot_old "    u8 dir = readSaturnU8(dirTable + entityIndex + dirBase * 3);")
+  string(FIND "${source_text}" "${variant_slot_old}" variant_slot_found)
+  if(variant_slot_found LESS 0)
+   message(FATAL_ERROR "A5 variant initial quadrant boundary changed")
+  endif()
+  string(REPLACE "${variant_slot_old}" "${variant_slot_old}\n    pParent->mF4_entityPositions[entityIndex]=dir;" source_text "${source_text}")
+  foreach(variant_reaction_boundary IN ITEMS
+   "    // state machine"
+   "                    pThis->m14_flags |= 4;"
+   "            pThis->m14_flags &= ~4;"
+   "        pThis->m158_formation->mF4_entityPositions[pThis->m1C_entityIndex] = 4;")
+   string(FIND "${source_text}" "${variant_reaction_boundary}" variant_reaction_found)
+   if(variant_reaction_found LESS 0)
+    message(FATAL_ERROR "A5 variant reaction boundary changed: ${variant_reaction_boundary}")
+   endif()
+  endforeach()
+  string(REPLACE "    // state machine" "    lagiConsumeGarilVariantDamage(pThis);\n    // state machine" source_text "${source_text}")
+  string(REPLACE "                    pThis->m14_flags |= 4;" "                    lagiSetGarilVariantReaction(pThis,true);\n                    pThis->m14_flags |= 4;" source_text "${source_text}")
+  string(REPLACE "            pThis->m14_flags &= ~4;" "            lagiSetGarilVariantReaction(pThis,false);\n            pThis->m14_flags &= ~4;" source_text "${source_text}")
+  string(REPLACE "        pThis->m158_formation->mF4_entityPositions[pThis->m1C_entityIndex] = 4;" "        lagiSetGarilVariantReaction(pThis,false);\n        pThis->m158_formation->mF4_entityPositions[pThis->m1C_entityIndex] = 4;" source_text "${source_text}")
+  set(variant_scroll_old [=[    // auto-scroll position
+    pThis->m30_position.m0_X = pThis->m30_position.m0_X + pEngine->m1A0_battleAutoScrollDelta.m0_X;
+    pThis->m30_position.m4_Y = pThis->m30_position.m4_Y + pEngine->m1A0_battleAutoScrollDelta.m4_Y;
+    pThis->m30_position.m8_Z = pThis->m30_position.m8_Z + pEngine->m1A0_battleAutoScrollDelta.m8_Z;]=])
+  string(FIND "${source_text}" "${variant_scroll_old}" variant_scroll_found)
+  if(variant_scroll_found LESS 0)
+   message(FATAL_ERROR "A5 variant obsolete auto-scroll boundary changed")
+  endif()
+  string(REPLACE "${variant_scroll_old}" "" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_cleanup.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_cleanup.inc" variant_cleanup)
+  string(REPLACE "// 06054df8" "${variant_cleanup}\n// 06054df8" source_text "${source_text}")
+  set(variant_delete_old "        nullptr, // shared delete handled by cleanup in update state 10")
+  set(variant_create_old "    if (!pEntity)\n        return nullptr;\n")
+  set(variant_meter_old [=[                if (pThis->mAC_lifeMeter)
+                {
+                    static_cast<sEnemyLifeMeterTask*>(pThis->mAC_lifeMeter)->m31 |= 1;
+                    static_cast<sEnemyLifeMeterTask*>(pThis->mAC_lifeMeter)->m31 |= 8;
+                }]=])
+  foreach(variant_cleanup_boundary IN ITEMS variant_delete_old variant_create_old variant_meter_old)
+   string(FIND "${source_text}" "${${variant_cleanup_boundary}}" variant_cleanup_found)
+   if(variant_cleanup_found LESS 0)
+    message(FATAL_ERROR "A5 variant cleanup boundary changed: ${variant_cleanup_boundary}")
+   endif()
+  endforeach()
+  string(REPLACE "${variant_delete_old}" "        &lagiDeleteGarilVariantActor," source_text "${source_text}")
+  string(REPLACE "${variant_create_old}" "${variant_create_old}    lagi::tasks::register_work_area_disposer(pEntity,[](void* area){delete static_cast<sBTL_A5_VariantEnemy*>(area);});\n" source_text "${source_text}")
+  string(REPLACE "${variant_meter_old}" "                lagiBattleEnemyDefeated(pThis->mAC_lifeMeter);" source_text "${source_text}")
+  set(variant_fire_old [=[        if (frame == 0x2E)
+        {
+            playSystemSoundEffect(0x6D);]=])
+  string(FIND "${source_text}" "${variant_fire_old}" variant_fire_found)
+  if(variant_fire_found LESS 0)
+   message(FATAL_ERROR "A5 variant burst launch boundary changed")
+  endif()
+  string(REPLACE "${variant_fire_old}" [=[        if (frame == 0x2E)
+        {
+            lagiFireGarilVariantBurst(pThis);
+            playSystemSoundEffect(0x6D);]=] source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_control.inc"
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_phases.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_control.inc" variant_control)
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_phases.inc" variant_phases)
+  string(FIND "${source_text}" "// 0605493c" variant_controller_found)
+  if(variant_controller_found LESS 0)
+   message(FATAL_ERROR "A5 variant controller insertion boundary changed")
+  endif()
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_quadrants.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_quadrants.inc" variant_quadrants)
+  string(REPLACE "// 0605493c" "${variant_control}\n${variant_quadrants}\n// 0605493c" source_text "${source_text}")
+  set(variant_state_anchor "    switch (pThis->m28_state)\n    {\n    case 0:\n        if (battleEngine_isBattleIntroFinished())")
+  string(FIND "${source_text}" "${variant_state_anchor}" variant_state_found)
+  if(variant_state_found LESS 0)
+   message(FATAL_ERROR "A5 variant quadrant update boundary changed")
+  endif()
+  string(REPLACE "${variant_state_anchor}" "    lagiUpdateGarilVariantQuadrants(pThis);\n    formationUpdatePosition(&pThis->m2C_posBlock,&pEngine->mC_battleCenter);\n\n${variant_state_anchor}" source_text "${source_text}")
+  string(FIND "${source_text}" "static void BTL_A5_formationVariant_Update" variant_update_start)
+  string(SUBSTRING "${source_text}" 0 ${variant_update_start} variant_prefix)
+  string(SUBSTRING "${source_text}" ${variant_update_start} -1 variant_update)
+  string(FIND "${variant_update}" "    case 3:" variant_phase_start)
+  string(FIND "${variant_update}" "\n    }\n}\n\n// 060547da" variant_phase_end)
+  if(variant_phase_start LESS 0 OR variant_phase_end LESS variant_phase_start)
+   message(FATAL_ERROR "A5 variant formation phase boundary changed")
+  endif()
+  string(SUBSTRING "${variant_update}" 0 ${variant_phase_start} variant_before_phases)
+  string(SUBSTRING "${variant_update}" ${variant_phase_end} -1 variant_after_phases)
+  string(REPLACE "pThis->m28_state = 0xB;" "pThis->m28_state = 8;" variant_before_phases "${variant_before_phases}")
+  string(REPLACE "pThis->m28_state = 4;" "pThis->m28_state = 5;" variant_before_phases "${variant_before_phases}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_intro.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_garil_variant_intro.inc" variant_intro)
+  string(FIND "${variant_before_phases}" "    case 0:" variant_intro_begin)
+  if(variant_intro_begin LESS 0)
+   message(FATAL_ERROR "A5 variant intro phase boundary changed")
+  endif()
+  string(SUBSTRING "${variant_before_phases}" 0 ${variant_intro_begin} variant_before_intro)
+  set(source_text "${variant_prefix}${variant_before_intro}${variant_intro}${variant_phases}${variant_after_phases}")
+  set(source_text "#include \"lagi/lagi_azel_upstream_prelude.h\"\n#include \"lagi/native_task_disposal.h\"\n#include \"lagi_battle_enemy_lifecycle.h\"\n#include \"lagi/native_battle_speech.h\"\n#include <span>\n#include \"lagi/native_battle_models.h\"\n#include \"kernel/vdp1Allocator.h\"\n #include \"lagi_formation_actor_signal.h\"\n#include \"lagi/native_battle_projectiles.h\"\n#include \"lagi/native_formation_motion.h\"\n#include \"battle/battleDragon.h\"\n${source_text}")
+ elseif(relative_path STREQUAL "battle/BTL_A5/BTL_A5_formation.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  string(REPLACE "#include \"battle/battleEngine.h\"" "#include \"battle/battleEngine.h\"\n#include \"audio/systemSounds.h\"" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_formation_trail.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_formation_trail.inc" nanyd_trail)
+  string(REPLACE "// 0605cd10" "${nanyd_trail}\n// 0605cd10" source_text "${source_text}")
+  set(source_text "#include \"lagi/native_formation_motion.h\"\n${source_text}")
+
+  set(source_text "#include \"lagi/native_battle_speech.h\"\n${source_text}")
+  set(nanyd_anchor "static void BTL_A5_formationTask_Update")
   string(FIND "${source_text}" "${nanyd_anchor}" nanyd_found)
   if(nanyd_found LESS 0)
    message(FATAL_ERROR "Nanyd formation update boundary changed")
   endif()
-  string(REPLACE "${nanyd_anchor}" "${nanyd_intro}
-${nanyd_anchor}" source_text "${source_text}")
+  set(nanyd_intro_mode "            battleEngine_SetBattleMode(eBattleModes::m7);")
+  string(FIND "${source_text}" "${nanyd_intro_mode}" nanyd_intro_mode_found)
+  if(nanyd_intro_mode_found LESS 0)
+   message(FATAL_ERROR "Nanyd authored intro camera boundary changed")
+  endif()
+  string(REPLACE "${nanyd_intro_mode}" "${nanyd_intro_mode}\n            battleEngine_setupAttackCamera(&pThis->m2C_posBlock.m0_position,0x50000,0,0);" source_text "${source_text}")
   # Restore native A5 queen-loss: special branch 0605CDF4..CE4E and
   # state 9 0605D0A0..D124. Shared battle engine remains the owner.
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_a5_scatter_formation.inc"
    "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_formation_actor_signal.h")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_a5_scatter_formation.inc" a5_scatter_formation)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_control.inc"
+   "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_attack_phases.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_control.inc" nanyd_control)
+  set(a5_scatter_formation "${a5_scatter_formation}\n${nanyd_control}")
+  set(nanyd_selector [=[    case 3:
+        if (battleEngine_isPlayerTurnActive())
+            return;
+        break;]=])
+  string(FIND "${source_text}" "${nanyd_selector}" nanyd_selector_found)
+  if(nanyd_selector_found LESS 0)
+   message(FATAL_ERROR "Nanyd native selector boundary changed")
+  endif()
+  string(REPLACE "${nanyd_selector}" [=[    case 3:
+        if (battleEngine_isPlayerTurnActive())return;
+        if(pEngine->m3CC->m8==1)lagiSelectNanydAttack(pThis,pEngine);
+        break;]=] source_text "${source_text}")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_nanyd_attack_phases.inc" nanyd_phases)
+  string(FIND "${source_text}" "    case 0xB:" nanyd_cleanup_state_found)
+  if(nanyd_cleanup_state_found LESS 0)
+   message(FATAL_ERROR "Nanyd attack phase insertion boundary changed")
+  endif()
+  string(REPLACE "    case 0xB:" "${nanyd_phases}    case 0xB:" source_text "${source_text}")
+
   string(REPLACE "${nanyd_anchor}" "${a5_scatter_formation}\n${nanyd_anchor}" source_text "${source_text}")
   set(a5_scatter_pre_switch "    // state machine\n    switch (pThis->m28_state)")
   string(FIND "${source_text}" "${a5_scatter_pre_switch}" a5_scatter_switch_found)
@@ -4029,6 +4919,7 @@ ${nanyd_anchor}" source_text "${source_text}")
    message(FATAL_ERROR "A5 queen-loss state machine boundary changed")
   endif()
   string(REPLACE "${a5_scatter_pre_switch}" [=[
+    lagiUpdateNanydFormationTrail(pThis,pEngine);
     lagiA5BeginQueenScatter(pThis, pEngine);
     // state machine
     switch (pThis->m28_state)]=] source_text "${source_text}")
@@ -4052,8 +4943,8 @@ ${nanyd_anchor}" source_text "${source_text}")
   endif()
   string(REPLACE "${nanyd_start}" [=[        if (pEngine->m188_flags.m2000)
         {
-            lagiStartNanydDialogue(pThis, pEngine);
-            battleEngine_restoreCameraDefault();
+            lagiCreateNativeBattleSpeech(pThis,4,15,g_BTL_A5->getSaturnPtr(0x060B1018));
+            battleEngine_restoreCameraAfterEnemyAttack();
             pThis->m28_state = 2;]=] source_text "${source_text}")
  elseif(relative_path STREQUAL "battle/battleIntro.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # Bounded A5 intro lifecycle diagnostics; preserve every upstream decision.
@@ -4076,11 +4967,31 @@ ${nanyd_anchor}" source_text "${source_text}")
   string(REPLACE "${a5_intro_end}"
    "${a5_intro_end}\n        lagi::platform::logging::writef(\"[GarilBattleIntro] finish frame=%d\\n\",int(pThis->m0_frameIndex));"
    source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleMainTask.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  foreach(entry_call IN ITEMS "reset3dEngine();" "resetCameraProperties2(&cameraProperties2);" "initTownGrid();" "pThis->mC(pThis->m4_parent);")
+   string(FIND "${source_text}" "${entry_call}" entry_call_found)
+   if(entry_call_found LESS 0)
+    message(FATAL_ERROR "Shared battle entry checkpoint changed: ${entry_call}")
+   endif()
+   string(REPLACE "${entry_call}"
+    "lagi::platform::logging::writef(\"[BattleEntryPhase] begin ${entry_call}\\n\");\n        ${entry_call}\n        lagi::platform::logging::writef(\"[BattleEntryPhase] end ${entry_call}\\n\");"
+    source_text "${source_text}")
+  endforeach()
  elseif(relative_path STREQUAL "battle/battleEngine.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
   # Report transition edges only, not each battle frame.
   # The generated Azel source has already rewritten PDS.h to the Vita
   # prelude, so the original include is no longer a reliable anchor.
   set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  foreach(entry_call IN ITEMS "battleEngine_InitSub2(pThis);" "battleEngine_InitSub3(pThis);" "battleEngine_createDragonTask(pThis);" "battleEngine_InitSub5(pThis);" "executeFuncPtr(readSaturnEA(overlayBattleData + pThis->m3B0_subBattleId * 0x20 + 8), pThis);")
+   string(FIND "${source_text}" "${entry_call}" entry_call_found)
+   if(entry_call_found LESS 0)
+    message(FATAL_ERROR "Shared battle engine checkpoint changed: ${entry_call}")
+   endif()
+   string(REPLACE "${entry_call}"
+    "lagi::platform::logging::writef(\"[BattleEntryPhase] begin ${entry_call} sub=%d\\n\", int(pThis->m3B0_subBattleId));\n    ${entry_call}\n    lagi::platform::logging::writef(\"[BattleEntryPhase] end ${entry_call} sub=%d\\n\", int(pThis->m3B0_subBattleId));"
+    source_text "${source_text}")
+  endforeach()
   set(a5_mode_anchor "void updateBattleIntro(s_battleEngine* pThis)\n{")
   string(FIND "${source_text}" "${a5_mode_anchor}" a5_mode_found)
   if(a5_mode_found LESS 0)
@@ -4193,7 +5104,25 @@ ${nanyd_anchor}" source_text "${source_text}")
 ]=])
   set(source_text "${charge_prefix}${charge_draw}${charge_suffix}")
   string(REPLACE "#include \"kernel/vdp1AnimatedQuad.h\"" "#include \"kernel/vdp1AnimatedQuad.h\"\n#include \"kernel/rayDisplay.h\"\n#include \"battle/battleGenericData.h\"" source_text "${source_text}")
+ elseif(relative_path STREQUAL "battle/battleFormationIntroEffect.cpp")
+  set(single_speech_old "void sFormationIntroEffectTask::Update(sFormationIntroEffectTask* pThis)\n{\n    formationIntroEffect_HandleSkipKey(pThis);")
+  string(FIND "${source_text}" "${single_speech_old}" single_speech_found)
+  if(single_speech_found LESS 0)
+   message(FATAL_ERROR "Native shared speech update boundary changed")
+  endif()
+  string(REPLACE "${single_speech_old}" "static void lagiFormationIntroEffectUpdateBody(sFormationIntroEffectTask* pThis)\n{" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_single_speech.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_battle_single_speech.inc" single_speech)
+  set(source_text "#include \"lagi/native_battle_speech.h\"\n${source_text}\n${single_speech}")
  elseif(relative_path STREQUAL "battle/battleDamageDisplay.cpp")
+  # Original A3 0605BB18/1A and A5_3 0605A660/62 set color 3,
+  # not damage 3. Preserve zero for the shared digit formatter.
+  set(hit_zero_old "        pThis->m42_colorType = 3;\n        pThis->m22_damageValue = 3;")
+  string(FIND "${source_text}" "${hit_zero_old}" hit_zero_found)
+  if(hit_zero_found LESS 0)
+   message(FATAL_ERROR "Native shared zero-damage display boundary changed")
+  endif()
+  string(REPLACE "${hit_zero_old}" "        pThis->m42_colorType = 3;" source_text "${source_text}")
   set(damage_draw_old [=[static void damageDisplay_draw(sDamageDisplayTask* pThis)
 {
     // Renders digits using font tables at 060b1f7c (mode 0) / 060b1f04 (mode 1)
@@ -4320,6 +5249,19 @@ ${nanyd_anchor}" source_text "${source_text}")
    "void sLockTask::Draw(sLockTask* pThis)\n{\n    pushCurrentMatrix();\n    translateCurrentMatrix(pThis->m74_translation);\n    rotateCurrentMatrixZYX(pThis->m80_rotation);\n\n    sMatrix4x3 lagiWorldMatrix;\n    initMatrixToIdentity(&lagiWorldMatrix);\n    translateMatrix(pThis->m74_translation, &lagiWorldMatrix);\n    rotateMatrixZYX(&pThis->m80_rotation, &lagiWorldMatrix);\n\n    lagi::azel_bridge::SubmissionState lagiState{};\n    for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n    {\n        for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n        {\n            lagiState.modelMatrix[lagiRow * 4u + lagiCol] =\n                lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n        }\n    }\n    lagiState.hasModelMatrix = true;\n    lagiState.dynamic = true;\n    lagi::azel_bridge::capture_current_light(lagiState);\n\n    const u16 lagiModelOffset = readSaturnU16(pThis->mC + 0x20);\n    lagi::azel_bridge::set_town_submission_context(\n        -1,\n        static_cast<std::uint32_t>(pThis->mC.m_offset),\n        static_cast<std::uint32_t>(readSaturnU16(pThis->mC + 0x28)),\n        static_cast<std::uint32_t>(lagiModelOffset),\n        lagiState);\n\n    addObjectToDrawList(pThis->m0_fileBundle->get3DModel(lagiModelOffset));\n    popMatrix();\n}"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townEdge.cpp")
+  # Camp return hardware regression: stale flags can turn a completed
+  # rotation into unintended walking. Initialize before authored mode bits.
+  set(edge_init_state_old [=[    pThis->mC = 0;
+    pThis->m10_InitPtr = arg;]=])
+  set(edge_init_state_new [=[    pThis->mC = 0;
+    pThis->mE_controlState = 0;
+    pThis->mF = 0;
+    pThis->m10_InitPtr = arg;]=])
+  string(FIND "${source_text}" "${edge_init_state_old}" edge_init_state_found)
+  if(edge_init_state_found LESS 0)
+    message(FATAL_ERROR "Edge NPC state initialization anchor changed")
+  endif()
+  string(REPLACE "${edge_init_state_old}" "${edge_init_state_new}" source_text "${source_text}")
   # Edge's native hierarchy draw path submits through addObjectToDrawList()
   # with pCurrentMatrix already containing the town camera. Mark the scope so
   # Lagi's render bridge strips only that view transform and publishes each
@@ -4405,7 +5347,186 @@ static void lagiPatchModelAddresses(sProcessed3dModel* model, u32 offset)
   endif()
   set(source_text "#include \"lagi/azel_movie_runtime_hooks.h\"\n${source_text}")
   string(REPLACE "${field_cinematic_tick}" "    lagiAzelCinematicKeepAwake();\n${field_cinematic_tick}" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/a5_wormPassageEntrance.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(a5_passage_fields_old [=[    // Saturn size 0xAC]=])
+  set(a5_passage_fields_new [=[    sVec3_FP lagiPosition,lagiRotation; // decoded, stable host storage
+    // Saturn size 0xAC]=])
+  set(a5_passage_decode_old [=[    pThis->m8_dataPtr = arg;]=])
+  set(a5_passage_decode_new [=[    pThis->m8_dataPtr = arg;
+    pThis->lagiPosition=readSaturnVec3(arg);
+    pThis->lagiRotation=readSaturnVec3(arg+0xC);]=])
+  set(a5_passage_callback_old [=[static void a5WormPassageEntrance_Init(sA5WormPassageEntrance* pThis, sSaturnPtr arg)]=])
+  set(a5_passage_callback_new [=[#include "lagi_a5_worm_passage_selected.inc"
+
+static void a5WormPassageEntrance_Init(sA5WormPassageEntrance* pThis, sSaturnPtr arg)]=])
+  set(a5_passage_target_old [=[initFieldModelRenderContext(&pThis->mC_modelCtx, pThis, nullptr,
+            (sVec3_FP*)getSaturnPtr(arg),]=])
+  set(a5_passage_target_new [=[initFieldModelRenderContext(&pThis->mC_modelCtx, pThis, (void*)&lagiA5WormPassageSelected,
+            &pThis->lagiPosition,]=])
+  set(a5_passage_normal_old [=[transformVec(*(sVec3_FP*)getSaturnPtr(gFLD_A5->getSaturnPtr(0x06098AE4)), pThis->m90_normal, rotMatrix);]=])
+  set(a5_passage_normal_new [=[transformVec(readSaturnVec3(gFLD_A5->getSaturnPtr(0x06098AE4)), pThis->m90_normal, rotMatrix);]=])
+  set(a5_passage_debris_old [=[    // Position from Saturn data at +0xC (the entity's world position)
+    sVec3_FP pos = readSaturnVec3(data + 0xC);
+    params.m10_pPosition = &pos;
+    params.m14_pRotation = nullptr;]=])
+  set(a5_passage_debris_new [=[    // Native 06056A5C..64: position at data+0, rotation at data+0xC.
+    params.m10_pPosition = &pThis->lagiPosition;
+    params.m14_pRotation = &pThis->lagiRotation;]=])
+  set(a5_passage_draw_bit_old [=[        u32 bitIdx = (u32)readSaturnS16(data + 0x5E);
+        u32 adjIdx = bitIdx;
+        if ((s32)bitIdx > 999)
+        {
+            adjIdx = bitIdx - 0x236;
+            bitIdx = bitIdx - 0x236;
+        }
+        if ((mainGameState.bitField[adjIdx >> 3] & bitMasks[bitIdx & 7]) != 0)]=])
+  set(a5_passage_draw_bit_new [=[        const u32 bitIdx = (u32)readSaturnS16(data + 0x5E);
+        if (mainGameState.getBit566(bitIdx))]=])
+  set(a5_passage_init_bit_old [=[        u32 bitIdx = (u32)readSaturnS16(arg + 0x5E);
+        u32 adjIdx = (bitIdx < 1000) ? bitIdx : (bitIdx - 0x236);
+        if ((mainGameState.bitField[adjIdx >> 3] & bitMasks[bitIdx & 7]) == 0)]=])
+  set(a5_passage_init_bit_new [=[        const u32 bitIdx = (u32)readSaturnS16(arg + 0x5E);
+        if (!mainGameState.getBit566(bitIdx))]=])
+  set(a5_passage_gate1_old [=[                u32 adj1 = (bit1 < 1000) ? (u32)bit1 : (u32)(bit1 - 0x236);
+                if ((mainGameState.bitField[adj1 >> 3] & bitMasks[bit1 & 7]) == 0)]=])
+  set(a5_passage_gate1_new [=[                if (!mainGameState.getBit566(bit1))]=])
+  set(a5_passage_gate2_old [=[                    u32 adj2 = (bit2 < 1000) ? (u32)bit2 : (u32)(bit2 - 0x236);
+                    if ((mainGameState.bitField[adj2 >> 3] & bitMasks[bit2 & 7]) == 0)]=])
+  set(a5_passage_gate2_new [=[                    if (!mainGameState.getBit566(bit2))]=])
+  foreach(a5_passage_boundary IN ITEMS a5_passage_fields a5_passage_decode a5_passage_callback a5_passage_target a5_passage_normal a5_passage_debris a5_passage_draw_bit a5_passage_init_bit a5_passage_gate1 a5_passage_gate2)
+   string(FIND "${source_text}" "${${a5_passage_boundary}_old}" a5_passage_found)
+   if(a5_passage_found LESS 0)
+    message(FATAL_ERROR "Native A5 passage boundary changed: ${a5_passage_boundary}")
+   endif()
+   string(REPLACE "${${a5_passage_boundary}_old}" "${${a5_passage_boundary}_new}" source_text "${source_text}")
+  endforeach()
+ elseif(relative_path STREQUAL "field/field_a5/a5_exitEntity.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(a5_wind_table_old [=[static const u32 s_windQuadListAddrs[] = { 0x06099804, 0x06099820, 0x0609983C, 0x06099858 };]=])
+  set(a5_wind_table_new [=[#include "lagi_a5_wind_quad_table.inc"]=])
+  set(a5_wind_mode0_old [=[a5GetOrParseQuadList(gFLD_A5->getSaturnPtr(s_windQuadListAddrs[rng & 3]))]=])
+  set(a5_wind_mode0_new [=[lagiA5WindQuadList(0x06099804,rng & 3)]=])
+  set(a5_wind_mode1_table_old [=[    static const u32 s_mode1SecondaryQuadAddrs[] = { 0x06099554, 0x06099634 };]=])
+  set(a5_wind_mode1_table_new "")
+  set(a5_wind_mode1_old [=[a5GetOrParseQuadList(gFLD_A5->getSaturnPtr(s_mode1SecondaryQuadAddrs[rng & 1]))]=])
+  set(a5_wind_mode1_new [=[lagiA5WindQuadList(0x06099814,rng & 1)]=])
+  set(a5_wind_mode3_table_old [=[        static const u32 s_mode3QuadAddrs[] = { 0x060992B4, 0x06099394, 0x06099394, 0x06099474 };]=])
+  set(a5_wind_mode3_table_new "")
+  set(a5_wind_mode3_old [=[a5GetOrParseQuadList(gFLD_A5->getSaturnPtr(s_mode3QuadAddrs[rng & 3]))]=])
+  set(a5_wind_mode3_new [=[lagiA5WindQuadList(0x06099804,rng & 3)]=])
+  # Native emitters replace only the quad-list pointer (06058C76/06058D1A/
+  # 06058DF6): preserve the pool-initialized VRAM base and animation phase.
+  set(a5_wind_rebind_old [=[    particleInitSub(&pParticle->m0_quad, 0, pQuadList);]=])
+  set(a5_wind_rebind_new [=[    pParticle->m0_quad.m0_quad = pQuadList;]=])
+  # Original 06058D06..0C writes 0x51 to gravity +0x24, not lifetime +0x40.
+  set(a5_wind_gravity_old [=[    pParticle->m40_lifetime = 0x51;]=])
+  set(a5_wind_gravity_new [=[    pParticle->m24_gravityY = 0x51;]=])
+  foreach(a5_wind_boundary IN ITEMS a5_wind_table a5_wind_mode0 a5_wind_mode1_table a5_wind_mode1 a5_wind_mode3_table a5_wind_mode3 a5_wind_rebind a5_wind_gravity)
+   string(FIND "${source_text}" "${${a5_wind_boundary}_old}" a5_wind_found)
+   if(a5_wind_found LESS 0)
+    message(FATAL_ERROR "Native A5 wind producer boundary changed: ${a5_wind_boundary}")
+   endif()
+   string(REPLACE "${${a5_wind_boundary}_old}" "${${a5_wind_boundary}_new}" source_text "${source_text}")
+  endforeach()
+ elseif(relative_path STREQUAL "field/field_a5/a5_sandWorm.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(worm_header_path "${LAGI_AZEL_SOURCE_ROOT}/field/field_a5/a5_sandWorm.h")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${worm_header_path}")
+  file(READ "${worm_header_path}" worm_header)
+  set(worm_owner_anchor "    // size 0x144")
+  string(FIND "${worm_header}" "${worm_owner_anchor}" worm_owner_found)
+  if(worm_owner_found LESS 0)
+   message(FATAL_ERROR "Native worm body ownership boundary changed")
+  endif()
+  set(worm_header "#include <memory>\n${worm_header}")
+  string(REPLACE "${worm_owner_anchor}" "    std::shared_ptr<sMonsterBody> lagiBodyOwner; // appended host storage\n${worm_owner_anchor}" worm_header "${worm_header}")
+  file(CONFIGURE OUTPUT "${LAGI_AZEL_GENERATED_ROOT}/a5_sandWorm_native.h" CONTENT "${worm_header}" @ONLY)
+  string(REPLACE "#include \"a5_sandWorm.h\"" "#include \"a5_sandWorm_native.h\"" source_text "${source_text}")
+  set(source_text "#include \"lagi/native_task_disposal.h\"\n#include \"lagi/garil_story_worm.h\"\n#include \"lagi/field_particle_follow.h\"\n${source_text}")
+  set(worm_particles_anchor "// 0605f734")
+  string(FIND "${source_text}" "${worm_particles_anchor}" worm_particles_found)
+  if(worm_particles_found LESS 0)
+   message(FATAL_ERROR "Native shared worm particle producer boundary changed")
+  endif()
+  string(REPLACE "${worm_particles_anchor}" "#include \"lagi_garil_worm_particles.inc\"\n\n${worm_particles_anchor}" source_text "${source_text}")
+  set(worm_body_anchor "    pThis->m58_body = pBody;")
+  string(FIND "${source_text}" "${worm_body_anchor}" worm_body_found)
+  if(worm_body_found LESS 0)
+   message(FATAL_ERROR "Native environmental worm body binding changed")
+  endif()
+  string(REPLACE "${worm_body_anchor}" "${worm_body_anchor}\n    pThis->lagiBodyOwner.reset(pBody);" source_text "${source_text}")
+  set(worm_create_anchor "    sA5SandWorm* pThis = createSubTask<sA5SandWorm>(parent, &td);")
+  string(FIND "${source_text}" "${worm_create_anchor}" worm_create_found)
+  if(worm_create_found LESS 0)
+   message(FATAL_ERROR "Native environmental worm task creation boundary changed")
+  endif()
+  string(REPLACE "${worm_create_anchor}" "${worm_create_anchor}\n    if(pThis)lagi::tasks::register_work_area_disposer(pThis,[](void* area){delete static_cast<sA5SandWorm*>(area);});" source_text "${source_text}")
+  set(worm_sand_stub "Unimplemented(); // a5_sandWorm_spawnSegmentSand(pThis, &pPart->m4_worldPosition)")
+  set(worm_debris_stub "Unimplemented(); // a5_sandWorm_spawnSegmentDebris(pThis, &pPart->m4_worldPosition)")
+  foreach(worm_stub IN ITEMS worm_sand_stub worm_debris_stub)
+   string(FIND "${source_text}" "${${worm_stub}}" worm_stub_found)
+   if(worm_stub_found LESS 0)
+    message(FATAL_ERROR "Native environmental worm effect boundary changed: ${worm_stub}")
+   endif()
+  endforeach()
+  # Native environmental loop stops after its first emission; the story loop does not.
+  string(REPLACE "${worm_sand_stub}" "lagiSpawnA5WormSegmentSand(&pPart->m4_worldPosition);" source_text "${source_text}")
+  string(REPLACE "${worm_debris_stub}" "lagiSpawnA5WormSegmentDebris(pThis->lagiBodyOwner,i);" source_text "${source_text}")
+  string(REPLACE "static void a5_sandWorm_spawnBreachSand(sA5SandWorm* /*pThis*/, sVec3_FP* pPos)" "void lagiSpawnA5WormBreachSand(sVec3_FP* pPos)" source_text "${source_text}")
+  string(REPLACE "a5_sandWorm_spawnBreachSand(pThis, &pThis->m40_renderPosition);" "lagiSpawnA5WormBreachSand(&pThis->m40_renderPosition);" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/a5_sandParticlePool.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(wind_export_anchor "// 06058f48")
+  string(FIND "${source_text}" "${wind_export_anchor}" wind_export_found)
+  if(wind_export_found LESS 0)
+   message(FATAL_ERROR "Original A5 particle wind service boundary changed")
+  endif()
+  string(REPLACE "${wind_export_anchor}" "void lagiApplyA5WindToParticle(sVec3_FP* p) { a5SandParticle_ClampPosition(p); }\n\n${wind_export_anchor}" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/field_a5/a5_proximityAlertTask.cpp" AND LAGI_BATTLE_NATIVE_BUILD)
+  set(source_text "#include \"lagi/garil_story_worm.h\"\n${source_text}")
+  string(REPLACE "    Unimplemented();\n    (void)pParent; (void)dataAddr;\n    return nullptr;" "    return lagiCreateA5StoryWorm(pParent,gFLD_A5->getSaturnPtr(dataAddr));" source_text "${source_text}")
+  string(REPLACE "    Unimplemented();\n    (void)pNpc; (void)nameTableAddr; (void)yThreshold; (void)bitIndex;" "    lagiTrackA5StoryWorm(pNpc,gFLD_A5->getSaturnPtr(nameTableAddr),yThreshold,bitIndex);" source_text "${source_text}")
+  string(REPLACE "u32 callbackAddr, u32 arg)" "u32 callbackAddr, sVec3_FP* arg)" source_text "${source_text}")
+  string(REPLACE "    Unimplemented();\n    (void)pTask; (void)cameraDataAddr; (void)callbackAddr; (void)arg;" "    lagiStartA5StoryWormCamera(pTask,gFLD_A5->getSaturnPtr(cameraDataAddr),callbackAddr,arg);" source_text "${source_text}")
+  string(REPLACE "        a5_createNpcTracker_06067ee2(pNpc," "        if (!pNpc) return;\n        a5_createNpcTracker_06067ee2(pNpc," source_text "${source_text}")
+  string(REPLACE "\n    a5_createNpcTracker_06067ee2(pNpc," "\n    if (!pNpc) return;\n    a5_createNpcTracker_06067ee2(pNpc," source_text "${source_text}")
+  string(REPLACE "(u32)((u8*)pNpc + 0x14)" "lagiA5StoryWormCameraAnchor(pNpc)" source_text "${source_text}")
+  string(REPLACE "        Unimplemented();\n        //a5_startProximityCamera_0606f9e4" "        a5_startProximityCamera_0606f9e4" source_text "${source_text}")
+  string(REPLACE "    Unimplemented();\n    //a5_startProximityCamera_0606f9e4" "    a5_startProximityCamera_0606f9e4" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/fieldCutsceneTask3.cpp")
+  # FLD_A5 060723A8..B6 integrates the authored orbit radius each tick.
+  set(orbit_radius_anchor "        pThis->m1C += pThis->m3C;")
+  string(FIND "${source_text}" "${orbit_radius_anchor}" orbit_radius_found)
+  if(orbit_radius_found LESS 0)
+   message(FATAL_ERROR "Shared orbit-camera radius boundary changed")
+  endif()
+  string(REPLACE "${orbit_radius_anchor}" "${orbit_radius_anchor}\n        pThis->m28 += pThis->m48;" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldCutsceneTask2.cpp")
+  # Original A5 06071BF6..C2C uses authored roll endpoints, not task
+  # state/index; 06071D10 writes camera+0x14 (rotation Z), never yaw.
+  set(camera_roll_step_old [=[    m5C = intDivide(m40, fixedPoint(m38 - m34).normalized());]=])
+  set(camera_roll_step_new [=[    m5C = intDivide(m40, fixedPoint(m3C->m38 - m3C->m34).normalized());]=])
+  set(camera_roll_axis_old [=[        getFieldCameraStatus()->mC_rotation[1] = pThis->m20;]=])
+  set(camera_roll_axis_new [=[        getFieldCameraStatus()->mC_rotation[2] = pThis->m20;]=])
+  foreach(camera_roll_boundary IN ITEMS camera_roll_step camera_roll_axis)
+   string(FIND "${source_text}" "${${camera_roll_boundary}_old}" camera_roll_found)
+   if(camera_roll_found LESS 0)
+    message(FATAL_ERROR "Shared cutscene roll boundary changed: ${camera_roll_boundary}")
+   endif()
+   string(REPLACE "${${camera_roll_boundary}_old}" "${${camera_roll_boundary}_new}" source_text "${source_text}")
+  endforeach()
+  # Original A5 06071D1A..D4C: add the LIVE tracked actor position to
+  # the interpolated relative target. The upstream moving-target arm asserts.
+  set(camera_tracking_old [=[        if (pThis->m24)
+        {
+            //0606A12C
+            assert(0);
+        }]=])
+  string(FIND "${source_text}" "${camera_tracking_old}" camera_tracking_found)
+  if(camera_tracking_found LESS 0)
+   message(FATAL_ERROR "Shared cutscene moving-target boundary changed")
+  endif()
+  string(REPLACE "${camera_tracking_old}" [=[        if (pThis->m24)
+        {
+            pThis->m14 = pThis->m28 + *pThis->m24;
+        }]=] source_text "${source_text}")
   set(source_text "#include \"lagi/platform.h\"\n${source_text}")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_excavation_camera_cut.inc" excavation_camera_cut)
   set(camera_cut_anchor "        endCutsceneTask(pThis);")
@@ -4723,9 +5844,7 @@ static void lagiUpdateRawTownPCM(sStreamingFile* stream)
         if (result == 0)
         {
             executeCutsceneCommandsSub0Sub0(stream, bytes);
-            stream->m28.m84_frameIndex = static_cast<u32>(
-                (static_cast<u64>(stream->m28.m28 / 2u) * 60u) /
-                stream->m28.m60);
+
         }
         else if (result == -2)
         {
@@ -4735,6 +5854,12 @@ static void lagiUpdateRawTownPCM(sStreamingFile* stream)
             stream->m28.m0 = -1;
         }
     }
+
+    // Playback progress excludes frames still owned by the audio queue.
+    const u32 submitted=stream->m28.m28/2u;
+    const u32 queued=std::min(submitted,lagiCutscenePCMQueued(stream));
+    stream->m28.m84_frameIndex=static_cast<u32>(
+        (static_cast<u64>(submitted-queued)*60u)/stream->m28.m60);
 
     if (stream->m28.m28 >= stream->m198.m18_fileSize &&
         lagiCutscenePCMQueued(stream) == 0)
@@ -4757,6 +5882,17 @@ void sCutsceneTask::cutsceneDrawSub0(sCutsceneTask* pThis, s32 r5)]=]
      NOT source_text MATCHES "lagiUpdateRawTownPCM")
    message(FATAL_ERROR "Town raw PCM bridge did not apply")
   endif()
+
+  # Battle/field sPCMVoiceTask uses the same raw mono BE16 queue as town PCM.
+  set(raw_pcm_desktop_anchor "        // SoLoud playback (replaces Saturn SCSP streaming via PcmS/FUN_0600dedc/FUN_0600df52)")
+  string(FIND "${source_text}" "${raw_pcm_desktop_anchor}" raw_pcm_desktop_begin)
+  string(FIND "${source_text}" "// 06036224" raw_pcm_desktop_end)
+  if(raw_pcm_desktop_begin LESS 0 OR raw_pcm_desktop_end LESS raw_pcm_desktop_begin)
+   message(FATAL_ERROR "Shared raw PCM voice bridge boundaries changed")
+  endif()
+  string(SUBSTRING "${source_text}" 0 ${raw_pcm_desktop_begin} raw_pcm_prefix)
+  string(SUBSTRING "${source_text}" ${raw_pcm_desktop_end} -1 raw_pcm_suffix)
+  set(source_text "${raw_pcm_prefix}    }\n    return psVar1;\n}\n\nstatic void lagiUpdateRawTownPCM(sStreamingFile*);\nvoid drawPCMDebugDisplay(sStreamingFile* stream)\n{\n    lagiUpdateRawTownPCM(stream);\n}\n\n${raw_pcm_suffix}")
 
   # Azel owns stream completion. Stop the Vita PCM service before its teardown.
   set(town_stream_cleanup "    executeCutsceneCommandsSub2(pStreamingFile);")
@@ -5615,6 +6751,44 @@ sKernelScriptFunctions gKernelScriptFunctions =]=]
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townCamera.cpp")
+  # Camp positional lighting sets a zero directional vector, so the
+  # native point selector must be active for the existing bridge evaluator.
+  # Activate once after reset, never push the selector stack per Draw.
+  set(camp_point_setup_old [=[    resetProjectVector();
+    cameraTaskPtr->m2 = 1;
+    cameraTaskPtr->m0_colorMode = 2;]=])
+  set(camp_point_setup_new [=[    resetProjectVector();
+    if (gCurrentTownOverlay && gCurrentTownOverlay->m_name == "TWN_CAMP.PRG") {
+        dragonFieldTaskDrawSub1Sub0();
+    }
+    cameraTaskPtr->m2 = 1;
+    cameraTaskPtr->m0_colorMode = 2;]=])
+  string(FIND "${source_text}" "${camp_point_setup_old}" camp_point_setup_found)
+  if(camp_point_setup_found LESS 0)
+   message(FATAL_ERROR "Camp positional light setup boundary changed")
+  endif()
+  string(REPLACE "${camp_point_setup_old}" "${camp_point_setup_new}" source_text "${source_text}")
+  # Bounded evidence for authored position/color/range and active selector.
+  set(camp_point_draw_old [=[    setupLight(0, 0, 0, pThis->m10.toU32());]=])
+  set(camp_point_draw_new [=[    setupLight(0, 0, 0, pThis->m10.toU32());
+    if (gCurrentTownOverlay && gCurrentTownOverlay->m_name == "TWN_CAMP.PRG") {
+        extern u16 loc_601FA9E;
+        static unsigned reports=0;
+        static unsigned previousSelector=0;
+        const unsigned selector=unsigned(loc_601FA9E);
+        if (reports<32u && (reports<8u || selector!=previousSelector)) {
+            ++reports;
+            lagi::platform::logging::writef("[CampPointLight] selector=%04X pos=%d,%d,%d rgb=%06X range=%08X intensity=%08X\n",
+                selector,local_14[0].asS32(),local_14[1].asS32(),local_14[2].asS32(),
+                unsigned(pThis->m10.toU32()),unsigned(pThis->m2C),unsigned(pThis->m30_colorIntensity));
+        }
+        previousSelector=selector;
+    }]=])
+  string(FIND "${source_text}" "${camp_point_draw_old}" camp_point_draw_found)
+  if(camp_point_draw_found LESS 0)
+   message(FATAL_ERROR "Camp positional light draw boundary changed")
+  endif()
+  string(REPLACE "${camp_point_draw_old}" "${camp_point_draw_new}" source_text "${source_text}")
   set(source_text "#include \"lagi/platform.h\"\n${source_text}")
   string(REPLACE "void townCamera_update(sCameraTask* pThis)" [=[static void lagiTraceTownLight(const char* source,sSaturnPtr data)
 {
@@ -6933,6 +8107,9 @@ target_include_directories(lagi PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DI
 target_link_libraries(lagi m SceAudio_stub SceCtrl_stub SceDisplay_stub SceGxm_stub SceKernelThreadMgr_stub SceProcessmgr_stub SceSysmem_stub SceSysmodule_stub)
 if(LAGI_BATTLE_NATIVE_BUILD)
  target_sources(lagi PRIVATE src/integration/lagi_battle_projectile_vita.cpp)
+ target_sources(lagi PRIVATE src/integration/lagi_garil_story_worm.cpp)
+ target_sources(lagi PRIVATE src/integration/lagi_native_field_cells.cpp src/integration/lagi_garil_mound.cpp)
+ target_sources(lagi PRIVATE src/integration/lagi_native_vector_transition.cpp)
  target_sources(lagi PRIVATE src/integration/lagi_battle_models_vita.cpp src/integration/lagi_battle_rays_vita.cpp src/integration/lagi_world_ray_vita.cpp src/integration/lagi_world_polygon_vita.cpp src/integration/lagi_battle_graphics_vita.cpp src/integration/lagi_resident_video_vita.cpp src/integration/lagi_allocator_tables_vita.cpp src/integration/lagi_battle_damage_digits_vita.cpp)
  set_property(SOURCE src/integration/lagi_task_vita.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_NATIVE_TASK_HEAP_CLEANUP=1)
  set_property(SOURCE src/integration/lagi_disc_file_vita.cpp src/integration/lagi_map_resources_vita.cpp src/integration/lagi_azel_books_menu.cpp APPEND PROPERTY COMPILE_DEFINITIONS LAGI_TRACK_RESIDENT_VIDEO=1)

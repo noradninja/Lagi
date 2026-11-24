@@ -1,7 +1,7 @@
 # Lagi development status
 
-**Updated 20 November 2026**  
-**Working combat baseline:** `diagnostics/garil-cliff-current` at `977809e`, with documentation changes following that baseline.
+**Updated 22 November 2026**
+**Current hardware acceptance:** `5e252ba` gameplay paths, plus the subsequent passage-camera correction and overall performance improvement confirmed on 21 November 2026.
 
 This is the current project overview. The older, dated engineering reports remain useful for source addresses and test evidence, but they are not competing reports on the present build.
 
@@ -26,9 +26,21 @@ These features have different validation histories. A linked task or successful 
 
 ## Current Garil/Valley work
 
+**New source checkpoints, awaiting device acceptance:** single/horned enemy turns and homing attacks, plus Nanyd rush/coordinated attacks, now use shared battle services. Host/native-contract regressions and full Vita packaging pass. Dual-enemy formation, actor signals, spacing, camera and completion paths are source-connected; combined host boundary checks pass, while whole-encounter device acceptance remains open. Variant combat and intro paths are source-connected with shared model, damage, speech and cleanup services; integrated actor/formation host checks pass, while device acceptance remains open. See [GARIL_ENEMY_ATTACK_TRACE.md](GARIL_ENEMY_ATTACK_TRACE.md).
+
+**Lathum and Green Oasis:** The Vita run cleared Lathum and reached Green Oasis. The monolith crash fix, whirlpools and worm tasks, arena callbacks, and Hopper routes are ready for a hardware retest. See the [Green Oasis handoff](GREEN_OASIS_HANDOFF_2026_11_23.md) for the source checkpoint and test steps.
+
 The restored combat baseline is commit `977809e`. It brings back the exact tracked tree of `60d7b61` after experimental WEAK marker depth and tracing changes regressed Valley combat. Those reverted experiments remain in Git history, but are not part of the active tree.
 
-Recent Garil development includes the original horizon sprites, native Nanyd targeting, enemy life-meter retirement, queen-loss Scatter handoff, the original Scatter text path, escape offsets/movement and authored quadrant eligibility for WEAK cursors. The remaining checks are the appearance and depth of WEAK markers, Scatter text and survivors' flight, results/field return, repeated encounters, and later worm/story sequences. Camp/Gash story continuity is another original-script validation boundary.
+At `5e252ba`, the user confirms on Vita that the red-worm cinematic plays, its passage opens, entry into the Secret Worm Passage and return to the field work, and combat entry/exit, player attacks, enemy death, experience and dyne awards work. Earlier Scatter and death-lifecycle acceptance remain in force. These confirmations establish those gameplay paths, not complete cinematic or combat parity.
+
+The user now confirms corrected passage-entry camera behavior and better overall performance, with some slowdown remaining. Restored enemy attacks still need device acceptance. The main exit retains its authored post-Lathum gate. Renderer performance remains below target, and worm sand effects, the full Gash horn-warning timing and remaining visual parity still need specific acceptance.
+
+The wind-table correction and shared passage services are part of this tested tree. The user has not explicitly confirmed that every earlier rendering glitch is gone. A separate subdivision shade-cache optimization now retains exact corner-bit keys when mapped storage survives. Production byte-comparison tests and the Vita build pass. The subsequent hardware run confirms an overall improvement, but not stable 30 Hz or an isolated speedup attributable only to this optimization. See the latest hardware log summary in GARIL_SHARED_PARITY.md.
+
+The passage-entry camera now has its missing shared no-script tracking arm restored from the original instructions: it holds the authored camera position and tracks the approaching dragon. The production fixture/native contracts pass, and the user confirms the corrected passage-entry camera on Vita.
+
+The implementation uses shared field targets, story-bit accessors, camera services, particle pools, combat targeting/damage, rewards and destination handoffs. Unique Garil actor/formation logic must bind to those services rather than duplicate them.
 
 A source implementation, a host fixture and a hardware-verified scene are different things. We record that difference because these paths have repeatedly compiled and still shown issues on Vita.
 

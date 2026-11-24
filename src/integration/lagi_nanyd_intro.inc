@@ -44,16 +44,16 @@ struct NanydDialogue : s_workAreaTemplate<NanydDialogue>
     }
 };
 
-void lagiStartNanydDialogue(p_workArea parent, s_battleEngine* engine)
+void lagiStartBattleDialogue(p_workArea parent, s_battleEngine* engine, int subtitle, const char* pcmName)
 {
-    // BTL_A5 0605CEFC supplies subtitle index 4 and the PCM name.
+    // Native formation adapters supply their authored subtitle index and PCM.
     const auto entry = engine->m3A8_overlayBattledata + engine->m3B0_subBattleId * 0x20;
     const auto table = readSaturnEA(entry + 0xC);
-    const auto text = readSaturnEA(table + 4 * 4);
+    const auto text = readSaturnEA(table + subtitle * 4);
     std::vector<std::uint8_t> pcm;
-    if (!lagi::disc::read_file("B_A5_00.PCM", pcm) || pcm.empty())
+    if (!lagi::disc::read_file(pcmName, pcm) || pcm.empty())
     {
-        lagi::platform::logging::writef("[NanydDialogue] missing B_A5_00.PCM\n");
+        lagi::platform::logging::writef("[BattleDialogue] missing %s\n", pcmName);
         return;
     }
 
@@ -68,7 +68,12 @@ void lagiStartNanydDialogue(p_workArea parent, s_battleEngine* engine)
     setupVDP2StringRendering(3, 25, 38, 4);
     clearVdp2TextArea();
     VDP2DrawString(readSaturnString(text).c_str());
-    lagi::platform::logging::writef("[NanydDialogue] start sub=%d\n", int(engine->m3B0_subBattleId));
+    lagi::platform::logging::writef("[BattleDialogue] start sub=%d text=%d file=%s\n", int(engine->m3B0_subBattleId), subtitle, pcmName);
+}
+
+void lagiStartNanydDialogue(p_workArea parent, s_battleEngine* engine)
+{
+    lagiStartBattleDialogue(parent, engine, 4, "B_A5_00.PCM");
 }
 
 } // namespace

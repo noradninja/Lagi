@@ -472,6 +472,15 @@ struct SubdivShadeState {
     bool valid = false;
 };
 static std::vector<SubdivShadeState> g_sceneSubdivShadeStates;
+// Shade reuse belongs to a physical mapped slot, not to a polygon identity.
+// Its exact key contains every corner-color bit used by midpoint interpolation.
+// Rebinding geometry/UVs cannot invalidate these fields; replacing storage can.
+static void prepareSubdivShadeStorage(bool reuseGeometry)
+{
+    if (!reuseGeometry)
+        g_sceneSubdivShadeStates.clear();
+}
+
 
 // Render-thread-only, bounded field diagnostics. Hash explicit fields, never
 // structure padding. Samples retain exact submission/local/global identity.
@@ -5377,11 +5386,17 @@ static void drawPublishedVdp1Ui(
         // Only native radar-owned commands use this right-anchored, square
         // integer pixel grid. Keep animation offsets and all authored geometry.
         const float radarScale = std::max(1, viewerRenderHeight() / 224);
+        // The frame already meets the right edge. Its authored top is inset
+        // 16 Saturn pixels, so lift the entire radar assembly as one group.
+        // At 960x544 this is 32 output pixels; at 480x272 it is 16.
+        // All radar-owned sprites, markers, direction lines and altitude
+        // polygons use these same transforms.
+        constexpr float kRadarTopShiftNative = 16.0f;
         const auto radarX = [&](float x) {
             return 1.0f + 2.0f * (x - 176.0f) * radarScale / viewerRenderWidth();
         };
         const auto radarY = [&](float y) {
-            return 1.0f - 2.0f * (y + 112.0f) * radarScale / viewerRenderHeight();
+            return 1.0f - 2.0f * (y + 112.0f + kRadarTopShiftNative) * radarScale / viewerRenderHeight();
         };
 
         // Native solid polygons (4) include battle HP/BP/power/enemy gauges,
@@ -5765,6 +5780,17 @@ static void drawPublishedVdp1Ui(
             g_gouraudSubdivVertexProgram && g_texturedGouraudSubdivFragmentProgram;
         const bool blended = lagi::vdp1_half_transparent(command.cmdPmod);
         const bool mesh = (command.cmdPmod & 0x100u)!=0;
+        // Reconstruct presentation/UI sprites stochastically only when
+        // they are neither scene effects nor VDP1 mesh sprites. Both scene
+        // sprites and mesh sprites retain native point-sampled texels,
+        // while mesh shaders and half-transparency behavior remain intact.
+        // Classify scene effects by command provenance and pass, not IDs.
+        const bool sceneSprite = !nativeCanvas &&
+            (background || command.hasWorldDepth ||
+             pass == Vdp1UiPass::Background ||
+             pass == Vdp1UiPass::WorldEffects);
+        const bool stochasticSprite = kStochastic && !sceneSprite && !mesh;
+        const bool pointSampleSprite = sceneSprite || mesh;
         if (g_sceneGameMode==4u && worldDepth) {
             static std::uint64_t seen[64]{};
             static unsigned count=0;
@@ -5819,19 +5845,19 @@ static void drawPublishedVdp1Ui(
                 sceGxmSetUniformDataF(shadeUniforms, g_gouraudSubdivWvpParam, 0, 16, identity);
             sceGxmSetVertexStream(g_probeContext, 0, gouraudVertices);
         }
-        if (shaded && !fieldRadarMap && kStochastic) {
+        if (shaded && !fieldRadarMap && stochasticSprite) {
             setStochasticGouraud(texture->width, texture->height, blended, mesh);
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
         }
-        if (!shaded && !fieldRadarMap && kStochastic && !mesh) {
+        if (!shaded && !fieldRadarMap && stochasticSprite && !mesh) {
             setStochastic(texture->width, texture->height, blended);
             sceGxmTextureSetMinFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_POINT);
         }
-        if (fieldRadarMap) {
+        if (fieldRadarMap || pointSampleSprite) {
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_POINT);
             sceGxmTextureSetMagFilter(
@@ -5850,13 +5876,13 @@ static void drawPublishedVdp1Ui(
             SCE_GXM_INDEX_FORMAT_U16,
             g_vdp1UiIndices,
             6);
-        if (!shaded && !fieldRadarMap && kStochastic) {
+        if (!shaded && !fieldRadarMap && stochasticSprite) {
             sceGxmTextureSetMinFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_LINEAR);
             sceGxmTextureSetMagFilter(&texture->texture,SCE_GXM_TEXTURE_FILTER_LINEAR);
             sceGxmSetFragmentProgram(g_probeContext,g_textureFragmentProgram);
         }
         if (shaded) {
-            if (kStochastic) {
+            if (stochasticSprite) {
                 sceGxmTextureSetMinFilter(
                     &texture->texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
                 sceGxmTextureSetMagFilter(
@@ -5868,7 +5894,7 @@ static void drawPublishedVdp1Ui(
             if (sceGxmReserveVertexDefaultUniformBuffer(g_probeContext, &textureUniforms) >= 0 && textureUniforms)
                 sceGxmSetUniformDataF(textureUniforms, g_textureWvpParam, 0, 16, identity);
         }
-        if (fieldRadarMap) {
+        if (fieldRadarMap || pointSampleSprite) {
             sceGxmTextureSetMinFilter(
                 &texture->texture, SCE_GXM_TEXTURE_FILTER_LINEAR);
             sceGxmTextureSetMagFilter(
@@ -6508,7 +6534,7 @@ bool prepare_vdp1_model(
             // Prepare can reuse storage with a different polygon association.
             // Invalidate independently of the CPU static-prefix rebuild flag.
             g_sceneSubdivPositionValid.clear();
-            g_sceneSubdivShadeStates.clear();
+            prepareSubdivShadeStorage(reuseGeometry);
             if (reuseGeometry) {
                 // Positions, UVs, and topology are rewritten below into the
                 // already-mapped capacity. No allocation is required.
@@ -7657,7 +7683,9 @@ static void appendLiveTownModel(
                     break;
                 }
     }
-    constexpr float kCampCircleFloorHeightCorrection=-0.01514f;
+    // Lower the Camp circles below character shadows. RBG0 is composed
+    // independently of the world depth buffer.
+    constexpr float kCampCircleFloorHeightCorrection=-0.03f;
 
     const auto transformVertex = [&](const azel::DebugColorVertex& source) {
         azel::DebugColorVertex v = source;
@@ -8441,7 +8469,8 @@ static bool buildLiveTownFrame()
         staticSignature != g_liveTownStaticSignature;
     if (g_liveTownStaticRebuilt) {
         g_sceneSubdivPositionValid.clear();
-        g_sceneSubdivShadeStates.clear();
+        // Corner-bit comparison validates shades even when a new polygon
+        // occupies an existing mapped slot. Storage replacement resets it.
         g_liveTownCpuMesh.vertices.clear();
         g_liveTownCpuMesh.polygonRecords.clear();
         g_liveTownCpuMesh.gouraud555.clear();

@@ -1,5 +1,7 @@
 #pragma once
 #include <cstdint>
+#include <array>
+#include <cstddef>
 #include <cstring>
 
 namespace lagi {
@@ -64,5 +66,15 @@ inline void stepNativeFormationAngularSpring(NativeFormationSpringAxis& axis,
     stepNativeFormationSpring(axis,center,spring,damping);
     axis.current=formationSignedBits(std::uint32_t(axis.current)&0x0fffffffu);
     axis.world=formationAdd(center,axis.current);
+}
+// Native A5 0605D1B2: store the current head BEFORE the reverse copy.
+// Slots 0 and 1 therefore both contain this frame's head; slot 17 receives
+// the previous slot 16. This ordering is authored, not an ordinary FIFO push.
+template<class Position,std::size_t Count>
+inline void stepNativeFormationTrail(std::array<Position,Count>& trail,
+                                     const Position& head) {
+    static_assert(Count>1);
+    trail[0]=head;
+    for(std::size_t i=Count-1;i>0;--i)trail[i]=trail[i-1];
 }
 } // namespace lagi

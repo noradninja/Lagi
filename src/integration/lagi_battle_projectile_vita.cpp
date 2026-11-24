@@ -14,6 +14,7 @@
 #include "audio/systemSounds.h"
 #include "mainMenuDebugTasks.h"
 #include <map>
+#include "lagi/native_battle_projectiles.h"
 #include "lagi_battle_projectile_descriptor.inc"
 #include "lagi_battle_projectile_motion.inc"
 
@@ -31,6 +32,22 @@ static const std::vector<sVdp1Quad>* lagiProjectileQuad(sSaturnPtr ptr)
     const auto found=cache.find(key);
     if(found!=cache.end())return &found->second;
     return &cache.emplace(std::move(key),std::move(quads)).first->second;
+}
+
+const std::vector<sVdp1Quad>* lagiNativeBattleParticleQuad(sSaturnPtr descriptor) {
+    return lagiProjectileQuad(descriptor);
+}
+
+// Shared 06064400 boundary used by native shots and actor rush attacks.
+// Keep the geometry service independent of each caller's damage protocol.
+bool lagiBattleContactPoint(const sVec3_FP& source,std::int32_t sourceRadius,
+    const sVec3_FP& target,std::int32_t targetRadius,sVec3_FP& worldContact)
+{
+    sLagiBattleSphere sourceView{},targetView{};
+    transformAndAddVecByCurrentMatrix(&source,&sourceView.position);
+    transformAndAddVecByCurrentMatrix(&target,&targetView.position);
+    sourceView.radius=sourceRadius;targetView.radius=targetRadius;
+    return lagiBattleSphereImpact(sourceView,targetView,worldContact);
 }
 
 struct sLagiBattleProjectile: s_workAreaTemplateWithCopy<sLagiBattleProjectile>
@@ -141,5 +158,130 @@ p_workArea lagiCreateBattleProjectile(const sVec3_FP& source,const sVec3_FP& tar
     if(!d.hit.isNull()){
         task->hit=lagiProjectileQuad(d.hit);task->hitSlot=d.hitSlot;
     }
+    return task;
+}
+
+// Native homing shots use the same immutable quad cache, task ownership,
+// projected-particle rendering and dragon damage service as other projectiles.
+// Their motion/timing/impact protocol is distinct from the ballistic route.
+struct sLagiHomingBattleProjectile: s_workAreaTemplateWithCopy<sLagiHomingBattleProjectile>
+{
+    sVec3_FP position{},velocity{},acceleration{};
+    sAnimatedQuad quad{};
+    s16 delay{},timer{},damage{};
+    u8 damageType{};
+    bool impacted{};
+};
+
+static void lagiHomingBattleProjectileUpdate(sLagiHomingBattleProjectile* task)
+{
+    if(task->impacted)return;
+    auto* overlay=gBattleManager->m10_battleOverlay;
+    task->position+=overlay->m4_battleEngine->m1A0_battleAutoScrollDelta;
+    sGunShotTask_UpdateSub4(&task->quad);
+    if(task->delay-->0)return;
+    auto* dragon=overlay->m18_dragon;
+    lagiBattleHomingProjectileMotion(dragon->m8_position,task->position,
+        task->velocity,task->acceleration);
+    sVec3_FP impact;
+    if(lagiBattleContactPoint(task->position,0x2000,dragon->m8_position,0x1000,impact)){
+        const sVec3_FP zero{};
+        applyDamageToDragon(dragon->m8C,task->damage,impact,2,zero,task->damageType);
+        task->impacted=true;
+        task->m_DrawMethod=nullptr;
+        task->getTask()->markFinished();
+    }
+    if(task->timer--<0){
+        task->m_DrawMethod=nullptr;
+        task->getTask()->markFinished();
+    }
+}
+
+static void lagiHomingBattleProjectileDraw(sLagiHomingBattleProjectile* task)
+{
+    drawProjectedParticle(&task->quad,&task->position);
+}
+
+// 06054080. The caller supplies authored resource/quad/damage data; the common
+// service preserves the original delay, lifetime, homing and one-hit protocol.
+s_workArea* lagiCreateNativeHomingBattleProjectile(s_workAreaCopy* parent,
+    const sVec3_FP& source,const sVec3_FP& velocity,sSaturnPtr quad,
+    std::uint8_t slot,std::int16_t damage,std::uint8_t damageType)
+{
+    static const sLagiHomingBattleProjectile::TypedTaskDefinition definition={
+        nullptr,lagiHomingBattleProjectileUpdate,lagiHomingBattleProjectileDraw,nullptr};
+    auto* task=createSubTaskWithCopy<sLagiHomingBattleProjectile>(parent,&definition);
+    if(!task)return nullptr;
+    auto* owner=dramAllocatorEnd[slot].mC_fileBundle;
+    task->m0_fileBundle=owner->m0_fileBundle;
+    task->m4_vd1Allocation=owner->m4_vd1Allocation;
+    task->position=source;task->velocity=velocity;
+    task->delay=randomNumber()&9;
+    task->timer=0x4B;
+    task->damage=damage;task->damageType=damageType;
+    particleInitSub(&task->quad,owner->m4_vd1Allocation->m4_vdp1Memory,
+        lagiProjectileQuad(quad));
+    return task;
+}
+
+struct sLagiBattleChargeQuad: s_workAreaTemplateWithCopy<sLagiBattleChargeQuad>
+{
+    const sVec3_FP* source{};
+    const std::uint8_t* state{};
+    std::uint8_t activeState{};
+    sVec3_FP position{};
+    sAnimatedQuad quad{};
+    std::vector<sVdp1Quad>* frames{};
+    fixedPoint width{},height{};
+};
+
+// Native 0605C582. State is checked before reading the borrowed hotpoint:
+// actor retirement may stop updating it, but storage stays parent-task-owned.
+static void lagiBattleChargeQuadUpdate(sLagiBattleChargeQuad* task)
+{
+    if(*task->state!=task->activeState){
+        task->getTask()->markFinished();
+        return;
+    }
+    task->position=*task->source;
+    task->position[1]+=fixedPoint(0x2000);
+    task->position[2]+=fixedPoint(0x2000);
+    sGunShotTask_UpdateSub4(&task->quad);
+    task->width+=fixedPoint(0x333);
+    task->height+=fixedPoint(0x333);
+    if(task->width.m_value>=0x4000)task->width=0x4000;
+    if(task->height.m_value>=0x4000)task->height=0x4000;
+}
+
+static void lagiBattleChargeQuadDraw(sLagiBattleChargeQuad* task)
+{
+    auto& frame=(*task->frames)[task->quad.m7_currentFrame];
+    frame.mC_width=task->width;
+    frame.m10_height=task->height;
+    drawProjectedParticle(&task->quad,&task->position);
+}
+
+static void lagiBattleChargeQuadDelete(sLagiBattleChargeQuad* task)
+{
+    delete task->frames;task->frames=nullptr;
+}
+
+// Native 0605C51C. The scheduler retires children with their parent. Its state
+// and targetable hotpoint therefore outlive this task; no host layout offsets.
+s_workArea* lagiCreateNativeBattleChargeQuad(s_workAreaCopy* parent,
+    const sVec3_FP* position,const std::uint8_t* state,std::uint8_t activeState,
+    sSaturnPtr quad,std::uint8_t slot)
+{
+    static const sLagiBattleChargeQuad::TypedTaskDefinition definition={
+        nullptr,lagiBattleChargeQuadUpdate,lagiBattleChargeQuadDraw,lagiBattleChargeQuadDelete};
+    auto* task=createSubTaskWithCopy<sLagiBattleChargeQuad>(parent,&definition);
+    if(!task)return nullptr;
+    auto* owner=dramAllocatorEnd[slot].mC_fileBundle;
+    task->m0_fileBundle=owner->m0_fileBundle;
+    task->m4_vd1Allocation=owner->m4_vd1Allocation;
+    task->source=position;task->position=*position;
+    task->state=state;task->activeState=activeState;
+    task->frames=new std::vector<sVdp1Quad>(*lagiProjectileQuad(quad));
+    particleInitSub(&task->quad,owner->m4_vd1Allocation->m4_vdp1Memory,task->frames);
     return task;
 }

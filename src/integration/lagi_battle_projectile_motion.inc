@@ -29,3 +29,32 @@ static void lagiBattleProjectileMotion(const sVec3_FP& source,
         velocity[axis]+=scroll[axis];
     }
 }
+
+// BTL_A5 060541BA..06054260. Each acceleration uses the pre-integration
+// position/velocity; SH arithmetic shifts and 32-bit wrap are intentional.
+static void lagiBattleHomingProjectileMotion(const sVec3_FP& target,
+    sVec3_FP& position,sVec3_FP& velocity,sVec3_FP& acceleration)
+{
+    for(int axis=0;axis<3;++axis){
+        const s32 delta=s32(u32(target[axis].m_value)-u32(position[axis].m_value));
+        acceleration[axis].m_value=s32(u32(delta>>7)-u32(velocity[axis].m_value>>3));
+    }
+    for(int axis=0;axis<3;++axis){
+        velocity[axis].m_value=s32(u32(velocity[axis].m_value)+u32(acceleration[axis].m_value));
+        position[axis].m_value=s32(u32(position[axis].m_value)+u32(velocity[axis].m_value));
+    }
+}
+
+// Shared native 06064400/060644B0: view-space spheres, with the contact
+// midpoint transformed through the camera's inverse matrix. Native integer
+// division rounds a negative odd sum toward zero, unlike an arithmetic shift.
+static bool lagiBattleSphereImpact(const sLagiBattleSphere& a,
+    const sLagiBattleSphere& b,sVec3_FP& worldImpact)
+{
+    if(!lagiBattleSpheresOverlap(a,b))return false;
+    sVec3_FP midpoint;
+    for(int axis=0;axis<3;++axis)
+        midpoint[axis].m_value=s32(u32(a.position[axis].m_value)+u32(b.position[axis].m_value))/2;
+    transformAndAddVec(midpoint,worldImpact,cameraProperties2.m28[0]);
+    return true;
+}

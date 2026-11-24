@@ -35,12 +35,13 @@ s16 readSaturnS16(sSaturnPtr p){return s16(p.address);}
 fixedPoint readSaturnFP(sSaturnPtr p){return s32(p.address);}
 sSaturnPtr readSaturnEA(sSaturnPtr p){return p;}
 unsigned draws=0,modelSteps=0,quadSteps=0,modelDraws=0,quadDraws=0,deletedModels=0,damages=0;
-u32 randomNumber(){++draws;return 2;}
-struct sVdp1Quad{u32 identity;};
-struct sAnimatedQuad{const std::vector<sVdp1Quad>* frames{};};
-std::vector<sVdp1Quad> initVdp1Quad(sSaturnPtr p){return {{p.address}};}
-void particleInitSub(sAnimatedQuad* a,u16 slot,const std::vector<sVdp1Quad>* q){assert(slot==0x1234);a->frames=q;}
-int sGunShotTask_UpdateSub4(sAnimatedQuad*){++quadSteps;return 0;}
+u32 nextRandom=2;
+u32 randomNumber(){++draws;return nextRandom;}
+struct sVdp1Quad{u32 identity;fixedPoint mC_width{},m10_height{};};
+struct sAnimatedQuad{const std::vector<sVdp1Quad>* frames{};u8 m7_currentFrame{};};
+std::vector<sVdp1Quad> initVdp1Quad(sSaturnPtr p){return {{p.address},{p.address+0x1C}};}
+void particleInitSub(sAnimatedQuad* a,u16 slot,const std::vector<sVdp1Quad>* q){assert(slot==0x1234);a->frames=q;a->m7_currentFrame=0;}
+int sGunShotTask_UpdateSub4(sAnimatedQuad* q){++quadSteps;q->m7_currentFrame=u8((q->m7_currentFrame+1)%q->frames->size());return 0;}
 int drawProjectedParticle(sAnimatedQuad*,sVec3_FP*){++quadDraws;return 0;}
 struct Hierarchy{unsigned countNumberOfBones(){return 3;}}hierarchy;
 struct Pose{}pose;struct Anim{}animation;
@@ -63,15 +64,26 @@ struct Engine{sVec3_FP m1A0_battleAutoScrollDelta{};}engine;
 struct Overlay{Dragon* m18_dragon=&dragon;Engine* m4_battleEngine=&engine;}overlay;
 struct Manager{Overlay* m10_battleOverlay=&overlay;}manager;
 auto* gBattleManager=&manager;
-template<class T>T* createSubTaskWithCopy(Dragon* p,const typename T::TypedTaskDefinition* d){assert(p==&dragon);auto* t=new T;t->m_UpdateMethod=d->update;t->m_DrawMethod=d->draw;return t;}
+using s_workAreaCopy=Owner;
+template<class T>T* createSubTaskWithCopy(s_workAreaCopy* p,const typename T::TypedTaskDefinition* d){assert(p==&dragon);auto* t=new T;t->m_UpdateMethod=d->update;t->m_DrawMethod=d->draw;return t;}
 struct s_3dModel{void(*m18_drawFunction)(s_3dModel*){};~s_3dModel(){++deletedModels;}};
 bool modelOK=true;
 bool init3DModelRawData(p_workArea,s_3dModel* m,int,Bundle*,u16,Anim*,Pose*,void*,void*){m->m18_drawFunction=[](s_3dModel*){++modelDraws;};return modelOK;}
 void stepAnimation(s_3dModel*){++modelSteps;}
 void pushCurrentMatrix(){}void popMatrix(){}
 void translateCurrentMatrix(sVec3_FP*){}void rotateCurrentMatrixYXZ(sVec3_FP*){}
-void transformAndAddVecByCurrentMatrix(sVec3_FP* a,sVec3_FP* b){*b=*a;}
-void applyDamageToDragon(int&,s32 damage,sVec3_FP&,s32 type,const sVec3_FP&,s32 damageType){assert(damage==9&&type==3&&damageType==2);++damages;}
+void transformAndAddVecByCurrentMatrix(const sVec3_FP* a,sVec3_FP* b){*b=*a;}
+struct CameraMatrix{sVec3_FP translation{};};
+struct CameraProperties{CameraMatrix m28[2];}cameraProperties2;
+unsigned inverseTransforms=0;
+void transformAndAddVec(const sVec3_FP& a,sVec3_FP& b,const CameraMatrix& m){b=a;b+=m.translation;++inverseTransforms;}
+struct DamageCall{s32 damage,type,flags;sVec3_FP point,impulse;};
+std::vector<DamageCall> damageCalls;
+void applyDamageToDragon(int&,s32 damage,sVec3_FP& point,s32 type,const sVec3_FP& impulse,s32 damageType){
+    if(type==3)assert(damage==9&&damageType==2);
+    else assert(type==2);
+    damageCalls.push_back({damage,type,damageType,point,impulse});++damages;
+}
 struct Emission{const std::vector<sVdp1Quad>* quad;sVec3_FP position;};std::vector<Emission> emissions;
 void createParticleEffect(Owner*,const std::vector<sVdp1Quad>* q,const sVec3_FP* p,void*,void*,int,void*,int){emissions.push_back({q,*p});}
 std::vector<int> sounds;
@@ -79,11 +91,12 @@ void playSystemSoundEffect(s8 sound){sounds.push_back(sound);}
 #include "lagi_battle_projectile_descriptor.inc"
 #include "lagi_battle_projectile_motion.inc"
 #include "projectile_runtime.inc"
-using s_workAreaCopy=Owner;
 struct sUrchin:Owner{sVec3_FP m8{};};
 template<class T>using s_workAreaTemplate=s_workAreaTemplateWithCopy<T>;
 template<class T>T* createSubTask(p_workArea,const typename T::TypedTaskDefinition* d){auto* t=new T;t->m_UpdateMethod=d->update;return t;}
 #include "lagi_battle_urchin_projectiles.inc"
+#include "battle_homing_projectile_cases.inc"
+#include "battle_charge_quad_cases.inc"
 int main(){
     sLagiBattleSphere a{},b{};a.position[0]=1000000;b.position[0]=1100000;
     b.radius=5000;assert(!lagiBattleSpheresOverlap(a,b));
@@ -135,5 +148,7 @@ int main(){
     lagiUrchinProjectileMonitorUpdate(monitor);assert(monitor->control.finished);
     lagiUrchinProjectileMonitorDelete(monitor);delete monitor;
     for(auto* p:shots){auto* shot=static_cast<sLagiBattleProjectile*>(p);lagiBattleProjectileDelete(shot);delete shot;}
+    testNativeHomingProjectiles();
+    testNativeBattleChargeQuads();
     std::puts("Native projectile radius, motion, visuals, expiry, impact and model cleanup PASS");
 }

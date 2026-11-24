@@ -8,13 +8,19 @@
 #include "lagi/garil_placement.h"
 #include "field/fieldDragon.h"
 
+void startBaldorQueenBattle(int encounter, int completionBit);
+
 bool lagiAzelTryGarilScriptAction(sSaturnPtr target, s32& result)
 {
     if (lagiAzelTryGarilPlacement(target)) {result=0;return true;}
     if (!gFLD_A5 || target.m_file != gFLD_A5 ||
-        (target.m_offset != 0x060728A4 && target.m_offset != 0x060728E0 &&
+        (target.m_offset != 0x06054DCC && target.m_offset != 0x060728A4 && target.m_offset != 0x060728E0 &&
          target.m_offset != 0x060728F8 && target.m_offset != 0x0607C82A &&
          target.m_offset != 0x0607C86C)) return false;
+    // Native 06054DCC requests the shared encounter service with these operands.
+    if (target.m_offset == 0x06054DCC) {
+        startBaldorQueenBattle(0x10,0x90); result=0; return true;
+    }
     auto* field=getFieldTaskPtr()->m8_pSubFieldData;
     if (target.m_offset == 0x0607C82A || target.m_offset == 0x0607C86C) {
         auto* dragon=field->m338_pDragonTask;

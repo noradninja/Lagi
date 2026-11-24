@@ -34,3 +34,11 @@ vertex uniform after each solid submission; regression guards cover that
 handoff. This corrects a proven state leak, not a proven complete explanation
 of the L-button crash. Retest frame visibility and L hide/show on hardware;
 if the crash persists, obtain the matching log and full dump.
+
+Hardware layout adjustment (2026-11-21): the existing native right edge is
+already aligned, but the screenshot shows an approximately 16-Saturn-pixel
+vertical inset. Move the shared radar-owned Y transform up by 16 native pixels
+(16 output pixels at 480x272 or 32 at 960x544). This moves the frame, orb,
+markers, direction line and altitude fill together, preserving their authored
+relative geometry, slide offsets, UI scale, and sampling. CPU/source alignment
+guards added; Vita visual confirmation remains pending.
