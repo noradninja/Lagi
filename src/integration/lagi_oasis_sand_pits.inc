@@ -180,7 +180,7 @@ static void lagiCreateOasisSandPit(s_visdibilityCellTask* cell,
     while (readSaturnU32(row) < progress)
         row += 8;
     auto* field = static_cast<s_fieldSpecificData_A5*>(getFieldTaskPtr()->mC);
-    if (field->m18_wormColorState1++ % readSaturnU32(row + 4) == 0)
+    if (field->m18_wormColorState1++ % readSaturnU32(row + 4) != 0)
         return;
 
     unsigned variant = 0;

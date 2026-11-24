@@ -91,3 +91,16 @@ instruction anchors, clipping, LOD, reflected identity basis, translation,
 collision dispatch, layout guards and matrix-stack restoration. Vita configure,
 compile and package passed. Restored visual coverage awaits hardware acceptance;
 this does not yet establish that every missing tree or whirlpool is fixed.
+
+## Whirlpool placement selection correction
+
+Native selector 0605ED0C returns one for counter modulo interval == zero
+(0605ED54..ED5C); factory 0605ED66 creates only when that return is nonzero
+(0605ED72..ED74). The adapter had inverted this branch. It now skips nonzero
+remainders and creates the original selected placements. Authored intervals at
+0609C678 are 5,4,3,2,1,1 for thresholds 10,20,30,40,50,99999. At interval one
+the old code suppressed every pit. No progress bits or thresholds were changed.
+
+Validation: native branch evidence plus compiled production condition across
+112 intervals and 224 placements each passed; Vita compile/package passed.
+Visible whirlpools and progression still await hardware acceptance.
