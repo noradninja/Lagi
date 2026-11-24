@@ -5249,6 +5249,40 @@ ${source_text}")
    "void sLockTask::Draw(sLockTask* pThis)\n{\n    pushCurrentMatrix();\n    translateCurrentMatrix(pThis->m74_translation);\n    rotateCurrentMatrixZYX(pThis->m80_rotation);\n\n    sMatrix4x3 lagiWorldMatrix;\n    initMatrixToIdentity(&lagiWorldMatrix);\n    translateMatrix(pThis->m74_translation, &lagiWorldMatrix);\n    rotateMatrixZYX(&pThis->m80_rotation, &lagiWorldMatrix);\n\n    lagi::azel_bridge::SubmissionState lagiState{};\n    for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n    {\n        for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n        {\n            lagiState.modelMatrix[lagiRow * 4u + lagiCol] =\n                lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n        }\n    }\n    lagiState.hasModelMatrix = true;\n    lagiState.dynamic = true;\n    lagi::azel_bridge::capture_current_light(lagiState);\n\n    const u16 lagiModelOffset = readSaturnU16(pThis->mC + 0x20);\n    lagi::azel_bridge::set_town_submission_context(\n        -1,\n        static_cast<std::uint32_t>(pThis->mC.m_offset),\n        static_cast<std::uint32_t>(readSaturnU16(pThis->mC + 0x28)),\n        static_cast<std::uint32_t>(lagiModelOffset),\n        lagiState);\n\n    addObjectToDrawList(pThis->m0_fileBundle->get3DModel(lagiModelOffset));\n    popMatrix();\n}"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townEdge.cpp")
+  # Temporary camp-only trace: bounded, sampled from the native actor state.
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  set(camp_edge_trace_anchor [=[void sEdgeTask::Update(sEdgeTask* pThis)
+{
+    sNPCE8* r12 = &pThis->mE8;]=])
+  set(camp_edge_trace_new [=[void sEdgeTask::Update(sEdgeTask* pThis)
+{
+    sNPCE8* r12 = &pThis->mE8;
+    static unsigned traceTick=0, traceLines=0, lastMode=0, lastFlags=0;
+    if (gCurrentTownOverlay && gCurrentTownOverlay->m_name == "TWN_CAMP.PRG") {
+        ++traceTick;
+        const unsigned mode=unsigned(pThis->mC), flags=unsigned(pThis->mF);
+        if (traceLines<768 && (mode!=lastMode || flags!=lastFlags ||
+            (mode && (traceTick%4u)==0u) || (traceTick%120u)==0u)) {
+            ++traceLines;
+            const auto& pos=r12->m0_position;
+            const auto& dst=r12->m3C_targetPosition;
+            const auto& rot=r12->mC_rotation;
+            const auto& step=r12->m30_stepTranslation;
+            lagi::platform::logging::writef(
+                "[CampEdge] tick=%u mode=%02X flags=%02X control=%d anim=%d pos=%d,%d,%d target=%d,%d,%d rot=%d,%d,%d targetYaw=%d step=%d,%d,%d\n",
+                traceTick,mode,flags,int(pThis->mE_controlState),int(pThis->m2C_currentAnimation),
+                pos[0].asS32(),pos[1].asS32(),pos[2].asS32(),
+                dst[0].asS32(),dst[1].asS32(),dst[2].asS32(),
+                rot[0].asS32(),rot[1].asS32(),rot[2].asS32(),r12->m48_targetRotation[1].asS32(),
+                step[0].asS32(),step[1].asS32(),step[2].asS32());
+        }
+        lastMode=mode; lastFlags=flags;
+    }]=])
+  string(FIND "${source_text}" "${camp_edge_trace_anchor}" camp_edge_trace_found)
+  if(camp_edge_trace_found LESS 0)
+    message(FATAL_ERROR "Camp Edge trace anchor changed")
+  endif()
+  string(REPLACE "${camp_edge_trace_anchor}" "${camp_edge_trace_new}" source_text "${source_text}")
   # Edge's native hierarchy draw path submits through addObjectToDrawList()
   # with pCurrentMatrix already containing the town camera. Mark the scope so
   # Lagi's render bridge strips only that view transform and publishes each
@@ -6504,6 +6538,48 @@ static s32 lagiCampRandomChoice(s32 limit)
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 2)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townScript.cpp")
+  # Bounded camp-only script trace; coalesce repeated wait instructions.
+  set(source_text "#include \"lagi/platform.h\"\n${source_text}")
+  set(camp_opcode_anchor [=[        u8 r0_opcode = readSaturnU8(r14++);]=])
+  set(camp_opcode_trace [=[        u8 r0_opcode = readSaturnU8(r14++);
+        if (gCurrentTownOverlay && gCurrentTownOverlay->m_name == "TWN_CAMP.PRG") {
+            static unsigned lines=0, lastPC=0, repeats=0;
+            static int lastResult=0;
+            const unsigned pc=unsigned((r14-1).m_offset);
+            const int result=r13_pThis->m118_currentResult;
+            if (pc!=lastPC || result!=lastResult) repeats=0; else ++repeats;
+            if (lines<3072 && (repeats%32u)==0u) {
+                ++lines;
+                lagi::platform::logging::writef("[CampScript] pc=%08X op=%u result=%d repeats=%u\n",
+                    pc,unsigned(r0_opcode),result,repeats);
+            }
+            lastPC=pc; lastResult=result;
+        }]=])
+  string(FIND "${source_text}" "${camp_opcode_anchor}" camp_opcode_found)
+  if(camp_opcode_found LESS 0)
+    message(FATAL_ERROR "Camp opcode trace anchor changed")
+  endif()
+  string(REPLACE "${camp_opcode_anchor}" "${camp_opcode_trace}" source_text "${source_text}")
+  set(camp_callback_anchor [=[    sSaturnPtr functionEA = readSaturnEA(r14);]=])
+  set(camp_callback_trace [=[    sSaturnPtr functionEA = readSaturnEA(r14);
+    if (gCurrentTownOverlay && gCurrentTownOverlay->m_name == "TWN_CAMP.PRG") {
+        static unsigned lines=0, lastEA=0, lastPC=0, repeats=0;
+        const unsigned ea=unsigned(functionEA.m_offset), pc=unsigned((r5-2).m_offset);
+        if (ea!=lastEA || pc!=lastPC) repeats=0; else ++repeats;
+        if (lines<2048 && numArguments<=4 && (repeats%32u)==0u) {
+            ++lines;
+            unsigned args[4]={0,0,0,0};
+            for (unsigned i=0;i<numArguments;++i) args[i]=unsigned(readSaturnS32(r14+4+4*i));
+            lagi::platform::logging::writef("[CampNative] pc=%08X ea=%08X argc=%u args=%08X,%08X,%08X,%08X resultBefore=%d repeats=%u\n",
+                pc,ea,unsigned(numArguments),args[0],args[1],args[2],args[3],int(r4_pThis->m118_currentResult),repeats);
+        }
+        lastEA=ea; lastPC=pc;
+    }]=])
+  string(FIND "${source_text}" "${camp_callback_anchor}" camp_callback_found)
+  if(camp_callback_found LESS 0)
+    message(FATAL_ERROR "Camp native callback trace anchor changed")
+  endif()
+  # Insert after the existing native cursor patch below, which needs the original anchor.
   # On an unsupported authored opcode, retain the exact Saturn script cursor
   # and result in the synchronous Vita fatal trace before the existing assert.
   # No interpreter behavior or error handling is changed.
@@ -6630,6 +6706,7 @@ static s32 lagiCampRandomChoice(s32 limit)
   endif()
   string(REPLACE "${town_native_return_old}" "${town_native_return_new}"
    source_text "${source_text}")
+  string(REPLACE "${camp_callback_anchor}" "${camp_callback_trace}" source_text "${source_text}")
   string(REPLACE "    return r14 + (numArguments + 1) * 4;"
    "    return authoredNext;" source_text "${source_text}")
   # A matching Vita core resumed Camp's two-argument 06070268 call at
