@@ -5249,6 +5249,19 @@ ${source_text}")
    "void sLockTask::Draw(sLockTask* pThis)\n{\n    pushCurrentMatrix();\n    translateCurrentMatrix(pThis->m74_translation);\n    rotateCurrentMatrixZYX(pThis->m80_rotation);\n\n    sMatrix4x3 lagiWorldMatrix;\n    initMatrixToIdentity(&lagiWorldMatrix);\n    translateMatrix(pThis->m74_translation, &lagiWorldMatrix);\n    rotateMatrixZYX(&pThis->m80_rotation, &lagiWorldMatrix);\n\n    lagi::azel_bridge::SubmissionState lagiState{};\n    for (unsigned int lagiRow = 0; lagiRow < 3; ++lagiRow)\n    {\n        for (unsigned int lagiCol = 0; lagiCol < 4; ++lagiCol)\n        {\n            lagiState.modelMatrix[lagiRow * 4u + lagiCol] =\n                lagiWorldMatrix.m[lagiRow][lagiCol].asS32();\n        }\n    }\n    lagiState.hasModelMatrix = true;\n    lagiState.dynamic = true;\n    lagi::azel_bridge::capture_current_light(lagiState);\n\n    const u16 lagiModelOffset = readSaturnU16(pThis->mC + 0x20);\n    lagi::azel_bridge::set_town_submission_context(\n        -1,\n        static_cast<std::uint32_t>(pThis->mC.m_offset),\n        static_cast<std::uint32_t>(readSaturnU16(pThis->mC + 0x28)),\n        static_cast<std::uint32_t>(lagiModelOffset),\n        lagiState);\n\n    addObjectToDrawList(pThis->m0_fileBundle->get3DModel(lagiModelOffset));\n    popMatrix();\n}"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townEdge.cpp")
+  # Camp return hardware regression: stale flags can turn a completed
+  # rotation into unintended walking. Initialize before authored mode bits.
+  set(edge_init_state_old [=[    pThis->mC = 0;
+    pThis->m10_InitPtr = arg;]=])
+  set(edge_init_state_new [=[    pThis->mC = 0;
+    pThis->mE_controlState = 0;
+    pThis->mF = 0;
+    pThis->m10_InitPtr = arg;]=])
+  string(FIND "${source_text}" "${edge_init_state_old}" edge_init_state_found)
+  if(edge_init_state_found LESS 0)
+    message(FATAL_ERROR "Edge NPC state initialization anchor changed")
+  endif()
+  string(REPLACE "${edge_init_state_old}" "${edge_init_state_new}" source_text "${source_text}")
   # Edge's native hierarchy draw path submits through addObjectToDrawList()
   # with pCurrentMatrix already containing the town camera. Mark the scope so
   # Lagi's render bridge strips only that view transform and publishes each
