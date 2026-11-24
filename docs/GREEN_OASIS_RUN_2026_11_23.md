@@ -69,3 +69,25 @@ No additional capture has been requested; continue tracing existing evidence.
   unimplemented billboard list at cell+10 and dynamic-object creation at +14.
   Check whether the affected Garil cells contain such records before restoring
   their original behavior. Do not guess scenery offsets.
+
+## Third scenery grid restoration
+
+The original Oasis environment descriptor has a third grid at 0609146C. Its
+central cell contains 64 records: models B30 (5), B38 (15), B34 (14), ADC/AE0/AE4
+(4 each), AE8/AEC/AF0 (6 each). All were omitted by readGrid3 returning null.
+Native field draw 060780A2..06078144 traverses 16-byte records, clips and checks
+LOD, then calls common 0601E424. That primitive keeps view translation but sets
+basis diag(-1,1,1), unlike second-list billboard 0601E356. Optional collision
+uses matrix helper 06077010 and shared collision producer 060771C0.
+
+The generated shared field adapter now decodes the third list using the existing
+16-byte decoder, owns one active layout's cells, and submits that exact basis
+through the normal model bridge with a dynamic view-relative scope. Replacing
+the active layout replaces the decoded storage; unrelated layouts are guarded.
+No extern/Azel edits or guessed placement/scale/culling values were introduced.
+
+Validation: production-helper host test checks the 64 native records and native
+instruction anchors, clipping, LOD, reflected identity basis, translation,
+collision dispatch, layout guards and matrix-stack restoration. Vita configure,
+compile and package passed. Restored visual coverage awaits hardware acceptance;
+this does not yet establish that every missing tree or whirlpool is fixed.

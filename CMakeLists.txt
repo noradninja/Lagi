@@ -2579,6 +2579,20 @@ p_workArea lagiAzelCreateNativeMenuCover(p_workArea parent,
         if (!(pThis->m65 & 4))]=] source_text "${source_text}")
 
  elseif(relative_path STREQUAL "field/field_a3/o_fld_a3.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_field_screen_scenery.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_field_screen_scenery.inc" screen_scenery)
+  set(screen_draw_anchor "void s_visdibilityCellTask::gridCellDraw_normal(s_visdibilityCellTask* pTypedWorkAread)")
+  set(screen_draw_old "    if (pTypedWorkAread->m10_pCell3)\n    {\n        assert(0);\n    }")
+  set(screen_load_old "    pNewData3->m8 = readGrid3(grid3, pNewData3->m10_gridSize[0], pNewData3->m10_gridSize[1]);")
+  foreach(screen_boundary IN ITEMS screen_draw_anchor screen_draw_old screen_load_old)
+   string(FIND "${source_text}" "${${screen_boundary}}" screen_found)
+   if(screen_found LESS 0)
+    message(FATAL_ERROR "Shared third scenery grid boundary changed: ${screen_boundary}")
+   endif()
+  endforeach()
+  string(REPLACE "${screen_draw_anchor}" "${screen_scenery}\n${screen_draw_anchor}" source_text "${source_text}")
+  string(REPLACE "${screen_draw_old}" "    lagiDrawFieldScreenScenery(pTypedWorkAread, r15);" source_text "${source_text}")
+  string(REPLACE "${screen_load_old}" "    pNewData3->m8 = nullptr;\n    lagiScreenSceneryLayout = pNewData3;\n    lagiScreenSceneryCells = readGrid2(grid3, pNewData3->m10_gridSize[0], pNewData3->m10_gridSize[1]);" source_text "${source_text}")
   # FLD_A5 0607C2D0 reloads the saved dragon and both riders when the
   # field task's +3E reload flag is 1. The shared initializer owns this
   # flag, along with the native HP/BP refill and completion state.
