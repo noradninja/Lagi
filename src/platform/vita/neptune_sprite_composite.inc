@@ -109,8 +109,15 @@ static bool setNbg1DotPass(unsigned pass,unsigned width,unsigned height) {
     return true;
 }
 static bool prepareSpriteUiPriority() {
-    if(!lagi::spriteUiPrioritySupported(g_spriteColor) || !g_vdp2TextValid ||
-        readVdp2Be32(g_vdp2LineScroll,0)==0x01010000u)return false;
+    if(!lagi::spriteUiPrioritySupported(g_spriteColor) || !g_vdp2TextValid)
+        return false;
+    // Camp's cinematic matte is drawn separately, after the world resolve
+    // and before the subtitle plane. Its line-scroll sentinel does not
+    // invalidate the supported RBG0/VDP1 color calculation or the NBG1/3
+    // priority lookup. Keep the legacy restriction for other paths.
+    if(readVdp2Be32(g_vdp2LineScroll,0)==0x01010000u &&
+       !(g_sceneGameMode==2u && lagi::rbgLayerCompositeSupported(g_spriteColor)))
+        return false;
     if(g_spriteUiPriorityProgram)return true;
     const auto* fp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_vdp2_ui_priority_f_gxp_start);
     const auto* vp=reinterpret_cast<const SceGxmProgram*>(_binary_lagi_texture_v_gxp_start);

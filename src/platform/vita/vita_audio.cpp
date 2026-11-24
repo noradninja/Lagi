@@ -41,9 +41,6 @@ int audio_thread(SceSize, void*)
     g_threadRunning.store(true, std::memory_order_release);
     const std::size_t blockSamples = kOutputFrames * g_channels;
     bool outputStarted = false;
-    std::uint64_t underrunBlocks = 0, emptyBlocks = 0, missingFrames = 0;
-    std::uint64_t outputBlocks = 0;
-    std::size_t minQueuedFrames = kRingSamples / g_channels;
 
     while (!g_stopRequested.load(std::memory_order_acquire)) {
         std::size_t available = queued_samples();
@@ -57,17 +54,8 @@ int audio_thread(SceSize, void*)
         if (finished && available == 0)
             break;
 
-        const bool wasStarted = outputStarted;
         outputStarted = true;
         const std::size_t consume = std::min(available, blockSamples);
-        if (wasStarted && !finished) {
-            minQueuedFrames = std::min(minQueuedFrames, available / g_channels);
-            if (consume < blockSamples) {
-                ++underrunBlocks;
-                if (consume == 0) ++emptyBlocks;
-                missingFrames += (blockSamples - consume) / g_channels;
-            }
-        }
         std::uint64_t read = g_readPosition.load(std::memory_order_relaxed);
         for (std::size_t i = 0; i < consume; ++i)
             g_output[i] = g_ring[static_cast<std::size_t>(read + i) & kRingMask];
@@ -78,17 +66,6 @@ int audio_thread(SceSize, void*)
 
         if (sceAudioOutOutput(g_port, g_output.data()) < 0)
             break;
-        ++outputBlocks;
-        if ((outputBlocks & 127u) == 0u) {
-            lagi::platform::logging::writef(
-                "[LagiPCM] blocks=%llu underrunBlocks=%llu emptyBlocks=%llu missingFrames=%llu minQueuedFrames=%u\\n",
-                static_cast<unsigned long long>(outputBlocks),
-                static_cast<unsigned long long>(underrunBlocks),
-                static_cast<unsigned long long>(emptyBlocks),
-                static_cast<unsigned long long>(missingFrames),
-                static_cast<unsigned>(minQueuedFrames));
-            minQueuedFrames = kRingSamples / g_channels;
-        }
         const std::uint64_t submitted =
             g_submittedFrames.fetch_add(
                 kOutputFrames, std::memory_order_acq_rel) + kOutputFrames;

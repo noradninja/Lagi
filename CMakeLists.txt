@@ -6751,6 +6751,44 @@ sKernelScriptFunctions gKernelScriptFunctions =]=]
    "if (graphicEngineStatus.m4514.m0_inputDevices[0].m0_current.m8_newButtonDown & 5)"
    source_text "${source_text}")
  elseif(relative_path STREQUAL "town/townCamera.cpp")
+  # Camp positional lighting sets a zero directional vector, so the
+  # native point selector must be active for the existing bridge evaluator.
+  # Activate once after reset, never push the selector stack per Draw.
+  set(camp_point_setup_old [=[    resetProjectVector();
+    cameraTaskPtr->m2 = 1;
+    cameraTaskPtr->m0_colorMode = 2;]=])
+  set(camp_point_setup_new [=[    resetProjectVector();
+    if (gCurrentTownOverlay && gCurrentTownOverlay->m_name == "TWN_CAMP.PRG") {
+        dragonFieldTaskDrawSub1Sub0();
+    }
+    cameraTaskPtr->m2 = 1;
+    cameraTaskPtr->m0_colorMode = 2;]=])
+  string(FIND "${source_text}" "${camp_point_setup_old}" camp_point_setup_found)
+  if(camp_point_setup_found LESS 0)
+   message(FATAL_ERROR "Camp positional light setup boundary changed")
+  endif()
+  string(REPLACE "${camp_point_setup_old}" "${camp_point_setup_new}" source_text "${source_text}")
+  # Bounded evidence for authored position/color/range and active selector.
+  set(camp_point_draw_old [=[    setupLight(0, 0, 0, pThis->m10.toU32());]=])
+  set(camp_point_draw_new [=[    setupLight(0, 0, 0, pThis->m10.toU32());
+    if (gCurrentTownOverlay && gCurrentTownOverlay->m_name == "TWN_CAMP.PRG") {
+        extern u16 loc_601FA9E;
+        static unsigned reports=0;
+        static unsigned previousSelector=0;
+        const unsigned selector=unsigned(loc_601FA9E);
+        if (reports<32u && (reports<8u || selector!=previousSelector)) {
+            ++reports;
+            lagi::platform::logging::writef("[CampPointLight] selector=%04X pos=%d,%d,%d rgb=%06X range=%08X intensity=%08X\n",
+                selector,local_14[0].asS32(),local_14[1].asS32(),local_14[2].asS32(),
+                unsigned(pThis->m10.toU32()),unsigned(pThis->m2C),unsigned(pThis->m30_colorIntensity));
+        }
+        previousSelector=selector;
+    }]=])
+  string(FIND "${source_text}" "${camp_point_draw_old}" camp_point_draw_found)
+  if(camp_point_draw_found LESS 0)
+   message(FATAL_ERROR "Camp positional light draw boundary changed")
+  endif()
+  string(REPLACE "${camp_point_draw_old}" "${camp_point_draw_new}" source_text "${source_text}")
   set(source_text "#include \"lagi/platform.h\"\n${source_text}")
   string(REPLACE "void townCamera_update(sCameraTask* pThis)" [=[static void lagiTraceTownLight(const char* source,sSaturnPtr data)
 {
