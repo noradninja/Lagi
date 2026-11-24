@@ -7213,6 +7213,38 @@ static bool decodeLiveVdp1Texture(
     const bool endDisabled = (record.cmdPmod & 0x80u) != 0u;
     const bool endMode = (record.cmdPmod & 0x20u) == 0u;
 
+    // The Camp fire hierarchy's one-quad 8x8 LUT material decoded to
+    // zero visible pixels. Preserve its authored PMOD while auditing the
+    // actual character and LUT data, including potential end-code dots.
+    if ((g_sceneGameMode==1u || g_sceneGameMode==2u) &&
+        commandType==2u && record.cmdPmod==0x0408u &&
+        record.cmdSize==0x0108u && mode==1u) {
+        static unsigned auditBudget=16;
+        if(auditBudget) {
+            --auditBudget;
+            unsigned dots[16]{};
+            for(unsigned i=0;i<32u;++i) {
+                ++dots[src[i]>>4u]; ++dots[src[i]&15u];
+            }
+            const unsigned lutAddress=unsigned(record.cmdColr)<<3;
+            const auto* lut=lutAddress<=0x80000u-32u ?
+                (textureMemory ? textureMemory+lutAddress :
+                    getVdp1Pointer(0x25C00000u+lutAddress)) : nullptr;
+            logging::writef("[CampEmberRaw] PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X dots=%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u snapshot=%u\n",
+                unsigned(record.cmdPmod),unsigned(record.cmdColr),unsigned(record.cmdSrca),unsigned(record.cmdSize),
+                dots[0],dots[1],dots[2],dots[3],dots[4],dots[5],dots[6],dots[7],
+                dots[8],dots[9],dots[10],dots[11],dots[12],dots[13],dots[14],dots[15],unsigned(textureMemory!=nullptr));
+            if(lut) {
+                for(unsigned d=0;d<16u;++d) {
+                    const unsigned entry=(unsigned(lut[2u*d])<<8)|unsigned(lut[2u*d+1u]);
+                    if(dots[d]) logging::writef("[CampEmberLut] SRCA=%04X dot=%X count=%u lut=%04X cram=%04X\n",
+                        unsigned(record.cmdSrca),d,dots[d],entry,
+                        unsigned(readVdp2Be16(g_vdp2Cram,(entry*2u)&0xfffu)));
+                }
+            }
+        }
+    }
+
     auto trackCramRead = [&](unsigned byte) {
         const unsigned block = (byte & 0x0fffu) / 32u;
         out.nativeCramDependencies[block / 32u] |= 1u << (block % 32u);
