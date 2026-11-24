@@ -3342,6 +3342,18 @@ void s_LCSLaser_DeleteTrailSub0(s32 r4)]=]
     a5CutsceneCameraInit((p_workArea)pThis,"
    source_text "${source_text}")
   string(REPLACE "${sandfall_camera_old}" "&pThis->lagiDiscoveryCameraTarget" source_text "${source_text}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_oasis_discovery_camera.inc")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/integration/lagi_oasis_discovery_camera.inc" oasis_orbit_camera)
+  string(REPLACE "    sVec3_FP lagiDiscoveryCameraTarget;" "    sVec3_FP lagiDiscoveryCameraTarget;\n    std::vector<s_scriptData2> lagiDiscoveryOrbitFrames;" source_text "${source_text}")
+  set(oasis_orbit_anchor "// 0605A236 - sandfall discovery callback:")
+  string(FIND "${source_text}" "${oasis_orbit_anchor}" oasis_orbit_found)
+  if(oasis_orbit_found LESS 0)
+   message(FATAL_ERROR "Oasis discovery orbit-camera boundary changed")
+  endif()
+  string(REPLACE "${oasis_orbit_anchor}" "${oasis_orbit_camera}\n${oasis_orbit_anchor}" source_text "${source_text}")
+  string(REPLACE "a5CutsceneCameraInit((p_workArea)pThis," "lagiStartOasisDiscoveryOrbitCamera(pThis," source_text "${source_text}")
+  string(REPLACE "#include \"field/fieldCutsceneTask2.h\"" "#include \"field/fieldCutsceneTask2.h\"\n#include \"field/fieldCutsceneTask3.h\"" source_text "${source_text}")
+
   set(source_text "#include \"lagi/lagi_render_bridge.h\"
 ${source_text}")
  elseif(relative_path STREQUAL "field/field_a5/a5_exitTriggerEntity.cpp")
@@ -5456,6 +5468,14 @@ static void a5WormPassageEntrance_Init(sA5WormPassageEntrance* pThis, sSaturnPtr
   string(REPLACE "(u32)((u8*)pNpc + 0x14)" "lagiA5StoryWormCameraAnchor(pNpc)" source_text "${source_text}")
   string(REPLACE "        Unimplemented();\n        //a5_startProximityCamera_0606f9e4" "        a5_startProximityCamera_0606f9e4" source_text "${source_text}")
   string(REPLACE "    Unimplemented();\n    //a5_startProximityCamera_0606f9e4" "    a5_startProximityCamera_0606f9e4" source_text "${source_text}")
+ elseif(relative_path STREQUAL "field/fieldCutsceneTask3.cpp")
+  # FLD_A5 060723A8..B6 integrates the authored orbit radius each tick.
+  set(orbit_radius_anchor "        pThis->m1C += pThis->m3C;")
+  string(FIND "${source_text}" "${orbit_radius_anchor}" orbit_radius_found)
+  if(orbit_radius_found LESS 0)
+   message(FATAL_ERROR "Shared orbit-camera radius boundary changed")
+  endif()
+  string(REPLACE "${orbit_radius_anchor}" "${orbit_radius_anchor}\n        pThis->m28 += pThis->m48;" source_text "${source_text}")
  elseif(relative_path STREQUAL "field/fieldCutsceneTask2.cpp")
   # Original A5 06071BF6..C2C uses authored roll endpoints, not task
   # state/index; 06071D10 writes camera+0x14 (rotation Z), never yaw.

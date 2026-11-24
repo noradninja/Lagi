@@ -104,3 +104,33 @@ the old code suppressed every pit. No progress bits or thresholds were changed.
 Validation: native branch evidence plus compiled production condition across
 112 intervals and 224 placements each passed; Vita compile/package passed.
 Visible whirlpools and progression still await hardware acceptance.
+
+## Ruin discovery camera format correction
+
+Native callback 0605A26C dispatches 0607272E, the orbit camera, with data
+0608CFB4 and anchor 06099FD4. The old adapter decoded that data as 60-byte
+position-camera records and dispatched cutsceneTaskInitSub2. The authored data
+instead contains two 36-byte orbit records (185 and 200 frames), then a zero
+terminator. Treating their angles/radius as world positions explains invalid
+framing without requiring guessed camera offsets.
+
+Discovery now owns/decodes those orbit records and uses existing shared
+cutsceneTaskInitSub3 with its decoded owned anchor. Other position-camera calls,
+including monolith destruction, retain their authored format. The shared orbit
+Update also now integrates radius by m48 before evaluating position, as native
+060723A8..B6 does; the reconstruction had omitted that step. The second discovery
+record moves radius from A0000 to 78000.
+
+Validation: compiled production decoder/service fixture checks original records,
+owned storage on repeated invocation and generated discovery routing. Original
+radius instructions and generated update ordering are checked. Vita compile and
+package passed. Camera framing still requires hardware acceptance.
+
+## Remaining investigation
+
+Boulder targeting/connected ruin destruction, battle scenery placement and the
+combat-entry crash remain open. The particle-named subfield-4 entity is not a
+small cosmetic effect: native 0605E99C initializes models, per-model animation
+buffers and a controller, while upstream Init/Update/Draw remain stubs. Trace
+its relationships to the required ruin objects before implementing any targets
+or completion flags. No invented boulder count or story gate was added.
