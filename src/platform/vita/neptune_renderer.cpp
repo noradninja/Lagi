@@ -5015,6 +5015,21 @@ static GpuMode1Texture* findOrUploadVdp1UiTexture(
         if (lagi::vdp1_half_transparent(command.cmdPmod))
             for (auto& pixel : decoded.rgba)
                 pixel=lagi::vdp1_blend_texel(command.cmdPmod,pixel);
+        // Correlate world-tagged Camp particle descriptors with decoded
+        // pixels, independently of the first-UI-sprite-only trace.
+        if ((g_sceneGameMode==1u || g_sceneGameMode==2u) && command.hasWorldDepth) {
+            static unsigned particleDecodeBudget=96;
+            if (particleDecodeBudget) {
+                --particleDecodeBudget;
+                unsigned nonzero=0, visible=0;
+                for(unsigned i=0;i<texBytes;++i) nonzero+=src[i]!=0;
+                for(auto px:decoded.rgba) visible+=(px&0xff000000u)!=0;
+                logging::writef("[TownParticleDecode] CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X sourceNZ=%u/%u visible=%u/%u refresh=%u\n",
+                    unsigned(command.cmdCtrl),unsigned(command.cmdPmod),unsigned(command.cmdColr),
+                    unsigned(command.cmdSrca),unsigned(command.cmdSize),nonzero,texBytes,
+                    visible,unsigned(decoded.rgba.size()),unsigned(refreshEntry!=nullptr));
+            }
+        }
         const unsigned int stridePixels =
             (decoded.width + 7u) & ~7u;
         const unsigned int bytes =
@@ -7898,6 +7913,35 @@ static void appendLiveTownModel(
                 : liveTownTextureIndex(record);
         g_liveTownCpuMesh.polygonTextureIndices[polygonBase + p] =
             textureIndex;
+        // Small authored town hierarchy meshes include the fire/ember
+        // children. Audit each distinct descriptor only once, even when
+        // an animation changes the model transform on every update.
+        if ((g_sceneGameMode==1u || g_sceneGameMode==2u) &&
+            model.polygons.size()<=12u) {
+            static std::uint64_t seen[384]{};
+            static unsigned seenCount=0;
+            if(seenCount<384u) {
+                const auto key=lagi::ui_texture_key(record.cmdPmod,record.cmdColr,record.cmdSrca,record.cmdSize);
+                bool known=false;
+                for(unsigned i=0;i<seenCount;++i) if(seen[i]==key) {known=true;break;}
+                if(!known) {
+                    seen[seenCount++]=key;
+                    unsigned visible=0, total=0, bright=0;
+                    if(textureIndex<g_staticRoomCpuMesh.decodedTextureData.size()) {
+                        const auto& tex=g_staticRoomCpuMesh.decodedTextureData[textureIndex];
+                        total=unsigned(tex.rgba.size());
+                        for(auto px:tex.rgba) {
+                            visible+=(px&0xff000000u)!=0;
+                            bright+=((px&0xff000000u)!=0 && (px&0x00ffffffu)!=0);
+                        }
+                    }
+                    logging::writef("[TownSmallMeshMaterial] CTRL=%04X PMOD=%04X COLR=%04X SRCA=%04X SIZE=%04X light=%04X index=%u visible=%u/%u nonblack=%u quads=%u billboard=%u\n",
+                        unsigned(record.cmdCtrl),unsigned(record.cmdPmod),unsigned(record.cmdColr),
+                        unsigned(record.cmdSrca),unsigned(record.cmdSize),unsigned(record.lightingControl),
+                        unsigned(textureIndex),visible,total,bright,unsigned(model.polygons.size()),unsigned(state.billboard));
+                }
+            }
+        }
         // resize above already constructed fresh zero Gouraud payloads for
         // the appended range; cached static prefixes are reset separately.
     }
