@@ -16,6 +16,7 @@ std::vector<sSequenceConfig> SoundDataTable(8);
 const sSequenceConfig* g_sequence=nullptr;
 s32 g_sequenceNumber=-1,g_loadingState=-1;unsigned g_audioDiagBudget=0,g_audioPerfBudget=0;
 std::atomic<bool> g_loadingFinished{true};bool g_gameplayRenderEnabled=false;
+std::atomic<s32> g_readySoundSequence{-1};
 std::vector<PendingSound> g_pendingSounds,submitted;
 std::vector<int> g_commands;
 std::array<ActiveSound,8> g_activeSounds{},g_resumeSounds{};
@@ -72,6 +73,7 @@ void worker_fade_all(){}
 #include "queue.inc"
 #include "events.inc"
 #include "ready.inc"
+#include "find.inc"
 int main(){
     worker_load_banks(2,0);assert(g_sequenceNumber==2 && g_sequenceStack.index==0);
     g_activeSounds[0]={100,100};g_activeSounds[1]={101,80};
@@ -171,6 +173,18 @@ int main(){
     SoundDataTable[3].m8_areaMapIndex=1;g_loadingState=1;commandSlot=0;
     assert(advance_loading_state(commandSlot) && g_loadingState==2 && commandSlot==1);
     assert(!g_bankResidency.contains("BTL1DSP.EXB",0x25A53A40));
+    // Battle pop never calls public loadSoundBanks: worker must publish restored
+    // identity before a positional emitter can find its already-started loop.
+    g_sequenceNumber=3;g_loadingState=8;g_pendingSequenceEvents.store(0);
+    g_activeSoundIds[6].store(102);g_activeSoundSequences[6].store(3);
+    g_readySoundSequence.store(-1);g_loadingFinished.store(false);
+    assert(findSound(102)==-1);
+    advance_loading_state(commandSlot);
+    assert(g_readySoundSequence.load()==3 && findSound(102)==6);
+    g_pendingSequenceEvents.store(1);assert(findSound(102)==-1);
+    g_pendingSequenceEvents.store(0);assert(findSound(102)==6);
+    assert(findSound(-1)==-1);
+    puts("PASS: restored worker sequence is visible to field sound emitters");
     puts("PASS: production sound requests retain distinct playback-slot ownership for a shared data bank; volume/stop commands and transition stop/wait target the actual driver slots.");
     puts("PASS: production audio stack/queue/readiness plus native loader choice, residency mask, selective stop, driver-status wait and transfer-failure retention; mocked SCSP/worker scheduling");
 }

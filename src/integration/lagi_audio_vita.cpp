@@ -223,7 +223,7 @@ std::atomic<bool> g_loadingFinished{true};
 std::atomic<unsigned> g_pendingSequenceEvents{0};
 std::array<std::atomic<s32>, 8> g_activeSoundIds{};
 std::array<std::atomic<s32>, 8> g_activeSoundSequences{};
-std::atomic<s32> g_requestedSequence{-1};
+std::atomic<s32> g_readySoundSequence{-1}; // worker-published after slot reconciliation
 SceUID g_audioWorkerThread = -1;
 bool g_gameplayRenderEnabled = false;
 std::atomic<unsigned> g_updateSoundCalls{0};
@@ -630,6 +630,7 @@ bool advance_loading_state(unsigned& commandSlot)
         g_loadingState = -1;
         if constexpr(LAGI_BATTLE_AUDIO_STACK)replay_restored_sequence();
         if constexpr(LAGI_BATTLE_AUDIO_STACK)g_stoppedBankMask=0;
+        g_readySoundSequence.store(g_sequenceNumber,std::memory_order_release);
         g_loadingFinished.store(true, std::memory_order_release);
         lagi::platform::logging::writef(
             "[AzelAudio:%llu] SCSP sequence=%d ready\n",
@@ -1056,6 +1057,7 @@ void worker_load_banks(s32 musicNumber, s32 mode)
     if (musicNumber < 0) {
         g_sequence = nullptr;
         g_sequenceNumber = -1;
+        g_readySoundSequence.store(-1,std::memory_order_release);
         g_loadingState = -1;
         g_loadingFinished.store(true, std::memory_order_release);
         g_pendingSounds.clear();
@@ -1070,6 +1072,7 @@ void worker_load_banks(s32 musicNumber, s32 mode)
     if (index >= SoundDataTable.size())
         return;
 
+    g_readySoundSequence.store(-1,std::memory_order_release);
     g_sequence = &SoundDataTable[index];
     g_sequenceNumber = musicNumber;
     g_loadingState = nativeLoadState;
@@ -1183,6 +1186,7 @@ int audio_worker_thread(SceSize, void*)
         g_previousSequence=nullptr;g_stoppedBankMask=0;
         g_sequence=nullptr;g_sequenceNumber=-1;g_loadingState=-1;
     }
+    g_readySoundSequence.store(-1,std::memory_order_release);
     // COMMON sequence 0 owns persistent system SE plus the initial player/DSP
     // banks. Direct/title startup begins at sequence 75, whose list omits SYS_SE.
     // Restore that boot residency, not a new sequence or replacement mapping.
@@ -1430,7 +1434,6 @@ void updateSound()
 
 void loadSoundBanks(s8 musicNumber, s8 mode)
 {
-    g_requestedSequence.store(musicNumber, std::memory_order_release);
     trace_sequence_config(musicNumber, mode);
 
     AudioEvent event{};
@@ -1503,11 +1506,17 @@ s32 fadeOutAllSequences()
 
 s32 findSound(s32 soundIndex)
 {
+    // A pop restores a sequence without a game-thread loadSoundBanks call.
+    // Only the worker knows which sequence has actually completed loading.
+    const s32 ready = g_readySoundSequence.load(std::memory_order_acquire);
+    if(soundIndex<0)return -1;
+    if(soundIndex>=100 && (ready<0 ||
+        g_pendingSequenceEvents.load(std::memory_order_acquire)!=0 ||
+        !g_loadingFinished.load(std::memory_order_acquire)))return -1;
     for (unsigned i = 0; i < g_activeSoundIds.size(); ++i) {
         if (g_activeSoundIds[i].load(std::memory_order_acquire) == soundIndex &&
             (soundIndex < 100 ||
-             g_activeSoundSequences[i].load(std::memory_order_acquire) ==
-             g_requestedSequence.load(std::memory_order_acquire)))
+             g_activeSoundSequences[i].load(std::memory_order_acquire) == ready))
             return static_cast<s32>(i);
     }
     return -1;
