@@ -19,6 +19,13 @@ Identical gameplay replays are not required. Use the same device, clocks, build 
 - Compare worker active time, rendered vs non-rendered samples, lease time and gaps; correlate with PCM reports and existing scene/render timing. Timestamped audio records support temporal correlation, but asynchronous log ordering and sparse samples cannot prove exact per-underrun causation.
 - Compare representative distributions and worst cases across workloads, not raw total underruns across different playthroughs. Preserve outliers and note sample sizes. Capture the baseline before implementing MeP execution.
 
+### Step 2A: repair native DSP reselection before MeP work
+The 2026-11-25 natural-play capture demonstrates actual PCM starvation and frequent sampled reference execution despite ARM cache hits. Stopped DSP samples also use profiler backend 0, so that category alone is not proof of active interpreter execution.
+
+The pinned Azel SCSP write path triggers SCSPDSP_Start on address 0xBF0, before the last MPRO word at 0xBFE. The old dirty hook cleared the selected native function; worker service only processed pending cache misses. A cache hit followed by an MPRO write could therefore leave a running DSP permanently on the generic path until another Start. Commit 6e140d8 reselects dirty running programs at the existing worker boundary, preserving the LastStep latched by Start and using the reference during modification. Commit 8dcac62 avoids invalidation for identical register writes without suppressing the native Start trigger. Commit 5cb84b1 adds regression coverage for cache-hit Start, changed MPRO, safe reference execution before boundary, native reselection, restoration to a cached program, and no repeat selection on clean service.
+
+Hardware acceptance: [LagiDSPReselect] reports dirty recovery with selected backend (3=ARM); compare active DSP workload backend distributions, PCM starvation and quantum timing against the baseline. Backend 0 can also mean stopped DSP; the 127-step invalid-program rejection is a separate Step 2B issue, not fixed here. Tests and Vita build remain unverified until run. No queue depth, timing, affinity, or MeP changes.
+
 ## 2. Bridge feasibility
 Upstream: https://github.com/GrapheneCt/VVNZRunner
 Inspect pinned source and release artifacts, license and firmware requirements. Measure injection, blocking execution, cache ownership transitions, mapped buffer transfer, warm/cold dispatch, contention and suspend/resume. Use coarse work units, never per-sample bridge calls. Verify ABI and alignment; ARM pointers are not MeP pointers. No assumptions about cache coherence or speed.
