@@ -7839,9 +7839,10 @@ string(FIND "${lagi_scsp_source}" "${lagi_mpro_anchor}" lagi_mpro_last REVERSE)
 if(lagi_mpro_match LESS 0 OR NOT lagi_mpro_match EQUAL lagi_mpro_last)
  message(FATAL_ERROR "SCSP MPRO write hook anchor changed")
 endif()
-string(REPLACE "${lagi_mpro_anchor}" "{ if (SCSP->DSP.MPRO[(addr-0x800)/2] != val) lagi_dsp_program_written(&SCSP->DSP); ${lagi_mpro_anchor} }" lagi_scsp_source "${lagi_scsp_source}")
+# Step 2B: bounded sample of illegal IRA writes; retain original assignment and Start trigger.
+string(REPLACE "${lagi_mpro_anchor}" "{ static unsigned lagi_bad_ira_total, lagi_bad_ira_batch; if (addr == 0xBF0) lagi_bad_ira_batch = 0; if (SCSP->DSP.MPRO[(addr-0x800)/2] != val) { if (((addr-0x800) & 7) == 2 && ((val >> 6) & 0x3F) >= 0x32 && lagi_bad_ira_batch < 4 && lagi_bad_ira_total < 64) { ++lagi_bad_ira_batch; ++lagi_bad_ira_total; lagi_dsp_log(\"[LagiDSPWrite] pc=%06X addr=%03X step=%u old=%04X new=%04X IRA=%02X\\n\", (unsigned)m68k_get_reg(0,M68K_REG_PC), (unsigned)addr, (unsigned)((addr-0x800)/8), (unsigned)SCSP->DSP.MPRO[(addr-0x800)/2], (unsigned)val, (unsigned)((val >> 6) & 0x3F)); } lagi_dsp_program_written(&SCSP->DSP); } ${lagi_mpro_anchor} }" lagi_scsp_source "${lagi_scsp_source}")
 set(LAGI_SCSP_SERVICE "${CMAKE_BINARY_DIR}/lagi_scsp_service.c")
-file(WRITE "${LAGI_SCSP_SERVICE}" "#include \"lagi_dsp_platform.h\"\n${lagi_scsp_source}")
+file(WRITE "${LAGI_SCSP_SERVICE}" "#include \"lagi_dsp_platform.h\"\n#include \"eng_ssf/m68k.h\"\n${lagi_scsp_source}")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/extern/Azel/ThirdParty/aosdk/eng_ssf/scsp.c")
 
 add_executable(lagi
