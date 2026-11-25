@@ -367,6 +367,41 @@ void lagi_dsp_program_written(struct _SCSPDSP *DSP) {
     if(g_lagiNativeDsp==DSP || g_lagiDirtyOverflow) g_lagiNativeFunction=0;
     lagi_dsp_selected_backend=0;
 }
+/* Step 2B: capture the rejected live MPRO, not just the earlier Start
+ * snapshot. Bound diagnostics by unique hash/step pairs for this process.
+ * Capture I/O is deferred through the existing worker-boundary queue. */
+static struct { UINT32 hash; unsigned steps; } g_lagiRejectedPrograms[16];
+static unsigned g_lagiRejectedCount;
+static void lagi_dsp_capture_rejection(struct _SCSPDSP *DSP,UINT32 hash) {
+    const unsigned steps=(unsigned)DSP->LastStep;
+    unsigned i, j, first=128, last=128, invalid=0, ones=0, zeros=0;
+    for(i=0;i<g_lagiRejectedCount;++i)
+        if(g_lagiRejectedPrograms[i].hash==hash && g_lagiRejectedPrograms[i].steps==steps) return;
+    if(g_lagiRejectedCount==16) return;
+    g_lagiRejectedPrograms[g_lagiRejectedCount].hash=hash;
+    g_lagiRejectedPrograms[g_lagiRejectedCount++].steps=steps;
+    if(steps>128) {
+        lagi_dsp_log("[LagiDSPReject] hash=%08X steps=%u reason=step-range\n",hash,steps);
+        return;
+    }
+    for(i=0;i<steps;++i) {
+        const UINT16 *p=DSP->MPRO+i*4;
+        const unsigned ira=(p[1]>>6)&0x3F;
+        if(ira>=0x32) { if(first==128) first=i; last=i; ++invalid; }
+        for(j=0;j<4;++j) { ones+=p[j]==0xFFFF; zeros+=p[j]==0; }
+    }
+    lagi_dsp_log("[LagiDSPReject] hash=%08X steps=%u invalidIRA=%u first=%u last=%u ffffWords=%u zeroWords=%u tail=%04X,%04X,%04X,%04X\n",
+        hash,steps,invalid,first,last,ones,zeros,
+        (unsigned)DSP->MPRO[508],(unsigned)DSP->MPRO[509],
+        (unsigned)DSP->MPRO[510],(unsigned)DSP->MPRO[511]);
+    if(first<128) {
+        const UINT16 *p=DSP->MPRO+first*4;
+        lagi_dsp_log("[LagiDSPReject] hash=%08X step=%u IRA=%02X words=%04X,%04X,%04X,%04X\n",
+            hash,first,(unsigned)((p[1]>>6)&0x3F),
+            (unsigned)p[0],(unsigned)p[1],(unsigned)p[2],(unsigned)p[3]);
+    }
+    lagi_dsp_queue_capture(DSP,hash);
+}
 static void lagi_dsp_select_native(struct _SCSPDSP *DSP,int allowCompile) {
     const unsigned long long started=sceKernelGetSystemTimeWide();
     const unsigned steps=(unsigned)DSP->LastStep;
@@ -404,7 +439,10 @@ static void lagi_dsp_select_native(struct _SCSPDSP *DSP,int allowCompile) {
                     const unsigned slot=g_lagiCacheNext++%4;
                     LagiDspCacheEntry *entry=&g_lagiNativeCache[slot];
                     ++g_lagiCacheMisses; entry->function=0;
-                    if (!lagi_dsp_decode_ir(&g_lagiTranslation,DSP->MPRO,steps)) reason="invalid-program";
+                    if (!lagi_dsp_decode_ir(&g_lagiTranslation,DSP->MPRO,steps)) {
+                        reason="invalid-program";
+                        lagi_dsp_capture_rejection(DSP,hash);
+                    }
                     else {
                         bytes=lagi_dsp_emit_arm(&g_lagiTranslation,g_lagiArmScratch,16384);
                         if (!bytes) reason="code-capacity";
