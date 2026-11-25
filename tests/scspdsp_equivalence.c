@@ -156,6 +156,29 @@ static void native_tests(void) {
     lagi_dsp_program_written(&a); a.MPRO[1]^=0x20;
     i=g_lagiCacheMisses; lagi_dsp_service_pending(&a);
     if(!g_lagiNativeFunction || g_lagiPendingDsp || lagi_dsp_is_dirty(&a) || g_lagiCacheMisses!=i+1) exit(42);
+    /* Reproduce a cache-hit Start followed by a live MPRO write.
+     * A hit has no pending compile; the dirty bit alone must schedule
+     * reselection. A sample before the boundary must remain reference. */
+    SCSPDSP_Start(&a);
+    if(!g_lagiNativeFunction || g_lagiPendingDsp) exit(47);
+    {
+        const int latchedSteps=a.LastStep;
+        const UINT16 prior=a.MPRO[1];
+        lagi_dsp_program_written(&a); a.MPRO[1]^=0x20;
+        if(g_lagiNativeFunction || g_lagiPendingDsp || !lagi_dsp_is_dirty(&a)) exit(48);
+        lagi_dsp_profile_sample=1; SCSPDSP_Step(&a); lagi_dsp_profile_sample=0;
+        if(lagi_dsp_profile_backend_last!=0 || g_lagiNativeFunction) exit(49);
+        lagi_dsp_service_pending(&a);
+        if(!g_lagiNativeFunction || lagi_dsp_is_dirty(&a) || a.LastStep!=latchedSteps) exit(50);
+        lagi_dsp_profile_sample=1; SCSPDSP_Step(&a); lagi_dsp_profile_sample=0;
+        if(lagi_dsp_profile_backend_last!=3) exit(51);
+        /* Restore a known cached program without another Start. */
+        lagi_dsp_program_written(&a); a.MPRO[1]=prior;
+        i=g_lagiCacheHits; lagi_dsp_service_pending(&a);
+        if(!g_lagiNativeFunction || lagi_dsp_is_dirty(&a) || g_lagiCacheHits!=i+1) exit(52);
+        i=g_lagiCacheHits; lagi_dsp_service_pending(&a);
+        if(g_lagiCacheHits!=i || a.LastStep!=latchedSteps) exit(53);
+    }
     SCSPDSP_Init(&a); a.SCSPRAM=ramA; a.MPRO[1]=63u << 6;
     SCSPDSP_Start(&a); lagi_dsp_service_pending(&a); g_lagiBackendMode=LAGI_DSP_ARM; lagi_dsp_select_native(&a,1);
     if(g_lagiNativeFunction) exit(33);
