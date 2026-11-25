@@ -20,6 +20,11 @@ bool read_file(const char* name,std::vector<u8>& bytes){++reads;const auto found
 namespace lagi::platform::logging{template<class... T>void writef(const char*,T...) {}}
 unsigned next_audio_trace(){return 0;}
 lagi::NativeAudioBankResidency g_bankResidency;
+// Diagnostics added in Step 2B are intentionally mocked in this loader test.
+std::size_t g_dspImageOffset=0,g_dspImageBytes=0;
+std::uint32_t g_dspImageLoadedHash=0;
+std::uint32_t dsp_image_hash(const void*,std::size_t){return 0;}
+void trace_dsp_image(const char*){}
 #include "load.inc"
 void select(const char* name,u32 address){
     config.fill(0);std::strcpy(reinterpret_cast<char*>(config.data()+128),name);
@@ -39,5 +44,36 @@ int main(){
     assert(!load_sound_file_list({8}) && reads==oldReads);
     select("A.BNK",0x25A00010);++selectedDisc;
     assert(load_sound_file_list({8}) && reads==oldReads+1);
+    // Original Disc 1 layout: the area-1 work ring covers both area-0 EXBs.
+    // Only the relevant map records are needed for this synthetic fixture.
+    const u8 maps[]={0x30,0x05,0x40,0,0,1,1,0,0xFF,
+                     0x30,0x04,0x80,0,0,1,1,0,0xFF,0xFF};
+    assert(g_bankResidency.set_area_maps(maps,sizeof(maps)));
+    assert(g_bankResidency.activate_area(0)==0);
+    files["A5DSP.EXB"]=std::vector<u8>(0x540,0x11);
+    files["BTL1DSP.EXB"]=std::vector<u8>(0x540,0x22);
+    select("A5DSP.EXB",0x25A53500);assert(load_sound_file_list({8}));
+    select("BTL1DSP.EXB",0x25A53A40);assert(load_sound_file_list({8}));
+    const int beforeHit=reads;
+    assert(load_sound_file_list({8}) && reads==beforeHit);
+    // Same-area mutation must be caught even without an area-map command.
+    sat_ram[0x53A40+0x140]=0xE7;
+    assert(load_sound_file_list({8}) && reads==beforeHit+1 && sat_ram[0x53A40+0x140]==0x22);
+    assert(g_bankResidency.activate_area(1)==2);
+    assert(!g_bankResidency.contains("A5DSP.EXB",0x25A53500));
+    assert(!g_bankResidency.contains("BTL1DSP.EXB",0x25A53A40));
+    assert(g_bankResidency.contains("A.BNK",0x25A00010));
+    std::memset(sat_ram+0x48000,0xE7,0x10100);
+    assert(g_bankResidency.activate_area(0)==0);
+    const int beforeReturn=reads;
+    select("A5DSP.EXB",0x25A53500);assert(load_sound_file_list({8}));
+    select("BTL1DSP.EXB",0x25A53A40);assert(load_sound_file_list({8}));
+    assert(reads==beforeReturn+2 && sat_ram[0x53500]==0x11 && sat_ram[0x53A40]==0x22);
+    // No identity may be retained for a newly loaded file in live work RAM.
+    g_bankResidency.loaded("WORK.BNK",0x25A54000,32);
+    assert(!g_bankResidency.contains("WORK.BNK",0x25A54000));
+    assert(g_bankResidency.activate_area(99)==3 && g_bankResidency.files.empty());
+    assert(!g_bankResidency.set_area_maps(maps,sizeof(maps)-1));
+    puts("PASS: area-map DSP work RAM invalidation, immutable EXB byte check and reload, unknown-map fallback");
     puts("PASS: production sound-bank loader skips exact resident files, invalidates partial overlaps, rejects missing/oversize/out-of-range writes and reloads after disc change; mocked disc bytes");
 }

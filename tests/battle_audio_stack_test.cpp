@@ -19,13 +19,14 @@ std::atomic<bool> g_loadingFinished{true};bool g_gameplayRenderEnabled=false;
 std::vector<PendingSound> g_pendingSounds,submitted;
 std::vector<int> g_commands;
 std::array<ActiveSound,8> g_activeSounds{},g_resumeSounds{};
-std::array<std::atomic<s32>,8> g_activeSoundIds{};
+std::array<std::atomic<s32>,8> g_activeSoundIds{},g_activeSoundSequences{};
+void trace_dsp_image(const char*){}
 lagi::NativeAudioStack<std::array<ActiveSound,8>> g_sequenceStack;
 bool g_resumeAfterLoad=false;
 lagi::NativeAudioBankResidency g_bankResidency;
 const sSequenceConfig* g_previousSequence=nullptr;
 std::array<ActiveSound,8> g_transitionSounds{};u8 g_stoppedBankMask=0;
-enum class AudioEventType{LoadBanks,StopBanks,Sound,FadeAll,BattleMark,PopSequence};
+enum class AudioEventType{LoadBanks,StopBanks,Sound,FadeAll,BattleMark,PopSequence,CddaPlay,CddaStop};
 struct AudioEvent{AudioEventType type=AudioEventType::Sound;int a=0,b=0,c=0,d=0;};
 constexpr unsigned kAudioEventCapacity=256,kAudioEventMask=255;
 std::array<AudioEvent,kAudioEventCapacity> g_audioEvents{};
@@ -37,7 +38,11 @@ s8 readSaturnS8(Ptr p){assert(p.offset<configs.size());return configs[p.offset];
 u32 readSaturnU32(Ptr p){u32 result=0;for(unsigned i=0;i<4;++i)result=result<<8|u8(readSaturnS8(p+i));return result;}
 Ptr readSaturnEA(Ptr p){return {readSaturnU32(p)};}
 std::string readSaturnString(Ptr p){return reinterpret_cast<const char*>(configs.data()+p.offset);}
-namespace lagi::disc{int selected_disc(){return 1;}}
+namespace lagi {
+struct CddaTrack{unsigned long long firstByte=0,endByte=0;std::string file;};
+namespace disc{int selected_disc(){return 1;}bool audio_track(int,CddaTrack&){return false;}}
+}
+struct MockCdda{void stop(){}bool start(const lagi::CddaTrack&,bool){return false;}void fade(unsigned){}}g_cdda;
 std::array<u16,8> status{};
 unsigned m68k_read_memory_16(unsigned address){assert(address>=0x780 && address<0x790);return status[(address-0x780)/2];}
 void m68k_write_memory_8(unsigned,unsigned){}
@@ -156,6 +161,16 @@ int main(){
     stop_changed_sequence_banks();assert(g_stoppedBankMask==8 && stops==std::vector<int>({4,5}));
     assert(!changed_sequence_banks_stopped());status[4]=0;assert(!changed_sequence_banks_stopped());status[5]=0;
     assert(changed_sequence_banks_stopped());
+    // Production area-map command invalidates old files before bank-mask/load.
+    const u8 maps[]={0x30,0x05,0x40,0,0,1,1,0,0xFF,
+                     0x30,0x04,0x80,0,0,1,1,0,0xFF,0xFF};
+    assert(g_bankResidency.set_area_maps(maps,sizeof(maps)));
+    g_bankResidency.activate_area(0);
+    g_bankResidency.loaded("BTL1DSP.EXB",0x25A53A40,0x540);
+    assert(g_bankResidency.contains("BTL1DSP.EXB",0x25A53A40));
+    SoundDataTable[3].m8_areaMapIndex=1;g_loadingState=1;commandSlot=0;
+    assert(advance_loading_state(commandSlot) && g_loadingState==2 && commandSlot==1);
+    assert(!g_bankResidency.contains("BTL1DSP.EXB",0x25A53A40));
     puts("PASS: production sound requests retain distinct playback-slot ownership for a shared data bank; volume/stop commands and transition stop/wait target the actual driver slots.");
     puts("PASS: production audio stack/queue/readiness plus native loader choice, residency mask, selective stop, driver-status wait and transfer-failure retention; mocked SCSP/worker scheduling");
 }

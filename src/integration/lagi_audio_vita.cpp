@@ -421,7 +421,14 @@ bool load_sound_file_list(sSaturnPtr config)
         const u32 destination = readSaturnU32(config + 4);
         if constexpr(LAGI_BATTLE_AUDIO_STACK){
             g_bankResidency.select_disc(lagi::disc::selected_disc());
-            if(g_bankResidency.contains(filename,destination)){config+=0xC;continue;}
+            if(g_bankResidency.contains(filename,destination)){
+                if(g_bankResidency.verify(filename,destination,sat_ram,sizeof(sat_ram))){
+                    if(lagi::NativeAudioBankResidency::is_dsp(filename))
+                        lagi::platform::logging::writef("[LagiDSPBank] file=%s dest=%08X status=resident-verified\n",filename.c_str(),unsigned(destination));
+                    config+=0xC;continue;
+                }
+                lagi::platform::logging::writef("[LagiDSPBank] file=%s dest=%08X status=modified-reload\n",filename.c_str(),unsigned(destination));
+            }
         }
         if (destination < 0x25A00000u ||
             destination - 0x25A00000u >= sizeof(sat_ram)) {
@@ -451,7 +458,7 @@ bool load_sound_file_list(sSaturnPtr config)
             g_dspImageLoadedHash=dsp_image_hash(data.data(),data.size());
             trace_dsp_image("image-loaded");
         }
-        if constexpr(LAGI_BATTLE_AUDIO_STACK)g_bankResidency.loaded(filename,destination,data.size());
+        if constexpr(LAGI_BATTLE_AUDIO_STACK)g_bankResidency.loaded(filename,destination,data.size(),data.data());
         lagi::platform::logging::writef(
             "[AzelAudio:%llu] SCSP loaded %s -> %05X bytes=%u\n",
             next_audio_trace(), filename.c_str(),
@@ -563,6 +570,12 @@ bool advance_loading_state(unsigned& commandSlot)
     }
     case 1: {
         trace_dsp_image("before-area-map");
+        if constexpr(LAGI_BATTLE_AUDIO_STACK){
+            const int area=g_sequence->m8_areaMapIndex;
+            const auto evicted=g_bankResidency.activate_area(area);
+            lagi::platform::logging::writef("[LagiDSPResidency] area=%d known=%u evicted=%u\n",
+                area,unsigned(g_bankResidency.known_area(area)),unsigned(evicted));
+        }
         ScspCommand command{};
         command.bytes[0] = 0x08; // area-map change
         command.bytes[2] =
@@ -1162,6 +1175,11 @@ int audio_worker_thread(SceSize, void*)
         // A new worker follows sound-RAM bootstrap. Old file identities and
         // sequence pointers must not survive that new memory owner epoch.
         g_bankResidency={};g_sequenceStack={};g_resumeAfterLoad=false;
+        std::vector<std::uint8_t> areaMap;
+        const bool mapsReady=lagi::disc::read_file("AREAMAP.SND",areaMap) &&
+            g_bankResidency.set_area_maps(areaMap.data(),areaMap.size());
+        lagi::platform::logging::writef("[LagiDSPResidency] mapsReady=%u maps=%u bytes=%u\n",
+            unsigned(mapsReady),unsigned(g_bankResidency.areaMaps.size()),unsigned(areaMap.size()));
         g_previousSequence=nullptr;g_stoppedBankMask=0;
         g_sequence=nullptr;g_sequenceNumber=-1;g_loadingState=-1;
     }
