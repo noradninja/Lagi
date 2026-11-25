@@ -388,6 +388,28 @@ sSaturnPtr player_sound_bank_config(const sSequenceConfig* config)
     }
 }
 
+// Step 2B: observe the actual boot DSP executable in worker-owned sound RAM.
+ // Read only at load/transition boundaries; never hash in the sample loop.
+std::size_t g_dspImageOffset=0, g_dspImageBytes=0;
+std::uint32_t g_dspImageLoadedHash=0;
+std::uint32_t dsp_image_hash(const void* data,std::size_t bytes)
+{
+    const auto* p=static_cast<const unsigned char*>(data);
+    std::uint32_t hash=2166136261u;
+    for(std::size_t i=0;i<bytes;++i)hash=(hash^p[i])*16777619u;
+    return hash;
+}
+void trace_dsp_image(const char* phase)
+{
+    if(!g_dspImageBytes)return;
+    const auto hash=dsp_image_hash(sat_ram+g_dspImageOffset,g_dspImageBytes);
+    lagi::platform::logging::writef(
+        "[LagiDSPImage] phase=%s seq=%d load=%d pc=%06X offset=%05X bytes=%u loaded=%08X live=%08X match=%u mproHash=%08X\n",
+        phase,int(g_sequenceNumber),int(g_loadingState),
+        unsigned(m68k_get_reg(nullptr,M68K_REG_PC)),unsigned(g_dspImageOffset),
+        unsigned(g_dspImageBytes),unsigned(g_dspImageLoadedHash),unsigned(hash),
+        unsigned(hash==g_dspImageLoadedHash),unsigned(lagi_dsp_selected_hash));
+}
 bool load_sound_file_list(sSaturnPtr config)
 {
     if (config.isNull())
@@ -424,6 +446,11 @@ bool load_sound_file_list(sSaturnPtr config)
         }
 
         std::memcpy(sat_ram + offset, data.data(), data.size());
+        if(filename=="A5DSP.EXB") {
+            g_dspImageOffset=offset; g_dspImageBytes=data.size();
+            g_dspImageLoadedHash=dsp_image_hash(data.data(),data.size());
+            trace_dsp_image("image-loaded");
+        }
         if constexpr(LAGI_BATTLE_AUDIO_STACK)g_bankResidency.loaded(filename,destination,data.size());
         lagi::platform::logging::writef(
             "[AzelAudio:%llu] SCSP loaded %s -> %05X bytes=%u\n",
@@ -440,9 +467,11 @@ bool load_current_banks()
     if (!g_sequence)
         return false;
 
+    trace_dsp_image("before-bank-copy");
     const bool sequenceOk = load_sound_file_list(g_sequence->m0);
     const bool playerOk =
         load_sound_file_list(player_sound_bank_config(g_sequence));
+    trace_dsp_image("after-bank-copy");
 
     lagi::platform::logging::writef(
         "[AzelAudio:%llu] SCSP banks sequence=%d sequenceOk=%d playerOk=%d\n",
@@ -518,6 +547,7 @@ bool advance_loading_state(unsigned& commandSlot)
 
     switch (g_loadingState) {
     case 0: {
+        trace_dsp_image("before-dsp-init");
         // Match Azel updateSoundLoadingState(): loader commands are written
         // directly into the current 8-entry mailbox before queued SFX/fades.
         ScspCommand command{};
@@ -532,6 +562,7 @@ bool advance_loading_state(unsigned& commandSlot)
         return true;
     }
     case 1: {
+        trace_dsp_image("before-area-map");
         ScspCommand command{};
         command.bytes[0] = 0x08; // area-map change
         command.bytes[2] =
@@ -559,6 +590,7 @@ bool advance_loading_state(unsigned& commandSlot)
         g_loadingState = 5;
         return false;
     case 5: {
+        trace_dsp_image("before-effect-change");
         ScspCommand command{};
         command.bytes[0] = static_cast<s8>(0x83); // effect change
         command.bytes[2] = 0;
@@ -567,6 +599,7 @@ bool advance_loading_state(unsigned& commandSlot)
         return true;
     }
     case 6: {
+        trace_dsp_image("before-mixer-change");
         ScspCommand command{};
         command.bytes[0] = static_cast<s8>(0x87); // mixer change
         command.bytes[2] = 0;
@@ -580,6 +613,7 @@ bool advance_loading_state(unsigned& commandSlot)
         g_loadingState = 8;
         return false;
     case 8:
+        trace_dsp_image("sequence-ready");
         g_loadingState = -1;
         if constexpr(LAGI_BATTLE_AUDIO_STACK)replay_restored_sequence();
         if constexpr(LAGI_BATTLE_AUDIO_STACK)g_stoppedBankMask=0;
@@ -1065,6 +1099,7 @@ void worker_pop_sequence(s32 replay)
         return;
     }
     const auto saved=g_sequenceStack.entries[g_sequenceStack.index];
+    trace_dsp_image("battle-pop-before-restore");
     worker_load_banks(saved.sequence,saved.mode);
     g_resumeSounds=saved.sounds;
     g_resumeAfterLoad=replay!=0 && saved.sequence>=0;
@@ -1107,6 +1142,7 @@ void process_audio_events()
             worker_fade_all();
             break;
         case AudioEventType::BattleMark:
+            trace_dsp_image("battle-mark");
             if constexpr(LAGI_BATTLE_AUDIO_STACK)g_sequenceStack.mark();
             break;
         case AudioEventType::PopSequence:
@@ -1132,6 +1168,7 @@ int audio_worker_thread(SceSize, void*)
     // COMMON sequence 0 owns persistent system SE plus the initial player/DSP
     // banks. Direct/title startup begins at sequence 75, whose list omits SYS_SE.
     // Restore that boot residency, not a new sequence or replacement mapping.
+    g_dspImageOffset=0;g_dspImageBytes=0;g_dspImageLoadedHash=0;
     const bool systemBanksReady = !SoundDataTable.empty() &&
         load_sound_file_list(SoundDataTable.front().m0);
     lagi::platform::logging::writef("[AzelAudio] native boot banks ready=%u\n",
