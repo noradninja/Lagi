@@ -7,11 +7,11 @@
 #include <vector>
 #include <cstring>
 using s8=std::int8_t;using s16=std::int16_t;using s32=std::int32_t;using u8=std::uint8_t;using u16=std::uint16_t;using u32=std::uint32_t;
-struct ActiveSound{s16 soundIndex=-1,volume=0x80;};
+struct ActiveSound{s16 soundIndex=-1,volume=0x80;bool stopped=false;};
 struct PendingSound{s32 soundIndex,bankIndex,volume,arg;};
 struct Ptr{unsigned offset=0xFFFFFFFF;Ptr operator+(unsigned n)const{return {offset+n};}Ptr& operator+=(unsigned n){offset+=n;return *this;}bool isNull()const{return offset==0xFFFFFFFF;}};
 using sSaturnPtr=Ptr;
-struct sSequenceConfig{unsigned mE=0;Ptr m4_soundConfigs{0};int m8_areaMapIndex=0;Ptr m0{};unsigned mC_numMapEntries=0;};
+struct sSequenceConfig{unsigned mE=0;Ptr m4_soundConfigs{0};int m8_areaMapIndex=0,mA=20;Ptr m0{};unsigned mC_numMapEntries=0;};
 std::vector<sSequenceConfig> SoundDataTable(8);
 const sSequenceConfig* g_sequence=nullptr;
 s32 g_sequenceNumber=-1,g_loadingState=-1;unsigned g_audioDiagBudget=0,g_audioPerfBudget=0;
@@ -26,7 +26,7 @@ lagi::NativeAudioStack<std::array<ActiveSound,8>> g_sequenceStack;
 bool g_resumeAfterLoad=false;
 lagi::NativeAudioBankResidency g_bankResidency;
 const sSequenceConfig* g_previousSequence=nullptr;
-std::array<ActiveSound,8> g_transitionSounds{};u8 g_stoppedBankMask=0;
+std::array<ActiveSound,8> g_transitionSounds{};u8 g_stoppedBankMask=0,g_stoppedSlotMask=0;
 enum class AudioEventType{LoadBanks,StopBanks,Sound,FadeAll,BattleMark,PopSequence,CddaPlay,CddaStop};
 struct AudioEvent{AudioEventType type=AudioEventType::Sound;int a=0,b=0,c=0,d=0;};
 constexpr unsigned kAudioEventCapacity=256,kAudioEventMask=255;
@@ -58,16 +58,18 @@ void ensure_output_stream(){}
 int sceKernelGetCpuId(){return 2;}
 unsigned next_audio_trace(){return 0;}
 namespace lagi::platform::logging{template<class... T>void writef(const char*,T...){}}
-void submit_sound_request(const PendingSound& sound){submitted.push_back(sound);}
+void submit_sound_request(const PendingSound& sound);
 struct RecordedCommand{int command,slot,bank,sound;};
 std::vector<RecordedCommand> requestCommands;
 void queue_command(u8 command,u8 slot,u8 bank,u8 sound=0){requestCommands.push_back({command,slot,bank,sound});}
-Ptr sound_config_for(s16 sound){return g_sequence->m4_soundConfigs+unsigned(sound-100)*4;}
+Ptr config_for_sequence_sound(const sSequenceConfig*,s16);
+Ptr sound_config_for(s16 sound){return config_for_sequence_sound(g_sequence,sound);}
 #include "request.inc"
+void submit_sound_request(const PendingSound& sound){submitted.push_back(sound);native_submit_sound_request(sound);}
 #include "load.inc"
 #include "pop.inc"
-#include "replay.inc"
 #include "transition.inc"
+#include "replay.inc"
 #include "advance.inc"
 void worker_fade_all(){}
 #include "queue.inc"
@@ -84,9 +86,10 @@ int main(){
     assert(g_sequenceStack.entries[0].sounds[0].volume==0x80);
     worker_pop_sequence(1);
     assert(g_sequenceNumber==3 && g_sequenceStack.index==0 && g_resumeAfterLoad && !g_loadingFinished.load());
-    configs[2]=1;configs[6]=0;g_stoppedBankMask=1;g_loadingState=-1;replay_restored_sequence();
+    configs[2]=1;configs[6]=0;configs[7]=1;g_stoppedBankMask=1;g_loadingState=-1;
+    g_activeSounds={};replay_restored_sequence();
     assert(submitted.size()==1 && submitted[0].soundIndex==100 && submitted[0].volume==127);
-    assert(g_activeSounds[1].soundIndex==101 && g_activeSoundIds[1].load()==101);
+    assert(g_activeSounds[1].soundIndex==-1); // non-replayable saved sound is not a live owner
     replay_restored_sequence();assert(submitted.size()==1);
     g_sequenceStack.mark();worker_pop_sequence(1); // cancel before bank switch
     assert(g_sequenceStack.index==0 && g_sequenceNumber==3 && g_loadingFinished.load());
@@ -129,7 +132,7 @@ int main(){
     put(100,200);put(104,0x25A10000);put(108,1);
     SoundDataTable[3].m0={100};g_sequence=&SoundDataTable[3];g_previousSequence=g_sequence;
     g_transitionSounds={};g_transitionSounds[0].soundIndex=100;g_transitionSounds[1].soundIndex=101;
-    configs[0]=0;configs[4]=1;status={0x100,0x100};g_stoppedBankMask=0;stops.clear();
+    configs[0]=0;configs[3]=0;configs[4]=1;configs[7]=1;status={0x100,0x100};g_stoppedBankMask=0;stops.clear();
     unsigned commandSlot=0;g_loadingState=2;advance_loading_state(commandSlot);
     assert(g_loadingState==3 && g_stoppedBankMask==1 && stops==std::vector<int>{0});
     advance_loading_state(commandSlot);assert(g_loadingState==3 && bankLoads==0);
@@ -140,10 +143,37 @@ int main(){
     assert(g_stoppedBankMask==0 && stops.empty());
     submitted.clear();configs[2]=1;configs[6]=1;
     g_resumeSounds={};g_resumeSounds[0].soundIndex=100;g_resumeSounds[1].soundIndex=101;
+    g_activeSounds={};g_activeSounds[1].soundIndex=101;
     g_resumeAfterLoad=true;g_stoppedBankMask=1;replay_restored_sequence();
     assert(submitted.size()==1 && submitted[0].soundIndex==100);
-    submitted.clear();g_resumeAfterLoad=true;g_stoppedBankMask=2;replay_restored_sequence();
+    submitted.clear();g_activeSounds[1]=ActiveSound{};g_resumeAfterLoad=true;g_stoppedBankMask=2;replay_restored_sequence();
     assert(submitted.size()==1 && submitted[0].soundIndex==101);
+    // Actual Valley records: ten local entries, sound 111 is outside table.
+    // Its former slot 4 must not overwrite BGM in slot 0.
+    g_activeSounds={};submitted.clear();SoundDataTable[3].mA=10;
+    configs[0]=2;configs[1]=0;configs[2]=1;configs[3]=0;
+    configs[44]=2;configs[45]=1;configs[46]=1;configs[47]=0;
+    g_resumeSounds={};g_resumeSounds[0].soundIndex=100;
+    g_resumeSounds[4].soundIndex=111;g_resumeSounds[5].soundIndex=100;
+    g_resumeAfterLoad=true;replay_restored_sequence();
+    assert(submitted.size()==1 && submitted[0].soundIndex==100 && g_activeSounds[0].soundIndex==100);
+    assert(sound_config_for(111).isNull());native_submit_sound_request({111,1,127,0});
+    assert(g_activeSounds[0].soundIndex==100);
+    // Two eligible saved IDs remapped to one slot cannot replay twice.
+    configs[7]=0;g_activeSounds={};submitted.clear();g_resumeSounds={};
+    g_resumeSounds[0].soundIndex=100;g_resumeSounds[4].soundIndex=101;
+    g_resumeAfterLoad=true;replay_restored_sequence();
+    assert(submitted.size()==1 && submitted[0].soundIndex==100);
+    // A local sound with the same numeric ID but a different route cannot
+    // survive a normal transition, even if no data-bank replacement occurs.
+    SoundDataTable[2].m4_soundConfigs={64};configs[64]=2;configs[65]=9;configs[67]=0;
+    g_previousSequence=&SoundDataTable[2];g_transitionSounds={};
+    g_transitionSounds[0].soundIndex=100;g_stoppedBankMask=0;g_stoppedSlotMask=0;
+    reconcile_transition_sounds();assert(g_activeSounds[0].soundIndex==-1);
+    g_previousSequence=g_sequence;
+    g_transitionSounds[0].stopped=true;
+    reconcile_transition_sounds();assert(g_activeSounds[0].soundIndex==-1);
+    SoundDataTable[3].mA=20;
     for(unsigned word=0;word<65536;++word)assert(lagi::native_audio_bank_playing(u16(word))==(word>=256));
     // Tunnel transition: simultaneous ambience uses one data bank but
     // distinct playback slots. Status/stop must follow those control slots.
@@ -176,6 +206,8 @@ int main(){
     // Battle pop never calls public loadSoundBanks: worker must publish restored
     // identity before a positional emitter can find its already-started loop.
     g_sequenceNumber=3;g_loadingState=8;g_pendingSequenceEvents.store(0);
+    g_previousSequence=g_sequence;g_transitionSounds={};g_transitionSounds[6].soundIndex=102;
+    configs[8]=3;configs[9]=1;configs[11]=6;g_stoppedBankMask=0;g_stoppedSlotMask=0;
     g_activeSoundIds[6].store(102);g_activeSoundSequences[6].store(3);
     g_readySoundSequence.store(-1);g_loadingFinished.store(false);
     assert(findSound(102)==-1);
@@ -184,6 +216,13 @@ int main(){
     g_pendingSequenceEvents.store(1);assert(findSound(102)==-1);
     g_pendingSequenceEvents.store(0);assert(findSound(102)==6);
     assert(findSound(-1)==-1);
+    // Genuine repeated start requests retain original command semantics.
+    requestCommands.clear();native_submit_sound_request({102,1,127,0});
+    native_submit_sound_request({102,1,127,0});
+    unsigned starts=0;for(const auto& cmd:requestCommands)if(cmd.command==1)++starts;
+    assert(starts==2);
+    native_submit_sound_request({102,2,0,0});assert(findSound(102)==-1);
+    puts("PASS: bounded local configs, immutable collision-safe replay, stale ownership cleanup and unchanged retrigger semantics");
     puts("PASS: restored worker sequence is visible to field sound emitters");
     puts("PASS: production sound requests retain distinct playback-slot ownership for a shared data bank; volume/stop commands and transition stop/wait target the actual driver slots.");
     puts("PASS: production audio stack/queue/readiness plus native loader choice, residency mask, selective stop, driver-status wait and transfer-failure retention; mocked SCSP/worker scheduling");

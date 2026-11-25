@@ -168,6 +168,7 @@ struct PendingSound {
 struct ActiveSound {
     s16 soundIndex = -1;
     s16 volume = 0x80;
+    bool stopped = false; // retain physical routing until transfer/stop acknowledgement
 };
 
 enum class AudioEventType : std::uint8_t {
@@ -211,6 +212,7 @@ lagi::NativeAudioBankResidency g_bankResidency;
 const sSequenceConfig* g_previousSequence=nullptr;
 std::array<ActiveSound,8> g_transitionSounds{};
 u8 g_stoppedBankMask=0;
+u8 g_stoppedSlotMask=0;
 std::vector<ScspCommand> g_commands;
 std::vector<PendingSound> g_pendingSounds;
 std::array<std::int16_t, kRenderChunkFrames * 2> g_mixBuffer{};
@@ -319,6 +321,7 @@ void reset_active_sounds()
     for (auto& sound : g_activeSounds) {
         sound.soundIndex = -1;
         sound.volume = 0x80;
+        sound.stopped=false;
     }
     for (unsigned i=0;i<g_activeSoundIds.size();++i) {
         g_activeSoundIds[i].store(-1, std::memory_order_release);
@@ -487,10 +490,30 @@ bool load_current_banks()
     return sequenceOk && playerOk;
 }
 
+// COMMON sequence records contain mA local sound configurations, four bytes
+// each. Never interpret a stale field ID as the following sequence's table.
+sSaturnPtr config_for_sequence_sound(const sSequenceConfig* sequence,s16 sound)
+{
+    if(sound<0 || !gCommonFile)return sSaturnPtr();
+    if(sound>=100){
+        if(!sequence || sound-100>=sequence->mA || sequence->m4_soundConfigs.isNull())return sSaturnPtr();
+        return sequence->m4_soundConfigs+u32(sound-100)*4u;
+    }
+    return gCommonFile->getSaturnPtr(0x02131C4)+u32(sound)*4u;
+}
+
 sSaturnPtr transition_sound_config(s16 sound)
 {
-    if(sound>99)return g_previousSequence ? g_previousSequence->m4_soundConfigs+u32(sound-100)*4u : sSaturnPtr();
-    return gCommonFile->getSaturnPtr(0x02131C4)+u32(sound)*4u;
+    return config_for_sequence_sound(g_previousSequence,sound);
+}
+
+bool same_sound_route(sSaturnPtr oldConfig,sSaturnPtr newConfig,unsigned slot)
+{
+    if(oldConfig.isNull() || newConfig.isNull())return false;
+    const int bank=readSaturnS8(oldConfig);
+    return bank>=0 && bank<8 && bank==readSaturnS8(newConfig) &&
+        readSaturnS8(oldConfig+1)==readSaturnS8(newConfig+1) &&
+        readSaturnS8(oldConfig+3)==int(slot) && readSaturnS8(newConfig+3)==int(slot);
 }
 
 void stop_changed_sequence_banks()
@@ -503,47 +526,81 @@ void stop_changed_sequence_banks()
             g_stoppedBankMask|=static_cast<u8>(readSaturnU32(config+8));
         config+=0xC;
     }
+    g_stoppedSlotMask=0;
     for(unsigned slot=0;slot<8;++slot){
         const auto sound=g_transitionSounds[slot].soundIndex;
-        if(sound<0 || !lagi::native_audio_bank_playing(static_cast<u16>(m68k_read_memory_16(0x780+2*slot))))continue;
+        if(sound<0)continue;
         const auto oldConfig=transition_sound_config(sound);
-        if(oldConfig.isNull())continue;
-        const int bank=readSaturnS8(oldConfig);
-        if(bank>=0 && bank<8 && (g_stoppedBankMask&(1u<<bank)))queue_command(0x02,static_cast<u8>(slot));
+        const int bank=oldConfig.isNull() ? -1 : readSaturnS8(oldConfig);
+        const auto nextConfig=config_for_sequence_sound(g_sequence,sound);
+        const bool changed=bank<0 || bank>=8 || (g_stoppedBankMask&(1u<<bank)) ||
+            !same_sound_route(oldConfig,nextConfig,slot);
+        if(!changed)continue;
+        g_stoppedSlotMask|=static_cast<u8>(1u<<slot);
+        if(lagi::native_audio_bank_playing(static_cast<u16>(m68k_read_memory_16(0x780+2*slot))))
+            queue_command(0x02,static_cast<u8>(slot));
     }
-    lagi::platform::logging::writef("[BattleAudio] stoppedBankMask=%02X\n",unsigned(g_stoppedBankMask));
+    lagi::platform::logging::writef("[BattleAudio] stoppedBankMask=%02X stoppedSlotMask=%02X\n",unsigned(g_stoppedBankMask),unsigned(g_stoppedSlotMask));
 }
 
 bool changed_sequence_banks_stopped()
 {
     for(unsigned slot=0;slot<8;++slot){
-        const auto sound=g_transitionSounds[slot].soundIndex;
-        if(sound<0 || !lagi::native_audio_bank_playing(static_cast<u16>(m68k_read_memory_16(0x780+2*slot))))continue;
-        const auto config=transition_sound_config(sound);
-        if(config.isNull())continue;
-        const int bank=readSaturnS8(config);
-        if(bank>=0 && bank<8 && (g_stoppedBankMask&(1u<<bank)))return false;
+        if((g_stoppedSlotMask&(1u<<slot)) &&
+            lagi::native_audio_bank_playing(static_cast<u16>(m68k_read_memory_16(0x780+2*slot))))return false;
     }
     return true;
 }
 
 void submit_sound_request(const PendingSound& request);
+void reconcile_transition_sounds()
+{
+    // Rebuild ownership from physical slots whose actual routes survived the
+    // transfer. Never relabel the entire old active array as the new sequence.
+    for(unsigned slot=0;slot<g_activeSounds.size();++slot){
+        const auto old=g_transitionSounds[slot];
+        const auto oldConfig=transition_sound_config(old.soundIndex);
+        const auto nextConfig=config_for_sequence_sound(g_sequence,old.soundIndex);
+        const int bank=oldConfig.isNull() ? -1 : readSaturnS8(oldConfig);
+        const bool keep=old.soundIndex>=0 && !old.stopped && bank>=0 && bank<8 &&
+            !(g_stoppedBankMask&(1u<<bank)) && !(g_stoppedSlotMask&(1u<<slot)) &&
+            same_sound_route(oldConfig,nextConfig,slot);
+        g_activeSounds[slot]=keep ? old : ActiveSound{};
+        // Driver/loader reset volume sentinel for subsequent commands.
+        g_activeSounds[slot].volume=0x80;
+        g_activeSoundSequences[slot].store(keep?g_sequenceNumber:-1,std::memory_order_release);
+        g_activeSoundIds[slot].store(keep?old.soundIndex:-1,std::memory_order_release);
+    }
+}
+
 void replay_restored_sequence()
 {
     if(!g_resumeAfterLoad)return;
     g_resumeAfterLoad=false;
-    g_activeSounds=g_resumeSounds;
-    for(unsigned bank=0;bank<g_activeSounds.size();++bank){
-        const auto sound=g_activeSounds[bank].soundIndex;
-        g_activeSoundIds[bank].store(sound,std::memory_order_release);
-        g_activeSoundSequences[bank].store(g_sequenceNumber,std::memory_order_release);
-        if(sound<0)continue;
-        const auto config=sound>99 ? g_sequence->m4_soundConfigs+u32(sound-100)*4u :
-            gCommonFile->getSaturnPtr(0x02131C4)+u32(sound)*4u;
-        // MAIN 0602B962 checks config +2 before replay, at volume 0x7F.
-        const int dataBank=readSaturnS8(config);
-        if(readSaturnS8(config+2)!=0 && dataBank>=0 && dataBank<8 && (g_stoppedBankMask&(1u<<dataBank)))
+    // Immutable snapshot: submit_sound_request updates live slots. Prefer a
+    // candidate whose saved slot equals its destination, then allow remaps.
+    const auto saved=g_resumeSounds;
+    u8 handled=0;
+    for(unsigned pass=0;pass<2;++pass){
+        for(unsigned source=0;source<saved.size();++source){
+            const auto sound=saved[source].soundIndex;
+            if(sound<0 || saved[source].stopped)continue;
+            const auto config=config_for_sequence_sound(g_sequence,sound);
+            if(config.isNull()){
+                if(pass==0)lagi::platform::logging::writef("[LagiSoundReplay] seq=%d sound=%d savedSlot=%u action=invalid-id\n",int(g_sequenceNumber),int(sound),source);
+                continue;
+            }
+            const int bank=readSaturnS8(config),slot=readSaturnS8(config+3);
+            if(bank<0 || bank>=8 || slot<0 || slot>=8 ||
+                readSaturnS8(config+2)==0 || (pass==0)!=(source==unsigned(slot)) ||
+                (handled&(1u<<slot)))continue;
+            handled|=static_cast<u8>(1u<<slot);
+            // A persistent sound already surviving in this physical slot
+            // needs no restart. Otherwise replay only the original +2 flag.
+            if(g_activeSounds[slot].soundIndex==sound && !g_activeSounds[slot].stopped)continue;
+            lagi::platform::logging::writef("[LagiSoundReplay] seq=%d sound=%d savedSlot=%u control=%d bank=%d action=start\n",int(g_sequenceNumber),int(sound),source,slot,bank);
             submit_sound_request(PendingSound{sound,1,0x7F,0});
+        }
     }
 }
 
@@ -554,6 +611,7 @@ bool advance_loading_state(unsigned& commandSlot)
 
     switch (g_loadingState) {
     case 0: {
+        if constexpr(LAGI_BATTLE_AUDIO_STACK)g_stoppedBankMask=0xFF; // driver stops every sequence
         trace_dsp_image("before-dsp-init");
         // Match Azel updateSoundLoadingState(): loader commands are written
         // directly into the current 8-entry mailbox before queued SFX/fades.
@@ -628,8 +686,11 @@ bool advance_loading_state(unsigned& commandSlot)
     case 8:
         trace_dsp_image("sequence-ready");
         g_loadingState = -1;
-        if constexpr(LAGI_BATTLE_AUDIO_STACK)replay_restored_sequence();
-        if constexpr(LAGI_BATTLE_AUDIO_STACK)g_stoppedBankMask=0;
+        if constexpr(LAGI_BATTLE_AUDIO_STACK){
+            reconcile_transition_sounds();
+            replay_restored_sequence();
+            g_stoppedBankMask=0;g_stoppedSlotMask=0;
+        }
         g_readySoundSequence.store(g_sequenceNumber,std::memory_order_release);
         g_loadingFinished.store(true, std::memory_order_release);
         lagi::platform::logging::writef(
@@ -695,22 +756,13 @@ void service_driver_commands()
 
 sSaturnPtr sound_config_for(s16 soundIndex)
 {
-    if (!g_sequence || !gCommonFile)
-        return sSaturnPtr();
-
-    if (soundIndex > 99) {
-        return g_sequence->m4_soundConfigs +
-            static_cast<u32>(soundIndex - 100) * 4u;
-    }
-
-    return gCommonFile->getSaturnPtr(0x02131C4) +
-        static_cast<u32>(soundIndex) * 4u;
+    return config_for_sequence_sound(g_sequence,soundIndex);
 }
 
 s32 find_active_sound(s32 soundIndex)
 {
     for (unsigned i = 0; i < g_activeSounds.size(); ++i) {
-        if (g_activeSounds[i].soundIndex == soundIndex)
+        if (g_activeSounds[i].soundIndex == soundIndex && !g_activeSounds[i].stopped)
             return static_cast<s32>(i);
     }
     return -1;
@@ -755,6 +807,7 @@ void submit_sound_request(const PendingSound& request)
             static_cast<u8>(sequenceDataBank),
             static_cast<u8>(soundNumber));
         active.soundIndex = static_cast<s16>(request.soundIndex);
+        active.stopped=false;
         g_activeSoundSequences[static_cast<unsigned>(soundControlId)].store(
             g_sequenceNumber, std::memory_order_release);
         g_activeSoundIds[static_cast<unsigned>(soundControlId)].store(
@@ -777,6 +830,12 @@ void submit_sound_request(const PendingSound& request)
 
     switch (request.bankIndex) {
     case 2:
+        queue_command(0x02,static_cast<u8>(found));
+        // No longer a logical owner; keep the physical route for loader wait.
+        g_activeSounds[static_cast<unsigned>(found)].stopped=true;
+        g_activeSoundIds[static_cast<unsigned>(found)].store(-1,std::memory_order_release);
+        g_activeSoundSequences[static_cast<unsigned>(found)].store(-1,std::memory_order_release);
+        break;
     case 3:
     case 4:
         queue_command(
@@ -1047,12 +1106,14 @@ void worker_load_banks(s32 musicNumber, s32 mode)
             const int previousArea=comparison>=0 && std::size_t(comparison)<SoundDataTable.size() ? SoundDataTable[comparison].m8_areaMapIndex : -1;
             nativeLoadState=lagi::native_audio_load_state(comparison,previousArea,musicNumber,SoundDataTable[musicNumber].m8_areaMapIndex);
         }
-        if(!g_sequenceStack.load(musicNumber,mode,returnOffset,g_activeSounds)){
+        auto liveSounds=g_activeSounds;
+        for(auto& sound:liveSounds)if(sound.stopped)sound=ActiveSound{};
+        if(!g_sequenceStack.load(musicNumber,mode,returnOffset,liveSounds)){
             lagi::platform::logging::writef("[BattleAudio] sequence stack full\n");
             g_loadingFinished.store(true,std::memory_order_release);return;
         }
         g_resumeAfterLoad=false;
-        g_previousSequence=g_sequence;g_transitionSounds=g_activeSounds;g_stoppedBankMask=0;
+        g_previousSequence=g_sequence;g_transitionSounds=g_activeSounds;g_stoppedBankMask=0;g_stoppedSlotMask=0;
     }
     if (musicNumber < 0) {
         g_sequence = nullptr;
@@ -1104,7 +1165,12 @@ void worker_fade_all()
 
     // MAIN 0602B670 stops sequences and resets their volume, not the sound
     // processor/output service. Later cinematic BGM and SFX must remain audible.
-    for (auto& sound : g_activeSounds) sound.volume = 0x7f;
+    for(unsigned slot=0;slot<g_activeSounds.size();++slot){
+        g_activeSounds[slot].volume=0x7f;
+        g_activeSounds[slot].stopped=true;
+        g_activeSoundIds[slot].store(-1,std::memory_order_release);
+        g_activeSoundSequences[slot].store(-1,std::memory_order_release);
+    }
 }
 
 void worker_pop_sequence(s32 replay)
@@ -1183,7 +1249,7 @@ int audio_worker_thread(SceSize, void*)
             g_bankResidency.set_area_maps(areaMap.data(),areaMap.size());
         lagi::platform::logging::writef("[LagiDSPResidency] mapsReady=%u maps=%u bytes=%u\n",
             unsigned(mapsReady),unsigned(g_bankResidency.areaMaps.size()),unsigned(areaMap.size()));
-        g_previousSequence=nullptr;g_stoppedBankMask=0;
+        g_previousSequence=nullptr;g_stoppedBankMask=0;g_stoppedSlotMask=0;
         g_sequence=nullptr;g_sequenceNumber=-1;g_loadingState=-1;
     }
     g_readySoundSequence.store(-1,std::memory_order_release);
