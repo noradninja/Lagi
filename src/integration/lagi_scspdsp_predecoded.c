@@ -350,7 +350,9 @@ static void lagi_dsp_clear_dirty(struct _SCSPDSP *DSP, int release) {
 }
 
 /* All MPRO writes from the generated SCSP service arrive on the audio worker.
- * Dirty programs use the generic reference until Start selects a replacement. */
+ * Dirty programs use the generic reference until Start or a worker boundary
+ * selects a replacement for the live words. 0xBF0 triggers Start before the
+ * end of MPRO (0xBFE), so a later write must not strand native execution. */
 void lagi_dsp_program_written(struct _SCSPDSP *DSP) {
     unsigned i, empty=8;
     for(i=0;i<8;++i) {
@@ -436,11 +438,22 @@ static void lagi_dsp_select_native(struct _SCSPDSP *DSP,int allowCompile) {
 /* Called once per audio-worker iteration, outside the 256-frame sample loop. */
 void lagi_dsp_service_pending(struct _SCSPDSP *DSP) {
     lagi_dsp_capture_one();
-    if(g_lagiPendingDsp==DSP) {
-        g_lagiPendingDsp=0;
+    /* Start may have hit the cache, then a later MPRO write invalidated
+     * its function without setting g_lagiPendingDsp. Recover at this safe
+     * boundary, not inside SCSPDSP_Step. Preserve the LastStep latched by
+     * Start; only the live instruction words are refreshed. */
+    const int pending = g_lagiPendingDsp==DSP;
+    const int dirty = !g_lagiDirtyOverflow && lagi_dsp_is_dirty(DSP);
+    if(pending || dirty) {
+        if(pending) g_lagiPendingDsp=0;
         if(!DSP->Stopped) {
-            if(g_lagiDecodedDsp!=DSP || g_lagiDecodedSteps!=DSP->LastStep) lagi_scspdsp_decode(DSP);
+            if(dirty || g_lagiDecodedDsp!=DSP || g_lagiDecodedSteps!=DSP->LastStep)
+                lagi_scspdsp_decode(DSP);
             lagi_dsp_select_native(DSP,1);
+            if(dirty)
+                lagi_dsp_log("[LagiDSPReselect] cause=mpro-write pending=%u steps=%u hash=%08X backend=%u\n",
+                    (unsigned)pending,(unsigned)DSP->LastStep,
+                    (unsigned)lagi_dsp_selected_hash,(unsigned)lagi_dsp_selected_backend);
         }
     }
 }
