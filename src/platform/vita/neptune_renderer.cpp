@@ -980,6 +980,16 @@ static std::vector<std::uint64_t> g_nativeDecodedTextureGenerations;
 static std::vector<std::uint64_t> g_nativeGpuTextureGenerations;
 static unsigned int g_nativeTextureUploadCount = 0u;
 static bool g_vdp1BaseTexturedPayloadValid = false;
+#if LAGI_FIELD_CACHE_TRACE
+struct FieldPrepareCounters {
+    unsigned cram=0,vdp1=0,format=0,deferred=0,prepared=0,signature=0,
+        dirty=0,count=0,notReady=0,base=0,uploadCalls=0,zeroUploads=0,
+        uploaded=0,refreshed=0,prefixSkipped=0;
+    std::uint64_t invalidateUs=0,uploadUs=0;
+};
+static FieldPrepareCounters g_fieldPrepareFrame,g_fieldPrepareWindow;
+static unsigned g_fieldPrepareFrames=0;
+#endif
 
 // Lightweight VDP1 2D/UI translator. These resources are separate from the
 // resident 3D town mesh so UI commands never invalidate or rebuild it.
@@ -2620,6 +2630,21 @@ void invalidate_vdp1_texture_range(unsigned int start, unsigned int size)
 
 static void applyPendingRendererInvalidation()
 {
+#if LAGI_FIELD_CACHE_TRACE
+    const auto invalidationStart=sceKernelGetProcessTimeWide();
+#endif
+#if LAGI_FIELD_TEXTURE_DECOUPLE
+    // A clean, resident normal field can defer texture-only invalidation:
+    // the active descriptor/generation check in buildLiveTownFrame decides
+    // whether any actual upload is needed. Do not suppress pending failures,
+    // initial preparation, transitions to other resident models or diagnostics.
+    const bool deferTextureOnly=g_sceneGameMode==3u && g_viewMode==7 &&
+        g_liveTownPrepared && !g_vdp1TextureDataDirty &&
+        g_residentVdp1Model==ResidentVdp1Model::LiveTown &&
+        g_vdp1TexturedReady;
+#else
+    constexpr bool deferTextureOnly=false;
+#endif
     // Metadata is decoded into cached texture alpha. Crossing SPCTL formats
     // invalidates model and UI payloads on their owning render thread, even
     // if neither VRAM nor CRAM changed. Register-only changes need no decode.
@@ -2628,14 +2653,30 @@ static void applyPendingRendererInvalidation()
     if(LAGI_VDP2_SPRITE_COMPOSITE && decodedType0!=type0) {
         decodedType0=type0;
         ++g_nativeTextureGeneration;
-        g_liveTownSignature=0;g_liveTownPrepared=false;
-        g_vdp1TextureDataDirty=true;
+        if(!deferTextureOnly) {
+            g_liveTownSignature=0;g_liveTownPrepared=false;
+            g_vdp1TextureDataDirty=true;
+        }
+#if LAGI_FIELD_CACHE_TRACE
+        ++g_fieldPrepareFrame.format;
+        g_fieldPrepareFrame.deferred=deferTextureOnly;
+#endif
         for(auto& entry:g_vdp1UiTextureCache)entry.contentsDirty=true;
     }
     const std::uint32_t flags = g_rendererInvalidationFlags.exchange(
         0u, std::memory_order_acquire);
-    if (flags == 0u)
+    if (flags == 0u) {
+#if LAGI_FIELD_CACHE_TRACE
+        if(g_fieldPrepareFrame.format)
+            g_fieldPrepareFrame.invalidateUs=sceKernelGetProcessTimeWide()-invalidationStart;
+#endif
         return;
+    }
+#if LAGI_FIELD_CACHE_TRACE
+    g_fieldPrepareFrame.cram=(flags & kRendererInvalidateCram)!=0u;
+    g_fieldPrepareFrame.vdp1=(flags & kRendererInvalidateVdp1Textures)!=0u;
+    g_fieldPrepareFrame.deferred=deferTextureOnly;
+#endif
 
     // Palette and VDP1 texture writes invalidate texture *contents*, not
     // world geometry. Keep the flattened static prefix, its signature, mesh
@@ -2645,8 +2686,10 @@ static void applyPendingRendererInvalidation()
     //
     // Force the GPU-side prepare path to refresh affected texture payloads,
     // while leaving CPU geometry residency untouched.
-    g_liveTownSignature = 0;
-    g_liveTownPrepared = false;
+    if(!deferTextureOnly) {
+        g_liveTownSignature = 0;
+        g_liveTownPrepared = false;
+    }
 
     if ((flags & kRendererInvalidateVdp1Textures) != 0u) {
         // VDP1 source writes may change material descriptors as well as texels.
@@ -2660,7 +2703,7 @@ static void applyPendingRendererInvalidation()
 
     // CRAM changes alter decoded color only. Existing polygon/material indices
     // remain valid; prepare_vdp1_model() will refresh the resident texture data.
-    g_vdp1TextureDataDirty = true;
+    if(!deferTextureOnly)g_vdp1TextureDataDirty = true;
     const auto pixelWrites = g_pendingVdp1Writes.consume();
     const auto paletteWrites = g_pendingCramWrites.consume();
     for (auto& entry : g_vdp1UiTextureCache)
@@ -2684,6 +2727,9 @@ static void applyPendingRendererInvalidation()
             g_nativeGpuTextureGenerations[index] == previousGeneration)
             g_nativeGpuTextureGenerations[index] = g_nativeTextureGeneration;
     }
+#if LAGI_FIELD_CACHE_TRACE
+    g_fieldPrepareFrame.invalidateUs=sceKernelGetProcessTimeWide()-invalidationStart;
+#endif
 }
 
 bool init()
@@ -6384,6 +6430,13 @@ bool prepare_vdp1_model(
         model.texturesValid() &&
         !g_vdp1GpuTextures.empty() &&
         g_vdp1GpuTextures.size() <= model.textureCount;
+#if LAGI_FIELD_TEXTURE_DECOUPLE
+    if(preserveTexturePrefix && reuseTextures && g_sceneGameMode==3u) {
+#if LAGI_FIELD_CACHE_TRACE
+        ++g_fieldPrepareFrame.prefixSkipped;
+#endif
+    } else
+#endif
     if (preserveTexturePrefix) {
         for (std::size_t t = 0; t < g_vdp1GpuTextures.size(); ++t) {
             const auto& gpu = g_vdp1GpuTextures[t];
@@ -6565,6 +6618,14 @@ bool prepare_vdp1_model(
                 preserveTexturePrefix && g_vdp1TextureDataDirty);
             g_profilePrepareTextureUploadUs = static_cast<unsigned int>(
                 sceKernelGetProcessTimeWide() - textureUploadStartUs);
+#if LAGI_FIELD_CACHE_TRACE
+            if(g_sceneGameMode==3u) {
+                ++g_fieldPrepareFrame.uploadCalls;
+                g_fieldPrepareFrame.zeroUploads+=g_nativeTextureUploadCount==0u;
+                g_fieldPrepareFrame.uploaded+=g_nativeTextureUploadCount;
+                g_fieldPrepareFrame.uploadUs+=g_profilePrepareTextureUploadUs;
+            }
+#endif
             if (g_sceneGameMode == 3u) {
                 logging::writef(
                     "[FieldTextureUpload] retained=%u total=%u uploaded=%u time=%uus ok=%u\n",
@@ -8436,6 +8497,9 @@ static bool buildLiveTownFrame()
         g_liveTownTransformHistory.clear();
         g_liveTownAutoDynamicIdentities.clear();
         g_liveTownStaticIdentityAppliedEpoch = identityResetEpoch;
+#if LAGI_FIELD_CACHE_TRACE
+        g_fieldPrepareWindow={};g_fieldPrepareFrames=0;
+#endif
 #if LAGI_FIELD_SUBDIV_CACHE
         g_fieldSubdivPositionSlots.clear();
 #endif
@@ -8863,9 +8927,22 @@ static bool buildLiveTownFrame()
          polygon < g_liveTownCpuMesh.polygonTextureIndices.size() &&
          polygon < g_liveTownCpuMesh.polygonRecords.size(); ++polygon) {
         const auto index = g_liveTownCpuMesh.polygonTextureIndices[polygon];
-        if (index >= decodedTextures.size() ||
-            g_nativeDecodedTextureGenerations[index] == g_nativeTextureGeneration)
+        if (index >= decodedTextures.size())continue;
+        if (g_nativeDecodedTextureGenerations[index] == g_nativeTextureGeneration) {
+#if LAGI_FIELD_TEXTURE_DECOUPLE
+            // CPU decode and GPU upload are separate lifetimes. A previously
+            // inactive descriptor may have a valid decode but an older GPU
+            // payload (or an interrupted upload). Check active entries even
+            // after leaving field mode. Existing prefix validation remains
+            // responsible for descriptor compatibility when upload is needed.
+            if(g_residentVdp1Model==ResidentVdp1Model::LiveTown &&
+                index<g_vdp1GpuTextures.size() &&
+                (index>=g_nativeGpuTextureGenerations.size() ||
+                 g_nativeGpuTextureGenerations[index]!=g_nativeDecodedTextureGenerations[index]))
+                g_vdp1TextureDataDirty=true;
+#endif
             continue;
+        }
         const auto& descriptor = g_liveTownCpuMesh.polygonRecords[polygon];
         azel::DecodedMode1Texture refreshed{};
         if (!decodeLiveVdp1Texture(descriptor, refreshed))
@@ -8945,6 +9022,18 @@ static bool buildLiveTownFrame()
         g_vdp1GpuTextures.size() != g_staticRoomCpuMesh.decodedTextureData.size() ||
         signature != g_liveTownSignature ||
         (!fullSubdivMode && !g_vdp1BaseTexturedPayloadValid);
+#if LAGI_FIELD_CACHE_TRACE
+    if(g_sceneGameMode==3u) {
+        auto& pc=g_fieldPrepareFrame;
+        pc.prepared=changed;
+        pc.signature=signature!=g_liveTownSignature;
+        pc.dirty=g_vdp1TextureDataDirty;
+        pc.count=g_vdp1GpuTextures.size()!=g_staticRoomCpuMesh.decodedTextureData.size();
+        pc.notReady=!g_liveTownPrepared || g_residentVdp1Model!=ResidentVdp1Model::LiveTown;
+        pc.base=!fullSubdivMode && !g_vdp1BaseTexturedPayloadValid;
+        pc.refreshed=g_profileTextureRefreshCount;
+    }
+#endif
     g_liveTownSignature = signature;
     if (changed) {
         if (!prepare_vdp1_model(
@@ -9058,6 +9147,31 @@ static bool buildLiveTownFrame()
                 static_cast<unsigned long long>(evictions-pw.lastEvictions),
                 static_cast<unsigned long long>(pw.lookupUs),static_cast<unsigned long long>(pw.storeUs));
             pw={};pw.lastEvictions=evictions;pw.peakBytes=g_fieldPlacementCache.bytes();
+        }
+#endif
+#if LAGI_FIELD_CACHE_TRACE
+        auto& prep=g_fieldPrepareWindow;
+        const auto& cur=g_fieldPrepareFrame;
+        prep.cram+=cur.cram;prep.vdp1+=cur.vdp1;prep.format+=cur.format;
+        prep.deferred+=cur.deferred;prep.prepared+=cur.prepared;
+        prep.signature+=cur.signature;prep.dirty+=cur.dirty;prep.count+=cur.count;
+        prep.notReady+=cur.notReady;prep.base+=cur.base;
+        prep.uploadCalls+=cur.uploadCalls;prep.zeroUploads+=cur.zeroUploads;
+        prep.uploaded+=cur.uploaded;prep.refreshed+=cur.refreshed;
+        prep.prefixSkipped+=cur.prefixSkipped;prep.invalidateUs+=cur.invalidateUs;
+        prep.uploadUs+=cur.uploadUs;
+        if(++g_fieldPrepareFrames==120u) {
+            logging::writef("[FieldPrepareWindow] frame=%llu frames=%u cram=%u vdp1=%u format=%u deferred=%u "
+                "prepared=%u signature=%u dirty=%u count=%u notReady=%u base=%u "
+                "uploadCalls=%u zeroUploads=%u uploaded=%u refreshed=%u prefixSkipped=%u "
+                "invalidateUs=%llu uploadUs=%llu textures=%u\n",
+                static_cast<unsigned long long>(azel_bridge::published_frame_number()),
+                g_fieldPrepareFrames,prep.cram,prep.vdp1,prep.format,prep.deferred,
+                prep.prepared,prep.signature,prep.dirty,prep.count,prep.notReady,prep.base,
+                prep.uploadCalls,prep.zeroUploads,prep.uploaded,prep.refreshed,prep.prefixSkipped,
+                static_cast<unsigned long long>(prep.invalidateUs),
+                static_cast<unsigned long long>(prep.uploadUs),decodedTexturesAfter);
+            prep={};g_fieldPrepareFrames=0;
         }
 #endif
         const bool periodicSample =
@@ -16240,6 +16354,9 @@ static int renderThreadMain(SceSize, void*)
         // Azel-side invalidation callbacks only publish atomic requests.
         // Consume them here, on LagiRender, before any movie/scene renderer
         // can observe the affected material, static-range, or GPU state.
+#if LAGI_FIELD_CACHE_TRACE
+        g_fieldPrepareFrame={};
+#endif
         applyPendingRendererInvalidation();
 
         if (!g_debugVisible)

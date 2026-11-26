@@ -224,6 +224,7 @@ option(LAGI_FIELD_MOTION_TRACE "Bounded field motion/snapshot cadence diagnostic
 option(LAGI_FIELD_CACHE_TRACE "Aggregate native field static-cache rebuild causes" OFF)
 option(LAGI_FIELD_PLACEMENT_CACHE "Retain prepared rigid field placement vertex variants" ON)
 option(LAGI_FIELD_SUBDIV_CACHE "Retain exact subdivision slot positions and shared UV templates" ON)
+option(LAGI_FIELD_TEXTURE_DECOUPLE "Defer clean field texture-only invalidations until active use" ON)
 set(LAGI_RBG_ROWS_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f_gxp.o")
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp"
  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
@@ -8067,6 +8068,7 @@ target_compile_definitions(lagi PRIVATE LAGI_FIELD_MOTION_TRACE=$<BOOL:${LAGI_FI
 target_compile_definitions(lagi PRIVATE LAGI_FIELD_CACHE_TRACE=$<BOOL:${LAGI_FIELD_CACHE_TRACE}>)
 target_compile_definitions(lagi PRIVATE LAGI_FIELD_PLACEMENT_CACHE=$<BOOL:${LAGI_FIELD_PLACEMENT_CACHE}>)
 target_compile_definitions(lagi PRIVATE LAGI_FIELD_SUBDIV_CACHE=$<BOOL:${LAGI_FIELD_SUBDIV_CACHE}>)
+target_compile_definitions(lagi PRIVATE LAGI_FIELD_TEXTURE_DECOUPLE=$<BOOL:${LAGI_FIELD_TEXTURE_DECOUPLE}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without
