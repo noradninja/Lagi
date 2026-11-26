@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <new>
+#include <utility>
 #include <unordered_map>
 
 namespace lagi {
@@ -76,7 +78,8 @@ public:
         }
         // Allocate only after eviction so payload memory never exceeds budget.
         // Value copy preserves each face's own color as well as position.
-        std::unique_ptr<Vertex[]> payload(new Vertex[count]);
+        std::unique_ptr<Vertex[]> payload(new (std::nothrow) Vertex[count]);
+        if(!payload)return false;
         for(std::size_t i=0;i<count;++i)payload[i]=data[i];
         entries.emplace(key,Entry{std::move(payload),++clock});
         bytes_+=bytes;

@@ -8990,7 +8990,7 @@ static bool buildLiveTownFrame()
         if(++pw.frames==120u) {
             const auto evictions=g_fieldPlacementCache.evictions();
             logging::writef("[FieldPlacementWindow] frame=%llu frames=%u hits=%u misses=%u stored=%u bypass=%u "
-                "hitVerts=%llu missVerts=%llu entries=%u bytes=%u peakBytes=%u evictions=%llu lookupUs=%llu storeUs=%llu\\n",
+                "hitVerts=%llu missVerts=%llu entries=%u bytes=%u peakBytes=%u evictions=%llu lookupUs=%llu storeUs=%llu\n",
                 static_cast<unsigned long long>(azel_bridge::published_frame_number()),
                 pw.frames,pw.hits,pw.misses,pw.stored,pw.bypass,
                 static_cast<unsigned long long>(pw.hitVertices),static_cast<unsigned long long>(pw.missVertices),
