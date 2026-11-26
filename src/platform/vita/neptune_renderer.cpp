@@ -980,11 +980,22 @@ static std::vector<std::uint64_t> g_nativeDecodedTextureGenerations;
 static std::vector<std::uint64_t> g_nativeGpuTextureGenerations;
 static unsigned int g_nativeTextureUploadCount = 0u;
 static bool g_vdp1BaseTexturedPayloadValid = false;
+#if LAGI_FIELD_CRAM_REVERSE_INDEX
+static std::array<std::vector<std::uint16_t>, CramWriteBlocks::Blocks> g_cramUsers;
+static std::vector<std::uint16_t> g_cramUnknown;
+static std::size_t g_cramIndexedCount=0;
+static void resetCramUsers()
+{
+    for(auto& users:g_cramUsers)users.clear();
+    g_cramUnknown.clear();
+    g_cramIndexedCount=0;
+}
+#endif
 #if LAGI_FIELD_CACHE_TRACE
 struct FieldPrepareCounters {
     unsigned cram=0,vdp1=0,format=0,deferred=0,prepared=0,signature=0,
         dirty=0,count=0,notReady=0,base=0,uploadCalls=0,zeroUploads=0,
-        uploaded=0,refreshed=0,prefixSkipped=0;
+        uploaded=0,refreshed=0,prefixSkipped=0,cramFast=0,cramCandidates=0,cramAffected=0,cramFallback=0;
     std::uint64_t invalidateUs=0,uploadUs=0;
 };
 static FieldPrepareCounters g_fieldPrepareFrame,g_fieldPrepareWindow;
@@ -2711,6 +2722,51 @@ static void applyPendingRendererInvalidation()
             entry.cmdSrca,entry.cmdSize,pixelWrites,paletteWrites,
             (flags & kRendererInvalidateVdp1Textures)!=0u,
             (flags & kRendererInvalidateCram)!=0u);
+#if LAGI_FIELD_CRAM_REVERSE_INDEX
+    // Targeted palette writes leave the global epoch unchanged. Explicitly
+    // invalidate both copies; a successful active decode restores the epoch.
+    if(deferTextureOnly && flags==kRendererInvalidateCram &&
+        !CramWriteBlocks::empty(paletteWrites) &&
+        Vdp1WriteBlocks::empty(pixelWrites)) {
+        const auto& textures=g_staticRoomCpuMesh.decodedTextureData;
+        if(g_cramIndexedCount>textures.size())resetCramUsers();
+        while(g_cramIndexedCount<textures.size()) {
+            const auto i=g_cramIndexedCount++;
+            const auto& t=textures[i];
+            const unsigned mode=(t.cmdPmod>>3u)&7u;
+            if(!t.nativeDependenciesKnown || (t.cmdSize!=0u && mode>5u))
+                g_cramUnknown.push_back(static_cast<std::uint16_t>(i));
+            else if(t.cmdSize!=0u && mode!=5u)
+                for(unsigned b=0;b<CramWriteBlocks::Blocks;++b)
+                    if(t.nativeCramDependencies[b/32u]&(1u<<(b%32u)))
+                        g_cramUsers[b].push_back(static_cast<std::uint16_t>(i));
+        }
+        auto stale=[&](std::uint16_t i) {
+#if LAGI_FIELD_CACHE_TRACE
+            ++g_fieldPrepareFrame.cramCandidates;
+            if(i<g_nativeDecodedTextureGenerations.size() &&
+                g_nativeDecodedTextureGenerations[i]==g_nativeTextureGeneration)
+                ++g_fieldPrepareFrame.cramAffected;
+#endif
+            if(i<g_nativeDecodedTextureGenerations.size())
+                g_nativeDecodedTextureGenerations[i]=0u;
+            if(i<g_nativeGpuTextureGenerations.size())
+                g_nativeGpuTextureGenerations[i]=0u;
+        };
+        for(auto i:g_cramUnknown)stale(i);
+        for(unsigned b=0;b<CramWriteBlocks::Blocks;++b)
+            if(paletteWrites[b/32u]&(1u<<(b%32u)))
+                for(auto i:g_cramUsers[b])stale(i);
+#if LAGI_FIELD_CACHE_TRACE
+        ++g_fieldPrepareFrame.cramFast;
+        g_fieldPrepareFrame.invalidateUs=sceKernelGetProcessTimeWide()-invalidationStart;
+#endif
+        return;
+    }
+#endif
+#if LAGI_FIELD_CACHE_TRACE
+    if(flags&kRendererInvalidateCram)++g_fieldPrepareFrame.cramFallback;
+#endif
     const auto previousGeneration = g_nativeTextureGeneration++;
     // Only advance entries already valid at the previous epoch. Older stale
     // entries must remain stale until first use decodes them. GPU generations
@@ -7628,6 +7684,9 @@ static bool prepareRegisteredNativeMaterial()
             resource.textureMemory->data());
         if (resource.textureWriteEpoch != azel_bridge::native_texture_write_epoch()) {
             // Nothing was uploaded yet. Discard an obsolete appended decode.
+#if LAGI_FIELD_CRAM_REVERSE_INDEX
+            resetCramUsers();
+#endif
             g_staticRoomCpuMesh.decodedTextureData.resize(before);
             g_nativeDecodedTextureGenerations.resize(before);
             g_fieldTextureIndices.clear();
@@ -8947,6 +9006,13 @@ static bool buildLiveTownFrame()
         azel::DecodedMode1Texture refreshed{};
         if (!decodeLiveVdp1Texture(descriptor, refreshed))
             return false;
+#if LAGI_FIELD_CRAM_REVERSE_INDEX
+        if(decodedTextures[index].nativeDependenciesKnown!=refreshed.nativeDependenciesKnown ||
+            decodedTextures[index].nativeCramDependencies!=refreshed.nativeCramDependencies ||
+            decodedTextures[index].cmdPmod!=refreshed.cmdPmod ||
+            decodedTextures[index].cmdSize!=refreshed.cmdSize)
+            resetCramUsers();
+#endif
         decodedTextures[index] = std::move(refreshed);
         g_nativeDecodedTextureGenerations[index] = g_nativeTextureGeneration;
         ++g_profileTextureRefreshCount;
@@ -9160,17 +9226,20 @@ static bool buildLiveTownFrame()
         prep.uploaded+=cur.uploaded;prep.refreshed+=cur.refreshed;
         prep.prefixSkipped+=cur.prefixSkipped;prep.invalidateUs+=cur.invalidateUs;
         prep.uploadUs+=cur.uploadUs;
+        prep.cramFast+=cur.cramFast;prep.cramCandidates+=cur.cramCandidates;
+        prep.cramAffected+=cur.cramAffected;prep.cramFallback+=cur.cramFallback;
         if(++g_fieldPrepareFrames==120u) {
             logging::writef("[FieldPrepareWindow] frame=%llu frames=%u cram=%u vdp1=%u format=%u deferred=%u "
                 "prepared=%u signature=%u dirty=%u count=%u notReady=%u base=%u "
                 "uploadCalls=%u zeroUploads=%u uploaded=%u refreshed=%u prefixSkipped=%u "
-                "invalidateUs=%llu uploadUs=%llu textures=%u\n",
+                "invalidateUs=%llu uploadUs=%llu textures=%u cramFast=%u cramCandidates=%u cramAffected=%u cramFallback=%u\n",
                 static_cast<unsigned long long>(azel_bridge::published_frame_number()),
                 g_fieldPrepareFrames,prep.cram,prep.vdp1,prep.format,prep.deferred,
                 prep.prepared,prep.signature,prep.dirty,prep.count,prep.notReady,prep.base,
                 prep.uploadCalls,prep.zeroUploads,prep.uploaded,prep.refreshed,prep.prefixSkipped,
                 static_cast<unsigned long long>(prep.invalidateUs),
-                static_cast<unsigned long long>(prep.uploadUs),decodedTexturesAfter);
+                static_cast<unsigned long long>(prep.uploadUs),decodedTexturesAfter,
+                prep.cramFast,prep.cramCandidates,prep.cramAffected,prep.cramFallback);
             prep={};g_fieldPrepareFrames=0;
         }
 #endif
@@ -11962,6 +12031,9 @@ bool load_static_room_viewer(const azel::StaticRoomDebugMesh& mesh)
         mesh.gouraud555.size() != mesh.polygons)
         return false;
 
+#if LAGI_FIELD_CRAM_REVERSE_INDEX
+    resetCramUsers();
+#endif
     g_staticRoomCpuMesh = mesh;
     g_fieldTextureIndices.clear();
     g_fieldTextureIndexedCount = 0u;
