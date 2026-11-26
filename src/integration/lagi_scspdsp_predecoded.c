@@ -7,6 +7,7 @@
 #include "cpuintrf.h"
 #include "scsp.h"
 #include "lagi_dsp_platform.h"
+#include "lagi/audio_diagnostics.h"
 
 /*
  * Lagi-owned drop-in replacement for AOSDK scspdsp.c.
@@ -314,7 +315,7 @@ static void lagi_dsp_queue_capture(struct _SCSPDSP *DSP,UINT32 hash) {
     }
     if(g_lagiCaptureWrite-g_lagiCaptureRead==32) {
         ++g_lagiCaptureDrops;
-        lagi_dsp_log("[LagiDSPCapture] reason=queue-full drops=%u\n",g_lagiCaptureDrops);
+        LAGI_DSP_LOG("[LagiDSPCapture] reason=queue-full drops=%u\n",g_lagiCaptureDrops);
         return;
     }
     i=g_lagiCaptureWrite++%32;
@@ -361,7 +362,7 @@ void lagi_dsp_program_written(struct _SCSPDSP *DSP) {
     }
     if(i==8) {
         if(empty<8) { g_lagiDirtyInstances[empty].dsp=DSP; g_lagiDirtyInstances[empty].dirty=1; }
-        else { g_lagiDirtyOverflow=1; lagi_dsp_log("[LagiDSP] reason=instance-capacity backend=reference\n"); }
+        else { g_lagiDirtyOverflow=1; LAGI_DSP_LOG("[LagiDSP] reason=instance-capacity backend=reference\n"); }
     }
     if(g_lagiDecodedDsp==DSP) g_lagiDecodedSteps=-1;
     if(g_lagiNativeDsp==DSP || g_lagiDirtyOverflow) g_lagiNativeFunction=0;
@@ -381,7 +382,7 @@ static void lagi_dsp_capture_rejection(struct _SCSPDSP *DSP,UINT32 hash) {
     g_lagiRejectedPrograms[g_lagiRejectedCount].hash=hash;
     g_lagiRejectedPrograms[g_lagiRejectedCount++].steps=steps;
     if(steps>128) {
-        lagi_dsp_log("[LagiDSPReject] hash=%08X steps=%u reason=step-range\n",hash,steps);
+        LAGI_DSP_LOG("[LagiDSPReject] hash=%08X steps=%u reason=step-range\n",hash,steps);
         return;
     }
     for(i=0;i<steps;++i) {
@@ -390,20 +391,20 @@ static void lagi_dsp_capture_rejection(struct _SCSPDSP *DSP,UINT32 hash) {
         if(ira>=0x32) { if(first==128) first=i; last=i; ++invalid; }
         for(j=0;j<4;++j) { ones+=p[j]==0xFFFF; zeros+=p[j]==0; }
     }
-    lagi_dsp_log("[LagiDSPReject] hash=%08X steps=%u invalidIRA=%u first=%u last=%u ffffWords=%u zeroWords=%u tail=%04X,%04X,%04X,%04X\n",
+    LAGI_DSP_LOG("[LagiDSPReject] hash=%08X steps=%u invalidIRA=%u first=%u last=%u ffffWords=%u zeroWords=%u tail=%04X,%04X,%04X,%04X\n",
         hash,steps,invalid,first,last,ones,zeros,
         (unsigned)DSP->MPRO[508],(unsigned)DSP->MPRO[509],
         (unsigned)DSP->MPRO[510],(unsigned)DSP->MPRO[511]);
     if(first<128) {
         const UINT16 *p=DSP->MPRO+first*4;
-        lagi_dsp_log("[LagiDSPReject] hash=%08X step=%u IRA=%02X words=%04X,%04X,%04X,%04X\n",
+        LAGI_DSP_LOG("[LagiDSPReject] hash=%08X step=%u IRA=%02X words=%04X,%04X,%04X,%04X\n",
             hash,first,(unsigned)((p[1]>>6)&0x3F),
             (unsigned)p[0],(unsigned)p[1],(unsigned)p[2],(unsigned)p[3]);
     }
     lagi_dsp_queue_capture(DSP,hash);
 }
 static void lagi_dsp_select_native(struct _SCSPDSP *DSP,int allowCompile) {
-    const unsigned long long started=sceKernelGetSystemTimeWide();
+    const unsigned long long started=LAGI_AUDIO_DIAGNOSTICS ? sceKernelGetSystemTimeWide() : 0;
     const unsigned steps=(unsigned)DSP->LastStep;
     const UINT32 hash=lagi_dsp_program_hash(DSP->MPRO,steps);
     const char *backend=g_lagiPdsFastPath?"predecoded":"reference";
@@ -441,7 +442,7 @@ static void lagi_dsp_select_native(struct _SCSPDSP *DSP,int allowCompile) {
                     ++g_lagiCacheMisses; entry->function=0;
                     if (!lagi_dsp_decode_ir(&g_lagiTranslation,DSP->MPRO,steps)) {
                         reason="invalid-program";
-                        lagi_dsp_capture_rejection(DSP,hash);
+                        if(LAGI_AUDIO_DIAGNOSTICS) lagi_dsp_capture_rejection(DSP,hash);
                     }
                     else {
                         bytes=lagi_dsp_emit_arm(&g_lagiTranslation,g_lagiArmScratch,16384);
@@ -467,15 +468,15 @@ static void lagi_dsp_select_native(struct _SCSPDSP *DSP,int allowCompile) {
     g_lagiNativeBackend=!strcmp(backend,"arm")?3:(!strcmp(backend,"aot")?2:(!strcmp(backend,"predecoded")?1:0));
     lagi_dsp_selected_backend=g_lagiNativeBackend;
     lagi_dsp_selected_hash=hash;
-    lagi_dsp_log("[LagiDSPProgram] hash=%08X steps=%u backend=%s translateUs=%llu codeBytes=%u sizeKind=%s hits=%u misses=%u reason=%s\n",
+    LAGI_DSP_LOG("[LagiDSPProgram] hash=%08X steps=%u backend=%s translateUs=%llu codeBytes=%u sizeKind=%s hits=%u misses=%u reason=%s\n",
         hash,steps,backend,sceKernelGetSystemTimeWide()-started,bytes,
         !strcmp(backend,"aot")?"section":"runtime",g_lagiCacheHits,g_lagiCacheMisses,reason);
-    if(!allowCompile) lagi_dsp_queue_capture(DSP,hash);
+    if(LAGI_AUDIO_DIAGNOSTICS && !allowCompile) lagi_dsp_queue_capture(DSP,hash);
 }
 
 /* Called once per audio-worker iteration, outside the 256-frame sample loop. */
 void lagi_dsp_service_pending(struct _SCSPDSP *DSP) {
-    lagi_dsp_capture_one();
+    if(LAGI_AUDIO_DIAGNOSTICS) lagi_dsp_capture_one();
     /* Start may have hit the cache, then a later MPRO write invalidated
      * its function without setting g_lagiPendingDsp. Recover at this safe
      * boundary, not inside SCSPDSP_Step. Preserve the LastStep latched by
@@ -489,7 +490,7 @@ void lagi_dsp_service_pending(struct _SCSPDSP *DSP) {
                 lagi_scspdsp_decode(DSP);
             lagi_dsp_select_native(DSP,1);
             if(dirty)
-                lagi_dsp_log("[LagiDSPReselect] cause=mpro-write pending=%u steps=%u hash=%08X backend=%u\n",
+                LAGI_DSP_LOG("[LagiDSPReselect] cause=mpro-write pending=%u steps=%u hash=%08X backend=%u\n",
                     (unsigned)pending,(unsigned)DSP->LastStep,
                     (unsigned)lagi_dsp_selected_hash,(unsigned)lagi_dsp_selected_backend);
         }
@@ -499,7 +500,7 @@ void lagi_dsp_release_native(void) {
     unsigned i;
     g_lagiNativeFunction=0; g_lagiNativeDsp=0; g_lagiPendingDsp=0;
     for(i=0;i<4;++i) g_lagiNativeCache[i].function=0;
-    while(g_lagiCaptureRead!=g_lagiCaptureWrite) lagi_dsp_capture_one();
+    if(LAGI_AUDIO_DIAGNOSTICS) while(g_lagiCaptureRead!=g_lagiCaptureWrite) lagi_dsp_capture_one();
     lagi_dsp_selected_backend=0;
 }
 void SCSPDSP_Init(struct _SCSPDSP* DSP)
@@ -646,7 +647,7 @@ static void lagi_scspdsp_step_pds(struct _SCSPDSP* DSP)
 
 void SCSPDSP_Step(struct _SCSPDSP* DSP)
 {
-    const int profileSample = lagi_dsp_profile_sample != 0;
+    const int profileSample = LAGI_AUDIO_DIAGNOSTICS && lagi_dsp_profile_sample != 0;
     unsigned long long profileStartUs = 0;
     INT32 ACC = 0;
     INT32 SHIFTED = 0;
@@ -874,7 +875,7 @@ void SCSPDSP_Start(struct _SCSPDSP* DSP)
     lagi_scspdsp_decode(DSP);
     lagi_dsp_select_native(DSP,0);
 
-    {
+    if (LAGI_AUDIO_DIAGNOSTICS) {
         unsigned nIWT = 0, nTWT = 0, nMRD = 0, nMWT = 0, nEWT = 0;
         unsigned nADRL = 0, nFRCL = 0, nYRL = 0, nXInput = 0;
         unsigned nYCoef = 0, nYFrc = 0, nYReg = 0;

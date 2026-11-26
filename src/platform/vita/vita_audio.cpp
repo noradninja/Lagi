@@ -1,4 +1,5 @@
 #include "lagi/platform.h"
+#include "lagi/audio_diagnostics.h"
 
 #include <psp2/audioout.h>
 #include <psp2/kernel/threadmgr.h>
@@ -47,8 +48,8 @@ int audio_thread(SceSize, void*)
     std::uint64_t intervalBlocks = 0;
     std::size_t minQueuedFrames = kRingSamples / g_channels;
     const auto report = [&](const char* phase) {
-        if (!intervalBlocks) return;
-        logging::writef("[LagiPCM] phase=%s stream=%llu tUs=%llu rate=%u channels=%u blockFrames=%u steadyBlocks=%llu intervalBlocks=%llu underrunBlocks=%llu emptyBlocks=%llu missingFrames=%llu minQueuedFrames=%u\n",
+        if (!LAGI_AUDIO_DIAGNOSTICS || !intervalBlocks) return;
+        LAGI_AUDIO_LOG("[LagiPCM] phase=%s stream=%llu tUs=%llu rate=%u channels=%u blockFrames=%u steadyBlocks=%llu intervalBlocks=%llu underrunBlocks=%llu emptyBlocks=%llu missingFrames=%llu minQueuedFrames=%u\n",
             phase, static_cast<unsigned long long>(g_streamSerial),
             static_cast<unsigned long long>(sceKernelGetSystemTimeWide()),
             g_sampleRate, g_channels, static_cast<unsigned>(kOutputFrames),
@@ -85,7 +86,7 @@ int audio_thread(SceSize, void*)
         if (sceAudioOutOutput(g_port, g_output.data()) < 0)
             break;
         // Count only successfully submitted, non-final blocks after startup.
-        if (steady) {
+        if (LAGI_AUDIO_DIAGNOSTICS && steady) {
             ++steadyBlocks;
             ++intervalBlocks;
             minQueuedFrames = std::min(minQueuedFrames, available / g_channels);
@@ -103,9 +104,9 @@ int audio_thread(SceSize, void*)
             g_playedFrames.store(
                 submitted - static_cast<std::uint64_t>(remaining),
                 std::memory_order_release);
-        if (intervalBlocks >= 128u) report("periodic");
+        if (LAGI_AUDIO_DIAGNOSTICS && intervalBlocks >= 128u) report("periodic");
     }
-    report("end");
+    if constexpr (LAGI_AUDIO_DIAGNOSTICS) report("end");
 
     g_threadRunning.store(false, std::memory_order_release);
     return 0;

@@ -1,3 +1,4 @@
+#include "lagi/audio_diagnostics.h"
 #include "lagi/native_audio_banks.h"
 #include <array>
 #include <cassert>

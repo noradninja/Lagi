@@ -1,4 +1,5 @@
 #include "lagi/platform.h"
+#include "lagi/audio_diagnostics.h"
 #include <psp2/kernel/threadmgr.h>
 #include <atomic>
 #include <cstdio>
@@ -84,7 +85,7 @@ int run(SceSize, void*)
     unsigned sampleRate = 0, channels = 0;
     const std::vector<std::int16_t>* activeCue = nullptr;
     std::size_t cueFrame = 0;
-    logging::writef("[FrontendMusic] opened %s\n", g_musicPath);
+    LAGI_AUDIO_LOG("[FrontendMusic] opened %s\n", g_musicPath);
     while (!stopRequested.load(std::memory_order_acquire)) {
         if (buffered < 4096) {
             const int amount = static_cast<int>(
@@ -120,10 +121,10 @@ int run(SceSize, void*)
             sampleRate = static_cast<unsigned>(info.hz);
             channels = static_cast<unsigned>(info.channels);
             if (!audio::start_pcm_stream(sampleRate, channels)) {
-                logging::writef("[FrontendMusic] PCM output init failed\n");
+                LAGI_AUDIO_LOG("[FrontendMusic] PCM output init failed\n");
                 break;
             }
-            logging::writef("[FrontendMusic] playing hz=%u channels=%u\n",
+            LAGI_AUDIO_LOG("[FrontendMusic] playing hz=%u channels=%u\n",
                             sampleRate, channels);
             audioReady = true;
         }
@@ -166,7 +167,7 @@ int run(SceSize, void*)
         }
     }
     std::fclose(file);
-    logging::writef("[FrontendMusic] worker stopped\n");
+    LAGI_AUDIO_LOG("[FrontendMusic] worker stopped\n");
     return 0;
 }
 }
@@ -180,11 +181,11 @@ void start()
         "app0:frontend/navigate.wav", navigationPcm);
     const bool confirmReady = load_cue(
         "app0:frontend/confirm.wav", confirmPcm);
-    logging::writef("[FrontendMusic] original PCM cues navigation=%u confirm=%u\n",
+    LAGI_AUDIO_LOG("[FrontendMusic] original PCM cues navigation=%u confirm=%u\n",
                     navigationReady ? 1u : 0u, confirmReady ? 1u : 0u);
     FILE* test = open_music();
     if (!test) {
-        logging::writef("[FrontendMusic] optional file absent: %s\n", g_musicPath);
+        LAGI_AUDIO_LOG("[FrontendMusic] optional file absent: %s\n", g_musicPath);
         return;
     }
     std::fclose(test);
@@ -192,13 +193,13 @@ void start()
     worker = sceKernelCreateThread("LagiFrontendMP3", run, 0x10000100,
                                    96 * 1024, 0, 0, nullptr);
     if (worker < 0) {
-        logging::writef("[FrontendMusic] thread creation failed\n");
+        LAGI_AUDIO_LOG("[FrontendMusic] thread creation failed\n");
         return;
     }
     if (sceKernelStartThread(worker, 0, nullptr) < 0) {
         sceKernelDeleteThread(worker);
         worker = -1;
-        logging::writef("[FrontendMusic] thread start failed\n");
+        LAGI_AUDIO_LOG("[FrontendMusic] thread start failed\n");
     }
 }
 void stop()
@@ -212,7 +213,7 @@ void stop()
     navigationPcm.clear();
     confirmPcm.clear();
     requestedCue.store(-1, std::memory_order_release);
-    logging::writef("[FrontendMusic] output released before Azel\n");
+    LAGI_AUDIO_LOG("[FrontendMusic] output released before Azel\n");
 }
 void play_navigation()
 {

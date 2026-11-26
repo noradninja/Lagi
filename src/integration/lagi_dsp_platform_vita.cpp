@@ -1,5 +1,6 @@
 #include "lagi_dsp_platform.h"
 #include "lagi/platform.h"
+#include "lagi/audio_diagnostics.h"
 #include <psp2/kernel/sysmem.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
@@ -18,7 +19,7 @@ struct CaptureKey { unsigned steps; uint32_t hash; uint16_t words[512]; };
 CaptureKey captured[64]{};
 unsigned captureCount = 0;
 int result(const char *operation, int status) {
-    lagi_dsp_log("[LagiDSPVM] op=%s status=%d hex=%08X\n", operation, status, static_cast<unsigned>(status));
+    LAGI_DSP_LOG("[LagiDSPVM] op=%s status=%d hex=%08X\n", operation, status, static_cast<unsigned>(status));
     return status;
 }
 bool probe() {
@@ -52,6 +53,7 @@ bool probe() {
 }
 
 extern "C" void lagi_dsp_log(const char *format, ...) {
+    if constexpr (!LAGI_AUDIO_DIAGNOSTICS) return;
     char buffer[1024]; va_list args; va_start(args, format);
     std::vsnprintf(buffer, sizeof(buffer), format, args); va_end(args);
     lagi::platform::logging::writef("%s", buffer);
@@ -72,14 +74,14 @@ extern "C" int lagi_dsp_platform_init() {
     else if (!std::strcmp(config, "arm")) mode = LAGI_DSP_ARM;
     else if (!std::strcmp(config, "predecoded")) mode = LAGI_DSP_PREDECODED;
     else if (config[0])
-        lagi_dsp_log("[LagiDSP] invalid backend setting; using arm\n");
+        LAGI_DSP_LOG("[LagiDSP] invalid backend setting; using arm\n");
     vmReady = probe();
-    lagi_dsp_log("[LagiDSP] configured=%d vmReady=%d capture=on\n", mode, vmReady);
+    LAGI_DSP_LOG("[LagiDSP] configured=%d vmReady=%d capture=on\n", mode, vmReady);
     return mode;
 }
 extern "C" int lagi_dsp_vm_available() { return vmReady; }
 extern "C" void lagi_dsp_capture(const uint16_t *words, unsigned steps, uint32_t hash) {
-    if (steps > 128) return;
+    if (!LAGI_AUDIO_DIAGNOSTICS || steps > 128) return;
     for (unsigned i=0; i<captureCount; ++i)
         if (captured[i].hash == hash && captured[i].steps == steps &&
             !std::memcmp(captured[i].words, words, steps*8)) return;
@@ -104,15 +106,15 @@ extern "C" void lagi_dsp_capture(const uint16_t *words, unsigned steps, uint32_t
             else continue; // Never overwrite a hash collision or corrupt capture.
         } else {
             fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_EXCL, 0777);
-            if (fd < 0) { lagi_dsp_log("[LagiDSPCapture] hash=%08X open=%d\n", hash, fd); break; }
+            if (fd < 0) { LAGI_DSP_LOG("[LagiDSPCapture] hash=%08X open=%d\n", hash, fd); break; }
             const int written = sceIoWrite(fd, blob, bytes);
             const int closed = sceIoClose(fd);
             saved = written == static_cast<int>(bytes) && closed >= 0;
-            if (!saved) { sceIoRemove(path); lagi_dsp_log("[LagiDSPCapture] hash=%08X write=%d close=%d\n", hash, written, closed); break; }
-            lagi_dsp_log("[LagiDSPCapture] hash=%08X steps=%u bytes=%u path=%s\n", hash, steps, bytes, path);
+            if (!saved) { sceIoRemove(path); LAGI_DSP_LOG("[LagiDSPCapture] hash=%08X write=%d close=%d\n", hash, written, closed); break; }
+            LAGI_DSP_LOG("[LagiDSPCapture] hash=%08X steps=%u bytes=%u path=%s\n", hash, steps, bytes, path);
         }
     }
-    if(!saved) lagi_dsp_log("[LagiDSPCapture] hash=%08X steps=%u reason=not-saved\n",hash,steps);
+    if(!saved) LAGI_DSP_LOG("[LagiDSPCapture] hash=%08X steps=%u reason=not-saved\n",hash,steps);
     if (saved && captureCount < 64) {
         CaptureKey &key = captured[captureCount++]; key.steps=steps; key.hash=hash;
         std::memcpy(key.words, words, steps*8);
