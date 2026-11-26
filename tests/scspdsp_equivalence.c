@@ -102,24 +102,24 @@ static void native_tests(void) {
     SCSPDSP_Init(&a); a.SCSPRAM=ramA;
     memcpy(a.MPRO,g_lagiDspAotEntries[0].words,sizeof(a.MPRO)); SCSPDSP_Start(&a); lagi_dsp_service_pending(&a);
     lagi_dsp_profile_sample=1; SCSPDSP_Step(&a); lagi_dsp_profile_sample=0;
-    if(lagi_dsp_profile_backend_last!=1) exit(45);
+    if((lagi_dsp_selected_backend!=1 || lagi_dsp_profile_backend_last!=(LAGI_AUDIO_DIAGNOSTICS ? 1 : 0))) exit(45);
     g_lagiBackendMode=LAGI_DSP_AOT; lagi_dsp_select_native(&a,1);
     if(g_lagiNativeFunction!=g_lagiDspAotEntries[0].function) exit(20);
     lagi_dsp_profile_sample=1; SCSPDSP_Step(&a); lagi_dsp_profile_sample=0;
-    if(lagi_dsp_profile_backend_last!=2) exit(43);
+    if((lagi_dsp_selected_backend!=2 || lagi_dsp_profile_backend_last!=(LAGI_AUDIO_DIAGNOSTICS ? 2 : 0))) exit(43);
     a.Stopped=1; b=a; SCSPDSP_Step(&a); if(memcmp(&a,&b,sizeof(a))) exit(21); a.Stopped=0;
     lagi_dsp_program_written(&a); a.MPRO[0]^=0x80;
     if(g_lagiNativeFunction || !lagi_dsp_is_dirty(&a)) exit(22);
     /* Dirty execution refreshes decode but never reinstalls native code. */
     lagi_dsp_profile_sample=1; SCSPDSP_Step(&a); lagi_dsp_profile_sample=0;
-    if(g_lagiNativeFunction || lagi_dsp_profile_backend_last!=0) exit(46);
+    if(g_lagiNativeFunction || (lagi_dsp_selected_backend!=0 || lagi_dsp_profile_backend_last!=(LAGI_AUDIO_DIAGNOSTICS ? 0 : 0))) exit(46);
     SCSPDSP_Start(&a); lagi_dsp_service_pending(&a); if(lagi_dsp_is_dirty(&a) || g_lagiNativeFunction) exit(24);
     g_lagiBackendMode=LAGI_DSP_ARM; g_lagiDspTestVm=0; lagi_dsp_select_native(&a,1);
     if(g_lagiNativeFunction) exit(25);
     g_lagiDspTestVm=1; lagi_dsp_select_native(&a,1);
     if(!g_lagiNativeFunction) exit(26);
     lagi_dsp_profile_sample=1; SCSPDSP_Step(&a); lagi_dsp_profile_sample=0;
-    if(lagi_dsp_profile_backend_last!=3) exit(44);
+    if((lagi_dsp_selected_backend!=3 || lagi_dsp_profile_backend_last!=(LAGI_AUDIO_DIAGNOSTICS ? 3 : 0))) exit(44);
     i=g_lagiCacheHits; lagi_dsp_select_native(&a,1);
     if(g_lagiCacheHits!=i+1) exit(27);
     /* Collision: mutate content while keeping the cache key equal. */
@@ -161,17 +161,18 @@ static void native_tests(void) {
      * reselection. A sample before the boundary must remain reference. */
     SCSPDSP_Start(&a);
     if(!g_lagiNativeFunction || g_lagiPendingDsp) exit(47);
+    if(!LAGI_AUDIO_DIAGNOSTICS && (g_lagiCaptureWrite || g_lagiCaptureRead || lagi_dsp_mix_serial)) exit(54);
     {
         const int latchedSteps=a.LastStep;
         const UINT16 prior=a.MPRO[1];
         lagi_dsp_program_written(&a); a.MPRO[1]^=0x20;
         if(g_lagiNativeFunction || g_lagiPendingDsp || !lagi_dsp_is_dirty(&a)) exit(48);
         lagi_dsp_profile_sample=1; SCSPDSP_Step(&a); lagi_dsp_profile_sample=0;
-        if(lagi_dsp_profile_backend_last!=0 || g_lagiNativeFunction) exit(49);
+        if((lagi_dsp_selected_backend!=0 || lagi_dsp_profile_backend_last!=(LAGI_AUDIO_DIAGNOSTICS ? 0 : 0)) || g_lagiNativeFunction) exit(49);
         lagi_dsp_service_pending(&a);
         if(!g_lagiNativeFunction || lagi_dsp_is_dirty(&a) || a.LastStep!=latchedSteps) exit(50);
         lagi_dsp_profile_sample=1; SCSPDSP_Step(&a); lagi_dsp_profile_sample=0;
-        if(lagi_dsp_profile_backend_last!=3) exit(51);
+        if((lagi_dsp_selected_backend!=3 || lagi_dsp_profile_backend_last!=(LAGI_AUDIO_DIAGNOSTICS ? 3 : 0))) exit(51);
         /* Restore a known cached program without another Start. */
         lagi_dsp_program_written(&a); a.MPRO[1]=prior;
         i=g_lagiCacheHits; lagi_dsp_service_pending(&a);

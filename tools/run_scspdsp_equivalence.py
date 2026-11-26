@@ -25,6 +25,7 @@ parser=argparse.ArgumentParser(description="ARM DSP translator differential test
 parser.add_argument('--corpus',type=Path,default=repo/'dsp_programs')
 parser.add_argument('--synthetic-count',type=int,default=32,choices=range(1,33))
 parser.add_argument('--thumb',action='store_true',help='Compile reference/C/helpers in Thumb mode, matching Vita defaults')
+parser.add_argument('--diagnostics',action='store_true',help='Enable the diagnostic instrumentation for comparison')
 args=parser.parse_args()
 rng=random.Random(0x597fb08)
 programs=[]
@@ -60,6 +61,6 @@ int printf(const char *s,...) { return 0; }
 void exit(int status) { for(;;) {} }
 void __assert_func(const char *f,int n,const char *fn,const char *e) { exit(99); }
 ''')
-subprocess.run([str(Path(os.environ.get('VITASDK', r'C:\Dev\VitaSDK')) / 'bin/arm-vita-eabi-gcc.exe'), '-DLAGI_DSP_TEST', '-O2', '-mthumb' if args.thumb else '-marm', '-march=armv7-a', '-ffreestanding', '-fno-builtin', '-nostdlib', '-I'+str(out), '-I'+str(repo / 'src/integration'), str(out/'test.c'), str(out/'lib.c'), '-Wl,-Ttext=0x10000', '-Wl,-e,main', '-lgcc', '-o', str(out/'test.elf')], check=True)
+subprocess.run([str(Path(os.environ.get('VITASDK', r'C:\Dev\VitaSDK')) / 'bin/arm-vita-eabi-gcc.exe'), '-DLAGI_DSP_TEST', '-DLAGI_AUDIO_DIAGNOSTICS='+str(int(args.diagnostics)), '-O2', '-mthumb' if args.thumb else '-marm', '-march=armv7-a', '-ffreestanding', '-fno-builtin', '-nostdlib', '-I'+str(out), '-I'+str(repo / 'src/integration'), '-I'+str(repo / 'include'), str(out/'test.c'), str(out/'lib.c'), '-Wl,-Ttext=0x10000', '-Wl,-e,main', '-lgcc', '-o', str(out/'test.elf')], check=True)
 run_arm_elf(out/'test.elf')
 print(f'PASS ({"Thumb" if args.thumb else "ARM"} helpers): 1,024 predecoded comparisons; {len(programs)*16} samples compared across reference, generated C, generated ARM; selection/invalidation/failure tests')

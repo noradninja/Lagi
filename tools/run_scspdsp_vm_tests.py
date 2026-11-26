@@ -34,6 +34,6 @@ int strcmp(const char *a,const char *b) { while(*a && *a==*b) { ++a; ++b; } retu
 size_t strcspn(const char *s,const char *reject) { size_t n=0; while(s[n]) { for(const char *p=reject;*p;++p) if(s[n]==*p) return n; ++n; } return n; }
 }''')
     gcc=Path(os.environ.get('VITASDK',r'C:\Dev\VitaSDK'))/'bin/arm-vita-eabi-g++.exe'
-    subprocess.run([str(gcc),'-O2','-marm','-march=armv7-a','-fno-exceptions','-fno-rtti','-ffreestanding','-fno-builtin','-nostdlib','-I'+str(out),'-I'+str(repo/'src/integration'),str(repo/'tests/scspdsp_vm_tests.cpp'),str(out/'lib.cpp'),'-Wl,-Ttext=0x10000','-Wl,-e,main','-lgcc','-o',str(out/'test.elf')],check=True)
+    subprocess.run([str(gcc),'-std=c++17','-O2','-marm','-march=armv7-a','-fno-exceptions','-fno-rtti','-ffreestanding','-fno-builtin','-nostdlib','-I'+str(out),'-I'+str(repo/'src/integration'),'-I'+str(repo/'include'),str(repo/'tests/scspdsp_vm_tests.cpp'),str(out/'lib.cpp'),'-Wl,-Ttext=0x10000','-Wl,-e,main','-lgcc','-o',str(out/'test.elf')],check=True)
     run_arm_elf(out/'test.elf')
 print('PASS: 1 MiB single-allocation VM probe/reuse, publication and cleanup failures; real ARM return values; backend settings')
