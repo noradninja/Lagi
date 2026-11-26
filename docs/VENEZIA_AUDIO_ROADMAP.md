@@ -59,6 +59,22 @@ Implementation:
 
 Hardware acceptance: fresh boot, Garil -> Valley -> at least two battles; sound 100 continues after each restore, no out-of-range 111 start, [LagiSoundReplay] starts at most once per destination slot. Verify train pass has one start for 102 followed by bank=5 positional volume requests until stop. In Garil, return from battle near a trigger zone: 117 should start once until leaving zone, not every game update. Test leaving/re-entering zones, normal one-shot effects, camp/field transitions, tunnel shared-bank ambience and battle audio. Compare PCM counters and valid DSP hashes; distinguish remaining real underruns from sequence behavior. Correctness first: Step 2D is the corrected ARM baseline before Venezia bridge work. No DSP, clocks, buffer size, affinity, or audio synthesis changes in 2C.
 
+### Step 2C hardware acceptance and Step 2D corrected ARM baseline (2026-11-25)
+
+Baseline source checkpoint `2648cdb` includes validated audio fixes through `a96b50c` and the user's LiveArea image update. Hardware capture `lagi(20261126-005909).log` plus user listening confirmation validates the three reported regressions (Valley BGM, train positional sound, Garil repetitive clicking). Five completed restorations (2, 3, 7, 7, 7); Valley sound 100 replayed in both restores. No invalid-program rejects or invalid MPRO writes. Area map 1 evicts four entries. All 31,328 sampled DSP executions in records with nonzero DSP steps were ARM. Stream 3 last periodic record: 42,624 x 1024 frames at 44,100 Hz (989.7 seconds), 1,009,920 missing frames (2.314%), 1,206 affected blocks (2.829%), 906 empty blocks. Abrupt log end means final partial interval is unavailable. Frontend and movie streams excluded. Median sampled rendering worker time 5.032 ms (n=1322). Previous natural-play sessions had 18.01%, 6.54%, and 2.365% missing frames respectively; workloads differ.
+
+| Sequence | Profile records | Median synthesis us | Percent over 5805 us |
+|---|---:|---:|---:|
+| 1 Valley | 39 | 4315 | 5.1 |
+| 2 Valley | 218 | 5126.5 | 12.4 |
+| 3 Valley | 145 | 5994 | 64.8 |
+| 4 Valley battle | 82 | 5565.5 | 32.9 |
+| 7 Garil | 290 | 4577 | 16.6 |
+| 8 Garil battle | 176 | 5452 | 27.8 |
+| 64 Camp | 77 | 5656 | 44.2 |
+
+Step 2D established as measured reference, not zero-underrun acceptance. Profiled synthesis costs are sparse, nested/interleaved rather than additive. Remaining transition starvation also implicates synchronous sound-bank I/O on the audio worker (not solved by DSP offload); defer separate I/O preparation with worker-owned RAM commit to a measured follow-up. Do not change timing or queue depth for the bridge experiment. Host regression suite execution remains unverified. Preserve current ARM default. Merge this validated checkpoint to main; continue bridge experiments on feature/venezia-audio-offload.
+
 ## 2. Bridge feasibility
 Upstream: https://github.com/GrapheneCt/VVNZRunner
 Inspect pinned source and release artifacts, license and firmware requirements. Measure injection, blocking execution, cache ownership transitions, mapped buffer transfer, warm/cold dispatch, contention and suspend/resume. Use coarse work units, never per-sample bridge calls. Verify ABI and alignment; ARM pointers are not MeP pointers. No assumptions about cache coherence or speed.
