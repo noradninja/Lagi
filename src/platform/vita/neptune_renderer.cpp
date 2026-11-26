@@ -8,6 +8,9 @@
 #include "lagi/saturn_presentation.h"
 #include "lagi/rbg_decoded_page.h"
 #include "lagi/native_scene_mode.h"
+#if LAGI_FIELD_SUBDIV_CACHE
+#include "lagi/field_subdivision_cache.h"
+#endif
 #if LAGI_FIELD_PLACEMENT_CACHE
 #include "lagi/field_placement_cache.h"
 #endif
@@ -473,6 +476,20 @@ static std::vector<std::uint32_t> g_liveTownPolygonLightIndices;
 // A static CPU cache hit does not imply that an offscreen quad has had its
 // current positions written to the reused subdivision GPU buffer.
 static std::vector<std::uint8_t> g_sceneSubdivPositionValid;
+#if LAGI_FIELD_SUBDIV_CACHE
+static std::vector<lagi::FieldSubdivPositionSlot> g_fieldSubdivPositionSlots;
+static lagi::FieldSubdivUvCache g_fieldSubdivUvCache;
+#endif
+#if LAGI_FIELD_SUBDIV_CACHE && LAGI_FIELD_CACHE_TRACE
+struct FieldSubdivCounters {
+    unsigned positionCandidates=0,positionReused=0,positionWrites=0;
+    unsigned uvSlotHits=0,uvTemplateHits=0,uvTemplateMisses=0,uvWrites=0,topologyQuads=0;
+};
+static FieldSubdivCounters g_fieldSubdivCounters;
+#define LAGI_SUBDIV_COUNT(member) (++g_fieldSubdivCounters.member)
+#else
+#define LAGI_SUBDIV_COUNT(member) ((void)0)
+#endif
 struct SubdivShadeState {
     std::array<std::uint32_t,12> cornerBits{};
     bool valid = false;
@@ -2901,6 +2918,9 @@ void shutdown()
     g_vdp1SubdivIndexCapacity = 0u;
     g_vdp1SubdivQuadIndices.clear();
     g_sceneSubdivShadeStates.clear();
+#if LAGI_FIELD_SUBDIV_CACHE
+    g_fieldSubdivPositionSlots.clear();
+#endif
     freeVdp1Textures(true);
     freeMovieResources();
 
@@ -6315,6 +6335,9 @@ static void releaseResidentVdp1Model(bool preserveTextures = false)
     g_vdp1SubdivIndexCapacity = 0u;
     g_vdp1SubdivQuadIndices.clear();
     g_sceneSubdivShadeStates.clear();
+#if LAGI_FIELD_SUBDIV_CACHE
+    g_fieldSubdivPositionSlots.clear();
+#endif
 
     p = g_vdp1SubdivWireVertices;
     freeMapped(g_vdp1SubdivWireVertexUid, p);
@@ -6566,6 +6589,9 @@ bool prepare_vdp1_model(
             // Prepare can reuse storage with a different polygon association.
             // Invalidate independently of the CPU static-prefix rebuild flag.
             g_sceneSubdivPositionValid.clear();
+#if LAGI_FIELD_SUBDIV_CACHE
+            if(!reuseGeometry)g_fieldSubdivPositionSlots.clear();
+#endif
             prepareSubdivShadeStorage(reuseGeometry);
             if (reuseGeometry) {
                 // Positions, UVs, and topology are rewritten below into the
@@ -6612,7 +6638,15 @@ bool prepare_vdp1_model(
                 };
                 const std::size_t previousSubdivIndexCount =
                     g_vdp1SubdivQuadIndices.size();
+#if LAGI_FIELD_SUBDIV_CACHE
+                // Absolute indices for slot p always use p*9. Keep the
+                // initialized suffix through a field shrink/regrow.
+                const bool fieldTemplates=g_sceneGameMode==3u && g_viewMode==7;
+                if(!fieldTemplates || subdivIndexCount>previousSubdivIndexCount)
+                    g_vdp1SubdivQuadIndices.resize(subdivIndexCount);
+#else
                 g_vdp1SubdivQuadIndices.resize(subdivIndexCount);
+#endif
                 if (!reuseGeometry)
                     g_sceneSubdivUvStates.clear();
                 g_sceneSubdivUvStates.resize(model.polygonCount);
@@ -6638,44 +6672,11 @@ bool prepare_vdp1_model(
                     if (reuseGeometry &&
                         p * 24u < previousSubdivIndexCount &&
                         uvState.width == texture.width &&
-                        uvState.height == texture.height && uvState.flip == flip)
+                        uvState.height == texture.height && uvState.flip == flip) {
+#if LAGI_FIELD_SUBDIV_CACHE
+                        if(fieldTemplates)LAGI_SUBDIV_COUNT(uvSlotHits);
+#endif
                         continue;
-
-                    const float u0 =
-                        0.5f / static_cast<float>(texture.width);
-                    const float v0 =
-                        0.5f / static_cast<float>(texture.height);
-                    const float u1 =
-                        (static_cast<float>(texture.width) - 0.5f) /
-                        static_cast<float>(texture.width);
-                    const float v1 =
-                        (static_cast<float>(texture.height) - 0.5f) /
-                        static_cast<float>(texture.height);
-                    const float uv[4][2] = {
-                        {u0,v0}, {u1,v0}, {u1,v1}, {u0,v1}
-                    };
-                    int order[4] = {0,1,2,3};
-                    switch (record.textureFlip() & 3u) {
-                    case 1:
-                        order[0]=1; order[1]=0;
-                        order[2]=3; order[3]=2;
-                        break;
-                    case 2:
-                        order[0]=3; order[1]=2;
-                        order[2]=1; order[3]=0;
-                        break;
-                    case 3:
-                        order[0]=2; order[1]=3;
-                        order[2]=0; order[3]=1;
-                        break;
-                    default:
-                        break;
-                    }
-
-                    float cornerUv[4][2];
-                    for (unsigned c = 0; c < 4u; ++c) {
-                        cornerUv[c][0] = uv[order[c]][0];
-                        cornerUv[c][1] = uv[order[c]][1];
                     }
 
                     const auto& a =
@@ -6688,12 +6689,64 @@ bool prepare_vdp1_model(
                         model.vertices[p * 6u + cornerVertex[3]];
 
                     float gridU[9], gridV[9];
-                    fillMidpointGrid3x3(
-                        cornerUv[0][0], cornerUv[1][0],
-                        cornerUv[2][0], cornerUv[3][0], gridU);
-                    fillMidpointGrid3x3(
-                        cornerUv[0][1], cornerUv[1][1],
-                        cornerUv[2][1], cornerUv[3][1], gridV);
+#if LAGI_FIELD_SUBDIV_CACHE
+                    if(fieldTemplates) {
+                        bool hit=false;
+                        const auto& grid=g_fieldSubdivUvCache.get(
+                            texture.width,texture.height,flip,fillMidpointGrid3x3,hit);
+                        std::copy_n(grid.u,9,gridU);
+                        std::copy_n(grid.v,9,gridV);
+                        if(hit)LAGI_SUBDIV_COUNT(uvTemplateHits);
+                        else LAGI_SUBDIV_COUNT(uvTemplateMisses);
+                        LAGI_SUBDIV_COUNT(uvWrites);
+                    } else
+#endif
+                    {
+                        const float u0 =
+                            0.5f / static_cast<float>(texture.width);
+                        const float v0 =
+                            0.5f / static_cast<float>(texture.height);
+                        const float u1 =
+                            (static_cast<float>(texture.width) - 0.5f) /
+                            static_cast<float>(texture.width);
+                        const float v1 =
+                            (static_cast<float>(texture.height) - 0.5f) /
+                            static_cast<float>(texture.height);
+                        const float uv[4][2] = {
+                            {u0,v0}, {u1,v0}, {u1,v1}, {u0,v1}
+                        };
+                        int order[4] = {0,1,2,3};
+                        switch (record.textureFlip() & 3u) {
+                        case 1:
+                            order[0]=1; order[1]=0;
+                            order[2]=3; order[3]=2;
+                            break;
+                        case 2:
+                            order[0]=3; order[1]=2;
+                            order[2]=1; order[3]=0;
+                            break;
+                        case 3:
+                            order[0]=2; order[1]=3;
+                            order[2]=0; order[3]=1;
+                            break;
+                        default:
+                            break;
+                        }
+
+                        float cornerUv[4][2];
+                        for (unsigned c = 0; c < 4u; ++c) {
+                            cornerUv[c][0] = uv[order[c]][0];
+                            cornerUv[c][1] = uv[order[c]][1];
+                        }
+
+                        fillMidpointGrid3x3(
+                            cornerUv[0][0], cornerUv[1][0],
+                            cornerUv[2][0], cornerUv[3][0], gridU);
+                        fillMidpointGrid3x3(
+                            cornerUv[0][1], cornerUv[1][1],
+                            cornerUv[2][1], cornerUv[3][1], gridV);
+
+                    }
 
                     float gridX[9], gridY[9], gridZ[9];
                     if (!reuseGeometry) {
@@ -6720,6 +6773,9 @@ bool prepare_vdp1_model(
 
                     const unsigned int quadIndexBase = p * 24u;
                     if (quadIndexBase >= previousSubdivIndexCount) {
+#if LAGI_FIELD_SUBDIV_CACHE
+                        if(fieldTemplates)LAGI_SUBDIV_COUNT(topologyQuads);
+#endif
                         for (unsigned k = 0; k < 24u; ++k) {
                             g_vdp1SubdivQuadIndices[quadIndexBase + k] =
                                 static_cast<std::uint16_t>(
@@ -8380,6 +8436,9 @@ static bool buildLiveTownFrame()
         g_liveTownTransformHistory.clear();
         g_liveTownAutoDynamicIdentities.clear();
         g_liveTownStaticIdentityAppliedEpoch = identityResetEpoch;
+#if LAGI_FIELD_SUBDIV_CACHE
+        g_fieldSubdivPositionSlots.clear();
+#endif
 #if LAGI_FIELD_PLACEMENT_CACHE
         g_fieldPlacementCache.clear();
 #if LAGI_FIELD_CACHE_TRACE
@@ -12508,6 +12567,12 @@ bool submit_vdp1_model(
                 g_liveTownStaticPolygonCount)
             g_sceneSubdivPositionValid.assign(g_liveTownStaticPolygonCount, 0u);
         g_sceneSubdivShadeStates.resize(model.polygonCount);
+#if LAGI_FIELD_SUBDIV_CACHE
+        const bool fieldSlotReuse=sceneStaticPositions && g_sceneGameMode==3u &&
+            g_viewMode==7 && !g_fieldProbeActive;
+        if(fieldSlotReuse)g_fieldSubdivPositionSlots.resize(model.polygonCount);
+        else g_fieldSubdivPositionSlots.clear();
+#endif
         // GPU-only vertical-position experiment. Never modify Azel's
         // authoritative CPU model or the production FULL view.
         const unsigned circleHeightMode=(g_viewMode>=21 && g_viewMode<=23)
@@ -12559,12 +12624,33 @@ bool submit_vdp1_model(
 
             const bool heightTarget=circleIdentified &&
                 p>=626u && p<=637u && model.polygons[p].cmdColr==0x2100u;
-            const bool updatePosition =
+            bool updatePosition =
                 (heightTarget && circleHeightMode!=0u) ||
                 g_liveTownStaticRebuilt ||
                 p >= static_cast<unsigned int>(
                     g_liveTownStaticPolygonCount) ||
                 (sceneStaticPositions && !g_sceneSubdivPositionValid[p]);
+#if LAGI_FIELD_SUBDIV_CACHE
+            // Old validity is reset on any flattened-set change. A physical
+            // slot can nevertheless still contain exactly the right XYZ.
+            // Never read the mapped buffer to decide, and never use stale
+            // tags for a dynamic overwrite or a diagnostic height offset.
+            if(fieldSlotReuse && updatePosition) {
+                auto& slot=g_fieldSubdivPositionSlots[p];
+                if(p<g_liveTownStaticPolygonCount) {
+                    LAGI_SUBDIV_COUNT(positionCandidates);
+                    const std::array<float,12> corners={
+                        a.x,a.y,a.z,b.x,b.y,b.z,c.x,c.y,c.z,d.x,d.y,d.z};
+                    if(slot.matches(corners)) {
+                        updatePosition=false;
+                        LAGI_SUBDIV_COUNT(positionReused);
+                    } else {
+                        slot.remember(corners);
+                        LAGI_SUBDIV_COUNT(positionWrites);
+                    }
+                } else slot.invalidate();
+            }
+#endif
 
             // Compare authored corner bits in CPU memory. Identical inputs
             // produce identical midpoint shade payloads; avoid reading the
@@ -14976,6 +15062,9 @@ static void renderBasicWingViewer()
     g_profileLightingUs = 0u;
     g_profileSubdivShadeReusedQuads = 0u;
     g_profileSubdivShadeWrittenQuads = 0u;
+#if LAGI_FIELD_SUBDIV_CACHE && LAGI_FIELD_CACHE_TRACE
+    g_fieldSubdivCounters={};
+#endif
     g_profileSubmitUs = 0u;
     g_profileGxmWaitUs = 0u;
     g_profileGxmEndSceneUs = 0u;
@@ -15784,6 +15873,10 @@ static void renderBasicWingViewer()
         unsigned int maxRender = 0u, maxBuild = 0u, rebuilds = 0u;
         unsigned int maxFieldLog = 0u;
         std::uint64_t totalRender = 0u;
+#if LAGI_FIELD_SUBDIV_CACHE && LAGI_FIELD_CACHE_TRACE
+        FieldSubdivCounters subdiv{};
+        std::uint64_t subdivBuildUs=0,payloadUs=0;
+#endif
     };
     static FlightTimingWindow flightTiming;
     static unsigned int flightTimingMode = 0u;
@@ -15803,7 +15896,31 @@ static void renderBasicWingViewer()
         flightTiming.over30 += g_profileRenderUs > 30000u;
         flightTiming.overDeadline += g_profileRenderUs > 33333u;
         flightTiming.rebuilds += g_liveTownStaticRebuilt;
+#if LAGI_FIELD_SUBDIV_CACHE && LAGI_FIELD_CACHE_TRACE
+        auto& sc=flightTiming.subdiv;
+        sc.positionCandidates+=g_fieldSubdivCounters.positionCandidates;
+        sc.positionReused+=g_fieldSubdivCounters.positionReused;
+        sc.positionWrites+=g_fieldSubdivCounters.positionWrites;
+        sc.uvSlotHits+=g_fieldSubdivCounters.uvSlotHits;
+        sc.uvTemplateHits+=g_fieldSubdivCounters.uvTemplateHits;
+        sc.uvTemplateMisses+=g_fieldSubdivCounters.uvTemplateMisses;
+        sc.uvWrites+=g_fieldSubdivCounters.uvWrites;
+        sc.topologyQuads+=g_fieldSubdivCounters.topologyQuads;
+        flightTiming.subdivBuildUs+=g_profilePrepareSubdivBuildUs;
+        flightTiming.payloadUs+=g_profileGouraudPayloadUs;
+#endif
         if (flightTiming.frames == 120u) {
+#if LAGI_FIELD_SUBDIV_CACHE && LAGI_FIELD_CACHE_TRACE
+            logging::writef("[FieldSubdivWindow] frame=%llu mode=%u frames=%u candidates=%u reused=%u writes=%u "
+                "uvSlotHits=%u uvTemplateHits=%u uvTemplateMisses=%u uvWrites=%u topologyQuads=%u "
+                "subBuildUs=%llu payloadUs=%llu slots=%u\n",
+                static_cast<unsigned long long>(azel_bridge::published_frame_number()),
+                flightTimingMode,flightTiming.frames,sc.positionCandidates,sc.positionReused,sc.positionWrites,
+                sc.uvSlotHits,sc.uvTemplateHits,sc.uvTemplateMisses,sc.uvWrites,sc.topologyQuads,
+                static_cast<unsigned long long>(flightTiming.subdivBuildUs),
+                static_cast<unsigned long long>(flightTiming.payloadUs),
+                static_cast<unsigned>(g_fieldSubdivPositionSlots.size()));
+#endif
             logging::writef(
                 "[FlightTimingWindow] mode=%u frames=%u mean=%uus max=%uus "
                 "over20=%u over25=%u over30=%u over33333=%u "

@@ -223,6 +223,7 @@ option(LAGI_WORLD_MAP_BRINGUP "Enable the in-progress native WORLD scene for dev
 option(LAGI_FIELD_MOTION_TRACE "Bounded field motion/snapshot cadence diagnostics" OFF)
 option(LAGI_FIELD_CACHE_TRACE "Aggregate native field static-cache rebuild causes" OFF)
 option(LAGI_FIELD_PLACEMENT_CACHE "Retain prepared rigid field placement vertex variants" ON)
+option(LAGI_FIELD_SUBDIV_CACHE "Retain exact subdivision slot positions and shared UV templates" ON)
 set(LAGI_RBG_ROWS_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f_gxp.o")
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp"
  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
@@ -8065,6 +8066,7 @@ target_compile_definitions(lagi PRIVATE LAGI_RBG_COEFFICIENT_ROWS=$<BOOL:${LAGI_
 target_compile_definitions(lagi PRIVATE LAGI_FIELD_MOTION_TRACE=$<BOOL:${LAGI_FIELD_MOTION_TRACE}>)
 target_compile_definitions(lagi PRIVATE LAGI_FIELD_CACHE_TRACE=$<BOOL:${LAGI_FIELD_CACHE_TRACE}>)
 target_compile_definitions(lagi PRIVATE LAGI_FIELD_PLACEMENT_CACHE=$<BOOL:${LAGI_FIELD_PLACEMENT_CACHE}>)
+target_compile_definitions(lagi PRIVATE LAGI_FIELD_SUBDIV_CACHE=$<BOOL:${LAGI_FIELD_SUBDIV_CACHE}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without
