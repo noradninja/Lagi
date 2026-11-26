@@ -221,6 +221,7 @@ option(LAGI_RBG_DECODED_PAGES "Cache native RBG source pages before GPU rotation
 option(LAGI_RBG_COEFFICIENT_ROWS "Predecode scanline-constant native RBG coefficients" ON)
 option(LAGI_WORLD_MAP_BRINGUP "Enable the in-progress native WORLD scene for device testing" ON)
 option(LAGI_FIELD_MOTION_TRACE "Bounded field motion/snapshot cadence diagnostics" OFF)
+option(LAGI_FIELD_CACHE_TRACE "Aggregate native field static-cache rebuild causes" OFF)
 set(LAGI_RBG_ROWS_OBJ "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f_gxp.o")
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lagi_vdp2_rbg0_rows_f.gxp"
  COMMAND "${PSP2CGC_EXECUTABLE}" -profile sce_fp_psp2
@@ -8061,6 +8062,7 @@ endif()
 target_compile_definitions(lagi PRIVATE LAGI_WORLD_MAP_BRINGUP=$<AND:$<BOOL:${LAGI_WORLD_MAP_BRINGUP}>,$<BOOL:${LAGI_BATTLE_EXECUTE_A3}>>)
 target_compile_definitions(lagi PRIVATE LAGI_RBG_COEFFICIENT_ROWS=$<BOOL:${LAGI_RBG_COEFFICIENT_ROWS}>)
 target_compile_definitions(lagi PRIVATE LAGI_FIELD_MOTION_TRACE=$<BOOL:${LAGI_FIELD_MOTION_TRACE}>)
+target_compile_definitions(lagi PRIVATE LAGI_FIELD_CACHE_TRACE=$<BOOL:${LAGI_FIELD_CACHE_TRACE}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without

@@ -8,6 +8,9 @@
 #include "lagi/saturn_presentation.h"
 #include "lagi/rbg_decoded_page.h"
 #include "lagi/native_scene_mode.h"
+#if LAGI_FIELD_CACHE_TRACE
+#include "lagi/field_cache_history.h"
+#endif
 #if LAGI_FIELD_MOTION_TRACE
 #include "lagi/motion_cadence.h"
 #endif
@@ -549,6 +552,17 @@ static std::size_t g_liveTownStaticVertexCount = 0;
 static std::size_t g_liveTownStaticPolygonCount = 0;
 static std::size_t g_liveTownStaticLightStateCount = 0;
 static bool g_liveTownStaticRebuilt = true;
+#if LAGI_FIELD_CACHE_TRACE
+static lagi::FieldCacheHistory g_fieldCacheHistory;
+struct FieldCacheWindow {
+    unsigned frames=0,rebuilds=0,baseline=0,lodFrames=0,lod=0,
+        entryExitFrames=0,added=0,removed=0,orderFrames=0,
+        resourceFrames=0,resource=0,transformFrames=0,transform=0,
+        ambiguous=0,unclassified=0;
+    std::uint64_t classificationUs=0,rebuildBuildUs=0,retainedBuildUs=0;
+};
+static FieldCacheWindow g_fieldCacheWindow;
+#endif
 
 static std::size_t g_liveTownShadowFirstPolygon = 0;
 static std::size_t g_liveTownShadowPolygonCount = 0;
@@ -8341,6 +8355,10 @@ static bool buildLiveTownFrame()
         g_liveTownTransformHistory.clear();
         g_liveTownAutoDynamicIdentities.clear();
         g_liveTownStaticIdentityAppliedEpoch = identityResetEpoch;
+#if LAGI_FIELD_CACHE_TRACE
+        g_fieldCacheHistory.reset();
+        g_fieldCacheWindow={};
+#endif
     }
 
     if (g_liveTownKnownStaticIdentities.bucket_count() < 512u)
@@ -8467,6 +8485,38 @@ static bool buildLiveTownFrame()
     // rebuilds the static cache.
     g_liveTownStaticRebuilt =
         staticSignature != g_liveTownStaticSignature;
+#if LAGI_FIELD_CACHE_TRACE
+    // Observe only signature changes (and the first baseline). No per-object
+    // logging or per-frame hash table allocation on stable field frames.
+    lagi::FieldCacheDelta fieldCacheDelta{};
+    bool fieldCacheBaseline=false;
+    std::uint64_t fieldCacheClassificationUs=0;
+    if(g_sceneGameMode==3u &&
+       (g_liveTownStaticRebuilt || !g_fieldCacheHistory.initialized())) {
+        const auto started=sceKernelGetProcessTimeWide();
+        fieldCacheBaseline=!g_fieldCacheHistory.initialized();
+        g_fieldCacheHistory.begin();
+        for(const auto& submission:azel_bridge::published_submissions()) {
+            if(!submission.state.fieldEnvironment ||
+               submission.adaptedModelIndex<0 ||
+               liveTownSubmissionIsDynamic(submission)) continue;
+            const auto* model=azel_bridge::published_adapted_model(
+                static_cast<std::uint32_t>(submission.adaptedModelIndex));
+            if(!model)continue;
+            lagi::FieldCacheVariant v{};
+            v.placement={submission.bundleIndex,submission.cellIndex,submission.objectIndex};
+            v.model=reinterpret_cast<std::uintptr_t>(submission.model);
+            v.generation=submission.modelGeneration;
+            v.offset=submission.modelTableOffset;
+            v.polygons=static_cast<std::uint32_t>(model->polygons.size());
+            v.hasMatrix=submission.state.hasModelMatrix;
+            std::copy_n(submission.state.modelMatrix,12,v.matrix.begin());
+            g_fieldCacheHistory.add(v);
+        }
+        fieldCacheDelta=g_fieldCacheHistory.finish();
+        fieldCacheClassificationUs=sceKernelGetProcessTimeWide()-started;
+    }
+#endif
     if (g_liveTownStaticRebuilt) {
         g_sceneSubdivPositionValid.clear();
         // Corner-bit comparison validates shades even when a new polygon
@@ -8816,6 +8866,38 @@ static bool buildLiveTownFrame()
         const unsigned int buildElapsedUs =
             static_cast<unsigned int>(
                 sceKernelGetProcessTimeWide() - buildStartUs);
+#if LAGI_FIELD_CACHE_TRACE
+        auto& w=g_fieldCacheWindow;
+        ++w.frames;
+        w.classificationUs+=fieldCacheClassificationUs;
+        if(g_liveTownStaticRebuilt) {
+            ++w.rebuilds;w.rebuildBuildUs+=buildElapsedUs;
+            const auto& d=fieldCacheDelta;
+            if(fieldCacheBaseline) ++w.baseline;
+            else if(d.ambiguous) ++w.ambiguous;
+            else {
+                w.lodFrames+=d.lod!=0;w.lod+=d.lod;
+                w.entryExitFrames+=(d.added||d.removed);w.added+=d.added;w.removed+=d.removed;
+                w.orderFrames+=d.reordered;
+                w.resourceFrames+=d.resource!=0;w.resource+=d.resource;
+                w.transformFrames+=d.transform!=0;w.transform+=d.transform;
+                w.unclassified+=!(d.lod||d.added||d.removed||d.reordered||d.resource||d.transform);
+            }
+        } else w.retainedBuildUs+=buildElapsedUs;
+        if(w.frames==120u) {
+            logging::writef("[FieldCacheWindow] frame=%llu frames=%u rebuilds=%u baseline=%u "
+                "lodFrames=%u lod=%u entryExitFrames=%u added=%u removed=%u orderFrames=%u "
+                "resourceFrames=%u resource=%u transformFrames=%u transform=%u ambiguous=%u unclassified=%u "
+                "classificationUs=%llu rebuildMeanUs=%llu retainedMeanUs=%llu\\n",
+                static_cast<unsigned long long>(azel_bridge::published_frame_number()),
+                w.frames,w.rebuilds,w.baseline,w.lodFrames,w.lod,w.entryExitFrames,w.added,w.removed,w.orderFrames,
+                w.resourceFrames,w.resource,w.transformFrames,w.transform,w.ambiguous,w.unclassified,
+                static_cast<unsigned long long>(w.classificationUs),
+                static_cast<unsigned long long>(w.rebuilds?w.rebuildBuildUs/w.rebuilds:0),
+                static_cast<unsigned long long>(w.frames>w.rebuilds?w.retainedBuildUs/(w.frames-w.rebuilds):0));
+            w={};
+        }
+#endif
         const bool periodicSample =
             (fieldStreamHeartbeat++ % 120u) == 0u;
         if ((changed && !g_profilePrepareReusedGeometry) ||

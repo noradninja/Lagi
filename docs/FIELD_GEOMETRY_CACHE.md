@@ -1,0 +1,15 @@
+# Field geometry cache investigation
+
+Branch from main fff37ab (quiet ARM audio baseline). Preserve existing visuals, full resolution, original Azel culling/LOD decisions, collision, lighting and VDP1 ordering.
+
+## Source trace
+Pinned Azel 4cebb24b: FLD_A5 subfield setup calls readDataTable3; readEnvironmentGridCell reads 24-byte placement records and five 16-bit model offsets, four render ranges plus collision. gridCellDraw_normal in field/field_a3/o_fld_a3.cpp chooses a model using camera-space depth (default 8,16,32 in 16.16 units), skips zero offsets, and submits the selected variant. get3DModel caches by bundle offset. Lagi CMake generated field submission hook supplies original cell/record address, selected offset, world matrix and fieldEnvironment. Render bridge supplies model generation. Neptune hashes the entire static sequence (including variant and matrix); any difference clears and reconstructs static CPU prefix and invalidates subdivision positions. Existing material cache and GPU allocation reuse do not guarantee retained geometry contents.
+
+## 1A — observational classifier
+Enable -DLAGI_FIELD_CACHE_TRACE=ON on this branch. Default OFF; no normal-build overhead. Keep audio diagnostics, GPU serialized pass timing and field motion trace OFF. One [FieldCacheWindow] record per 120 successful native field builds. Count visible static placement differences by stable (bundle,cell,object) tuple and separate variant offset. Duplicate keys are ambiguous rather than guessed. LOD means different selected offset for a surviving explicit placement, not a claim about the underlying distance threshold. Same-offset model identity/generation/polygon count changes count as resource changes. Matrix changes independently count transform. Relative order of common placements is tested excluding additions/removals. Entry/exit includes visibility, absent LOD and streaming; cannot separate those with published visible submissions alone. Rebuild without observed field-placement delta is unclassified (e.g. other static submissions). Categories overlap; counts are not exclusive. First snapshot is baseline; scene-mode ownership reset discards partial windows and history. Same-mode subfield changes may appear as entry/exit or resource changes; do not treat them as steady-state LOD samples. Classification happens only on rebuild or first snapshot. classificationUs is total observed classifier time, included in build times. Compare with trace OFF before attributing speed differences. No cache behavior changed.
+
+Host fixture: c++ -std=c++17 -Iinclude tests/field_cache_history_test.cpp -o field_cache_history_test && ./field_cache_history_test
+Or cl /std:c++17 /EHsc /Iinclude tests/field_cache_history_test.cpp
+
+## Follow-up
+1B: persistent prepared placement/variant CPU geometry, explicit lifetime/invalidation, current light and order. 1C: retain subdivision payload with correct slot association and UV dimensions/flip. 1D: evaluate persistent GPU ranges after measured 1B/1C. No optimization accepted without hardware comparison.
