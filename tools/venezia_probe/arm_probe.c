@@ -8,7 +8,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
-#include <vvnzrunner.h>
+/* v2.1 user syscall ABI. The upstream SDK header includes official
+ * SDK-only scetypes.h; these three C signatures need no SDK typedefs. */
+extern int vnzBridgeInject(const void *,unsigned int);
+extern int vnzBridgeExec(void *,unsigned int);
+extern int vnzBridgeRestore(void);
 #include "probe.h"
 #include "elfcheck.h"
 

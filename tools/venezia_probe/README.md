@@ -20,12 +20,11 @@ $env:VITASDK = "E:\dev\VitaSDK"
 $env:PATH = "$env:VITASDK\bin;$env:PATH"
 cmake -S tools/venezia_probe -B build-venezia-probe -G Ninja `
   -DCMAKE_BUILD_TYPE=Release `
-  -DVVNZRUNNER_SOURCE=E:/dev/VVNZRunner `
   "-DVVNZRUNNER_STUB=E:/dev/VVNZRunner-stubs/libVVNZRunner_stub.a" `
   -DMEP_ELF=E:/dev/mep_probe.elf
 cmake --build build-venezia-probe --target VeneziaProbe.vpk-vpk
 ```
-Confirm exact stub filename from ZIP listing. No PSP2CGC or Lagi CMake flags required.
+Confirm exact stub filename from ZIP listing. No PSP2CGC or Lagi CMake flags required. ARM uses three minimal v2.1 C ABI declarations instead of the upstream official-SDK-specific header; the original sample CRT and headers remain external MeP build inputs.
 
 Install only on known-compatible test unit after plugin setup/reboot. Launch probe, wait for launch, press Cross once to start (Circle cancels). Screen is intentionally unrendered so no CDRAM allocations precede ELF; log is ux0:data/lagi/venezia_probe.log. Probe exits after run. Log flushed before injection, first guarded RPC and restore so last operation is visible on failure. If stuck or failed after injection, reboot before retry; no automatic cancellation/reinjection or module unload. Run twice from fresh launches only after PASS. Return full log and report firmware, plugin version and device type.
 
