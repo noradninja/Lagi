@@ -81,3 +81,7 @@ git pull --ff-only
 cmake -S . -B build-fullres -DLAGI_FULLRES=ON -DLAGI_STOCHASTIC_FILTER=ON -DLAGI_DITHER_LOOKUP=ON
 cmake --build build-fullres
 ```
+
+## Full-panel title scanout
+
+The TVMD 0x00C3 title path now renders directly to 960x544 with pitch 1024, using the existing full-sized double-buffer storage and dedicated no-MSAA frontend target/surfaces. The existing 4:3 background quad and text extent fill the panel vertically with pillarboxing (approximately 725x544 active content). The decoded source, stochastic/linear filter selection, fades, and two-vblank title cadence are unchanged. Other TVMD modes, Cinepak and gameplay render dimensions are unchanged. Confirm actual scanout in MovieScanout and visual alignment on hardware.

@@ -9901,20 +9901,20 @@ void show_game_presentation()
     }
 
     SceGxmRenderTargetParams frontendHighRtParams = movieRtParams;
-    frontendHighRtParams.width = 720;
-    frontendHighRtParams.height = 408;
+    frontendHighRtParams.width = kWidth;
+    frontendHighRtParams.height = kHeight;
     const int frontendHighRtResult =
         sceGxmCreateRenderTarget(
             &frontendHighRtParams, &g_frontendHighRenderTarget);
     if (frontendHighRtResult < 0) {
         char line[78];
         std::snprintf(
-            line, sizeof(line), "[FAIL] GXM FRONTEND 720X408 TARGET 0X%08X",
+            line, sizeof(line), "[FAIL] GXM FRONTEND 960X544 TARGET 0X%08X",
             static_cast<unsigned int>(frontendHighRtResult));
         failure(line);
         return;
     }
-    status("[PASS] GXM FRONTEND 720X408 TARGET", 0xFF80E0FFu);
+    status("[PASS] GXM FRONTEND 960X544 TARGET", 0xFF80E0FFu);
 
     SceGxmRenderTargetParams sceneRbg0RtParams = movieRtParams;
     sceneRbg0RtParams.width = kSceneRbg0Width;
@@ -10003,11 +10003,11 @@ void show_game_presentation()
         SCE_GXM_COLOR_SURFACE_LINEAR,
         SCE_GXM_COLOR_SURFACE_SCALE_NONE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
-        720, 408, gxmPitch, g_probeColorBuffer);
+        kWidth, kHeight, gxmPitch, g_probeColorBuffer);
     if (frontendHighColorResult < 0) {
         char line[78];
         std::snprintf(
-            line, sizeof(line), "[FAIL] GXM FRONTEND 720X408 COLOR 0X%08X",
+            line, sizeof(line), "[FAIL] GXM FRONTEND 960X544 COLOR 0X%08X",
             static_cast<unsigned int>(frontendHighColorResult));
         failure(line);
         return;
@@ -10093,11 +10093,11 @@ void show_game_presentation()
         SCE_GXM_COLOR_SURFACE_LINEAR,
         SCE_GXM_COLOR_SURFACE_SCALE_NONE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
-        720, 408, gxmPitch, g_probeColorBuffer2);
+        kWidth, kHeight, gxmPitch, g_probeColorBuffer2);
     if (frontendHighColorResult2 < 0) {
         char line[78];
         std::snprintf(
-            line, sizeof(line), "[FAIL] GXM FRONTEND 720X408 COLOR2 0X%08X",
+            line, sizeof(line), "[FAIL] GXM FRONTEND 960X544 COLOR2 0X%08X",
             static_cast<unsigned int>(frontendHighColorResult2));
         failure(line);
         return;
@@ -14497,9 +14497,9 @@ static bool renderMovieFrame()
         return false;
 
     // Azel switches the title to HRESO=3 with double-density interlace.
-    // When that live TVMD mode is active, render and scan out a native
-    // 720x408 Vita framebuffer directly. There is no 960x544 intermediate
-    // and no Neptune scaling pass; sceDisplay receives the 720x408 frame.
+    // Render that frontend directly at full Vita resolution. The existing
+    // 4:3 quad and text layer preserve aspect; retain the source filter
+    // and title-specific two-scanout cadence.
     const bool highResolutionFrontend =
         g_movieUsesVdp2Title &&
         (g_movieVdp2Tvmd & 0x00C7u) == 0x00C3u;
@@ -14510,19 +14510,19 @@ static bool renderMovieFrame()
         logging::writef(
             "[VDP2Display] TVMD=%04X framebuffer=%s\n",
             g_movieVdp2Tvmd & 0xFFFFu,
-            highResolutionFrontend ? "720x408" :
+            highResolutionFrontend ? "960x544" :
                  (g_halfResolution ? "480x272" : "960x544"));
         lastFrontendDisplayMode = frontendDisplayMode;
     }
     const bool cinepakPresentation = !g_movieUsesVdp2Title;
     const int pitch = cinepakPresentation ? kCinepakOutputWidth :
-        (highResolutionFrontend ? 1024 : viewerRenderPitch());
+        (highResolutionFrontend ? kGxmPitch : viewerRenderPitch());
     const int movieOutputWidth =
         cinepakPresentation ? kCinepakOutputWidth :
-        (highResolutionFrontend ? 720 : viewerRenderWidth());
+        (highResolutionFrontend ? kWidth : viewerRenderWidth());
     const int movieOutputHeight =
         cinepakPresentation ? kCinepakOutputHeight :
-        (highResolutionFrontend ? 408 : viewerRenderHeight());
+        (highResolutionFrontend ? kHeight : viewerRenderHeight());
     std::uint32_t* const colorBuffer =
         g_gxmDrawBuffer == 0 ? g_probeColorBuffer : g_probeColorBuffer2;
     SceGxmColorSurface* const colorSurface =
@@ -14772,7 +14772,7 @@ static bool renderMovieFrame()
             g_movieUsesVdp2Title
                 ? (g_movieVdp2Info[0] < 0.5f && g_titleDecodedValid
                     ? (highResolutionFrontend
-                        ? "SGX-RGBA-TITLE-720X408"
+                        ? "SGX-RGBA-TITLE-960X544"
                         : "SGX-RGBA-TITLE")
                     : "SGX-VDP2")
                 : (g_movieUsesCinepakPayload
@@ -14799,8 +14799,8 @@ static bool renderMovieFrame()
     } else {
         // Saturn's high-resolution title advances its animation state at the
         // lower cadence even though the display is scanned more frequently.
-        // Keep Neptune's cheap 720x408 render, but hold each published Azel
-        // title state for two scanouts before returning the render slot.
+        // Hold each published Azel title state for two scanouts before
+        // returning the render slot, independently of output resolution.
         // Re-queueing the same completed buffer gives two display presents
         // without advancing the game/task graph twice.
         displayResult = sceDisplaySetFrameBuf(
