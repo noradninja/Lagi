@@ -8649,6 +8649,10 @@ static bool buildNativeSceneFrame()
         g_liveTownTransformHistory.clear();
         g_liveTownAutoDynamicIdentities.clear();
         g_liveTownStaticIdentityAppliedEpoch = identityResetEpoch;
+#if NEPTUNE_GEOMETRY_PAYLOAD_PROBE
+        reportGeometryPayloads();
+        clearGeometryPayloads();
+#endif
 #if LAGI_FIELD_CACHE_TRACE
         g_fieldPrepareWindow={};g_fieldPrepareFrames=0;
 #endif
@@ -8783,6 +8787,9 @@ static bool buildNativeSceneFrame()
     g_liveTownHasBillboards = hasBillboards;
 #if NEPTUNE_GEOMETRY_OBSERVE
     if (g_profileAppendSample) observeNativeSceneGeometry();
+#if NEPTUNE_GEOMETRY_PAYLOAD_PROBE
+    if (g_profileAppendSample) reportGeometryPayloads();
+#endif
 #endif
     g_profileBuildScanUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tScan);
@@ -8891,12 +8898,35 @@ static bool buildNativeSceneFrame()
             else if(g_sceneGameMode==3u)++g_fieldPlacementWindow.bypass;
 #endif
 #endif
+#if NEPTUNE_GEOMETRY_PAYLOAD_PROBE
+            const auto payloadFirst=g_sceneCpuMesh.vertices.size();
+#endif
             appendSceneModel(
                 *model,
                 submission.state,
                 resolved && !resolved->empty() ? resolved->data() : nullptr,
                 resolved ? resolved->size() : 0u,
                 preparedVertices);
+#if NEPTUNE_GEOMETRY_PAYLOAD_PROBE
+            const auto& payloadState=submission.state;
+            if (submission.modelGeneration && payloadState.hasModelMatrix &&
+                !payloadState.billboard && !payloadState.dynamic &&
+                !payloadState.animatedColorCount &&
+                payloadState.localCoordinatesX==176 &&
+                payloadState.localCoordinatesY==112 &&
+                !(model->polygons.size()==6u && model->vertices.size()==36u) &&
+                !model->vertices.empty() &&
+                g_sceneCpuMesh.vertices.size()-payloadFirst==model->vertices.size()) {
+                neptune::GeometryRepresentationKey payloadKey{};
+                payloadKey.source={1u,submission.modelGeneration,1u};
+                payloadKey.layout=1u;
+                payloadKey.coordinateConvention=1u;
+                payloadKey.space=neptune::GeometrySpace::Transformed;
+                std::copy_n(payloadState.modelMatrix,12,payloadKey.transform.begin());
+                verifyGeometryPayload(payloadKey,g_sceneCpuMesh.vertices.data()+payloadFirst,
+                    model->vertices.size()*sizeof(azel::DebugColorVertex));
+            }
+#endif
 #if LAGI_FIELD_PLACEMENT_CACHE
             // Copy only the newly appended range, after the canonical
             // transform (including shared-source corner reuse) completes.
