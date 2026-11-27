@@ -8,6 +8,10 @@
 #include "lagi/saturn_presentation.h"
 #include "lagi/rbg_decoded_page.h"
 #include "lagi/native_scene_mode.h"
+#if NEPTUNE_GEOMETRY_ARENA_PROBE
+#include "neptune/geometry_arena.h"
+#include <optional>
+#endif
 #if NEPTUNE_GEOMETRY_OBSERVE
 #include "neptune/geometry_resource_key.h"
 #endif
@@ -1851,6 +1855,7 @@ static void* probeGpuAlloc(
     unsigned int attribs,
     SceUID* uid);
 static void freeMovieMappedBlock(SceUID& uid, void*& memory);
+#include "neptune_geometry_arena.inc"
 
 static bool ensureDitherOffsetsTexture()
 {
@@ -2923,6 +2928,9 @@ void shutdown()
     }
 
     launcherReleaseGpu();
+#if NEPTUNE_GEOMETRY_ARENA_PROBE
+    releaseGeometryArena();
+#endif
     auto freeSimpleMappedProbe = [](SceUID& uid, void*& ptr) {
         if (uid >= 0) {
             void* mem = nullptr;
@@ -8580,6 +8588,9 @@ static void observeNativeSceneGeometry()
 
 static bool buildNativeSceneFrame()
 {
+#if NEPTUNE_GEOMETRY_ARENA_PROBE
+    ensureGeometryArena();
+#endif
     g_profileFieldStreamLogUs = 0u;
     const std::uint64_t buildStartUs = sceKernelGetProcessTimeWide();
     const unsigned int decodedTexturesBefore =
