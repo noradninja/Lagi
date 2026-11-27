@@ -468,7 +468,7 @@ static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface*
         // Reset the finite budget if a later scene/visible-set growth occurs.
         static unsigned lastPolygonCount=0u,stableFrames=0u,readbacks=0u;
         const unsigned polygonCount=static_cast<unsigned>(
-            g_liveTownCpuMesh.polygonRecords.size());
+            g_sceneCpuMesh.polygonRecords.size());
         if(polygonCount!=lastPolygonCount) {
             lastPolygonCount=polygonCount;
             stableFrames=0u;
