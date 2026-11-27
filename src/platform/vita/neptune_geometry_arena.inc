@@ -7,7 +7,7 @@ static SceUID g_geometryArenaUid = -1;
 static void* g_geometryArenaMemory = nullptr;
 static bool g_geometryArenaAttempted = false;
 static bool g_geometryArenaCdram = false;
-static std::optional<neptune::GeometryArena<>> g_geometryArena;
+static std::optional<neptune::GeometryArena<4096>> g_geometryArena;
 
 static void ensureGeometryArena()
 {
@@ -37,7 +37,7 @@ using GeometryEstimate = std::pair<neptune::GeometryRepresentationKey,std::uint6
 using GeometryShadowLru = std::list<neptune::GeometryRepresentationKey>;
 static GeometryShadowLru g_geometryShadowLru;
 struct GeometryShadowEntry {
-    neptune::GeometryArena<>::Range range;
+    neptune::GeometryArena<4096>::Range range;
     std::uint64_t lastSample;
     GeometryShadowLru::iterator lru;
 };
