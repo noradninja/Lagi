@@ -228,7 +228,7 @@ option(LAGI_FIELD_TEXTURE_DECOUPLE "Defer clean field texture-only invalidations
 option(LAGI_FIELD_CRAM_REVERSE_INDEX "Target native field CRAM invalidation by captured palette dependencies" ON)
 option(NEPTUNE_GEOMETRY_OBSERVE "Sample native geometry residency candidates without altering rendering" OFF)
 option(NEPTUNE_GEOMETRY_ARENA_PROBE "Reserve optional mapped geometry storage for residency testing" OFF)
-set(NEPTUNE_GEOMETRY_ARENA_MIB 8 CACHE STRING "Geometry arena size in MiB (1-32)")
+set(NEPTUNE_GEOMETRY_ARENA_MIB 16 CACHE STRING "Geometry arena size in MiB (1-32)")
 if(NOT NEPTUNE_GEOMETRY_ARENA_MIB MATCHES "^([1-9]|[12][0-9]|3[012])$")
  message(FATAL_ERROR "NEPTUNE_GEOMETRY_ARENA_MIB must be an integer from 1 to 32")
 endif()
