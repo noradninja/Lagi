@@ -8,6 +8,9 @@
 #include "lagi/saturn_presentation.h"
 #include "lagi/rbg_decoded_page.h"
 #include "lagi/native_scene_mode.h"
+#if NEPTUNE_GEOMETRY_OBSERVE
+#include "neptune/geometry_resource_key.h"
+#endif
 #if LAGI_FIELD_SUBDIV_CACHE
 #include "lagi/field_subdivision_cache.h"
 #endif
@@ -8509,6 +8512,72 @@ static bool liveSubdivisionBuffersReady(const Vdp1ModelSource& model)
         g_gouraudSubdivVertexProgram;
 }
 
+#if NEPTUNE_GEOMETRY_OBSERVE
+// Sample the existing adapter without changing resource ownership or draw
+// decisions. These are provisional position-payload keys, NOT GPU eligibility.
+static void observeNativeSceneGeometry()
+{
+    const auto start = sceKernelGetProcessTimeWide();
+    constexpr std::size_t maxKeys = 1024u;
+    std::unordered_set<neptune::GeometryRepresentationKey,
+        neptune::GeometryRepresentationKeyHash> keys;
+    unsigned total=0, missing=0, unversioned=0, dynamic=0, viewDependent=0;
+    unsigned specialShape=0, candidates=0, duplicates=0, overflow=0;
+    std::uint64_t uniquePositionBytes=0, uniqueSubdivEstimateBytes=0;
+    for (const auto& submission : azel_bridge::published_submissions()) {
+        ++total;
+        const auto* model = submission.adaptedModelIndex < 0 ? nullptr :
+            azel_bridge::published_adapted_model(
+                static_cast<std::uint32_t>(submission.adaptedModelIndex));
+        if (!model || model->vertices.empty() || model->polygons.empty()) {
+            ++missing; continue;
+        }
+        if (!submission.modelGeneration) { ++unversioned; continue; }
+        const auto& state = submission.state;
+        if (!state.hasModelMatrix || state.billboard ||
+            state.localCoordinatesX != 176 || state.localCoordinatesY != 112) {
+            ++viewDependent; continue;
+        }
+        if (liveTownSubmissionIsDynamic(submission) || state.animatedColorCount) {
+            ++dynamic; continue;
+        }
+        // Conservatively exclude the shape class containing the existing
+        // game-specific floor correction, regardless of scene mode.
+        if (model->polygons.size()==6u && model->vertices.size()==36u) {
+            ++specialShape; continue;
+        }
+        neptune::GeometryRepresentationKey key{};
+        // Observation only: one bridge cache namespace, monotonic immutable
+        // snapshot serial as resource ID. Not the final owner registry.
+        key.source = {1u, submission.modelGeneration, 1u};
+        key.layout = 1u; // transformed DebugColorVertex payload estimate
+        key.coordinateConvention = 1u; // centered native world transform
+        key.space = neptune::GeometrySpace::Transformed;
+        std::copy_n(state.modelMatrix, 12, key.transform.begin());
+        ++candidates;
+        if (keys.find(key)!=keys.end()) { ++duplicates; continue; }
+        if (keys.size()>=maxKeys) { ++overflow; continue; }
+        keys.insert(key);
+        uniquePositionBytes += std::uint64_t(model->vertices.size()) *
+            sizeof(azel::DebugColorVertex);
+        // Separate hypothetical subdivision storage estimate; actual UV,
+        // shading, indexing and material dependencies are not validated here.
+        uniqueSubdivEstimateBytes += std::uint64_t(model->polygons.size()) *
+            (9u*sizeof(SubdivGouraudVertex)+24u*sizeof(std::uint16_t));
+    }
+    logging::writef("[NeptuneGeometryObserve] frame=%llu mode=%u total=%u "
+        "missing=%u unversioned=%u dynamic=%u viewDependent=%u specialShape=%u "
+        "candidates=%u unique=%u duplicates=%u overflow=%u "
+        "positionBytes=%llu subdivEstimateBytes=%llu sampleUs=%llu provisional=1\n",
+        static_cast<unsigned long long>(azel_bridge::published_frame_number()),
+        unsigned(g_sceneGameMode),total,missing,unversioned,dynamic,viewDependent,
+        specialShape,candidates,unsigned(keys.size()),duplicates,overflow,
+        static_cast<unsigned long long>(uniquePositionBytes),
+        static_cast<unsigned long long>(uniqueSubdivEstimateBytes),
+        static_cast<unsigned long long>(sceKernelGetProcessTimeWide()-start));
+}
+#endif
+
 static bool buildNativeSceneFrame()
 {
     g_profileFieldStreamLogUs = 0u;
@@ -8688,6 +8757,9 @@ static bool buildNativeSceneFrame()
         hasBillboards = hasBillboards || submission.state.billboard;
     }
     g_liveTownHasBillboards = hasBillboards;
+#if NEPTUNE_GEOMETRY_OBSERVE
+    if (g_profileAppendSample) observeNativeSceneGeometry();
+#endif
     g_profileBuildScanUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tScan);
 
