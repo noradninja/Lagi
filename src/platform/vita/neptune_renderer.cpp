@@ -8532,6 +8532,9 @@ static void observeNativeSceneGeometry()
     unsigned total=0, missing=0, unversioned=0, dynamic=0, viewDependent=0;
     unsigned specialShape=0, candidates=0, duplicates=0, overflow=0;
     std::uint64_t uniquePositionBytes=0, uniqueSubdivEstimateBytes=0;
+#if NEPTUNE_GEOMETRY_ARENA_PROBE
+    std::vector<GeometryEstimate> estimates;
+#endif
     for (const auto& submission : azel_bridge::published_submissions()) {
         ++total;
         const auto* model = submission.adaptedModelIndex < 0 ? nullptr :
@@ -8566,12 +8569,17 @@ static void observeNativeSceneGeometry()
         if (keys.find(key)!=keys.end()) { ++duplicates; continue; }
         if (keys.size()>=maxKeys) { ++overflow; continue; }
         keys.insert(key);
-        uniquePositionBytes += std::uint64_t(model->vertices.size()) *
+        const auto positionBytes=std::uint64_t(model->vertices.size()) *
             sizeof(azel::DebugColorVertex);
+        uniquePositionBytes += positionBytes;
         // Separate hypothetical subdivision storage estimate; actual UV,
         // shading, indexing and material dependencies are not validated here.
-        uniqueSubdivEstimateBytes += std::uint64_t(model->polygons.size()) *
+        const auto subdivBytes=std::uint64_t(model->polygons.size()) *
             (9u*sizeof(SubdivGouraudVertex)+24u*sizeof(std::uint16_t));
+        uniqueSubdivEstimateBytes += subdivBytes;
+#if NEPTUNE_GEOMETRY_ARENA_PROBE
+        if (g_geometryArena) estimates.emplace_back(key,positionBytes+subdivBytes);
+#endif
     }
     logging::writef("[NeptuneGeometryObserve] frame=%llu mode=%u total=%u "
         "missing=%u unversioned=%u dynamic=%u viewDependent=%u specialShape=%u "
@@ -8583,6 +8591,9 @@ static void observeNativeSceneGeometry()
         static_cast<unsigned long long>(uniquePositionBytes),
         static_cast<unsigned long long>(uniqueSubdivEstimateBytes),
         static_cast<unsigned long long>(sceKernelGetProcessTimeWide()-start));
+#if NEPTUNE_GEOMETRY_ARENA_PROBE
+    observeGeometryArena(estimates);
+#endif
 }
 #endif
 
