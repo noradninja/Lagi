@@ -34,9 +34,12 @@ static void ensureGeometryArena()
 // copied into mapped storage and no GXM work references these allocations.
 // This estimates a cumulative sampled working set, not actual cache hits.
 using GeometryEstimate = std::pair<neptune::GeometryRepresentationKey,std::uint64_t>;
+using GeometryShadowLru = std::list<neptune::GeometryRepresentationKey>;
+static GeometryShadowLru g_geometryShadowLru;
 struct GeometryShadowEntry {
     neptune::GeometryArena<>::Range range;
     std::uint64_t lastSample;
+    GeometryShadowLru::iterator lru;
 };
 static std::unordered_map<neptune::GeometryRepresentationKey,GeometryShadowEntry,
     neptune::GeometryRepresentationKeyHash> g_geometryShadow;
@@ -56,9 +59,11 @@ static void observeGeometryArena(const std::vector<GeometryEstimate>& estimates)
         if (it==g_geometryShadow.end()) continue;
         if (it->second.range.bytes!=item.second) {
             arena.retire(it->second.range);
+            g_geometryShadowLru.erase(it->second.lru);
             g_geometryShadow.erase(it);
         } else {
             it->second.lastSample=sample;
+            g_geometryShadowLru.splice(g_geometryShadowLru.end(),g_geometryShadowLru,it->second.lru);
             ++hits;
         }
     }
@@ -67,29 +72,29 @@ static void observeGeometryArena(const std::vector<GeometryEstimate>& estimates)
         ++misses;
         if (!item.second || item.second>arena.capacity()) { ++skipped; continue; }
         auto range=arena.allocate(static_cast<std::size_t>(item.second),64u);
-        while (!range) {
-            auto victim=g_geometryShadow.end();
-            for (auto it=g_geometryShadow.begin();it!=g_geometryShadow.end();++it) {
-                if (it->second.lastSample==sample) continue;
-                if (victim==g_geometryShadow.end() ||
-                    it->second.lastSample<victim->second.lastSample ||
-                    (it->second.lastSample==victim->second.lastSample &&
-                     it->second.range.id<victim->second.range.id)) victim=it;
-            }
-            if (victim==g_geometryShadow.end()) break;
+        // The first entry is the oldest. All current-sample hits were
+        // moved to the back before admissions; never evict those.
+        constexpr unsigned maxEvictionsPerSample=16;
+        while (!range && evicted<maxEvictionsPerSample &&
+               !g_geometryShadowLru.empty()) {
+            auto victim=g_geometryShadow.find(g_geometryShadowLru.front());
+            if (victim==g_geometryShadow.end() ||
+                victim->second.lastSample==sample) break;
             arena.retire(victim->second.range);
+            g_geometryShadowLru.pop_front();
             g_geometryShadow.erase(victim);
             ++evicted;
             range=arena.allocate(static_cast<std::size_t>(item.second),64u);
         }
         if (!range) { ++skipped; continue; }
-        g_geometryShadow.emplace(item.first,GeometryShadowEntry{range,sample});
+        g_geometryShadowLru.push_back(item.first);
+        g_geometryShadow.emplace(item.first,GeometryShadowEntry{range,sample,std::prev(g_geometryShadowLru.end())});
         ++admitted;
     }
     logging::writef("[NeptuneGeometryArenaSample] sample=%llu frame=%llu "
         "mode=%u hits=%u misses=%u admitted=%u evicted=%u skipped=%u "
         "ranges=%u estimatedBytes=%u peakEstimatedBytes=%u largestFree=%u "
-        "capacity=%u sampleUs=%llu shadow=1\\n",
+        "capacity=%u sampleUs=%llu shadow=1\n",
         static_cast<unsigned long long>(sample),
         static_cast<unsigned long long>(azel_bridge::published_frame_number()),
         unsigned(g_sceneGameMode),hits,misses,admitted,evicted,skipped,
@@ -105,6 +110,7 @@ static void releaseGeometryArena()
     // submissions, require successful GPU completion before unmapping.
 #if NEPTUNE_GEOMETRY_OBSERVE
     g_geometryShadow.clear();
+    g_geometryShadowLru.clear();
     g_geometryShadowSample=0;
 #endif
     g_geometryArena.reset();
