@@ -228,6 +228,10 @@ option(LAGI_FIELD_TEXTURE_DECOUPLE "Defer clean field texture-only invalidations
 option(LAGI_FIELD_CRAM_REVERSE_INDEX "Target native field CRAM invalidation by captured palette dependencies" ON)
 option(NEPTUNE_GEOMETRY_OBSERVE "Sample native geometry residency candidates without altering rendering" OFF)
 option(NEPTUNE_GEOMETRY_ARENA_PROBE "Reserve optional mapped geometry storage for residency testing" OFF)
+option(NEPTUNE_GEOMETRY_PAYLOAD_PROBE "Verify canonical vertex payloads in mapped geometry storage (no resident draws)" OFF)
+if(NEPTUNE_GEOMETRY_PAYLOAD_PROBE AND (NOT NEPTUNE_GEOMETRY_ARENA_PROBE OR NOT NEPTUNE_GEOMETRY_OBSERVE))
+ message(FATAL_ERROR "Geometry payload probe requires arena probe and observation")
+endif()
 set(NEPTUNE_GEOMETRY_ARENA_MIB 16 CACHE STRING "Geometry arena size in MiB (1-32)")
 if(NOT NEPTUNE_GEOMETRY_ARENA_MIB MATCHES "^([1-9]|[12][0-9]|3[012])$")
  message(FATAL_ERROR "NEPTUNE_GEOMETRY_ARENA_MIB must be an integer from 1 to 32")
@@ -8079,6 +8083,7 @@ target_compile_definitions(lagi PRIVATE LAGI_FIELD_TEXTURE_DECOUPLE=$<BOOL:${LAG
 target_compile_definitions(lagi PRIVATE LAGI_FIELD_CRAM_REVERSE_INDEX=$<BOOL:${LAGI_FIELD_CRAM_REVERSE_INDEX}>)
  target_compile_definitions(lagi PRIVATE NEPTUNE_GEOMETRY_OBSERVE=$<BOOL:${NEPTUNE_GEOMETRY_OBSERVE}>)
  target_compile_definitions(lagi PRIVATE NEPTUNE_GEOMETRY_ARENA_PROBE=$<BOOL:${NEPTUNE_GEOMETRY_ARENA_PROBE}> NEPTUNE_GEOMETRY_ARENA_MIB=${NEPTUNE_GEOMETRY_ARENA_MIB})
+ target_compile_definitions(lagi PRIVATE NEPTUNE_GEOMETRY_PAYLOAD_PROBE=$<BOOL:${NEPTUNE_GEOMETRY_PAYLOAD_PROBE}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without
