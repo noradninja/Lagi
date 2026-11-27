@@ -66,3 +66,6 @@ User supplied Azel-master.zip (18,779,632 bytes, ZIP comment 4cebb24b91ed1499b87
 
 ### Revised closure / next actions
 Archive access resolves the missing upstream-reference source, not pinned revision verification. Before enabling residency for broad producers, check git -C extern/Azel rev-parse HEAD against archive comment; inspect generated runtime sources for additional hooks. Establish explicit source revision/owner retirement contract in 1D.1, keep unknown or mutable unversioned producers on legacy path, and test mutation, bundle release and address reuse. Prefer explicit owner token to mode gate. Keep existing snapshot shared ownership across frame publication. GPU error-path completion and measured memory headroom remain open. No runtime changes or tests in this commit.
+
+### Upstream revision confirmation
+User ran `git -C extern/Azel rev-parse HEAD` from E:\dev\Lagi and reported `4cebb24b91ed1499b8754cf992c2fc90dbfb044d`, exactly matching the supplied ZIP revision identifier. This resolves the archive-versus-local-checkout revision uncertainty. Generated CMake patches and local modifications still require separate consideration; no runtime behavior or test result is implied by revision equality. Proceed with explicit geometry revision and ownership contracts, retaining fallback for unverified resource lifetimes.
