@@ -443,7 +443,7 @@ static bool g_edgeIdleCpuReady = false;
 static azel::BasicWingDebugMesh g_edgeShadowCpuMesh{};
 static bool g_edgeShadowCpuReady = false;
 static std::vector<std::uint16_t> g_edgeShadowTownTextureIndices;
-static azel::BasicWingDebugMesh g_liveTownCpuMesh{};
+static azel::BasicWingDebugMesh g_sceneCpuMesh{};
 
 struct LivePolygonLightState {
     lagi::AdditionalModelLight additionalLight{};
@@ -542,11 +542,11 @@ static void traceFieldPolygonStage(const char* stage)
     if (!g_fieldProbeActive) return;
     for (const auto& probe : g_fieldPolygonProbes) {
         const auto p = probe.polygon;
-        if (p >= g_liveTownCpuMesh.gouraud555.size() ||
+        if (p >= g_sceneCpuMesh.gouraud555.size() ||
             p >= g_liveTownPolygonLightIndices.size() ||
             g_liveTownPolygonLightIndices[p] >= g_liveTownLightStates.size()) continue;
         const auto& light = g_liveTownLightStates[g_liveTownPolygonLightIndices[p]];
-        const auto& shade = g_liveTownCpuMesh.gouraud555[p];
+        const auto& shade = g_sceneCpuMesh.gouraud555[p];
         logging::writef(
             "[FieldPolygonStage] frame=%u stage=%s cell=%u obj=%08X "
             "model=%08X local=%u p=%u light=%u vec=%d,%d,%d "
@@ -621,11 +621,11 @@ static std::vector<LiveTownMeshRange> g_liveTownStaticMeshRanges;
 // Retain Azel's submission order across the static-prefix cache. A native
 // frame can interleave static and dynamic submissions; appending all static
 // models first must not become a different VDP1 command order.
-struct LiveTownSubmissionRange {
+struct SceneSubmissionRange {
     std::size_t first=0,count=0,azelOrder=0;
 };
-static std::vector<LiveTownSubmissionRange> g_liveTownSubmissionRanges;
-static std::vector<LiveTownSubmissionRange> g_liveTownStaticSubmissionRanges;
+static std::vector<SceneSubmissionRange> g_sceneSubmissionRanges;
+static std::vector<SceneSubmissionRange> g_sceneStaticSubmissionRanges;
 // Diagnostic readback points selected from projected overlaps of the
 // previously identified circle polygons and other VDP1 submissions.
 struct Vdp1CircleAuditPoint {int x=0,y=0;unsigned circle=0,other=0;};
@@ -781,7 +781,7 @@ static std::unordered_set<
 
 // The identity set is owned exclusively by LagiRender. CRAM/VDP1 invalidation
 // can arrive from the game/Azel side while the renderer is hashing/reserving,
-// so producers only bump this epoch; buildLiveTownFrame() performs the actual
+// so producers only bump this epoch; buildNativeSceneFrame() performs the actual
 // container clear on the render thread at the next safe frame boundary.
 static std::atomic<std::uint32_t> g_liveTownStaticIdentityResetEpoch{0u};
 static std::uint32_t g_liveTownStaticIdentityAppliedEpoch = 0u;
@@ -1554,7 +1554,7 @@ static void recordFlightPresentation(
             g_profileTransientCornerTests, g_profileTransientCornerHits,
             g_profileTransientCornerReuses,
             g_profileGouraudPrepUs,
-            static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
+            static_cast<unsigned>(g_sceneCpuMesh.polygonRecords.size()),
             g_profileSprites.draws,
             static_cast<unsigned long long>(g_profileSprites.bboxPixels),
             g_sceneColorOffset[0], g_sceneColorOffset[1], g_sceneColorOffset[2]);
@@ -2646,7 +2646,7 @@ static void applyPendingRendererInvalidation()
 #endif
 #if LAGI_FIELD_TEXTURE_DECOUPLE
     // A clean, resident normal field can defer texture-only invalidation:
-    // the active descriptor/generation check in buildLiveTownFrame decides
+    // the active descriptor/generation check in buildNativeSceneFrame decides
     // whether any actual upload is needed. Do not suppress pending failures,
     // initial preparation, transitions to other resident models or diagnostics.
     const bool deferTextureOnly=g_sceneGameMode==3u && g_viewMode==7 &&
@@ -7631,21 +7631,21 @@ static std::uint16_t liveTownTextureIndex(
 static Vdp1ModelSource liveTownVdp1Source()
 {
     Vdp1ModelSource source{};
-    source.vertices = g_liveTownCpuMesh.vertices.data();
+    source.vertices = g_sceneCpuMesh.vertices.data();
     // Live append previously copied every transformed vertex into an identical
     // second array. The lighting source needs the same immutable positions;
     // normals and current Gouraud payload remain in their separate records.
     source.lightingVertices = source.vertices;
-    source.vertexCount = g_liveTownCpuMesh.vertices.size();
-    source.polygons = g_liveTownCpuMesh.polygonRecords.data();
-    source.gouraud555 = g_liveTownCpuMesh.gouraud555.data();
-    source.polygonCount = g_liveTownCpuMesh.polygonRecords.size();
+    source.vertexCount = g_sceneCpuMesh.vertices.size();
+    source.polygons = g_sceneCpuMesh.polygonRecords.data();
+    source.gouraud555 = g_sceneCpuMesh.gouraud555.data();
+    source.polygonCount = g_sceneCpuMesh.polygonRecords.size();
     source.textures = g_staticRoomCpuMesh.decodedTextureData.data();
     source.textureCount = g_staticRoomCpuMesh.decodedTextureData.size();
     source.polygonTextureIndices =
-        g_liveTownCpuMesh.polygonTextureIndices.data();
+        g_sceneCpuMesh.polygonTextureIndices.data();
     source.polygonTextureIndexCount =
-        g_liveTownCpuMesh.polygonTextureIndices.size();
+        g_sceneCpuMesh.polygonTextureIndices.size();
     return source;
 }
 
@@ -7654,7 +7654,7 @@ static Vdp1ModelSource liveTownVdp1Source()
 static bool prepareRegisteredNativeMaterial()
 {
     if (!lagi::native_scene_mode(g_sceneGameMode) ||
-        g_liveTownCpuMesh.polygonRecords.empty())
+        g_sceneCpuMesh.polygonRecords.empty())
         return false;
     static std::uint64_t revision = 0u, generation = 0u;
     static std::size_t resourceIndex = 0u, polygonIndex = 0u;
@@ -7717,7 +7717,7 @@ static const std::vector<std::uint16_t>* resolvedLiveTownMaterialIndices(
     }
 
     // A retired native address may be reused with the same polygon count.
-    // No caller retains these indices past appendLiveTownModel(), so discard
+    // No caller retains these indices past appendSceneModel(), so discard
     // obsolete bindings for this identity before resolving the new snapshot.
     g_liveTownMaterialCache.erase(std::remove_if(
         g_liveTownMaterialCache.begin(), g_liveTownMaterialCache.end(),
@@ -7766,7 +7766,7 @@ static void transformLiveLightVectorToModelSpace(
     }
 }
 
-static void appendLiveTownModel(
+static void appendSceneModel(
     const azel_bridge::LiveVdp1Model& model,
     const azel_bridge::SubmissionState& state,
     const std::uint16_t* resolvedTextureIndices = nullptr,
@@ -7820,20 +7820,20 @@ static void appendLiveTownModel(
         billboardY[2] = billboardZ[0]*billboardX[1] - billboardZ[1]*billboardX[0];
     }
 
-    const std::size_t vertexBase = g_liveTownCpuMesh.vertices.size();
-    const std::size_t polygonBase = g_liveTownCpuMesh.polygonRecords.size();
+    const std::size_t vertexBase = g_sceneCpuMesh.vertices.size();
+    const std::size_t polygonBase = g_sceneCpuMesh.polygonRecords.size();
     appendPhase(g_profileAppendSetupUs);
     // Append final transformed vertices, without value-initializing every
     // attribute first. Retain geometric capacity growth for new high-water
     // marks; reserving the exact size per actor would repeatedly reallocate.
     const std::size_t neededVertices=vertexBase+model.vertices.size();
-    if(neededVertices>g_liveTownCpuMesh.vertices.capacity())
-        g_liveTownCpuMesh.vertices.reserve(std::max(neededVertices,
-            g_liveTownCpuMesh.vertices.capacity()*2u));
+    if(neededVertices>g_sceneCpuMesh.vertices.capacity())
+        g_sceneCpuMesh.vertices.reserve(std::max(neededVertices,
+            g_sceneCpuMesh.vertices.capacity()*2u));
     // Copy immutable descriptors directly into their final slots. resize()
     // first value-initialized their full lighting payload only to overwrite
     // it below for every dynamic model, on every frame.
-    g_liveTownCpuMesh.polygonRecords.insert(g_liveTownCpuMesh.polygonRecords.end(),
+    g_sceneCpuMesh.polygonRecords.insert(g_sceneCpuMesh.polygonRecords.end(),
         model.polygons.begin(),model.polygons.end());
     // Apply sparse frame-owned material updates to the final descriptors,
     // never the cached model. Existing Gouraud payload/GXM draw does the rest:
@@ -7845,12 +7845,12 @@ static void appendLiveTownModel(
             const auto& color=animated[state.animatedColorStart+i];
             if(color.polygon<model.polygons.size())
                 lagi::applyNativeAnimatedColor(
-                    g_liveTownCpuMesh.polygonRecords[polygonBase+color.polygon],color);
+                    g_sceneCpuMesh.polygonRecords[polygonBase+color.polygon],color);
         }
     }
-    g_liveTownCpuMesh.polygonTextureIndices.resize(
+    g_sceneCpuMesh.polygonTextureIndices.resize(
         polygonBase + model.polygons.size());
-    g_liveTownCpuMesh.gouraud555.resize(
+    g_sceneCpuMesh.gouraud555.resize(
         polygonBase + model.polygons.size());
     appendPhase(g_profileAppendStorageUs);
 
@@ -7933,7 +7933,7 @@ static void appendLiveTownModel(
         // Cached payload was generated by this exact append path for the
         // same native variant and world matrix. All face colors are retained.
         // Polygon descriptors and current lighting are still built below.
-        g_liveTownCpuMesh.vertices.insert(g_liveTownCpuMesh.vertices.end(),
+        g_sceneCpuMesh.vertices.insert(g_sceneCpuMesh.vertices.end(),
             preparedVertices,preparedVertices+model.vertices.size());
     } else if (model.vertices.size() == model.polygons.size() * 6u) {
         const bool hasPositionSources=model.positionSources.size()==model.vertices.size();
@@ -7947,7 +7947,7 @@ static void appendLiveTownModel(
                 // across submissions or frames, or copy a prior face's color.
                 if(prior<srcBase) {
                     auto v=source;
-                    const auto& position=g_liveTownCpuMesh.vertices[vertexBase+prior];
+                    const auto& position=g_sceneCpuMesh.vertices[vertexBase+prior];
                     v.x=position.x;v.y=position.y;v.z=position.z;
                     return v;
                 }
@@ -7959,13 +7959,13 @@ static void appendLiveTownModel(
             const auto d = corner(5u);
 
             const azel::DebugColorVertex quad[6]={a,b,c,a,c,d};
-            g_liveTownCpuMesh.vertices.insert(g_liveTownCpuMesh.vertices.end(),
+            g_sceneCpuMesh.vertices.insert(g_sceneCpuMesh.vertices.end(),
                 quad,quad+6);
         }
     } else {
         for (std::size_t i = 0; i < model.vertices.size(); ++i) {
             const auto v = transformVertex(model.vertices[i]);
-            g_liveTownCpuMesh.vertices.push_back(v);
+            g_sceneCpuMesh.vertices.push_back(v);
         }
     }
 
@@ -7976,7 +7976,7 @@ static void appendLiveTownModel(
     static unsigned campCircleVertexAuditBudget=8u;
     if(campCircleVertexAuditBudget && model.polygons.size()==6u &&
        model.vertices.size()==36u && state.hasModelMatrix &&
-       g_liveTownCpuMesh.vertices.size()>=vertexBase+36u) {
+       g_sceneCpuMesh.vertices.size()>=vertexBase+36u) {
         unsigned materialMatches=0u,flatVertices=0u;
         for(const auto& q:model.polygons)
             materialMatches+=unsigned(q.cmdColr==0x2100u &&
@@ -7986,7 +7986,7 @@ static void appendLiveTownModel(
         if(materialMatches==6u && flatVertices==model.vertices.size()) {
             --campCircleVertexAuditBudget;
             const auto& source=model.vertices[0];
-            const auto& world=g_liveTownCpuMesh.vertices[vertexBase];
+            const auto& world=g_sceneCpuMesh.vertices[vertexBase];
             const float linearY=source.x*m[4]+source.y*m[5]+source.z*m[6];
             const float translatedY=linearY+m[7];
             logging::writef(
@@ -8067,7 +8067,7 @@ static void appendLiveTownModel(
     std::size_t runStart = 0u;
     std::size_t runCount = 0u;
     for (std::size_t p = 0; p < model.polygons.size(); ++p) {
-        auto& record = g_liveTownCpuMesh.polygonRecords[polygonBase+p];
+        auto& record = g_sceneCpuMesh.polygonRecords[polygonBase+p];
 
         if (lagi::vdp1_half_transparent(record.cmdPmod)) {
             // Color calculation reads the existing destination. Do not let
@@ -8113,7 +8113,7 @@ static void appendLiveTownModel(
             resolvedTextureIndices && p < resolvedTextureIndexCount
                 ? resolvedTextureIndices[p]
                 : liveTownTextureIndex(record);
-        g_liveTownCpuMesh.polygonTextureIndices[polygonBase + p] =
+        g_sceneCpuMesh.polygonTextureIndices[polygonBase + p] =
             textureIndex;
         // resize above already constructed fresh zero Gouraud payloads for
         // the appended range; cached static prefixes are reset separately.
@@ -8251,23 +8251,23 @@ static void appendLiveTownEdge()
         // Keep Azel's original transform. VDP1 mesh visibility is reproduced
         // in the GXM draw state below rather than by moving the geometry.
         g_liveTownShadowFirstPolygon =
-            g_liveTownCpuMesh.polygonRecords.size();
-        appendLiveTownModel(
+            g_sceneCpuMesh.polygonRecords.size();
+        appendSceneModel(
             shadow,
             shadowState,
             g_edgeShadowTownTextureIndices.data(),
             g_edgeShadowTownTextureIndices.size());
         g_liveTownShadowPolygonCount =
-            g_liveTownCpuMesh.polygonRecords.size() -
+            g_sceneCpuMesh.polygonRecords.size() -
             g_liveTownShadowFirstPolygon;
     }
 
     g_liveTownEdgeFirstPolygon =
-        g_liveTownCpuMesh.polygonRecords.size();
-    appendLiveTownModel(
+        g_sceneCpuMesh.polygonRecords.size();
+    appendSceneModel(
         edge, state, edgeTextureIndices, edgeTextureIndexCount);
     g_liveTownEdgePolygonCount =
-        g_liveTownCpuMesh.polygonRecords.size() -
+        g_sceneCpuMesh.polygonRecords.size() -
         g_liveTownEdgeFirstPolygon;
     g_profileEdgeAppendUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tAppend);
@@ -8342,12 +8342,12 @@ static void refreshLiveTownStaticLighting()
             break;
 
         if (g_fieldProbeActive && polygonBase + polygonCount <=
-                g_liveTownCpuMesh.polygonRecords.size()) {
+                g_sceneCpuMesh.polygonRecords.size()) {
             unsigned int mismatches = 0u;
             unsigned int first = 0u;
             std::uint32_t cachedHash = 2166136261u, sourceHash = cachedHash;
             for (std::size_t p = 0; p < polygonCount; ++p) {
-                const auto& cached = g_liveTownCpuMesh.polygonRecords[polygonBase + p];
+                const auto& cached = g_sceneCpuMesh.polygonRecords[polygonBase + p];
                 const auto& source = model->polygons[p];
                 const auto ch = fieldRecordHash(cached), sh = fieldRecordHash(source);
                 cachedHash = (cachedHash ^ ch) * 16777619u;
@@ -8363,7 +8363,7 @@ static void refreshLiveTownStaticLighting()
                 g_fieldPolygonProbes.push_back({polygonBase + first,
                     submission.cellIndex, submission.objectIndex,
                     submission.modelTableOffset, first});
-                const auto& c = g_liveTownCpuMesh.polygonRecords[polygonBase + first];
+                const auto& c = g_sceneCpuMesh.polygonRecords[polygonBase + first];
                 const auto& s = model->polygons[first];
                 unsigned int differences = 0u;
                 if (c.lightingControl != s.lightingControl) differences |= 1u;
@@ -8396,7 +8396,7 @@ static void refreshLiveTownStaticLighting()
                     cachedHash, sourceHash, differences, c.lightingControl, s.lightingControl,
                     c.lightingCount, s.lightingCount, c.model,
                     static_cast<unsigned int>(polygonBase),
-                    g_liveTownCpuMesh.polygonTextureIndices[polygonBase + first]);
+                    g_sceneCpuMesh.polygonTextureIndices[polygonBase + first]);
             }
         }
 
@@ -8407,7 +8407,7 @@ static void refreshLiveTownStaticLighting()
         std::copy(std::begin(submission.state.additionalPointParams),std::end(submission.state.additionalPointParams),light.additionalPointParams);
         std::copy(std::begin(submission.state.additionalPointView),std::end(submission.state.additionalPointView),light.additionalPointView);
         // Static geometry reuses its polygons across frames. Re-snapshot
-        // transient shot lights here just as appendLiveTownModel() does for
+        // transient shot lights here just as appendSceneModel() does for
         // dynamic objects, otherwise the cached environment never receives
         // the current laser's position, color, or light count.
         light.transientLaserLights=submission.state.transientLaserLights;
@@ -8439,7 +8439,7 @@ static void refreshLiveTownStaticLighting()
             g_sceneGameMode == 3u &&
             g_nativeSceneViewValid &&
             polygonBase + polygonCount <=
-                g_liveTownCpuMesh.polygonRecords.size()) {
+                g_sceneCpuMesh.polygonRecords.size()) {
             const int objectIndex = diagnosticFalloffIndexFromRaw(
                 submission.state.nativeViewDepthRaw);
 
@@ -8449,11 +8449,11 @@ static void refreshLiveTownStaticLighting()
             for (std::size_t p = 0; p < polygonCount; ++p) {
                 const std::size_t globalPolygon = polygonBase + p;
                 if (globalPolygon * 6u >=
-                    g_liveTownCpuMesh.vertices.size())
+                    g_sceneCpuMesh.vertices.size())
                     break;
 
                 const auto& v =
-                    g_liveTownCpuMesh.vertices[globalPolygon * 6u];
+                    g_sceneCpuMesh.vertices[globalPolygon * 6u];
                 float viewZ =
                     v.x * g_nativeSceneViewMatrix[8] +
                     v.y * g_nativeSceneViewMatrix[9] +
@@ -8509,7 +8509,7 @@ static bool liveSubdivisionBuffersReady(const Vdp1ModelSource& model)
         g_gouraudSubdivVertexProgram;
 }
 
-static bool buildLiveTownFrame()
+static bool buildNativeSceneFrame()
 {
     g_profileFieldStreamLogUs = 0u;
     const std::uint64_t buildStartUs = sceKernelGetProcessTimeWide();
@@ -8581,7 +8581,7 @@ static bool buildLiveTownFrame()
     bool hasBillboards = false;
     g_liveTownSubmissionCount = 0u;
     g_liveTownMeshRanges.clear();
-    g_liveTownSubmissionRanges.clear();
+    g_sceneSubmissionRanges.clear();
     g_liveTownStaticSubmissionCount = 0u;
     g_liveTownBillboardSubmissionCount = 0u;
     g_liveTownStaticSubmittedPolygons = 0u;
@@ -8734,10 +8734,10 @@ static bool buildLiveTownFrame()
         g_sceneSubdivPositionValid.clear();
         // Corner-bit comparison validates shades even when a new polygon
         // occupies an existing mapped slot. Storage replacement resets it.
-        g_liveTownCpuMesh.vertices.clear();
-        g_liveTownCpuMesh.polygonRecords.clear();
-        g_liveTownCpuMesh.gouraud555.clear();
-        g_liveTownCpuMesh.polygonTextureIndices.clear();
+        g_sceneCpuMesh.vertices.clear();
+        g_sceneCpuMesh.polygonRecords.clear();
+        g_sceneCpuMesh.gouraud555.clear();
+        g_sceneCpuMesh.polygonTextureIndices.clear();
         g_liveTownLightStates.clear();
         g_liveTownPolygonLightIndices.clear();
         const auto& orderedSubmissions=azel_bridge::published_submissions();
@@ -8759,7 +8759,7 @@ static bool buildLiveTownFrame()
             // cache as task-owned/dynamic submissions.
             const auto* resolved = resolvedLiveTownMaterialIndices(
                 submission.model, submission.modelGeneration, *model);
-            const std::size_t first=g_liveTownCpuMesh.polygonRecords.size();
+            const std::size_t first=g_sceneCpuMesh.polygonRecords.size();
             const azel::DebugColorVertex* preparedVertices=nullptr;
 #if LAGI_FIELD_PLACEMENT_CACHE
             const auto& state=submission.state;
@@ -8771,7 +8771,7 @@ static bool buildLiveTownFrame()
                 state.localCoordinatesY==112 && submission.model &&
                 submission.modelGeneration && !model->vertices.empty();
             lagi::FieldPlacementKey key{};
-            const std::size_t firstVertex=g_liveTownCpuMesh.vertices.size();
+            const std::size_t firstVertex=g_sceneCpuMesh.vertices.size();
             if(eligible) {
 #if LAGI_FIELD_CACHE_TRACE
                 const auto lookupStart=sceKernelGetProcessTimeWide();
@@ -8795,7 +8795,7 @@ static bool buildLiveTownFrame()
             else if(g_sceneGameMode==3u)++g_fieldPlacementWindow.bypass;
 #endif
 #endif
-            appendLiveTownModel(
+            appendSceneModel(
                 *model,
                 submission.state,
                 resolved && !resolved->empty() ? resolved->data() : nullptr,
@@ -8805,12 +8805,12 @@ static bool buildLiveTownFrame()
             // Copy only the newly appended range, after the canonical
             // transform (including shared-source corner reuse) completes.
             if(eligible && !preparedVertices &&
-                g_liveTownCpuMesh.vertices.size()-firstVertex==key.vertices) {
+                g_sceneCpuMesh.vertices.size()-firstVertex==key.vertices) {
 #if LAGI_FIELD_CACHE_TRACE
                 const auto storeStart=sceKernelGetProcessTimeWide();
 #endif
                 const bool stored=g_fieldPlacementCache.store(key,
-                    g_liveTownCpuMesh.vertices.data()+firstVertex,key.vertices);
+                    g_sceneCpuMesh.vertices.data()+firstVertex,key.vertices);
 #if LAGI_FIELD_CACHE_TRACE
                 auto& w=g_fieldPlacementWindow;
                 w.stored+=stored;
@@ -8821,22 +8821,22 @@ static bool buildLiveTownFrame()
 #endif
             }
 #endif
-            const auto count=g_liveTownCpuMesh.polygonRecords.size()-first;
-            if(count)g_liveTownSubmissionRanges.push_back({first,count,submissionOrder});
+            const auto count=g_sceneCpuMesh.polygonRecords.size()-first;
+            if(count)g_sceneSubmissionRanges.push_back({first,count,submissionOrder});
         }
         g_liveTownStaticSignature = staticSignature;
-        g_liveTownStaticVertexCount = g_liveTownCpuMesh.vertices.size();
-        g_liveTownStaticPolygonCount = g_liveTownCpuMesh.polygonRecords.size();
+        g_liveTownStaticVertexCount = g_sceneCpuMesh.vertices.size();
+        g_liveTownStaticPolygonCount = g_sceneCpuMesh.polygonRecords.size();
         g_liveTownStaticLightStateCount = g_liveTownLightStates.size();
         g_liveTownStaticMeshRanges = g_liveTownMeshRanges;
-        g_liveTownStaticSubmissionRanges = g_liveTownSubmissionRanges;
+        g_sceneStaticSubmissionRanges = g_sceneSubmissionRanges;
     } else {
-        g_liveTownCpuMesh.vertices.resize(g_liveTownStaticVertexCount);
-        g_liveTownCpuMesh.polygonRecords.resize(g_liveTownStaticPolygonCount);
-        g_liveTownCpuMesh.gouraud555.resize(g_liveTownStaticPolygonCount);
+        g_sceneCpuMesh.vertices.resize(g_liveTownStaticVertexCount);
+        g_sceneCpuMesh.polygonRecords.resize(g_liveTownStaticPolygonCount);
+        g_sceneCpuMesh.gouraud555.resize(g_liveTownStaticPolygonCount);
 
         // The old all-dynamic path rebuilt every static model through
-        // appendLiveTownModel() each frame, which zeroed every polygon's
+        // appendSceneModel() each frame, which zeroed every polygon's
         // Gouraud payload before current-frame lighting was evaluated.
         // Reusing the static prefix must preserve that lifecycle: resize()
         // alone retains the previous frame's shade values and can leave stale
@@ -8844,16 +8844,16 @@ static bool buildLiveTownFrame()
         // pass. Clear only the cached static shade prefix; geometry, materials,
         // polygon records, and resident GPU resources remain untouched.
         std::fill(
-            g_liveTownCpuMesh.gouraud555.begin(),
-            g_liveTownCpuMesh.gouraud555.end(),
+            g_sceneCpuMesh.gouraud555.begin(),
+            g_sceneCpuMesh.gouraud555.end(),
             azel::SaturnGouraud555Quad{});
 
-        g_liveTownCpuMesh.polygonTextureIndices.resize(
+        g_sceneCpuMesh.polygonTextureIndices.resize(
             g_liveTownStaticPolygonCount);
         g_liveTownLightStates.resize(g_liveTownStaticLightStateCount);
         g_liveTownPolygonLightIndices.resize(g_liveTownStaticPolygonCount);
         g_liveTownMeshRanges = g_liveTownStaticMeshRanges;
-        g_liveTownSubmissionRanges = g_liveTownStaticSubmissionRanges;
+        g_sceneSubmissionRanges = g_sceneStaticSubmissionRanges;
         // The cached geometry retains its static order, but interleaved
         // dynamic submissions may occupy different Azel slots each frame.
         // Rebind current producer indices without rebuilding any vertices.
@@ -8866,8 +8866,8 @@ static bool buildLiveTownFrame()
             const auto* adapted=azel_bridge::published_adapted_model(
                 static_cast<std::uint32_t>(submission.adaptedModelIndex));
             if(!adapted || adapted->polygons.empty())continue;
-            if(staticRange<g_liveTownSubmissionRanges.size())
-                g_liveTownSubmissionRanges[staticRange++].azelOrder=order;
+            if(staticRange<g_sceneSubmissionRanges.size())
+                g_sceneSubmissionRanges[staticRange++].azelOrder=order;
         }
     }
     g_profileBuildCacheUs = static_cast<unsigned int>(
@@ -8899,49 +8899,49 @@ static bool buildLiveTownFrame()
 
         const auto* resolved = resolvedLiveTownMaterialIndices(
             submission.model, submission.modelGeneration, *model);
-        const std::size_t first=g_liveTownCpuMesh.polygonRecords.size();
-        appendLiveTownModel(
+        const std::size_t first=g_sceneCpuMesh.polygonRecords.size();
+        appendSceneModel(
             *model,
             submission.state,
             resolved && !resolved->empty() ? resolved->data() : nullptr,
             resolved ? resolved->size() : 0u);
-        const auto count=g_liveTownCpuMesh.polygonRecords.size()-first;
-        if(count)g_liveTownSubmissionRanges.push_back({first,count,submissionOrder});
+        const auto count=g_sceneCpuMesh.polygonRecords.size()-first;
+        if(count)g_sceneSubmissionRanges.push_back({first,count,submissionOrder});
     }
     // The flattening cache is grouped by lifetime, but draw order belongs to
     // the Azel task frame. Sort only the range descriptors, not cached meshes.
-    std::sort(g_liveTownSubmissionRanges.begin(),g_liveTownSubmissionRanges.end(),
-        [](const LiveTownSubmissionRange&a,const LiveTownSubmissionRange&b){
+    std::sort(g_sceneSubmissionRanges.begin(),g_sceneSubmissionRanges.end(),
+        [](const SceneSubmissionRange&a,const SceneSubmissionRange&b){
             return a.azelOrder<b.azelOrder;
         });
-    if(g_profileAppendSample && !g_liveTownSubmissionRanges.empty()) {
+    if(g_profileAppendSample && !g_sceneSubmissionRanges.empty()) {
         unsigned materialRuns=0, orderedRuns=0, discontinuities=0;
         std::size_t previousEnd=0;
         bool firstRange=true;
-        for(const auto& range:g_liveTownSubmissionRanges) {
+        for(const auto& range:g_sceneSubmissionRanges) {
             if(!firstRange && range.first!=previousEnd)++discontinuities;
             firstRange=false;
             previousEnd=range.first+range.count;
-            const auto end=std::min(previousEnd,g_liveTownCpuMesh.polygonRecords.size());
+            const auto end=std::min(previousEnd,g_sceneCpuMesh.polygonRecords.size());
             for(std::size_t p=range.first;p<end;) {
-                const auto& record=g_liveTownCpuMesh.polygonRecords[p];
-                const unsigned texture=g_liveTownCpuMesh.polygonTextureIndices[p];
+                const auto& record=g_sceneCpuMesh.polygonRecords[p];
+                const unsigned texture=g_sceneCpuMesh.polygonTextureIndices[p];
                 const bool ordered=(record.cmdPmod&0x0100u) ||
                     lagi::vdp1_half_transparent(record.cmdPmod);
                 ++materialRuns;
                 if(ordered)++orderedRuns;
                 std::size_t next=p+1;
                 while(next<end &&
-                    g_liveTownCpuMesh.polygonTextureIndices[next]==texture &&
-                    bool((g_liveTownCpuMesh.polygonRecords[next].cmdPmod&0x0100u) ||
-                        lagi::vdp1_half_transparent(g_liveTownCpuMesh.polygonRecords[next].cmdPmod))==ordered)
+                    g_sceneCpuMesh.polygonTextureIndices[next]==texture &&
+                    bool((g_sceneCpuMesh.polygonRecords[next].cmdPmod&0x0100u) ||
+                        lagi::vdp1_half_transparent(g_sceneCpuMesh.polygonRecords[next].cmdPmod))==ordered)
                     ++next;
                 p=next;
             }
         }
         logging::writef("[NativeOrderReplay] submissions=%u runs=%u orderedRuns=%u storageDiscontinuities=%u polygons=%u originalOrder=1 depthOpaque=LEQUAL depthOrdered=native\n",
-            unsigned(g_liveTownSubmissionRanges.size()),materialRuns,orderedRuns,
-            discontinuities,unsigned(g_liveTownCpuMesh.polygonRecords.size()));
+            unsigned(g_sceneSubmissionRanges.size()),materialRuns,orderedRuns,
+            discontinuities,unsigned(g_sceneCpuMesh.polygonRecords.size()));
     }
     g_profileObjectAppendUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - tObjects);
@@ -8983,9 +8983,9 @@ static bool buildLiveTownFrame()
     g_nativeDecodedTextureGenerations.resize(decodedTextures.size(), 0u);
     const auto refreshStartUs = sceKernelGetProcessTimeWide();
     for (std::size_t polygon = 0;
-         polygon < g_liveTownCpuMesh.polygonTextureIndices.size() &&
-         polygon < g_liveTownCpuMesh.polygonRecords.size(); ++polygon) {
-        const auto index = g_liveTownCpuMesh.polygonTextureIndices[polygon];
+         polygon < g_sceneCpuMesh.polygonTextureIndices.size() &&
+         polygon < g_sceneCpuMesh.polygonRecords.size(); ++polygon) {
+        const auto index = g_sceneCpuMesh.polygonTextureIndices[polygon];
         if (index >= decodedTextures.size())continue;
         if (g_nativeDecodedTextureGenerations[index] == g_nativeTextureGeneration) {
 #if LAGI_FIELD_TEXTURE_DECOUPLE
@@ -9002,7 +9002,7 @@ static bool buildLiveTownFrame()
 #endif
             continue;
         }
-        const auto& descriptor = g_liveTownCpuMesh.polygonRecords[polygon];
+        const auto& descriptor = g_sceneCpuMesh.polygonRecords[polygon];
         azel::DecodedMode1Texture refreshed{};
         if (!decodeLiveVdp1Texture(descriptor, refreshed))
             return false;
@@ -9021,32 +9021,32 @@ static bool buildLiveTownFrame()
     g_profileTextureRefreshUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - refreshStartUs);
     std::uint64_t signature = staticSignature;
-    signature ^= g_liveTownCpuMesh.polygonRecords.size();
+    signature ^= g_sceneCpuMesh.polygonRecords.size();
     signature *= 1099511628211ull;
     // Offscreen material preparation appends to the atlas without changing
     // this frame's topology or bindings. Hash referenced bindings instead;
     // a new active material still changes the signature even at equal counts.
-    for (const auto index : g_liveTownCpuMesh.polygonTextureIndices) {
+    for (const auto index : g_sceneCpuMesh.polygonTextureIndices) {
         signature ^= index;
         signature *= 1099511628211ull;
     }
-    g_liveTownCpuMesh.polygons = static_cast<unsigned int>(
-        g_liveTownCpuMesh.polygonRecords.size());
-    if (g_liveTownCpuMesh.vertices.empty() ||
-        g_liveTownCpuMesh.vertices.size() > 65535u ||
-        g_liveTownCpuMesh.polygonTextureIndices.size() !=
-            g_liveTownCpuMesh.polygonRecords.size() ||
+    g_sceneCpuMesh.polygons = static_cast<unsigned int>(
+        g_sceneCpuMesh.polygonRecords.size());
+    if (g_sceneCpuMesh.vertices.empty() ||
+        g_sceneCpuMesh.vertices.size() > 65535u ||
+        g_sceneCpuMesh.polygonTextureIndices.size() !=
+            g_sceneCpuMesh.polygonRecords.size() ||
         g_liveTownPolygonLightIndices.size() !=
-            g_liveTownCpuMesh.polygonRecords.size()) {
+            g_sceneCpuMesh.polygonRecords.size()) {
         static bool loggedInvalidGeometry = false;
         if (!loggedInvalidGeometry) {
             logging::writef(
                 "[SceneRender] live frame validation failed "
                 "verts=%u polys=%u texIndices=%u submissions=%u atlas=%u\n",
-                static_cast<unsigned>(g_liveTownCpuMesh.vertices.size()),
-                static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
+                static_cast<unsigned>(g_sceneCpuMesh.vertices.size()),
+                static_cast<unsigned>(g_sceneCpuMesh.polygonRecords.size()),
                 static_cast<unsigned>(
-                    g_liveTownCpuMesh.polygonTextureIndices.size()),
+                    g_sceneCpuMesh.polygonTextureIndices.size()),
                 g_liveTownSubmissionCount,
                 static_cast<unsigned>(
                     g_staticRoomCpuMesh.decodedTextureData.size()));
@@ -9056,8 +9056,8 @@ static bool buildLiveTownFrame()
     }
 
     for (std::size_t i = 0;
-         i < g_liveTownCpuMesh.polygonTextureIndices.size(); ++i) {
-        if (g_liveTownCpuMesh.polygonTextureIndices[i] == 0xFFFFu) {
+         i < g_sceneCpuMesh.polygonTextureIndices.size(); ++i) {
+        if (g_sceneCpuMesh.polygonTextureIndices[i] == 0xFFFFu) {
             static bool loggedInvalidMaterial = false;
             if (!loggedInvalidMaterial) {
                 logging::writef(
@@ -9065,7 +9065,7 @@ static bool buildLiveTownFrame()
                     "poly=%u polys=%u atlas=%u submissions=%u\n",
                     static_cast<unsigned>(i),
                     static_cast<unsigned>(
-                        g_liveTownCpuMesh.polygonRecords.size()),
+                        g_sceneCpuMesh.polygonRecords.size()),
                     static_cast<unsigned>(
                         g_staticRoomCpuMesh.decodedTextureData.size()),
                     g_liveTownSubmissionCount);
@@ -9124,33 +9124,33 @@ static bool buildLiveTownFrame()
         const auto positionSyncStartUs = sceKernelGetProcessTimeWide();
         // Keep each GPU-backed write stream contiguous. Interleaving three
         // uncached destinations per vertex defeats ARM store coalescing.
-        if (firstDynamicVertex < g_liveTownCpuMesh.vertices.size()) {
+        if (firstDynamicVertex < g_sceneCpuMesh.vertices.size()) {
             std::memcpy(g_vdp1Vertices + firstDynamicVertex,
-                g_liveTownCpuMesh.vertices.data() + firstDynamicVertex,
-                (g_liveTownCpuMesh.vertices.size() - firstDynamicVertex) *
-                    sizeof(g_liveTownCpuMesh.vertices[0]));
+                g_sceneCpuMesh.vertices.data() + firstDynamicVertex,
+                (g_sceneCpuMesh.vertices.size() - firstDynamicVertex) *
+                    sizeof(g_sceneCpuMesh.vertices[0]));
         }
         // Subdivision uploads its own current positions from model.vertices.
         // These legacy streams are used only by base/diagnostic fallback.
         if (!subdivisionOnly) {
             for (std::size_t i = firstDynamicVertex;
-                 i < g_liveTownCpuMesh.vertices.size(); ++i) {
-                const auto& v = g_liveTownCpuMesh.vertices[i];
+                 i < g_sceneCpuMesh.vertices.size(); ++i) {
+                const auto& v = g_sceneCpuMesh.vertices[i];
                 g_vdp1TextureVertices[i].x = v.x;
                 g_vdp1TextureVertices[i].y = v.y;
                 g_vdp1TextureVertices[i].z = v.z;
             }
             for (std::size_t i = firstDynamicVertex;
-                 i < g_liveTownCpuMesh.vertices.size(); ++i) {
-                const auto& v = g_liveTownCpuMesh.vertices[i];
+                 i < g_sceneCpuMesh.vertices.size(); ++i) {
+                const auto& v = g_sceneCpuMesh.vertices[i];
                 g_vdp1GouraudVertices[i].x = v.x;
                 g_vdp1GouraudVertices[i].y = v.y;
                 g_vdp1GouraudVertices[i].z = v.z;
             }
         }
         g_profilePositionSyncVertices = static_cast<unsigned int>(
-            g_liveTownCpuMesh.vertices.size() > firstDynamicVertex
-                ? g_liveTownCpuMesh.vertices.size() - firstDynamicVertex : 0u);
+            g_sceneCpuMesh.vertices.size() > firstDynamicVertex
+                ? g_sceneCpuMesh.vertices.size() - firstDynamicVertex : 0u);
         g_profilePositionSyncLegacyVertices = subdivisionOnly ? 0u : g_profilePositionSyncVertices;
         g_profilePositionSyncUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - positionSyncStartUs);
@@ -9265,9 +9265,9 @@ static bool buildLiveTownFrame()
                     azel_bridge::published_frame_number()),
                 g_liveTownSubmissionCount,
                 static_cast<unsigned int>(
-                    g_liveTownCpuMesh.polygonRecords.size()),
+                    g_sceneCpuMesh.polygonRecords.size()),
                 static_cast<unsigned int>(
-                    g_liveTownCpuMesh.vertices.size()),
+                    g_sceneCpuMesh.vertices.size()),
                 modelCacheMisses,
                 g_profileObjectMaterialCacheMisses,
                 decodedTexturesBefore,
@@ -9316,8 +9316,8 @@ static bool buildLiveTownFrame()
         logging::writef(
             "[SceneRender] live frame ready verts=%u polys=%u "
             "atlas=%u submissions=%u\n",
-            static_cast<unsigned>(g_liveTownCpuMesh.vertices.size()),
-            static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
+            static_cast<unsigned>(g_sceneCpuMesh.vertices.size()),
+            static_cast<unsigned>(g_sceneCpuMesh.polygonRecords.size()),
             static_cast<unsigned>(
                 g_staticRoomCpuMesh.decodedTextureData.size()),
             g_liveTownSubmissionCount);
@@ -9615,14 +9615,14 @@ static void prepareLiveTownGouraudVisibility(const ViewerMat4& wvp)
     const std::uint64_t prepStartUs = sceKernelGetProcessTimeWide();
     static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
     const std::size_t polygonCount =
-        g_liveTownCpuMesh.polygonRecords.size();
+        g_sceneCpuMesh.polygonRecords.size();
 
     g_liveTownGouraudPrep.assign(polygonCount, GouraudQuadPrep{});
-    g_liveTownGouraudPrepVertices = g_liveTownCpuMesh.vertices.data();
+    g_liveTownGouraudPrepVertices = g_sceneCpuMesh.vertices.data();
     g_liveTownGouraudPrepPolygonCount = polygonCount;
     g_liveTownGouraudPrepValid =
         polygonCount != 0u &&
-        g_liveTownCpuMesh.vertices.size() == polygonCount * 6u;
+        g_sceneCpuMesh.vertices.size() == polygonCount * 6u;
     g_profileGouraudVisibleQuads = 0u;
     g_profileGouraudTotalQuads = static_cast<unsigned int>(polygonCount);
 
@@ -9638,7 +9638,7 @@ static void prepareLiveTownGouraudVisibility(const ViewerMat4& wvp)
         std::uint8_t sharedOutcode = 0x3Fu;
 
         for (unsigned int corner = 0; corner < 4u; ++corner) {
-            const auto& v = g_liveTownCpuMesh.vertices[
+            const auto& v = g_sceneCpuMesh.vertices[
                 p * 6u + cornerVertex[corner]];
             const float clipX =
                 v.x * wvp.m[0] + v.y * wvp.m[4] +
@@ -9687,7 +9687,7 @@ static void projectLiveTownGouraudScreen(const ViewerMat4& wvp,
         return;
     static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
     for (unsigned corner = 0; corner < 4u; ++corner) {
-        const auto& v = g_liveTownCpuMesh.vertices[polygon * 6u + cornerVertex[corner]];
+        const auto& v = g_sceneCpuMesh.vertices[polygon * 6u + cornerVertex[corner]];
         const float clipX = v.x*wvp.m[0] + v.y*wvp.m[4] + v.z*wvp.m[8] + wvp.m[12];
         const float clipY = v.x*wvp.m[1] + v.y*wvp.m[5] + v.z*wvp.m[9] + wvp.m[13];
         const float clipW = v.x*wvp.m[3] + v.y*wvp.m[7] + v.z*wvp.m[11] + wvp.m[15];
@@ -12668,8 +12668,8 @@ bool submit_vdp1_model(
         };
 
         if (g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-            !g_liveTownSubmissionRanges.empty()) {
-            for(const auto& range:g_liveTownSubmissionRanges) {
+            !g_sceneSubmissionRanges.empty()) {
+            for(const auto& range:g_sceneSubmissionRanges) {
                 const std::size_t end=std::min(range.first+range.count,model.polygonCount);
                 for(std::size_t p=range.first;p<end;) {
                     const unsigned texture=model.polygonTextureIndices[p];
@@ -12748,7 +12748,7 @@ bool submit_vdp1_model(
 
         const std::uint64_t tPayload = sceKernelGetProcessTimeWide();
         const bool sceneStaticPositions =
-            model.vertices == g_liveTownCpuMesh.vertices.data();
+            model.vertices == g_sceneCpuMesh.vertices.data();
         if (sceneStaticPositions && g_sceneSubdivPositionValid.size() !=
                 g_liveTownStaticPolygonCount)
             g_sceneSubdivPositionValid.assign(g_liveTownStaticPolygonCount, 0u);
@@ -12919,7 +12919,7 @@ bool submit_vdp1_model(
                 g_sceneSubdivPositionValid[p] = 1u;
 
             if (g_fieldProbeActive && model.vertices ==
-                    g_liveTownCpuMesh.vertices.data()) {
+                    g_sceneCpuMesh.vertices.data()) {
                 for (const auto& probe : g_fieldPolygonProbes) {
                     if (probe.polygon != p) continue;
                     std::uint32_t hash = 2166136261u;
@@ -13022,7 +13022,7 @@ bool submit_vdp1_model(
             if(g_sceneGameMode==3u &&
                g_residentVdp1Model==ResidentVdp1Model::LiveTown) {
                 const auto& sources=azel_bridge::published_submissions();
-                for(const auto& range:g_liveTownSubmissionRanges) {
+                for(const auto& range:g_sceneSubmissionRanges) {
                     if(range.azelOrder>=sources.size() ||
                        range.count!=20u || range.first>=model.polygonCount)
                         continue;
@@ -13060,7 +13060,7 @@ bool submit_vdp1_model(
                 // consecutive polygons can reuse an uploaded texture while
                 // requiring distinct blend programs and depth-write policy.
                 const bool blended=lagi::vdp1_half_transparent(
-                    g_liveTownCpuMesh.polygonRecords[p].cmdPmod);
+                    g_sceneCpuMesh.polygonRecords[p].cmdPmod);
                 if(blended!=lagi::vdp1_half_transparent(
                     g_vdp1GpuTextures[texture].cmdPmod))
                     ++materialPmodMismatches;
@@ -13110,7 +13110,7 @@ bool submit_vdp1_model(
             // Index writes still address the original per-polygon slots.
             static std::vector<std::uint8_t> replayed;
             replayed.assign(model.polygonCount,0u);
-            for(const auto& range:g_liveTownSubmissionRanges) {
+            for(const auto& range:g_sceneSubmissionRanges) {
                 if(range.first>=model.polygonCount)continue;
                 const std::size_t end=range.first+
                     std::min(range.count,model.polygonCount-range.first);
@@ -13594,8 +13594,8 @@ bool submit_vdp1_model(
         bool phaseResult = true;
         if (subdividedTexturedLit &&
             g_residentVdp1Model == ResidentVdp1Model::LiveTown &&
-            !g_liveTownSubmissionRanges.empty()) {
-            for(const auto& range:g_liveTownSubmissionRanges) {
+            !g_sceneSubmissionRanges.empty()) {
+            for(const auto& range:g_sceneSubmissionRanges) {
                 const std::size_t end=std::min(range.first+range.count,model.polygonCount);
                 for(std::size_t p=range.first;p<end && phaseResult;) {
                     const unsigned texture=model.polygonTextureIndices[p];
@@ -15221,7 +15221,7 @@ static void renderBasicWingViewer()
 
     // Resident VDP1 geometry is scene data, not renderer initialization state.
     // Authentic boot reaches the first native scene with no preloaded debug
-    // model, so buildLiveTownFrame()/prepare_vdp1_model() must be allowed to
+    // model, so buildNativeSceneFrame()/prepare_vdp1_model() must be allowed to
     // allocate these buffers on demand.
 
     static bool loggedSceneRendererEntry = false;
@@ -15320,7 +15320,7 @@ static void renderBasicWingViewer()
         applyBasicWingAnimationFrame(g_basicWingAnimationFrame);
     } else if (nativeSceneMode || (!nativeSceneContext && !nativeMenuFrame && roomAuthenticCameraMode)) {
         const std::uint64_t buildStartUs = sceKernelGetProcessTimeWide();
-        const bool liveTownBuilt = buildLiveTownFrame();
+        const bool liveTownBuilt = buildNativeSceneFrame();
         g_profileBuildUs = static_cast<unsigned int>(
             sceKernelGetProcessTimeWide() - buildStartUs);
         if (!liveTownBuilt)
@@ -15359,15 +15359,15 @@ static void renderBasicWingViewer()
             const auto& submissions=azel_bridge::published_submissions();
             logging::writef("[FieldVdp1Trace] sample=%u view=%d submissions=%u ranges=%u polys=%u near=%.5f far=%.5f\n",
                 fieldVdp1TraceFrame,g_viewMode,unsigned(submissions.size()),
-                unsigned(g_liveTownSubmissionRanges.size()),
-                unsigned(g_liveTownCpuMesh.polygonRecords.size()),
+                unsigned(g_sceneSubmissionRanges.size()),
+                unsigned(g_sceneCpuMesh.polygonRecords.size()),
                 double(g_nativeSceneNearPlane),double(g_nativeSceneFarPlane));
             unsigned reported=0u;
-            for(const auto& range:g_liveTownSubmissionRanges) {
+            for(const auto& range:g_sceneSubmissionRanges) {
                 if(reported++>=48u)break;
                 const auto& submission=submissions[range.azelOrder];
                 const std::size_t end=std::min(range.first+range.count,
-                    g_liveTownCpuMesh.polygonRecords.size());
+                    g_sceneCpuMesh.polygonRecords.size());
                 unsigned visible=0u,clipped=0u,nearHorizon=0u;
                 unsigned clipSide=0u,clipNear=0u,clipFar=0u,clipBehind=0u,clipMixed=0u;
                 float minX=1e9f,minY=1e9f,maxX=-1e9f,maxY=-1e9f;
@@ -15385,7 +15385,7 @@ static void renderBasicWingViewer()
                         unsigned shared=0x3fu;
                         bool behind=false;
                         for(unsigned corner:corners) {
-                            const auto& v=g_liveTownCpuMesh.vertices[p*6u+corner];
+                            const auto& v=g_sceneCpuMesh.vertices[p*6u+corner];
                             const float x=v.x*wvp.m[0]+v.y*wvp.m[4]+v.z*wvp.m[8]+wvp.m[12];
                             const float y=v.x*wvp.m[1]+v.y*wvp.m[5]+v.z*wvp.m[9]+wvp.m[13];
                             const float z=v.x*wvp.m[2]+v.y*wvp.m[6]+v.z*wvp.m[10]+wvp.m[14];
@@ -15414,7 +15414,7 @@ static void renderBasicWingViewer()
                     float ymin=1e9f,ymax=-1e9f,depth=0.f;
                     bool valid=true;
                     for(unsigned c:corners) {
-                        const auto& v=g_liveTownCpuMesh.vertices[p*6u+c];
+                        const auto& v=g_sceneCpuMesh.vertices[p*6u+c];
                         const float x=v.x*wvp.m[0]+v.y*wvp.m[4]+v.z*wvp.m[8]+wvp.m[12];
                         const float y=v.x*wvp.m[1]+v.y*wvp.m[5]+v.z*wvp.m[9]+wvp.m[13];
                         const float z=v.x*wvp.m[2]+v.y*wvp.m[6]+v.z*wvp.m[10]+wvp.m[14];
@@ -15438,9 +15438,9 @@ static void renderBasicWingViewer()
                     }
                 }
                 const unsigned exTexture=example<end?
-                    unsigned(g_liveTownCpuMesh.polygonTextureIndices[example]):65535u;
+                    unsigned(g_sceneCpuMesh.polygonTextureIndices[example]):65535u;
                 const unsigned exPmod=example<end?
-                    unsigned(g_liveTownCpuMesh.polygonRecords[example].cmdPmod):0u;
+                    unsigned(g_sceneCpuMesh.polygonRecords[example].cmdPmod):0u;
                 logging::writef(
                     "[FieldVdp1Range] order=%u cell=%d obj=%08X table=%08X base=%u count=%u visible=%u rejected=%u horizon=%u "
                     "bounds=(%.1f,%.1f)-(%.1f,%.1f) depth=(%.5f,%.5f) example=%u tex=%u PMOD=%04X dynamic=%u rejectSide=%u rejectNear=%u rejectFar=%u rejectBehind=%u rejectMixed=%u\n",
@@ -15483,14 +15483,14 @@ static void renderBasicWingViewer()
         // when numerous other field submissions precede them.
         const auto& cliffSubmissions=azel_bridge::published_submissions();
         unsigned cliffObjects=0u;
-        for(const auto& range:g_liveTownSubmissionRanges) {
+        for(const auto& range:g_sceneSubmissionRanges) {
             if(range.azelOrder>=cliffSubmissions.size())continue;
             const auto& submission=cliffSubmissions[range.azelOrder];
             if(submission.modelTableOffset<0x4A0u ||
                submission.modelTableOffset>0x4C0u ||
                range.count!=20u)continue;
             const auto end=std::min(range.first+range.count,
-                g_liveTownCpuMesh.polygonRecords.size());
+                g_sceneCpuMesh.polygonRecords.size());
             if(end-range.first!=20u)continue;
             ++cliffObjects;
             unsigned pass=0u,side=0u,near=0u,far=0u,behind=0u;
@@ -15501,7 +15501,7 @@ static void renderBasicWingViewer()
                 float px[4]{},py[4]{},pz[4]{},pw[4]{};
                 unsigned shared=0x3fu,negativeW=0u;
                 for(unsigned c=0u;c<4u;++c) {
-                    const auto& v=g_liveTownCpuMesh.vertices[p*6u+cornerIndices[c]];
+                    const auto& v=g_sceneCpuMesh.vertices[p*6u+cornerIndices[c]];
                     const float x=v.x*wvp.m[0]+v.y*wvp.m[4]+v.z*wvp.m[8]+wvp.m[12];
                     const float y=v.x*wvp.m[1]+v.y*wvp.m[5]+v.z*wvp.m[9]+wvp.m[13];
                     const float z=v.x*wvp.m[2]+v.y*wvp.m[6]+v.z*wvp.m[10]+wvp.m[14];
@@ -15533,12 +15533,12 @@ static void renderBasicWingViewer()
                 posArea+=unsigned(area0>1e-7f);
                 negArea+=unsigned(area0< -1e-7f);
                 mixedWinding+=unsigned(area0*area1< -1e-10f);
-                const auto material=g_liveTownCpuMesh.polygonTextureIndices[p];
+                const auto material=g_sceneCpuMesh.polygonTextureIndices[p];
                 const bool materialOk=material<g_staticRoomCpuMesh.decodedTextureData.size();
                 validMaterial+=unsigned(materialOk);
                 opaqueMaterial+=unsigned(materialOk &&
                     g_staticRoomCpuMesh.decodedTextureData[material].opaque);
-                const auto& cmd=g_liveTownCpuMesh.polygonRecords[p];
+                const auto& cmd=g_sceneCpuMesh.polygonRecords[p];
                 if (p-range.first < 4u) logging::writef(
                     "[GarilCliffQuad] sample=%u table=%04X obj=%08X local=%u "
                     "global=%u visible=%u out=%02X behind=%u "
@@ -15580,8 +15580,8 @@ static void renderBasicWingViewer()
     // not every frame, and is bounded independently of visibility size.
     if (nativeSceneMode && (g_viewMode == 13 || g_viewMode == 14 || g_viewMode == 15 || g_viewMode == 16 || g_viewMode == 17 || g_viewMode == 18 || g_viewMode == 19 || g_viewMode == 20 || g_viewMode == 21 || g_viewMode == 22 || g_viewMode == 23 || g_viewMode == 24) &&
         g_liveTownGouraudPrepValid &&
-        g_liveTownCpuMesh.vertices.size() ==
-            g_liveTownCpuMesh.polygonRecords.size() * 6u) {
+        g_sceneCpuMesh.vertices.size() ==
+            g_sceneCpuMesh.polygonRecords.size() * 6u) {
         static unsigned lastMode=0xffffffffu, lastScene=0xffffffffu;
         static unsigned attributionBudget=8u;
         if (attributionBudget &&
@@ -15596,7 +15596,7 @@ static void renderBasicWingViewer()
                 bool ordered;
             };
             std::vector<Candidate> candidates;
-            const auto& source=g_liveTownCpuMesh;
+            const auto& source=g_sceneCpuMesh;
             const unsigned corners[4]={0u,1u,2u,5u};
             unsigned meshCount=0u, halfCount=0u, validCount=0u;
             // Central/lower overlap is only a secondary ranking heuristic,
@@ -15829,15 +15829,15 @@ static void renderBasicWingViewer()
         static std::vector<azel::SaturnGouraud555Quad> grayModeColorBackup;
         static bool previousGrayMode = false;
         if (previousGrayMode && !g_liveTownStaticRebuilt &&
-            grayModeColorBackup.size() == g_liveTownCpuMesh.gouraud555.size())
-            g_liveTownCpuMesh.gouraud555 = grayModeColorBackup;
+            grayModeColorBackup.size() == g_sceneCpuMesh.gouraud555.size())
+            g_sceneCpuMesh.gouraud555 = grayModeColorBackup;
         const std::uint64_t lightingStartUs = sceKernelGetProcessTimeWide();
         traceFieldPolygonStage("before");
         updateLiveTownAzelLighting();
         previousGrayMode = g_viewMode == 10;
         if (previousGrayMode) {
-            grayModeColorBackup = g_liveTownCpuMesh.gouraud555;
-            for (auto& quad : g_liveTownCpuMesh.gouraud555)
+            grayModeColorBackup = g_sceneCpuMesh.gouraud555;
+            for (auto& quad : g_sceneCpuMesh.gouraud555)
                 for (auto& corner : quad.corner) {
                     const float gray = (corner[0] + corner[1] + corner[2]) / 3.0f;
                     corner[0] = corner[1] = corner[2] = gray;
@@ -16176,8 +16176,8 @@ static void renderBasicWingViewer()
             g_profileGxmEndSceneUs,
             g_profileGxmFinishUs,
             g_profileRenderUs,
-            static_cast<unsigned>(g_liveTownCpuMesh.polygonRecords.size()),
-            static_cast<unsigned>(g_liveTownCpuMesh.vertices.size()),
+            static_cast<unsigned>(g_sceneCpuMesh.polygonRecords.size()),
+            static_cast<unsigned>(g_sceneCpuMesh.vertices.size()),
             g_liveTownStaticRebuilt ? 1u : 0u,
             g_sceneRbg0Enabled ? 1u : 0u,
             g_profileRbgPrepareUs,
@@ -17236,19 +17236,19 @@ static void updateLiveTownAzelLighting()
     g_profileTransientCornerTests = 0u;
     g_profileTransientCornerHits = 0u;
     g_profileTransientCornerReuses = 0u;
-    if (g_liveTownCpuMesh.gouraud555.size() !=
-            g_liveTownCpuMesh.polygonRecords.size() ||
+    if (g_sceneCpuMesh.gouraud555.size() !=
+            g_sceneCpuMesh.polygonRecords.size() ||
         g_liveTownPolygonLightIndices.size() !=
-            g_liveTownCpuMesh.polygonRecords.size())
+            g_sceneCpuMesh.polygonRecords.size())
         return;
 
     const bool usePreparedVisibility =
         g_liveTownGouraudPrepValid &&
-        g_liveTownGouraudPrepVertices == g_liveTownCpuMesh.vertices.data() &&
+        g_liveTownGouraudPrepVertices == g_sceneCpuMesh.vertices.data() &&
         g_liveTownGouraudPrepPolygonCount ==
-            g_liveTownCpuMesh.polygonRecords.size() &&
+            g_sceneCpuMesh.polygonRecords.size() &&
         g_liveTownGouraudPrep.size() ==
-            g_liveTownCpuMesh.polygonRecords.size();
+            g_sceneCpuMesh.polygonRecords.size();
 
     float cameraForward[3] = {
         g_townCameraTarget[0] - g_townCameraPosition[0],
@@ -17290,7 +17290,7 @@ static void updateLiveTownAzelLighting()
         return std::clamp(byteOffset >> 3, 0, 31);
     };
     auto falloffIndex = [&](std::size_t polygon) {
-        const auto& v = g_liveTownCpuMesh.vertices[polygon * 6u];
+        const auto& v = g_sceneCpuMesh.vertices[polygon * 6u];
         float depth = 0.0f;
         if (g_nativeSceneViewValid) {
             depth =
@@ -17353,15 +17353,15 @@ static void updateLiveTownAzelLighting()
     primaryCornerBasisReady.assign(g_liveTownLightStates.size(),0u);
 
     for (std::size_t p = 0;
-         p < g_liveTownCpuMesh.polygonRecords.size(); ++p) {
+         p < g_sceneCpuMesh.polygonRecords.size(); ++p) {
         if (usePreparedVisibility && !g_liveTownGouraudPrep[p].visible)
             continue;
 
-        const auto& record = g_liveTownCpuMesh.polygonRecords[p];
+        const auto& record = g_sceneCpuMesh.polygonRecords[p];
         const std::uint32_t lightIndex = g_liveTownPolygonLightIndices[p];
         const auto& light = g_liveTownLightStates[lightIndex];
         const unsigned mode = (record.lightingControl >> 8) & 3u;
-        auto& out = g_liveTownCpuMesh.gouraud555[p];
+        auto& out = g_sceneCpuMesh.gouraud555[p];
         out = {};
         if (light.transientLaserLightCount) {
             laserCoveragePresent=true;
@@ -17460,7 +17460,7 @@ static void updateLiveTownAzelLighting()
             const int beforePoint[3] = {accum[0], accum[1], accum[2]};
             if(light.additionalPointPerCorner && light.additionalLight.active) {
                 ++g_profilePrimaryCornerTests;
-                const auto& vtx=g_liveTownCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
+                const auto& vtx=g_sceneCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
                 const float world[3]={vtx.x,vtx.y,vtx.z};
                 std::uint32_t positionBits[3];
                 std::memcpy(positionBits,world,sizeof(positionBits));
@@ -17515,7 +17515,7 @@ static void updateLiveTownAzelLighting()
             std::int32_t transientCornerMatrix[12];
             bool transientCornerMatrixReady=false;
             const auto& transientVertex=
-                g_liveTownCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
+                g_sceneCpuMesh.vertices[p*6u+(corner==3u?5u:corner)];
             const float transientWorld[3]={
                 transientVertex.x,transientVertex.y,transientVertex.z};
             std::uint32_t transientPositionBits[3]{};
