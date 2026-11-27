@@ -11,6 +11,8 @@
 #if NEPTUNE_GEOMETRY_ARENA_PROBE
 #include "neptune/geometry_arena.h"
 #include <optional>
+#include <list>
+#include <iterator>
 #endif
 #if NEPTUNE_GEOMETRY_OBSERVE
 #include "neptune/geometry_resource_key.h"
