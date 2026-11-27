@@ -104,6 +104,67 @@ static void observeGeometryArena(const std::vector<GeometryEstimate>& estimates)
 }
 #endif
 
+#if NEPTUNE_GEOMETRY_PAYLOAD_PROBE
+// Independent, CPU-only validation of canonical transformed vertex bytes.
+// Never binds this memory to a draw or trusts it as a rendering input.
+static std::optional<neptune::GeometryArena<4096>> g_geometryPayloadRanges;
+static std::unordered_map<neptune::GeometryRepresentationKey,
+    neptune::GeometryArena<4096>::Range,
+    neptune::GeometryRepresentationKeyHash> g_geometryPayloads;
+static unsigned g_geometryPayloadUploads=0, g_geometryPayloadHits=0,
+    g_geometryPayloadMismatch=0, g_geometryPayloadSkipped=0;
+static std::uint64_t g_geometryPayloadBytes=0, g_geometryPayloadUs=0;
+
+static void clearGeometryPayloads()
+{
+    g_geometryPayloads.clear();
+    g_geometryPayloadRanges.reset();
+    // The backing memory has no GPU readers in this diagnostic.
+}
+
+static void verifyGeometryPayload(const neptune::GeometryRepresentationKey& key,
+    const void* source, std::size_t bytes)
+{
+    if (!g_geometryArenaMemory || !key.valid() || !source || !bytes) return;
+    const auto started=sceKernelGetProcessTimeWide();
+    if (!g_geometryPayloadRanges) g_geometryPayloadRanges.emplace(kGeometryArenaBytes);
+    auto& ranges=*g_geometryPayloadRanges;
+    auto* base=static_cast<unsigned char*>(g_geometryArenaMemory);
+    auto it=g_geometryPayloads.find(key);
+    if (it!=g_geometryPayloads.end()) {
+        const auto range=it->second;
+        if (range.bytes!=bytes || std::memcmp(base+range.offset,source,bytes)!=0)
+            ++g_geometryPayloadMismatch;
+        else ++g_geometryPayloadHits;
+    } else if (bytes<=256u*1024u && g_geometryPayloadBytes<=256u*1024u-bytes) {
+        auto range=ranges.allocate(bytes,64u);
+        if (range) {
+            std::memcpy(base+range.offset,source,bytes);
+            if (std::memcmp(base+range.offset,source,bytes)!=0)
+                ++g_geometryPayloadMismatch;
+            g_geometryPayloads.emplace(key,range);
+            ++g_geometryPayloadUploads;
+            g_geometryPayloadBytes+=bytes;
+        } else ++g_geometryPayloadSkipped;
+    } else ++g_geometryPayloadSkipped;
+    g_geometryPayloadUs+=sceKernelGetProcessTimeWide()-started;
+}
+
+static void reportGeometryPayloads()
+{
+    if (!g_geometryPayloadRanges) return;
+    logging::writef("[NeptuneGeometryPayload] frame=%llu uploads=%u hits=%u "
+        "mismatch=%u skipped=%u bytes=%llu used=%u ranges=%u timeUs=%llu cpuOnly=1\n",
+        static_cast<unsigned long long>(azel_bridge::published_frame_number()),
+        g_geometryPayloadUploads,g_geometryPayloadHits,g_geometryPayloadMismatch,
+        g_geometryPayloadSkipped,static_cast<unsigned long long>(g_geometryPayloadBytes),
+        unsigned(g_geometryPayloadRanges->used()),unsigned(g_geometryPayloadRanges->count()),
+        static_cast<unsigned long long>(g_geometryPayloadUs));
+    g_geometryPayloadUploads=g_geometryPayloadHits=g_geometryPayloadMismatch=g_geometryPayloadSkipped=0;
+    g_geometryPayloadBytes=g_geometryPayloadUs=0;
+}
+#endif
+
 static void releaseGeometryArena()
 {
     // This probe never binds the block to a GXM draw. Before adding actual
@@ -112,6 +173,9 @@ static void releaseGeometryArena()
     g_geometryShadow.clear();
     g_geometryShadowLru.clear();
     g_geometryShadowSample=0;
+#endif
+#if NEPTUNE_GEOMETRY_PAYLOAD_PROBE
+    clearGeometryPayloads();
 #endif
     g_geometryArena.reset();
     if (g_geometryArenaUid >= 0) {
