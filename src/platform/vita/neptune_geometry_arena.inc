@@ -174,6 +174,38 @@ static void reportGeometryPayloads()
 static std::optional<neptune::GeometryArena<4096>> g_geometryPhysicalRanges;
 #if NEPTUNE_RESIDENT_MODEL_GEOMETRY
 static neptune::GeometrySubmissionEpoch g_geometrySubmissionEpoch;
+static neptune::ResidentGeometryCache<> g_residentModelGeometry;
+static unsigned g_modelResidentCandidates=0, g_modelResidentEligible=0;
+static unsigned g_modelResidentDraws=0, g_modelResidentFallbackRuns=0, g_modelResidentBindFailures=0;
+static std::uint64_t g_modelResidentPrepareUs=0;
+
+static void reportResidentModelGeometry()
+{
+    if(!g_geometryPhysicalRanges) return;
+    const auto& s=g_residentModelGeometry.stats();
+    if(!g_modelResidentCandidates && !g_modelResidentDraws &&
+        !g_modelResidentFallbackRuns && !s.retired) return;
+    auto& arena=*g_geometryPhysicalRanges;
+    logging::writef("[NeptuneResidentModelWindow] frame=%llu mode=%u "
+        "candidates=%u eligible=%u hits=%u uploads=%u mismatches=%u skipped=%u retired=%u "
+        "comparedBytes=%llu uploadedBytes=%llu draws=%u fallbackRuns=%u bindFailures=%u "
+        "modelRanges=%u physicalUsed=%u physicalPeak=%u largestFree=%u prepareUs=%llu "
+        "epochFault=%u exactCompare=1\n",
+        static_cast<unsigned long long>(azel_bridge::published_frame_number()),
+        unsigned(g_sceneGameMode),g_modelResidentCandidates,g_modelResidentEligible,
+        s.hits,s.uploads,s.mismatches,s.skipped,s.retired,
+        static_cast<unsigned long long>(s.comparedBytes),
+        static_cast<unsigned long long>(s.uploadedBytes),
+        g_modelResidentDraws,g_modelResidentFallbackRuns,g_modelResidentBindFailures,
+        unsigned(g_residentModelGeometry.size()),unsigned(arena.used()),
+        unsigned(arena.peak()),unsigned(arena.largestFree()),
+        static_cast<unsigned long long>(g_modelResidentPrepareUs),
+        unsigned(g_geometrySubmissionEpoch.failed()));
+    g_residentModelGeometry.resetStats();
+    g_modelResidentCandidates=g_modelResidentEligible=g_modelResidentDraws=0;
+    g_modelResidentFallbackRuns=g_modelResidentBindFailures=0;
+    g_modelResidentPrepareUs=0;
+}
 static unsigned g_geometryEpochCompletions=0, g_geometryEpochFaults=0;
 
 static void faultGeometryEpoch()
@@ -333,6 +365,8 @@ static void releaseGeometryArena()
 #if NEPTUNE_RESIDENT_MODEL_GEOMETRY
     logging::writef("[NeptuneGeometryEpoch] completions=%u faults=%u shutdown=1\n",
         g_geometryEpochCompletions,g_geometryEpochFaults);
+    reportResidentModelGeometry();
+    g_residentModelGeometry.abandonAfterContextDestruction();
     g_geometrySubmissionEpoch={};
     g_geometryEpochCompletions=g_geometryEpochFaults=0;
 #endif

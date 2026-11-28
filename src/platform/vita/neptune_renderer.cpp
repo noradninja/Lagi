@@ -12,6 +12,7 @@
 #include "neptune/subdivision_streams.h"
 #if NEPTUNE_RESIDENT_MODEL_GEOMETRY
 #include "neptune/geometry_submission_epoch.h"
+#include "neptune/resident_geometry_cache.h"
 #endif
 #if NEPTUNE_GEOMETRY_ARENA_PROBE
 #include "neptune/geometry_arena.h"
@@ -8838,6 +8839,9 @@ static bool buildNativeSceneFrame()
     if (g_profileAppendSample) reportResidentSubdivisionTopology();
 #if NEPTUNE_SPLIT_SUBDIV_STREAMS
     if (g_profileAppendSample) reportSplitSubdivisionStreams();
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+    if (g_profileAppendSample) reportResidentModelGeometry();
+#endif
 #endif
 #endif
 #if NEPTUNE_GEOMETRY_OBSERVE
@@ -13625,6 +13629,92 @@ bool submit_vdp1_model(
             if(useSplitStreams) ++g_splitDrawFrames;
             else ++g_splitFallbackFrames;
 #endif
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+            // Validation checkpoint: retain the canonical *fully visible*
+            // static model XYZ/UV bytes. Do not change the existing preparation,
+            // visibility, order, shade evaluation, or run coalescing.
+            struct ResidentModelBinding {
+                std::size_t first,count;
+                const neptune::SubdivisionGeometryVertex* geometry;
+            };
+            static std::vector<ResidentModelBinding> residentBindings;
+            static std::vector<int> residentPolygonBinding;
+            residentBindings.clear();
+            residentPolygonBinding.clear();
+            const auto residentSerial=g_geometrySubmissionEpoch.active();
+            const bool tryResidentModels=primary && useSplitStreams &&
+                useResidentIndices && sceneStaticPositions && g_viewMode==7 &&
+                !g_fieldProbeActive && residentSerial && g_geometryPhysicalRanges;
+            if(tryResidentModels) {
+                const auto start=sceKernelGetProcessTimeWide();
+                auto& arena=*g_geometryPhysicalRanges;
+                auto* base=static_cast<unsigned char*>(g_geometryArenaMemory);
+                if(residentSerial%120u==1u)
+                    g_residentModelGeometry.sweep(arena,residentSerial);
+                residentPolygonBinding.assign(model.polygonCount,-1);
+                const auto& sources=azel_bridge::published_submissions();
+                for(const auto& range:g_sceneSubmissionRanges) {
+                    ++g_modelResidentCandidates;
+                    if(!range.count || range.first>=model.polygonCount ||
+                        range.count>model.polygonCount-range.first ||
+                        range.azelOrder>=sources.size()) continue;
+                    const auto& source=sources[range.azelOrder];
+                    const auto& state=source.state;
+                    if(source.adaptedModelIndex<0 || !state.hasModelMatrix ||
+                        state.billboard || liveTownSubmissionIsDynamic(source) ||
+                        state.animatedColorCount || state.localCoordinatesX!=176 ||
+                        state.localCoordinatesY!=112) continue;
+                    const auto index=static_cast<std::uint32_t>(source.adaptedModelIndex);
+                    const auto* snapshot=azel_bridge::published_adapted_model(index);
+                    if(!snapshot || snapshot->polygons.size()!=range.count ||
+                        (snapshot->polygons.size()==6u && snapshot->vertices.size()==36u))
+                        continue;
+                    const auto resource=azel_bridge::published_geometry_resource(index,
+                        source.modelGeneration);
+                    if(!resource.key.valid()) continue;
+                    bool full=true;
+                    for(std::size_t p=range.first;p<range.first+range.count;++p)
+                        if(!visibleQuads[p] || residentPolygonBinding[p]>=0) {
+                            full=false; break;
+                        }
+                    if(!full) continue;
+                    ++g_modelResidentEligible;
+                    neptune::GeometryRepresentationKey key{};
+                    key.source=resource.key;
+                    key.layout=2u; // canonical subdivided XYZ/UV, exact compare
+                    key.coordinateConvention=1u;
+                    key.space=neptune::GeometrySpace::Transformed;
+                    std::copy_n(state.modelMatrix,12,key.transform.begin());
+                    const auto bytes=range.count*neptune::kSubdivisionVerticesPerQuad*
+                        sizeof(neptune::SubdivisionGeometryVertex);
+                    const auto allocation=g_residentModelGeometry.acquire(arena,base,key,
+                        resource.owner,g_splitGeometry+range.first*neptune::kSubdivisionVerticesPerQuad,
+                        bytes,residentSerial);
+                    if(!allocation) continue;
+                    const auto bindingIndex=static_cast<int>(residentBindings.size());
+                    residentBindings.push_back({range.first,range.count,
+                        reinterpret_cast<const neptune::SubdivisionGeometryVertex*>(base+allocation.offset)});
+                    for(std::size_t p=range.first;p<range.first+range.count;++p)
+                        residentPolygonBinding[p]=bindingIndex;
+                }
+                g_modelResidentPrepareUs+=sceKernelGetProcessTimeWide()-start;
+            }
+            // Both streams must use the same local index domain. On any
+            // resident binding failure, restore BOTH original streams before
+            // issuing the unchanged absolute-index fallback draw.
+            const void* boundGeometry=g_splitGeometry;
+            const void* boundShade=g_splitShade;
+            const auto bindModelStreams=[&](const void* geom,const void* shade)->bool {
+                if(boundGeometry==geom && boundShade==shade) return true;
+                if(sceGxmSetVertexStream(g_probeContext,0,geom)<0 ||
+                    sceGxmSetVertexStream(g_probeContext,1,shade)<0) {
+                    boundGeometry=boundShade=nullptr;
+                    return false;
+                }
+                boundGeometry=geom; boundShade=shade;
+                return true;
+            };
+#endif
             const std::uint64_t drawStart=sceKernelGetProcessTimeWide();
             for(const auto& run:orderedRuns) {
                 const unsigned texture=run.texture;
@@ -13674,8 +13764,37 @@ bool submit_vdp1_model(
                     indices=g_residentTopology+run.firstIndex;
                 }
 #endif
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+                bool residentDraw=false;
+                if(tryResidentModels) {
+                    const auto bindingIndex=residentPolygonBinding[runPolygon];
+                    if(bindingIndex>=0) {
+                        const auto& binding=residentBindings[static_cast<std::size_t>(bindingIndex)];
+                        std::size_t localIndex=0;
+                        if(neptune::localSubdivisionIndexOffset(binding.first,binding.count,
+                            run.firstIndex,run.count,localIndex)) {
+                            if(bindModelStreams(binding.geometry,
+                                g_splitShade+binding.first*neptune::kSubdivisionVerticesPerQuad)) {
+                                indices=g_residentTopology+localIndex;
+                                residentDraw=true;
+                            } else ++g_modelResidentBindFailures;
+                        }
+                    }
+                    if(!residentDraw) {
+                        ++g_modelResidentFallbackRuns;
+                        if(!bindModelStreams(g_splitGeometry,g_splitShade)) {
+                            ++g_modelResidentBindFailures;
+                            faultGeometryEpoch();
+                            return false;
+                        }
+                    }
+                }
+#endif
                 if(sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,
                     SCE_GXM_INDEX_FORMAT_U16,indices,run.count)<0)return false;
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+                if(residentDraw) ++g_modelResidentDraws;
+#endif
 #if NEPTUNE_RESIDENT_SUBDIV_INDICES
                 if(useResidentIndices) {
                     ++g_residentTopologyDraws;
@@ -13687,6 +13806,13 @@ bool submit_vdp1_model(
                     cliffQuads+=run.count/24u;
                 }
             }
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+            if(tryResidentModels && !bindModelStreams(g_splitGeometry,g_splitShade)) {
+                ++g_modelResidentBindFailures;
+                faultGeometryEpoch();
+                return false;
+            }
+#endif
             sceGxmSetCullMode(g_probeContext,cullMode);
             sceGxmSetFrontDepthFunc(g_probeContext,depthFunc);
             sceGxmSetBackDepthFunc(g_probeContext,depthFunc);
