@@ -165,10 +165,67 @@ static void reportGeometryPayloads()
 }
 #endif
 
+#if NEPTUNE_RESIDENT_SUBDIV_INDICES
+// One renderer-owned immutable range. Shadow estimates are separate metadata
+// and never write to this allocation. CPU payload probe is mutually exclusive.
+// No model identity, scene epoch, or changing texture state enters this key.
+static neptune::GeometryArena<1> g_residentTopologyRanges(kGeometryArenaBytes);
+static const std::uint16_t* g_residentTopology = nullptr;
+static bool g_residentTopologyAttempted = false;
+static neptune::GeometryArena<1>::Range g_residentTopologyRange{};
+static unsigned g_residentTopologyDraws=0, g_residentTopologyFallbacks=0;
+static std::uint64_t g_residentTopologyIndices=0;
+static bool g_residentTopologySubmitted=false;
+
+static void ensureResidentSubdivisionTopology()
+{
+    if (g_residentTopologyAttempted || !g_geometryArenaMemory) return;
+    g_residentTopologyAttempted=true;
+    constexpr unsigned count=neptune::kSubdivisionMaxQuads*neptune::kSubdivisionIndicesPerQuad;
+    constexpr unsigned bytes=count*sizeof(std::uint16_t);
+    const auto started=sceKernelGetProcessTimeWide();
+    auto range=g_residentTopologyRanges.allocate(bytes,64u);
+    if(range) {
+        auto* target=reinterpret_cast<std::uint16_t*>(
+            static_cast<unsigned char*>(g_geometryArenaMemory)+range.offset);
+        if(neptune::writeSubdivisionTopology(target,count,neptune::kSubdivisionMaxQuads)) {
+            g_residentTopology=target;
+            g_residentTopologyRange=range;
+        } else g_residentTopologyRanges.retire(range);
+    }
+    logging::writef("[NeptuneResidentTopology] ready=%u cdram=%u bytes=%u "
+        "quads=%u uploadUs=%llu immutable=1\\n",
+        unsigned(g_residentTopology!=nullptr),unsigned(g_geometryArenaCdram),
+        g_residentTopology?bytes:0u,neptune::kSubdivisionMaxQuads,
+        static_cast<unsigned long long>(sceKernelGetProcessTimeWide()-started));
+}
+
+static void reportResidentSubdivisionTopology()
+{
+    if(!g_residentTopologyDraws && !g_residentTopologyFallbacks) return;
+    logging::writef("[NeptuneResidentTopologyFrame] frame=%llu mode=%u draws=%u "
+        "fallbacks=%u indices=%llu\\n",
+        static_cast<unsigned long long>(azel_bridge::published_frame_number()),
+        unsigned(g_sceneGameMode),g_residentTopologyDraws,g_residentTopologyFallbacks,
+        static_cast<unsigned long long>(g_residentTopologyIndices));
+    g_residentTopologyDraws=g_residentTopologyFallbacks=0;
+    g_residentTopologyIndices=0;
+}
+#endif
+
 static void releaseGeometryArena()
 {
-    // This probe never binds the block to a GXM draw. Before adding actual
-    // submissions, require successful GPU completion before unmapping.
+    // The caller has stopped the render thread and destroyed the GXM context
+    // after its final finish. The immutable table was never modified or freed
+    // while any context could reference it.
+#if NEPTUNE_RESIDENT_SUBDIV_INDICES
+    reportResidentSubdivisionTopology();
+    g_residentTopology=nullptr;
+    if(g_residentTopologyRange) g_residentTopologyRanges.retire(g_residentTopologyRange);
+    g_residentTopologyRange={};
+    g_residentTopologyAttempted=false;
+    g_residentTopologySubmitted=false;
+#endif
 #if NEPTUNE_GEOMETRY_OBSERVE
     g_geometryShadow.clear();
     g_geometryShadowLru.clear();
