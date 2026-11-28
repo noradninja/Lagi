@@ -1554,7 +1554,7 @@ static void recordFlightPresentation(
             "gxmend=%u gxmfinish=%u rbgPrep=%u rbgResolve=%u "
             "light=%u primaryTests=%u primaryReuses=%u transientMax=%u transientTests=%u transientHits=%u transientReuses=%u "
             "gourPrep=%u polys=%u spriteDraws=%u spritePixels=%llu "
-            "fadeR=%d fadeG=%d fadeB=%d\n",
+            "fadeR=%d fadeG=%d fadeB=%d frame=%llu scene=%u processUs=%llu\n",
             static_cast<unsigned int>(g_viewMode), window.lastUs != 0u ? 1u : 0u,
             g_profileRenderUs, g_profileBuildUs,
             static_cast<unsigned long long>(intervalUs), intervalVblanks,
@@ -1571,7 +1571,9 @@ static void recordFlightPresentation(
             static_cast<unsigned>(g_sceneCpuMesh.polygonRecords.size()),
             g_profileSprites.draws,
             static_cast<unsigned long long>(g_profileSprites.bboxPixels),
-            g_sceneColorOffset[0], g_sceneColorOffset[1], g_sceneColorOffset[2]);
+            g_sceneColorOffset[0], g_sceneColorOffset[1], g_sceneColorOffset[2],
+            static_cast<unsigned long long>(azel_bridge::published_frame_number()),
+            unsigned(g_sceneGameMode),static_cast<unsigned long long>(nowUs));
     }
     if (window.lastUs != 0u) {
         const std::uint64_t intervalUs = nowUs - window.lastUs;
@@ -1596,7 +1598,7 @@ static void recordFlightPresentation(
         logging::writef(
             "[FlightPresentWindow] mode=%u intervals=%u mean=%lluus max=%lluus "
             "fpsMilli=%llu over2Vblanks=%u maxVblanks=%u "
-            "preRender=%lluus postRender=%lluus publish=%lluus present=%lluus\n",
+            "preRender=%lluus postRender=%lluus publish=%lluus present=%lluus frame=%llu scene=%u processUs=%llu\n",
             static_cast<unsigned int>(window.mode), window.intervals,
             static_cast<unsigned long long>(window.totalUs / window.intervals),
             static_cast<unsigned long long>(window.maxUs),
@@ -1606,7 +1608,9 @@ static void recordFlightPresentation(
             static_cast<unsigned long long>(window.totalPreRender / window.intervals),
             static_cast<unsigned long long>(window.totalPostRender / window.intervals),
             static_cast<unsigned long long>(window.totalPublish / window.intervals),
-            static_cast<unsigned long long>(window.totalPresent / window.intervals));
+            static_cast<unsigned long long>(window.totalPresent / window.intervals),
+            static_cast<unsigned long long>(azel_bridge::published_frame_number()),
+            unsigned(g_sceneGameMode),static_cast<unsigned long long>(nowUs));
         // Retain the endpoint so the next window includes the following
         // interval, including any work or logging between these presents.
         window.intervals = window.over2Vblanks = window.maxVblanks = 0u;
@@ -16335,12 +16339,14 @@ static void renderBasicWingViewer()
             logging::writef(
                 "[FlightTimingWindow] mode=%u frames=%u mean=%uus max=%uus "
                 "over20=%u over25=%u over30=%u over33333=%u "
-                "maxBuild=%uus rebuilds=%u maxFieldLog=%uus rendererOnly=1\n",
+                "maxBuild=%uus rebuilds=%u maxFieldLog=%uus rendererOnly=1 frame=%llu scene=%u processUs=%llu\n",
                 flightTimingMode, flightTiming.frames,
                 static_cast<unsigned int>(flightTiming.totalRender / flightTiming.frames),
                 flightTiming.maxRender, flightTiming.over20, flightTiming.over25,
                 flightTiming.over30, flightTiming.overDeadline,
-                flightTiming.maxBuild, flightTiming.rebuilds, flightTiming.maxFieldLog);
+                flightTiming.maxBuild, flightTiming.rebuilds, flightTiming.maxFieldLog,
+                static_cast<unsigned long long>(azel_bridge::published_frame_number()),
+                unsigned(g_sceneGameMode),static_cast<unsigned long long>(sceKernelGetProcessTimeWide()));
             flightTiming = {};
         }
     }
