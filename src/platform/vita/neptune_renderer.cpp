@@ -6907,7 +6907,14 @@ bool prepare_vdp1_model(
                     }
 
                     const unsigned int baseVertex = p * 9u;
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+                    const bool primary=splitSubdivisionPrimary();
+                    if(primary) g_splitAvoidedBytes+=9u*(reuseGeometry?8u:32u);
+#endif
                     for (unsigned int i = 0; i < 9u; ++i) {
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+                        if(!primary) {
+#endif
                         auto& dst = g_vdp1SubdivVertices[baseVertex + i];
                         if (!reuseGeometry) {
                             dst.x = gridX[i];
@@ -6919,6 +6926,9 @@ bool prepare_vdp1_model(
                         }
                         dst.u = gridU[i];
                         dst.v = gridV[i];
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+                        }
+#endif
 #if NEPTUNE_SPLIT_SUBDIV_STREAMS
                         if(g_splitMirrorsReady) {
                             auto& geom=g_splitGeometry[baseVertex+i];
@@ -12945,6 +12955,9 @@ bool submit_vdp1_model(
         visibleQuads.assign(model.polygonCount, 0u);
 
         const std::uint64_t tPayload = sceKernelGetProcessTimeWide();
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+        const bool primary=splitSubdivisionPrimary();
+#endif
         const bool sceneStaticPositions =
             model.vertices == g_sceneCpuMesh.vertices.data();
         if (sceneStaticPositions && g_sceneSubdivPositionValid.size() !=
@@ -13077,12 +13090,20 @@ bool submit_vdp1_model(
                 positionRepairBudget != 0u) {
                 unsigned int mismatches = 0u;
                 for (unsigned int i = 0; i < 9u; ++i) {
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+                    const auto dst=primary?readPrimarySubdivisionVertex(baseVertex+i):g_vdp1SubdivVertices[baseVertex+i];
+#else
                     const auto& dst = g_vdp1SubdivVertices[baseVertex + i];
+#endif
                     if (dst.x != gridX[i] || dst.y != gridY[i] || dst.z != gridZ[i])
                         ++mismatches;
                 }
                 if (mismatches != 0u) {
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+                    const auto old=primary?readPrimarySubdivisionVertex(baseVertex):g_vdp1SubdivVertices[baseVertex];
+#else
                     const auto& old = g_vdp1SubdivVertices[baseVertex];
+#endif
                     logging::writef(
                         "[FieldPositionRepair] p=%u modelBase=%u local=%u "
                         "texture=%u staleVertices=%u/9 old=%.5f,%.5f,%.5f "
@@ -13093,7 +13114,16 @@ bool submit_vdp1_model(
                     --positionRepairBudget;
                 }
             }
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+            if(primary) {
+                if(useSplitStreams) g_splitAvoidedBytes+=9u*(unsigned(updatePosition)*12u+unsigned(updateShade)*12u);
+                else g_splitFallbackBytes+=9u*sizeof(SubdivGouraudVertex);
+            }
+#endif
             for (unsigned int i = 0; i < 9u; ++i) {
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+                if(!primary) {
+#endif
                 auto& dst = g_vdp1SubdivVertices[baseVertex + i];
                 if (updatePosition) {
                     dst.x = gridX[i];
@@ -13105,6 +13135,9 @@ bool submit_vdp1_model(
                     dst.shadeG = gridG[i];
                     dst.shadeB = gridB[i];
                 }
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+                }
+#endif
 #if NEPTUNE_SPLIT_SUBDIV_STREAMS
                 if(g_splitMirrorsReady) {
                     if(updatePosition) {
@@ -13113,6 +13146,12 @@ bool submit_vdp1_model(
                     }
                     if(updateShade) g_splitShade[baseVertex+i]={gridR[i],gridG[i],gridB[i]};
                 }
+#endif
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+                // Only visible quads are submitted. Repack every visible quad
+                // on the legacy route, not just those whose inputs changed.
+                if(primary && !useSplitStreams)
+                    g_vdp1SubdivVertices[baseVertex+i]=readPrimarySubdivisionVertex(baseVertex+i);
 #endif
             }
             if (updateShade) {
@@ -13132,7 +13171,11 @@ bool submit_vdp1_model(
                     std::uint32_t hash = 2166136261u;
                     unsigned int mismatch = 0u;
                     for (unsigned int i = 0; i < 9u; ++i) {
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+                        const auto dst=primary?readPrimarySubdivisionVertex(baseVertex+i):g_vdp1SubdivVertices[baseVertex+i];
+#else
                         const auto& dst = g_vdp1SubdivVertices[baseVertex + i];
+#endif
                         const float actual[3] = {dst.shadeR, dst.shadeG, dst.shadeB};
                         const float expected[3] = {gridR[i], gridG[i], gridB[i]};
                         for (unsigned int a = 0; a < 3u; ++a) {
