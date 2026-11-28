@@ -918,11 +918,7 @@ static std::uint16_t* g_vdp1TextureIndices = nullptr;
 static unsigned int g_vdp1TextureVertexCapacity = 0u;
 static unsigned int g_vdp1TextureIndexCapacity = 0u;
 
-struct SubdivGouraudVertex {
-    float x, y, z;
-    float u, v;
-    float shadeR, shadeG, shadeB;
-};
+using SubdivGouraudVertex = neptune::SubdivisionInterleavedVertex;
 
 // Full mode always samples a source quad at u/v = 0, 1/2, 1. Build those
 // exact nine bilinear points with midpoint arithmetic instead of evaluating
