@@ -172,6 +172,49 @@ static void reportGeometryPayloads()
 // Shadow estimates remain independent metadata and never write mapped bytes.
 // CPU payload probe is mutually exclusive with resident indices.
 static std::optional<neptune::GeometryArena<4096>> g_geometryPhysicalRanges;
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+static neptune::GeometrySubmissionEpoch g_geometrySubmissionEpoch;
+static unsigned g_geometryEpochCompletions=0, g_geometryEpochFaults=0;
+
+static void faultGeometryEpoch()
+{
+    if (!g_geometrySubmissionEpoch.failed()) {
+        ++g_geometryEpochFaults;
+        logging::writef("[NeptuneGeometryEpoch] disabled=1 ambiguousBoundary=1\n");
+    }
+    g_geometrySubmissionEpoch.fail();
+}
+
+// Created only after successful native scene begin. The scope spans world
+// composition, including any intermediate end/begin and diagnostic finish.
+// No new GPU wait is introduced. An unhandled exit fails closed.
+class GeometryFrameEpochScope {
+public:
+    GeometryFrameEpochScope() {
+        if (g_geometryPhysicalRanges && !g_geometrySubmissionEpoch.failed())
+            serial_=g_geometrySubmissionEpoch.begin();
+    }
+    ~GeometryFrameEpochScope() {
+        if (serial_) faultGeometryEpoch();
+    }
+    void finish(bool endSceneSucceeded) {
+        if (!serial_) return;
+        serial_=0;
+        if (!endSceneSucceeded || g_geometrySubmissionEpoch.failed()) {
+            faultGeometryEpoch();
+            return;
+        }
+        const auto completed=g_geometrySubmissionEpoch.complete(true);
+        if (!completed || !g_geometryPhysicalRanges->completeThrough(completed)) {
+            faultGeometryEpoch();
+            return;
+        }
+        ++g_geometryEpochCompletions;
+    }
+private:
+    std::uint64_t serial_=0;
+};
+#endif
 static const std::uint16_t* g_residentTopology = nullptr;
 static bool g_residentTopologyAttempted = false;
 static neptune::GeometryArena<4096>::Range g_residentTopologyRange{};
@@ -286,6 +329,12 @@ static void releaseGeometryArena()
     reportSplitSubdivisionStreams();
     g_splitGeometry=nullptr;g_splitShade=nullptr;
     g_splitAttempted=g_splitMirrorsReady=false;
+#endif
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+    logging::writef("[NeptuneGeometryEpoch] completions=%u faults=%u shutdown=1\n",
+        g_geometryEpochCompletions,g_geometryEpochFaults);
+    g_geometrySubmissionEpoch={};
+    g_geometryEpochCompletions=g_geometryEpochFaults=0;
 #endif
     g_geometryPhysicalRanges.reset();
     g_residentTopologyRange={};

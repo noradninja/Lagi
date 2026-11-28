@@ -376,7 +376,12 @@ static bool prepareSpriteComposite(bool native,bool menu) {
 }
 static bool finishSpriteComposite(SceGxmRenderTarget* target,SceGxmColorSurface* destination,
     SceGxmSyncObject* sync) {
-    sceGxmEndScene(g_probeContext,nullptr,nullptr);
+    const int worldEndResult=sceGxmEndScene(g_probeContext,nullptr,nullptr);
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+    if (worldEndResult<0) faultGeometryEpoch();
+#else
+    (void)worldEndResult;
+#endif
     // Camp circle depth A/B: the ONLY state changed between two adjacent
     // frames is the depth policy of polygons 626..637. Compare the completed
     // VDP1 world surface, before RBG0 composition, within their projected

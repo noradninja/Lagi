@@ -232,6 +232,10 @@ option(NEPTUNE_GEOMETRY_PAYLOAD_PROBE "Verify canonical vertex payloads in mappe
 option(NEPTUNE_RESIDENT_SUBDIV_INDICES "Use immutable mapped subdivision indices in native ordered draws" OFF)
 option(NEPTUNE_SPLIT_SUBDIV_STREAMS "Bind independent geometry and Gouraud shade streams" OFF)
 option(NEPTUNE_SPLIT_SUBDIV_PRIMARY "Write canonical subdivision payloads only to split streams when available" OFF)
+option(NEPTUNE_RESIDENT_MODEL_GEOMETRY "Experimental immutable model XYZ/UV resident draws" OFF)
+if(NEPTUNE_RESIDENT_MODEL_GEOMETRY AND NOT NEPTUNE_SPLIT_SUBDIV_PRIMARY)
+ message(FATAL_ERROR "Resident model geometry requires primary split subdivision streams")
+endif()
 if(NEPTUNE_SPLIT_SUBDIV_PRIMARY AND NOT NEPTUNE_SPLIT_SUBDIV_STREAMS)
  message(FATAL_ERROR "Primary split streams require split subdivision streams")
 endif()
@@ -8099,6 +8103,7 @@ target_compile_definitions(lagi PRIVATE LAGI_FIELD_CRAM_REVERSE_INDEX=$<BOOL:${L
  target_compile_definitions(lagi PRIVATE NEPTUNE_RESIDENT_SUBDIV_INDICES=$<BOOL:${NEPTUNE_RESIDENT_SUBDIV_INDICES}>)
  target_compile_definitions(lagi PRIVATE NEPTUNE_SPLIT_SUBDIV_STREAMS=$<BOOL:${NEPTUNE_SPLIT_SUBDIV_STREAMS}>)
  target_compile_definitions(lagi PRIVATE NEPTUNE_SPLIT_SUBDIV_PRIMARY=$<BOOL:${NEPTUNE_SPLIT_SUBDIV_PRIMARY}>)
+ target_compile_definitions(lagi PRIVATE NEPTUNE_RESIDENT_MODEL_GEOMETRY=$<BOOL:${NEPTUNE_RESIDENT_MODEL_GEOMETRY}>)
 # Temporary bring-up aid only. The long-term target is the complete Azel
 # runtime graph, not a Ruins-only binary. While enabled, this trims unreachable
 # code so adapter work can proceed against the first playable scene without

@@ -10,6 +10,9 @@
 #include "lagi/native_scene_mode.h"
 #include "neptune/subdivision_topology.h"
 #include "neptune/subdivision_streams.h"
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+#include "neptune/geometry_submission_epoch.h"
+#endif
 #if NEPTUNE_GEOMETRY_ARENA_PROBE
 #include "neptune/geometry_arena.h"
 #include <optional>
@@ -16052,6 +16055,9 @@ static void renderBasicWingViewer()
         sceKernelGetProcessTimeWide() - beginSceneStartUs);
     if (beginSceneResult < 0)
         return;
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+    GeometryFrameEpochScope geometryEpochScope;
+#endif
 
     unsigned int vdp1UiSpriteSlot = 0u;
     if (nativeSceneMode) {
@@ -16171,8 +16177,13 @@ static void renderBasicWingViewer()
     g_profileSubmitUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - submitStartUs);
     if (!submitted && !nativeMenuFrame) {
-        sceGxmEndScene(g_probeContext, nullptr, nullptr);
+        const int endResult=sceGxmEndScene(g_probeContext, nullptr, nullptr);
         sceGxmFinish(g_probeContext);
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+        geometryEpochScope.finish(endResult>=0);
+#else
+        (void)endResult;
+#endif
         return;
     }
 
@@ -16208,6 +16219,9 @@ static void renderBasicWingViewer()
                 Vdp1UiPass::Foreground, &vdp1UiSpriteSlot);
             if (spriteComposite && !finishSpriteComposite(renderTarget,colorSurface,syncObject)) {
                 logging::writef("[VDP2SpriteComposite] FAIL finishing world layer\n");
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+                faultGeometryEpoch();
+#endif
                 sceGxmEndScene(g_probeContext,nullptr,nullptr);
                 sceGxmFinish(g_probeContext);
                 return;
@@ -16264,7 +16278,7 @@ static void renderBasicWingViewer()
             ? renderCpuBeforeWaitUs - g_profileSubmitUs
             : 0u;
     const std::uint64_t endSceneStartUs = sceKernelGetProcessTimeWide();
-    sceGxmEndScene(g_probeContext, nullptr, nullptr);
+    const int geometryEndResult=sceGxmEndScene(g_probeContext, nullptr, nullptr);
     g_profileGxmEndSceneUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - endSceneStartUs);
     const auto materialPrepareStartUs = sceKernelGetProcessTimeWide();
@@ -16272,6 +16286,11 @@ static void renderBasicWingViewer()
     const auto materialPrepareUs = sceKernelGetProcessTimeWide() - materialPrepareStartUs;
     const std::uint64_t finishStartUs = sceKernelGetProcessTimeWide();
     sceGxmFinish(g_probeContext);
+#if NEPTUNE_RESIDENT_MODEL_GEOMETRY
+    geometryEpochScope.finish(geometryEndResult>=0);
+#else
+    (void)geometryEndResult;
+#endif
     g_profileGxmFinishUs = static_cast<unsigned int>(
         sceKernelGetProcessTimeWide() - finishStartUs);
     if(g_gpuPassSample) {
