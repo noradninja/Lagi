@@ -219,7 +219,7 @@ static SubdivGouraudVertex readPrimarySubdivisionVertex(unsigned index)
 {
     const auto& geom=g_splitGeometry[index];
     const auto& shade=g_splitShade[index];
-    return {geom.x,geom.y,geom.z,geom.u,geom.v,shade.r,shade.g,shade.b};
+    return neptune::interleaveSubdivisionVertex(geom,shade);
 }
 #endif
 
