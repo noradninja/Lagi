@@ -16,6 +16,15 @@ int main()
     SubdivisionShadeVertex shade{original[5],original[6],original[7]};
     assert(std::memcmp(&geometry,original,sizeof geometry)==0);
     assert(std::memcmp(&shade,original+5,sizeof shade)==0);
+    const auto initial=neptune::interleaveSubdivisionVertex(geometry,shade);
+    assert(std::memcmp(&initial,original,sizeof initial)==0);
     shade={0.75f,-0.125f,0.5f};
     assert(std::memcmp(&geometry,original,sizeof geometry)==0);
+    const auto repacked=neptune::interleaveSubdivisionVertex(geometry,shade);
+    assert(std::memcmp(&repacked,&geometry,sizeof geometry)==0);
+    assert(std::memcmp(&repacked.shadeR,&shade,sizeof shade)==0);
+    geometry.x=-8.f; geometry.u=0.375f;
+    const auto moved=neptune::interleaveSubdivisionVertex(geometry,shade);
+    assert(moved.x==-8.f && moved.u==0.375f);
+    assert(std::memcmp(&moved.shadeR,&shade,sizeof shade)==0);
 }
