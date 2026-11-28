@@ -206,6 +206,22 @@ static neptune::SubdivisionShadeVertex* g_splitShade=nullptr;
 static bool g_splitAttempted=false, g_splitMirrorsReady=false;
 static constexpr unsigned kSplitVertexCount=neptune::kSubdivisionMaxQuads*9u;
 static unsigned g_splitDrawFrames=0, g_splitFallbackFrames=0;
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+static std::uint64_t g_splitAvoidedBytes=0, g_splitFallbackBytes=0;
+// Storage authority is selected when subdivision storage is prepared.
+// Do not change it on view switches or failed per-draw bindings.
+static bool splitSubdivisionPrimary() noexcept
+{
+    return g_splitMirrorsReady && g_splitSubdivVertexProgram;
+}
+
+static SubdivGouraudVertex readPrimarySubdivisionVertex(unsigned index)
+{
+    const auto& geom=g_splitGeometry[index];
+    const auto& shade=g_splitShade[index];
+    return {geom.x,geom.y,geom.z,geom.u,geom.v,shade.r,shade.g,shade.b};
+}
+#endif
 
 static void ensureSplitSubdivisionStreams()
 {
@@ -232,6 +248,13 @@ static void reportSplitSubdivisionStreams()
     logging::writef("[NeptuneSplitStreamsWindow] frame=%llu mode=%u split=%u fallback=%u\n",
         static_cast<unsigned long long>(azel_bridge::published_frame_number()),
         unsigned(g_sceneGameMode),g_splitDrawFrames,g_splitFallbackFrames);
+#if NEPTUNE_SPLIT_SUBDIV_PRIMARY
+    logging::writef("[NeptuneSplitPrimaryWindow] frame=%llu mode=%u avoidedBytes=%llu fallbackBytes=%llu\n",
+        static_cast<unsigned long long>(azel_bridge::published_frame_number()),
+        unsigned(g_sceneGameMode),static_cast<unsigned long long>(g_splitAvoidedBytes),
+        static_cast<unsigned long long>(g_splitFallbackBytes));
+    g_splitAvoidedBytes=g_splitFallbackBytes=0;
+#endif
     g_splitDrawFrames=g_splitFallbackFrames=0;
 }
 #endif
