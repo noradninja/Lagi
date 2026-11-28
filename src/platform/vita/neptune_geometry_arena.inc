@@ -166,13 +166,15 @@ static void reportGeometryPayloads()
 #endif
 
 #if NEPTUNE_RESIDENT_SUBDIV_INDICES
-// One renderer-owned immutable range. Shadow estimates are separate metadata
-// and never write to this allocation. CPU payload probe is mutually exclusive.
-// No model identity, scene epoch, or changing texture state enters this key.
-static std::optional<neptune::GeometryArena<3>> g_residentTopologyRanges;
+// One physical allocation domain for all GPU-addressable arena ranges.
+// Topology and split streams are renderer-lifetime reservations; future model
+// ranges must allocate from this same domain and retire at a proven GPU boundary.
+// Shadow estimates remain independent metadata and never write mapped bytes.
+// CPU payload probe is mutually exclusive with resident indices.
+static std::optional<neptune::GeometryArena<4096>> g_geometryPhysicalRanges;
 static const std::uint16_t* g_residentTopology = nullptr;
 static bool g_residentTopologyAttempted = false;
-static neptune::GeometryArena<3>::Range g_residentTopologyRange{};
+static neptune::GeometryArena<4096>::Range g_residentTopologyRange{};
 static unsigned g_residentTopologyDraws=0, g_residentTopologyFallbacks=0;
 static std::uint64_t g_residentTopologyIndices=0;
 
@@ -183,15 +185,15 @@ static void ensureResidentSubdivisionTopology()
     constexpr unsigned count=neptune::kSubdivisionMaxQuads*neptune::kSubdivisionIndicesPerQuad;
     constexpr unsigned bytes=count*sizeof(std::uint16_t);
     const auto started=sceKernelGetProcessTimeWide();
-    g_residentTopologyRanges.emplace(kGeometryArenaBytes);
-    auto range=g_residentTopologyRanges->allocate(bytes,64u);
+    g_geometryPhysicalRanges.emplace(kGeometryArenaBytes);
+    auto range=g_geometryPhysicalRanges->allocate(bytes,64u);
     if(range) {
         auto* target=reinterpret_cast<std::uint16_t*>(
             static_cast<unsigned char*>(g_geometryArenaMemory)+range.offset);
         if(neptune::writeSubdivisionTopology(target,count,neptune::kSubdivisionMaxQuads)) {
             g_residentTopology=target;
             g_residentTopologyRange=range;
-        } else g_residentTopologyRanges->retire(range);
+        } else g_geometryPhysicalRanges->retire(range);
     }
     logging::writef("[NeptuneResidentTopology] ready=%u cdram=%u bytes=%u "
         "quads=%u uploadUs=%llu immutable=1\n",
@@ -225,13 +227,13 @@ static SubdivGouraudVertex readPrimarySubdivisionVertex(unsigned index)
 
 static void ensureSplitSubdivisionStreams()
 {
-    if (g_splitAttempted || !g_residentTopologyRanges || !g_residentTopology) return;
+    if (g_splitAttempted || !g_geometryPhysicalRanges || !g_residentTopology) return;
     g_splitAttempted=true;
-    auto& arena=*g_residentTopologyRanges;
+    auto& arena=*g_geometryPhysicalRanges;
     constexpr auto geometryBytes=kSplitVertexCount*sizeof(neptune::SubdivisionGeometryVertex);
     constexpr auto shadeBytes=kSplitVertexCount*sizeof(neptune::SubdivisionShadeVertex);
     auto geometry=arena.allocate(geometryBytes,64u);
-    auto shade=geometry ? arena.allocate(shadeBytes,64u) : neptune::GeometryArena<3>::Range{};
+    auto shade=geometry ? arena.allocate(shadeBytes,64u) : neptune::GeometryArena<4096>::Range{};
     if(geometry && shade) {
         auto* base=static_cast<unsigned char*>(g_geometryArenaMemory);
         g_splitGeometry=reinterpret_cast<neptune::SubdivisionGeometryVertex*>(base+geometry.offset);
@@ -285,7 +287,7 @@ static void releaseGeometryArena()
     g_splitGeometry=nullptr;g_splitShade=nullptr;
     g_splitAttempted=g_splitMirrorsReady=false;
 #endif
-    g_residentTopologyRanges.reset();
+    g_geometryPhysicalRanges.reset();
     g_residentTopologyRange={};
     g_residentTopologyAttempted=false;
 #endif

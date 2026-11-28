@@ -93,5 +93,29 @@ int main() {
     assert(stress.retire(x) && stress.retire(y));
     assert(stress.completeThrough(10) && stress.used()==128);
     assert(stress.completeThrough(12) && stress.used()==0);
+    // Physical domain: preserve renderer-lifetime offsets and admit model
+    // ranges without allowing retirement to overwrite in-flight geometry.
+    {
+        neptune::GeometryArena<4096> physical(16u*1024u*1024u);
+        auto topology=physical.allocate(349488,64);
+        auto geometry=physical.allocate(1310580,64);
+        auto shade=physical.allocate(786348,64);
+        assert(topology && geometry && shade);
+        assert(topology.offset==0 && geometry.offset==349504 && shade.offset==1660096);
+        const auto permanent=physical.used();
+        auto model=physical.allocate(256u*1024u,64);
+        assert(model && model.offset>=shade.offset+shade.bytes);
+        assert(physical.markUsed(model,7) && physical.retire(model));
+        assert(physical.completeThrough(6));
+        assert(physical.used()==permanent+model.bytes);
+        auto another=physical.allocate(model.bytes,64);
+        assert(another && another.offset!=model.offset);
+        assert(physical.retire(another));
+        assert(physical.completeThrough(7) && physical.used()==permanent);
+        auto reused=physical.allocate(model.bytes,64);
+        assert(reused && reused.offset==model.offset && reused.id!=model.id);
+        assert(physical.retire(reused));
+        assert(physical.count()==3 && physical.used()==permanent);
+    }
     std::puts("PASS Neptune geometry arena range and retirement");
 }
