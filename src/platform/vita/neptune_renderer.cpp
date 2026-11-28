@@ -8582,7 +8582,10 @@ static void observeNativeSceneGeometry()
         if (!model || model->vertices.empty() || model->polygons.empty()) {
             ++missing; continue;
         }
-        if (!submission.modelGeneration) { ++unversioned; continue; }
+        const auto resource = azel_bridge::published_geometry_resource(
+            static_cast<std::uint32_t>(submission.adaptedModelIndex),
+            submission.modelGeneration);
+        if (!resource.key.valid()) { ++unversioned; continue; }
         const auto& state = submission.state;
         if (!state.hasModelMatrix || state.billboard ||
             state.localCoordinatesX != 176 || state.localCoordinatesY != 112) {
@@ -8597,9 +8600,9 @@ static void observeNativeSceneGeometry()
             ++specialShape; continue;
         }
         neptune::GeometryRepresentationKey key{};
-        // Observation only: one bridge cache namespace, monotonic immutable
-        // snapshot serial as resource ID. Not the final owner registry.
-        key.source = {1u, submission.modelGeneration, 1u};
+        // The producer validates the exact published immutable snapshot.
+        // Representation eligibility and baked dependencies remain provisional.
+        key.source = resource.key;
         key.layout = 1u; // transformed DebugColorVertex payload estimate
         key.coordinateConvention = 1u; // centered native world transform
         key.space = neptune::GeometrySpace::Transformed;
@@ -8967,7 +8970,9 @@ static bool buildNativeSceneFrame()
                 !model->vertices.empty() &&
                 g_sceneCpuMesh.vertices.size()-payloadFirst==model->vertices.size()) {
                 neptune::GeometryRepresentationKey payloadKey{};
-                payloadKey.source={1u,submission.modelGeneration,1u};
+                payloadKey.source=azel_bridge::published_geometry_resource(
+                    static_cast<std::uint32_t>(submission.adaptedModelIndex),
+                    submission.modelGeneration).key;
                 payloadKey.layout=1u;
                 payloadKey.coordinateConvention=1u;
                 payloadKey.space=neptune::GeometrySpace::Transformed;

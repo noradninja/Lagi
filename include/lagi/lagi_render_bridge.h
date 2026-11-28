@@ -7,6 +7,7 @@
 #include "lagi/lagi_additive_light.h"
 #include "lagi/lagi_transient_laser_lights.h"
 #include "lagi/native_color_animation.h"
+#include "neptune/geometry_resource_key.h"
 
 struct sProcessed3dModel;
 void addObjectToDrawListWithColorAnimation(sProcessed3dModel*,const std::uint8_t*);
@@ -175,6 +176,16 @@ const std::vector<Vdp1UiCommand>& published_vdp1_ui_commands();
 const std::vector<RenderSubmission>& published_submissions();
 const std::vector<lagi::NativeAnimatedPolygonColor>& published_animated_colors();
 const LiveVdp1Model* published_adapted_model(std::uint32_t index);
+
+// Resource identity is attached to the immutable published snapshot, not
+// the native address. Weak ownership permits renderer-side retirement only
+// after both producer and published frames release that exact snapshot.
+struct PublishedGeometryResource {
+    neptune::GeometryResourceKey key{};
+    std::weak_ptr<const LiveVdp1Model> owner;
+};
+PublishedGeometryResource published_geometry_resource(std::uint32_t index,
+    std::uint64_t expectedGeneration);
 std::uint64_t published_frame_number();
 
 // Number of previously unseen native model identities adapted while building

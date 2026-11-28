@@ -399,6 +399,21 @@ const LiveVdp1Model* published_adapted_model(std::uint32_t index)
         : nullptr;
 }
 
+PublishedGeometryResource published_geometry_resource(std::uint32_t index,
+    std::uint64_t expectedGeneration)
+{
+    if (!expectedGeneration || index >= g_publishedAdaptedModels.size()) return {};
+    const auto& snapshot = g_publishedAdaptedModels[index];
+    if (!snapshot || snapshot->generation != expectedGeneration) return {};
+    // This producer namespace belongs to the single process-lifetime native
+    // model cache. Snapshot generations identify immutable content; replacement
+    // (including native address reuse) gets a different resource ID, not a
+    // mutable revision of a previous snapshot. Do not reset/recreate the cache.
+    constexpr std::uint64_t nativeSnapshotProducer = 1u;
+    const std::shared_ptr<const LiveVdp1Model> owner(snapshot, &snapshot->value);
+    return {{nativeSnapshotProducer, snapshot->generation, 1u}, owner};
+}
+
 std::uint64_t published_frame_number()
 {
     return g_publishedFrameNumber;
