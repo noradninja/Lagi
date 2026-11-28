@@ -9,6 +9,7 @@
 #include "lagi/rbg_decoded_page.h"
 #include "lagi/native_scene_mode.h"
 #include "neptune/subdivision_topology.h"
+#include "neptune/subdivision_streams.h"
 #if NEPTUNE_GEOMETRY_ARENA_PROBE
 #include "neptune/geometry_arena.h"
 #include <optional>
@@ -389,6 +390,9 @@ static const SceGxmProgramParameter* g_gouraudPayloadWvpParam = nullptr;
 static SceGxmShaderPatcherId g_gouraudSubdivVertexProgramId{};
 static bool g_gouraudSubdivVertexRegistered = false;
 static SceGxmVertexProgram* g_gouraudSubdivVertexProgram = nullptr;
+#if NEPTUNE_SPLIT_SUBDIV_STREAMS
+static SceGxmVertexProgram* g_splitSubdivVertexProgram = nullptr;
+#endif
 static const SceGxmProgramParameter* g_gouraudSubdivWvpParam = nullptr;
 static SceGxmShaderPatcherId g_texturedGouraudSubdivFragmentProgramId{};
 static bool g_texturedGouraudSubdivFragmentRegistered = false;
@@ -3030,6 +3034,9 @@ void shutdown()
     g_vdp1SubdivVertexCapacity = 0u;
     g_vdp1SubdivIndexCapacity = 0u;
     g_vdp1SubdivQuadIndices.clear();
+#if NEPTUNE_SPLIT_SUBDIV_STREAMS
+    g_splitMirrorsReady=false;
+#endif
     g_sceneSubdivShadeStates.clear();
 #if LAGI_FIELD_SUBDIV_CACHE
     g_fieldSubdivPositionSlots.clear();
@@ -3176,6 +3183,12 @@ void shutdown()
                 g_probeShaderPatcher, g_texturedGouraudSubdivFragmentProgram);
             g_texturedGouraudSubdivFragmentProgram = nullptr;
         }
+#if NEPTUNE_SPLIT_SUBDIV_STREAMS
+        if(g_splitSubdivVertexProgram) {
+            sceGxmShaderPatcherReleaseVertexProgram(g_probeShaderPatcher,g_splitSubdivVertexProgram);
+            g_splitSubdivVertexProgram=nullptr;
+        }
+#endif
         if (g_gouraudSubdivVertexProgram) {
             sceGxmShaderPatcherReleaseVertexProgram(
                 g_probeShaderPatcher, g_gouraudSubdivVertexProgram);
@@ -6450,6 +6463,9 @@ static void releaseResidentVdp1Model(bool preserveTextures = false)
     g_vdp1SubdivVertexCapacity = 0u;
     g_vdp1SubdivIndexCapacity = 0u;
     g_vdp1SubdivQuadIndices.clear();
+#if NEPTUNE_SPLIT_SUBDIV_STREAMS
+    g_splitMirrorsReady=false;
+#endif
     g_sceneSubdivShadeStates.clear();
 #if LAGI_FIELD_SUBDIV_CACHE
     g_fieldSubdivPositionSlots.clear();
@@ -6760,6 +6776,11 @@ bool prepare_vdp1_model(
                 // initialize a newly grown topology suffix.
                 const std::uint64_t subdivBuildStartUs =
                     sceKernelGetProcessTimeWide();
+#if NEPTUNE_SPLIT_SUBDIV_STREAMS
+                if (!reuseGeometry) g_splitMirrorsReady=g_splitGeometry && g_splitShade &&
+                    g_vdp1SubdivVertexCapacity<=kSplitVertexCount;
+                else if(g_vdp1SubdivVertexCapacity>kSplitVertexCount) g_splitMirrorsReady=false;
+#endif
                 static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
                 constexpr auto& gridTris = neptune::kSubdivisionGridTriangles;
                 const std::size_t previousSubdivIndexCount =
@@ -6894,6 +6915,16 @@ bool prepare_vdp1_model(
                         }
                         dst.u = gridU[i];
                         dst.v = gridV[i];
+#if NEPTUNE_SPLIT_SUBDIV_STREAMS
+                        if(g_splitMirrorsReady) {
+                            auto& geom=g_splitGeometry[baseVertex+i];
+                            if(!reuseGeometry) {
+                                geom.x=gridX[i]; geom.y=gridY[i]; geom.z=gridZ[i];
+                                g_splitShade[baseVertex+i]={0.f,0.f,0.f};
+                            }
+                            geom.u=gridU[i]; geom.v=gridV[i];
+                        }
+#endif
                     }
                     uvState = {texture.width, texture.height, flip};
 
@@ -8601,6 +8632,9 @@ static bool buildNativeSceneFrame()
     ensureGeometryArena();
 #if NEPTUNE_RESIDENT_SUBDIV_INDICES
     ensureResidentSubdivisionTopology();
+#if NEPTUNE_SPLIT_SUBDIV_STREAMS
+    ensureSplitSubdivisionStreams();
+#endif
 #endif
 #endif
     g_profileFieldStreamLogUs = 0u;
@@ -8786,6 +8820,9 @@ static bool buildNativeSceneFrame()
     g_liveTownHasBillboards = hasBillboards;
 #if NEPTUNE_RESIDENT_SUBDIV_INDICES
     if (g_profileAppendSample) reportResidentSubdivisionTopology();
+#if NEPTUNE_SPLIT_SUBDIV_STREAMS
+    if (g_profileAppendSample) reportSplitSubdivisionStreams();
+#endif
 #endif
 #if NEPTUNE_GEOMETRY_OBSERVE
     if (g_profileAppendSample) observeNativeSceneGeometry();
@@ -11588,6 +11625,20 @@ void show_game_presentation()
         failure("[FAIL] CREATE GOURAUD SUBDIV VP");
         return;
     }
+#if NEPTUNE_SPLIT_SUBDIV_STREAMS
+    SceGxmVertexStream splitStreams[2]{};
+    splitStreams[0].stride=sizeof(neptune::SubdivisionGeometryVertex);
+    splitStreams[1].stride=sizeof(neptune::SubdivisionShadeVertex);
+    splitStreams[0].indexSource=splitStreams[1].indexSource=SCE_GXM_INDEX_SOURCE_INDEX_16BIT;
+    subdivAttributes[2].streamIndex=1;
+    subdivAttributes[2].offset=0;
+    const int splitResult=sceGxmShaderPatcherCreateVertexProgram(
+        g_probeShaderPatcher,g_gouraudSubdivVertexProgramId,
+        subdivAttributes,3,splitStreams,2,&g_splitSubdivVertexProgram);
+    if(splitResult<0) g_splitSubdivVertexProgram=nullptr;
+    logging::writef("[NeptuneSplitProgram] ready=%u result=0x%08X\n",
+        unsigned(g_splitSubdivVertexProgram!=nullptr),unsigned(splitResult));
+#endif
     if (sceGxmShaderPatcherCreateFragmentProgram(
             g_probeShaderPatcher,
             g_texturedGouraudSubdivFragmentProgramId,
@@ -12556,7 +12607,19 @@ bool submit_vdp1_model(
         subdividedTexturedLit || subdividedGouraudGray;
     const bool gouraudPath =
         texturedLit || gouraudGray;
-
+#if NEPTUNE_SPLIT_SUBDIV_STREAMS
+    bool useSplitStreams=subdividedTexturedLit &&
+        g_residentVdp1Model==ResidentVdp1Model::LiveTown &&
+        g_splitSubdivVertexProgram && g_splitMirrorsReady &&
+        model.polygonCount<=neptune::kSubdivisionMaxQuads;
+    if(useSplitStreams) {
+        sceGxmSetVertexProgram(g_probeContext,g_splitSubdivVertexProgram);
+        if(sceGxmSetVertexStream(g_probeContext,0,g_splitGeometry)<0 ||
+           sceGxmSetVertexStream(g_probeContext,1,g_splitShade)<0)
+            useSplitStreams=false;
+    }
+    if(!useSplitStreams)
+#endif
     sceGxmSetVertexProgram(
         g_probeContext,
         subdividedGouraud
@@ -12637,6 +12700,9 @@ bool submit_vdp1_model(
                 ? static_cast<const void*>(g_vdp1TextureVertices)
                 : static_cast<const void*>(g_vdp1Vertices)));
 
+    #if NEPTUNE_SPLIT_SUBDIV_STREAMS
+    if(!useSplitStreams)
+    #endif
     if (sceGxmSetVertexStream(g_probeContext, 0, vertexStream) < 0)
         return false;
 
@@ -13035,6 +13101,15 @@ bool submit_vdp1_model(
                     dst.shadeG = gridG[i];
                     dst.shadeB = gridB[i];
                 }
+#if NEPTUNE_SPLIT_SUBDIV_STREAMS
+                if(g_splitMirrorsReady) {
+                    if(updatePosition) {
+                        auto& geom=g_splitGeometry[baseVertex+i];
+                        geom.x=gridX[i]; geom.y=gridY[i]; geom.z=gridZ[i];
+                    }
+                    if(updateShade) g_splitShade[baseVertex+i]={gridR[i],gridG[i],gridB[i]};
+                }
+#endif
             }
             if (updateShade) {
                 shadeState.cornerBits=shadeBits;
@@ -13495,6 +13570,10 @@ bool submit_vdp1_model(
                     g_viewMode,unsigned(g_sceneGameMode),garilCliffObjects);
             }
             unsigned cliffRuns=0u, cliffQuads=0u;
+#if NEPTUNE_SPLIT_SUBDIV_STREAMS
+            if(useSplitStreams) ++g_splitDrawFrames;
+            else ++g_splitFallbackFrames;
+#endif
             const std::uint64_t drawStart=sceKernelGetProcessTimeWide();
             for(const auto& run:orderedRuns) {
                 const unsigned texture=run.texture;
