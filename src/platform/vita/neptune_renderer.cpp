@@ -8784,11 +8784,11 @@ static bool buildNativeSceneFrame()
         hasBillboards = hasBillboards || submission.state.billboard;
     }
     g_liveTownHasBillboards = hasBillboards;
-#if NEPTUNE_GEOMETRY_OBSERVE
-    if (g_profileAppendSample) observeNativeSceneGeometry();
 #if NEPTUNE_RESIDENT_SUBDIV_INDICES
     if (g_profileAppendSample) reportResidentSubdivisionTopology();
 #endif
+#if NEPTUNE_GEOMETRY_OBSERVE
+    if (g_profileAppendSample) observeNativeSceneGeometry();
 #if NEPTUNE_GEOMETRY_PAYLOAD_PROBE
     if (g_profileAppendSample) reportGeometryPayloads();
 #endif
@@ -13542,7 +13542,6 @@ bool submit_vdp1_model(
 #if NEPTUNE_RESIDENT_SUBDIV_INDICES
                 if(useResidentIndices) {
                     indices=g_residentTopology+run.firstIndex;
-                    g_residentTopologySubmitted=true;
                 }
 #endif
                 if(sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,
