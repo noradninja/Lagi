@@ -8,6 +8,7 @@
 #include "lagi/saturn_presentation.h"
 #include "lagi/rbg_decoded_page.h"
 #include "lagi/native_scene_mode.h"
+#include "neptune/subdivision_topology.h"
 #if NEPTUNE_GEOMETRY_ARENA_PROBE
 #include "neptune/geometry_arena.h"
 #include <optional>
@@ -2930,9 +2931,6 @@ void shutdown()
     }
 
     launcherReleaseGpu();
-#if NEPTUNE_GEOMETRY_ARENA_PROBE
-    releaseGeometryArena();
-#endif
     auto freeSimpleMappedProbe = [](SceUID& uid, void*& ptr) {
         if (uid >= 0) {
             void* mem = nullptr;
@@ -3474,6 +3472,9 @@ void shutdown()
     }
     std::free(g_probeContextHost);
     g_probeContextHost = nullptr;
+#if NEPTUNE_GEOMETRY_ARENA_PROBE
+    releaseGeometryArena();
+#endif
 
     if (g_probeFragmentUsseUid >= 0) {
         void* mem = nullptr;
@@ -6760,12 +6761,7 @@ bool prepare_vdp1_model(
                 const std::uint64_t subdivBuildStartUs =
                     sceKernelGetProcessTimeWide();
                 static const unsigned int cornerVertex[4] = {0u, 1u, 2u, 5u};
-                static const unsigned int gridTris[24] = {
-                    0,1,4, 0,4,3,
-                    1,2,5, 1,5,4,
-                    3,4,7, 3,7,6,
-                    4,5,8, 4,8,7
-                };
+                constexpr auto& gridTris = neptune::kSubdivisionGridTriangles;
                 const std::size_t previousSubdivIndexCount =
                     g_vdp1SubdivQuadIndices.size();
 #if LAGI_FIELD_SUBDIV_CACHE
@@ -8603,6 +8599,9 @@ static bool buildNativeSceneFrame()
 {
 #if NEPTUNE_GEOMETRY_ARENA_PROBE
     ensureGeometryArena();
+#if NEPTUNE_RESIDENT_SUBDIV_INDICES
+    ensureResidentSubdivisionTopology();
+#endif
 #endif
     g_profileFieldStreamLogUs = 0u;
     const std::uint64_t buildStartUs = sceKernelGetProcessTimeWide();
@@ -8787,6 +8786,9 @@ static bool buildNativeSceneFrame()
     g_liveTownHasBillboards = hasBillboards;
 #if NEPTUNE_GEOMETRY_OBSERVE
     if (g_profileAppendSample) observeNativeSceneGeometry();
+#if NEPTUNE_RESIDENT_SUBDIV_INDICES
+    if (g_profileAppendSample) reportResidentSubdivisionTopology();
+#endif
 #if NEPTUNE_GEOMETRY_PAYLOAD_PROBE
     if (g_profileAppendSample) reportGeometryPayloads();
 #endif
@@ -13167,6 +13169,12 @@ bool submit_vdp1_model(
             }
             // Static-prefix caching changes storage order, not Azel's
             // native VDP1 submission order. Preserve the latter here.
+#if NEPTUNE_RESIDENT_SUBDIV_INDICES
+            const bool useResidentIndices=g_residentTopology &&
+                model.polygonCount<=neptune::kSubdivisionMaxQuads;
+#else
+            constexpr bool useResidentIndices=false;
+#endif
             const auto appendPolygon=[&](std::size_t p)->bool {
                 if(!visibleQuads[p])return true;
                 const unsigned texture=model.polygonTextureIndices[p];
@@ -13192,9 +13200,10 @@ bool submit_vdp1_model(
                     ++materialPmodMismatches;
                 const unsigned index=static_cast<unsigned>(p*24u);
                 if(index+24u>g_vdp1SubdivIndexCapacity)return false;
-                std::memcpy(g_vdp1SubdivIndices+index,
-                    g_vdp1SubdivQuadIndices.data()+index,
-                    24u*sizeof(std::uint16_t));
+                if(!useResidentIndices)
+                    std::memcpy(g_vdp1SubdivIndices+index,
+                        g_vdp1SubdivQuadIndices.data()+index,
+                        24u*sizeof(std::uint16_t));
                 if(texture!=lastTexture)++textureTransitions;
                 lastTexture=texture;
                 // In mode 24 the circle must have its own draw runs;
@@ -13529,9 +13538,21 @@ bool submit_vdp1_model(
                     (mesh?g_meshSubdivFragmentProgram:g_texturedGouraudSubdivFragmentProgram));
                 sceGxmSetFragmentTexture(g_probeContext,0,
                     &g_vdp1GpuTextures[texture].texture);
+                const std::uint16_t* indices=g_vdp1SubdivIndices+run.firstIndex;
+#if NEPTUNE_RESIDENT_SUBDIV_INDICES
+                if(useResidentIndices) {
+                    indices=g_residentTopology+run.firstIndex;
+                    g_residentTopologySubmitted=true;
+                }
+#endif
                 if(sceGxmDraw(g_probeContext,SCE_GXM_PRIMITIVE_TRIANGLES,
-                    SCE_GXM_INDEX_FORMAT_U16,
-                    g_vdp1SubdivIndices+run.firstIndex,run.count)<0)return false;
+                    SCE_GXM_INDEX_FORMAT_U16,indices,run.count)<0)return false;
+#if NEPTUNE_RESIDENT_SUBDIV_INDICES
+                if(useResidentIndices) {
+                    ++g_residentTopologyDraws;
+                    g_residentTopologyIndices+=run.count;
+                } else ++g_residentTopologyFallbacks;
+#endif
                 if(garilCliff) {
                     ++cliffRuns;
                     cliffQuads+=run.count/24u;
